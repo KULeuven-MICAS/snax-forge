@@ -277,7 +277,7 @@ def test_the_link_names_the_loops_matched():
     """The fold's kept loop against the nest's: m = m at import, m_t = m after the tag; a row
     split of the nest leaves a loop of its own."""
     g = matvec_acc(8, 512)
-    assert seed_link(g, FOLD, EW) == {"container": "tmp1", "subset": ["m"],
+    assert seed_link(g, FOLD, EW) == {"container": "tmp1", "subset": ["m"], "writer": "sum",
                                       "loops": [["m", "m", "0:8"]]}  # fmt: skip
     t = tagged(g, 4)
     assert seed_link(t, FOLD, EW)["loops"] == [["m_t", "m", "0:8"]]

@@ -65,6 +65,7 @@ from snax_forge.dfg.graph import SEEDED
 from snax_forge.dfg.subset import map_range
 from snax_forge.expr import ExprError
 
+from .compose import range_text
 from .recipe import SandboxError
 from .transforms import _copy, _locate, _result, register_transform
 
@@ -424,18 +425,11 @@ def seed_pairs(g: Graph) -> list[tuple[str, str]]:
     return out
 
 
-def range_text(g: Graph, rng: str) -> str:
-    """A map's range at the graph's symbols, ``0:8``; as written where they are unknown."""
-    try:
-        return ":".join(str(expr.evaluate(p, g.bound_symbols)) for p in rng.split(":"))
-    except ExprError:
-        return rng
-
-
 def seed_link(g: Graph, first: str, second: str) -> dict[str, Any]:
     """The transient between ``first``'s fold and ``second``'s nest and the loops matched: the
     fold's kept loops (the maps around it its output moves with) against the nest's, level by
-    level, ``{"container": "tmp1", "subset": ["m"], "loops": [["m_t", "m", "0:8"]]}``; the
+    level, ``{"container": "tmp1", "subset": ["m"], "writer": "sum", "loops": [["m_t", "m",
+    "0:8"]]}``, the subset the nest reads; the
     two sides' ranges joined by `` = `` where they differ (``0:8 = 0:4``), and the leftover
     loops of the longer side with an empty partner."""
     _second(g, first, second)
@@ -454,7 +448,8 @@ def seed_link(g: Graph, first: str, second: str) -> dict[str, Any]:
         text = ra if ra == rb or rb is None else rb if ra is None else f"{ra} = {rb}"
         loops.append([a.attrs["var"] if a else "", b.attrs["var"] if b else "", text])
     (read,) = [m for m in r.inputs.values() if m.data == found["t"]]
-    return {"container": found["t"], "subset": [str(d) for d in read.subset], "loops": loops}
+    return {"container": found["t"], "subset": [str(d) for d in read.subset], "writer": fold.id,
+            "loops": loops}  # fmt: skip
 
 
 register_transform("fuse_seed", fuse_seed, site=_site, multi=_multi)

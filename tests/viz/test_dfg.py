@@ -1119,3 +1119,114 @@ def test_the_seed_is_two_edges_of_x_on_the_fold():
     assert d["inputs"] == {"a": "tmp0[m_t, 4 * n_1_t:4 * n_1_t + 4]", "seed": "q[m_t:m_t + 1]"}
     assert d["params"] == {"W": 4, "op": "add", "seed": 1}
     assert bound["details"]["container:q"]["readers"] == ["sum"]
+
+
+# =============================================================================
+# Partners: the maps a map fuses, seeds or interchanges with (B2 R5)
+# =============================================================================
+
+
+def _bound_fixture(name: str, **symbols: int) -> Graph:
+    d = json.loads((FIXTURES / f"{name}.snaxdfg").read_text())
+    d["symbols"] = symbols
+    return Graph.from_dict(d)
+
+
+def _partners(g: Graph) -> dict[str, list[tuple[str, str, str | None]]]:
+    from snax_forge.viz.dfg.api import Entry, graph_view
+
+    v = graph_view(Entry("g", Path("g"), g, None))
+    return {m: [(p["map"], p["transform"], (p.get("marker") or {}).get("text")) for p in ps]
+            for m, ps in v["partners"].items()}  # fmt: skip
+
+
+def _agree(g: Graph, found: dict) -> None:
+    """Every partner shown is one its transform's site takes, the pair in either role."""
+    from snax_forge.sandbox import SandboxError
+    from snax_forge.sandbox.transforms import _interchange_check, site_of
+
+    for m, ps in found.items():
+        for other, transform, _ in ps:
+            if transform == "interchange_map":
+                _interchange_check(g, m, other, "")
+                continue
+            try:
+                site_of(transform, g, [m, other])
+            except SandboxError:  # the partner is the first
+                site_of(transform, g, [other, m])
+
+
+MATVEC_FUSE = "tmp0[m, n] · m = m (0:8), n = n (0:512)"
+
+
+def test_matvec_acc_partners_at_import():
+    """matvec_acc at import: mult and sum fuse (tmp0, both loops matched), the sum seeds from
+    the elementwise nest (tmp1, its kept loop m against the nest's m), each nest's two maps
+    interchange; no partner for a pair the transforms refuse (the sum's nest and the
+    elementwise nest are of different depths for fuse_map)."""
+    g = _bound_fixture("matvec_acc", M=8, N=512)
+    found = _partners(g)
+    seed = "tmp1[m] · m = m (0:8)"
+    assert found == {
+        "mult_map": [("sum_map", "fuse_map", MATVEC_FUSE), ("mult_map_1", "interchange_map", None)],
+        "mult_map_1": [("mult_map", "interchange_map", None)],
+        "sum_map": [("mult_map", "fuse_map", MATVEC_FUSE),
+                    ("augassign_19_4_map", "fuse_seed", seed),
+                    ("sum_map_1", "interchange_map", None)],
+        "sum_map_1": [("augassign_19_4_map", "fuse_seed", seed),
+                      ("sum_map", "interchange_map", None)],
+        "augassign_19_4_map": [("sum_map", "fuse_seed", seed), ("sum_map_1", "fuse_seed", seed)],
+    }  # fmt: skip
+    _agree(g, found)
+    from snax_forge.viz.dfg.api import Entry, graph_view
+
+    v = graph_view(Entry("g", Path("g"), g, None))
+    marks = {p["transform"]: p["marker"] for p in v["partners"]["sum_map"] if "marker" in p}
+    assert {t: (m["box"], m["container"]) for t, m in marks.items()} == {
+        "fuse_map": ("tmp0@1", "tmp0"), "fuse_seed": ("tmp1@1", "tmp1")}  # fmt: skip
+    assert {v["boxes"][m["box"]]["container"] for m in marks.values()} == {"tmp0", "tmp1"}
+
+
+def test_matvec_acc_partners_after_the_tag_and_split():
+    """After tag_map sum_map temporal and split_map sum_map_1 4: mult and sum no longer fuse
+    (one nest untagged, the other temporal), every map of the sum's nest seeds with the
+    elementwise nest, its kept loop now m_t, and the three maps of the sum's nest interchange
+    pairwise (interchange_map takes any two maps of one perfect nest)."""
+    from snax_forge.sandbox.transforms import split_map, tag_map
+
+    g = split_map(tag_map(_bound_fixture("matvec_acc", M=8, N=512), "sum_map", "temporal"),
+                  "sum_map_1", 4)  # fmt: skip
+    found = _partners(g)
+    seed = "tmp1[m] · m_t = m (0:8)"
+    ew = "augassign_19_4_map"
+    assert found == {
+        "mult_map": [("mult_map_1", "interchange_map", None)],
+        "mult_map_1": [("mult_map", "interchange_map", None)],
+        "sum_map": [(ew, "fuse_seed", seed), ("sum_map_1", "interchange_map", None),
+                    ("sum_map_1_s", "interchange_map", None)],
+        "sum_map_1": [(ew, "fuse_seed", seed), ("sum_map", "interchange_map", None),
+                      ("sum_map_1_s", "interchange_map", None)],
+        "sum_map_1_s": [(ew, "fuse_seed", seed), ("sum_map", "interchange_map", None),
+                        ("sum_map_1", "interchange_map", None)],
+        ew: [("sum_map", "fuse_seed", seed), ("sum_map_1", "fuse_seed", seed),
+             ("sum_map_1_s", "fuse_seed", seed)],
+    }  # fmt: skip
+    _agree(g, found)
+
+
+def test_axpys_two_maps_fuse():
+    """axpy at import: the multiply and the in-place add fuse over n (tmp0[n]); one-level
+    nests, so nothing interchanges; no fold, so nothing seeds."""
+    g = _bound_fixture("axpy", N=64)
+    found = _partners(g)
+    fuse = "tmp0[n] · n = n (0:64)"
+    assert found == {"mult_map": [("augassign_19_4_map", "fuse_map", fuse)],
+                     "augassign_19_4_map": [("mult_map", "fuse_map", fuse)]}  # fmt: skip
+    _agree(g, found)
+
+
+def test_a_seeded_or_bound_graph_has_no_seed_partner():
+    """matvec_seed's last steps: the seed taken, so no fuse_seed partner is left."""
+    _, graphs = _matvec_seed()
+    for g in graphs[6:]:
+        assert not [p for ps in _partners(g).values() for p in ps if p[1] == "fuse_seed"]

@@ -404,6 +404,39 @@ function outline() {
       if (el._marker) el.setAttribute("marker-end", `url(#${el._marker}-sel)`);
     }
   }
+  showPartners();
+}
+
+// A selected map's partners (api.py's ``partners``, found by the transforms' own sites): each
+// partner map outlined in its transform's colour with a tag naming the transform, and for a
+// fuse the marker beside the transient between the two nests. Tags and markers are placed
+// absolutely, so the boxes do not move and the edges stay where they are.
+const PARTNER_CLASSES = ["p-on", "p-fuse_map", "p-fuse_seed", "p-interchange_map"];
+
+function showPartners() {
+  for (const el of document.querySelectorAll("#graphs .p-tags, #graphs .p-marker")) el.remove();
+  for (const el of document.querySelectorAll("#graphs .p-on")) el.classList.remove(...PARTNER_CLASSES);
+  for (const panelEl of document.querySelectorAll("#graphs .c-panel")) {
+    const v = panelEl._view;
+    if (!v || !v.partners) continue;
+    for (const name of state.sels) {
+      for (const p of v.partners[name] || []) {
+        const cls = `p-${p.transform}`;
+        const map = panelEl.querySelector(`.c-map[data-sel="${CSS.escape(p.map)}"]`);
+        const bar = map && map.querySelector(":scope > .c-bar");
+        if (bar) {
+          map.classList.add("p-on", cls);
+          const tags = bar.querySelector(":scope > .p-tags") || bar.appendChild(h("span", { class: "p-tags" }));
+          if (!tags.querySelector(`.${cls}`)) tags.append(h("span", { class: `p-tag ${cls}` }, p.transform));
+        }
+        const box = p.marker && p.marker.box && panelEl.querySelector(`[data-box="${CSS.escape(p.marker.box)}"]`);
+        if (box && !box.querySelector(`.p-marker.${cls}`)) {
+          box.classList.add("p-on", cls);
+          box.append(h("span", { class: `p-marker ${cls}` }, p.marker.text));
+        }
+      }
+    }
+  }
 }
 
 /** Select ``name`` (null clears); with ``add`` (shift-click) add it to the selection, or remove

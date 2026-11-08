@@ -160,6 +160,18 @@ a bound unit's ``seed`` port), and its write into ``x``'s box below (its next ve
 any in-place write). The seed's edge is labelled with its memlet, ``q[m_t]``, and marked
 ``seed``; its Details' memlet ends ``(seed)``; the node's Details list it under ``seed``, a
 seeded tasklet's output memlet ``(reduce add, seed q[m])``.
+
+**Partners** (``partners``). Each map's list of the maps it can be fused with
+(``fuse_map``), seeded with (``fuse_seed``) or interchanged with (``interchange_map``),
+found by the transforms' own sites, the code that fills the editor's fields (compose.py's
+``fuse_pairs``, seed.py's ``seed_pairs``, transforms.py's ``partners``), never by a rule of
+the viewer's, so a partner shown is one the transform takes. A fuse's entry has a
+``marker`` on the transient between the two nests, its box's key and its text, the subset
+the second nest reads and the loops matched with their range (``tmp0[m, n] · m = m (0:8), n
+= n (0:512)`` for fuse_map on matvec_acc's mult and sum, ``tmp1[m] · m_t = m (0:8)`` for
+fuse_seed after ``tag_map sum_map temporal``); an interchange's none (its partners are maps
+of one nest). The page shows them for a selected map only: each partner in its transform's
+colour with a tag naming it, and the marker beside the transient's box.
 """
 
 from __future__ import annotations
@@ -319,6 +331,7 @@ def graph_view(e: Entry, platform: Any = None, est: Any = None,
         containers={k: _container(g, k, placed.get(k)) for k in g.containers},
     )
     out.update(_layout(g))
+    out["partners"] = partners(g, out["boxes"])
     out["accelerators"] = accelerators(g)
     for acc in out["accelerators"]:
         acc["text"] = acc["name"]
@@ -1423,6 +1436,48 @@ def _node(g: Graph, n: Node) -> dict[str, Any]:
     if n.body is not None:
         d["body"] = [_node(g, c) for c in n.body]
     return d
+
+
+# The transforms a map's partners are found by, in the order a map's list gives them
+PARTNER_TRANSFORMS = ("fuse_map", "fuse_seed", "interchange_map")
+
+
+def partners(g: Graph, boxes: dict[str, dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    """Each map's partners (module doc, "Partners"): map id -> ``{"map", "transform"}`` per map
+    it fuses, seeds or interchanges with, by the transforms' own sites, and for a fuse the
+    ``marker`` on the transient between the two nests, ``{"box", "container", "text"}``."""
+    from snax_forge.sandbox.compose import fuse_link, fuse_pairs, link_text
+    from snax_forge.sandbox.recipe import SandboxError
+    from snax_forge.sandbox.seed import seed_link, seed_pairs
+    from snax_forge.sandbox.transforms import partners as swaps
+
+    out: dict[str, list[dict[str, Any]]] = {}
+    found = {"fuse_map": (fuse_pairs, fuse_link), "fuse_seed": (seed_pairs, seed_link)}
+
+    def add(a: str, b: str, transform: str, marker: dict[str, Any] | None = None) -> None:
+        out.setdefault(a, []).append({"map": b, "transform": transform}
+                                     | ({"marker": marker} if marker else {}))  # fmt: skip
+
+    for transform in PARTNER_TRANSFORMS:
+        try:
+            if transform == "interchange_map":
+                maps = [n.id for n, _ in g.walk() if n.kind == "map"]
+                for m in maps:
+                    for other, why in swaps(g, m):
+                        if why is None:
+                            add(m, other, transform)
+                continue
+            pairs, link = found[transform]
+            for a, b in pairs(g):
+                ln = link(g, a, b)
+                box = next((k for k, x in boxes.items() if x["container"] == ln["container"]
+                            and ln["writer"] in x["written_by"] and not x["again"]), None)  # fmt: skip
+                marker = {"box": box, "container": ln["container"], "text": link_text(ln)}
+                add(a, b, transform, marker)
+                add(b, a, transform, marker)
+        except (SandboxError, DfgError, ExprError, KeyError):
+            continue  # a graph the transform cannot judge: no partners by it
+    return out
 
 
 def _replaced_text(r: dict[str, Any] | None) -> str | None:

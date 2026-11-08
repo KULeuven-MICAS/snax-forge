@@ -314,6 +314,54 @@ def fuse_map(g: Graph, first: str, second: str) -> Graph:
     return _result(g)
 
 
+def fuse_pairs(g: Graph) -> list[tuple[str, str]]:
+    """Every (first, second) ``fuse_map`` takes in ``g`` (``_fuse_site`` on each map), in the
+    graph's order."""
+    out: list[tuple[str, str]] = []
+    for n, _ in g.walk():
+        if n.kind != "map":
+            continue
+        try:
+            out.append((n.id, _fuse_site(g, n.id)["second"]))
+        except SandboxError:
+            continue
+    return out
+
+
+def fuse_link(g: Graph, first: str, second: str) -> dict[str, Any]:
+    """The transient between the two nests ``fuse_map`` fuses and the loops matched, level by
+    level: ``{"container": "tmp0", "subset": ["m", "n"], "writer": "mult", "loops": [["m",
+    "m", "0:8"], ["n", "n", "0:512"]]}`` (matvec_acc's mult and sum), the subset the second
+    reads; SandboxError as the site."""
+    if _fuse_site(g, first)["second"] != second:
+        raise SandboxError(f"fuse_map {first!r} {second!r}: {second!r} must come right after "
+                           f"{first!r} in one body")  # fmt: skip
+    f, s = g.node(first), g.node(second)
+    matched = []
+    while f.kind == "map":
+        matched.append([f.attrs["var"], s.attrs["var"], range_text(g, f.attrs["range"])])
+        f, s = (f.body or [])[0], (s.body or [])[0]
+    ((_, write),) = f.outputs.items()
+    (read,) = [m for m in s.inputs.values() if m.data == write.data]
+    return {"container": write.data, "subset": [str(d) for d in read.subset], "writer": f.id,
+            "loops": matched}  # fmt: skip
+
+
+def range_text(g: Graph, rng: str) -> str:
+    """A map's range at the graph's symbols, ``0:8``; as written where they are unknown."""
+    try:
+        return ":".join(str(expr.evaluate(p, g.bound_symbols)) for p in rng.split(":"))
+    except expr.ExprError:
+        return rng
+
+
+def link_text(link: dict[str, Any]) -> str:
+    """``fuse_link``'s or seed.py's ``seed_link``'s as one line: ``tmp0[m, n] · m = m (0:8), n
+    = n (0:512)``; a loop of one side only by its name and range."""
+    loops = [f"{a} = {b} ({r})" if a and b else f"{a or b} ({r})" for a, b, r in link["loops"]]
+    return f"{link['container']}[{', '.join(link['subset'])}] · {', '.join(loops)}"
+
+
 def _unfuse_site(g: Graph, map: str) -> dict[str, Any]:
     """A map with ``loop.fused``."""
     body, i, _ = _locate(g, map)

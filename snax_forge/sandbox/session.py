@@ -1014,15 +1014,12 @@ def _second_field(g: Graph, first: str, second: str | None) -> dict[str, Any]:
     """fuse_seed's ``second``: a choice per map of the elementwise nest that reads ``first``'s
     fold (seed.py's ``seed_seconds``), outermost first, the site's (or the selection's) the
     default; and the form's hint."""
+    from .compose import link_text
     from .seed import seed_link, seed_seconds
 
     seconds = seed_seconds(g, first)
-    choices = []
-    for m in seconds:
-        link = seed_link(g, first, m)
-        loops = ", ".join(f"{a} = {b} ({r})" for a, b, r in link["loops"])
-        label = f"{m} · {link['container']}[{', '.join(link['subset'])}] · {loops}"
-        choices.append({"value": m, "label": label, "ok": True})
+    choices = [{"value": m, "label": f"{m} · {link_text(seed_link(g, first, m))}", "ok": True}
+               for m in seconds]  # fmt: skip
     hint = ("the elementwise nest x' = x (+) t that the fold takes as its seed: the fold starts "
             "each job from x, one beat per job, and t and the nest go")  # fmt: skip
     value = second if second in seconds else seconds[0]
