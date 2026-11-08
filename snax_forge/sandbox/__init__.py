@@ -3,9 +3,10 @@
 Recipes (recipe.py), an ordered list of registered transforms with their
 params, applied to an imported graph; the transforms ``split``,
 ``split_map``, ``tag_map``, ``bind`` and ``encapsulate`` and their inverses
-``join_map``, ``untag_map``, ``unbind`` and ``unencapsulate``
-(transforms.py); ``split_reduce``, ``fuse_map`` and ``link`` with their
-inverses ``join_reduce``, ``unfuse_map`` and ``unlink`` (compose.py, D150);
+``join_map``, ``untag_map``, ``unbind`` and ``unencapsulate``, and
+``interchange_map``, its own inverse (transforms.py); ``split_reduce``,
+``fuse_map`` and ``link`` with their inverses ``join_reduce``,
+``unfuse_map`` and ``unlink`` (compose.py, D150);
 ``bake_scalar`` and its inverse ``unbake_scalar`` (scalar.py);
 each with its site, the graph-shape test of where it applies (D72);
 the pattern matchers ``bind`` uses to recognise a BRM's pattern
@@ -26,6 +27,7 @@ from .transforms import (
     TRANSFORMS,
     bind,
     encapsulate,
+    interchange_map,
     join_map,
     register_transform,
     split,
@@ -47,6 +49,7 @@ __all__ = [
     "bind_recipe_symbols",
     "encapsulate",
     "fuse_map",
+    "interchange_map",
     "join_map",
     "join_reduce",
     "link",

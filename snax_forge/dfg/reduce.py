@@ -18,7 +18,10 @@ registered op is associative and commutative on the integers it runs on
 (D28), so the order the writes land in never changes the result: a map
 with a ``reduce`` memlet can be split, tiled or run in parallel as any other.
 A float op, whose result depends on the order, needs the order its BRM
-defines and is not registered here.
+defines and is not registered here. ``ReduceOp.order_free`` says so for each
+op (True for all four): a transform that changes the order a fold's writes
+land in (``interchange_map``) reads it, so an op registered with
+``order_free=False`` is refused there.
 
 A fold into what the element already holds (DaCe's plain ``wcr`` memlet,
 ``C[i] += ...`` in a loop) would be ``identity: null``; it is not accepted
@@ -38,20 +41,24 @@ from .kinds import DfgError
 
 @dataclass(frozen=True)
 class ReduceOp:
-    """A registered op: the ufunc that folds it and its identity for an integer dtype."""
+    """A registered op: the ufunc that folds it, its identity for an integer dtype, and whether
+    its result is the same in any order (associative and commutative, D28)."""
 
     ufunc: np.ufunc
     identity: Callable[[np.dtype], int]
+    order_free: bool = True
 
 
 REDUCE_OPS: dict[str, ReduceOp] = {}
 
 
-def register_reduction(name: str, ufunc: np.ufunc, identity: Callable[[np.dtype], int]) -> None:
-    """Make ``"reduce": {"op": name, ...}`` usable; the op must be associative and commutative."""
+def register_reduction(name: str, ufunc: np.ufunc, identity: Callable[[np.dtype], int],
+                       order_free: bool = True) -> None:  # fmt: skip
+    """Make ``"reduce": {"op": name, ...}`` usable; ``order_free`` False for an op that is not
+    associative and commutative, which a transform reordering its fold refuses."""
     if name in REDUCE_OPS:
         raise ValueError(f"reduce op {name!r} already registered")
-    REDUCE_OPS[name] = ReduceOp(ufunc, identity)
+    REDUCE_OPS[name] = ReduceOp(ufunc, identity, order_free)
 
 
 register_reduction("add", np.add, lambda dt: 0)

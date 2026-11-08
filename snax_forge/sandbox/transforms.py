@@ -89,6 +89,18 @@ name) stay in the transform.
     the inverses: the subtree an accelerated node replaced, and the
     map a split pair was split from (``loop.split``), whatever their tags,
     so a graph at any step can go back to the imported one.
+``interchange_map(map)``
+    a map ``X`` whose body is one map ``Y`` and nothing else trades places
+    with it: ``Y`` becomes the parent, ``X`` its only child, and ``Y``'s
+    body ``X``'s; each keeps its id, variable, range and attrs (its tag
+    among them). Applied to ``Y`` it undoes itself. rowsum's lane
+    accumulator puts the spatial row map inside the column map this way.
+    Refused, naming what it found: a body other than one map; a range that
+    names the other's variable; ``X`` inside an accelerated node or a bound
+    unit under ``Y`` (unbind first); ``X`` or ``Y`` a fused nest's outer map
+    (``loop.fused``: unfuse_map first); a fold under ``Y`` over ``X``'s
+    variable whose op is not order-free (dfg/reduce.py's ``order_free``;
+    every registered op is, D28).
 ``encapsulate(accelerator, units)`` and ``unencapsulate(accelerator)``
     put the groups of the instances ``units`` into one accelerator of that
     name (D148): every accelerated node of each carries ``accelerator``. A
@@ -107,7 +119,7 @@ from __future__ import annotations
 
 import copy
 import itertools
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -115,7 +127,16 @@ import numpy as np
 
 from snax_forge import expr
 from snax_forge.common import fresh
-from snax_forge.dfg import Container, DfgError, Graph, Memlet, Node, named_rates, parse_dim
+from snax_forge.dfg import (
+    REDUCE_OPS,
+    Container,
+    DfgError,
+    Graph,
+    Memlet,
+    Node,
+    named_rates,
+    parse_dim,
+)
 from snax_forge.dfg.graph import SCALAR
 from snax_forge.dfg.subset import dim_names, format_dim, map_range
 from snax_forge.expr import ExprError
@@ -957,6 +978,72 @@ def join_map(g: Graph, map: str) -> Graph:
 
 
 # =============================================================================
+# interchange_map: its own inverse
+# =============================================================================
+
+
+def _interchange_site(g: Graph, map: str, what: str) -> dict[str, Any]:
+    """A map whose body is one map, the two free to trade places: neither range names the
+    other's variable, no accelerated node around or under them, neither a fused nest's map,
+    and no fold under them over the outer map with an op whose result depends on the order."""
+    body, i, outer = _locate(g, map)
+    x = body[i]
+    if x.kind != "map":
+        raise SandboxError(f"{what}: a {x.kind!r} is not a map")
+    kids = x.body or []
+    if len(kids) != 1 or kids[0].kind != "map":
+        held = ", ".join(f"the {k.kind} {k.id!r}" for k in kids) or "nothing"
+        raise SandboxError(f"{what}: its body must be one map and nothing else; it holds {held}")
+    (y,) = kids
+    for a, b in ((x, y), (y, x)):
+        if b.attrs["var"] in dim_names(a.attrs["range"]):
+            raise SandboxError(f"{what}: {a.id}'s range {a.attrs['range']} names {b.id}'s "
+                               f"variable {b.attrs['var']!r}; the two cannot trade places")  # fmt: skip
+    for o in outer:
+        if o.kind == "accelerated":
+            raise SandboxError(f"{what}: it is inside the accelerated node {o.id!r} (unbind "
+                               "first)")  # fmt: skip
+    under = list(_nodes_under(y.body or []))
+    for n in under:
+        if n.kind == "accelerated":
+            raise SandboxError(f"{what}: the bound unit {n.id!r} is inside it (unbind first)")
+    for m in (x, y):
+        if m.attrs.get("loop.fused") is not None:
+            raise SandboxError(f"{what}: {m.id!r} is a fused nest's outer map (unfuse_map "
+                               "first)")  # fmt: skip
+    var = x.attrs["var"]
+    for n in under:
+        for c, m in n.outputs.items():
+            red = m.reduce
+            if red is not None and var not in m.names and not REDUCE_OPS[red.op].order_free:
+                raise SandboxError(
+                    f"{what}: {n.id}'s {c} folds over {var!r} with {red.op!r}, whose result "
+                    "depends on the order (not associative and commutative); the interchange "
+                    "would change it"
+                )
+    return {"map": map}
+
+
+def _nodes_under(body: list[Node]) -> Iterator[Node]:
+    """Every live node in ``body``, depth first (not an accelerated node's ``replaced``)."""
+    for n in body:
+        yield n
+        yield from _nodes_under(n.body or [])
+
+
+def interchange_map(g: Graph, map: str) -> Graph:
+    """The map ``map`` and its only child map trade places (module doc); its own inverse."""
+    _interchange_site(g, map, f"interchange_map {map!r}")
+    g = _copy(g)
+    body, i, _ = _locate(g, map)
+    x = body[i]
+    (y,) = x.body
+    x.body, y.body = y.body, [x]
+    body[i] = y
+    return _result(g)
+
+
+# =============================================================================
 # encapsulate and unencapsulate
 # =============================================================================
 
@@ -1080,5 +1167,7 @@ register_transform("untag_map", untag_map, site=lambda g, s: _untag_site(g, s, f
 register_transform("bind", bind, site=_bind_params)
 register_transform("unbind", unbind, site=lambda g, s: _unbind_site(g, s, f"unbind {s!r}"))
 register_transform("join_map", join_map, site=lambda g, s: _join_site(g, s, f"join_map {s!r}"))
+register_transform("interchange_map", interchange_map,
+                   site=lambda g, s: _interchange_site(g, s, f"interchange_map {s!r}"))  # fmt: skip
 register_transform("encapsulate", encapsulate, site=_encapsulate_site, multi=_encapsulate_multi)
 register_transform("unencapsulate", unencapsulate, site=_unencapsulate_site)
