@@ -29,10 +29,13 @@ at their result type, ``+ b`` with k2 unset) and ``reduce`` (input ``a`` at rate
 output ``out`` at rate ``"T"``, the lanes folded too when ``lanes_out`` is 1;
 each input lane cast to the output's dtype first, so its tree and its
 accumulator run at that dtype, as ``np.add.reduce(a, dtype=out)`` and
-SnaxUnit do), and ``mac`` (inputs ``a`` and ``b`` at rate 1, output
+SnaxUnit do), ``mac`` (inputs ``a`` and ``b`` at rate 1, output
 ``out`` at rate ``"T"``, every lane its own: the product at the inputs' result
-type, cast to the output's dtype and folded per lane over T beats),
-each with ``op`` a registered op by name (``mac``'s the fold's) (``add``, ``sub``, ``mul``, ``min``, ``max``, ``and``,
+type, cast to the output's dtype and folded per lane over T beats), and
+``lane_accumulate`` (input ``a`` at rate 1, output ``out`` at rate ``"T"``, every
+lane its own: ``a`` cast to the output's dtype and folded per lane over T beats),
+each with ``op`` a registered op by name (``mac``'s and ``lane_accumulate``'s the
+fold's) (``add``, ``sub``, ``mul``, ``min``, ``max``, ``and``,
 ``or``, ``xor``). New ones with ``register_kind`` and ``register_op``.
 
 A function param that names a design param the instance leaves unset (``simd``'s
@@ -250,6 +253,29 @@ def mac_kind(
     return AccelFunction(ports, fn, "mac")
 
 
+def lane_accumulate_kind(
+    lanes: int = 1,
+    op: Callable[[Any, Any], Any] = np.add,
+    dtypes: Mapping[str, str] | None = None,
+) -> AccelFunction:
+    """T beats of ``a`` -> 1 beat of ``out``, each lane its own: ``a`` at its dtype cast to
+    the output's (``dtypes["out"]``), folded with ``op`` over the T beats; without
+    ``dtypes``, at ``a``'s. The lanes are never folded together (``reduce``'s ``lanes_out``
+    1 does that)."""
+    out_dtype = None if dtypes is None else dtypes.get("out")
+
+    def fn(k, ins, state, params):
+        x = np.asarray(ins["a"])
+        x = x if out_dtype is None else x.astype(out_dtype)
+        state["acc"] = x.copy() if "acc" not in state else op(state["acc"], x)
+        if (k + 1) % params["T"] == 0:
+            return {"out": state.pop("acc")}
+        return {}
+
+    ports = (AccelPort("a", "in", lanes, 1), AccelPort("out", "out", lanes, "T"))
+    return AccelFunction(ports, fn, "lane_accumulate")
+
+
 # =============================================================================
 # Registries: ops and kinds
 # =============================================================================
@@ -304,6 +330,7 @@ def _with_op(kind: Callable[..., AccelFunction]) -> KindFactory:
 register_kind("simd", _with_op(simd))
 register_kind("reduce", _with_op(reduce_kind))
 register_kind("mac", _with_op(mac_kind))
+register_kind("lane_accumulate", _with_op(lane_accumulate_kind))
 
 
 def function_of(inst: Instance, dtypes: Mapping[str, str] | None = None) -> AccelFunction:

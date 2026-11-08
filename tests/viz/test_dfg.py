@@ -1040,3 +1040,26 @@ def test_the_editor_offers_bake_unbake_and_fuse_map_on_axpy(tmp_path, monkeypatc
                            "implementation": "chisel_tiled_spatial", "instance": "acc"})  # fmt: skip
     assert got["ok"], got
     assert s.graphs[-1].node("mult").attrs["params"]["k1"] == 3
+
+
+def test_the_lane_accumulator_reads_as_a_fold():
+    """rowsum_2 bound: its unit reads ``acc · fold + · W 4``, the way the folds read, inside the
+    row block map and the column map; its Details give the W lanes down a column."""
+    from snax_forge.design import Platform
+    from snax_forge.sandbox import Recipe, apply_recipe
+    from snax_forge.viz.dfg.api import Entry, step_view
+    from tests.design.helpers import SNAX_FORGE
+    from tests.helpers import imported
+
+    r = Recipe.load(recipe_path("rowsum_2"))
+    g = apply_recipe(r, imported("rowsum"))[-1].graph
+    v = step_view(Entry("4", Path("4"), g, None), "4", Platform.load(SNAX_FORGE), recipe=r)
+    (top,) = [row["node"] for row in v["rows"] if row["kind"] == "node"]
+    (col,) = top["body"]
+    (unit,) = col["body"]
+    assert [top["text"], col["text"], unit["text"]] == [
+        "sum_map · i_t · 2 · temporal", "sum_map_1 · j · 64 · temporal", "acc · fold + · W 4"]  # fmt: skip
+    d = v["details"]["node:sum"]
+    assert (d["brm"], d["replaced"]) == ("lane_accumulate", "sum_map_s › sum")
+    assert d["inputs"] == {"a": "A[4 * i_t:4 * i_t + 4, j]"}
+    assert d["outputs"] == {"out": "y[4 * i_t:4 * i_t + 4]"}

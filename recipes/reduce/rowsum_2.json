@@ -1,0 +1,20 @@
+{
+ "name": "rowsum_2",
+ "kernel": "rowsum",
+ "params": {"W": 4, "M": 8, "N": 64},
+ "symbols": {"M": "M", "N": "N"},
+ "steps": [
+  {"transform": "split_map", "params": {"map": "sum_map", "factor": "W"}},
+  {"transform": "tag_map", "params": {"map": "sum_map_1", "kind": "temporal"}},
+  {"transform": "interchange_map", "params": {"map": "sum_map_s"}},
+  {
+   "transform": "bind",
+   "params": {
+    "node": "sum_map_s",
+    "brm": "lane_accumulate",
+    "implementation": "chisel_lane_accumulate",
+    "instance": "acc"
+   }
+  }
+ ]
+}

@@ -62,6 +62,12 @@ output of a named rate (T), each lane summing T products; otherwise the plain
 rate 1. Every port args.lanes lanes of whole 64-bit channels; ``opType`` the
 result type of ``a`` and ``b``; params ``accumulate`` and ``regOut``.
 
+**LaneAccumulate** (L 1): Mac's accumulating form without the product, each
+lane summing its own T inputs: an input ``a`` of rate 1 and an output of a named
+rate (T), both args.lanes lanes of whole 64-bit channels; args lanes only; op
+add (``gen.op``); no opType (the input is extended to the output's type, which
+the sum runs at) and no params.
+
 An instance judged without a graph (brm/instance.py's check of its datapath)
 has no dtypes: its adapter checks everything but the widths and gives ports
 without dtypes, which are never written.
@@ -337,3 +343,26 @@ def mac(inst: Instance, dtypes: Mapping[str, str] | None = None) -> Fill:
 
 
 register_datapath("Mac", "max(accumulate, regOut)", mac)
+
+
+def lane_accumulate(inst: Instance, dtypes: Mapping[str, str] | None = None) -> Fill:
+    """LaneAccumulate's fill; see the module doc."""
+    brm, b = inst.brm, inst.impl.binding
+    what = f"{brm.name}.{inst.implementation}"
+    if set(b["args"]) != {"lanes"}:
+        raise GenError("gen.args", f"{what}: args {sorted(b['args'])}; LaneAccumulate takes "
+                       "lanes only")  # fmt: skip
+    lanes = _lanes_arg(inst, what)
+    op = inst.params.get("op")
+    if op != "add":
+        raise GenError("gen.op", f"{what}: op {op!r}; LaneAccumulate adds")
+    (a,), (out,) = _ports(inst, 1, 1, "LaneAccumulate", what)
+    if a.rate != 1 or not isinstance(out.rate, str):
+        raise GenError("gen.rate", f"{what}: rates {a.rate!r} in and {out.rate!r} out; "
+                       "LaneAccumulate takes 1 in and a named rate out (one sum per lane per T "
+                       "inputs)")  # fmt: skip
+    _lanes(inst, {a.name: lanes, out.name: lanes}, what)
+    return Fill(_fill_ports(inst, dtypes, {a.name, out.name}, what))
+
+
+register_datapath("LaneAccumulate", 1, lane_accumulate)

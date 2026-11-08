@@ -43,7 +43,9 @@ name) stay in the transform.
     replaces a tasklet and the spatial map around it (the map's only
     child), or a fused nest's spatial map and its two tasklets
     (compose.py's ``fuse_map``; the first's inputs, the second's output,
-    patterns.py's ``fused_view``), by an accelerated node with the
+    patterns.py's ``fused_view``), or a spatial map whose one tasklet
+    folds, given by the map (``lane_fold`` without a front op,
+    ``lane_accumulate``), by an accelerated node with the
     (first) tasklet's id, bound to an
     instance of a library BRM. The BRM's pattern matcher (patterns.py) says
     which connector feeds which port. Every map around the spatial map
@@ -479,10 +481,14 @@ def _bind_site(g: Graph, node: str, what: str) -> _Site:
     body, i, outer = _locate(g, node)
     if body[i].kind == "map":  # a fused nest's spatial map (fuse_map): its two tasklets as one
         smap, found = body[i], fused_view(body[i])
-        if found is None:
+        if found is not None:
+            tasklet, pattern_node = found[2], smap
+        elif _lane_fold_map(smap):  # a spatial map of one folding tasklet (lane_accumulate)
+            tasklet, pattern_node = smap.body[0], smap
+        else:
             raise SandboxError(f"{what}: a map binds only as a fused nest, a spatial map of two "
-                               "tasklets (fuse_map)")  # fmt: skip
-        tasklet, pattern_node = found[2], smap
+                               "tasklets (fuse_map), or as a spatial map of one tasklet whose "
+                               "output folds (a lane fold)")  # fmt: skip
     else:
         tasklet = pattern_node = body[i]
         smap = outer[-1] if outer else None
@@ -501,6 +507,18 @@ def _bind_site(g: Graph, node: str, what: str) -> _Site:
                 "its firing loops: tag it temporal with tag_map"
             )
     return _Site(tasklet, pattern_node, smap, temporal)
+
+
+def _lane_fold_map(m: Node) -> bool:
+    """A spatial map whose body is one tasklet with a folding output: ``bind`` takes the map
+    (patterns.py's ``lane_fold`` without a front op)."""
+    kids = m.body or []
+    return (
+        m.attrs.get("loop.kind") == "spatial"
+        and len(kids) == 1
+        and kids[0].kind == "tasklet"
+        and any(o.reduce is not None for o in kids[0].outputs.values())
+    )
 
 
 def _bind_check(g: Graph, site: _Site, brm: str, implementation: str,
@@ -780,7 +798,8 @@ def _bind_rewrite(g: Graph, site: _Site, bound: _Bound, brm: str, implementation
         },
         body=[],
     )
-    if site.pattern is smap and (taken := _take_locals(g, smap)):  # a fused nest's local value
+    fused = site.pattern is smap and fused_view(smap) is not None
+    if fused and (taken := _take_locals(g, smap)):  # a fused nest's local value
         acc.attrs["locals"] = taken  # goes with its two tasklets
     parent_body, j, _ = _locate(g, smap.id)
     parent_body[j] = acc
