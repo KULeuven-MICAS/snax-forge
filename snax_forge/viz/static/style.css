@@ -473,7 +473,7 @@ svg.dfg-edges { position: absolute; top: 0; left: 0; z-index: 0; pointer-events:
 .c-node > .c-body { padding: 0.6rem; }
 
 /* tasklets, units and links: small boxes with their text */
-.c-node { display: flex; flex-direction: column; align-items: stretch; min-width: 7rem; border: 1.5px solid var(--ink); border-radius: 4px; background: var(--panel); cursor: pointer; }
+.c-node { position: relative; display: flex; flex-direction: column; align-items: stretch; min-width: 7rem; border: 1.5px solid var(--ink); border-radius: 4px; background: var(--panel); cursor: pointer; }
 .c-node.c-unit { border: 2px solid var(--busy); background: var(--busy-bg); }
 .c-node.c-link { border: 2px dashed var(--busy); background: var(--busy-bg); }
 .c-text { padding: 0.15rem 0.6rem; font-size: 0.82em; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; white-space: nowrap; text-align: center; }
@@ -485,6 +485,8 @@ svg.dfg-edges { position: absolute; top: 0; left: 0; z-index: 0; pointer-events:
 .c-pill { display: flex; align-items: baseline; gap: 0.4rem; padding: 0.12rem 0.7rem; border: 1.5px solid var(--data); border-radius: 1rem; background: color-mix(in srgb, var(--data) 10%, var(--panel)); font-size: 0.85em; cursor: pointer; white-space: nowrap; }
 .c-pill.transient { border-style: dashed; }
 .c-pill.again { opacity: 0.75; }
+/* a kernel's scalar argument: a parameter hexagon (its edges labelled "alpha[0] · broadcast") */
+.c-pill.scalar { border: none; border-radius: 0; padding: 0.14rem 1.1rem; background: color-mix(in srgb, var(--data) 28%, var(--panel)); clip-path: polygon(0.6rem 0, calc(100% - 0.6rem) 0, 100% 50%, calc(100% - 0.6rem) 100%, 0.6rem 100%, 0 50%); }
 .c-badge { font-size: 0.8em; color: var(--muted); }
 
 /* edges: no text, a wide transparent stroke under each to click */
@@ -497,6 +499,8 @@ path.edge.sel { stroke: var(--hl); stroke-width: 2.6; }
 path.edge.local { stroke: var(--busy); stroke-width: 2; stroke-dasharray: 4 3; }
 svg.dfg-edges text.edge-label { font: 600 0.72rem ui-monospace, "SF Mono", Menlo, Consolas, monospace; fill: var(--busy); }
 svg.dfg-edges text.edge-label.sel { fill: var(--hl); }
+/* a broadcast's label at its edge's start: a band of the page behind it, so an edge it crosses does not run through it */
+svg.dfg-edges text.edge-label.at-start { paint-order: stroke; stroke: var(--bg); stroke-width: 4px; stroke-linejoin: round; }
 
 /* groups and accelerators: a thin dashed outline, the name on top */
 svg.dfg-edges .group-box rect, svg.dfg-edges .acc-box rect { fill: none; stroke-dasharray: 5 4; pointer-events: stroke; cursor: pointer; }
@@ -620,6 +624,7 @@ i.key.c-unit { background: var(--busy-bg); box-shadow: inset 0 0 0 2px var(--bus
 i.key.c-link { background: var(--busy-bg); border: 2px dashed var(--busy); }
 i.key.c-pill { background: color-mix(in srgb, var(--data) 18%, var(--panel)); box-shadow: inset 0 0 0 1.5px var(--data); border-radius: 6px; }
 i.key.c-pill.transient { background: var(--panel); box-shadow: none; border: 1.5px dashed var(--data); }
+i.key.c-pill.scalar { border: none; border-radius: 0; background: color-mix(in srgb, var(--data) 40%, var(--panel)); clip-path: polygon(30% 0, 70% 0, 100% 50%, 70% 100%, 30% 100%, 0 50%); }
 
 /* -- memory tab (VIS4a) -------------------------------------------------------
    Region colours are a meaning of this tab only: a region keeps its colour in

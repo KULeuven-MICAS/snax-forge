@@ -6,6 +6,7 @@ params, applied to an imported graph; the transforms ``split``,
 ``join_map``, ``untag_map``, ``unbind`` and ``unencapsulate``
 (transforms.py); ``split_reduce``, ``fuse_map`` and ``link`` with their
 inverses ``join_reduce``, ``unfuse_map`` and ``unlink`` (compose.py, D150);
+``bake_scalar`` and its inverse ``unbake_scalar`` (scalar.py);
 each with its site, the graph-shape test of where it applies (D72);
 the pattern matchers ``bind`` uses to recognise a BRM's pattern
 (patterns.py), among them ``reduce``, with which ``bind`` binds a folding
@@ -20,6 +21,7 @@ from .compose import fuse_map, join_reduce, link, split_reduce, unfuse_map, unli
 from .patterns import PATTERNS, match, register_pattern
 from .recipe import Recipe, SandboxError, Step
 from .run import Result, apply_recipe, bind_recipe_symbols, write_steps
+from .scalar import bake_scalar, unbake_scalar
 from .transforms import (
     TRANSFORMS,
     bind,
@@ -40,6 +42,7 @@ __all__ = [
     "SandboxError",
     "Step",
     "apply_recipe",
+    "bake_scalar",
     "bind",
     "bind_recipe_symbols",
     "encapsulate",
@@ -53,6 +56,7 @@ __all__ = [
     "split",
     "split_map",
     "split_reduce",
+    "unbake_scalar",
     "unbind",
     "unencapsulate",
     "unfuse_map",

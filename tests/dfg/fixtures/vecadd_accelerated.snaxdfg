@@ -29,10 +29,10 @@
      "outputs": {"out": {"data": "C", "subset": ["4 * i_t:4 * i_t + 4"]}},
      "attrs": {
       "instance": "acc",
-      "brm": "elementwise_add",
+      "brm": "simd",
       "implementation": "chisel_tiled_spatial",
       "code": "out = a + b",
-      "params": {"W": 4, "op": "add"},
+      "params": {"W": 4, "op": "add", "streams": 2},
       "replaced": {
        "id": "add_map_s",
        "kind": "map",

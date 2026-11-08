@@ -2,7 +2,7 @@
 
 The graphs are the SNAX-DFG fixtures of tests/dfg/fixtures (vecadd as
 imported, split, accelerated); the recipe is the checked-in
-``recipes/vecadd.json``. ``restricted_brm`` is ``elementwise_add`` with W
+``recipes/elementwise/vecadd.json``. ``restricted_brm`` is ``simd`` with W
 limited to 4 and 8, for the "a W the BRM does not allow" case.
 
 For the sites (D72): ``recipe_graphs(name)``, every recipe's graphs from its
@@ -25,10 +25,11 @@ from typing import Any
 from snax_forge.brm import LIBRARY, Brm, library_names, load_brm
 from snax_forge.dfg import Graph
 from snax_forge.sandbox import TRANSFORMS, Recipe, SandboxError, apply_recipe, split, split_map
+from snax_forge.sandbox.recipe import recipe_paths
 from snax_forge.sandbox.transforms import _locate
-from tests.helpers import FIXTURES, REPO
+from tests.helpers import FIXTURES, recipe_path
 
-RECIPE = REPO / "recipes" / "vecadd.json"
+RECIPE = recipe_path("vecadd")
 
 
 def graph(name: str) -> Graph:
@@ -40,12 +41,12 @@ def recipe() -> Recipe:
 
 
 def restricted_brm() -> Brm:
-    d = json.loads((LIBRARY / "elementwise_add.json").read_text())
+    d = json.loads((LIBRARY / "simd.json").read_text())
     d["interface"]["params"]["W"]["values"] = [4, 8]
     return Brm.from_dict(d)
 
 
-RECIPES = sorted(p.stem for p in (REPO / "recipes").glob("*.json"))
+RECIPES = sorted(recipe_paths())  # every recipe's name, from every folder (find_recipe)
 START = {"vecadd_undo": "vecadd"}  # starts from that recipe's last graph
 
 # The param a transform's site fills from the selected node or container
@@ -53,9 +54,11 @@ SELECTED = {
     "split": "map", "split_map": "map", "tag_map": "map", "untag_map": "map", "join_map": "map",
     "split_reduce": "map", "join_reduce": "map", "fuse_map": "first", "unfuse_map": "map",
     "bind": "node", "unbind": "node", "link": "container", "unlink": "container",
-    "encapsulate": "units", "unencapsulate": "accelerator",
+    "encapsulate": "units", "unencapsulate": "accelerator", "bake_scalar": "container",
+    "unbake_scalar": "container",
 }  # fmt: skip
-DEFAULTS = {"factor": 4, "kind": "temporal", "depth": 1, "group": "g", "accelerator": "acc"}
+DEFAULTS = {"factor": 4, "kind": "temporal", "depth": 1, "group": "g", "accelerator": "acc",
+            "value": 3}  # fmt: skip
 
 
 @cache
@@ -63,7 +66,7 @@ def recipe_graphs(name: str) -> tuple[Recipe, tuple[Graph, ...]]:
     """The recipe and its graphs: the input (symbols bound), then one per step."""
     from snax_forge.dfg.import_sdfg import import_kernel
 
-    r = Recipe.load(REPO / "recipes" / f"{name}.json")
+    r = Recipe.load(recipe_path(name))
     start = (
         recipe_graphs(START[name])[1][-1] if name in START else import_kernel(r.kernel, r.dtypes)
     )

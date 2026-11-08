@@ -11,13 +11,13 @@ from snax_forge.design.check import pad_content
 from snax_forge.dfg import Graph
 from snax_forge.dfg.import_sdfg import import_kernel
 from snax_forge.sandbox import Recipe, apply_recipe
-from tests.helpers import dot1_split, imported
+from tests.helpers import dot1_split, imported, recipe_path
 
-from .helpers import REPO, SNAX_FORGE, design, problems
+from .helpers import SNAX_FORGE, design, problems
 
 
 def bound(name: str, **params) -> Graph:
-    recipe = Recipe.load(REPO / "recipes" / f"{name}.json").with_params(params)
+    recipe = Recipe.load(recipe_path(name)).with_params(params)
     return apply_recipe(recipe, import_kernel(recipe.kernel))[-1].graph
 
 

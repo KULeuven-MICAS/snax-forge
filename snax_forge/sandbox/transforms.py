@@ -57,8 +57,27 @@ name) stay in the transform.
     ``affine`` notation, the memlets together with the temporal maps around
     must give the elements in the order of the port's nest (D70); in
     the ``stream`` notation the memlet is the order. The tasklet's code, on
-    the BRM's port names, must be the BRM's ``function.code``; the accelerated node carries that
-    code and the replaced subtree (D82), and, for a fused nest, the nest's local value
+    the BRM's port names, must be the BRM's ``function.code``: a code table (brm.py's ``Code``,
+    ``simd``'s one entry per ``op`` and ``streams``, then ``axpby``'s two) is tried in order,
+    and the first entry whose present input ports (``Port.when`` at its params) take the
+    tasklet's array inputs, in some assignment (port order first, then every other), and
+    whose code equals the tasklet's on them up to its slots and to ``+``, ``*``, ``min`` and
+    ``max`` commuting (``expr.unify``: a slot takes an int sub-expression with no names or a
+    scalar operand, the same wherever it appears) is taken; its params and int slot values
+    are set on the instance. A **scalar operand** is an input whose memlet names no variable
+    of the maps around it, on a kernel's scalar argument (``sdfg.scalar``, axpy's
+    ``alpha[0]``): it maps to no port, only to a slot, which the instance leaves unset (a CSR)
+    and the accelerated node keeps as an input connector named after the slot (``k1:
+    alpha[0]``); such an input on another container is refused, naming it, and an input on a
+    scalar whose subset uses a map variable is an array input. Refused, each naming what it
+    found: a ``params`` value that contradicts the entry's params or a slot's value (or gives
+    a slot read from a scalar), a slot value that does not fit the op type (NumPy's result type
+    of the input ports' dtypes, the literal weak, NEP 50) or a scalar that the op type does not
+    hold, and no matching entry, listing every entry's code with its params. A fused nest of
+    two plain tasklets (``fuse_map``, the second no fold) binds as one, the second's code with
+    the first's expression in place of the local value (axpy's ``out = y + alpha * x``,
+    patterns.py's ``fused_view``). The
+    accelerated node carries that code and the replaced subtree (D82), and, for a fused nest, the nest's local value
     (``loop.local``), which only its two tasklets named: it leaves the graph's containers for
     the node's ``locals`` (dfg/kinds.py), and ``unbind`` puts it back at its index. A folding
     output (``reduce``) whose memlet does not use the spatial variable (dot's
@@ -87,6 +106,7 @@ name) stay in the transform.
 from __future__ import annotations
 
 import copy
+import itertools
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -96,6 +116,7 @@ import numpy as np
 from snax_forge import expr
 from snax_forge.common import fresh
 from snax_forge.dfg import Container, DfgError, Graph, Memlet, Node, named_rates, parse_dim
+from snax_forge.dfg.graph import SCALAR
 from snax_forge.dfg.subset import dim_names, format_dim, map_range
 from snax_forge.expr import ExprError
 
@@ -113,6 +134,9 @@ class TransformSpec:
     ints: tuple[str, ...] = ()
     site: Site | None = None
     multi: MultiSite | None = None  # its site over a selection of several items (D72)
+    # the inputs the step fixes, {container: array} from (graph, **params): its reference check
+    # runs the graph before it and after it on them (run.py's checked_step; bake_scalar's value)
+    fixes: Callable[..., dict[str, Any]] | None = None
 
 
 TRANSFORMS: dict[str, TransformSpec] = {}
@@ -124,12 +148,14 @@ def register_transform(
     ints: tuple[str, ...] = (),
     site: Site | None = None,
     multi: MultiSite | None = None,
+    fixes: Callable[..., dict[str, Any]] | None = None,
 ) -> None:
-    """Make ``{"transform": name}`` usable in a recipe (principle 6), with its site (D72) and,
-    for a transform that takes several items, its site over a selection (``multi``)."""
+    """Make ``{"transform": name}`` usable in a recipe (principle 6), with its site (D72),
+    for a transform that takes several items its site over a selection (``multi``), and for
+    one that fixes an input (``bake_scalar``) the inputs it fixes (``fixes``)."""
     if name in TRANSFORMS:
         raise ValueError(f"transform {name!r} already registered")
-    TRANSFORMS[name] = TransformSpec(fn, tuple(ints), site, multi)
+    TRANSFORMS[name] = TransformSpec(fn, tuple(ints), site, multi, fixes)
 
 
 def site_of(name: str, g: Graph, selected: str | list[str]) -> dict[str, Any]:
@@ -422,6 +448,8 @@ class _Bound:
     end: int
     memlets: dict[str, Memlet]
     folds: set[str]
+    code: str  # the matched code entry's
+    scalars: dict[str, Memlet]  # slot -> the scalar operand it is read from (a CSR)
 
 
 def _bind_site(g: Graph, node: str, what: str) -> _Site:
@@ -459,7 +487,7 @@ def _bind_check(g: Graph, site: _Site, brm: str, implementation: str,
     """The check: the BRM's ports match the tasklet's, their dtypes are accepted, it computes
     what the tasklet computes, and its lanes are the spatial bound (the design params: the
     lanes param from that bound, the rest given or default)."""
-    from snax_forge.brm import BrmError, accepted, check_dtypes
+    from snax_forge.brm import BrmError, fits, result_type
 
     tasklet, smap = site.tasklet, site.smap
     try:
@@ -469,21 +497,70 @@ def _bind_check(g: Graph, site: _Site, brm: str, implementation: str,
     conn_dtypes = {
         c: g.containers[m.data].dtype for c, m in (tasklet.inputs | tasklet.outputs).items()
     }
-    ports = match(site.pattern, b, conn_dtypes)
-    dtypes = {ports[c]: dt for c, dt in conn_dtypes.items()}
-    if refused := check_dtypes(b, dtypes):
-        raise SandboxError(
-            f"{what}: {'; '.join(refused)}; accepted output dtypes for these inputs: "
-            f"{accepted(b, dtypes)}"
-        )
-    if b.function.code is None:
+    scalars = _scalar_inputs(g, site, what)
+    ports = match(site.pattern, b, conn_dtypes, frozenset(scalars))
+    _check_port_dtypes(b, ports, conn_dtypes, what)
+    entries = b.function.entries()
+    if not entries:
         raise SandboxError(f"{what}: brm {brm!r} does not say what it computes (function.code)")
-    computes = expr.rename_code(tasklet.attrs["code"], ports)
-    if computes != b.function.code:
-        raise SandboxError(
-            f"{what}: the tasklet computes {computes!r} on the BRM's ports, "
-            f"{brm!r} computes {b.function.code!r}"
+    given = dict(params or {})
+    names = _scalar_names(b, scalars)
+    entry, ports, slots = _entry(b, entries, ports, tasklet, names, given)
+    if entry is None:
+        computes = _computes(tasklet, ports, names)
+        listed = (
+            repr(entries[0].code)
+            if isinstance(b.function.code, str)
+            else "one of " + ", ".join(f"{e.code!r} ({_params_text(e.params)})" for e in entries)
         )
+        raise SandboxError(
+            f"{what}: the tasklet computes {computes!r} on the BRM's ports, {brm!r} computes "
+            f"{listed}"
+        )
+    _check_port_dtypes(b, ports, conn_dtypes, what)  # the entry's assignment of the inputs
+    computes = _computes(tasklet, ports, names)
+    for k, v in entry.params.items():
+        if k in given and given[k] != v:
+            raise SandboxError(
+                f"{what}: {k} = {given[k]!r} given, but the tasklet computes {computes!r}, "
+                f"{brm!r}'s code at {k} = {v!r}"
+            )
+        given[k] = v
+    op_type = None
+    if slots:
+        try:
+            op_type = result_type([conn_dtypes[c] for c in tasklet.inputs if c in ports])
+        except ValueError:
+            op_type = None  # no integer result type: check_dtypes refused it above
+    from_scalar: dict[str, Memlet] = {}
+    for k, v in slots.items():
+        if isinstance(v, str):  # a scalar operand: the slot is read from its container (a CSR)
+            c = names[v]
+            m = tasklet.inputs[c]
+            if k in given:
+                raise SandboxError(
+                    f"{what}: {k} = {given[k]!r} given, but the tasklet computes {computes!r}, "
+                    f"{brm!r}'s {entry.code!r} with its slot {k} from the scalar {m.data}"
+                )
+            dt = conn_dtypes[c]
+            if op_type is not None and not np.can_cast(dt, op_type, "safe"):
+                raise SandboxError(
+                    f"{what}: {k} reads the scalar {m.data}, {dt}, which the op type {op_type} "
+                    "does not hold (NumPy's result type of the input ports' dtypes)"
+                )
+            from_scalar[k] = m
+            continue
+        if k in given and given[k] != v:
+            raise SandboxError(
+                f"{what}: {k} = {given[k]!r} given, but the tasklet computes {computes!r}, "
+                f"{brm!r}'s {entry.code!r} at its slot {k} = {v!r}"
+            )
+        if op_type is not None and not fits(v, op_type):
+            raise SandboxError(
+                f"{what}: {k} = {v} does not fit the op type {op_type} (NumPy's result type of "
+                "the input ports' dtypes; the literal is weak, NEP 50)"
+            )
+        given[k] = v
 
     begin, end, step = parse_dim(smap.attrs["range"], what)
     if begin != 0 or step != 1:
@@ -492,7 +569,7 @@ def _bind_check(g: Graph, site: _Site, brm: str, implementation: str,
         )
     end = _bound(g, end, what)  # a symbol (tag_map spatial on an unsplit map) at its value
     var_s = smap.attrs["var"]
-    memlets = tasklet.inputs | tasklet.outputs
+    memlets = {c: m for c, m in (tasklet.inputs | tasklet.outputs).items() if c in ports}
     # a folding output that does not use the spatial variable takes one lane
     folds = {c for c, m in tasklet.outputs.items() if m.reduce is not None and var_s not in m.names}
     for c, m in memlets.items():
@@ -506,7 +583,6 @@ def _bind_check(g: Graph, site: _Site, brm: str, implementation: str,
             f"{what}: the BRM's ports have different lanes {sorted(map(str, lanes))}"
         )
     (lanes_v,) = lanes
-    given = dict(params or {})
     if expr.is_name(lanes_v):
         if lanes_v in given and given[lanes_v] != end:
             raise SandboxError(
@@ -514,9 +590,16 @@ def _bind_check(g: Graph, site: _Site, brm: str, implementation: str,
             )
         given[lanes_v] = end
     try:
-        inst = b.resolve(implementation, given)
+        inst = b.resolve(implementation, given, from_scalar)
     except BrmError as e:
         raise SandboxError(f"{what}: {e}") from None
+    if inst.code != entry.code:  # a slot given that the matched entry leaves unset
+        extra = [k for k in b.all_slots() if k in inst.params and k not in slots]
+        raise SandboxError(
+            f"{what}: {', '.join(f'{k} = {inst.params[k]!r}' for k in extra)} given, but the "
+            f"tasklet computes {computes!r}, {brm!r}'s {entry.code!r}, which leaves "
+            f"{' and '.join(extra)} unset"
+        )
     lane_port = next(ports[c] for c in memlets if c not in folds)
     if inst.lanes(lane_port) != end:
         raise SandboxError(f"{what}: the BRM has {inst.lanes(lane_port)} lanes, the map {end}")
@@ -526,7 +609,91 @@ def _bind_check(g: Graph, site: _Site, brm: str, implementation: str,
                 f"{what}: {c} folds every lane into one, port {ports[c]!r} has "
                 f"{inst.lanes(ports[c])} lanes"
             )
-    return _Bound(b, ports, inst, var_s, end, memlets, folds)
+    return _Bound(b, ports, inst, var_s, end, memlets, folds, entry.code, from_scalar)
+
+
+def _scalar_inputs(g: Graph, site: _Site, what: str) -> dict[str, Memlet]:
+    """The tasklet's scalar operands: each input whose memlet names no variable of the maps
+    around it (the same element every firing), on a kernel's scalar argument (``sdfg.scalar``),
+    which goes to a slot, not a port; such an input on any other container is refused,
+    naming it. An input on a scalar whose subset uses a map variable stays an array input."""
+    variables = {m.attrs["var"] for m in [*site.temporal, site.smap]}
+    out: dict[str, Memlet] = {}
+    for c, m in site.tasklet.inputs.items():
+        if m.names & variables:
+            continue
+        if SCALAR not in g.containers[m.data].attrs:
+            raise SandboxError(
+                f"{what}: {c} reads {m.data}{m.subset}, the same element in every firing; a "
+                f"slot takes a kernel's scalar argument (sdfg.scalar), and {m.data} is not one"
+            )
+        out[c] = m
+    return out
+
+
+def _scalar_names(b: Any, scalars: Mapping[str, Memlet]) -> dict[str, str]:
+    """Each scalar operand's name in the code ``bind`` matches: its container's (``alpha``), or
+    with ``_s`` appended while that is a port's or a design param's name; name -> connector.
+    Two connectors on one container share the name: they read the same element."""
+    taken = {p.name for p in b.interface.ports} | set(b.params("design"))
+    out: dict[str, str] = {}
+    for c, m in scalars.items():
+        name = m.data
+        while name in taken:
+            name = f"{name}_s"
+        out.setdefault(name, c)
+    return out
+
+
+def _computes(tasklet: Node, ports: Mapping[str, str], names: Mapping[str, str]) -> str:
+    """The tasklet's code on the BRM's ports, a scalar operand under its name (``_scalar_names``)."""
+    by_conn = {tasklet.inputs[c].data: n for n, c in names.items()}
+    rename = dict(ports) | {c: by_conn[m.data] for c, m in tasklet.inputs.items()
+                            if c not in ports and m.data in by_conn}  # fmt: skip
+    return expr.rename_code(tasklet.attrs["code"], rename)
+
+
+def _check_port_dtypes(b: Any, ports: Mapping[str, str], conn_dtypes: Mapping[str, str],
+                       what: str) -> None:  # fmt: skip
+    from snax_forge.brm import accepted, check_dtypes
+
+    dtypes = {p: conn_dtypes[c] for c, p in ports.items()}
+    if refused := check_dtypes(b, dtypes):
+        raise SandboxError(
+            f"{what}: {'; '.join(refused)}; accepted output dtypes for these inputs: "
+            f"{accepted(b, dtypes)}"
+        )
+
+
+def _entry(b: Any, entries: list[Any], ports: Mapping[str, str], tasklet: Node,
+           names: Mapping[str, str], given: Mapping[str, Any],
+           ) -> tuple[Any, dict[str, str], dict[str, int | str]]:  # fmt: skip
+    """The first code entry whose present ports (at the defaults, ``given`` and its params) take
+    the tasklet's array inputs, in some assignment, and whose code is the tasklet's on them up
+    to its slots (``expr.unify``, a slot an int or a scalar operand's name, ``names``): the
+    entry, connector -> port, and the slot values; or ``(None, ports, {})``. The assignments
+    are tried port order first: the matcher's (the inputs in the order they first appear onto
+    the ports in order), then every other."""
+    arrays = [c for c in ports if c in tasklet.inputs]
+    outs = {c: p for c, p in ports.items() if c in tasklet.outputs}
+    for e in entries:
+        present = b.present(b.defaults() | dict(given) | e.params)
+        ins = [p.name for p in present if p.direction == "in"]
+        if {p.name for p in present if p.direction == "out"} != set(outs.values()):
+            continue
+        if len(ins) != len(arrays):
+            continue
+        for perm in itertools.permutations(ins):
+            mapping = dict(zip(arrays, perm, strict=True)) | outs
+            found = expr.unify(e.code, _computes(tasklet, mapping, names), b.slots(e), names)
+            if found is not None:
+                return e, mapping, found
+    return None, dict(ports), {}
+
+
+def _params_text(params: Mapping[str, Any]) -> str:
+    """A code entry's params as the refusals write them: ``op = 'add'``."""
+    return ", ".join(f"{k} = {v!r}" for k, v in params.items()) or "any params"
 
 
 def _bind_rewrite(g: Graph, site: _Site, bound: _Bound, brm: str, implementation: str,
@@ -556,6 +723,8 @@ def _bind_rewrite(g: Graph, site: _Site, bound: _Bound, brm: str, implementation
         ("outputs", tasklet.outputs, new_out),
     ):
         for c, m in conns.items():
+            if c not in ports:  # a scalar operand: its slot's connector, below
+                continue
             port = ports[c]
             nest = None
             if by_nest:
@@ -573,6 +742,8 @@ def _bind_rewrite(g: Graph, site: _Site, bound: _Bound, brm: str, implementation
             out[port] = Memlet(m.data, _lanes_dims(m, bound.var_s, bound.end, f"{what}.{side}.{c}"))
             if nest is not None:
                 _check_order(g, m, temporal, smap, nest.indices(), f"{what} port {port!r}")
+    for slot, m in bound.scalars.items():  # a slot read from a scalar: a connector of its name
+        new_in[slot] = Memlet(m.data, list(m.subset))
     acc = Node(
         tasklet.id,
         "accelerated",
@@ -582,7 +753,7 @@ def _bind_rewrite(g: Graph, site: _Site, bound: _Bound, brm: str, implementation
             "instance": instance,
             "brm": brm,
             "implementation": implementation,
-            "code": b.function.code,
+            "code": bound.code,
             "params": dict(inst.params),
             "replaced": smap.to_dict(),  # for unbind
         },

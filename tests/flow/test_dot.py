@@ -1,6 +1,6 @@
-"""dot 1 end to end (D148, D157, D158): ``recipes/dot_1.json``, a multiplier into tmp0 in L1,
+"""dot 1 end to end (D148, D157, D158): ``recipes/dot/dot_1.json``, a multiplier into tmp0 in L1,
 then an adder tree over it, two accelerators ``vmul`` and ``vsum``, run in series; and
-``recipes/dot_1_enc.json``, the two as the groups of one accelerator ``dot``.
+``recipes/dot/dot_1_enc.json``, the two as the groups of one accelerator ``dot``.
 
 Up to the generator on the host: dot 1's task list waits once between the accelerators (the
 serial sync on vmul's task) and has no idle mover. On SNAX-GVSoC (marker ``gvsoc``, D134: in the
@@ -22,13 +22,13 @@ from snax_forge.flow import run_flow, summary
 from snax_forge.lower import placed_waits, task_list
 from snax_forge.report import reports_of
 from snax_forge.run import read_run
-from tests.design.helpers import REPO, SNAX_FORGE
-from tests.helpers import dot1_split
+from tests.design.helpers import SNAX_FORGE
+from tests.helpers import dot1_split, recipe_path
 
 from .helpers import needs_gvsoc
 
-DOT1 = REPO / "recipes" / "dot_1.json"
-DOT1_ENC = REPO / "recipes" / "dot_1_enc.json"
+DOT1 = recipe_path("dot_1")
+DOT1_ENC = recipe_path("dot_1_enc")
 
 
 def test_the_task_list_waits_once_between_the_accelerators(tmp_path):

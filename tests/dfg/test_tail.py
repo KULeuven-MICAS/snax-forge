@@ -13,13 +13,13 @@ from snax_forge.dfg import DfgError, ExecutionError, Graph, execute
 from snax_forge.dfg.import_sdfg import import_kernel
 from snax_forge.dfg.pad import pad_value, padded_shape
 from snax_forge.sandbox import Recipe, apply_recipe
-from tests.helpers import FIXTURES, REPO
+from tests.helpers import FIXTURES, recipe_path
 
 execute_mod = sys.modules["snax_forge.dfg.execute"]  # the package exports the function by name
 
 
 def steps(name: str, **params) -> list[Graph]:
-    recipe = Recipe.load(REPO / "recipes" / f"{name}.json").with_params(params)
+    recipe = Recipe.load(recipe_path(name)).with_params(params)
     return [s.graph for s in apply_recipe(recipe, import_kernel(recipe.kernel))]
 
 

@@ -1,5 +1,5 @@
 {
- "name": "dot_1_enc",
+ "name": "dot_1",
  "kernel": "dot",
  "params": {"W": 4, "N": 64},
  "symbols": {"N": "N"},
@@ -9,7 +9,7 @@
    "transform": "bind",
    "params": {
     "node": "mult",
-    "brm": "elementwise_mul",
+    "brm": "simd",
     "implementation": "chisel_tiled_spatial",
     "instance": "vmul"
    }
@@ -23,7 +23,6 @@
     "implementation": "chisel_adder_tree",
     "instance": "vsum"
    }
-  },
-  {"transform": "encapsulate", "params": {"accelerator": "dot", "units": ["vmul", "vsum"]}}
+  }
  ]
 }

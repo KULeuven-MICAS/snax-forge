@@ -76,6 +76,9 @@ DESIGNS = {
     "matvec_6": ("matvec_6", ["M=2", "N=16"]),
 }
 
+# SimdLanes' slot params of a unit with none (axpby's k1 and k2, each slot from its CSR or not)
+NO_SLOTS = {"k1": None, "k2": None, "kCsr": False, "k1Csr": False, "k2Csr": False}
+
 
 @pytest.fixture
 def vecadd(tmp_path):
@@ -98,9 +101,10 @@ def test_the_fill_rule_gives_the_datapaths_params(vecadd, tmp_path):
     path, root = vecadd
     acc = accelerator_spec(path, root)
     (u,) = acc.groups[0].units
-    sig = catalogue()["ElementwiseLanes"]
+    sig = catalogue()["SimdLanes"]
     assert fill(acc, u, sig) == {"inTypes": ["int64", "int64"], "opType": "int64",
-                                 "outType": "int64", "lanes": 4, "op": "add"}  # fmt: skip
+                                 "outType": "int64", "lanes": 4, "op": "add", "streams": 2,
+                                 "k": None} | NO_SLOTS  # fmt: skip
     vsum = accelerator_spec(
         point(tmp_path / "vsum", name="vsum", graph=bound_vsum()), tmp_path / "vsum"
     )
@@ -110,21 +114,37 @@ def test_the_fill_rule_gives_the_datapaths_params(vecadd, tmp_path):
     }  # fmt: skip
 
 
+def test_relus_unit_fills_one_stream_and_its_k(tmp_path):
+    """relu's SimdLanes: one input (streams 1, b not live), k 0 from its params; the catalogue
+    takes it."""
+    from .helpers import bound_recipe
+
+    path = point(tmp_path, name="relu", graph=bound_recipe("relu", "relu"))
+    acc = accelerator_spec(path, tmp_path)
+    (u,) = acc.groups[0].units
+    sig = catalogue()["SimdLanes"]
+    params = fill(acc, u, sig)
+    assert params == {"inTypes": ["int32"], "opType": "int32", "outType": "int32", "lanes": 4,
+                      "op": "max", "streams": 1, "k": 0} | NO_SLOTS  # fmt: skip
+    assert list(live(sig["ports"], params)) == ["a", "out"]
+
+
 def test_the_catalogues_ops_are_elementwise_ops():
-    """The catalogue's op names are blocks.py's (whose encodings tests read from the Chisel source)."""
-    ops = catalogue()["ElementwiseLanes"]["params"]["op"]["values"]
-    assert ops == list(ELEMENTWISE_OP)
+    """The catalogue's op names are blocks.py's (whose encodings tests read from the Chisel source),
+    then axpby."""
+    ops = catalogue()["SimdLanes"]["params"]["op"]["values"]
+    assert ops == [*ELEMENTWISE_OP, "axpby"]
 
 
 def test_the_catalogue_has_the_datapaths_latency_span_and_pins():
     cat = catalogue()
     assert {k: (v["latency"], v["span"]) for k, v in cat.items()} == {
-        "ElementwiseLanes": (0, 1), "TreeAccumulate": (1, 1), "Mac": ("max(accumulate, regOut)", 1),
+        "SimdLanes": (0, 1), "TreeAccumulate": (1, 1), "Mac": ("max(accumulate, regOut)", 1),
         "SerialAccumulate": (1, "lanes"), "LinkBuffer": (1, 1),
     }  # fmt: skip
     pins = {k: live(v["pins"], {"accumulate": True, "regOut": False}) for k, v in cat.items()}
     assert {k: list(v) for k, v in pins.items()} == {
-        "ElementwiseLanes": [], "TreeAccumulate": ["fire", "first"], "Mac": ["fire", "first"],
+        "SimdLanes": [], "TreeAccumulate": ["fire", "first"], "Mac": ["fire", "first"],
         "SerialAccumulate": ["read", "lane", "first"], "LinkBuffer": ["load", "wslot", "rslot"],
     }  # fmt: skip
     assert list(live(cat["Mac"]["pins"], {"accumulate": False, "regOut": True})) == ["en"]
@@ -134,18 +154,18 @@ def test_the_catalogue_has_the_datapaths_latency_span_and_pins():
 
 
 def _edit(f):
-    """The catalogue with ElementwiseLanes' signature edited by ``f``."""
+    """The catalogue with SimdLanes' signature edited by ``f``."""
 
     def edited():
         cat = copy.deepcopy(catalogue())
-        f(cat["ElementwiseLanes"])
+        f(cat["SimdLanes"])
         return cat
 
     return edited
 
 
 REFUSALS = [
-    ("gen.catalogue", lambda: {k: v for k, v in catalogue().items() if k != "ElementwiseLanes"}),
+    ("gen.catalogue", lambda: {k: v for k, v in catalogue().items() if k != "SimdLanes"}),
     ("gen.timing", _edit(lambda d: d.update(latency=1))),
     ("gen.timing", _edit(lambda d: d.update(span=2))),
     ("gen.catalogue", _edit(lambda d: d["fill"].update(lanes="unit.width"))),
@@ -166,12 +186,14 @@ def test_a_unit_the_catalogue_refuses(vecadd, code, cat):
 
 
 def test_a_type_param_must_be_type_names():
-    sig = catalogue()["ElementwiseLanes"]["params"]
+    sig = catalogue()["SimdLanes"]["params"]
     good = {"inTypes": ["int8", "uint8"], "opType": "int16", "outType": "int16", "lanes": 8,
-            "op": "add"}  # fmt: skip
+            "op": "add", "streams": 2, "k": None} | NO_SLOTS  # fmt: skip
     check_params("E", good, sig)
+    check_params("E", {**good, "inTypes": ["int8"], "streams": 1, "k": -(2**53)}, sig)
     for k, v in (("opType", 16), ("inTypes", "int8"), ("outType", "float32"),
-                 ("inTypes", ["int8", "int128"]), ("op", "pow"), ("lanes", 0)):  # fmt: skip
+                 ("inTypes", ["int8", "int128"]), ("op", "pow"), ("lanes", 0), ("streams", 0),
+                 ("k", "0"), ("k", 1.5), ("k", 2**53 + 1), ("k1Csr", 1)):  # fmt: skip
         with pytest.raises(GenError) as e:
             check_params("E", {**good, k: v}, sig)
         assert e.value.code == "gen.params"
@@ -266,7 +288,7 @@ def test_a_three_unit_chain_gets_its_counter():
         }
         return Unit(name, name, datapath, ports, params, latency, 1, list(csrs))
 
-    mul = unit("mul", "ElementwiseLanes", ("a", "b"), 0, {"op": "mul"})
+    mul = unit("mul", "SimdLanes", ("a", "b"), 0, {"op": "mul"})
     acc = unit("acc", "TreeAccumulate", ("a",), 1, {"op": "add"}, [Csr("JOB_BEATS", "rw", 2, 32)])
     total = unit("sum", "TreeAccumulate", ("a",), 1, {"op": "add", "T": 2})
     links = [Link("q", "mul.out", "acc.a", 1), Link("r", "acc.out", "sum.a", 0)]
@@ -293,7 +315,7 @@ def test_a_fixtures_tasks_give_jobs_and_job_beats():
 def test_a_narrow_elementwise_design_is_filled(tmp_path, recipe, dtype):
     acc = accelerator_spec(tmp_path / designed(tmp_path, recipe, recipe), tmp_path)
     (u,) = acc.groups[0].units
-    params = fill(acc, u, catalogue()["ElementwiseLanes"])
+    params = fill(acc, u, catalogue()["SimdLanes"])
     assert {k: params[k] for k in ("inTypes", "opType", "outType")} == {
         "inTypes": [dtype, dtype], "opType": dtype, "outType": dtype
     }  # fmt: skip
@@ -400,7 +422,7 @@ def test_a_mac_unit_the_catalogue_refuses(unit, code):
 
 def test_the_catalogue_has_each_datapaths_flops():
     assert {k: v["flops"] for k, v in catalogue().items()} == {
-        "ElementwiseLanes": 0, "TreeAccumulate": "width(outType)",
+        "SimdLanes": 0, "TreeAccumulate": "width(outType)",
         "Mac": "lanes * width(outType) * max(accumulate, regOut)",
         "SerialAccumulate": "width(outType)", "LinkBuffer": "depth * lanes * width(dtype)",
     }  # fmt: skip
@@ -409,7 +431,7 @@ def test_the_catalogue_has_each_datapaths_flops():
 @pytest.mark.parametrize(
     ("datapath", "params", "bits"),
     [
-        ("ElementwiseLanes", {"lanes": 8, "outType": "int64"}, 0),
+        ("SimdLanes", {"lanes": 8, "outType": "int64"}, 0),
         ("TreeAccumulate", {"inType": "int8", "outType": "int32", "lanes": 8}, 32),
         ("SerialAccumulate", {"inType": "int64", "outType": "int64", "lanes": 16}, 64),
         ("Mac", {"outType": "int64", "lanes": 8, "accumulate": True, "regOut": False}, 512),
@@ -436,3 +458,36 @@ def test_a_links_flops_are_its_buffers():
     assert link_flops(0, 8, "int64", cat) == 0
     assert [link_flops(d, 8, "int64", cat) for d in (1, 2, 4)] == [512, 1024, 2048]
     assert link_flops(2, 4, "int8", cat) == 64
+
+
+def test_axpys_unit_fills_k1_from_its_csr_and_k1_is_a_live_pin(tmp_path):
+    """axpy's SimdLanes at axpby: k1 from its CSR (``scalars``), so k1Csr and the pin k1; baked,
+    k1 the const and no pin. A scalar that is no live pin is refused (gen.port_map)."""
+    from dataclasses import replace
+
+    from .test_axpy import axpy
+
+    sig = catalogue()["SimdLanes"]
+    for name, graph, slots in (("axpy", axpy(), {"k1Csr": True}),
+                               ("axpy_baked", axpy(baked=3), {"k1": 3})):  # fmt: skip
+        acc = accelerator_spec(point(tmp_path / name, name=name, graph=graph), tmp_path / name)
+        (u,) = acc.groups[0].units
+        params = fill(acc, u, sig)
+        assert (
+            params
+            == {
+                "inTypes": ["int32", "int32"],
+                "opType": "int32",
+                "outType": "int32",
+                "lanes": 2,
+                "op": "axpby",
+                "streams": 2,
+                "k": None,
+            }
+            | NO_SLOTS
+            | slots
+        )
+        assert list(live(sig["pins"], params)) == (["k1"] if "k1Csr" in slots else [])
+        check_unit(acc, u, catalogue())
+    with pytest.raises(GenError, match=r"scalar k3 is no pin of SimdLanes here \(\[\]\)"):
+        check_unit(acc, replace(u, scalars={"k3": "int32"}), catalogue())

@@ -32,6 +32,7 @@ from snax_forge.run import load_cluster, read_events, read_run, write_run
 from snax_forge.run.convert import convert
 from snax_forge.viz import api, movement, schedule
 from tests.flow.helpers import stubbed_flow
+from tests.helpers import recipe_path
 
 FIXTURE = Path(__file__).resolve().parents[1] / "run" / "fixtures" / "vecadd"
 
@@ -310,12 +311,12 @@ def test_the_command_line(flows, tmp_path, capsys):
 
 
 def designed_report(tmp_path, recipe, sets=()):
-    """The design report of ``recipes/<recipe>.json`` (``--set`` each of ``sets``) designed on
+    """The design report of ``recipes/<folder>/<recipe>.json`` (``--set`` each of ``sets``) designed on
     snax_forge (no run)."""
     from snax_forge.gen import generate
     from snax_forge.report.design import build_design
     from snax_forge.sandbox import Recipe
-    from tests.gen.helpers import REPO, designed
+    from tests.gen.helpers import designed
 
     rel = designed(tmp_path, recipe, recipe, sets)
     with pytest.MonkeyPatch.context() as mp:
@@ -323,7 +324,7 @@ def designed_report(tmp_path, recipe, sets=()):
         generate(rel, tmp_path / "gen", root=tmp_path)
     point = DesignPoint.load(tmp_path / rel)
     cluster = load_cluster(tmp_path / "gen" / "snax_forge.hjson", tmp_path / rel)
-    return build_design(recipe, cluster, point, Recipe.load(REPO / "recipes" / f"{recipe}.json"))
+    return build_design(recipe, cluster, point, Recipe.load(recipe_path(recipe)))
 
 
 def test_a_mover_shows_its_dtype_k_and_channels(tmp_path):
@@ -467,7 +468,7 @@ def test_the_bank_notes_compare_the_streamers_of_one_group(dot1):
 def test_the_design_report_has_a_row_per_unit(dot1):
     r = reports_of(dot1).design
     assert [(a.instance, a.group, a.kind) for a in r.accelerators] == [
-        ("vmul", "vmul", "ElementwiseLanes"), ("vsum", "vsum", "TreeAccumulate")]  # fmt: skip
+        ("vmul", "vmul", "SimdLanes"), ("vsum", "vsum", "TreeAccumulate")]  # fmt: skip
     assert [c.name for c in r.components][:2] == ["vmul", "vsum"]
     assert [(s.name, s.instance) for s in r.streamers][:3] == [
         ("vmul_a", "vmul"), ("vmul_b", "vmul"), ("vsum_a", "vsum")]  # fmt: skip
@@ -525,7 +526,7 @@ def test_design_md_costs_each_group_beside_its_cycles(dot1):
     e = r.estimate
     assert e.tech == "nangate45" and e.char_source["snax_forge_experiments"] and not e.missing
     assert [(c.group, c.block, c.datapath) for c in e.cost] == [
-        ("vmul", "vmul", "ElementwiseLanes"), ("vmul", "ctrl", "group control unit"),
+        ("vmul", "vmul", "SimdLanes"), ("vmul", "ctrl", "group control unit"),
         ("vsum", "vsum", "TreeAccumulate"), ("vsum", "ctrl", "group control unit")]  # fmt: skip
     assert all(c.found for c in e.cost if c.block != "ctrl")
     assert e.area_um2 == pytest.approx(sum(g.area_um2 for g in e.groups))
@@ -547,9 +548,9 @@ def test_design_md_costs_each_group_beside_its_cycles(dot1):
         "| vsum | vsum | TreeAccumulate | measured | 16 | 64 | 1 300 | 340 | 2.495 | 0.457 | 0.055 |"
         in text
     )
-    # a block with no flops (the ElementwiseLanes mul) holds "–"
+    # a block with no flops (the SimdLanes mul) holds "–"
     (mul,) = [x for x in text.splitlines()
-              if x.startswith("| vmul | vmul | ElementwiseLanes |") and len(x.split(" | ")) == 11]  # fmt: skip
+              if x.startswith("| vmul | vmul | SimdLanes |") and len(x.split(" | ")) == 11]  # fmt: skip
     assert mul.split(" | ")[9] == "–", mul
     assert (f"| dot | L1 accesses (placeholder, 4 × e_load per bit) | {l1.words} | {l1.bits} | "
             f"{l1.energy_nj:.3f} |") in text  # fmt: skip
@@ -571,14 +572,14 @@ def test_design_md_on_another_technology_or_none(dot1):
 
 
 def test_design_md_names_what_the_table_does_not_hold(tmp_path):
-    """vecadd_i32: an int32 ElementwiseLanes, not in nangate45's int64 table; its comb counted
+    """vecadd_i32: an int32 SimdLanes, not in nangate45's int64 table; its comb counted
     as 0, listed under the cost and noted (char.missing)."""
     r = designed_report(tmp_path, "vecadd_i32")
     assert r.estimate.missing == ["acc"]
     text = render_design(r)
-    assert "| acc | acc | ElementwiseLanes | not characterized |" in text
+    assert "| acc | acc | SimdLanes | not characterized |" in text
     assert "Not characterized on nangate45 (comb counted as 0, flops counted): acc" in text
-    assert ("- note [char.missing] acc: not characterized: ElementwiseLanes at lanes 4 on "
+    assert ("- note [char.missing] acc: not characterized: SimdLanes at lanes 4 on "
             "nangate45") in text  # fmt: skip
 
 

@@ -1,9 +1,9 @@
 """dot through SNAX-SANDBOX: a multiplier and an accumulator bound in one recipe.
 
-Accepted when ``recipes/dot_1.json`` gives ``dot_accelerated.snaxdfg`` at its
+Accepted when ``recipes/dot/dot_1.json`` gives ``dot_accelerated.snaxdfg`` at its
 last bind, the fixture's instances ``mul`` and ``sum`` named ``vmul`` and ``vsum``
-(the multiply map bound to elementwise_mul, the sum map to accumulate, each step
-passing the reference check), ``recipes/dot_1_enc.json`` the same and then both
+(the multiply map bound to simd, the sum map to accumulate, each step
+passing the reference check), ``recipes/dot/dot_1_enc.json`` the same and then both
 groups in the accelerator ``dot`` (D148), and the bound graph equals ``np.dot``; the
 accumulate binding with one lane (the Chisel Accumulator) works as well, the
 reduce matcher rejects every mismatch by name, and unbind and join_map take
@@ -28,15 +28,15 @@ from snax_forge.sandbox import (
     unencapsulate,
 )
 from snax_forge.sandbox.transforms import tag_map
-from tests.helpers import graph_dict
+from tests.helpers import graph_dict, recipe_path
 
-from .helpers import FIXTURES, REPO, graph
+from .helpers import FIXTURES, graph
 
-RECIPE = REPO / "recipes" / "dot_1.json"
-ENC = REPO / "recipes" / "dot_1_enc.json"
+RECIPE = recipe_path("dot_1")
+ENC = recipe_path("dot_1_enc")
 MUL = {
     "node": "mult",
-    "brm": "elementwise_mul",
+    "brm": "simd",
     "implementation": "chisel_tiled_spatial",
     "instance": "mul",
 }
@@ -106,7 +106,7 @@ def test_the_bound_dot_equals_np_dot():
 def test_every_w_that_divides_n(w):
     """One W for both accelerators; the recipe checks each step, and the result is np.dot."""
     g = apply_recipe(Recipe.load(RECIPE).with_params({"W": w}), graph("dot"))[-1].graph
-    assert g.node("mult").attrs["params"] == {"W": w, "op": "mul"}
+    assert g.node("mult").attrs["params"] == {"W": w, "op": "mul", "streams": 2}
     assert g.node("sum").attrs["params"] == {"W": w, "op": "add"}
     x = dot_inputs(seed=w)
     assert execute(g, x)["out"].tolist() == [int(x["A"] @ x["B"])]
@@ -167,7 +167,7 @@ REJECTED = [
         "starts from 5, the BRM from add's identity 0",
     ),
     (split_sum, SUM | {"implementation": "chisel_accumulator"}, "W = 4 not supported"),
-    (split_sum, SUM | {"brm": "elementwise_add"}, "is not a fold of inputs|one operator"),
+    (split_sum, SUM | {"brm": "simd"}, "the tasklet computes 'out = a' on the BRM's ports"),
     (lambda: split_map(imported(), "mult_map", 4), MUL | {"brm": "accumulate"}, "reduce folds one"),
 ]
 

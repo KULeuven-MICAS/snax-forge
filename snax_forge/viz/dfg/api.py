@@ -39,8 +39,9 @@ shown again in the row above its reader, with the same version and a
 shows an array once per access. Inside
 one top-level node, a read of a container written earlier in that same node
 is an edge straight from the writer's connector. Within a row, containers
-come in the order the next node's connectors read them, then the rest, so
-edges cross as little as possible.
+come in the order the next node's connectors read them, then the rest; the
+page then puts each box above the leftmost connector it feeds, which only the
+browser knows (dfg.js's ``orderRows``), so edges cross as little as possible.
 
 Each edge is one memlet: from a container box (or a writer's connector) to
 an input connector, or from an output connector to a container box, with its ``id``
@@ -78,12 +79,23 @@ worked out here:
     map          ``<id> · <var> · <iterations> · <kind or untagged>``
                                                        (``mult_map · i · 2048 · untagged``)
     tasklet      ``<id> · <operation>``: the code's right-hand side on its connector names,
-                 ``fold <op>`` for a copy into a ``reduce``        (``mult · in1 * in2``, ``sum · fold +``)
-    unit         ``<instance> · <what one lane computes> · W <lanes>``, a fold's as a
-                 tasklet's                                          (``mul · a * b · W 4``)
+                 ``fold <op>`` for a copy into a ``reduce``        (``mult · in1 * in2``, ``sum · fold +``;
+                 after ``bake_scalar`` ``mult · 3 * in2``, or ``mult · csr(alpha) * in2`` read as CSR)
+    unit         ``<instance> · <what one lane computes> · W <lanes>``, then each slot
+                 and its value, baked or read from a scalar (a CSR), a fold's as a tasklet's
+                                                          (``mul · a * b · W 4``,
+                                                           ``acc · max(a, k) · W 4 · k 0``,
+                                                           ``acc · k1 * a + b · W 4 · k1 csr(alpha)``)
     link         ``<container> · wire`` or ``<container> · FIFO <depth>``
     container    its name, and a ``badge`` from the estimate's placement (``L1 · 4 KiB``,
-                 ``wire``, ``FIFO 1``); a fused nest's local value has no box (Links)
+                 ``wire``, ``FIFO 1``); a fused nest's local value has no box (Links); a
+                 kernel's scalar argument (``sdfg.scalar``, ``scalar``) is drawn as a parameter
+                 hexagon, each edge reading it as one element labelled ``alpha[0] · broadcast``
+                 (drawn at the edge's start, beside the hexagon), and its Containers line is
+                 ``scalar · <dtype>``; read as CSR (a tasklet's connector ``bake_scalar`` named
+                 after it, or a unit's slot) it has no box, edge or port in the drawing: the
+                 operation names it ``csr(alpha)``, as a baked one shows its value, so the
+                 node shows only its streamed inputs (Containers still lists it)
     group, accelerator   their name
 
 Details: a map's range as written, ``loop.split``, ``loop.fused`` and ``loop.split_reduce``; a
@@ -164,6 +176,7 @@ from snax_forge.design.streamers import (
     port_loops,
 )
 from snax_forge.dfg import DfgError, Graph, Memlet, Node
+from snax_forge.dfg.graph import BAKED, SCALAR
 from snax_forge.dfg.subset import map_range, parse_dim
 from snax_forge.estimate.cost import L1_LABEL, L1Cost, caveat, dec3, heading, sig3
 from snax_forge.expr import ExprError
@@ -502,7 +515,8 @@ def bindings_section(g: Graph, recipe: Any = None, editable: bool = False) -> di
     ``split_reduce``'s ``M_final``). ``entries``, in the graph's order:
 
         unit    per bound instance: its BRM, the lanes its design params give (``W = 8``) and
-                the params of the splits that set them (``acc · elementwise_mul · W = 8``)
+                the params of the splits that set them, then its slots, read only
+                (``acc · simd · W = 8``, relu's ``acc · simd · W = 4 · k = 0``)
         split   a split whose map is not bound yet: its factor's params (``not bound``)
         link    a link whose depth a step gives as a param
 
@@ -534,9 +548,11 @@ def bindings_section(g: Graph, recipe: Any = None, editable: bool = False) -> di
                     used.add(i)
                     names += [x for x in ps if x not in names]
             design = dict(a.get("params") or {})
-            lanes = {k: v for k, v in design.items() if isinstance(v, int)}
+            slots = slot_params(n)
+            lanes = {k: v for k, v in design.items() if isinstance(v, int) and k not in slots
+                     and k in _lanes_names(n)}  # fmt: skip
             entries.append({"kind": "unit", "id": a["instance"], "label": f"{a['instance']} · {a['brm']}",
-                            "names": names, "lanes": lanes, "note": None})  # fmt: skip
+                            "names": names, "lanes": lanes, "slots": slots, "note": None})  # fmt: skip
         elif n.kind == "link" and n.attrs["container"] in links:
             c = n.attrs["container"]
             entries.append({"kind": "link", "id": c, "label": f"link {c} · depth",
@@ -552,17 +568,56 @@ def bindings_section(g: Graph, recipe: Any = None, editable: bool = False) -> di
         for x in e["names"]:
             by_name.setdefault(x, []).append(e["label"])
     for e in entries:
-        names = e.pop("names")
+        names, slots = e.pop("names"), e.pop("slots", {})
         e["params"] = [{"name": x, "value": params.get(x), "editable": bool(editable and x in params),
                         "shared_with": [lbl for lbl in by_name[x] if lbl != e["label"]]}
                        for x in names]  # fmt: skip
         if not e["params"] and e["lanes"]:  # no recipe param: the design params, read only
             e["params"] = [{"name": k, "value": v, "editable": False, "shared_with": []}
                            for k, v in e["lanes"].items()]  # fmt: skip
+        e["params"] += [{"name": k, "value": v, "editable": False, "shared_with": []}
+                        for k, v in slots.items()]  # a slot, baked in: read only  # fmt: skip
     symbol_params = {x["param"] for x in symbols_section(g, recipe) if x["param"]}
     unused = [{"name": k, "value": v, "editable": editable} for k, v in params.items()
               if k not in symbol_params and k not in by_name]  # fmt: skip
     return {"entries": entries, "unused": unused, "tree": bindings_tree(g, entries)}
+
+
+def slot_params(n: Node) -> dict[str, int | str]:
+    """An accelerated node's slots and their values: the int design params its code reads, baked
+    in (``simd``'s ``k``, brm.py's ``Code``), then the slots read from a scalar, each an input
+    connector that is no port, as ``csr(<container>)`` (axpy's ``k1``: ``csr(alpha)``), in the
+    order the code reads them."""
+    params = n.attrs.get("params") or {}
+    read = [x for _, e in expr.statements(n.attrs["code"], n.id) for x in expr.ordered_names(e)]
+    ports = _port_names(n)
+    out: dict[str, int | str] = {}
+    for x in dict.fromkeys(read):
+        if type(params.get(x)) is int:
+            out[x] = params[x]
+        elif x in n.inputs and x not in ports:
+            out[x] = f"csr({n.inputs[x].data})"
+    return out
+
+
+def _port_names(n: Node) -> set[str]:
+    """Its BRM's port names; its connectors when the BRM does not load."""
+    from snax_forge.brm import load_brm
+
+    try:
+        return {p.name for p in load_brm(n.attrs["brm"]).interface.ports}
+    except (BrmError, KeyError, OSError):
+        return set(n.inputs) | set(n.outputs)
+
+
+def _lanes_names(n: Node) -> set[str]:
+    """The design params its BRM's ports' lanes name; every int param when it does not
+    resolve."""
+    try:
+        inst = instance_of(n)
+    except (BrmError, ExprError, KeyError, ValueError):
+        return set(n.attrs.get("params") or {})
+    return {x for p in inst.ports for x in expr.names(p.lanes)}
 
 
 def bindings_tree(g: Graph, entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -668,8 +723,9 @@ def containers_section(g: Graph, est: Any = None) -> list[dict[str, Any]]:
             if at < len(text) or not parts:
                 parts.append({"text": text[at:], "symbol": None})
             dims.append({"parts": parts})
+        scalar = bool(c.attrs.get(SCALAR))
         out.append({
-            "name": name, "shape": list(c.shape),
+            "name": name, "shape": list(c.shape), "scalar": scalar,
             "shape_text": " × ".join(str(d) for d in c.shape) or "scalar", "dims": dims,
             "sizes": sizes, "sizes_text": " × ".join(map(str, sizes)) if sizes else None,
             "dtype": c.dtype, "transient": c.transient,
@@ -677,7 +733,8 @@ def containers_section(g: Graph, est: Any = None) -> list[dict[str, Any]]:
             "bytes_text": size_text(placed.bytes) if placed and placed.bytes is not None else None,
             "placement": placed.placement if placed else None,
             "symbols": list(dict.fromkeys(used)),
-            "line": " · ".join(x for x in (" × ".join(str(d) for d in c.shape) or "scalar",
+            "line": f"scalar · {c.dtype}" if scalar else
+                    " · ".join(x for x in (" × ".join(str(d) for d in c.shape) or "scalar",
                                            _placed_text(placed),
                                            size_text(placed.bytes)
                                            if placed and placed.bytes is not None else None)
@@ -1060,6 +1117,11 @@ def _operation(n: Node, code: str, ins: Sequence[str]) -> str:
     op = fold_op(n)
     if op is not None and _rhs(code) in ins:
         return f"fold {FOLD.get(op, op)}"
+    if n.kind == "tasklet":  # a scalar read as CSR by name: csr(alpha) (module doc)
+        csr = {r["name"] for r in n.attrs.get(BAKED, []) if r["value"] == "csr"} & set(ins)
+        if csr:
+            return re.sub(r"\b(" + "|".join(map(re.escape, sorted(csr))) + r")\b", r"csr(\1)",
+                          _rhs(code))  # fmt: skip
     return _rhs(code)
 
 
@@ -1079,8 +1141,9 @@ def compact_text(g: Graph, n: Node, param: str | None = None) -> str:
         text = f"{a['instance']} · {_operation(n, a['code'], list(n.inputs))}"
         try:
             inst = instance_of(n)
-            first = next(p.name for p in inst.brm.interface.ports if p.direction == "in")
-            return f"{text} · {param or 'W'} {inst.lanes(first)}"
+            first = next(p.name for p in inst.ports if p.direction == "in")  # a port, not a slot
+            slots = "".join(f" · {k} {v}" for k, v in slot_params(n).items())
+            return f"{text} · {param or 'W'} {inst.lanes(first)}{slots}"
         except (BrmError, ExprError, KeyError, StopIteration):
             return text
     if n.kind == "link":
@@ -1258,7 +1321,8 @@ def _node_details(n: Node) -> dict[str, Any]:
 def _container(g: Graph, name: str, placed: Any = None) -> dict[str, Any]:
     """A container as the drawing shows it: its name, its badge, whether it is transient."""
     c = g.containers[name]
-    return {"name": name, "text": name, "badge": badge(placed), "transient": c.transient}
+    return {"name": name, "text": name, "badge": badge(placed), "transient": c.transient,
+            "scalar": bool(c.attrs.get(SCALAR))}  # fmt: skip
 
 
 def memlet_text(m: Memlet) -> str:
@@ -1273,14 +1337,30 @@ def _iterations(g: Graph, rng: str) -> int | None:
         return None
 
 
+def csr_connectors(g: Graph, n: Node) -> set[str]:
+    """The input connectors ``n`` reads a kernel's scalar argument through at run time, from a
+    CSR (module doc): a tasklet's that ``bake_scalar`` named after its container (value
+    ``csr``), a unit's slots (inputs that are no BRM port)."""
+    if n.kind == "tasklet":
+        return {r["name"] for r in n.attrs.get(BAKED, [])
+                if r["value"] == "csr" and r["name"] in n.inputs}  # fmt: skip
+    if n.kind == "accelerated":
+        ports = _port_names(n)
+        return {c for c, m in n.inputs.items() if c not in ports
+                and g.containers.get(m.data) is not None
+                and g.containers[m.data].attrs.get(SCALAR)}  # fmt: skip
+    return set()
+
+
 def _node(g: Graph, n: Node) -> dict[str, Any]:
     """A node as the compact drawing shows it: its text, a map's tag, its connectors (where
     the edges meet it) and its body; the rest is in Details."""
+    csr = csr_connectors(g, n)
     d: dict[str, Any] = {
         "id": n.id,
         "kind": n.kind,
         "text": compact_text(g, n),
-        "inputs": [_conn(c, m) for c, m in n.inputs.items()],
+        "inputs": [_conn(c, m) | ({"csr": True} if c in csr else {}) for c, m in n.inputs.items()],
         "outputs": [_conn(c, m) for c, m in n.outputs.items()],
     }
     if n.kind == "map":
@@ -1347,12 +1427,16 @@ def _layout(g: Graph) -> dict[str, Any]:
     linked = {n.attrs["container"]: n.id for n, _ in g.walk() if n.kind == "link"}
     # nor does a fused nest's local value: its writer's connector joins its reader's
     local = {c for c, cont in g.containers.items() if "loop.local" in cont.attrs}
+    # a kernel's scalar argument read as one element: its edge says it is broadcast
+    scalars = {c for c, cont in g.containers.items() if cont.attrs.get(SCALAR)}
     reads, writes = [], []
     for top in tops:
         r: list[str] = []
         w: list[str] = []
-        for side, _, _, m in _uses(top):
+        for side, node, c, m in _uses(top):
             if m.data in linked or m.data in local:
+                continue
+            if side == "read" and c in csr_connectors(g, node):  # no box: csr(alpha) in the text
                 continue
             if side == "read" and m.data not in w and m.data not in r:
                 r.append(m.data)
@@ -1390,7 +1474,9 @@ def _layout(g: Graph) -> dict[str, Any]:
             rows.append({"kind": "containers", "boxes": list(keys.values())})
         return keys
 
-    unused = [c for c in g.containers if c not in used and c not in linked and c not in local]
+    csr_read = {n.inputs[c].data for n, _ in g.walk() for c in csr_connectors(g, n)}
+    unused = [c for c in g.containers
+              if c not in used and c not in linked and c not in local and c not in csr_read]  # fmt: skip
     before = reads[0] + unused if tops else list(g.containers)
     above = box_row(before, {}, 0)
     for k, top in enumerate(tops):
@@ -1423,10 +1509,12 @@ def _layout(g: Graph) -> dict[str, Any]:
             elif m.data in writers:  # written earlier inside this node: straight from the writer
                 edges.extend(_edge(w, port, m.data, text, "read", packing(g, n, c, m.data))
                              for w in writers[m.data])  # fmt: skip
+            elif c in csr_connectors(g, n):  # read at run time from a CSR: no edge (module doc)
+                continue
             else:
-                edges.append(
-                    _edge(above[m.data], port, m.data, text, "read", packing(g, n, c, m.data))
-                )
+                label = f"{text} · broadcast" if m.data in scalars and not m.names else None
+                edges.append(_edge(above[m.data], port, m.data, text, "read",
+                                   packing(g, n, c, m.data), label=label))  # fmt: skip
         nxt = reads[k + 1] if k + 1 < len(tops) else []
         names = nxt + [c for c in writes[k] if c not in nxt]
         fresh = {c: list(dict.fromkeys(n.id for n, _, _ in wrote[c])) for c in writes[k]}
@@ -1450,12 +1538,16 @@ def _edge(
     side: str,
     pack: str | None = None,
     local: bool = False,
+    label: str | None = None,
 ) -> dict[str, Any]:
     """One memlet; ``pack`` the port's packing when it meets an accelerated node; ``local`` a
-    fused nest's local value between its two tasklets, labelled with the container's name."""
+    fused nest's local value between its two tasklets, labelled with the container's name;
+    ``label`` any other text drawn beside it (a scalar's ``alpha[0] · broadcast``)."""
     out = {"id": f"{src}->{dst}", "from": src, "to": dst, "data": data, "text": text, "dir": side}
     if pack is not None:
         out["packing"] = pack
     if local:
         out |= {"local": True, "label": data}
+    elif label is not None:
+        out |= {"label": label}
     return out

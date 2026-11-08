@@ -119,13 +119,14 @@ function legend() {
     h("li", {}, h("i", { class: "key c-link" }), "link"),
     h("li", {}, h("i", { class: "key c-pill" }), "container"),
     h("li", {}, h("i", { class: "key c-pill transient" }), "transient"),
+    h("li", {}, h("i", { class: "key c-pill scalar" }), "scalar"),
   );
 }
 
 // -- the compact drawing ------------------------------------------------------------
 
 function ports(n, side) {
-  const list = side === "in" ? n.inputs : n.outputs;
+  const list = (side === "in" ? n.inputs : n.outputs).filter((p) => !p.csr);
   if (!list.length) return null;
   return h("div", { class: `c-ports ${side}` },
     list.map((p) => h("i", { class: "c-port", "data-port": `${n.id}.${p.connector}`, title: `${p.connector}: ${p.data}` })));
@@ -154,7 +155,7 @@ function topEl(n) {
 function pill(v, key) {
   const b = v.boxes[key];
   const c = v.containers[b.container];
-  return h("div", { class: `c-pill${c.transient ? " transient" : ""}${b.again ? " again" : ""}`, "data-box": key, "data-sel": c.name },
+  return h("div", { class: `c-pill${c.transient ? " transient" : ""}${c.scalar ? " scalar" : ""}${b.again ? " again" : ""}`, "data-box": key, "data-sel": c.name },
     h("b", {}, c.text), c.badge ? h("span", { class: "c-badge" }, c.badge) : null);
 }
 
@@ -250,13 +251,45 @@ function drawEdges(canvas, svg, edges, k) {
     const p = svgEl("path", { d, class: `edge ${e.dir}${e.local ? " local" : ""}`, "data-sel": e.id, "marker-end": `url(#${marker})` });
     p._marker = marker;
     out.push(p);
-    if (e.label) { // a fused nest's local value: its name beside the wire, highlighted with the container (no box, api.py)
-      const t = svgEl("text", { x: (x1 + x2) / 2 + 6, y: (y1 + y2) / 2 + 4, class: "edge-label", "data-sel": e.data });
+    if (e.label) { // a fused nest's local value (its name, no box) or a scalar's broadcast (alpha[0] · broadcast), api.py
+      // a local value's right of its edge, halfway down (clear of the line and its arrow); a
+      // broadcast's at its start, beside the hexagon, so no map bar it passes hides it
+      const [tx, ty] = e.local ? [Math.max(x1, x2) + 10, (y1 + y2) / 2 + 4] : [x1 + 6, y1 + 14];
+      const t = svgEl("text", { x: tx, y: ty, class: `edge-label${e.local ? "" : " at-start"}`, "data-sel": e.data });
       t.textContent = e.label;
       out.push(t);
     }
   }
   svg.replaceChildren(defs, ...out);
+}
+
+/** Each row of containers left to right by where its edges land: a box takes the place of the
+leftmost connector it feeds (else of the leftmost that wrote it), ties and boxes without edges in
+api.py's order, so an edge does not cross the row for want of an order (axpy's fused nest: y,
+read by augassign's left connector, first). The connectors sit in node rows, which the order
+does not move, so one pass settles it; it runs before the glide measures where the boxes are. */
+function orderRows(panel) {
+  const canvas = panel.querySelector(".c-canvas");
+  if (!canvas || !panel._view) return;
+  const edges = panel._view.edges;
+  const xOf = (key) => {
+    const a = anchor(canvas, key);
+    if (!a) return Infinity;
+    const r = a.getBoundingClientRect();
+    return r.left + r.width / 2;
+  };
+  for (const row of canvas.querySelectorAll(".c-rows > .c-row")) {
+    const pills = [...row.children].filter((el) => el.dataset.box);
+    if (pills.length < 2) continue;
+    const at = pills.map((el, i) => {
+      const key = el.dataset.box;
+      const fed = edges.filter((e) => e.from === key).map((e) => xOf(e.to));
+      const wrote = edges.filter((e) => e.to === key).map((e) => xOf(e.from));
+      return { el, x: Math.min(...(fed.length ? fed : wrote.length ? wrote : [Infinity])), i };
+    });
+    at.sort((a, b) => (a.x === b.x ? a.i - b.i : a.x - b.x));
+    at.forEach(({ el }, k) => { el.style.order = String(k); });
+  }
 }
 
 // -- groups and accelerators (D148): a thin dashed outline each, the name on top ---------
@@ -696,6 +729,7 @@ async function draw() {
     }
     const old = places();
     $("graphs").replaceChildren(...panels);
+    panels.forEach(orderRows);
     $("graphs").classList.toggle("two", panels.length === 2);
     const now = panels.map((p) => p._view);
     if (!still() && drawn && old.length === panels.length) {

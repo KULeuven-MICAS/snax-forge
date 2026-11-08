@@ -9,8 +9,9 @@ import snax.forge.shell.Block
 
 /** Every catalogue datapath on snax-gvsoc's NumPy vectors (`SnaxDatapathVectors`): each test's datapath built from the
   * registry (`Datapaths`) by its params, then per step its enables and inputs poked, its output peeked before the clock
-  * edge and compared lane by lane, as snax-gvsoc's `tests/snax/datapath/tb.cpp` checks its classes on the same file.
-  * Without `SNAX_GVSOC_DATAPATH_VECTORS` the spec cancels.
+  * edge and compared lane by lane, as snax-gvsoc's `tests/snax/datapath/tb.cpp` checks its classes on the same file; a
+  * step's `set` lines poke SimdLanes' scalar pins (`k`, `k1`, `k2`, a CSR's value) first. Without
+  * `SNAX_GVSOC_DATAPATH_VECTORS` the spec cancels.
   */
 class DatapathVectorsSpec extends AnyFlatSpec with ForgeTester {
 
@@ -20,14 +21,15 @@ class DatapathVectorsSpec extends AnyFlatSpec with ForgeTester {
       def bool(n: String, v: Boolean) = io.get(n).foreach(_.asInstanceOf[Bool].poke(v.B))
       def slot(n: String, v: Int)     = io.get(n).foreach(x => x.asInstanceOf[UInt].poke(v.U))
       val inputs = t.datapath match {
-        case "ElementwiseLanes" | "Mac" => Seq("a", "b", "c")
-        case _                          => Seq("in")
+        case "SimdLanes" | "Mac" => Seq("a", "b", "c")
+        case _                   => Seq("in")
       }
       for ((s, k) <- t.steps.zipWithIndex) {
         bool("fire", s.fire); bool("first", s.first); bool("read", s.read); bool("en", s.en)
         bool("load", s.load); slot("lane", s.lane); slot("wslot", s.wslot); slot("rslot", s.rslot)
+        for ((pin, v) <- s.sets) LaneBits.poke(io(pin), v) // a CSR slot's pin, held until set again
         for {
-          (lanes, i) <- s.ins.zipWithIndex
+          (lanes, i)  <- s.ins.zipWithIndex
           d = io(inputs(i))
           (v, l) <- lanes.zipWithIndex
         }

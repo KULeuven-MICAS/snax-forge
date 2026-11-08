@@ -1,0 +1,26 @@
+{
+ "name": "relu",
+ "symbols": {"N": null},
+ "containers": {
+  "A": {"shape": ["N"], "dtype": "int32", "transient": false, "attrs": {}},
+  "B": {"shape": ["N"], "dtype": "int32", "transient": false, "attrs": {}}
+ },
+ "body": [
+  {
+   "id": "numpy_maximum_map",
+   "kind": "map",
+   "inputs": {},
+   "outputs": {},
+   "attrs": {"var": "i", "range": "0:N"},
+   "body": [
+    {
+     "id": "numpy_maximum",
+     "kind": "tasklet",
+     "inputs": {"in1": {"data": "A", "subset": ["i"]}},
+     "outputs": {"out": {"data": "B", "subset": ["i"]}},
+     "attrs": {"code": "out = max(in1, 0)"}
+    }
+   ]
+  }
+ ]
+}

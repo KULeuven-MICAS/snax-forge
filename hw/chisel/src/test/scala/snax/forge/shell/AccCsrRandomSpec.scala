@@ -17,7 +17,8 @@ import snax.forge.shell.AcceleratorSpec.{CsrSpec, GroupSpec, LinkSpec, PortSpec,
   * random, each group's busy random and its done pulse now and then. Checked every cycle: `req.ready`, `rsp.valid`,
   * `rsp.bits` while valid (START 0, a register its written value's low bits, STATUS the sticky done and busy, COUNTER
   * saturating), each group's `starts.valid` and its JOBS and each JOB_BEATS in unit order (a group of 0, 1 or 2 folds:
-  * JOBS and 1, or a JOB_BEATS per fold).
+  * JOBS and 1, or a JOB_BEATS per fold). Each unit may hold a scalar after its JOB_BEATS (`K1` of 8, 16 or 32 bits, or
+  * `K1_LO` and `K1_HI` at 64, each with the pin `k1`): `scalars` must give each one's register every cycle.
   */
 class AccCsrRandomSpec extends AnyFlatSpec with ForgeTester {
 
@@ -27,7 +28,7 @@ class AccCsrRandomSpec extends AnyFlatSpec with ForgeTester {
   /** A layout of `folds.size` groups, group g of `folds(g)` folds (0: one unit without a JOB_BEATS; 1: one fold; 2: two
     * folds linked by a wire, a JOB_BEATS each).
     */
-  private def layout(folds: Seq[Int], jw: Int, cw: Int): AcceleratorSpec = {
+  private def layout(folds: Seq[Int], jw: Int, cw: Int, r: Rand): AcceleratorSpec = {
     var at     = 0
     def next() = { at += 1; at - 1 }
     val groups = folds.zipWithIndex.map { case (n, g) =>
@@ -35,8 +36,27 @@ class AccCsrRandomSpec extends AnyFlatSpec with ForgeTester {
       val jobs   = CsrSpec("JOBS", "rw", next(), jw)
       val ports  = Seq("a" -> PortSpec("in", "in", "int64", 1), "out" -> PortSpec("out", "out", "int64", 1))
       val units  = (0 until (n max 1)).map { k =>
-        val beats = if (n > 0) Seq(CsrSpec("JOB_BEATS", "rw", next(), jw)) else Seq.empty
-        UnitSpec(s"u${g}_$k", "accumulate", "TreeAccumulate", ports, None, Map.empty, 1, 1, 1, beats)
+        val beats  = if (n > 0) Seq(CsrSpec("JOB_BEATS", "rw", next(), jw)) else Seq.empty
+        val bits   = r.pick(Seq(0, 8, 16, 32, 64))
+        val scalar = bits match {
+          case 0  => Seq.empty
+          case 64 => Seq("K1_LO", "K1_HI").map(CsrSpec(_, "rw", next(), 32, Some("k1")))
+          case w  => Seq(CsrSpec("K1", "rw", next(), w, Some("k1")))
+        }
+        val dtype  = s"int${bits max 8}"
+        UnitSpec(
+          s"u${g}_$k",
+          "accumulate",
+          "TreeAccumulate",
+          ports,
+          None,
+          Map.empty,
+          1,
+          1,
+          1,
+          beats ++ scalar,
+          if (bits == 0) Seq.empty else Seq("k1" -> dtype)
+        )
       }
       val status = CsrSpec("STATUS", "ro", next(), 2)
       val count  = CsrSpec("COUNTER", "ro", next(), cw)
@@ -135,7 +155,7 @@ class AccCsrRandomSpec extends AnyFlatSpec with ForgeTester {
         for (l <- 0 until Layouts) {
           val jw     = r.pick(Seq(1, 5, 8, 16, 32))
           val cw     = r.pick(Seq(1, 2, 3, 8, 32))
-          val spec   = layout(Seq.fill(r.between(1, 3))(r.between(0, 2)), jw, cw)
+          val spec   = layout(Seq.fill(r.between(1, 3))(r.between(0, 2)), jw, cw, r)
           val groups = spec.groups.size
           val model  = new Model(spec)
           val reqs   = IndexedSeq.fill(Cycles)(request(r, spec))
@@ -164,11 +184,12 @@ class AccCsrRandomSpec extends AnyFlatSpec with ForgeTester {
               pulse.zipWithIndex.foreach { case (v, g) => dut.io.done(g).poke(v.B) }
 
               val configs                  = (0 until groups).map(model.config)
+              val scalars                  = AccCsr.scalars(spec).map(c => model.regs(c.offset))
               val (ready, answer, started) = model.cycle(req, rsp.isReady, readies, busy, pulse)
               assert(dut.io.req.ready.peek().litToBoolean == ready, s"$clue: req.ready, the model $ready (req $req)")
               assert(dut.io.rsp.valid.peek().litToBoolean == answer.isDefined, s"$clue: rsp.valid, the model $answer")
               answer.foreach(a => assert(dut.io.rsp.bits.data.peek().litValue == a, s"$clue: rsp.bits, the model $a"))
-              for (g <- 0 until groups) {
+              for (g         <- 0 until groups) {
                 val v     = dut.io.starts(g).valid.peek().litToBoolean
                 assert(v == started.contains(g), s"$clue: group $g's start ${v}, the model ${started.mkString}")
                 assert(
@@ -181,6 +202,8 @@ class AccCsrRandomSpec extends AnyFlatSpec with ForgeTester {
                   s"$clue: $g's JOB_BEATS"
                 )
               }
+              for ((want, i) <- scalars.zipWithIndex)
+                assert(dut.io.scalars(i).peek().litValue == want, s"$clue: scalar CSR $i, the model $want")
               core.fired(ready)
               dut.clock.step()
             }

@@ -284,7 +284,7 @@ def test_job_values():
     """JOBS = n / T and, for a fold, JOB_BEATS = T; T = 0 an empty run (JOBS 0)."""
     from snax_forge.brm import load_brm
 
-    add = load_brm("elementwise_add").resolve("chisel_tiled_spatial", {"W": 4})
+    add = load_brm("simd").resolve("chisel_tiled_spatial", {"W": 4})
     total = load_brm("accumulate").resolve("chisel_adder_tree", {"W": 4})
     assert job_values(add, {"n": 16}) == {"JOBS": 16}
     assert job_values(total, {"n": 16, "T": 16}) == {"JOBS": 1, "JOB_BEATS": 16}

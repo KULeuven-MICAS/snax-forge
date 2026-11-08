@@ -217,15 +217,15 @@ def test_firings_in_order_and_a_task_per_tile(monkeypatch):
     calls = []
     real = ex._accel
 
-    def spy(node, what, graph):
-        instance, cfg = real(node, what, graph)
+    def spy(node, what, ctx):
+        instance, cfg, slots = real(node, what, ctx)
 
         def fn(k, ins, state, params):
             calls.append((k, params["n"], state.get("seen", 0), ins["a"][0]))
             state["seen"] = state.get("seen", 0) + 1
             return cfg.fn(k, ins, state, params)
 
-        return instance, type(cfg)(cfg.ports, fn, cfg.kind)
+        return instance, type(cfg)(cfg.ports, fn, cfg.kind), slots
 
     monkeypatch.setattr(ex, "_accel", spy)
     inputs, ref = kernel_run(64)
@@ -253,7 +253,7 @@ GRAPH_CASES = [
     (
         "vecadd_accelerated",
         lambda d: accel(d)["inputs"].update(c=accel(d)["inputs"]["a"]),
-        "connectors \\['a', 'b', 'c'\\], the BRM's ports",
+        "inputs.c: neither a port of 'simd' nor an unset slot of it",
     ),
     ("vecadd_accelerated", lambda d: accel(d)["attrs"].update(brm="nope"), "no BRM 'nope'"),
     (
@@ -324,5 +324,5 @@ def test_an_unregistered_executor():
 def test_the_node_code_must_be_the_brms():
     d = as_dict("vecadd_accelerated")
     accel(d)["attrs"]["code"] = "out = a - b"
-    with pytest.raises(ExecutionError, match="'out = a - b', but 'elementwise_add' computes"):
+    with pytest.raises(ExecutionError, match="'out = a - b', but 'simd' computes"):
         execute(Graph.from_dict(d), kernel_run(64)[0])

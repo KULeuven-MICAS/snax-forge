@@ -14,9 +14,9 @@ from snax_forge.design import DesignPoint
 from snax_forge.dfg.reference import kernel_inputs, kernel_spec
 from snax_forge.gen import GenError
 from snax_forge.gen import data as data_mod
-from snax_forge.gen.data import arrays, data_h, literal
+from snax_forge.gen.data import array_text, arrays, data_h, literal
 from snax_forge.lower.layout import Layout, moved_bytes
-from tests.helpers import bound_vsum
+from tests.helpers import bound_vsum, recipe_path
 
 from .helpers import bound_vecmul, point
 
@@ -91,7 +91,9 @@ def test_literals():
     assert literal(-3, "int64_t") == "-3"
 
 
-def test_refused_an_inplace_output(tmp_path, monkeypatch):
+def test_an_inplace_output_starts_at_its_input(tmp_path, monkeypatch):
+    """An output make_inputs gives (an in-place update, axpy's y, open item 47) starts at that
+    value, not zeroed, and is not const; its golden is the reference executor's."""
     p = load(tmp_path, "vecadd")
     spec = kernel_spec("vecadd", "test")
 
@@ -101,8 +103,9 @@ def test_refused_an_inplace_output(tmp_path, monkeypatch):
         return d
 
     monkeypatch.setattr(data_mod, "kernel_spec", lambda *_: replace(spec, make_inputs=ones))
-    with pytest.raises(GenError, match=r"\[gen.inout\] output C"):
-        arrays(p)
+    (c,) = [a for a in arrays(p) if a.name == "C"]
+    assert c.role == "output" and not c.const and set(c.values[: c.elements]) == {1}
+    assert "int64_t C[" in array_text(c) and "= {0}" not in array_text(c)
 
 
 def test_refused_a_missing_input(tmp_path, monkeypatch):
@@ -188,9 +191,8 @@ def test_vecadd_n7_writes_its_pad_and_a_whole_beat(tmp_path):
     """N = 7 at W = 4 (D144): each array 7 elements, a pad element of 0, one 64-byte beat."""
     from snax_forge.dfg.import_sdfg import import_kernel
     from snax_forge.sandbox import Recipe, apply_recipe
-    from tests.design.helpers import REPO
 
-    recipe = Recipe.load(REPO / "recipes" / "vecadd.json").with_params({"W": 4, "N": 7})
+    recipe = Recipe.load(recipe_path("vecadd")).with_params({"W": 4, "N": 7})
     g = apply_recipe(recipe, import_kernel("vecadd"))[-1].graph
     p = DesignPoint.load(point(tmp_path, graph=g))
     a = {x.name: x for x in arrays(p)}

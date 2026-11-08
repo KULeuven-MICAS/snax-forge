@@ -26,8 +26,10 @@ class CsrRsp extends Bundle {
   *     `starts(g)` with its JOBS and each JOB_BEATS in unit order as they stand (JOBS and 1 for a group without a
   *     JOB_BEATS), and the request is ready only when `starts(g)` is: a start while the group is busy is held,
   *     `req.ready` low, until it is idle. A write with bit 0 clear is taken and does nothing.
-  *   - Every other read-write CSR is a register of its width (JOBS and JOB_BEATS: job_width), which takes a write's low
-  *     bits when the request fires.
+  *   - Every other read-write CSR is a register of its width (JOBS and JOB_BEATS: job_width, a unit's scalar its
+  *     dtype's bits), which takes a write's low bits when the request fires. A scalar's CSRs (those with a `pin`, after
+  *     its unit's JOB_BEATS) drive `scalars`, one element per CSR in CSR order, held until the next write: the wrapper
+  *     joins a 64-bit one's two (low word first) onto its datapath pin.
   *   - Per group, from its control unit's `busy` and `done` (the done pulse, high in the run's last cycle E):
   *     - STATUS {done, busy}: done is sticky, set by the done pulse, so it reads 1 from E + 1, and cleared by an
   *       accepted start, so it reads 0 from a + 1; a set wins over a clear in the same cycle (the empty run: STATUS
@@ -46,11 +48,12 @@ class AccCsr(spec: AcceleratorSpec) extends Module {
   private val groups = spec.groups
 
   val io = IO(new Bundle {
-    val req    = Flipped(Decoupled(new CsrReq))
-    val rsp    = Decoupled(new CsrRsp)
-    val starts = MixedVec(groups.map(g => Decoupled(new GroupStart(g.jobBeats.size, spec.jobWidth))))
-    val busy   = Input(Vec(groups.size, Bool()))
-    val done   = Input(Vec(groups.size, Bool()))
+    val req     = Flipped(Decoupled(new CsrReq))
+    val rsp     = Decoupled(new CsrRsp)
+    val starts  = MixedVec(groups.map(g => Decoupled(new GroupStart(g.jobBeats.size, spec.jobWidth))))
+    val busy    = Input(Vec(groups.size, Bool()))
+    val done    = Input(Vec(groups.size, Bool()))
+    val scalars = Output(MixedVec(AccCsr.scalars(spec).map(c => UInt(c.width.W))))
   })
 
   private val reading = io.req.fire && !io.req.bits.write
@@ -130,4 +133,12 @@ class AccCsr(spec: AcceleratorSpec) extends Module {
 
   private val held = startReq.foldLeft(false.B) { case (acc, (hit, ready)) => acc || (hit && !ready) }
   io.req.ready := !answerKept && !held
+
+  for ((c, i) <- AccCsr.scalars(spec).zipWithIndex) io.scalars(i) := regs(c.offset)
+}
+
+object AccCsr {
+
+  /** The scalars' CSRs (those with a `pin`), in CSR order: `io.scalars`' elements. */
+  def scalars(spec: AcceleratorSpec): Seq[AcceleratorSpec.CsrSpec] = spec.csrs.filter(_.pin.nonEmpty)
 }

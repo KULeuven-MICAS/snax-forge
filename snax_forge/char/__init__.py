@@ -12,6 +12,10 @@ measured ``points`` (``lanes``, LinkBuffer's ``depth``, ``comb_um2`` and ``e_com
 comb energy), and the technology's ``flop`` (``area_um2``, ``e_load_fj``, ``e_hold_fj``) and
 ``ctrl.counter_factor``. ``tests/char/`` checks it against the catalogue.
 
+``DATAPATH_RENAMES`` maps a catalogue datapath to the name the table still has it under
+(``SimdLanes`` was ``ElementwiseLanes`` when CHAR measured it); it lasts until CHAR's next
+export uses the new name, and the lookup goes through it.
+
 **The lookup** of a block, its params as the generator fills them (``lanes`` and ``depth`` in
 them are ignored) and its lanes (and depth): the entry whose params equal them, then
 
@@ -21,7 +25,14 @@ them are ignored) and its lanes (and depth): the entry whose params equal them, 
                   a LinkBuffer's depth, when no point has it, is linear between the two
                   measured depths around it (at lanes 1, then copied), and found so
 
-and None for anything else: no entry with these params (a dtype other than int64, another op),
+A param the fill leaves None (an unset slot, SimdLanes' ``k`` at two streams) is not compared,
+and one the table's export predates takes the value its points were measured at
+(``TABLE_DEFAULTS``: SimdLanes' ``streams`` 2, and no slot from a CSR, ``kCsr``, ``k1Csr``
+and ``k2Csr`` false), on the entry's side and, when the caller does
+not give it, on the caller's, until the next export writes it.
+None for anything else: no entry with these params (a dtype other than int64, another op, a
+SimdLanes at one stream, whose ``inTypes`` and ``k`` no two-input point has, axpby, a slot from
+its CSR),
 lanes or depth outside the measured range (TreeAccumulate at lanes 64, SerialAccumulate at
 lanes 1, a LinkBuffer deeper than 16). None is never a refusal: the estimate counts the block as
 0 and lists it (C§19), and the design note ``char.missing`` names it (C§14).
@@ -50,6 +61,13 @@ FOUND = ("measured", "copy", "interpolate")
 L1_ACCESS_LOADS = 4
 CTRL_COMB_PER_FLOP = 1.0
 _IGNORED = ("lanes", "depth")
+# catalogue name -> the table's, until CHAR's next export uses the new name (module doc)
+DATAPATH_RENAMES = {"SimdLanes": "ElementwiseLanes"}
+# per catalogue datapath, a param the table's export predates, at the value its points were
+# measured at: SimdLanes' streams, every point a two-input one (module doc)
+TABLE_DEFAULTS: dict[str, dict[str, Any]] = {
+    "SimdLanes": {"streams": 2, "kCsr": False, "k1Csr": False, "k2Csr": False}
+}
 
 
 class CharError(CodedError):
@@ -118,8 +136,10 @@ def _at_depth(points: list[dict[str, Any]], lanes: int, depth: int | None) -> Lo
 def lookup(table: Table, datapath: str, params: Mapping[str, Any], lanes: int,
            depth: int | None = None) -> Lookup | None:  # fmt: skip
     """A block's comb area and energy per fire on ``table`` (module doc), or None."""
-    want = {k: v for k, v in params.items() if k not in _IGNORED}
-    entry = next((e for e in table.blocks.get(datapath, []) if e["params"] == want), None)
+    defaults = TABLE_DEFAULTS.get(datapath, {})
+    want = defaults | {k: v for k, v in params.items() if k not in _IGNORED and v is not None}
+    entries = table.blocks.get(DATAPATH_RENAMES.get(datapath, datapath), [])
+    entry = next((e for e in entries if defaults | e["params"] == want), None)
     if entry is None:
         return None
     points = entry["points"]
@@ -140,9 +160,11 @@ def lookup(table: Table, datapath: str, params: Mapping[str, Any], lanes: int,
 
 __all__ = [
     "CTRL_COMB_PER_FLOP",
+    "DATAPATH_RENAMES",
     "DEFAULT_TECH",
     "FOUND",
     "L1_ACCESS_LOADS",
+    "TABLE_DEFAULTS",
     "TECHS",
     "CharError",
     "Lookup",

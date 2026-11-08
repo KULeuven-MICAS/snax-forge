@@ -39,7 +39,8 @@ DESIGNS = [
     "vecadd_i32", "vecmul_i32", "vsum_tree_i32", "vecadd_i8", "vsum_tree_i8",
     "vecadd_n7", "vsum_tree_n21", "rowsum_3x7", "vecmul_i32_i64", "dot_1", "dot_1_enc",
     "dot_2", "dot_3", "dot_4", "dot_5", "dot_6",
-    "matvec_1", "matvec_2", "matvec_3", "matvec_4", "matvec_5", "matvec_6",
+    "matvec_1", "matvec_2", "matvec_3", "matvec_4", "matvec_5", "matvec_6", "relu",
+    "axpy", "axpy_baked",
 ]  # fmt: skip
 
 pytestmark = requires_submodule

@@ -3,16 +3,19 @@
     arrays(point, seed=0, kernel=None, goldens=None) -> list[Array]
     data_h(point, point_path, data=None, seed=0) -> str
 
-Every container the DMA moves (it lives in L2 and L1), in the graph's
-container order, as one C array or two:
+Every container the DMA moves (it lives in L2 and L1) and every one the
+core reads to write a CSR (a slot's container, in L2 only: axpy's ``alpha``,
+main.c writes ``alpha[0]`` into K1), in the graph's container order, as one
+C array or two:
 
     input    the kernel's ``make_inputs`` at the size the graph binds,
              seeded (the flow's own path, ``dfg.reference.kernel_inputs``),
              ``const``
-    output   zeroed (the kernel's ``inout``), the array the DMA stores into,
-             then ``<name>_golden``: the reference executor
-             (``dfg/execute.py``) on the bound graph and those
-             inputs, as the flow checks a run, ``const``
+    output   the kernel's ``inout``, the array the DMA stores into: zeroed,
+             or ``make_inputs``' value when it gives one (an in-place
+             update, axpy's ``y``, open item 47), then ``<name>_golden``: the
+             reference executor (``dfg/execute.py``) on the bound graph and
+             those inputs, as the flow checks a run, ``const``
 
 The C type is the container's dtype (``int64_t``, ``int32_t``, ``int8_t``,
 ...): the arrays hold the elements packed as NumPy lays them out, several to
@@ -32,9 +35,7 @@ byte-identical text wherever it is written.
 (``gen.dtype``), an L2 layout that is not the array's contiguous elements
 (``gen.layout``), a graph named after no kernel, an input ``make_inputs`` does
 not give or a moved container that is neither an input nor an output
-(``gen.inputs``), and an output whose
-``make_inputs`` value is not zero (``gen.inout``: an in-place update, open
-item 47).
+(``gen.inputs``).
 """
 
 from __future__ import annotations
@@ -48,7 +49,7 @@ from snax_forge.common import generated_header
 from snax_forge.design.point import DesignPoint
 from snax_forge.dfg.execute import execute
 from snax_forge.dfg.pad import pad_value, padded_shape
-from snax_forge.dfg.reference import Goldens, KernelError, kernel_inputs, kernel_spec
+from snax_forge.dfg.reference import Goldens, KernelError, kernel_inputs, kernel_spec, on_graph
 from snax_forge.lower.layout import Layout, l2_bytes, over
 
 from .blocks import GenError, port_dtype
@@ -92,6 +93,16 @@ def moved(point: DesignPoint) -> list[str]:
     return [c for c in point.graph.containers if {"l1", "l2"} <= set(lays.get(c, {}))]
 
 
+def in_data_h(point: DesignPoint) -> list[str]:
+    """data.h's containers: those the DMA moves and the slots' containers in L2 (the core
+    writes them into CSRs), in the graph's order."""
+    from snax_forge.design.streamers import slot_containers
+
+    lays, core = point.memory.layouts, slot_containers(point.graph)
+    return [c for c in point.graph.containers
+            if c in set(moved(point)) or (c in core and "l2" in lays.get(c, {}))]  # fmt: skip
+
+
 def arrays(point: DesignPoint, seed: int = 0, kernel: str | None = None,
            goldens: Goldens | None = None) -> list[Array]:  # fmt: skip
     """data.h's arrays; see the module doc. ``kernel`` names the kernel when the graph's name
@@ -102,14 +113,14 @@ def arrays(point: DesignPoint, seed: int = 0, kernel: str | None = None,
         spec = kernel_spec(kernel or graph.name, "--kernel" if kernel else "the graph's name")
         if goldens is None:
             inputs = kernel_inputs(spec, graph, seed)
-            golden = execute(graph, {k: np.copy(v) for k, v in inputs.items()})
+            golden = execute(graph, {k: np.copy(v) for k, v in on_graph(graph, inputs).items()})
         else:
             inputs, golden = goldens
     except KernelError as e:
         raise GenError("gen.inputs", str(e)) from None
     beat = point.platform.l2.beat_bits // 8
     out = []
-    for c in moved(point):
+    for c in in_data_h(point):
         cont = graph.containers[c]
         t = ctype(cont.dtype, f"container {c}")
         size = np.dtype(cont.dtype).itemsize
@@ -121,14 +132,9 @@ def arrays(point: DesignPoint, seed: int = 0, kernel: str | None = None,
             )
         padded = l2_bytes(point, c) // size
         pad = (shape, pad_value(graph, c))
-        if c in spec.inout:
-            if c in inputs and np.any(inputs[c]):
-                raise GenError(
-                    "gen.inout", f"output {c} starts nonzero in {spec.name}'s make_inputs: an "
-                    "in-place update (open item 47)",
-                )  # fmt: skip
-            out.append(_array(c, c, "output", t, np.zeros(lay.shape, cont.dtype), padded, beat,
-                              *pad))  # fmt: skip
+        if c in spec.inout:  # make_inputs' value when it gives one: an in-place update
+            start = inputs[c] if c in inputs else np.zeros(lay.shape, cont.dtype)
+            out.append(_array(c, c, "output", t, start, padded, beat, *pad))
             out.append(_array(f"{c}_golden", c, "golden", t, golden[c], padded, beat, *pad))
         elif c in inputs:
             out.append(_array(c, c, "input", t, inputs[c], padded, beat, *pad))
@@ -171,7 +177,7 @@ def array_text(a: Array) -> str:
     what = f"// {a.container}: {a.role}, {n}, {len(a.values)} padded to beats"
     head = f"{'const ' if a.const else ''}{a.ctype} {a.name}[{len(a.values)}] "
     head += f"__attribute__((aligned({a.align})))"
-    if a.role == "output":
+    if a.role == "output" and not any(a.values):
         return f"{what}\n{head} = {{0}};\n"
     vals = [literal(v, a.ctype) for v in a.values]
     lines = [", ".join(vals[i : i + PER_LINE]) for i in range(0, len(vals), PER_LINE)]

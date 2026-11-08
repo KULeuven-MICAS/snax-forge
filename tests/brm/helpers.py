@@ -6,8 +6,8 @@ notation of their own, ``test_list``: a nest is a list of logical indices,
 and a port's list must hold a multiple of its lanes when they are constant.
 
 ``affine_adder`` and ``affine_reducer`` are the same BRMs with ``affine``
-nests: a vector walked W elements per beat. ``affine_elementwise_add`` is the
-library's ``elementwise_add`` with those nests in place of its ``stream`` ones:
+nests: a vector walked W elements per beat. ``affine_simd`` is the
+library's ``simd`` with those nests in place of its ``stream`` ones:
 the BRM whose nest SNAX-LOWER's order check reads.
 """
 
@@ -36,7 +36,7 @@ if "test_list" not in NOTATIONS:
 
 
 def adder() -> dict[str, Any]:
-    """A two-input adder of the elementwise kind, every field written."""
+    """A two-input adder of the simd kind, every field written."""
     nest = list(range(8))
     return copy.deepcopy(
         {
@@ -54,12 +54,12 @@ def adder() -> dict[str, Any]:
                 ],
             },
             "function": {
-                "accel": "elementwise",
+                "accel": "simd",
                 "params": {"lanes": "W", "n_inputs": 2, "op": "op"},
                 "code": "out = a + b",
             },
             "dataflow": {"notation": "test_list", "ports": {"a": nest, "b": nest, "out": nest}},
-            "pattern": {"family": "elementwise", "attrs": {"op": "add", "arity": 2}},
+            "pattern": {"family": "simd", "attrs": {"arity": 2}},
             "implementations": {
                 "chisel_tiled_spatial": {
                     "source": "chisel",
@@ -129,11 +129,11 @@ def affine_reducer() -> dict[str, Any]:
     return copy.deepcopy(d)
 
 
-def affine_elementwise_add() -> Any:
-    """The library's elementwise_add with affine nests (see the module doc), as a Brm."""
+def affine_simd() -> Any:
+    """The library's simd with affine nests (see the module doc), as a Brm."""
     from snax_forge.brm import LIBRARY, Brm
 
-    d = json.loads((LIBRARY / "elementwise_add.json").read_text())
+    d = json.loads((LIBRARY / "simd.json").read_text())
     nest = vector_nest("n", "W")
     d["dataflow"] = {"notation": "affine", "ports": {"a": nest, "b": nest, "out": nest}}
     return Brm.from_dict(d)

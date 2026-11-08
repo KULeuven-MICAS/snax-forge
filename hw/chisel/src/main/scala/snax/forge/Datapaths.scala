@@ -2,7 +2,7 @@ package snax.forge
 
 import chisel3._
 
-import snax.forge.datapath.{DatapathModule, ElementwiseLanes, LinkBuffer, Mac, SerialAccumulate, TreeAccumulate}
+import snax.forge.datapath.{DatapathModule, LinkBuffer, Mac, SerialAccumulate, SimdLanes, TreeAccumulate}
 import snax.forge.elementwise.ElementwiseOp
 import snax.forge.shell.AcceleratorSpec
 
@@ -16,7 +16,9 @@ import snax.forge.shell.AcceleratorSpec
   *   - `inputs.dtype`: the unit's input ports' dtypes, in order (a `dtypes` param), or the first input's (a `dtype`);
   *   - `outputs.dtype`: the output port's dtype;
   *   - `inputs.lanes`: the first input port's lanes;
+  *   - `inputs.count`: the number of input ports (SimdLanes' `streams`);
   *   - `unit.opType`, `unit.params.<name>`: the unit's `opType` and its `params.<name>`;
+  *   - `unit.scalars.<slot>`: whether the unit reads that slot from its CSR (a `bool`: its `scalars` has it);
   *   - `link.depth`, `link.lanes`, `link.dtype`: a buffer's link's depth and its ends' lanes and dtype.
   *
   * A port is `"in"` or `"out"`, or `{"dir": ..., "when": {param: value, ...}}`; a pin is a name, or `{"name": ...,
@@ -29,9 +31,10 @@ import snax.forge.shell.AcceleratorSpec
   * The Python side (`snax_forge/gen/rtl.py`) checks each unit's timing and ports against it; `Emit --spec` builds from
   * the unit with `build`. A spec checks `describe` equal to `blocks.json`.
   *
-  * Param types: `int` (`min`), `bool`, `op` (one op name of `values`: ElementwiseLanes takes every ElementwiseOp,
-  * TreeAccumulate `add` only), `dtype` (an element type's NumPy name of `values`, `IntType`'s eight) and `dtypes` (a
-  * list of them).
+  * Param types: `int` (`min`), `bool`, `op` (one op name of `values`: SimdLanes takes every ElementwiseOp,
+  * TreeAccumulate `add` only), `dtype` (an element type's NumPy name of `values`, `IntType`'s eight), `dtypes` (a list
+  * of them) and `const` (an integer of any size or null, SimdLanes' `k`: null at two streams, where the unit has no
+  * such param; `const`). A `unit.params.<name>` the unit does not have fills null.
   */
 object Datapaths {
 
@@ -41,6 +44,7 @@ object Datapaths {
   case object BoolParam                   extends ParamType
   case object DtypeParam                  extends ParamType
   case object DtypesParam                 extends ParamType
+  case object ConstParam                  extends ParamType // an integer of any size, or null (unset)
 
   /** A data port: its name, its direction and the params it exists for (empty: always). */
   case class Port(name: String, dir: String, when: Seq[(String, ujson.Value)] = Seq.empty)
@@ -75,8 +79,11 @@ object Datapaths {
           case "inputs.dtype"                     => ujson.Str(inPorts.head.dtype)
           case "outputs.dtype"                    => ujson.Str(unit.port(unit.outPorts.head).dtype)
           case "inputs.lanes"                     => ujson.Num(inPorts.head.lanes)
+          case "inputs.count"                     => ujson.Num(inPorts.size)
           case "unit.opType"                      => ujson.Str(unit.opType.get)
-          case r if r.startsWith("unit.params.")  => unit.params(r.stripPrefix("unit.params."))
+          case r if r.startsWith("unit.params.")  => unit.params.getOrElse(r.stripPrefix("unit.params."), ujson.Null)
+          case r if r.startsWith("unit.scalars.") =>
+            ujson.Bool(unit.scalars.exists(_._1 == r.stripPrefix("unit.scalars.")))
           case other                              => throw new IllegalArgumentException(s"$name.$n: fill rule $other")
         }
         n -> value
@@ -115,6 +122,7 @@ object Datapaths {
           case (OpParam(vs), ujson.Str(s))   => vs.contains(s)
           case (DtypeParam, ujson.Str(s))    => dtypes.contains(s)
           case (DtypesParam, ujson.Arr(xs))  => xs.nonEmpty && xs.forall(x => x.strOpt.exists(dtypes.contains))
+          case (ConstParam, v)               => scala.util.Try(const(v)).isSuccess
           case _                             => false
         }
         if (!ok)
@@ -126,6 +134,20 @@ object Datapaths {
   def holds(when: Seq[(String, ujson.Value)], p: Map[String, ujson.Value]): Boolean =
     when.forall { case (k, v) => p.get(k).contains(v) }
 
+  /** A `const` param's value: null as None, else an integer, exact (a JSON number within ±2^53, the doubles' exact
+    * integers, or a decimal string); an `IllegalArgumentException` otherwise.
+    */
+  def const(v: ujson.Value): Option[BigInt] =
+    v match {
+      case ujson.Null => None
+      case ujson.Num(x) if x.isWhole && math.abs(x) <= Exact => Some(BigInt(x.toLong))
+      case ujson.Str(s) if s.matches("-?[0-9]+") => Some(BigInt(s))
+      case other                                 =>
+        throw new IllegalArgumentException(s"${ujson.write(other)} is not an integer exact in JSON (±2^53) or null")
+    }
+
+  private val Exact = math.pow(2, 53)
+
   private def str(p: Map[String, ujson.Value], n: String): String = p(n).str
   private def int(p: Map[String, ujson.Value], n: String): Int    = p(n).num.toInt
 
@@ -134,26 +156,48 @@ object Datapaths {
 
   val all: Seq[Datapath] = Seq(
     Datapath(
-      "ElementwiseLanes",
+      "SimdLanes",
       Seq(
         ("inTypes", DtypesParam, "inputs.dtype"),
         ("opType", DtypeParam, "unit.opType"),
         ("outType", DtypeParam, "outputs.dtype"),
         ("lanes", IntParam(1), "inputs.lanes"),
-        ("op", OpParam(ElementwiseOp.all.map(ElementwiseOp.name)), "unit.params.op")
+        ("op", OpParam(ElementwiseOp.all.map(ElementwiseOp.name) :+ SimdLanes.AxpbyName), "unit.params.op"),
+        ("streams", IntParam(1), "inputs.count"),
+        ("k", ConstParam, "unit.params.k"),
+        ("k1", ConstParam, "unit.params.k1"),
+        ("k2", ConstParam, "unit.params.k2"),
+        ("kCsr", BoolParam, "unit.scalars.k"),
+        ("k1Csr", BoolParam, "unit.scalars.k1"),
+        ("k2Csr", BoolParam, "unit.scalars.k2")
       ),
-      Seq(Port("a", "in"), Port("b", "in"), Port("out", "out")),
+      Seq(Port("a", "in"), Port("b", "in", Seq("streams" -> ujson.Num(2))), Port("out", "out")),
       ujson.Num(0),
       ujson.Num(1),
       ujson.Num(0),
-      Seq.empty,
+      Seq(
+        Pin("k", Seq("kCsr" -> ujson.Bool(true))),
+        Pin("k1", Seq("k1Csr" -> ujson.Bool(true))),
+        Pin("k2", Seq("k2Csr" -> ujson.Bool(true)))
+      ),
       p => {
-        new ElementwiseLanes(
-          p("inTypes").arr.toSeq.map(_.str),
+        val inTypes = p("inTypes").arr.toSeq.map(_.str)
+        require(
+          int(p, "streams") == inTypes.size,
+          s"streams ${int(p, "streams")} with inTypes ${inTypes.mkString(", ")}"
+        )
+        new SimdLanes(
+          inTypes,
           str(p, "opType"),
           str(p, "outType"),
           int(p, "lanes"),
-          ElementwiseOp.byName(str(p, "op"))
+          SimdLanes.opByName(str(p, "op")),
+          const(p("k")),
+          const(p("k1")),
+          const(p("k2")),
+          p("kCsr").bool,
+          p("k1Csr").bool,
+          p("k2Csr").bool
         )
       },
       Map(
@@ -161,7 +205,14 @@ object Datapaths {
         "opType"  -> ujson.Str("int32"),
         "outType" -> ujson.Str("int32"),
         "lanes"   -> ujson.Num(4),
-        "op"      -> ujson.Str("add")
+        "op"      -> ujson.Str("add"),
+        "streams" -> ujson.Num(2),
+        "k"       -> ujson.Null,
+        "k1"      -> ujson.Null,
+        "k2"      -> ujson.Null,
+        "kCsr"    -> ujson.Bool(false),
+        "k1Csr"   -> ujson.Bool(false),
+        "k2Csr"   -> ujson.Bool(false)
       )
     ),
     Datapath(
@@ -298,5 +349,6 @@ object Datapaths {
       case BoolParam       => ujson.Obj("type" -> "bool")
       case DtypeParam      => ujson.Obj("type" -> "dtype", "values" -> ujson.Arr.from(dtypes))
       case DtypesParam     => ujson.Obj("type" -> "dtypes", "values" -> ujson.Arr.from(dtypes))
+      case ConstParam      => ujson.Obj("type" -> "const")
     }
 }

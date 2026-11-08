@@ -26,9 +26,10 @@ ports on a link with no streamer (D112) and no load or store. For each group:
                  start and read. An accelerator's tasks hold its own set's
                  movers only: another accelerator's streamer is another set,
                  started by its own CSR
-    accelerator  configure ``<node>_<instance>`` with ``n``, the firing count, and its
-                 named rates; a linked group's ``<node>_<group>`` with each unit's,
-                 by unit
+    accelerator  configure ``<node>_<instance>`` with ``n``, the firing count, its
+                 named rates and each slot it reads from a container (a CSR the
+                 program writes, ``{"k1": {"from": "alpha"}}``, axpy's); a linked
+                 group's ``<node>_<group>`` with each unit's, by unit
     serial sync  when the accelerator is not the previous group's (D158):
                  ``sync`` on the previous accelerator's task, after this
                  group's configures and before its start, unless an ``after``
@@ -45,6 +46,13 @@ for the task that last put its container in L1 (a load or a writer), a
 writer for the tasks that read or wrote its container since; the waits a
 busy component needs are placed later (waits.py). Every configure uses the platform's
 ``wait_mode``; so does every sync.
+
+**In place** (open item 47). A writer whose container a reader of the same start reads
+cannot wait for that reader: they start together. It needs no wait when the reader is a
+port of its own unit and both visit the same addresses in the same order, beat by beat
+(``addresses``): every element is read before the unit writes its result back (axpy's
+``y``, every beat; a fold's seed and its write, once per job). Any other reader in the
+same start is refused by name, naming both ports.
 
 **Accelerators run in series** (D158, C§9): the groups of one accelerator (an
 encapsulated set) follow each other through their data dependences, as
@@ -220,7 +228,7 @@ def unit_firings(g: Graph, node: Node, inst: Instance) -> tuple[dict[str, Any], 
     memlets = {**node.inputs, **node.outputs}
     try:  # named rates from the loops a memlet does not use (D102), as REF and bind do
         rates = named_rates(
-            {p.name: (memlets[p.name], p.rate) for p in inst.brm.interface.ports},
+            {p.name: (memlets[p.name], p.rate) for p in inst.ports},
             [(lp.var, lp.count) for lp in loops],
             what,
         )
@@ -275,10 +283,18 @@ class _Derivation:
         starts, unit_loops = self.firings(unit_nodes)
         self.loads(unit_nodes)
         own = self.streamers(unit_nodes, starts, unit_loops)
-        self.accelerator(n, group, members, starts, own)
+        values = {u: v | self.slot_values(un) for (u, v), un in zip(starts.items(), unit_nodes,
+                                                                      strict=True)}  # fmt: skip
+        self.accelerator(n, group, members, values, own)
         self.stores(unit_nodes, own)
 
     # -- helpers ----------------------------------------------------------------------------
+
+    def slot_values(self, un: Any) -> dict[str, dict[str, str]]:
+        """A unit's slots read from a container (CSRs, ``Instance.read``), each
+        ``{"from": <container>}``, in slot order."""
+        inst = self.insts[un.attrs["instance"]]
+        return {k: {"from": un.inputs[k].data} for k in inst.read}
 
     def unit_node(self, u: str) -> Any:
         """A linked unit's one node."""
@@ -296,7 +312,7 @@ class _Derivation:
     def outer(self, un: Any) -> list[str]:
         """The node's ports with a streamer: every port not on a link."""
         u = un.attrs["instance"]
-        return [p.name for p in self.insts[u].brm.interface.ports
+        return [p.name for p in self.insts[u].ports
                 if f"{u}.{p.name}" not in self.linked_ports]  # fmt: skip
 
     def dma(self, task: str, direction: str, c: str, after: list[str]) -> None:
@@ -348,6 +364,8 @@ class _Derivation:
                   unit_loops: dict[str, list[Loop]]) -> dict[str, Configure]:  # fmt: skip
         """Each outer port's streamer task, by streamer, after what it needs in L1."""
         own: dict[str, Configure] = {}
+        # this start's reader tasks -> (their unit's node, the addresses they visit)
+        launched: dict[str, tuple[str, np.ndarray]] = {}
         for un in unit_nodes:
             u, what = un.attrs["instance"], f"node {un.id}"
             inst, loops = self.insts[u], unit_loops[u]
@@ -380,13 +398,36 @@ class _Derivation:
                 if p in un.inputs:
                     after = [self.in_l1[c]] if c in self.in_l1 else []
                     self.readers.setdefault(c, []).append(task)
+                    launched[task] = (un.id, addresses(values, sb))
                 else:
+                    readers = self.readers.pop(c, [])
+                    for r in (r for r in readers if r in launched):
+                        self.in_place(f"{what}.{p}", c, un.id, addresses(values, sb), r,
+                                      *launched[r])  # fmt: skip
                     after = [
-                        *self.readers.pop(c, []),
+                        *(r for r in readers if r not in launched),
                         *([self.in_l1[c]] if c in self.in_l1 else []),
                     ]
                 own[s.name] = Configure(task, "streamer", s.name, values, after, self.mode)
         return own
+
+    @staticmethod
+    def in_place(what: str, c: str, node: str, writes: np.ndarray, reader: str,
+                 reader_node: str, reads: np.ndarray) -> None:  # fmt: skip
+        """A writer of ``c`` whose reader ``reader`` starts with it: allowed only as an
+        in-place update, its own unit reading the same addresses in the same order (the
+        module doc, "In place")."""
+        if reader_node != node:
+            raise LowerError(
+                f"{what}: writes {c}, which {reader} (node {reader_node}) reads in the same "
+                "start; an in-place update lowers only within one unit (open item 47)"
+            )
+        if not np.array_equal(writes, reads):
+            raise LowerError(
+                f"{what}: writes {c} in place of {reader}'s read, but not the same elements in "
+                "the same order; an in-place update lowers only as the same subset over the "
+                "same firing loops (open item 47)"
+            )
 
     def accelerator(self, n: Any, group: str, members: list[str] | None,
                     starts: dict[str, dict[str, Any]], own: dict[str, Configure]) -> None:  # fmt: skip
@@ -395,7 +436,7 @@ class _Derivation:
         name = n.attrs["instance"]
         movers = []
         for unit in self.groups[accelerator_of(n)]:
-            for q in (q.name for q in self.insts[unit].brm.interface.ports):
+            for q in (q.name for q in self.insts[unit].ports):
                 s = self.point.streamers.get(streamer_name(unit, q))
                 if s is None:  # a port on a link
                     continue

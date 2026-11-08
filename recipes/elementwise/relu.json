@@ -1,15 +1,15 @@
 {
- "name": "vecmul",
- "kernel": "vecmul",
+ "name": "relu",
+ "kernel": "relu",
  "params": {"W": 4, "N": 64},
  "symbols": {"N": "N"},
  "steps": [
-  {"transform": "split_map", "params": {"map": "mult_map", "factor": "W"}},
+  {"transform": "split_map", "params": {"map": "numpy_maximum_map", "factor": "W"}},
   {
    "transform": "bind",
    "params": {
-    "node": "mult",
-    "brm": "elementwise_mul",
+    "node": "numpy_maximum",
+    "brm": "simd",
     "implementation": "chisel_tiled_spatial",
     "instance": "acc"
    }

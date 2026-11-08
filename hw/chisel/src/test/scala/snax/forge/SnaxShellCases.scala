@@ -31,7 +31,9 @@ object SnaxShellCases {
   case class Cycle(valids: Seq[Boolean], ready: Boolean, access: Access, result: Option[BigInt], status: Int)
 
   /** A case: the group's read-write CSRs (`csrs`: START, JOBS, the units'; STATUS and COUNTER follow), its unit and the
-    * widths (`job_width` for JOBS and JOB_BEATS, `counter_width` for COUNTER; 32 by default, D152).
+    * widths (`job_width` for JOBS and JOB_BEATS, `counter_width` for COUNTER; 32 by default, D152); a unit's scalar CSR
+    * (any other name, `K1`, `K1_LO`, `K1_HI`) has its own width (`NAME:W`, `scalarWidths`, else job_width); `words`,
+    * the words each started run sends the unit (JOBS, the JOB_BEATS or 1, the scalars), which snax-gvsoc's tb checks.
     */
   case class Case(
     name:         String,
@@ -40,9 +42,15 @@ object SnaxShellCases {
     ii:           Int,
     inputs:       Int,
     cycles:       Seq[Cycle],
-    jobWidth:     Int = 32,
-    counterWidth: Int = 32
+    jobWidth:     Int              = 32,
+    counterWidth: Int              = 32,
+    scalarWidths: Map[String, Int] = Map.empty,
+    words:        Seq[Seq[BigInt]] = Seq.empty
   ) {
+
+    /** The unit's scalar CSRs: every read-write CSR but START, JOBS and JOB_BEATS, in CSR order. */
+    def scalars: Seq[String] = csrs.drop(2).filter(_ != "JOB_BEATS")
+
     def status:  Int = csrs.size
     def counter: Int = csrs.size + 1
   }
@@ -62,8 +70,14 @@ object SnaxShellCases {
     var inputs         = 2
     var jobWidth       = 32
     var counterWidth   = 32
+    var scalarWidths   = Map.empty[String, Int]
+    var words          = Seq.empty[Seq[BigInt]]
     for (line <- header) line.split("\\s+").toList match {
-      case "csrs" :: "START" :: "JOBS" :: rest => csrs         = Seq("START", "JOBS") ++ rest
+      case "csrs" :: "START" :: "JOBS" :: rest =>
+        val named = rest.map(_.split(":", 2).toList)
+        csrs         = Seq("START", "JOBS") ++ named.map(_.head)
+        scalarWidths = named.collect { case n :: w :: Nil => n -> w.toInt }.toMap
+      case "words" :: ws if ws.size >= 2 => words :+= ws.map(CaseFile.number)
       case "latency" :: n :: Nil               => latency      = n.toInt
       case "ii" :: n :: Nil                    => ii           = n.toInt
       case "inputs" :: n :: Nil                => inputs       = n.toInt
@@ -96,7 +110,7 @@ object SnaxShellCases {
       }
       Cycle(valids, ready, access, result, status)
     }
-    Case(CaseFile.name(path), csrs, latency, ii, inputs, cycles, jobWidth, counterWidth)
+    Case(CaseFile.name(path), csrs, latency, ii, inputs, cycles, jobWidth, counterWidth, scalarWidths, words)
   }
 
   /** Every case of the folder `Env` names (`CaseFile.all`). */

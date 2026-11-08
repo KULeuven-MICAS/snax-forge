@@ -36,7 +36,7 @@ def stubbed(tmp_path, monkeypatch):
             f"forge counter {recipe}: 19\nforge data: 0 errors (64 words)\n"
         )
         output.write_text(
-            f"forge {recipe}: recipes/{recipe}.json on platforms/snax_forge.json\n"
+            f"forge {recipe}: {fs.find_recipe(recipe).relative_to(REPO)} on platforms/snax_forge.json\n"
             f"  bundle    out/bundle/{recipe}/: snax_forge_{recipe}_shell_wrapper, snax-forge 0123456789ab\n"
             "snax_cluster on Verilator, from snax_cluster in its pixi environment:\n"
             f"  B={b}/snax_forge.hjson\n"
@@ -79,4 +79,14 @@ def test_a_failing_forge_stops_the_set(tmp_path, stubbed, capsys):
 
 
 def test_the_full_set_holds_the_quick_one():
-    assert fs.SETS["full"][: len(fs.QUICK)] == fs.QUICK and len(fs.SETS["full"]) == 14
+    assert fs.SETS["full"][: len(fs.QUICK)] == fs.QUICK and len(fs.SETS["full"]) == 16
+    assert fs.SETS["full"][-1] == "relu" and "relu" not in fs.QUICK
+
+
+def test_every_sets_recipe_is_found_in_its_folder():
+    """forge_set takes its names through ``find_recipe``: each set's recipes are in a folder of
+    ``recipes/``, and the sets keep their names."""
+    assert fs.QUICK == ["vecadd_i32", "vsum_tree_i8", "dot_1", "dot_1_enc", "dot_4", "axpy"]
+    for name in {n for names in fs.SETS.values() for n in names}:
+        path = fs.find_recipe(name)
+        assert path.parent.parent == REPO / "recipes" and path.stem == name

@@ -4,7 +4,7 @@ Each row of A dotted with p: an elementwise product into a transient
 ``tmp0[M, N]``, then a sum over j into ``q``, so the import mirrors dot's
 (a multiply map, then a sum map whose output memlet folds with ``add``) with
 the row loop i around each. M13's B1x binds it as dot's variants with the
-row loop as the jobs (``recipes/matvec_<k>.json``).
+row loop as the jobs (``recipes/matvec/matvec_<k>.json``).
 
 int64 (D113).
 """

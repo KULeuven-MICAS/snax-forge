@@ -23,7 +23,7 @@ cursor that refuses (and the ones after it) left as redo steps. The graphs are r
 from the kernel's import, never stored. The seeded inputs (seed 0) and what step 0 computes on
 them are drawn once and every step is checked against them (run.py's ``checked_step``). The
 roots are injectable (``Roots``): sessions default to ``out/sessions/``, recipes to
-``recipes/``, step files to ``out/sandbox/``. A new session takes its kernel's or its recipe's
+``recipes/`` (its folders by category; Save writes ``custom/``), step files to ``out/sandbox/``. A new session takes its kernel's or its recipe's
 name, ``_2``, ``_3``, ... when one is taken; an opened recipe file is never written.
 
 **Changing it**, each a dict with ``ok``; a refusal changes nothing and gives its ``code`` and
@@ -63,13 +63,15 @@ name, ``_2``, ``_3``, ... when one is taken; an opened recipe file is never writ
                                            after k left as redo steps (D156); a step that
                                            refuses keeps the old params and graphs and is named
                                            by its ``index``; returns the cursor's ``checks``
-    save(name, force=False)                steps 1..k as ``<recipes>/<name>.json``, with the
+    save(name, force=False)                steps 1..k as ``<recipes>/custom/<name>.json``
+                                           (``SAVED``, made when missing), with the
                                            params those steps or the symbols use and the
                                            session's own (``used_params``), and the step
                                            files with ``recipe.json`` in ``<sandbox>/<name>/``
                                            (run.py's ``write_steps``), after the design checks on
                                            step k's graph and the platform: ``save.name`` (not
-                                           an identifier, or a recipe of that name exists),
+                                           an identifier, or a recipe of that name exists in
+                                           any folder of ``<recipes>``),
                                            ``save.graph`` (a problem of the ``graph`` stage, so
                                            the graph is not one SNAX-LOWER takes), ``save.design``
                                            (any other problem, unless ``force``); returns the
@@ -127,6 +129,8 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 from snax_forge import expr
 from snax_forge.char import DEFAULT_TECH
 from snax_forge.common import repo_root
@@ -152,6 +156,7 @@ from .transforms import TRANSFORMS, _bind_site, _bound, bind, site_of
 ROOT = repo_root()
 PLATFORM = "platforms/snax_forge.json"
 RECIPE_JSON, SESSION_JSON, EXPORT = "recipe.json", "session.json", "export"
+SAVED = "custom"  # the folder of ``<recipes>`` Save writes into
 SEED = 0
 
 # The size a kernel session's refusal suggests for a symbol without a value
@@ -455,11 +460,15 @@ class Session:
     def save(self, name: str, force: bool = False) -> dict[str, Any]:
         """Steps 1..cursor as a recipe of its own (module doc)."""
         with self._lock:
-            path = self.roots.recipes / f"{name}.json"
             if not isinstance(name, str) or not name.isidentifier():
                 return _refused("save.name", f"{name!r} is not a name (an identifier)")
-            if path.exists():
-                return _refused("save.name", f"{path} exists; a recipe is never overwritten")
+            path = self.roots.recipes / SAVED / f"{name}.json"
+            taken = sorted(self.roots.recipes.glob(f"*/{name}.json"))
+            taken += [p for p in [self.roots.recipes / f"{name}.json"] if p.exists()]
+            if taken:
+                return _refused("save.name", f"{_shown(taken[0])} exists; a recipe is never "
+                                "overwritten")  # fmt: skip
+
             g = self.graphs[self.cursor]
             problems = run_checks(Design(self.platform, g))
             listed = [str(p) for p in problems]
@@ -546,9 +555,26 @@ class Session:
             out["bind"]["list"] = bind_list(g, items[0], order)
         for name, answer in out.items():
             if answer["ok"]:
-                answer["form"] = form(name, g, answer, self.recipe.params, order)
+                answer["form"] = form(
+                    name,
+                    g,
+                    answer,
+                    self.recipe.params,
+                    order,
+                    self._kernel_inputs() if name == "bake_scalar" else None,
+                )
         self._sites[key] = out
         return out
+
+    def _kernel_inputs(self) -> dict[str, Any]:
+        """The kernel's ``make_inputs`` at seed 0 on the input graph (axpy's alpha 3), else the
+        session's seeded inputs (the reference check's)."""
+        from snax_forge.dfg.reference import KernelError, kernel_inputs, kernel_spec
+
+        try:
+            return kernel_inputs(kernel_spec(self.recipe.kernel, "editor"), self.graphs[0], SEED)
+        except (KernelError, KeyError, TypeError, ValueError):
+            return self.inputs
 
     def _checks_of(self, k: int) -> dict[str, list[dict[str, Any]]]:
         if k not in self._checks:
@@ -871,8 +897,17 @@ def fresh_param(field: str, taken: Any) -> str:
 DEFAULT_KIND = "temporal"
 
 
+# bake_scalar's value in the editor's form for a container with no seeded input
+BAKE_DEFAULT = 1
+
+
 def form(
-    name: str, g: Graph, answer: dict[str, Any], params: dict[str, Any], order: int = 1
+    name: str,
+    g: Graph,
+    answer: dict[str, Any],
+    params: dict[str, Any],
+    order: int = 1,
+    inputs: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """The fields the editor shows to apply transform ``name`` where its site accepted
     (``answer``, with the bind list for ``bind``), in the transform's param order: each
@@ -884,7 +919,9 @@ def form(
     ``readonly`` (the selection's own field) and ``choices`` where they apply: ``tag_map``'s
     kinds, ``bind``'s (BRM, implementation) pairs from the bind list with their timing and
     message (one field, ``binding``, whose ``value`` gives both params), ``encapsulate``'s
-    units (the instances in no accelerator, in the graph's order, the selection's ticked)."""
+    units (the instances in no accelerator, in the graph's order, the selection's ticked),
+    ``bake_scalar``'s value (an int literal, or ``csr``, its ``hint`` says; the container's in ``inputs``: the session gives
+    the kernel's ``make_inputs`` at seed 0, axpy's alpha 3; else ``BAKE_DEFAULT``)."""
     import inspect
 
     from snax_forge.common import fresh
@@ -903,6 +940,14 @@ def form(
             if field["value"] is None:  # a param of its own, its value beside it (C§12)
                 field["value"] = fresh_param(p, params)
             field["new_value"] = DEFAULT_INT.get(p, 1)
+        elif name == "bake_scalar" and p == "value":  # an int literal, not a param
+            seeded = (inputs or {}).get(filled.get("container"))
+            value = BAKE_DEFAULT if seeded is None else int(np.asarray(seeded).reshape(-1)[0])
+            field |= {
+                "type": "int",
+                "value": value,
+                "hint": "an int baked into the hardware, or csr: read at run time from a CSR",
+            }
         elif name == "tag_map" and p == "kind":
             field |= {"type": "choice", "value": DEFAULT_KIND,
                       "choices": [{"value": t, "label": t} for t in TAGS]}  # fmt: skip

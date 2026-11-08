@@ -1,5 +1,5 @@
 {
- "name": "dot_1_enc_dry",
+ "name": "dot_1_dry",
  "kernel": "dot",
  "params": {"N": 2048, "W_acc_1": 8, "W_acc_2": 8},
  "symbols": {"N": "N"},
@@ -11,7 +11,7 @@
    "transform": "bind",
    "params": {
     "node": "mult",
-    "brm": "elementwise_mul",
+    "brm": "simd",
     "implementation": "chisel_tiled_spatial",
     "instance": "acc_1"
    }
@@ -27,7 +27,6 @@
     "implementation": "chisel_adder_tree",
     "instance": "acc_2"
    }
-  },
-  {"transform": "encapsulate", "params": {"accelerator": "dot", "units": ["acc_1", "acc_2"]}}
+  }
  ]
 }

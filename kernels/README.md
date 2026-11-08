@@ -1,6 +1,6 @@
 # Kernels
 
-Every kernel SNAX-FORGE targets, one file each with a `KernelSpec`. The flow uses `vecadd`, `vecmul`, `vsum` and `dot` (`recipes/`). The kernels tagged `staged` are here to be read and their graphs looked at (`pixi run sdfg K`, `pixi run import-dfg K`, `pixi run view-dfg`); they are not linked to the flow. `pixi run kernels` prints each kernel's directory, tier, dtype, whether its SDFG builds and whether `import-dfg` takes it, or why not.
+Every kernel SNAX-FORGE targets, one file each with a `KernelSpec`. The flow uses `vecadd`, `vecmul`, `vsum`, `dot` and `relu` (`recipes/`). The kernels tagged `staged` are here to be read and their graphs looked at (`pixi run sdfg K`, `pixi run import-dfg K`, `pixi run view-dfg`); they are not linked to the flow. `pixi run kernels` prints each kernel's directory, tier, dtype, whether its SDFG builds and whether `import-dfg` takes it, or why not.
 
 The PolyBench and DL kernels are NPBench's DaCe sources (BSD-3, `NPBENCH_LICENSE`) with their structure kept (D113): a `return X` becomes `out[:] = X`, and a body that only runs under DaCe (it loops over symbols or calls DaCe programs) has NPBench's NumPy version as its reference (`ref`). They are `int64` where the kernel is integer arithmetic, at PolyBench's MINI sizes; `softmax`, `mlp`, `lenet` and `resnet` keep NPBench's `float32` (`float-staged`) until their tier decides the integer form. The tiers are PAPER §6.1's.
 
@@ -34,7 +34,7 @@ $$y \leftarrow y + \alpha x$$
 $$q = A p, \quad A \in \mathbb{Z}^{M \times N}$$
 
 - Written as `q[:] = np.sum(A * p, axis=1)`, so the import mirrors dot's: a multiply map into the transient `tmp0[M, N]`, then a sum map folding into `q[i]`, each inside its own row map `i` (`mult_map` ⊃ `mult_map_1` ⊃ `mult`, `sum_map` ⊃ `sum_map_1` ⊃ `sum`).
-- `recipes/matvec_<k>.json` bind it as dot's variants with the row loop tagged temporal, the jobs; `p` is read again for every row (stride 0). matvec 1 runs at 8 × 512: at 16 × 512 its `tmp0` does not fit the L1 (open item 97).
+- `recipes/matvec/matvec_<k>.json` bind it as dot's variants with the row loop tagged temporal, the jobs; `p` is read again for every row (stride 0). matvec 1 runs at 8 × 512: at 16 × 512 its `tmp0` does not fit the L1 (open item 97).
 
 ## elementwise/
 
@@ -55,6 +55,7 @@ $$B = \max(A, 0)$$
 
 - `np.maximum` becomes `max(in1, 0)`, in the expression grammar; at int32 DaCe writes the 0 as `dace.int32(0)`, a constant cast the importer folds.
 - A compare-and-select unit at II 1; `mlp`, `lenet` and `resnet` use it between layers.
+- It runs: `recipes/elementwise/relu.json` splits the map by W = 4 and binds `simd` at one stream, op max, its slot k = 0 read off the tasklet's literal and baked into the SimdLanes (C§10).
 
 ### rowsum
 
@@ -63,7 +64,7 @@ $$B = \max(A, 0)$$
 $$y_i = \sum_j A_{ij}$$
 
 - A partial reduction: the reduced axis is not the output's, so the accumulator restarts per row (T < N).
-- It runs: `recipes/rowsum.json` (adder tree, W = 4) and `recipes/rowsum_serial.json` (accumulator, W = 1) tag the row map temporal and split the column map, so T = N / W beats per sum and M sums per run (the restart, M13 B0).
+- It runs: `recipes/reduce/rowsum.json` (adder tree, W = 4) and `recipes/reduce/rowsum_serial.json` (accumulator, W = 1) tag the row map temporal and split the column map, so T = N / W beats per sum and M sums per run (the restart, M13 B0).
 - The result goes through a view, which the importer folds: the Reduce writes `y` directly.
 - `softmax`'s sum pass has this shape.
 

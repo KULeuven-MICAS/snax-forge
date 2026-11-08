@@ -2,7 +2,7 @@
 
 ``point`` writes a design point of vecadd (bound by the checked-in recipe,
 W = 4 by default), or of a given graph (``bound_vecmul``: vecmul bound by
-``recipes/vecmul.json``; ``bound_vsum``: vsum by ``recipes/vsum.json``, or at
+``recipes/elementwise/vecmul.json``; ``bound_vsum``: vsum by ``recipes/reduce/vsum.json``, or at
 another W and implementation), on
 ``platforms/snax_forge.json`` (or a given platform), in a folder that stands
 for snax-forge's root: the platform's source hjson is copied into its
@@ -36,7 +36,7 @@ from snax_forge.gen.rtl import EMITTED_JSON
 from snax_forge.gen.schemas import schema
 from snax_forge.sandbox import Recipe, apply_recipe
 from tests.design.helpers import SNAX_FORGE, bound_vecadd
-from tests.helpers import FIXTURES, REPO, SUB
+from tests.helpers import FIXTURES, REPO, SUB, recipe_path
 
 # snax_forge's source hjson (platforms/snax_forge.json's hjson), snax-forge's base cluster
 SOURCE = REPO / "platforms" / "snax_forge_cluster.hjson"
@@ -73,7 +73,7 @@ def one_unit(k: int = 0, name: str = "acc") -> Description:
     rw = [Csr("START", "rw", 0, 1), Csr("JOBS", "rw", 1, 32)]
     own = [Csr(f"F{i}", "rw", 2 + i, 32) for i in range(k)]
     ro = [Csr("STATUS", "ro", 2 + k, 2), Csr("COUNTER", "ro", 3 + k, 32)]
-    unit = Unit(name, "elementwise_add", "ElementwiseLanes",
+    unit = Unit(name, "simd", "SimdLanes",
                 {p: Port(p, "out" if p == "out" else "in", "int64", 4) for p in ("a", "b", "out")},
                 {"op": "add"}, 0, 1, own,
                 "int64")  # fmt: skip
@@ -90,8 +90,8 @@ def with_groups(desc: Description, groups: list[Group], k: int = 0) -> Descripti
 
 
 def bound_vecmul(w: int = 4) -> Graph:
-    """vecmul bound with W = ``w`` by the checked-in recipe (elementwise_mul, instance acc)."""
-    recipe = Recipe.load(REPO / "recipes" / "vecmul.json").with_params({"W": w})
+    """vecmul bound with W = ``w`` by the checked-in recipe (simd, instance acc)."""
+    recipe = Recipe.load(recipe_path("vecmul")).with_params({"W": w})
     return apply_recipe(recipe, Graph.load(FIXTURES / "vecmul.snaxdfg"))[-1].graph
 
 
@@ -101,20 +101,20 @@ def bound_dot1() -> Graph:
 
 
 def bound_dot1_enc() -> Graph:
-    """dot 1 encapsulated (``recipes/dot_1_enc.json``): groups vmul and vsum in the accelerator
+    """dot 1 encapsulated (``recipes/dot/dot_1_enc.json``): groups vmul and vsum in the accelerator
     dot, one streamer set (D148)."""
     return bound_recipe("dot_1_enc", "dot")
 
 
 def bound_recipe(recipe: str, kernel: str) -> Graph:
-    """``recipes/<recipe>.json`` applied to the kernel fixture ``<kernel>.snaxdfg``: its bound
+    """``recipes/<folder>/<recipe>.json`` applied to the kernel fixture ``<kernel>.snaxdfg``: its bound
     graph."""
-    r = Recipe.load(REPO / "recipes" / f"{recipe}.json")
+    r = Recipe.load(recipe_path(recipe))
     return apply_recipe(r, Graph.load(FIXTURES / f"{kernel}.snaxdfg"))[-1].graph
 
 
 def designed(tmp: Path, recipe: str, name: str, sets: Sequence[str] = ()) -> str:
-    """The design point of ``recipes/<recipe>.json`` (``--set`` each of ``sets``) on snax_forge,
+    """The design point of ``recipes/<folder>/<recipe>.json`` (``--set`` each of ``sets``) on snax_forge,
     made by the sandbox's and the design step's commands under ``tmp`` as the root (``root``),
     as ``out/design/<name>/design_point.json``; that path, from ``tmp``."""
     from snax_forge.design import __main__ as design_cli
@@ -124,9 +124,9 @@ def designed(tmp: Path, recipe: str, name: str, sets: Sequence[str] = ()) -> str
     root(tmp)
     with pytest.MonkeyPatch.context() as mp:
         mp.chdir(tmp)
-        args = [str(REPO / "recipes" / f"{recipe}.json"), "--out", f"out/sandbox/{name}"]
+        args = [str(recipe_path(recipe)), "--out", f"out/sandbox/{name}"]
         assert sandbox_cli.main([*args, *(a for s in sets for a in ("--set", s))]) == 0
-        steps = Recipe.load(REPO / "recipes" / f"{recipe}.json").steps  # the last: the bound graph
+        steps = Recipe.load(recipe_path(recipe)).steps  # the last: the bound graph
         last = f"out/sandbox/{name}/{len(steps)}_{steps[-1].transform}.snaxdfg"
         assert design_cli.main([last, "--platform",
                                 str(SNAX_FORGE), "--out", f"out/design/{name}"]) == 0  # fmt: skip

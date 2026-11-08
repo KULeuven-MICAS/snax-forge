@@ -43,7 +43,7 @@ def test_the_lane_fold_maps_the_nests_connectors():
         (fused().body[0], "fuse_map first"),  # the multiply alone
         (fused().body[1], "split_reduce first"),  # the fold alone
         (fused(fold="0"), "split_reduce first"),  # fused, but folding into one element
-        (fused(code="out = in1 + in2"), "is add of 2"),
+        (fused(code="out = in1 + in2"), "mult is add, the pattern mul"),
         (fused(second="out = in1 + 1"), "not a copy"),
     ],
     ids=["multiply", "fold", "one-sum", "op", "copy"],

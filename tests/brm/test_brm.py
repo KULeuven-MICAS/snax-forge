@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from snax_forge.brm import INT_DTYPES, Brm, BrmError
@@ -86,9 +88,9 @@ def test_no_implementation_is_rejected():
         Brm.from_dict(d)
 
 
-# The binding of an elementwise BRM (D129): the datapath, its args, the nest controller
+# The binding of a simd BRM (D129): the datapath, its args, the nest controller
 BINDING = {
-    "datapath": "ElementwiseLanes",
+    "datapath": "SimdLanes",
     "args": {"lanes": "W", "op": "op"},
     "controller": "counted",
 }
@@ -279,3 +281,131 @@ def test_function_code_is_stored_canonical():
     d = adder()
     d["function"]["code"] = "out=(a+b)"
     assert Brm.from_dict(d).function.code == "out = a + b"
+
+
+# =============================================================================
+# function.code as a table: one code per design-param value (simd's op)
+# =============================================================================
+
+
+def two_ops() -> dict:
+    """adder() computing add or mul by its op, a code entry each."""
+    d = adder()
+    d["interface"]["params"]["op"]["values"] = ["add", "mul"]
+    d["function"]["code"] = [
+        {"params": {"op": "add"}, "code": "out=(a+b)"},
+        {"params": {"op": "mul"}, "code": "out = a * b"},
+    ]
+    return d
+
+
+def test_a_code_table_is_stored_canonical_and_round_trips():
+    b = Brm.from_dict(two_ops())
+    assert [(e.params, e.code) for e in b.function.entries()] == [
+        ({"op": "add"}, "out = a + b"), ({"op": "mul"}, "out = a * b")]  # fmt: skip
+    assert b.to_dict()["function"]["code"] == [
+        {"params": {"op": "add"}, "code": "out = a + b"},
+        {"params": {"op": "mul"}, "code": "out = a * b"},
+    ]
+    assert Brm.from_dict(b.to_dict()) == b and Brm.from_dict(json.loads(b.to_json())) == b
+    assert b.code_for({"W": 4, "op": "mul"}) == "out = a * b"
+    assert b.code_for({"W": 4, "op": "sub"}) is None
+
+
+def test_a_plain_code_is_one_entry_without_params():
+    b = Brm.from_dict(adder())
+    assert [(e.params, e.code) for e in b.function.entries()] == [({}, "out = a + b")]
+    assert b.code_for({"W": 4, "op": "add"}) == "out = a + b"
+    assert b.to_dict()["function"]["code"] == "out = a + b"
+
+
+@pytest.mark.parametrize(
+    ("edit", "message"),
+    [
+        (lambda c: c.clear(), r"function.code: must be a string, a non-empty list"),
+        (lambda c: c[0]["params"].update(W=4, K=1), r"code\[0\].params.K: not a design param"),
+        (lambda c: c[1]["params"].update(op="sub"),
+         r"code\[1\].params.op: 'sub' is not an allowed value \(\['add', 'mul'\]\)"),
+        (lambda c: c[1]["params"].update(op=2), r"code\[1\].params.op: 2 is not an allowed value"),
+        (lambda c: c[1].update(code="out = a / b"), r"code\[1\].code.*Div is not allowed"),
+        (lambda c: c[0].pop("params"), r"code\[0\]"),
+        (lambda c: c[0].update(when=1), r"code\[0\]"),
+        (lambda c: c[0].update(params=[]), r"code\[0\].params: must be an object"),
+    ],
+)  # fmt: skip
+def test_a_bad_code_table_is_rejected(edit, message):
+    d = two_ops()
+    edit(d["function"]["code"])
+    with pytest.raises(BrmError, match=message):
+        Brm.from_dict(d)
+
+
+# =============================================================================
+# Ports with when, unset params, slots
+# =============================================================================
+
+
+def one_or_two() -> dict:
+    """adder() on one stream or two: b only at two, the one-stream entry over the slot k."""
+    d = adder()
+    params = d["interface"]["params"]
+    params["streams"] = {"stage": "design", "type": "int", "default": 2, "values": [1, 2]}
+    params["k"] = {"stage": "design", "type": "int", "default": None, "values": None}
+    d["interface"]["ports"][1]["when"] = {"streams": 2}
+    d["function"]["code"] = [
+        {"params": {"op": "add", "streams": 2}, "code": "out = a + b"},
+        {"params": {"op": "add", "streams": 1}, "code": "out = a + k"},
+    ]
+    return d
+
+
+def test_a_port_with_when_round_trips_and_is_written_only_when_set():
+    d = one_or_two()
+    b = Brm.from_dict(d)
+    assert b.to_dict() == d and Brm.from_dict(json.loads(b.to_json())) == b
+    assert b.interface.ports[1].when == {"streams": 2}
+    assert "when" not in b.to_dict()["interface"]["ports"][0]
+    assert [p.name for p in b.present({"streams": 1})] == ["a", "out"]
+    assert [p.name for p in b.present({"streams": 2})] == ["a", "b", "out"]
+
+
+def test_an_unset_param_is_left_out_of_the_instance():
+    """k has no default: unset unless given, and no instance's params hold it; its ports are
+    the ones present at its params."""
+    b = Brm.from_dict(one_or_two())
+    inst = b.resolve("chisel_tiled_spatial")
+    assert inst.params == {"W": 4, "op": "add", "streams": 2}
+    assert [p.name for p in inst.ports] == ["a", "b", "out"]
+    one = b.resolve("chisel_tiled_spatial", {"streams": 1, "k": -3})
+    assert one.params == {"W": 4, "op": "add", "streams": 1, "k": -3}
+    assert [p.name for p in one.ports] == ["a", "out"]
+
+
+def test_a_slot_is_an_int_design_param_the_entry_names():
+    b = Brm.from_dict(one_or_two())
+    assert [b.slots(e) for e in b.function.entries()] == [[], ["k"]]
+
+
+@pytest.mark.parametrize(
+    ("edit", "message"),
+    [
+        (lambda d: d["interface"]["ports"][1].update(when={"n": 2}),
+         r"port 'b'.when.n: not a design param"),
+        (lambda d: d["interface"]["ports"][1].update(when={"lanes": 2}),
+         r"port 'b'.when.lanes: not a design param"),
+        (lambda d: d["interface"]["ports"][1].update(when={"streams": 3}),
+         r"port 'b'.when.streams: 3 is not an allowed value \(\[1, 2\]\)"),
+        (lambda d: d["interface"]["ports"][1].update(when={}), r"port 'b'.when: must be a non-empty"),
+        (lambda d: d["function"]["code"][1].update(code="out = a + b"),
+         r"code\[1\].code: reads 'b', a port not present at op = 'add', streams = 1"),
+        (lambda d: d["function"]["code"][0].update(code="out = a + q"),
+         r"code\[0\].code: 'q' is not an input present at op = 'add', streams = 2, nor a slot"),
+        (lambda d: d["function"]["code"][1].update(code="out = a + op"),
+         r"code\[1\].code: 'op' is not an input present at .*nor a slot"),
+    ],
+)  # fmt: skip
+def test_a_bad_when_or_slot_is_rejected(edit, message):
+    d = one_or_two()
+    edit(d)
+    with pytest.raises(BrmError, match=message):
+        Brm.from_dict(d)
