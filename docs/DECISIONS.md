@@ -111,7 +111,7 @@ Retired, and where each now lives:
 
 **D85** · design — Design checks report every problem before anything is written, each with its fix. A limit of the model's cluster is a platform field a check holds the design to, so a design is refused before the run would assert: the TCDM crossbar's inputs (`l1.max_xbar_inputs`, SNAX-GVSoC's 64). → C§13, C§14.
 
-**D86** · design — The memory plan comes from registered residency, layout and placement passes, contiguous by default, with pins, seeing each port's element-index stream to avoid bank conflicts without a run; the L2 base is the program's link (its ELF's symbols, D50). → C§15.
+**D86** · design — The memory plan comes from registered residency, layout and placement passes, contiguous by default, with pins, seeing each port's element-index stream to avoid bank conflicts without a run (`padded_rows`, chosen with a `--set`, never in a recipe); the L2 base is the program's link (its ELF's symbols, D50). → C§15.
 
 **D87** · design — `design_point.json` holds the bound graph, the platform, the resolved streamers and the memory plan; it is checked again on load and is SNAX-LOWER's and the generator's only input. → C§15.
 
@@ -187,9 +187,9 @@ Retired, and where each now lives:
 
 **D148** · dfg — A bound graph nests accelerator ⊃ groups ⊃ units and links: a group is a stand-alone accelerator (its own START, JOBS, STATUS, COUNTER and control unit), which may hold several units joined by links and is still one accelerator; each accelerator is one streamer set of the design's entry (D157), and `encapsulate` puts several groups on one streamer set, sharing its start. `link` merges two bound units' groups, their transient becoming a link; a group is its own accelerator until `encapsulate` puts several in one (both undone by inverses): dot 1 is two accelerators, `vmul` and `vsum`, which the core drives one after the other; `dot_1_enc` encapsulates them as `dot`; dot 2–6 one group of two units. → C§11, C§12.
 
-**D149** · brm — The MAC is one block with design-time variants (`accumulate`, or a·b + c with `regOut` for a later systolic PE; no `regIn`), not vmul into a lane accumulator. The one-lane vsum is `SerialAccumulate` (`span` = lanes), not a serializer link; a buffer is `LinkBuffer`, not a FIFO. → C§17.
+**D149** · brm — The MAC is one block with design-time variants (`accumulate`, or a·b + c with `regOut` for a later systolic PE; no `regIn`), not vmul into a lane accumulator; the lane accumulator without an op is its own block, `LaneAccumulate` (rowsum 2). The one-lane vsum is `SerialAccumulate` (`span` = lanes), not a serializer link; a buffer is `LinkBuffer`, not a FIFO. → C§17.
 
-**D150** · dfg — The mapping is spelled step by step: `split_reduce`, `fuse_map` (a fold, or a plain second tasklet composed into one code) and `link`, each with its inverse, one recipe per variant, instead of binding a group of tasklets in one step. `bind` refuses with the fix named ("fuse_map first", "split_reduce first"). → C§11, C§12.
+**D150** · dfg — The mapping is spelled step by step: `split_reduce`, `fuse_map` (a fold, or a plain second tasklet composed into one code), `interchange_map` (two maps of a perfect nest trade places) and `link`, each with its inverse, one recipe per variant, instead of binding a group of tasklets in one step. `bind` refuses with the fix named ("fuse_map first", "split_reduce first"). → C§11, C§12.
 
 **D152** · scope — `<tag>_csr` is the accelerator's interface, what an HLS block leaves to its driver, so `<tag>_ctrl` and `<tag>_datapath` compare with the whole HLS block: START a strobe that reads 0, STATUS's done bit and COUNTER kept there from ctrl's busy and done pulse, and every CSR at its width, the platform's `acc_csr` (JOBS and JOB_BEATS job_width, a saturating COUNTER counter_width). → C§13, C§17.
 
