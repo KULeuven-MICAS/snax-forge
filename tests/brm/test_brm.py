@@ -36,7 +36,7 @@ def test_sparse_file_takes_defaults_and_writes_them():
     assert b.interface.ports[0].dtypes == list(INT_DTYPES)
     assert d["pattern"] == {"family": "reduce", "attrs": {}}
     assert d["function"]["code"] is None  # a reduction cannot say it per lane yet (D82)
-    impl = d["implementations"]["chisel_accumulator"]
+    impl = d["implementations"]["chisel_adder_tree"]
     assert impl["supports"] == {} and impl["binding"] is None
     assert Brm.from_dict(d) == b
 

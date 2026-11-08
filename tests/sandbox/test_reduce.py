@@ -124,9 +124,9 @@ def test_the_sum_folds_every_lane_into_one():
     }
 
 
-def test_the_chisel_accumulator_takes_one_lane():
-    """The serial accumulator: the sum map split by 1, bound to chisel_accumulator (W = 1)."""
-    g = bind(split_sum(1), **SUM | {"implementation": "chisel_accumulator"})
+def test_the_adder_tree_takes_one_lane():
+    """The sum map split by 1, bound to the adder tree at W = 1 (vsum's)."""
+    g = bind(split_sum(1), **SUM)
     assert g.node("sum").attrs["params"] == {"W": 1, "op": "add"}
     x = dot_inputs(seed=5)
     assert execute(g, x)["out"].tolist() == [int(x["A"] @ x["B"])]
@@ -166,7 +166,6 @@ REJECTED = [
         SUM,
         "starts from 5, the BRM from add's identity 0",
     ),
-    (split_sum, SUM | {"implementation": "chisel_accumulator"}, "W = 4 not supported"),
     (split_sum, SUM | {"brm": "simd"}, "the tasklet computes 'out = a' on the BRM's ports"),
     (lambda: split_map(imported(), "mult_map", 4), MUL | {"brm": "accumulate"}, "reduce folds one"),
 ]

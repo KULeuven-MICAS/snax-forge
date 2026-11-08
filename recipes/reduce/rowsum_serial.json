@@ -11,7 +11,7 @@
    "params": {
     "node": "sum",
     "brm": "accumulate",
-    "implementation": "chisel_accumulator",
+    "implementation": "chisel_serial",
     "instance": "acc"
    }
   }

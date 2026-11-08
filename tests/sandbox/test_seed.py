@@ -88,7 +88,7 @@ def test_fuse_seed_takes_the_elementwise_nest_and_the_transient():
         lambda: fuse_seed(tagged(matvec_acc()), FOLD, EW),
         lambda: bind(fuse_seed(tagged(matvec_acc()), FOLD, EW), node="sum", **TREE),
         lambda: bind(fuse_seed(tagged(matvec_acc(), 1), FOLD, EW), node="sum", **TREE
-                     | {"implementation": "chisel_accumulator"}),
+                     | {"implementation": "chisel_adder_tree"}),
         lambda: bind(fuse_seed(tagged(matvec_acc()), FOLD, EW), node="sum", **TREE
                      | {"implementation": "chisel_serial"}),
         lambda: split_reduce(fuse_seed(matvec_acc(), FOLD, EW), FOLD, 2),

@@ -154,7 +154,7 @@ def test_task_nest_of_the_adder():
 
 
 def test_reducer_output_beats_follow_the_rate():
-    inst = Brm.from_dict(affine_reducer()).resolve("chisel_accumulator", {"W": 4})
+    inst = Brm.from_dict(affine_reducer()).resolve("chisel_adder_tree", {"W": 4})
     assert task_nest(inst, "a", {"n": 8, "T": 4}).n_beats == 8
     assert task_nest(inst, "out", {"n": 8, "T": 4}).n_beats == 2
 
@@ -211,7 +211,7 @@ def test_beats_must_be_n_over_rate():
     _nest(d)["shape"] = ["(n + 1) * W"]
     with pytest.raises(ValueError, match="gives 17 beats, need n / rate = 16"):
         task_nest(Brm.from_dict(d).resolve(IMPL), "a", {"n": 16})
-    inst = Brm.from_dict(affine_reducer()).resolve("chisel_accumulator", {"W": 4})
+    inst = Brm.from_dict(affine_reducer()).resolve("chisel_adder_tree", {"W": 4})
     with pytest.raises(ValueError, match="not a multiple of the rate 4"):
         task_nest(inst, "out", {"n": 6, "T": 4})
 

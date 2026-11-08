@@ -43,7 +43,7 @@ $$q = A p, \quad A \in \mathbb{Z}^{M \times N}$$
 $$q \mathrel{+}= A p, \quad A \in \mathbb{Z}^{M 	imes N}$$
 
 - Written as `q += np.sum(A * p, axis=1)`: matvec's two nests, the sum folding into the transient `tmp1[m]`, then the elementwise `q[m] = q[m] + tmp1[m]` (`augassign_19_4_map`), which `fuse_seed` takes into the fold as its seed, read once per row.
-- `recipes/matvec/matvec_seed.json` (adder tree) and `matvec_seed_serial.json` (one lane, `chisel_accumulator`) bind it at 8 × 512, W = 4.
+- `recipes/matvec/matvec_seed.json` (adder tree) and `matvec_seed_serial.json` (`chisel_serial`, SerialAccumulate) bind it at 8 × 512, W = 4.
 
 ## elementwise/
 

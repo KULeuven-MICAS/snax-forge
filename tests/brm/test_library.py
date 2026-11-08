@@ -70,11 +70,13 @@ def test_the_brms_are_bound():
         assert brm.resolve(IMPL, given).params == {"W": 4, **given}
     assert ELEMENTWISE_OP["mul"] == 2
     acc = load_brm("accumulate").implementations
-    assert acc["chisel_accumulator"].binding == {
+    assert list(acc) == ["chisel_adder_tree", "chisel_serial"]  # one name per datapath
+    assert acc["chisel_adder_tree"].binding == {
         "datapath": "TreeAccumulate", "args": {"lanes": "W"}, "controller": "counted",
         "ports": {"a": "in", "seed": "seed", "out": "out"},
     }  # fmt: skip
-    assert acc["chisel_adder_tree"].binding == acc["chisel_accumulator"].binding
+    assert acc["chisel_serial"].binding == acc["chisel_adder_tree"].binding | {
+        "datapath": "SerialAccumulate"}  # fmt: skip
 
 
 def test_unknown_name():
@@ -219,7 +221,7 @@ def test_unit_brms_are_in_the_stream_notation(name):
     assert brm.dataflow.notation == "stream" and memlet_ordered(brm)
     assert brm.dataflow.ports == {p.name: {} for p in brm.interface.ports}
     for impl in brm.implementations:
-        brm.resolve(impl, {"W": 1} if impl == "chisel_accumulator" else {})
+        brm.resolve(impl, {})
 
 
 @pytest.mark.parametrize("streams", [2, 1])
@@ -279,18 +281,17 @@ def test_the_adder_tree_folds_four_lanes_into_one():
     assert (inst.latency, inst.initiation_interval) == (1, 1)
 
 
-def test_the_chisel_accumulator_declares_its_drain():
-    """One lane, drain 0."""
+def test_the_adder_tree_at_one_lane_declares_its_drain():
+    """The adder tree at W = 1 (vsum's), drain 0 as at any W; the serial accumulator too."""
     brm = load_brm("accumulate")
-    inst = brm.resolve("chisel_accumulator", {"W": 1})
+    inst = brm.resolve("chisel_adder_tree", {"W": 1})
     assert (inst.latency, inst.initiation_interval, inst.drain) == (1, 1, 0)
     assert function_params(inst) == {"lanes": 1, "lanes_out": 1, "op": "add"}
-    assert brm.resolve("chisel_adder_tree").drain == 0
-    with pytest.raises(BrmError, match="W = 4 not supported"):
-        brm.resolve("chisel_accumulator", {"W": 4})
+    assert brm.resolve("chisel_adder_tree").drain == brm.resolve("chisel_serial").drain == 0
 
 
-@pytest.mark.parametrize(("impl", "w"), [("chisel_adder_tree", 4), ("chisel_accumulator", 1)])
+@pytest.mark.parametrize(("impl", "w"), [("chisel_adder_tree", 4), ("chisel_adder_tree", 1),
+                                         ("chisel_serial", 4)])  # fmt: skip
 def test_accumulate_code_folded_agrees_with_its_kind(impl, w):
     """``out = a`` folded with the pattern's op over every lane of T beats is what the kind gives."""
     from snax_forge.dfg import REDUCE_OPS

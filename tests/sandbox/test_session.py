@@ -367,8 +367,6 @@ def test_the_bind_list_of_dot_4s_final_sum(roots):
     assert s.recipe.steps[2].transform == "fuse_map"
     entries = s.sites(3, "sum_final")["bind"]["list"]
     assert _ok(entries) == [("accumulate", "chisel_adder_tree"), ("accumulate", "chisel_serial")]
-    (acc,) = [e for e in entries if e["implementation"] == "chisel_accumulator"]
-    assert not acc["ok"] and "W" in acc["message"]
 
 
 # =============================================================================
