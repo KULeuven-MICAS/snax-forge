@@ -23,7 +23,7 @@ def test_a_link_takes_tmp0_out_of_l1():
     assert traffic == [(1536, 513), (1024, 1)]
     assert (one.l1_footprint, two.l1_footprint, one.l1_size) == (12296, 8200, 128 * 1024)
     assert (two.containers["tmp0"].placement, two.containers["tmp0"].depth) == ("link", 1)
-    assert two.ports["mul.a"].to_dict() == {"container": "A", "loops": [["i_t", 128]],
+    assert two.ports["mul.a"].to_dict() == {"container": "A", "loops": [["n_1_t", 128]],
                                             "beats": 128, "num_ch": 4}  # fmt: skip
     assert [(g.channels, g.words_per_cycle) for g in two.groups] == [(9, 1025 / 130)]
 
