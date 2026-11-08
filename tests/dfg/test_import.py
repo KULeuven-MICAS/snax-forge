@@ -68,7 +68,9 @@ def test_a_stored_sdfg_gives_the_same_graph(vecadd_sdfg, tmp_path):
     assert import_sdfg(dace.SDFG.from_file(path), "vecadd") == Graph.load(fixture("vecadd"))
 
 
-@pytest.mark.parametrize("kernel", ["vecadd", "dot", "vecmul", "vsum", "relu", "axpy"])
+@pytest.mark.parametrize(
+    "kernel", ["vecadd", "dot", "vecmul", "vsum", "relu", "axpy", "matvec_acc"]
+)
 def test_cli_writes_the_fixture(tmp_path, capsys, kernel):
     """vecmul is vecadd with ``*`` (the map and tasklet named after Mult); vsum is dot's sum
     map on its own, the Reduce folding A into out[0] with add."""

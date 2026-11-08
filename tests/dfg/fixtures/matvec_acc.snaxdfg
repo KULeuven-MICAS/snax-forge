@@ -1,0 +1,79 @@
+{
+ "name": "matvec_acc",
+ "symbols": {"M": null, "N": null},
+ "containers": {
+  "A": {"shape": ["M", "N"], "dtype": "int64", "transient": false, "attrs": {}},
+  "p": {"shape": ["N"], "dtype": "int64", "transient": false, "attrs": {}},
+  "q": {"shape": ["M"], "dtype": "int64", "transient": false, "attrs": {}},
+  "tmp0": {"shape": ["M", "N"], "dtype": "int64", "transient": true, "attrs": {}},
+  "tmp1": {"shape": ["M"], "dtype": "int64", "transient": true, "attrs": {}}
+ },
+ "body": [
+  {
+   "id": "mult_map",
+   "kind": "map",
+   "inputs": {},
+   "outputs": {},
+   "attrs": {"var": "m", "range": "0:M", "loop.dim": "m", "loop.piece": 1},
+   "body": [
+    {
+     "id": "mult_map_1",
+     "kind": "map",
+     "inputs": {},
+     "outputs": {},
+     "attrs": {"var": "n", "range": "0:N", "loop.dim": "n", "loop.piece": 1},
+     "body": [
+      {
+       "id": "mult",
+       "kind": "tasklet",
+       "inputs": {"in1": {"data": "A", "subset": ["m", "n"]}, "in2": {"data": "p", "subset": ["n"]}},
+       "outputs": {"out": {"data": "tmp0", "subset": ["m", "n"]}},
+       "attrs": {"code": "out = in1 * in2"}
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "sum_map",
+   "kind": "map",
+   "inputs": {},
+   "outputs": {},
+   "attrs": {"var": "m", "range": "0:M", "loop.dim": "m", "loop.piece": 1},
+   "body": [
+    {
+     "id": "sum_map_1",
+     "kind": "map",
+     "inputs": {},
+     "outputs": {},
+     "attrs": {"var": "n", "range": "0:N", "loop.dim": "n", "loop.piece": 1},
+     "body": [
+      {
+       "id": "sum",
+       "kind": "tasklet",
+       "inputs": {"in1": {"data": "tmp0", "subset": ["m", "n"]}},
+       "outputs": {"out": {"data": "tmp1", "subset": ["m"], "reduce": {"op": "add", "identity": 0}}},
+       "attrs": {"code": "out = in1"}
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "augassign_19_4_map",
+   "kind": "map",
+   "inputs": {},
+   "outputs": {},
+   "attrs": {"var": "m", "range": "0:M", "loop.dim": "m", "loop.piece": 1},
+   "body": [
+    {
+     "id": "augassign_19_4",
+     "kind": "tasklet",
+     "inputs": {"in1": {"data": "q", "subset": ["m"]}, "in2": {"data": "tmp1", "subset": ["m"]}},
+     "outputs": {"out": {"data": "q", "subset": ["m"]}},
+     "attrs": {"code": "out = in1 + in2"}
+    }
+   ]
+  }
+ ]
+}
