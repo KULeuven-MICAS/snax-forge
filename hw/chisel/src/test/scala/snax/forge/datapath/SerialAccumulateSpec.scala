@@ -12,7 +12,9 @@ import snax.forge.elementwise.ElementwiseModel
   * too, whose lane pin is 0 bits), int64 and int32 into themselves or int64, signed and unsigned; the partials (-13, 6)
   * of snax-gvsoc's vectors: -13, then -7; and jobs of a run-time T (1 to 4 beats) of random int64 at 1, 2, 4 and 8
   * lanes, read lane by lane as its control unit reads them (`first` high on a job's first beat, so high and low at lane
-  * 0, idle cycles between reads), each job's sum against the sum of its elements.
+  * 0, idle cycles between reads), each job's sum against the sum of its elements. Seeded (D149, B2 R5), at 1, 2 and 4
+  * lanes: jobs read lane by lane with random gaps, a random seed each, added on the job's first beat's last lane (the
+  * read that fires it), each job's sum against its seed plus its elements.
   */
 class SerialAccumulateSpec extends AnyFlatSpec with ForgeTester {
 
@@ -51,6 +53,39 @@ class SerialAccumulateSpec extends AnyFlatSpec with ForgeTester {
             assert(
               LaneBits.signed(LaneBits.peek(dut.io.out), 64) == LaneBits.signed(want & LaneBits.mask(64), 64),
               s"int64, $lanes lanes, job $job of $t beats"
+            )
+          }
+        }
+      }
+    }
+
+  for (seed <- Seeds())
+    it should s"add each job's seed on its first beat's last lane at 1, 2 and 4 lanes (seed $seed)" in Seeds.run(
+      seed
+    ) { r =>
+      for (lanes <- Seq(1, 2, 4)) {
+        test(new SerialAccumulate("int64", "int64", lanes, seed = true)) { dut =>
+          for (job <- 0 until 6) {
+            val t     = r.between(1, 4)
+            val q     = r.word(64)
+            val beats = Seq.fill(t)(Seq.fill(lanes)(r.word(64)))
+            for {
+              (beat, b) <- beats.zipWithIndex
+              lane      <- 0 until lanes
+            } {
+              while (r.chance(0.2)) {
+                dut.io.read.poke(false.B); LaneBits.poke(dut.io.seed.get, r.word(64)); dut.clock.step()
+              }
+              beat.zipWithIndex.foreach { case (v, l) => LaneBits.poke(dut.io.in(l), v) }
+              LaneBits.poke(dut.io.seed.get, if (b == 0) q else r.word(64)) // held while the first beat is read
+              dut.io.read.poke(true.B); dut.io.lane.poke(lane.U); dut.io.first.poke((b == 0).B)
+              dut.clock.step()
+            }
+            dut.io.read.poke(false.B)
+            val want = (LaneBits.signed(q, 64) + beats.flatten.map(LaneBits.signed(_, 64)).sum) & LaneBits.mask(64)
+            assert(
+              LaneBits.peek(dut.io.out) == want,
+              s"int64 seeded, $lanes lanes, job $job of $t beats"
             )
           }
         }

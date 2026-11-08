@@ -110,7 +110,7 @@ def test_the_fill_rule_gives_the_datapaths_params(vecadd, tmp_path):
     )
     (v,) = vsum.groups[0].units
     assert fill(vsum, v, catalogue()["TreeAccumulate"]) == {
-        "inType": "int64", "outType": "int64", "lanes": 1, "op": "add"
+        "inType": "int64", "outType": "int64", "lanes": 1, "op": "add", "seed": False
     }  # fmt: skip
 
 
@@ -331,7 +331,7 @@ def test_a_narrow_fold_into_int64_is_filled(tmp_path, recipe, dtype):
     (u,) = acc.groups[0].units
     params = fill(acc, u, catalogue()["TreeAccumulate"])
     assert params == {"inType": dtype, "outType": "int64", "lanes": params["lanes"],
-                      "op": "add"}  # fmt: skip
+                      "op": "add", "seed": False}  # fmt: skip
 
 
 # =============================================================================
@@ -494,3 +494,19 @@ def test_axpys_unit_fills_k1_from_its_csr_and_k1_is_a_live_pin(tmp_path):
         check_unit(acc, u, catalogue())
     with pytest.raises(GenError, match=r"scalar k3 is no pin of SimdLanes here \(\[\]\)"):
         check_unit(acc, replace(u, scalars={"k3": "int32"}), catalogue())
+
+
+@pytest.mark.parametrize(("recipe", "datapath"), [("matvec_seed", "TreeAccumulate"),
+                                                  ("matvec_seed_serial", "SerialAccumulate")])  # fmt: skip
+def test_a_seeded_fold_fills_seed_and_its_seed_port_is_live(tmp_path, recipe, datapath):
+    """matvec_seed's sum (B2 R5, D149): the catalogue's fill rule unit.ports.seed gives seed true,
+    and the datapath's port seed is live on it, so the unit passes check_unit; the mul's simd
+    and an unseeded fold keep their params."""
+    acc = accelerator_spec(tmp_path / designed(tmp_path, recipe, recipe), tmp_path)
+    (sum_,) = [u for g in acc.groups for u in g.units if u.name == "sum"]
+    sig = catalogue()[datapath]
+    params = fill(acc, sum_, sig)
+    assert params["seed"] is True and params["lanes"] == (4 if recipe == "matvec_seed" else 1)
+    assert set(live(sig["ports"], params)) == {"in", "seed", "out"}
+    assert set(live(sig["ports"], params | {"seed": False})) == {"in", "out"}
+    check_unit(acc, sum_, catalogue())

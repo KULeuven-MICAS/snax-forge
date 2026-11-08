@@ -15,7 +15,7 @@ from snax_forge.gen import block as block_mod
 from snax_forge.gen.block import check_entry, emit_blocks, main
 from snax_forge.gen.rtl import EMITTED_JSON
 
-TREE = {"inType": "int64", "outType": "int64", "lanes": 8, "op": "add"}
+TREE = {"inType": "int64", "outType": "int64", "lanes": 8, "op": "add", "seed": False}
 MAC = {"inTypes": ["int64", "int64"], "opType": "int64", "outType": "int64", "lanes": 1,
        "accumulate": True, "regOut": False}  # fmt: skip
 

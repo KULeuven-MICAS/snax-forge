@@ -11,7 +11,17 @@ object SnaxGroupCases {
 
   val Env = "SNAX_GVSOC_GROUP_CASES"
 
-  case class UnitLine(name: String, datapath: String, latency: Int, ii: Int, span: Int, t: Int, inputs: Int)
+  /** A unit line; `seed`, its last outer input a fold's seed, one beat per job (`seed 1`, D149). */
+  case class UnitLine(
+    name:     String,
+    datapath: String,
+    latency:  Int,
+    ii:       Int,
+    span:     Int,
+    t:        Int,
+    inputs:   Int,
+    seed:     Boolean = false
+  )
 
   /** A cycle line: the outer inputs' valids (unit by unit), the output's ready; per unit fire and give; per buffer its
     * occupancy after the cycle; busy.
@@ -56,8 +66,9 @@ object SnaxGroupCases {
     var lanes          = 0
     var data           = Map.empty[String, Seq[BigInt]]
     for (line <- header) line.split("\\s+").toList match {
-      case "unit" :: n :: d :: "latency" :: l :: "ii" :: ii :: "span" :: s :: "t" :: t :: "inputs" :: i :: Nil =>
-        units :+= UnitLine(n, d, l.toInt, ii.toInt, s.toInt, t.toInt, i.toInt)
+      case "unit" :: n :: d :: "latency" :: l :: "ii" :: ii :: "span" :: s :: "t" :: t :: "inputs" :: i :: seed
+          if seed.isEmpty || seed == List("seed", "0") || seed == List("seed", "1") =>
+        units :+= UnitLine(n, d, l.toInt, ii.toInt, s.toInt, t.toInt, i.toInt, seed == List("seed", "1"))
       case "link" :: f :: t :: "depth" :: d :: Nil     => links :+= LinkLine(f, t, d.toInt)
       case "jobs" :: j :: Nil                          => jobs  = j.toInt
       case "start" :: c :: a :: Nil                    => start = (c.toInt, a)

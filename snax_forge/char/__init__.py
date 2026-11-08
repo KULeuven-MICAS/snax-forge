@@ -28,7 +28,8 @@ them are ignored) and its lanes (and depth): the entry whose params equal them, 
 A param the fill leaves None (an unset slot, SimdLanes' ``k`` at two streams) is not compared,
 and one the table's export predates takes the value its points were measured at
 (``TABLE_DEFAULTS``: SimdLanes' ``streams`` 2, and no slot from a CSR, ``kCsr``, ``k1Csr``
-and ``k2Csr`` false), on the entry's side and, when the caller does
+and ``k2Csr`` false; TreeAccumulate's and SerialAccumulate's ``seed`` false, B2 R5's seed port
+measured nowhere yet), on the entry's side and, when the caller does
 not give it, on the caller's, until the next export writes it.
 None for anything else: no entry with these params (a dtype other than int64, another op, a
 SimdLanes at one stream, whose ``inTypes`` and ``k`` no two-input point has, axpby, a slot from
@@ -66,7 +67,9 @@ DATAPATH_RENAMES = {"SimdLanes": "ElementwiseLanes"}
 # per catalogue datapath, a param the table's export predates, at the value its points were
 # measured at: SimdLanes' streams, every point a two-input one (module doc)
 TABLE_DEFAULTS: dict[str, dict[str, Any]] = {
-    "SimdLanes": {"streams": 2, "kCsr": False, "k1Csr": False, "k2Csr": False}
+    "SimdLanes": {"streams": 2, "kCsr": False, "k1Csr": False, "k2Csr": False},
+    "TreeAccumulate": {"seed": False},
+    "SerialAccumulate": {"seed": False},
 }
 
 

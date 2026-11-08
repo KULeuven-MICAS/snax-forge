@@ -5,8 +5,9 @@ import chisel3.util._
 
 /** One unit of a group's description (`accelerator.json`): its name, its timing (L, II, span), its outer inputs (the
   * streamer's ports it reads), its T when fixed at design time (`params.T`; 1 for a unit without a fold), else None: a
-  * JOB_BEATS from the start; and `linked`, the positions among its inputs (in port order) that no outer port takes,
-  * each fed by one link (snax_group.cpp's inputs left "").
+  * JOB_BEATS from the start; `linked`, the positions among its inputs (in port order) that no outer port takes, each
+  * fed by one link (snax_group.cpp's inputs left ""); and `seeded`, its last outer input a fold's seed (D149), one beat
+  * per job.
   */
 case class UnitDesc(
   name:    String,
@@ -15,12 +16,14 @@ case class UnitDesc(
   span:    Int,
   inputs:  Int,
   fixedT:  Option[Int],
-  linked:  Seq[Int] = Nil
+  linked:  Seq[Int] = Nil,
+  seeded:  Boolean  = false
 ) {
-  require(latency >= 0, s"$name: latency must be 0 or more, got $latency")
-  require(ii      >= 1, s"$name: ii must be 1 or more, got $ii")
-  require(span    >= 1, s"$name: span must be 1 or more, got $span")
-  require(inputs  >= 0, s"$name: inputs must be 0 or more, got $inputs")
+  require(latency           >= 0, s"$name: latency must be 0 or more, got $latency")
+  require(ii                >= 1, s"$name: ii must be 1 or more, got $ii")
+  require(span              >= 1, s"$name: span must be 1 or more, got $span")
+  require(inputs            >= 0, s"$name: inputs must be 0 or more, got $inputs")
+  require(!seeded || inputs >= 1, s"$name: a seeded unit's seed is one of its outer inputs")
 }
 
 /** A link of a group, by unit index (SnaxGroupRule's Link): unit `from`'s output into input `toInput` of unit `to` (its
@@ -152,9 +155,10 @@ class LinkEnables(depth: Int) extends Bundle {
   * 0); backward, in reverse order, its room (its outer output's ready if it owns it, and every out-edge's take: a wire
   * its consumer's firing, a buffer occupancy < D or that firing), whether it is frozen (its head, or at L 0 a giving
   * firing, has no room), fires and reads. The outer ports' join is per unit: input j's ready is its unit's firing,
-  * which needs every one of that unit's outer valids. The outer output's valid is its owner's offer, never its ready's.
-  * `cls` is the cycle's class, judged at the owner, as the run line counts it: busy 0, stall_in 1, stall_out 2, flush
-  * 3.
+  * which needs every one of that unit's outer valids; a seeded unit's seed (its last outer input, D149) only on its
+  * job's first beat (fire = a.valid ∧ (¬first ∨ seed.valid)), and its ready is that firing (seed.ready = fire ∧ first).
+  * The outer output's valid is its owner's offer, never its ready's. `cls` is the cycle's class, judged at the owner,
+  * as the run line counts it: busy 0, stall_in 1, stall_out 2, flush 3.
   */
 class GroupRule(val desc: GroupDesc, jobWidth: Int = 32) {
   // The C++ stays the spec (it counts firings up to n_k); here a register exists only where the description says the
@@ -256,11 +260,13 @@ class GroupRule(val desc: GroupDesc, jobWidth: Int = 32) {
   for (k <- desc.order) {
     val u = descs(k)
     val s = st(k)
-    inputs(k)    := io.in(k).map(_.valid).foldLeft(true.B)(_ && _)
-    avail(k)     := desc.ins(k).foldLeft(inputs(k)) { (a, i) =>
+    inputs(k) := (if (!u.seeded) io.in(k).map(_.valid).foldLeft(true.B)(_ && _)
+                  else // the seed only on the job's first beat
+                    io.in(k).init.map(_.valid).foldLeft(true.B)(_ && _) && (s.d =/= 0.U || io.in(k).last.valid))
+    avail(k) := desc.ins(k).foldLeft(inputs(k)) { (a, i) =>
       a && (if (links(i).depth == 0) offer(links(i).from) else occupancy(i) =/= 0.U)
     }
-    wants(k)     := busy         && left(k)  && s.gap === 0.U
+    wants(k) := busy && left(k) && s.gap === 0.U
     wouldFire(k) := wants(k)     && avail(k) && (if (u.span == 1) true.B else s.lane === (u.span - 1).U)
     gives(k)     := wouldFire(k) && s.d === ts(k) - 1.U
     head(k)      := (if (u.latency > 0) s.v(u.latency - 1) else false.B)
@@ -288,11 +294,12 @@ class GroupRule(val desc: GroupDesc, jobWidth: Int = 32) {
     }
   }
 
-  // The outer ports: input j's ready is its unit's firing; the output's valid its owner's offer
+  // The outer ports: input j's ready is its unit's firing (a seed's that firing on its job's first beat); the
+  // output's valid its owner's offer
   for {
-    k <- 0 until n
-    p <- io.in(k)
-  } p.ready    := fire(k)
+    k      <- 0 until n
+    (p, j) <- io.in(k).zipWithIndex
+  } p.ready    := (if (descs(k).seeded && j == descs(k).inputs - 1) fire(k) && st(k).d === 0.U else fire(k))
   io.out.valid := offer(owner)
 
   // The datapaths' enables and the buffers'

@@ -27,6 +27,7 @@ import snax.forge.shell.AcceleratorSpec
   *   - `inputs.count`: the number of input ports (SimdLanes' `streams`);
   *   - `unit.opType`, `unit.params.<name>`: the unit's `opType` and its `params.<name>`;
   *   - `unit.scalars.<slot>`: whether the unit reads that slot from its CSR (a `bool`: its `scalars` has it);
+  *   - `unit.ports.seed`: whether the unit has a seed port (a `bool`: a fold's start, read once per job, D149);
   *   - `link.depth`, `link.lanes`, `link.dtype`: a buffer's link's depth and its ends' lanes and dtype.
   *
   * A port is `"in"` or `"out"`, or `{"dir": ..., "when": {param: value, ...}}`; a pin is a name, or `{"name": ...,
@@ -92,6 +93,7 @@ object Datapaths {
           case r if r.startsWith("unit.params.")  => unit.params.getOrElse(r.stripPrefix("unit.params."), ujson.Null)
           case r if r.startsWith("unit.scalars.") =>
             ujson.Bool(unit.scalars.exists(_._1 == r.stripPrefix("unit.scalars.")))
+          case "unit.ports.seed"                  => ujson.Bool(unit.inPorts.contains("seed"))
           case other                              => throw new IllegalArgumentException(s"$name.$n: fill rule $other")
         }
         n -> value
@@ -229,22 +231,24 @@ object Datapaths {
         ("inType", DtypeParam, "inputs.dtype"),
         ("outType", DtypeParam, "outputs.dtype"),
         ("lanes", IntParam(1), "inputs.lanes"),
-        ("op", OpParam(Seq("add")), "unit.params.op")
+        ("op", OpParam(Seq("add")), "unit.params.op"),
+        ("seed", BoolParam, "unit.ports.seed")
       ),
-      Seq(Port("in", "in"), Port("out", "out")),
+      Seq(Port("in", "in"), Port("seed", "in", Seq("seed" -> ujson.True)), Port("out", "out")),
       ujson.Num(1),
       ujson.Num(1),
       ujson.Str("width(outType)"),
       Seq(Pin("fire"), Pin("first")),
       p => {
         require(str(p, "op") == "add", s"TreeAccumulate adds, op ${str(p, "op")}")
-        new TreeAccumulate(str(p, "inType"), str(p, "outType"), int(p, "lanes"))
+        new TreeAccumulate(str(p, "inType"), str(p, "outType"), int(p, "lanes"), p("seed").bool)
       },
       Map(
         "inType"  -> ujson.Str("int32"),
         "outType" -> ujson.Str("int64"),
         "lanes"   -> ujson.Num(4),
-        "op"      -> ujson.Str("add")
+        "op"      -> ujson.Str("add"),
+        "seed"    -> ujson.False
       )
     ),
     Datapath(
@@ -295,17 +299,23 @@ object Datapaths {
       Seq(
         ("inType", DtypeParam, "inputs.dtype"),
         ("outType", DtypeParam, "outputs.dtype"),
-        ("lanes", IntParam(1), "inputs.lanes")
+        ("lanes", IntParam(1), "inputs.lanes"),
+        ("seed", BoolParam, "unit.ports.seed")
       ),
-      Seq(Port("in", "in"), Port("out", "out")),
+      Seq(Port("in", "in"), Port("seed", "in", Seq("seed" -> ujson.True)), Port("out", "out")),
       ujson.Num(1),
       ujson.Str("lanes"),
       ujson.Str("width(outType)"),
       Seq(Pin("read"), Pin("lane"), Pin("first")),
       p => {
-        new SerialAccumulate(str(p, "inType"), str(p, "outType"), int(p, "lanes"))
+        new SerialAccumulate(str(p, "inType"), str(p, "outType"), int(p, "lanes"), p("seed").bool)
       },
-      Map("inType" -> ujson.Str("int64"), "outType" -> ujson.Str("int64"), "lanes" -> ujson.Num(4))
+      Map(
+        "inType"  -> ujson.Str("int64"),
+        "outType" -> ujson.Str("int64"),
+        "lanes"   -> ujson.Num(4),
+        "seed"    -> ujson.False
+      )
     ),
     Datapath(
       "LaneAccumulate",
