@@ -46,7 +46,7 @@ def test_a_w_that_does_not_divide_n_splits_with_a_tail():
     results = apply_recipe(recipe().with_params({"W": 5}), graph("vecadd"))
     m = results[-1].graph.node("add_map")
     assert m.attrs["range"] == "0:(N + 4) // 5"
-    assert m.attrs["loop.split"] == {"var": "i", "range": "0:N", "valid": "N"}
+    assert m.attrs["loop.split"] == {"var": "n", "range": "0:N", "valid": "N"}
 
 
 def test_the_reference_check_stops_a_wrong_step():

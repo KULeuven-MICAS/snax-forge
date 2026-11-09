@@ -16,7 +16,6 @@ the first's names to the second's on the same graph, and ``renamed`` a graph's t
 
 from __future__ import annotations
 
-import inspect
 import json
 import re
 from functools import cache
@@ -55,7 +54,7 @@ SELECTED = {
     "split_reduce": "map", "join_reduce": "map", "fuse_map": "first", "unfuse_map": "map",
     "bind": "node", "unbind": "node", "link": "container", "unlink": "container",
     "encapsulate": "units", "unencapsulate": "accelerator", "bake_scalar": "container",
-    "unbake_scalar": "container",
+    "unbake_scalar": "container", "interchange_map": "map", "fuse_seed": "first", "unfuse_seed": "map",
 }  # fmt: skip
 DEFAULTS = {"factor": 4, "kind": "temporal", "depth": 1, "group": "g", "accelerator": "acc",
             "value": 3}  # fmt: skip
@@ -82,9 +81,12 @@ def default_calls(g: Graph, name: str, selected: str) -> list[dict[str, Any]]:
     """``name``'s params for ``selected``, the user's at DEFAULTS; bind once per library BRM
     and implementation; fuse_map's ``second`` the next sibling, if any."""
     params: dict[str, Any] = {}
-    for p in list(inspect.signature(TRANSFORMS[name].fn).parameters)[1:]:
+    for p in TRANSFORMS[name].param_names():
         if p == SELECTED[name]:
             params[p] = [selected] if p == "units" else selected
+        elif p == "with":  # interchange_map: the first other map, any
+            maps = [n.id for n, _ in g.walk() if n.kind == "map" and n.id != selected]
+            params[p] = maps[0] if maps else selected
         elif p == "second":
             try:
                 body, k, _ = _locate(g, selected)
@@ -100,12 +102,13 @@ def default_calls(g: Graph, name: str, selected: str) -> list[dict[str, Any]]:
 
 
 def tagged_names(g: Graph, map: str, factor: int) -> dict[str, str]:
-    """``split``'s names of ``map``'s split on ``g`` (outer variable, inner variable, inner id)
-    -> ``split_map``'s."""
+    """``split``'s names of ``map``'s split on ``g`` -> ``split_map``'s, where they differ: the
+    inner id (``_inner``, ``_s``) and, before any tag, the variables (``n_1``, ``n_1_t``)."""
     a, b = split(g, map, factor), split_map(g, map, factor)
     (ia,), (ib,) = a.node(map).body, b.node(map).body
-    return {a.node(map).attrs["var"]: b.node(map).attrs["var"], ia.attrs["var"]: ib.attrs["var"],
-            ia.id: ib.id}  # fmt: skip
+    pairs = [(a.node(map).attrs["var"], b.node(map).attrs["var"]), (ia.attrs["var"], ib.attrs["var"]),
+             (ia.id, ib.id)]  # fmt: skip
+    return {x: y for x, y in pairs if x != y}
 
 
 def renamed(g: Graph, names: dict[str, str]) -> str:

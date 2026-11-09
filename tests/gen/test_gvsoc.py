@@ -521,7 +521,7 @@ def test_the_adapter_refuses(case, edit, params, code, dtypes):
     assert e.value.code == code
 
 
-ACC = "chisel_accumulator"
+ACC = "chisel_adder_tree"
 
 
 def _acc(edit=None, params=None) -> Instance:

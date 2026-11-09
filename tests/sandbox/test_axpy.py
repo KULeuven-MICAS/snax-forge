@@ -4,8 +4,8 @@ A scalar operand is a tasklet input on a kernel's scalar argument (``sdfg.scalar
 subset names no map variable (axpy's ``alpha[0]``): it maps to no port; ``bind`` matches it
 to a slot as it matches a literal, and the accelerated node keeps it as an input connector
 named after the slot (``k1: alpha[0]``), the slot left out of the params (a CSR). axpy as
-imported (``tests/dfg/fixtures/axpy.snaxdfg``) is two nests, ``alpha[0] * x[i]`` into the
-transient ``tmp0``, then ``y[i] + tmp0[i]`` into ``y``; split by W and fused, ``bind`` on
+imported (``tests/dfg/fixtures/axpy.snaxdfg``) is two nests, ``alpha[0] * x[n]`` into the
+transient ``tmp0``, then ``y[n] + tmp0[n]`` into ``y``; split by W and fused, ``bind`` on
 the fused nest composes the two codes, ``out = y + alpha * x``, and takes simd's
 ``out = k1 * a + b`` (op axpby; ``+`` and ``*`` commute, the array inputs tried on the ports
 in every order). Accepted when the worked example (W = 2, N = 4, alpha = 3) gives y' =
@@ -71,7 +71,7 @@ def test_axpy_fused_binds_axpby_with_k1_from_alpha():
     assert n.attrs["params"] == {"W": 2, "op": "axpby", "streams": 2}
     assert n.attrs["code"] == "out = k1 * a + b"
     assert {c: (m.data, m.subset) for c, m in n.inputs.items()} == {
-        "a": ("x", ["2 * i_t:2 * i_t + 2"]), "b": ("y", ["2 * i_t:2 * i_t + 2"]),
+        "a": ("x", ["2 * n_1_t:2 * n_1_t + 2"]), "b": ("y", ["2 * n_1_t:2 * n_1_t + 2"]),
         "k1": ("alpha", [0])}  # fmt: skip
     assert {c: m.data for c, m in n.outputs.items()} == {"out": "y"}
     assert "tmp0" not in g.containers  # the local value went with the nest
@@ -103,7 +103,7 @@ def test_split_map_leaves_the_scalar_as_it_is():
     g = split()
     assert g.node("mult").inputs["in1"].data == "alpha"
     assert g.node("mult").inputs["in1"].subset == [0]
-    assert g.node("mult").inputs["in2"].subset == ["2 * i_t + i_s"]
+    assert g.node("mult").inputs["in2"].subset == ["2 * n_1_t + n_2_s"]
 
 
 # =============================================================================
@@ -136,10 +136,10 @@ def scaled(code: str = "out = in1 * in2 + in3 * in4", beta_dtype: str = "int32")
         "beta": {**d["containers"]["alpha"], "dtype": beta_dtype},
         "x": d["containers"]["x"], "y": d["containers"]["y"], "z": d["containers"]["x"]}  # fmt: skip
     t = d["body"][0]["body"][0]
-    t["inputs"] = {"in1": {"data": "alpha", "subset": [0]}, "in2": {"data": "x", "subset": ["i"]},
-                   "in3": {"data": "beta", "subset": [0]}, "in4": {"data": "y", "subset": ["i"]}}  # fmt: skip
+    t["inputs"] = {"in1": {"data": "alpha", "subset": [0]}, "in2": {"data": "x", "subset": ["n"]},
+                   "in3": {"data": "beta", "subset": [0]}, "in4": {"data": "y", "subset": ["n"]}}  # fmt: skip
     t["inputs"] = {c: m for c, m in t["inputs"].items() if c in code}
-    t["outputs"] = {"out": {"data": "z", "subset": ["i"]}}
+    t["outputs"] = {"out": {"data": "z", "subset": ["n"]}}
     t["attrs"]["code"] = code
     d["body"] = d["body"][:1]
     return split_map(Graph.from_dict(d), "mult_map", 2)
@@ -234,7 +234,7 @@ def test_axpys_recipes_run_and_check(name, k1):
 
 def test_the_recipes_fuse_the_imported_maps_then_split_once():
     """The recipes' order, the same for both: bake_scalar (csr, or 3), fuse_map on the two
-    imported maps, both ``i in 0:N`` with tmp0[i] between them, then one split_map of the
+    imported maps, both ``n in 0:N`` with tmp0[n] between them, then one split_map of the
     fused nest; the unit is the one the older order (split, split, fuse_map) binds."""
     from tests.helpers import recipe_path
 

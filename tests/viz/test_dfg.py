@@ -155,7 +155,7 @@ def test_vecadd_accelerated():
     }  # fmt: skip
     assert v["containers"]["A"] == {
         "name": "A",
-        "text": "A",
+        "text": "A[N]",
         "badge": "L1 · 512 B",
         "transient": False,
         "scalar": False,
@@ -164,7 +164,7 @@ def test_vecadd_accelerated():
     assert (top["id"], top["loop_kind"], top["text"]) == (
         "add_map",
         "temporal",
-        "add_map · i_t · 16 · temporal",
+        "add_map · n_1_t · 16 · temporal",
     )
     acc = top["body"][0]
     assert (acc["text"], acc["inputs"][0]) == ("acc · a + b · W 4", {"connector": "a", "data": "A"})
@@ -172,16 +172,16 @@ def test_vecadd_accelerated():
     assert (d["brm"], d["implementation"], d["params"], d["replaced"], d["timing"]) == (
         "simd", "chisel_tiled_spatial", {"W": 4, "op": "add", "streams": 2}, "add_map_s › add",
         {"latency": 0, "ii": 1, "span": 1})  # fmt: skip
-    assert v["details"]["node:add_map"] == {"kind": "map", "var": "i_t", "range": "0:N // 4",
+    assert v["details"]["node:add_map"] == {"kind": "map", "var": "n_1_t", "range": "0:N // 4",
                                            "loop.kind": "temporal",
-                                           "loop.split": {"var": "i", "range": "0:N"}}  # fmt: skip
+                                           "loop.split": {"var": "n", "range": "0:N"}}  # fmt: skip
     assert v["details"]["container:A"]["sizes"] == [64]
     assert [(e["id"], e["dir"]) for e in v["edges"]] == [
         ("A@0->add.a", "read"), ("B@0->add.b", "read"), ("add.out->C@1", "write")]  # fmt: skip
     assert "text" not in v["edges"][0] and "packing" not in v["edges"][0]
     e = v["details"]["edge:A@0->add.a"]
     assert (e["memlet"], e["packing"], e["loops"], e["beats"], e["streamer"]) == (
-        "A[4 * i_t:4 * i_t + 4]", "int64 · num_slc 1 · num_ch 4", [["i_t", 16]], 16, True)  # fmt: skip
+        "A[4 * n_1_t:4 * n_1_t + 4]", "int64 · num_slc 1 · num_ch 4", [["n_1_t", 16]], 16, True)  # fmt: skip
 
 
 def recipe_view(tmp_path: Path, recipe: str) -> dict:
@@ -222,7 +222,7 @@ def test_a_folding_write_names_its_op():
         for e in v["edges"]
         if e["dir"] == "write"
     ]
-    assert writes == [("mult.out", "tmp0[i]"), ("sum.out", "out[0] (reduce add)")]
+    assert writes == [("mult.out", "tmp0[n]"), ("sum.out", "out[0] (reduce add)")]
     tops = [r["node"] for r in v["rows"] if r["kind"] == "node"]
     assert [t["body"][0]["text"] for t in tops] == ["mult · in1 * in2", "sum · fold +"]
 
@@ -232,8 +232,8 @@ def test_the_bound_dot_shows_both_accelerators():
     v = view(FIXTURES / "dot_accelerated.snaxdfg")
     tops = [r["node"] for r in v["rows"] if r["kind"] == "node"]
     assert [t["text"] for t in tops] == [
-        "mult_map · i_t · 16 · temporal",
-        "sum_map · i_t_1 · 16 · temporal",
+        "mult_map · n_1_t · 16 · temporal",
+        "sum_map · n_1_t · 16 · temporal",
     ]
     assert [t["body"][0]["text"] for t in tops] == ["mul · a * b · W 4", "sum · fold + · W 4"]
     writes = [
@@ -241,7 +241,7 @@ def test_the_bound_dot_shows_both_accelerators():
         for e in v["edges"]
         if e["dir"] == "write"
     ]
-    assert writes == [("mult.out", "tmp0[4 * i_t:4 * i_t + 4]"), ("sum.out", "out[0:1]")]
+    assert writes == [("mult.out", "tmp0[4 * n_1_t:4 * n_1_t + 4]"), ("sum.out", "out[0:1]")]
 
 
 def test_dot_1_enc_draws_one_accelerator_of_two_groups(tmp_path):
@@ -278,13 +278,13 @@ def test_without_encapsulate_each_group_is_its_own_accelerator():
 
 @pytest.mark.slow
 def test_a_maps_bar_starts_with_its_id():
-    """C§12: vecmul as imported at N = 2048, its map's bar ``mult_map · i · 2048 · untagged``."""
+    """C§12: vecmul as imported at N = 2048, its map's bar ``mult_map · n · 2048 · untagged``."""
     from snax_forge.viz.dfg.api import Entry
     from tests.helpers import steps
 
     g = steps("vecmul", N=2048)[0]
     v = graph_view(Entry("0_input", Path("0_input.snaxdfg"), g, None))
-    assert v["rows"][1]["node"]["text"] == "mult_map · i · 2048 · untagged"
+    assert v["rows"][1]["node"]["text"] == "mult_map · n · 2048 · untagged"
 
 
 @pytest.mark.slow
@@ -542,7 +542,7 @@ def test_view_mode_reads_the_folders_recipe(tmp_path):
 
 def test_iterations_need_bound_symbols():
     plain = view(FIXTURES / "vecadd.snaxdfg")
-    assert plain["rows"][1]["node"]["text"] == "add_map · i · ? · untagged"
+    assert plain["rows"][1]["node"]["text"] == "add_map · n · ? · untagged"
     assert plain["details"]["container:A"]["sizes"] is None
     assert plain["containers"]["A"]["badge"] is None and plain["estimate_error"]
     split = view(FIXTURES / "vecadd_split.snaxdfg")
@@ -550,7 +550,7 @@ def test_iterations_need_bound_symbols():
     assert (inner["id"], inner["loop_kind"], inner["text"]) == (
         "add_map_s",
         "spatial",
-        "add_map_s · i_s · 4 · spatial",
+        "add_map_s · n_2_s · 4 · spatial",
     )
 
 
@@ -992,6 +992,22 @@ def test_a_units_slots_show_csr_or_baked():
             "k1", slot, False)  # fmt: skip
 
 
+def test_a_container_box_names_its_shape():
+    """A box reads the container's name and shape over the kernel's symbols: rowsum's A[M, N]
+    (a matrix) and y[M] (a vector); a scalar argument its name alone (axpy's alpha)."""
+    from snax_forge.viz.dfg.api import container_text
+    from tests.helpers import imported
+
+    g = imported("rowsum")
+    assert (container_text(g, "A"), container_text(g, "y")) == ("A[M, N]", "y[M]")
+    r, graphs = _axpy("axpy")
+    a = graphs[0]
+    assert [container_text(a, c) for c in ("alpha", "x", "y")] == ["alpha", "x[N]", "y[N]"]
+    (v,) = _views(r, graphs[:1])
+    assert {c: v["containers"][c]["text"] for c in ("alpha", "x", "y")} == {
+        "alpha": "alpha", "x": "x[N]", "y": "y[N]"}  # fmt: skip
+
+
 def test_a_baked_tasklet_reads_the_value():
     """After bake_scalar 3 the tasklet reads ``mult · 3 * in2``, one input port, no alpha."""
     r, graphs = _axpy("axpy_baked")
@@ -1040,3 +1056,239 @@ def test_the_editor_offers_bake_unbake_and_fuse_map_on_axpy(tmp_path, monkeypatc
                            "implementation": "chisel_tiled_spatial", "instance": "acc"})  # fmt: skip
     assert got["ok"], got
     assert s.graphs[-1].node("mult").attrs["params"]["k1"] == 3
+
+
+def test_the_lane_accumulator_reads_as_a_fold():
+    """rowsum_2 bound: its unit reads ``acc · fold + · W 4``, the way the folds read, inside the
+    row block map and the column map; its Details give the W lanes down a column."""
+    from snax_forge.design import Platform
+    from snax_forge.sandbox import Recipe, apply_recipe
+    from snax_forge.viz.dfg.api import Entry, step_view
+    from tests.design.helpers import SNAX_FORGE
+    from tests.helpers import imported
+
+    r = Recipe.load(recipe_path("rowsum_2"))
+    g = apply_recipe(r, imported("rowsum"))[-1].graph
+    v = step_view(Entry("4", Path("4"), g, None), "4", Platform.load(SNAX_FORGE), recipe=r)
+    (top,) = [row["node"] for row in v["rows"] if row["kind"] == "node"]
+    (col,) = top["body"]
+    (unit,) = col["body"]
+    assert [top["text"], col["text"], unit["text"]] == [
+        "sum_map · m_1_t · 2 · temporal", "sum_map_1 · n_t · 64 · temporal", "acc · fold + · W 4"]  # fmt: skip
+    d = v["details"]["node:sum"]
+    assert (d["brm"], d["replaced"]) == ("lane_accumulate", "sum_map_s › sum")
+    assert d["inputs"] == {"a": "A[4 * m_1_t:4 * m_1_t + 4, n_t]"}
+    assert d["outputs"] == {"out": "y[4 * m_1_t:4 * m_1_t + 4]"}
+
+
+# =============================================================================
+# The fold's seed: matvec_seed (B2 R5)
+# =============================================================================
+
+
+def _matvec_seed():
+    from snax_forge.sandbox import Recipe, apply_recipe
+
+    r = Recipe.load(recipe_path("matvec_seed"))
+    return r, [x.graph for x in apply_recipe(r, Graph.load(FIXTURES / "matvec_acc.snaxdfg"))]
+
+
+def test_the_seed_is_two_edges_of_x_on_the_fold():
+    """Before fuse_seed the sum writes tmp1, which the elementwise nest adds to q; after it q
+    has two edges on the fold, its seed (labelled with its memlet alone, as q[m_t]) and its
+    write, and tmp1 has no box; bound, the unit's seed port takes the seed's edge and
+    its Details list it."""
+    r, graphs = _matvec_seed()
+    before, seeded, bound = _views(r, graphs[5:8])
+    assert "tmp1" in {b["container"] for b in before["boxes"].values()}
+    assert not [e for e in before["edges"] if e.get("seed")]
+    for v, node, subset in ((seeded, "sum", "q[m_t]"), (bound, "sum", "q[m_t:m_t + 1]")):
+        assert "tmp1" not in {b["container"] for b in v["boxes"].values()}
+        q = [e for e in v["edges"] if e["data"] == "q"]
+        seed = [e for e in q if e.get("seed")]
+        assert [(e["from"], e["to"]) for e in q] == [("q@0", f"{node}.seed"),
+                                                     (f"{node}.out", "q@1")]  # fmt: skip
+        assert seed[0]["label"] == subset
+        assert v["details"][f"edge:{seed[0]['id']}"]["memlet"] == f"{subset} (seed)"
+        assert v["details"][f"node:{node}"]["seed"] == seed[0]["label"]
+        conns = _node_in(v, node)["inputs"]
+        assert [c["connector"] for c in conns if c.get("seed")] == ["seed"]
+    assert seeded["details"]["node:sum"]["outputs"] == {
+        "out": "q[m_t] (reduce add, seed q[m_t])"}  # fmt: skip
+    d = bound["details"]["node:sum"]
+    assert d["inputs"] == {"a": "tmp0[m_t, 4 * n_1_t:4 * n_1_t + 4]", "seed": "q[m_t:m_t + 1]"}
+    assert d["params"] == {"W": 4, "op": "add", "seed": 1}
+    assert bound["details"]["container:q"]["readers"] == ["sum"]
+
+
+# =============================================================================
+# Partners: the maps a map fuses, seeds or interchanges with (B2 R5)
+# =============================================================================
+
+
+def _bound_fixture(name: str, **symbols: int) -> Graph:
+    d = json.loads((FIXTURES / f"{name}.snaxdfg").read_text())
+    d["symbols"] = symbols
+    return Graph.from_dict(d)
+
+
+def _partners(g: Graph) -> dict[str, list[tuple[str, str, str | None]]]:
+    from snax_forge.viz.dfg.api import Entry, graph_view
+
+    v = graph_view(Entry("g", Path("g"), g, None))
+    return {m: [(p["map"], p["transform"], (p.get("marker") or {}).get("text")) for p in ps
+                if "near" not in p]
+            for m, ps in v["partners"].items()}  # fmt: skip
+
+
+def _near(g: Graph) -> dict[str, list[tuple[str, str]]]:
+    from snax_forge.viz.dfg.api import Entry, graph_view
+
+    v = graph_view(Entry("g", Path("g"), g, None))
+    return {m: [(p["map"], p["near"]) for p in ps if "near" in p]
+            for m, ps in v["partners"].items() if any("near" in p for p in ps)}  # fmt: skip
+
+
+def _agree(g: Graph, found: dict) -> None:
+    """Every partner shown is one its transform's site takes, the pair in either role."""
+    from snax_forge.sandbox import SandboxError
+    from snax_forge.sandbox.transforms import _interchange_check, site_of
+
+    for m, ps in found.items():
+        for other, transform, _ in ps:
+            if transform == "interchange_map":
+                _interchange_check(g, m, other, "")
+                continue
+            try:
+                site_of(transform, g, [m, other])
+            except SandboxError:  # the partner is the first
+                site_of(transform, g, [other, m])
+
+
+MATVEC_FUSE = "tmp0[m, n] · m = m (0:8), n = n (0:512)"
+
+
+def test_matvec_acc_partners_at_import():
+    """matvec_acc at import: mult and sum fuse (tmp0, both loops matched), the sum seeds from
+    the elementwise nest (tmp1, its kept loop m against the nest's m), each nest's two maps
+    interchange; no partner for a pair the transforms refuse (the sum's nest and the
+    elementwise nest are of different depths for fuse_map)."""
+    g = _bound_fixture("matvec_acc", M=8, N=512)
+    found = _partners(g)
+    seed = "tmp1[m] · m = m (0:8)"
+    assert found == {
+        "mult_map": [("sum_map", "fuse_map", MATVEC_FUSE), ("mult_map_1", "interchange_map", None)],
+        "mult_map_1": [("mult_map", "interchange_map", None)],
+        "sum_map": [("mult_map", "fuse_map", MATVEC_FUSE),
+                    ("augassign_19_4_map", "fuse_seed", seed),
+                    ("sum_map_1", "interchange_map", None)],
+        "sum_map_1": [("augassign_19_4_map", "fuse_seed", seed),
+                      ("sum_map", "interchange_map", None)],
+        "augassign_19_4_map": [("sum_map", "fuse_seed", seed), ("sum_map_1", "fuse_seed", seed)],
+    }  # fmt: skip
+    _agree(g, found)
+    from snax_forge.viz.dfg.api import Entry, graph_view
+
+    v = graph_view(Entry("g", Path("g"), g, None))
+    marks = {p["transform"]: p["marker"] for p in v["partners"]["sum_map"] if "marker" in p}
+    assert {t: (m["box"], m["container"]) for t, m in marks.items()} == {
+        "fuse_map": ("tmp0@1", "tmp0"), "fuse_seed": ("tmp1@1", "tmp1")}  # fmt: skip
+    assert {v["boxes"][m["box"]]["container"] for m in marks.values()} == {"tmp0", "tmp1"}
+
+
+def test_matvec_acc_partners_after_the_tag_and_split():
+    """After tag_map sum_map temporal, mult (untagged) still fuses with sum (B0.2: it takes the
+    tag). After split_map sum_map_1 4 too, the two no longer fuse: mult_map is a near partner
+    of sum_map, its tag the refusal naming split_map mult_map_1 4; every map of the sum's nest
+    seeds with the elementwise nest, its kept loop m_t, and the three maps of the sum's nest
+    interchange pairwise (interchange_map takes any two maps of one perfect nest). After
+    split_map mult_map_1 4, mult and sum fuse again, three loops matched."""
+    from snax_forge.sandbox.transforms import split_map, tag_map
+
+    t = tag_map(_bound_fixture("matvec_acc", M=8, N=512), "sum_map", "temporal")
+    fuse = "tmp0[m_t, n] · m = m_t (0:8), n = n (0:512)"
+    assert _partners(t)["mult_map"][0] == ("sum_map", "fuse_map", fuse)
+    assert _near(t) == {}
+    g = split_map(t, "sum_map_1", 4)
+    found = _partners(g)
+    seed = "tmp1[m] · m_t = m (0:8)"
+    ew = "augassign_19_4_map"
+    assert found == {
+        "mult_map": [("mult_map_1", "interchange_map", None)],
+        "mult_map_1": [("mult_map", "interchange_map", None)],
+        "sum_map": [(ew, "fuse_seed", seed), ("sum_map_1", "interchange_map", None),
+                    ("sum_map_1_s", "interchange_map", None)],
+        "sum_map_1": [(ew, "fuse_seed", seed), ("sum_map", "interchange_map", None),
+                      ("sum_map_1_s", "interchange_map", None)],
+        "sum_map_1_s": [(ew, "fuse_seed", seed), ("sum_map", "interchange_map", None),
+                        ("sum_map_1", "interchange_map", None)],
+        ew: [("sum_map", "fuse_seed", seed), ("sum_map_1", "fuse_seed", seed),
+             ("sum_map_1_s", "fuse_seed", seed)],
+    }  # fmt: skip
+    _agree(g, found)
+    why = ("fuse_map 'mult_map' 'sum_map': mult_map_1 runs 0:512, sum_map_1 runs 0:128 and its "
+           "child 0:4: split_map mult_map_1 4 first")  # fmt: skip
+    assert _near(g) == {"mult_map": [("sum_map", why)], "sum_map": [("mult_map", why)]}
+    both = split_map(g, "mult_map_1", 4)
+    assert _near(both) == {}
+    fused = ("tmp0[m_t, 4 * n_1_t + n_2_s] · m = m_t (0:8), n_1_t = n_1_t (0:128), "
+             "n_2_s = n_2_s (0:4)")  # fmt: skip
+    assert _partners(both)["mult_map"][0] == ("sum_map", "fuse_map", fused)
+
+
+def test_axpys_two_maps_fuse():
+    """axpy at import: the multiply and the in-place add fuse over n (tmp0[n]); one-level
+    nests, so nothing interchanges; no fold, so nothing seeds."""
+    g = _bound_fixture("axpy", N=64)
+    found = _partners(g)
+    fuse = "tmp0[n] · n = n (0:64)"
+    assert found == {"mult_map": [("augassign_19_4_map", "fuse_map", fuse)],
+                     "augassign_19_4_map": [("mult_map", "fuse_map", fuse)]}  # fmt: skip
+    _agree(g, found)
+
+
+def test_a_seeded_or_bound_graph_has_no_seed_partner():
+    """matvec_seed's last steps: the seed taken, so no fuse_seed partner is left."""
+    _, graphs = _matvec_seed()
+    for g in graphs[6:]:
+        assert not [p for ps in _partners(g).values() for p in ps if p[1] == "fuse_seed"]
+
+
+# =============================================================================
+# Folds: drawn as upside-down trapezoids (B2 R5)
+# =============================================================================
+
+
+def _fold_nodes(v: dict) -> list[str]:
+    stack = [r["node"] for r in v["rows"] if r["kind"] == "node"]
+    out = []
+    while stack:
+        n = stack.pop(0)
+        if n.get("fold"):
+            out.append(n["id"])
+        stack += n.get("body") or []
+    return out
+
+
+def test_a_folding_node_is_marked_fold():
+    """A tasklet whose output memlet has a reduce (an identity or a seed) and a bound unit whose
+    replaced nest folds: matvec_acc's sum, seeded or not, its bound accumulate; dot 4's mac and
+    final adder tree; rowsum 2's lane accumulator. The multiplies, the elementwise add, a simd
+    unit and a link do not."""
+    from snax_forge.viz.dfg.api import Entry, graph_view
+    from tests.sandbox.helpers import recipe_graphs
+
+    def view_of(g: Graph) -> dict:
+        return graph_view(Entry("g", Path("g"), g, None))
+
+    assert _fold_nodes(view_of(_bound_fixture("matvec_acc", M=8, N=512))) == ["sum"]
+    _, graphs = _matvec_seed()
+    assert [_fold_nodes(view_of(g)) for g in graphs[5:]] == [["sum"]] * 4
+    assert "fold" not in _node_in(view_of(graphs[-1]), "mult")
+    for name, want in (("dot_4", ["mult", "sum_final"]), ("rowsum_2", ["sum"]),
+                       ("axpy", [])):  # fmt: skip
+        v = view_of(recipe_graphs(name)[1][-1])
+        assert sorted(_fold_nodes(v)) == want, name
+    links = [r["node"] for r in view_of(recipe_graphs("dot_4")[1][-1])["rows"]
+             if r["kind"] == "node" and r["node"]["kind"] == "link"]  # fmt: skip
+    assert links and not any(n.get("fold") for n in links)

@@ -35,7 +35,7 @@ Under the Estimate, the design checks (Save's, run on every step) list two notes
 
 Each split gets a param of its own. The factor field reads `W` both times, since the first `W` was renamed on its bind: a param the editor named and only one unit uses takes that unit's instance name, `W_acc_1` and `W_acc_2` (D156). The second split takes the next free pair of loop names, `i_3` and `i_4` (D73). The unit boxes read `acc_1 · a * b · W_acc_1 8` and `acc_2 · fold + · W_acc_2 8`, and Details give `mult_map`'s range as `0:N // W_acc_1 = 256`.
 
-At step 8 the bind list offers two implementations: `chisel_adder_tree` (latency 1, II 1, span 1: the 8 lanes summed in one beat) and `chisel_serial` (span 8: one lane a cycle). `chisel_accumulator` is refused at W = 8 (it takes one lane), `mac` needs `split_reduce` first (D150), and both element-wise patterns are refused (`'out = in1' is not one operator over distinct inputs`).
+At step 8 the bind list offers two implementations: `chisel_adder_tree` (latency 1, II 1, span 1: the 8 lanes summed in one beat) and `chisel_serial` (span 8: one lane a cycle). `mac` needs `split_reduce` first (D150), and both element-wise patterns are refused (`'out = in1' is not one operator over distinct inputs`).
 
 Step 8 is a design Save takes as it is: two bound units are two accelerators, each its own streamer set in the one entry (D157), so nothing has to put them behind one shell. Bindings lists them side by side, `acc_1 · simd · W_acc_1 = 8` and `acc_2 · accumulate · W_acc_2 = 8`, each param editable in place. Each accelerator is drawn with a dashed outline; section 9 selects both and encapsulates them.
 

@@ -44,7 +44,7 @@ def test_the_accelerated_node_says_what_it_computes_and_replaced():
     acc = graph("vecadd_accelerated").node("add")
     assert acc.attrs["code"] == "out = a + b"
     assert acc.attrs["replaced"] == graph("vecadd_split").node("add_map_s").to_dict()
-    assert graph("vecadd_split").node("add_map").attrs["loop.split"] == {"var": "i", "range": "0:N"}
+    assert graph("vecadd_split").node("add_map").attrs["loop.split"] == {"var": "n", "range": "0:N"}
 
 
 def test_back_from_the_accelerated_fixture():
@@ -65,14 +65,15 @@ def test_round_trip_with_an_offset_range():
     d["symbols"]["N"] = 66
     d["body"][0]["attrs"]["range"] = "2:N"
     t = d["body"][0]["body"][0]
-    t["inputs"]["in2"]["subset"] = ["i - 2"]
-    t["outputs"]["out"]["subset"] = ["i + 0"]
+    t["inputs"]["in2"]["subset"] = ["n - 2"]
+    t["outputs"]["out"]["subset"] = ["n + 0"]
     g = Graph.from_dict(d)
     back = join_map(split_map(g, "add_map", 8), "add_map")
     node = back.node("add")
     assert back.node("add_map").attrs == g.node("add_map").attrs
-    assert [m.subset for m in node.inputs.values()] == [["i"], ["i - 2"]]
-    assert node.outputs["out"].subset == ["i"]  # written back in normal form
+    assert [m.subset for m in node.inputs.values()] == [["n"], ["n - 2"]]
+    assert node.outputs["out"].subset == ["n + 0"]  # split's own expression put back as it was
+    assert back.to_json() == g.to_json()
 
 
 def test_the_undo_recipe(tmp_path):
@@ -112,7 +113,7 @@ def test_join_rejected():
     with pytest.raises(SandboxError, match="unbind first"):
         join_map(graph("vecadd_accelerated"), "add_map")
     d = graph_dict("vecadd_split")
-    d["body"][0]["body"][0]["body"][0]["inputs"]["in1"]["subset"] = ["i_t + 16 * i_s"]
+    d["body"][0]["body"][0]["body"][0]["inputs"]["in1"]["subset"] = ["n_1_t + 16 * n_2_s"]
     with pytest.raises(SandboxError, match="is not an index split_map wrote"):
         join_map(Graph.from_dict(d), "add_map")
 

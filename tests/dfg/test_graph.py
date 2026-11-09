@@ -27,21 +27,28 @@ def test_hand_built_vecadd_equals_the_fixture():
     add = Node(
         "add",
         "tasklet",
-        inputs={"in1": Memlet("A", ["i"]), "in2": Memlet("B", ["i"])},
-        outputs={"out": Memlet("C", ["i"])},
+        inputs={"in1": Memlet("A", ["n"]), "in2": Memlet("B", ["n"])},
+        outputs={"out": Memlet("C", ["n"])},
         attrs={"code": "out = in1 + in2"},
     )
     g = Graph(
         "vecadd",
         {"N": None},
         {k: Container(["N"], "int64") for k in "ABC"},
-        [Node("add_map", "map", attrs={"var": "i", "range": "0:N"}, body=[add])],
+        [
+            Node(
+                "add_map",
+                "map",
+                attrs={"var": "n", "range": "0:N", "loop.dim": "n", "loop.piece": 1},
+                body=[add],
+            )
+        ],
     )
     assert g.to_json() == fixture("vecadd").read_text()
 
 
 def test_hand_built_accelerated_equals_the_fixture():
-    lanes = "4*i_t:4*i_t+4"
+    lanes = "4*n_1_t:4*n_1_t+4"
     split = Graph.load(fixture("vecadd_split"))
     acc = Node(
         "add",
@@ -61,10 +68,12 @@ def test_hand_built_accelerated_equals_the_fixture():
         "add_map",
         "map",
         attrs={
-            "var": "i_t",
+            "var": "n_1_t",
             "range": "0:N//4",
+            "loop.dim": "n",
+            "loop.piece": 1,
             "loop.kind": "temporal",
-            "loop.split": {"var": "i", "range": "0:N"},
+            "loop.split": {"var": "n", "range": "0:N"},
         },
         body=[acc],
     )
@@ -120,13 +129,13 @@ def test_body_is_written_only_for_kinds_that_have_one():
 def test_expressions_are_stored_canonical():
     d = as_dict("vecadd_split")
     tasklet = d["body"][0]["body"][0]["body"][0]
-    tasklet["inputs"]["in1"]["subset"] = ["(4*i_t) + i_s + 0*1"]
+    tasklet["inputs"]["in1"]["subset"] = ["(4*n_1_t) + n_2_s + 0*1"]
     tasklet["attrs"]["code"] = "out=(in1+in2)"
     d["body"][0]["attrs"]["range"] = "0:N//4:1"
     d["containers"]["A"]["shape"] = ["N+0"]
     g = Graph.from_dict(d)
     t = g.node("add")
-    assert t.inputs["in1"].subset == ["4 * i_t + i_s + 0 * 1"]  # canonical, not simplified
+    assert t.inputs["in1"].subset == ["4 * n_1_t + n_2_s + 0 * 1"]  # canonical, not simplified
     assert t.attrs["code"] == "out = in1 + in2"
     assert g.node("add_map").attrs["range"] == "0:N // 4"  # a step of 1 is left out
     assert g.containers["A"].shape == ["N + 0"]
@@ -142,8 +151,10 @@ def test_namespaced_attrs_pass_through_untouched():
     d["containers"]["A"]["attrs"]["mem.home"] = "l2"
     g = Graph.from_dict(d)
     assert g.node("add_map").attrs == {
-        "var": "i",
+        "var": "n",
         "range": "0:N",
+        "loop.dim": "n",
+        "loop.piece": 1,
         "user.note": note,
         "hw.whatever": 3,
     }

@@ -67,14 +67,14 @@ class BlockEmitSpec extends AnyFlatSpec {
     simd(1, "max", kCsr    = true), // the pin k
     simd(2, "axpby", k1Csr = true, k2Csr = true), // the pins k1 and k2
     simd(2, "axpby", k1    = 3) // no pin
-  ) ++ Seq(
+  ) ++ Seq(false, true).map { seed => // seeded, the port seed (D163)
     Case(
       "TreeAccumulate",
-      ujson.Obj("inType" -> "int64", "outType" -> "int64", "lanes" -> Lanes, "op" -> "add"),
+      ujson.Obj("inType" -> "int64", "outType" -> "int64", "lanes" -> Lanes, "op" -> "add", "seed" -> seed),
       Set.empty,
       registered = true
     )
-  ) ++ Seq((true, false, true), (false, false, false), (false, true, true)).map { case (acc, reg, registered) =>
+  } ++ Seq((true, false, true), (false, false, false), (false, true, true)).map { case (acc, reg, registered) =>
     Case(
       "Mac",
       ujson.Obj(
@@ -88,14 +88,21 @@ class BlockEmitSpec extends AnyFlatSpec {
       Set.empty,
       registered
     )
-  } ++ Seq(1, Lanes).map { n =>
+  } ++ Seq((1, false), (Lanes, false), (Lanes, true)).map { case (n, seed) =>
     Case(
       "SerialAccumulate",
-      ujson.Obj("inType" -> "int64", "outType" -> "int64", "lanes" -> n),
+      ujson.Obj("inType" -> "int64", "outType" -> "int64", "lanes" -> n, "seed" -> seed),
       if (n == 1) Set("lane") else Set.empty,
       registered = true
     )
-  } ++ Seq(1, 2).map { d =>
+  } ++ Seq(
+    Case(
+      "LaneAccumulate",
+      ujson.Obj("inType" -> "int64", "outType" -> "int64", "lanes" -> Lanes),
+      Set.empty,
+      registered = true
+    )
+  ) ++ Seq(1, 2).map { d =>
     Case(
       "LinkBuffer",
       ujson.Obj("depth" -> d, "lanes" -> Lanes, "dtype" -> "int64"),
@@ -164,7 +171,7 @@ class BlockEmitSpec extends AnyFlatSpec {
       } else assert(always.isEmpty, s"$top: ${always.distinct}")
     }
 
-  private val tree = """{"inType":"int64","outType":"int64","lanes":8,"op":"add"}"""
+  private val tree = """{"inType":"int64","outType":"int64","lanes":8,"op":"add","seed":false}"""
 
   for (
     (why, name, json) <- Seq(

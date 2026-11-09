@@ -110,7 +110,7 @@ def test_the_fill_rule_gives_the_datapaths_params(vecadd, tmp_path):
     )
     (v,) = vsum.groups[0].units
     assert fill(vsum, v, catalogue()["TreeAccumulate"]) == {
-        "inType": "int64", "outType": "int64", "lanes": 1, "op": "add"
+        "inType": "int64", "outType": "int64", "lanes": 1, "op": "add", "seed": False
     }  # fmt: skip
 
 
@@ -140,12 +140,13 @@ def test_the_catalogue_has_the_datapaths_latency_span_and_pins():
     cat = catalogue()
     assert {k: (v["latency"], v["span"]) for k, v in cat.items()} == {
         "SimdLanes": (0, 1), "TreeAccumulate": (1, 1), "Mac": ("max(accumulate, regOut)", 1),
-        "SerialAccumulate": (1, "lanes"), "LinkBuffer": (1, 1),
+        "SerialAccumulate": (1, "lanes"), "LaneAccumulate": (1, 1), "LinkBuffer": (1, 1),
     }  # fmt: skip
     pins = {k: live(v["pins"], {"accumulate": True, "regOut": False}) for k, v in cat.items()}
     assert {k: list(v) for k, v in pins.items()} == {
         "SimdLanes": [], "TreeAccumulate": ["fire", "first"], "Mac": ["fire", "first"],
-        "SerialAccumulate": ["read", "lane", "first"], "LinkBuffer": ["load", "wslot", "rslot"],
+        "SerialAccumulate": ["read", "lane", "first"], "LaneAccumulate": ["fire", "first"],
+        "LinkBuffer": ["load", "wslot", "rslot"],
     }  # fmt: skip
     assert list(live(cat["Mac"]["pins"], {"accumulate": False, "regOut": True})) == ["en"]
     assert live(cat["Mac"]["pins"], {"accumulate": False, "regOut": False}) == {}
@@ -330,7 +331,7 @@ def test_a_narrow_fold_into_int64_is_filled(tmp_path, recipe, dtype):
     (u,) = acc.groups[0].units
     params = fill(acc, u, catalogue()["TreeAccumulate"])
     assert params == {"inType": dtype, "outType": "int64", "lanes": params["lanes"],
-                      "op": "add"}  # fmt: skip
+                      "op": "add", "seed": False}  # fmt: skip
 
 
 # =============================================================================
@@ -424,7 +425,8 @@ def test_the_catalogue_has_each_datapaths_flops():
     assert {k: v["flops"] for k, v in catalogue().items()} == {
         "SimdLanes": 0, "TreeAccumulate": "width(outType)",
         "Mac": "lanes * width(outType) * max(accumulate, regOut)",
-        "SerialAccumulate": "width(outType)", "LinkBuffer": "depth * lanes * width(dtype)",
+        "SerialAccumulate": "width(outType)", "LaneAccumulate": "lanes * width(outType)",
+        "LinkBuffer": "depth * lanes * width(dtype)",
     }  # fmt: skip
 
 
@@ -437,6 +439,7 @@ def test_the_catalogue_has_each_datapaths_flops():
         ("Mac", {"outType": "int64", "lanes": 8, "accumulate": True, "regOut": False}, 512),
         ("Mac", {"outType": "int16", "lanes": 4, "accumulate": False, "regOut": True}, 64),
         ("Mac", {"outType": "int64", "lanes": 8, "accumulate": False, "regOut": False}, 0),
+        ("LaneAccumulate", {"inType": "int32", "outType": "int64", "lanes": 8}, 512),
         ("LinkBuffer", {"depth": 3, "lanes": 4, "dtype": "uint8"}, 96),
     ],
 )
@@ -491,3 +494,19 @@ def test_axpys_unit_fills_k1_from_its_csr_and_k1_is_a_live_pin(tmp_path):
         check_unit(acc, u, catalogue())
     with pytest.raises(GenError, match=r"scalar k3 is no pin of SimdLanes here \(\[\]\)"):
         check_unit(acc, replace(u, scalars={"k3": "int32"}), catalogue())
+
+
+@pytest.mark.parametrize(("recipe", "datapath"), [("matvec_seed", "TreeAccumulate"),
+                                                  ("matvec_seed_serial", "SerialAccumulate")])  # fmt: skip
+def test_a_seeded_fold_fills_seed_and_its_seed_port_is_live(tmp_path, recipe, datapath):
+    """matvec_seed's sum (B2 R5, D163): the catalogue's fill rule unit.ports.seed gives seed true,
+    and the datapath's port seed is live on it, so the unit passes check_unit; the mul's simd
+    and an unseeded fold keep their params."""
+    acc = accelerator_spec(tmp_path / designed(tmp_path, recipe, recipe), tmp_path)
+    (sum_,) = [u for g in acc.groups for u in g.units if u.name == "sum"]
+    sig = catalogue()[datapath]
+    params = fill(acc, sum_, sig)
+    assert params["seed"] is True and params["lanes"] == (4 if recipe == "matvec_seed" else 1)
+    assert set(live(sig["ports"], params)) == {"in", "seed", "out"}
+    assert set(live(sig["ports"], params | {"seed": False})) == {"in", "out"}
+    check_unit(acc, sum_, catalogue())

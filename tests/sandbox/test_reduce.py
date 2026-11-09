@@ -116,7 +116,7 @@ def test_the_sum_folds_every_lane_into_one():
     """out[0] becomes the one lane out[0:1], with no reduce: the BRM folds (D102)."""
     s = Graph.load(FIXTURES / "dot_accelerated.snaxdfg").node("sum")
     assert s.outputs["out"].to_dict() == {"data": "out", "subset": ["0:1"]}
-    assert s.inputs["a"].subset == ["4 * i_t_1:4 * i_t_1 + 4"]
+    assert s.inputs["a"].subset == ["4 * n_1_t:4 * n_1_t + 4"]
     assert s.attrs["code"] == "out = a"
     assert s.attrs["replaced"]["body"][0]["outputs"]["out"]["reduce"] == {
         "op": "add",
@@ -124,9 +124,9 @@ def test_the_sum_folds_every_lane_into_one():
     }
 
 
-def test_the_chisel_accumulator_takes_one_lane():
-    """The serial accumulator: the sum map split by 1, bound to chisel_accumulator (W = 1)."""
-    g = bind(split_sum(1), **SUM | {"implementation": "chisel_accumulator"})
+def test_the_adder_tree_takes_one_lane():
+    """The sum map split by 1, bound to the adder tree at W = 1 (vsum's)."""
+    g = bind(split_sum(1), **SUM)
     assert g.node("sum").attrs["params"] == {"W": 1, "op": "add"}
     x = dot_inputs(seed=5)
     assert execute(g, x)["out"].tolist() == [int(x["A"] @ x["B"])]
@@ -166,7 +166,6 @@ REJECTED = [
         SUM,
         "starts from 5, the BRM from add's identity 0",
     ),
-    (split_sum, SUM | {"implementation": "chisel_accumulator"}, "W = 4 not supported"),
     (split_sum, SUM | {"brm": "simd"}, "the tasklet computes 'out = a' on the BRM's ports"),
     (lambda: split_map(imported(), "mult_map", 4), MUL | {"brm": "accumulate"}, "reduce folds one"),
 ]

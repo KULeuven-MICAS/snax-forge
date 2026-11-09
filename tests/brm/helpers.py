@@ -93,7 +93,7 @@ def reducer() -> dict[str, Any]:
             "dataflow": {"notation": "test_list", "ports": {"a": [0, 1], "out": [0]}},
             "pattern": {"family": "reduce"},
             "implementations": {
-                "chisel_accumulator": {
+                "chisel_adder_tree": {
                     "source": "chisel",
                     "timing": {"latency": 1, "initiation_interval": 1},
                 }

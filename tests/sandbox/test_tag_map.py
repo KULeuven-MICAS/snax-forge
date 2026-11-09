@@ -17,6 +17,7 @@ import pytest
 from snax_forge.dfg import Graph, execute
 from snax_forge.dfg.execute import against_reference
 from snax_forge.dfg.import_sdfg import import_kernel
+from snax_forge.dfg.loops import SUFFIX
 from snax_forge.sandbox import SandboxError, bind, join_map, split, split_map
 from snax_forge.sandbox.transforms import tag_map, untag_map
 from snax_forge.sdfg.loader import load
@@ -43,10 +44,15 @@ def matadd() -> Graph:
 
 @pytest.mark.parametrize("kind", ["temporal", "tile", "spatial"])
 def test_tag_and_untag_round_trip(matadd, kind):
-    """The map keeps its var and range; untag_map gives back the graph it was."""
+    """The map keeps its range, its variable takes the tag's suffix (``m_t``, ``m_tile``,
+    ``m_s``); untag_map gives back the graph it was."""
     g = tag_map(matadd, "add_map", kind)
     m = g.node("add_map")
-    assert (m.attrs["var"], m.attrs["range"], m.attrs["loop.kind"]) == ("i", "0:M", kind)
+    assert (m.attrs["var"], m.attrs["range"], m.attrs["loop.kind"]) == (
+        f"m{SUFFIX[kind]}",
+        "0:M",
+        kind,
+    )
     assert "loop.kind" not in matadd.node("add_map").attrs  # the input is not changed
     assert untag_map(g, "add_map") == matadd
 
@@ -66,7 +72,8 @@ def test_untag_map_takes_any_tag_but_around_a_bound_unit(matadd):
     g = split_map(matadd, "add_map_1", 4)
     untagged = untag_map(untag_map(g, "add_map_1"), "add_map_1_s")
     names = tagged_names(matadd, "add_map_1", 4)
-    assert names == {"j_1": "j_t", "j_2": "j_s", "add_map_1_inner": "add_map_1_s"}
+    assert names == {"n_1": "n_1_t", "n_2": "n_2_s", "add_map_1_inner": "add_map_1_s"}
+    names = {k: v for k, v in names.items() if k.endswith("_inner")}  # untagged: n_1, n_2
     assert renamed(split(matadd, "add_map_1", 4), names) == untagged.to_json()
     with pytest.raises(SandboxError, match="untag_map 'add_map': the bound unit 'add' is inside "
                        r"it \(unbind first\)"):  # fmt: skip
@@ -115,12 +122,12 @@ def test_matadd_binds_in_2d_and_passes_the_reference_check():
     loops = [(n.id, n.attrs["var"], n.attrs["range"], n.attrs.get("loop.kind"))
              for n, _ in g.walk() if n.kind == "map"]  # fmt: skip
     assert loops == [
-        ("add_map", "i", "0:M", "temporal"),
-        ("add_map_1", "j_t", "0:N // 4", "temporal"),
+        ("add_map", "m_t", "0:M", "temporal"),
+        ("add_map_1", "n_1_t", "0:N // 4", "temporal"),
     ]
     acc = g.node("add")
     assert acc.kind == "accelerated" and acc.attrs["params"]["W"] == 4
-    lanes = ["i", "4 * j_t:4 * j_t + 4"]
+    lanes = ["m_t", "4 * n_1_t:4 * n_1_t + 4"]
     assert {c: (m.data, m.subset) for c, m in (acc.inputs | acc.outputs).items()} == {
         "a": ("A", lanes), "b": ("B", lanes), "out": ("C", lanes)
     }  # fmt: skip

@@ -2,10 +2,13 @@
 
     python -m snax_forge.flow.forge_set quick|full [--sim vsim|vlt] [-j N]    (pixi forge-set)
 
-Runs ``pixi run forge`` (flow/forge.py) on each recipe of the set at its default sizes, ``-j``
-at a time (default the CPU count), each in its own folders (``out/flow/<name>/``,
-``out/bundle/<name>/``, ``out/forge/<name>/``), each forge's terminal output in
-``out/forge-set/<set>/<design>.txt``. Emit is made ready once first (``rtl.warm_emit``: its
+Runs ``pixi run forge`` (flow/forge.py) on each design of the set, ``-j`` at a time (default
+the CPU count), each in its own folders (``out/flow/<name>/``, ``out/bundle/<name>/``,
+``out/forge/<name>/``), each forge's terminal output in ``out/forge-set/<set>/<design>.txt``. A
+design (``Design``) is a recipe and the ``--set`` values forge runs it with, none for the
+recipe's defaults (rowsum_2 at its defaults, then with ``memory.passes.layout=padded_rows``,
+rows 64 and 65 words apart); its name is forge's
+folder name for them (flow/run.py's ``default_name``: ``rowsum_2_passes.layoutpadded_rows``). Emit is made ready once first (``rtl.warm_emit``: its
 classpath and firtool), so the bundles do not all start sbt or extract firtool at once. Then it writes ``out/forge-set/<set>.md``: per design its bundle folder and
 the lines its RTL run must print (``forge_expected.txt``, from its SNAX-GVSoC run); the one
 line that checks them all from snax_cluster's ``target/snitch_cluster`` (``make
@@ -23,33 +26,66 @@ import os
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from pathlib import Path
 
 from snax_forge.common import cwd_relative
 from snax_forge.gen import bundle
 from snax_forge.gen.rtl import warm_emit
-from snax_forge.sandbox.recipe import find_recipe
+from snax_forge.sandbox.recipe import Recipe, find_recipe
 
 ROOT = bundle.ROOT
 OUT = ROOT / "out" / "forge-set"
 
-QUICK = ["vecadd_i32", "vsum_tree_i8", "dot_1", "dot_1_enc", "dot_4", "axpy"]
+
+@dataclass(frozen=True)
+class Design:
+    """One design of a set: a recipe and the ``--set`` values forge runs it with, each
+    ``NAME=VALUE`` as on forge's command line (none: the recipe's defaults)."""
+
+    recipe: str
+    sets: tuple[str, ...] = ()
+
+    @property
+    def name(self) -> str:
+        """Forge's folder name for it: the recipe's, with every ``--set`` appended
+        (flow/run.py's ``default_name``)."""
+        if not self.sets:
+            return self.recipe
+        from snax_forge.flow import run as flow_run
+        from snax_forge.flow.__main__ import setting
+
+        by_head = flow_run.split_sets([setting(t) for t in self.sets])
+        recipe_sets = dict(by_head["recipe"])
+        r = Recipe.load(find_recipe(self.recipe)).with_params(recipe_sets)
+        return flow_run.default_name(r, recipe_sets, by_head["platform"], by_head["memory"])
+
+
+def designs(*recipes: str | Design) -> list[Design]:
+    """A set's designs: a name is its recipe at its defaults."""
+    return [r if isinstance(r, Design) else Design(r) for r in recipes]
+
+
+QUICK = designs("vecadd_i32", "vsum_tree_i8", "dot_1", "dot_1_enc", "dot_4", "axpy")
 SETS = {
     "quick": QUICK,
-    "full": [*QUICK, "vecadd", "vsum", "vecmul_i32_i64", "dot_2", "dot_3", "dot_5", "dot_6",
-             "matvec_5", "matvec_6", "relu"],
+    "full": [*QUICK, *designs("vecadd", "vsum", "rowsum_serial", "vecmul_i32_i64", "dot_2",
+                              "dot_3", "dot_5", "dot_6", "dot_serial", "matvec_1", "matvec_5",
+                              "matvec_6", "matvec_seed", "matvec_seed_serial", "relu", "rowsum_2",
+                              Design("rowsum_2", ("memory.passes.layout=padded_rows",)))],
 }  # fmt: skip
 
 
-def run_forge(recipe: str, output: Path) -> int:
-    """``pixi run forge recipes/<folder>/<recipe>.json`` (``find_recipe``), its terminal output
-    into ``output``; its exit."""
+def run_forge(design: Design, output: Path) -> int:
+    """``pixi run forge recipes/<folder>/<recipe>.json [--set ...]`` (``find_recipe``), its
+    terminal output into ``output``; its exit."""
     with output.open("w") as f:
         cmd = [
             sys.executable,
             "-m",
             "snax_forge.flow.forge",
-            str(find_recipe(recipe)),
+            str(find_recipe(design.recipe)),
+            *(a for s in design.sets for a in ("--set", s)),
         ]
         return subprocess.run(
             cmd, cwd=ROOT, stdout=f, stderr=subprocess.STDOUT, check=False
@@ -125,7 +161,8 @@ def table(name: str, designs: list[str], outputs: dict[str, str], sim: str) -> s
 
 def forge_set(name: str, sim: str, jobs: int) -> int:
     """Run the set and write its file; see the module doc."""
-    designs = SETS[name]
+    entries = SETS[name]
+    designs = [e.name for e in entries]
     logs = OUT / name
     logs.mkdir(parents=True, exist_ok=True)
     (OUT / f"{name}.md").unlink(missing_ok=True)
@@ -133,11 +170,12 @@ def forge_set(name: str, sim: str, jobs: int) -> int:
     print(f"forge-set {name}: {len(designs)} designs, {jobs} at a time; each forge's output in "
           f"{cwd_relative(logs)}/<design>.txt", flush=True)  # fmt: skip
     with ThreadPoolExecutor(max_workers=jobs) as pool:
-        rcs = dict(zip(designs, pool.map(lambda d: run_forge(d, logs / f"{d}.txt"), designs),
+        rcs = dict(zip(designs, pool.map(lambda e: run_forge(e, logs / f"{e.name}.txt"), entries),
                        strict=True))  # fmt: skip
     failed = [d for d in designs if rcs[d] != 0]
+    width = max(16, *map(len, designs))
     for d in designs:
-        print(f"  {d:<16} {'FAILED' if rcs[d] else 'passed'}", flush=True)
+        print(f"  {d:<{width}} {'FAILED' if rcs[d] else 'passed'}", flush=True)
     if failed:
         for d in failed:
             print(f"forge-set {name} FAILED: {d} (exit {rcs[d]}), its output in "

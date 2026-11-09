@@ -99,7 +99,7 @@ def test_readers_that_need_different_pads_are_refused():
 def test_a_memlet_past_the_padding_is_still_an_error():
     """vecadd N = 7, W = 4, A padded to 8: a memlet reaching element 8 leaves the padding."""
     d = steps("vecadd", W=4, N=7)[-1].to_dict()
-    d["body"][0]["body"][0]["inputs"]["a"]["subset"] = ["4 * i_t + 4:4 * i_t + 8"]
+    d["body"][0]["body"][0]["inputs"]["a"]["subset"] = ["4 * n_1_t + 4:4 * n_1_t + 8"]
     a = np.arange(7)
     with pytest.raises(ExecutionError, match="leaves 0:"):
         execute(Graph.from_dict(d), {"A": a, "B": a, "C": np.zeros(7, np.int64)})

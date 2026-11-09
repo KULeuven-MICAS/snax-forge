@@ -58,9 +58,10 @@
     "values": ["int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64"]
    },
    "lanes": {"type": "int", "min": 1},
-   "op": {"type": "op", "values": ["add"]}
+   "op": {"type": "op", "values": ["add"]},
+   "seed": {"type": "bool"}
   },
-  "ports": {"in": "in", "out": "out"},
+  "ports": {"in": "in", "seed": {"dir": "in", "when": {"seed": true}}, "out": "out"},
   "latency": 1,
   "span": 1,
   "flops": "width(outType)",
@@ -69,7 +70,8 @@
    "inType": "inputs.dtype",
    "outType": "outputs.dtype",
    "lanes": "inputs.lanes",
-   "op": "unit.params.op"
+   "op": "unit.params.op",
+   "seed": "unit.ports.seed"
   }
  },
  "Mac": {
@@ -118,13 +120,38 @@
     "type": "dtype",
     "values": ["int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64"]
    },
-   "lanes": {"type": "int", "min": 1}
+   "lanes": {"type": "int", "min": 1},
+   "seed": {"type": "bool"}
   },
-  "ports": {"in": "in", "out": "out"},
+  "ports": {"in": "in", "seed": {"dir": "in", "when": {"seed": true}}, "out": "out"},
   "latency": 1,
   "span": "lanes",
   "flops": "width(outType)",
   "pins": ["read", "lane", "first"],
+  "fill": {
+   "inType": "inputs.dtype",
+   "outType": "outputs.dtype",
+   "lanes": "inputs.lanes",
+   "seed": "unit.ports.seed"
+  }
+ },
+ "LaneAccumulate": {
+  "params": {
+   "inType": {
+    "type": "dtype",
+    "values": ["int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64"]
+   },
+   "outType": {
+    "type": "dtype",
+    "values": ["int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64"]
+   },
+   "lanes": {"type": "int", "min": 1}
+  },
+  "ports": {"a": "in", "out": "out"},
+  "latency": 1,
+  "span": 1,
+  "flops": "lanes * width(outType)",
+  "pins": ["fire", "first"],
   "fill": {"inType": "inputs.dtype", "outType": "outputs.dtype", "lanes": "inputs.lanes"}
  },
  "LinkBuffer": {

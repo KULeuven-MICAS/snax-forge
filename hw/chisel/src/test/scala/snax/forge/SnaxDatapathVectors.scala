@@ -60,7 +60,8 @@ object SnaxDatapathVectors {
             "inType"  -> ujson.Str(ins.head),
             "outType" -> ujson.Str(one("out")),
             "lanes"   -> ujson.Num(one("lanes").toInt),
-            "op"      -> ujson.Str(one("op"))
+            "op"      -> ujson.Str(one("op")),
+            "seed"    -> ujson.Bool(header.get("seed").contains(Seq("1")))
           )
         case "Mac"              =>
           Map(
@@ -72,6 +73,13 @@ object SnaxDatapathVectors {
             "regOut"     -> ujson.Bool(one("regOut") == "1")
           )
         case "SerialAccumulate" =>
+          Map(
+            "inType"  -> ujson.Str(ins.head),
+            "outType" -> ujson.Str(one("out")),
+            "lanes"   -> ujson.Num(one("lanes").toInt),
+            "seed"    -> ujson.Bool(header.get("seed").contains(Seq("1")))
+          )
+        case "LaneAccumulate"   =>
           Map(
             "inType"  -> ujson.Str(ins.head),
             "outType" -> ujson.Str(one("out")),

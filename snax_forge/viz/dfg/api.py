@@ -87,7 +87,9 @@ worked out here:
                                                            ``acc · max(a, k) · W 4 · k 0``,
                                                            ``acc · k1 * a + b · W 4 · k1 csr(alpha)``)
     link         ``<container> · wire`` or ``<container> · FIFO <depth>``
-    container    its name, and a ``badge`` from the estimate's placement (``L1 · 4 KiB``,
+    container    its name with its shape over the kernel's symbols, ``A[M, N]`` (a matrix),
+                 ``y[M]`` (a vector), a scalar argument by its name alone, and a ``badge``
+                 from the estimate's placement (``L1 · 4 KiB``,
                  ``wire``, ``FIFO 1``); a fused nest's local value has no box (Links); a
                  kernel's scalar argument (``sdfg.scalar``, ``scalar``) is drawn as a parameter
                  hexagon, each edge reading it as one element labelled ``alpha[0] · broadcast``
@@ -150,6 +152,37 @@ writer's output connector joins the reader's input connector inside the fused ma
 line gives no bytes and ``local to <fused map>``, its Details ``local to <fused map>, no
 memory``. A transient in L1 (dot 1's ``tmp0``) and the kernel's inputs and outputs keep
 their boxes.
+
+**The seed** (sandbox/seed.py's ``fuse_seed``). A seeded fold reads and writes ``x`` itself,
+so no transient sits between it and an elementwise nest: ``x`` has two edges on the fold,
+its seed, read from ``x``'s box above (a tasklet's drawn connector ``seed``, ``seed: true``,
+a bound unit's ``seed`` port), and its write into ``x``'s box below (its next version, as
+any in-place write). The seed's edge is labelled with its memlet, ``q[m_t]``, and marked
+``seed``; its Details' memlet ends ``(seed)``; the node's Details list it under ``seed``, a
+seeded tasklet's output memlet ``(reduce add, seed q[m])``.
+
+**Folds** (``folds``). A node whose output folds is drawn as an upside-down trapezoid, wide on
+top where its inputs come in, narrow at the bottom where its output leaves (``fold: true`` on
+the node): a tasklet whose output memlet has a ``reduce`` (an identity or a seed), and a bound
+unit whose replaced nest holds one, so TreeAccumulate, SerialAccumulate, LaneAccumulate and the
+Mac accumulating a lane fold; any other node stays a rectangle.
+
+**Partners** (``partners``). Each map's list of the maps it can be fused with
+(``fuse_map``), seeded with (``fuse_seed``) or interchanged with (``interchange_map``),
+found by the transforms' own sites, the code that fills the editor's fields (compose.py's
+``fuse_pairs``, seed.py's ``seed_pairs``, transforms.py's ``partners``), never by a rule of
+the viewer's, so a partner shown is one the transform takes. A fuse's entry has a
+``marker`` on the transient between the two nests, its box's key and its text, the subset
+the second nest reads and the loops matched with their range (``tmp0[m, n] · m = m (0:8), n
+= n (0:512)`` for fuse_map on matvec_acc's mult and sum, ``tmp1[m] · m_t = m (0:8)`` for
+fuse_seed after ``tag_map sum_map temporal``); an interchange's none (its partners are maps
+of one nest). A near partner (``near``, the refusal's message) is a map ``fuse_map`` refuses
+only for different ranges, one side split and the other not, and takes after the split its
+refusal names (compose.py's ``fuse_near``: "mult_map_1 runs 0:512, sum_map_1 runs 0:128 and
+its child 0:4: split_map mult_map_1 4 first"); ``fuse_seed`` compares the elements its
+loops run over, not their ranges, so it has none. The page shows them for a selected map
+only: each partner in its transform's colour with a tag naming it, and the marker beside the
+transient's box; a near partner grey and dashed, its tag the refusal.
 """
 
 from __future__ import annotations
@@ -164,7 +197,7 @@ from pathlib import Path
 from typing import Any
 
 from snax_forge import expr
-from snax_forge.brm import BrmError
+from snax_forge.brm import SEED, BrmError
 from snax_forge.brm.dtypes import bits
 from snax_forge.char import DEFAULT_TECH
 from snax_forge.common import LoadedSet, unique_names
@@ -309,6 +342,7 @@ def graph_view(e: Entry, platform: Any = None, est: Any = None,
         containers={k: _container(g, k, placed.get(k)) for k in g.containers},
     )
     out.update(_layout(g))
+    out["partners"] = partners(g, out["boxes"])
     out["accelerators"] = accelerators(g)
     for acc in out["accelerators"]:
         acc["text"] = acc["name"]
@@ -1216,7 +1250,11 @@ def details(g: Graph, view: dict[str, Any], est: Any) -> dict[str, dict[str, Any
     nodes: dict[str, Node] = {}
     for n, _ in g.walk():
         nodes[n.id] = n
-        for m in n.inputs.values():
+        seed = seed_memlet(n)
+        for m in [
+            *n.inputs.values(),
+            *([seed] if seed is not None and n.kind == "tasklet" else []),
+        ]:
             users[m.data]["readers"].append(n.id)
         for m in n.outputs.values():
             users[m.data]["writers"].append(n.id)
@@ -1298,6 +1336,9 @@ def _node_details(n: Node) -> dict[str, Any]:
         }
     io = {"inputs": {c: memlet_text(m) for c, m in n.inputs.items()},
           "outputs": {c: memlet_text(m) for c, m in n.outputs.items()}}  # fmt: skip
+    seed = seed_memlet(n)
+    if seed is not None:  # the seed (its edge's label)
+        io["seed"] = memlet_text(seed)
     if n.kind == "tasklet":
         return {"kind": "tasklet", "code": a["code"], **io}
     if n.kind == "accelerated":
@@ -1318,16 +1359,43 @@ def _node_details(n: Node) -> dict[str, Any]:
     return {"kind": n.kind, "attrs": dict(a), **io}
 
 
-def _container(g: Graph, name: str, placed: Any = None) -> dict[str, Any]:
-    """A container as the drawing shows it: its name, its badge, whether it is transient."""
+def container_text(g: Graph, name: str) -> str:
+    """A container's text in its box: its name and shape, as the graph spells it over the
+    kernel's symbols (``A[M, N]``, ``y[M]``, a convolution's ``X[B, C, H, W]``); a kernel's
+    scalar argument by its name alone (``alpha``)."""
     c = g.containers[name]
-    return {"name": name, "text": name, "badge": badge(placed), "transient": c.transient,
-            "scalar": bool(c.attrs.get(SCALAR))}  # fmt: skip
+    if c.attrs.get(SCALAR):
+        return name
+    return f"{name}[{', '.join(str(d) for d in c.shape)}]"
+
+
+def _container(g: Graph, name: str, placed: Any = None) -> dict[str, Any]:
+    """A container as the drawing shows it: its name and shape, its badge, whether it is
+    transient."""
+    c = g.containers[name]
+    return {"name": name, "text": container_text(g, name), "badge": badge(placed),
+            "transient": c.transient, "scalar": bool(c.attrs.get(SCALAR))}  # fmt: skip
 
 
 def memlet_text(m: Memlet) -> str:
     text = f"{m.data}[{', '.join(str(d) for d in m.subset)}]"
+    if m.reduce is not None and m.reduce.seed is not None:
+        sm = m.reduce.seed
+        return f"{text} (reduce {m.reduce.op}, seed {sm.data}[{', '.join(map(str, sm.subset))}])"
     return text if m.reduce is None else f"{text} (reduce {m.reduce.op})"
+
+
+def seed_memlet(n: Node) -> Memlet | None:
+    """The element a node's fold starts from (module doc, "The seed"): a seeded tasklet's
+    reduce's seed, or a bound unit's ``seed`` port; None for any other node."""
+    if n.kind == "accelerated":
+        return n.inputs.get(SEED)
+    if n.kind != "tasklet":
+        return None
+    for m in n.outputs.values():
+        if m.reduce is not None and m.reduce.seed is not None:
+            return Memlet(m.reduce.seed.data, list(m.reduce.seed.subset))
+    return None
 
 
 def _iterations(g: Graph, rng: str) -> int | None:
@@ -1360,11 +1428,18 @@ def _node(g: Graph, n: Node) -> dict[str, Any]:
         "id": n.id,
         "kind": n.kind,
         "text": compact_text(g, n),
-        "inputs": [_conn(c, m) | ({"csr": True} if c in csr else {}) for c, m in n.inputs.items()],
+        "inputs": [_conn(c, m) | ({"csr": True} if c in csr else {})
+                   | ({"seed": True} if c == SEED and n.kind == "accelerated" else {})
+                   for c, m in n.inputs.items()],
         "outputs": [_conn(c, m) for c, m in n.outputs.items()],
-    }
+    }  # fmt: skip
+    seed = seed_memlet(n) if n.kind == "tasklet" else None
+    if seed is not None:  # a seeded fold's seed, a connector the drawing gives it
+        d["inputs"].append({"connector": SEED, "data": seed.data, "seed": True})
     if n.kind == "map":
         d["loop_kind"] = n.attrs.get("loop.kind")
+    if folds(n):  # drawn as an upside-down trapezoid (module doc, "Folds")
+        d["fold"] = True
     if n.kind == "link":  # its container's edges meet it here (module doc)
         c = n.attrs["container"]
         d["inputs"], d["outputs"] = (
@@ -1374,6 +1449,71 @@ def _node(g: Graph, n: Node) -> dict[str, Any]:
     if n.body is not None:
         d["body"] = [_node(g, c) for c in n.body]
     return d
+
+
+# The transforms a map's partners are found by, in the order a map's list gives them
+PARTNER_TRANSFORMS = ("fuse_map", "fuse_seed", "interchange_map")
+
+
+def partners(g: Graph, boxes: dict[str, dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    """Each map's partners (module doc, "Partners"): map id -> ``{"map", "transform"}`` per map
+    it fuses, seeds or interchanges with, by the transforms' own sites, and for a fuse the
+    ``marker`` on the transient between the two nests, ``{"box", "container", "text"}``."""
+    from snax_forge.sandbox.compose import fuse_link, fuse_near, fuse_pairs, link_text
+    from snax_forge.sandbox.recipe import SandboxError
+    from snax_forge.sandbox.seed import seed_link, seed_pairs
+    from snax_forge.sandbox.transforms import partners as swaps
+
+    out: dict[str, list[dict[str, Any]]] = {}
+    found = {"fuse_map": (fuse_pairs, fuse_link), "fuse_seed": (seed_pairs, seed_link)}
+
+    def add(a: str, b: str, transform: str, marker: dict[str, Any] | None = None) -> None:
+        out.setdefault(a, []).append({"map": b, "transform": transform}
+                                     | ({"marker": marker} if marker else {}))  # fmt: skip
+
+    for transform in PARTNER_TRANSFORMS:
+        try:
+            if transform == "interchange_map":
+                maps = [n.id for n, _ in g.walk() if n.kind == "map"]
+                for m in maps:
+                    for other, why in swaps(g, m):
+                        if why is None:
+                            add(m, other, transform)
+                continue
+            pairs, link = found[transform]
+            for a, b in pairs(g):
+                ln = link(g, a, b)
+                box = next((k for k, x in boxes.items() if x["container"] == ln["container"]
+                            and ln["writer"] in x["written_by"] and not x["again"]), None)  # fmt: skip
+                marker = {"box": box, "container": ln["container"], "text": link_text(ln)}
+                add(a, b, transform, marker)
+                add(b, a, transform, marker)
+        except (SandboxError, DfgError, ExprError, KeyError):
+            continue  # a graph the transform cannot judge: no partners by it
+    try:  # near partners: refused for different ranges only, its refusal naming the split
+        for a, b, why in fuse_near(g):
+            for x, y in ((a, b), (b, a)):
+                out.setdefault(x, []).append({"map": y, "transform": "fuse_map", "near": why})
+    except (SandboxError, DfgError, ExprError, KeyError):
+        pass
+    return out
+
+
+def folds(n: Node) -> bool:
+    """Whether ``n``'s output folds (module doc, "Folds"): a tasklet's output memlet has a
+    ``reduce`` (an identity or a seed), a bound unit's replaced nest holds such a tasklet."""
+    if n.kind == "tasklet":
+        return any(m.reduce is not None for m in n.outputs.values())
+    if n.kind == "accelerated" and n.attrs.get("replaced"):
+        return _folds_in(n.attrs["replaced"])
+    return False
+
+
+def _folds_in(d: dict[str, Any]) -> bool:
+    """A stored subtree (``replaced``) holds a tasklet whose output folds."""
+    if d.get("kind") == "tasklet" and any("reduce" in m for m in (d.get("outputs") or {}).values()):
+        return True
+    return any(_folds_in(c) for c in d.get("body") or [])
 
 
 def _replaced_text(r: dict[str, Any] | None) -> str | None:
@@ -1400,6 +1540,9 @@ def _uses(n: Node) -> list[tuple[str, Node, str, Memlet]]:
     """Every memlet under ``n`` in execution order: (``read`` / ``write``, node, connector, memlet)."""
     out: list[tuple[str, Node, str, Memlet]] = []
     out += [("read", n, c, m) for c, m in n.inputs.items()]
+    seed = seed_memlet(n) if n.kind == "tasklet" else None
+    if seed is not None:  # a seeded fold reads its seed (no connector of its own)
+        out.append(("read", n, SEED, seed))
     for child in n.body or []:
         out += _uses(child)
     out += [("write", n, c, m) for c, m in n.outputs.items()]
@@ -1513,8 +1656,11 @@ def _layout(g: Graph) -> dict[str, Any]:
                 continue
             else:
                 label = f"{text} · broadcast" if m.data in scalars and not m.names else None
+                seeded = c == SEED and seed_memlet(n) is not None
+                if seeded:  # the fold's seed, labelled with its memlet
+                    label, text = text, f"{text} (seed)"
                 edges.append(_edge(above[m.data], port, m.data, text, "read",
-                                   packing(g, n, c, m.data), label=label))  # fmt: skip
+                                   packing(g, n, c, m.data), label=label, seed=seeded))  # fmt: skip
         nxt = reads[k + 1] if k + 1 < len(tops) else []
         names = nxt + [c for c in writes[k] if c not in nxt]
         fresh = {c: list(dict.fromkeys(n.id for n, _, _ in wrote[c])) for c in writes[k]}
@@ -1539,13 +1685,17 @@ def _edge(
     pack: str | None = None,
     local: bool = False,
     label: str | None = None,
+    seed: bool = False,
 ) -> dict[str, Any]:
     """One memlet; ``pack`` the port's packing when it meets an accelerated node; ``local`` a
     fused nest's local value between its two tasklets, labelled with the container's name;
-    ``label`` any other text drawn beside it (a scalar's ``alpha[0] · broadcast``)."""
+    ``label`` any other text drawn beside it (a scalar's ``alpha[0] · broadcast``, a fold's
+    seed ``q[m_t]``); ``seed`` a fold's seed."""
     out = {"id": f"{src}->{dst}", "from": src, "to": dst, "data": data, "text": text, "dir": side}
     if pack is not None:
         out["packing"] = pack
+    if seed:
+        out["seed"] = True
     if local:
         out |= {"local": True, "label": data}
     elif label is not None:

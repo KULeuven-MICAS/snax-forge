@@ -11,7 +11,9 @@ import snax.forge.elementwise.ElementwiseModel
   * input, before the tree, the tree and the register wrapping at the output type; each sum NumPy's
   * `x.astype(out).sum(dtype=out)`, taken once through the tree, one beat of all the values, and once through the
   * register, one value per beat), then random beats with `fire` and `first` driven at random against the model: `acc`
-  * takes the beat's sum on a fire with `first`, adds it on a fire without, and holds otherwise.
+  * takes the beat's sum on a fire with `first`, adds it on a fire without, and holds otherwise. Seeded (D163, B2 R5),
+  * at W = 1, 2 and 4: a random seed each cycle, and a fire with `first` takes seed + the beat's sum; matvec_acc's
+  * worked example at W = 2, rows (1, 2, 3, 4) · p = (1, 2, 0, 1) from q = 1: 6, then 10.
   */
 class TreeAccumulateSpec extends AnyFlatSpec with ForgeTester {
 
@@ -61,6 +63,46 @@ class TreeAccumulateSpec extends AnyFlatSpec with ForgeTester {
     val e = intercept[Exception](circt.stage.ChiselStage.emitCHIRRTL(new TreeAccumulate("int32", "int16", 1)))
     assert(e.getMessage.contains("outType int16 must be at least as wide as inType int32"), e.getMessage)
   }
+
+  behavior of "TreeAccumulate with a seed"
+
+  it should "give matvec_acc's worked example: q = 1, then 6, then 10" in {
+    test(new TreeAccumulate("int64", "int64", 2, seed = true)) { dut =>
+      for ((beat, q, first) <- Seq((Seq(1, 4), 1, true), (Seq(0, 4), 7, false))) {
+        dut.io.fire.poke(true.B); dut.io.first.poke(first.B)
+        beat.zipWithIndex.foreach { case (v, l) => LaneBits.poke(dut.io.in(l), v) }
+        LaneBits.poke(dut.io.seed.get, q) // read on the first beat only
+        dut.clock.step()
+      }
+      assert(LaneBits.signed(LaneBits.peek(dut.io.out), 64) == 10)
+    }
+  }
+
+  for (seed <- Seeds())
+    it should s"start each job from its seed at W = 1, 2 and 4 (seed $seed)" in Seeds.run(seed) { r =>
+      for (lanes <- Seq(1, 2, 4)) {
+        val ti   = IntType(r.pick(Seq("int64", "int32", "int8", "uint32")))
+        val to   = IntType(if (ti.width == 64) ti.name else r.pick(Seq("int64", ti.name)))
+        val clue = s"seeded, ${ti.name} -> ${to.name}, $lanes lanes"
+        test(new TreeAccumulate(ti.name, to.name, lanes, seed = true)) { dut =>
+          var acc = BigInt(0)
+          for (c <- 0 until 32) {
+            val beat  = Seq.fill(lanes)(r.word(ti.width))
+            val q     = r.word(to.width)
+            val fire  = r.chance(0.7)
+            val first = c == 0 || r.chance(0.3)
+            dut.io.fire.poke(fire.B)
+            dut.io.first.poke(first.B)
+            beat.zipWithIndex.foreach { case (v, l) => LaneBits.poke(dut.io.in(l), v) }
+            LaneBits.poke(dut.io.seed.get, q)
+            if (c > 0) assert(LaneBits.peek(dut.io.out) == acc, s"$clue, cycle $c: out")
+            val s     = beat.map(ElementwiseModel.cast(_, ti, to)).sum
+            if (fire) acc = ((if (first) q else acc) + s) & LaneBits.mask(to.width)
+            dut.clock.step()
+          }
+        }
+      }
+    }
 
   behavior of "TreeAccumulate under random fire and first"
 

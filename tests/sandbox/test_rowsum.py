@@ -1,7 +1,7 @@
 """rowsum: a reduction with a restart every T < n beats (open item 81).
 
-rowsum imports as two nested maps (``sum_map`` over the rows i, ``sum_map_1``
-over the columns j) around a tasklet whose output ``y[i]`` reduces by add.
+rowsum imports as two nested maps (``sum_map`` over the rows m, ``sum_map_1``
+over the columns n) around a tasklet whose output ``y[m]`` reduces by add.
 The recipes tag the row map temporal, split the column map by W and bind
 ``sum`` to ``accumulate``. The fold port's memlet uses the row loop but not
 the column loop, so its named rate T is the column loop's count, N / W: the
@@ -26,28 +26,30 @@ def rates(g, node="sum"):
     n = g.node(node)
     brm = load_brm(n.attrs["brm"])
     loops = [(lp.var, lp.count) for lp in firing_loops(g, n)]
-    ports = {p.name: (({**n.inputs, **n.outputs})[p.name], p.rate) for p in brm.interface.ports}
+    present = brm.present(n.attrs["params"])  # the ports at its params (a seed's only when set)
+    ports = {p.name: (({**n.inputs, **n.outputs})[p.name], p.rate) for p in present}
     return loops, named_rates(ports, loops, node)
 
 
 @pytest.mark.parametrize(
     "name, w, m, n, lanes",
-    [("rowsum", 4, 8, 64, "4 * j_t:4 * j_t + 4"), ("rowsum_serial", 1, 4, 16, "j_t:j_t + 1")],
+    [("rowsum", 4, 8, 64, "4 * n_1_t:4 * n_1_t + 4"),
+     ("rowsum_serial", 1, 4, 16, "n_1_t:n_1_t + 1")],
 )  # fmt: skip
 def test_the_fold_port_has_one_lane_per_row_and_t_is_n_over_w(name, w, m, n, lanes):
     """Two firing loops, lanes along a row, the sum written once per row: T = N / W."""
     g = bound_rowsum(name)
     assert [(nd.id, nd.attrs["var"], nd.attrs["range"], nd.attrs.get("loop.kind"))
             for nd, _ in g.walk() if nd.kind == "map"] == [
-        ("sum_map", "i", "0:M", "temporal"),
-        ("sum_map_1", "j_t", f"0:N // {w}", "temporal"),
+        ("sum_map", "m_t", "0:M", "temporal"),
+        ("sum_map_1", "n_1_t", f"0:N // {w}", "temporal"),
     ]  # fmt: skip
     s = g.node("sum")
     assert s.attrs["params"] == {"W": w, "op": "add"}
-    assert s.inputs["a"].subset == ["i", lanes]
-    assert s.outputs["out"].to_dict() == {"data": "y", "subset": ["i:i + 1"]}
+    assert s.inputs["a"].subset == ["m_t", lanes]
+    assert s.outputs["out"].to_dict() == {"data": "y", "subset": ["m_t:m_t + 1"]}
     loops, named = rates(g)
-    assert loops == [("i", m), ("j_t", n // w)]
+    assert loops == [("m_t", m), ("n_1_t", n // w)]
     assert named == {"T": n // w}
 
 

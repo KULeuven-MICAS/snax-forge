@@ -158,7 +158,7 @@ def test_vecmul_from_its_kernel_with_a_new_param_is_the_recipes_graph(roots):
     r = recipe("vecmul").with_params({"N": 2048, "W": 8})
     want = apply_recipe(r, imported("vecmul"))[-1].graph
     names = tagged_names(s.graphs[0], "mult_map", 8)
-    assert names == {"i_1": "i_t", "i_2": "i_s", "mult_map_inner": "mult_map_s"}
+    assert names == {"n_1": "n_1_t", "n_2": "n_2_s", "mult_map_inner": "mult_map_s"}
     assert renamed(s.graphs[-1], names | {"acc_1": "acc"}) == want.to_json()
     d = Design(s.platform, s.graphs[-1])
     assert run_checks(d) == []
@@ -367,8 +367,6 @@ def test_the_bind_list_of_dot_4s_final_sum(roots):
     assert s.recipe.steps[2].transform == "fuse_map"
     entries = s.sites(3, "sum_final")["bind"]["list"]
     assert _ok(entries) == [("accumulate", "chisel_adder_tree"), ("accumulate", "chisel_serial")]
-    (acc,) = [e for e in entries if e["implementation"] == "chisel_accumulator"]
-    assert not acc["ok"] and "W" in acc["message"]
 
 
 # =============================================================================
@@ -504,7 +502,8 @@ def dot1_by_hand(roots: Roots, w_mul: int = 8, w_sum: int = 8) -> tuple[Session,
 def test_dot_1_by_hand_names_its_units_params_and_loops(roots):
     """D156 and D73: the binds' instances ``acc_1`` and ``acc_2`` by their order, each split's
     factor named ``W`` and renamed ``W_<instance>`` at its bind, the second split's variables
-    the next free pair ``i_3`` and ``i_4`` (not ``i_1_1`` and ``i_2``)."""
+    named as the first's, ``n_1_t`` and ``n_2_s``: the two maps over N are siblings, each its own
+    dimension ``n``."""
     s, out = dot1_by_hand(roots)
     assert [x["params"].get("instance") for x in out if x["transform"] == "bind"] == [
         "acc_1",
@@ -516,7 +515,7 @@ def test_dot_1_by_hand_names_its_units_params_and_loops(roots):
     assert [x.params["factor"] for x in s.recipe.steps if x.transform == "split"] == [
         "W_acc_1", "W_acc_2"]  # fmt: skip
     vars_ = {n.id: n.attrs["var"] for n, _ in s.graphs[7].walk() if n.kind == "map"}
-    assert (vars_["sum_map"], vars_["sum_map_inner"]) == ("i_3", "i_4")
+    assert (vars_["sum_map"], vars_["sum_map_inner"]) == ("n_1_t", "n_2_s")
     assert s.recipe.steps[-1].params["accelerator"] == "dot"
 
 
@@ -647,3 +646,74 @@ def test_sites_over_a_selection_on_dot_1(roots):
         not back["ok"]
         and back["message"] == "fuse_map 'sum_map': nothing comes right after it in one body"
     )
+
+
+def test_the_editor_steps_through_fuse_seed(roots):
+    """edit-dfg on matvec_acc: after the sum's tag and split, a map of the sum's nest offers
+    fuse_seed with the elementwise nest's drop-down, as do the two maps selected; applied, the
+    step checks, and unfuse_seed takes it back (B2 R5)."""
+    s = Session.from_kernel("matvec_acc", {"M": 8, "N": 512}, roots=roots)
+    ok(s.apply("tag_map", {"map": "sum_map", "kind": "temporal"}))
+    ok(s.apply("split_map", {"map": "sum_map_1", "factor": 4}))
+    site = s.sites(s.cursor, "sum_map_1_s")["fuse_seed"]
+    assert site["ok"] and site["params"] == {"first": "sum_map_1_s",
+                                             "second": "augassign_19_4_map"}  # fmt: skip
+    (pair,) = site["form"]
+    assert (pair["name"], pair["value"]) == ("pair", site["params"])
+    back = s.sites(s.cursor, "augassign_19_4_map")["fuse_seed"]  # the other side offers it too
+    assert back["ok"] and back["params"] == {"first": "sum_map", "second": "augassign_19_4_map"}
+    both = s.sites(s.cursor, ["sum_map", "augassign_19_4_map"])["fuse_seed"]
+    assert both["ok"] and both["params"] == {"first": "sum_map", "second": "augassign_19_4_map"}
+    ok(s.apply("fuse_seed", {"first": "sum_map_1", "second": pair["value"]["second"]}))
+    assert s.sites(s.cursor, "sum")["fuse_seed"]["ok"] is False
+    assert s.sites(s.cursor, "sum_map")["unfuse_seed"]["ok"]
+    ok(s.apply("unfuse_seed", {"map": "sum_map_1"}))
+    assert s.graphs[s.cursor] == s.graphs[s.cursor - 2]
+
+
+# =============================================================================
+# The highlight and the editor agree (B2 R5): every partner shown is offered
+# =============================================================================
+
+
+def _offered(answer: dict, transform: str, map: str, partner: str) -> bool:
+    """The editor's answer on ``map`` offers ``transform`` with ``partner``: in fuse_map's and
+    fuse_seed's pair drop-down (either side), interchange_map's ``with``."""
+    if not answer["ok"]:
+        return False
+    (field,) = [f for f in answer["form"] if f["name"] in ("pair", "with")]
+    if transform == "interchange_map":
+        return any(c["value"] == partner and c["ok"] for c in field["choices"])
+    return any(set(c["value"].values()) == {map, partner} for c in field["choices"])
+
+
+SCENES = [
+    ("matvec_acc", {"M": 8, "N": 512}, []),
+    ("matvec_acc", {"M": 8, "N": 512}, [("tag_map", {"map": "sum_map", "kind": "temporal"})]),
+    ("matvec_acc", {"M": 8, "N": 512}, [("tag_map", {"map": "sum_map", "kind": "temporal"}),
+                                        ("split_map", {"map": "sum_map_1", "factor": 4}),
+                                        ("split_map", {"map": "mult_map_1", "factor": 4})]),
+    ("axpy", {"N": 64}, []),
+]  # fmt: skip
+
+
+@pytest.mark.parametrize(("kernel", "symbols", "steps"), SCENES,
+                         ids=["matvec_acc", "matvec_acc-tag", "matvec_acc-splits", "axpy"])  # fmt: skip
+def test_every_highlighted_partner_is_offered_by_the_editor(roots, kernel, symbols, steps):
+    """For every map and every partner the highlight shows (viz/dfg/api.py's ``partners``,
+    near partners left out), the editor's answer on that selected map offers that transform
+    with that partner, whichever side of the pair the map is."""
+    from pathlib import Path
+
+    from snax_forge.viz.dfg.api import Entry, graph_view
+
+    s = Session.from_kernel(kernel, symbols, roots=roots)
+    for name, params in steps:
+        ok(s.apply(name, params))
+    v = graph_view(Entry("g", Path("g"), s.graphs[s.cursor], None))
+    shown = [(m, p["transform"], p["map"]) for m, ps in v["partners"].items() for p in ps
+             if "near" not in p]  # fmt: skip
+    assert shown
+    missing = [(m, t, p) for m, t, p in shown
+               if not _offered(s.sites(s.cursor, m)[t], t, m, p)]  # fmt: skip
+    assert missing == []

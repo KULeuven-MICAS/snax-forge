@@ -50,7 +50,13 @@ class BlockFlopsSpec extends AnyFlatSpec {
     }
     val tree        = {
       val in = dtype(r)
-      ujson.Obj("inType" -> in, "outType" -> dtype(r, IntType(in).width), "lanes" -> lanes, "op" -> "add")
+      ujson.Obj(
+        "inType"  -> in,
+        "outType" -> dtype(r, IntType(in).width),
+        "lanes"   -> lanes,
+        "op"      -> "add",
+        "seed"    -> r.chance(0.5)
+      )
     }
     val macs        = Seq((true, false), (false, false), (false, true)).map { case (acc, reg) =>
       val out = dtype(r)
@@ -65,11 +71,15 @@ class BlockFlopsSpec extends AnyFlatSpec {
     }
     val serial      = {
       val in = dtype(r)
+      ujson.Obj("inType" -> in, "outType" -> dtype(r, IntType(in).width), "lanes" -> lanes, "seed" -> r.chance(0.5))
+    }
+    val lane        = { // LaneAccumulate (B2 R4): its output at least as wide as its input
+      val in = dtype(r)
       ujson.Obj("inType" -> in, "outType" -> dtype(r, IntType(in).width), "lanes" -> lanes)
     }
     val link        = ujson.Obj("depth" -> r.between(1, 6), "lanes" -> lanes, "dtype" -> dtype(r))
     Seq("SimdLanes" -> elementwise, "TreeAccumulate" -> tree) ++ macs.map("Mac" -> _) ++
-      Seq("SerialAccumulate" -> serial, "LinkBuffer" -> link)
+      Seq("SerialAccumulate" -> serial, "LaneAccumulate" -> lane, "LinkBuffer" -> link)
   }
 
   private val Reg = raw"\s*reg\s+(?:\[(\d+):0\]\s+)?(\w+)\s*(?:\[(\d+):(\d+)\])?\s*;.*".r

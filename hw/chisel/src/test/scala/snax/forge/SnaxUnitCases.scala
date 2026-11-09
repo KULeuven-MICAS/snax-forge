@@ -25,21 +25,22 @@ object SnaxUnitCases {
   case class Slot(value: BigInt, csr: Boolean)
 
   case class Case(
-    name:    String,
-    latency: Int,
-    ii:      Int,
-    inputs:  Int,
-    lanes:   Int,
-    types:   Seq[String],
-    op:      String,
-    k:       Option[BigInt], // one input's constant: a one-stream SimdLanes (relu's)
-    k1:      Option[Slot],   // axpby's (op axpby, axpy's): k1 required, k2 optional
-    k2:      Option[Slot],
-    starts:  Map[Int, Start],
-    runs:    Seq[RunLine],
-    beats:   Map[Int, Seq[BigInt]],
-    results: Map[Int, Seq[BigInt]],
-    cycles:  Seq[Cycle]
+    name:     String,
+    latency:  Int,
+    ii:       Int,
+    inputs:   Int,
+    lanes:    Int,
+    types:    Seq[String],
+    op:       String,
+    laneFold: Boolean,        // `fold lanes`: a one-input fold whose lanes keep their own sums
+    k:        Option[BigInt], // one input's constant: a one-stream SimdLanes (relu's)
+    k1:       Option[Slot],   // axpby's (op axpby, axpy's): k1 required, k2 optional
+    k2:       Option[Slot],
+    starts:   Map[Int, Start],
+    runs:     Seq[RunLine],
+    beats:    Map[Int, Seq[BigInt]],
+    results:  Map[Int, Seq[BigInt]],
+    cycles:   Seq[Cycle]
   )
 
   def parse(path: Path): Case = {
@@ -50,6 +51,7 @@ object SnaxUnitCases {
     var lanes          = 1
     var types          = Seq.empty[String]
     var op             = "add"
+    var laneFold       = false
     var k              = Option.empty[BigInt]
     var k1             = Option.empty[Slot]
     var k2             = Option.empty[Slot]
@@ -58,27 +60,29 @@ object SnaxUnitCases {
     var beats          = Map.empty[Int, Seq[BigInt]]
     var results        = Map.empty[Int, Seq[BigInt]]
     for (line <- header) line.split("\\s+").toList match {
-      case "latency" :: n :: Nil                       => latency = n.toInt
-      case "ii" :: n :: Nil                            => ii      = n.toInt
-      case "inputs" :: n :: Nil                        => inputs  = n.toInt
-      case "lanes" :: n :: Nil                         => lanes   = n.toInt
-      case "types" :: ts if ts.nonEmpty                => types   = ts
-      case "op" :: o :: Nil                            => op      = o
-      case "k" :: v :: Nil                             => k       = Some(BigInt(v))
-      case "k1" :: v :: from                           => k1      = Some(slot(path, line, v, from))
-      case "k2" :: v :: from                           => k2      = Some(slot(path, line, v, from))
-      case "start" :: c :: j :: t :: a :: Nil          =>
+      case "latency" :: n :: Nil                                   => latency  = n.toInt
+      case "ii" :: n :: Nil                                        => ii       = n.toInt
+      case "inputs" :: n :: Nil                                    => inputs   = n.toInt
+      case "lanes" :: n :: Nil                                     => lanes    = n.toInt
+      case "types" :: ts if ts.nonEmpty                            => types    = ts
+      case "op" :: o :: Nil                                        => op       = o
+      case "fold" :: how :: Nil if how == "tree" || how == "lanes" => laneFold = how == "lanes"
+      case "k" :: v :: Nil                                         => k        = Some(BigInt(v))
+      case "k1" :: v :: from                                       => k1       = Some(slot(path, line, v, from))
+      case "k2" :: v :: from                                       => k2       = Some(slot(path, line, v, from))
+      case "start" :: c :: j :: t :: a :: Nil                      =>
         starts += c.toInt -> Start(j.toInt, t.toInt, a)
-      case "expect" :: "run" :: RunLine.Fields(i, run) =>
+      case "expect" :: "run" :: RunLine.Fields(i, run)             =>
         require(i == runs.size, s"$path: `$line` is not run ${runs.size}")
         runs :+= run
-      case "beat" :: n :: vs if vs.nonEmpty            => beats += n.toInt -> vs.map(CaseFile.number)
-      case "result" :: n :: vs if vs.nonEmpty          =>
+      case "beat" :: n :: vs if vs.nonEmpty                        => beats += n.toInt -> vs.map(CaseFile.number)
+      case "result" :: n :: vs if vs.nonEmpty                      =>
         results += n.toInt -> vs.map(CaseFile.number)
       case _ => throw new IllegalArgumentException(s"$path: `$line` is not a header line")
     }
     require(types.isEmpty || types.size == inputs + 1, s"$path: types gives ${types.size}, not ${inputs + 1}")
     require(k.isEmpty || inputs == 1, s"$path: k is one input's constant; inputs is $inputs")
+    require(!laneFold || (inputs == 1 && k.isEmpty), s"$path: fold lanes is a one-input fold, without k")
     require(
       (op == "axpby") == k1.nonEmpty && (k2.isEmpty || k1.nonEmpty) && (op != "axpby" || inputs == 2),
       s"$path: op axpby takes two inputs and k1 (k2 optional), and only it"
@@ -96,6 +100,7 @@ object SnaxUnitCases {
       lanes,
       types,
       op,
+      laneFold,
       k,
       k1,
       k2,

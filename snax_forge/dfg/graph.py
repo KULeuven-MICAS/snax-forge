@@ -13,8 +13,9 @@ A node is ``id``, ``kind``, ``inputs``, ``outputs``, ``attrs`` and, for a
 kind that has one, ``body`` (kinds.py). ``inputs`` and ``outputs`` map a
 connector name to a memlet ``{"data": container, "subset": [dim, ...]}``,
 one dimension per container dimension (subset.py), and on a tasklet's
-output an optional ``"reduce": {"op", "identity"}`` that folds the writes of
-every iteration into the element instead of overwriting it (reduce.py).
+output an optional ``"reduce": {"op", "identity"}`` (or ``{"op", "seed"}``)
+that folds the writes of every iteration into the element instead of
+overwriting it (reduce.py).
 The graph is a tree: scopes hold ordered bodies, memlets sit on the
 connectors of the nodes that use the data, and there are no map entry/exit
 nodes, access nodes or outer memlets, which are derived.
@@ -83,6 +84,9 @@ SCALAR = "sdfg.scalar"
 # a tasklet's record of the sandbox's bake_scalar: the scalar it reads as a literal now, or
 # (value "csr") by the container's name, at run time
 BAKED = "sandbox.baked"
+# a fold tasklet's record of the sandbox's fuse_seed: the transient and the elementwise nest it
+# took, for unfuse_seed (sandbox/seed.py)
+SEEDED = "sandbox.seeded"
 
 
 def baked_values(d: Any) -> dict[str, tuple[int, str]]:
@@ -151,6 +155,13 @@ class Memlet:
         self.subset = [_wrap(lambda d=d: canonical_dim(d, "subset")) for d in self.subset]
         if self.reduce is not None and not isinstance(self.reduce, Reduction):
             raise DfgError(f"reduce: must be a Reduction or None, got {self.reduce!r}")
+
+    def map_dims(self, fn: Any) -> None:
+        """``fn`` on every dimension of its subset and of its reduce's seed (reduce.py), in
+        place: a transform rewriting a memlet's subset goes through here."""
+        self.subset = [fn(d) for d in self.subset]
+        if self.reduce is not None and self.reduce.seed is not None:
+            self.reduce = self.reduce.map_seed(fn)
 
     @property
     def names(self) -> set[str]:
@@ -424,16 +435,26 @@ def _check_memlets(node: Node, scope: Scope, what: str) -> None:
                     f"{w}: a reduce folds writes, so it sits on an output of a kind that takes one "
                     f"(a tasklet), not on the {side} of a {node.kind!r} (D102)"
                 )
-            rank = len(scope.containers[m.data].shape)
-            if len(m.subset) != rank:
-                raise DfgError(f"{w}: {len(m.subset)} dimensions for {m.data!r}, which has {rank}")
-            for d in m.subset:
-                try:
-                    parts = parse_dim(d, w)
-                except ExprError as e:
-                    raise DfgError(str(e)) from None
-                for part in parts:
-                    scope.uses(part, w)
+            _check_subset(m.data, m.subset, scope, w)
+            seed = m.reduce.seed if m.reduce is not None else None
+            if seed is not None:
+                if seed.data not in scope.containers:
+                    raise DfgError(f"{w}.reduce.seed: unknown container {seed.data!r}")
+                _check_subset(seed.data, list(seed.subset), scope, f"{w}.reduce.seed")
+
+
+def _check_subset(data: str, subset: list[Any], scope: Scope, w: str) -> None:
+    """A subset of ``data``: one dimension per container dimension, its names in scope."""
+    rank = len(scope.containers[data].shape)
+    if len(subset) != rank:
+        raise DfgError(f"{w}: {len(subset)} dimensions for {data!r}, which has {rank}")
+    for d in subset:
+        try:
+            parts = parse_dim(d, w)
+        except ExprError as e:
+            raise DfgError(str(e)) from None
+        for part in parts:
+            scope.uses(part, w)
 
 
 def _check_replaced(node: Node, scope: Scope, what: str) -> None:

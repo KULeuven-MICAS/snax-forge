@@ -16,7 +16,8 @@ design checks judge a whole plan, in L1 and L2. A layout places each element
 at its dtype's itemsize, so a word holds several narrow ones (D142). A
 container a tail pads (dfg/pad.py, D144) keeps its logical shape, its strides
 row-major over the padded shape; ``over`` gives its padded block, what the
-DMA moves and what memory it takes. ``l2_bytes`` is a container's array in L2,
+DMA moves and what memory it takes, a row's padding included when the rows are pitched
+(``padded_rows``). ``l2_bytes`` is a container's array in L2,
 that block in whole DMA beats: data.h declares it so, the ELF check expects
 it and the DMA's copies touch it.
 """
@@ -101,8 +102,18 @@ class Layout(Config):
 
 def over(lay: Layout, shape: tuple[int, ...]) -> Layout:
     """``lay``'s base and strides over ``shape``: with a container's padded shape (dfg/pad.py,
-    D144), the block it takes in memory, its pads included."""
-    return lay if tuple(shape) == lay.shape else Layout(lay.base, tuple(shape), lay.strides)
+    D144), the block it takes in memory, its pads included. Each dimension after the first is
+    widened to its pitch, the stride before it over its own, where the strides leave a gap
+    (``padded_rows``' rows of an odd number of words, design/memory.py): the gap's elements
+    are padding too, so a pitched row-major layout's block is contiguous, what the DMA moves.
+    A contiguous layout's pitch is its padded shape, so its block is that shape."""
+    ext = list(shape)
+    for d in range(1, len(ext)):
+        outer, inner = lay.strides[d - 1], lay.strides[d]
+        if inner > 0 and outer % inner == 0 and outer // inner > ext[d]:
+            ext[d] = outer // inner
+    ext_t = tuple(ext)
+    return lay if ext_t == lay.shape else Layout(lay.base, ext_t, lay.strides)
 
 
 def round_up(x: int, a: int) -> int:

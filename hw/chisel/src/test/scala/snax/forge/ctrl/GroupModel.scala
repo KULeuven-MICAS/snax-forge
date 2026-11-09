@@ -7,8 +7,10 @@ package snax.forge.ctrl
   * II counting from the cycle of the last firing, the class judged at the sink, and the run ending when every unit has
   * fired its n, nothing is in flight and every buffer is empty.
   *
-  * Per cycle: `start(...)` first when a start is offered, then `step(inputs, room)`, which steps the rule only in a
-  * busy cycle (None otherwise).
+  * Per cycle: `start(...)` first when a start is offered, then `step(inputs, room, seeds)`, which steps the rule only
+  * in a busy cycle (None otherwise). A seeded unit (`UnitDesc.seeded`, D163) takes `inputs(k)` for its other outer
+  * inputs and `seeds(k)` for its seed: its job's first beat waits for the seed (fire = a.valid ∧ (¬first ∨
+  * seed.valid)), and that firing takes it (`UnitStep.seed`).
   */
 class GroupModel(val units: Seq[UnitDesc], val links: Seq[Link]) {
 
@@ -19,7 +21,8 @@ class GroupModel(val units: Seq[UnitDesc], val links: Seq[Link]) {
     read:   Boolean,
     lane:   Int,
     first:  Boolean,
-    frozen: Boolean
+    frozen: Boolean,
+    seed:   Boolean = false
   )
   case class LinkStep(load: Boolean, take: Boolean, wslot: Int, rslot: Int, occupancy: Int)
   case class Step(units: Seq[UnitStep], links: Seq[LinkStep], cls: Int, end: Boolean)
@@ -77,13 +80,14 @@ class GroupModel(val units: Seq[UnitDesc], val links: Seq[Link]) {
   private def finished: Boolean =
     u.indices.forall(k => u(k).firings == counts(k) && !u(k).slots.contains(true)) && l.forall(_.occupancy == 0)
 
-  def step(inputs: Seq[Boolean], room: Boolean): Option[Step] = {
+  def step(inputs: Seq[Boolean], room: Boolean, seeds: Seq[Boolean] = Nil): Option[Step] = {
     if (!busy) { cycle += 1; return None }
-    val avail, wants, wouldFire, gives, head, offer = Array.fill(n)(false)
+    val avail, wants, wouldFire, gives, head, offer, outer = Array.fill(n)(false)
     for (k <- order) {
       val c      = units(k); val us = u(k)
       val linked = ins(k).forall(i => if (links(i).depth == 0) offer(links(i).from) else l(i).occupancy > 0)
-      avail(k) = inputs(k) && linked
+      outer(k) = inputs(k) && (!c.seeded || us.firings % beats(k) != 0 || seeds.lift(k).getOrElse(true))
+      avail(k) = outer(k)  && linked
       val iiOk = !us.hasFired || cycle >= us.lastFire + c.ii
       wants(k)     = us.firings < counts(k) && iiOk
       wouldFire(k) = wants(k)               && avail(k)        && (c.span == 1 || us.lane == c.span - 1)
@@ -114,8 +118,9 @@ class GroupModel(val units: Seq[UnitDesc], val links: Seq[Link]) {
         if (c.latency > 0) us.slots(0) = s.result
         val inGap = us.hasFired && cycle < us.lastFire + c.ii
         isBusy = isBusy || s.fire || s.read || inGap
-        waits  = waits || (wants(k) && !inputs(k))
+        waits  = waits || (wants(k) && !outer(k))
       }
+      s = s.copy(seed = s.fire && first && c.seeded)
       if (s.fire) { us.hasFired = true; us.lastFire = cycle; us.firings += 1; us.lane = 0 }
       else if (s.read) us.lane += 1
       st(k) = s

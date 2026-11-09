@@ -66,8 +66,8 @@ def test_split_reduce_gives_lane_partials_and_a_final_sum():
     g = split_reduce(split_map(dot(), "mult_map", 4), "sum_map", 4)
     assert [n.id for n in g.body] == ["mult_map", "sum_map", "sum_map_final"]
     assert g.containers["out_partial"].shape == [4] and g.containers["out_partial"].transient
-    assert g.node("sum").outputs["out"].subset == ["i_s_1"]  # split_map's fresh variable
-    assert g.node("sum_final").inputs["in1"].subset == ["i_f"]
+    assert g.node("sum").outputs["out"].subset == ["n_2_s"]  # its dimension's second piece
+    assert g.node("sum_final").inputs["in1"].subset == ["n_f_s"]  # a dimension of its own
     assert g.node("sum_final").outputs["out"].subset == [0]
     assert g.node("sum_map").attrs["loop.split_reduce"] == {"partial": "out_partial",
                                                             "final": "sum_map_final"}  # fmt: skip
@@ -180,7 +180,7 @@ def test_bind_names_the_fix():
         (lambda: join_reduce(bind(split_reduce(dot(), "sum_map", 4), "sum_final", *TREE, "s"),
                              "sum_map"), "bound"),
         (lambda: fuse_map(split_map(dot(), "mult_map", 4), "mult_map", "sum_map"),
-         "same depth"),
+         r"mult_map runs 0:2 and its child 0:4, sum_map runs 0:8: split_map sum_map 4 first"),
         (lambda: fuse_map(split_map(split_map(dot(), "mult_map", 4), "sum_map", 2), "mult_map",
                           "sum_map"), "same ranges"),
         (lambda: fuse_map(fused(), "sum_map_final", "mult_map"), "right after"),
@@ -188,7 +188,7 @@ def test_bind_names_the_fix():
         (lambda: unfuse_map(bind(fused(), "mult_map_s", "mac", "chisel_mac", "mac"), "mult_map"),
          "changed since"),
     ],
-    ids=["not-a-fold", "tail", "join-unsplit", "join-fused", "join-bound", "depth", "ranges",
+    ids=["not-a-fold", "tail", "join-unsplit", "join-fused", "join-bound", "split-one-side", "ranges",
          "adjacent", "unfuse-unfused", "unfuse-bound"],
 )  # fmt: skip
 def test_split_reduce_and_fuse_map_refuse(step, text):
@@ -275,3 +275,62 @@ def test_link_refuses_a_join_until_tier_a():
     with pytest.raises(LinkError) as e:
         link(g, "t2", 0, "j")
     assert e.value.code == "link.chain" and "until tier A" in str(e.value)
+
+
+# =============================================================================
+# fuse_map with an untagged side, and its range refusal's fix (B2 R5 B0)
+# =============================================================================
+
+
+def matvec_acc() -> Graph:
+    d = graph_dict("matvec_acc")
+    d["symbols"] = {"M": 8, "N": 512}
+    return Graph.from_dict(d)
+
+
+def test_an_untagged_map_takes_the_other_sides_tag():
+    """matvec_acc: tag_map sum_map temporal then fuse_map mult_map sum_map is the graph
+    fuse_map then tag_map mult_map temporal gives, the fused map temporal (m_t); its record
+    the two nests tagged, so unfuse_map gives both back temporal and untag_map the plain fuse;
+    the result still computes q."""
+    from snax_forge.sandbox.transforms import tag_map, untag_map
+
+    g = matvec_acc()
+    tagged_first = fuse_map(tag_map(g, "sum_map", "temporal"), "mult_map", "sum_map")
+    fused_first = tag_map(fuse_map(g, "mult_map", "sum_map"), "mult_map", "temporal")
+    assert tagged_first == fused_first
+    m = tagged_first.node("mult_map")
+    assert (m.attrs["loop.kind"], m.attrs["var"]) == ("temporal", "m_t")
+    both = tag_map(tag_map(g, "mult_map", "temporal"), "sum_map", "temporal")
+    assert unfuse_map(tagged_first, "mult_map") == both
+    assert untag_map(fused_first, "mult_map") == fuse_map(g, "mult_map", "sum_map")
+    x = {"A": np.arange(8 * 512).reshape(8, 512), "p": np.arange(512), "q": np.arange(8)}
+    want = execute(g, {k: v.copy() for k, v in x.items()})["q"]
+    assert np.array_equal(execute(tagged_first, {k: v.copy() for k, v in x.items()})["q"], want)
+
+
+def test_temporal_against_spatial_is_refused():
+    from snax_forge.sandbox.transforms import tag_map
+
+    g = tag_map(tag_map(matvec_acc(), "mult_map", "temporal"), "sum_map", "spatial")
+    with pytest.raises(SandboxError, match=r"fuse_map 'mult_map' 'sum_map': mult_map is "
+                       r"temporal, sum_map spatial; fused nests have the same tags"):  # fmt: skip
+        fuse_map(g, "mult_map", "sum_map")
+
+
+def test_different_ranges_name_the_split_that_fixes_them():
+    """After split_map sum_map_1 4 the refusal names split_map mult_map_1 4, a FuseRangeError
+    with that fix; applied, the two fuse (fuse_near gives the pair before)."""
+    from snax_forge.sandbox.compose import FuseRangeError, fuse_near, fuse_pairs
+    from snax_forge.sandbox.transforms import tag_map
+
+    t = split_map(tag_map(matvec_acc(), "sum_map", "temporal"), "sum_map_1", 4)
+    with pytest.raises(FuseRangeError) as e:
+        fuse_map(t, "mult_map", "sum_map")
+    assert str(e.value) == ("fuse_map 'mult_map' 'sum_map': mult_map_1 runs 0:512, sum_map_1 "
+                            "runs 0:128 and its child 0:4: split_map mult_map_1 4 first")  # fmt: skip
+    assert e.value.fix == {"map": "mult_map_1", "factor": 4}
+    assert fuse_pairs(t) == [] and fuse_near(t) == [("mult_map", "sum_map", str(e.value))]
+    fixed = split_map(t, "mult_map_1", 4)
+    assert fuse_pairs(fixed) == [("mult_map", "sum_map")] and fuse_near(fixed) == []
+    fuse_map(fixed, "mult_map", "sum_map")

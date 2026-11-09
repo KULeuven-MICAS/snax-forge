@@ -48,7 +48,7 @@ def test_view_mode_over_dot_2s_steps(tmp_path):
             "0 input", "1 split_map", "2 bind", "3 split_map", "4 bind", "5 link"]  # fmt: skip
         status, v = get_json(srv, "/api/step/5")
         texts = [t for row in v["rows"] if row["kind"] == "node" for t in _texts(row["node"])]
-        assert {"tmp0 · FIFO 1", "mul · a * b · W 4", "mult_map · i_t · 128 · temporal"} <= set(
+        assert {"tmp0 · FIFO 1", "mul · a * b · W 4", "mult_map · n_1_t · 128 · temporal"} <= set(
             texts
         )
         assert v["containers"]["A"]["badge"] == "L1 · 4 KiB"
@@ -63,7 +63,7 @@ def test_view_mode_over_dot_2s_steps(tmp_path):
         (edge,) = [e for e in v["edges"] if e["data"] == "tmp0" and e["to"].startswith("sum.")]
         d = v["details"][f"edge:{edge['id']}"]
         assert (d["subset"], d["packing"], d["loops"], d["beats"], d["streamer"]) == (
-            ["4 * i_t_1:4 * i_t_1 + 4"], "int64 · num_slc 1 · num_ch 4", [["i_t_1", 128]], 128,
+            ["4 * n_1_t:4 * n_1_t + 4"], "int64 · num_slc 1 · num_ch 4", [["n_1_t", 128]], 128,
             False)  # fmt: skip
         assert [g["cycles"] for g in v["estimate"]["groups"]] == [130]
         assert "tmp0" in v["marks"]["containers"] and "diff" not in v

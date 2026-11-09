@@ -58,10 +58,13 @@ them.
 ``C``); a transient loses its underscores (``__tmp0`` -> ``tmp0``). Maps and
 tasklets take their DaCe label without underscores, lower case
 (``_Add__map`` -> ``add_map``, ``_Add_`` -> ``add``), with ``_1``, ``_2``
-added on a clash. A map variable is named by its depth (``i``, ``j``, ``k``,
-``l``), a tasklet connector loses its underscores (``__in1`` -> ``in1``),
-and the tasklet's code is rewritten to match, always skipping a name
-already taken.
+added on a clash. A map variable is named after its dimension (loops.py's
+``import_names``): over ``0:X``, X one symbol, ``lower(X)`` (rowsum's ``m`` and ``n``,
+``A[m, n]``), with ``loop.dim`` its base and ``loop.piece`` 1; any other range, or a name
+already taken (a container, a symbol, an enclosing map's base: the second map over N in one
+nest), keeps the importer's name by depth (``i``, ``j``, ``k``, ``l``). A tasklet connector
+loses its underscores (``__in1`` -> ``in1``), and the tasklet's code is rewritten to match,
+always skipping a name already taken.
 
 **Constant casts.** DaCe writes a constant in an int32 tasklet as a cast
 (relu: ``max(__in1, dace.int32(0))``). A call ``dace.<integer type>(<int
@@ -109,6 +112,7 @@ from snax_forge.expr import ExprError, Value
 
 from .graph import SCALAR, Container, Graph, Memlet, Node
 from .kinds import DfgError
+from .loops import import_names
 from .reduce import REDUCE_OPS, Reduction
 from .subset import format_dim
 
@@ -223,7 +227,9 @@ class _Importer:
         containers = self._containers(set(symbols))
         self.outer_names = set(symbols) | set(containers)  # never a map variable
         body = self._scope(None, {}, 0)
-        return Graph(self.name, dict.fromkeys(symbols), containers, body)
+        g = Graph(self.name, dict.fromkeys(symbols), containers, body)
+        import_names(g)  # each variable after its dimension (loops.py)
+        return Graph.from_dict(g.to_dict())
 
     def _containers(self, symbols: set[str]) -> dict[str, Container]:
         out: dict[str, Container] = {}

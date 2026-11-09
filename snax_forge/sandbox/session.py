@@ -562,6 +562,7 @@ class Session:
                     self.recipe.params,
                     order,
                     self._kernel_inputs() if name == "bake_scalar" else None,
+                    items,
                 )
         self._sites[key] = out
         return out
@@ -908,6 +909,7 @@ def form(
     params: dict[str, Any],
     order: int = 1,
     inputs: dict[str, Any] | None = None,
+    selected: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     """The fields the editor shows to apply transform ``name`` where its site accepted
     (``answer``, with the bind list for ``bind``), in the transform's param order: each
@@ -921,8 +923,13 @@ def form(
     message (one field, ``binding``, whose ``value`` gives both params), ``encapsulate``'s
     units (the instances in no accelerator, in the graph's order, the selection's ticked),
     ``bake_scalar``'s value (an int literal, or ``csr``, its ``hint`` says; the container's in ``inputs``: the session gives
-    the kernel's ``make_inputs`` at seed 0, axpy's alpha 3; else ``BAKE_DEFAULT``)."""
-    import inspect
+    the kernel's ``make_inputs`` at seed 0, axpy's alpha 3; else ``BAKE_DEFAULT``),
+    ``fuse_map``'s and ``fuse_seed``'s ``first`` and ``second`` on one map ``selected`` (one
+    field, ``pair``, a choice per pair the transform takes with the selected map on either
+    side, its ``value`` giving both params, labelled with the partner and the transient's
+    marker, ``_pair_field``; on two maps ``first`` the selection's and fuse_seed's ``second`` a
+    choice per map of the elementwise nest, ``_second_field``) and ``unfuse_seed``'s ``map`` (a
+    choice per seeded fold, ``_fold_field``)."""
 
     from snax_forge.common import fresh
 
@@ -932,7 +939,11 @@ def form(
     filled = answer["params"]
     selection = next(iter(filled), None)
     fields: list[dict[str, Any]] = []
-    for p in list(inspect.signature(spec.fn).parameters)[1:]:
+    one = selected is None or len(selected) == 1
+    if name in ("fuse_map", "fuse_seed") and one:  # the partner, on either side
+        mine = selected[0] if selected else filled["first"]
+        return [_pair_field(name, g, mine, filled)]
+    for p in spec.param_names():
         field: dict[str, Any] = {"name": p, "type": "str", "sweepable": p in spec.ints,
                                  "value": filled.get(p), "readonly": p == selection}  # fmt: skip
         if p in spec.ints:
@@ -948,6 +959,12 @@ def form(
                 "value": value,
                 "hint": "an int baked into the hardware, or csr: read at run time from a CSR",
             }
+        elif name == "interchange_map" and p == "with":  # every map above and below it
+            field |= _partner_field(g, filled["map"])
+        elif name == "fuse_seed" and p == "second":  # the elementwise nest's maps
+            field |= _second_field(g, filled["first"], filled.get("second"))
+        elif name == "unfuse_seed" and p == "map":  # the seeded folds
+            field |= _fold_field(g, filled["map"])
         elif name == "tag_map" and p == "kind":
             field |= {"type": "choice", "value": DEFAULT_KIND,
                       "choices": [{"value": t, "label": t} for t in TAGS]}  # fmt: skip
@@ -980,6 +997,80 @@ def form(
             field["value"] = fresh(g.name, taken)
         fields.append(field)
     return fields
+
+
+def _partner_field(g: Graph, map: str) -> dict[str, Any]:
+    """interchange_map's ``with``: a choice per map above and below ``map`` in its nest, top to
+    bottom, one it cannot trade with not ``ok`` with its refusal (as bind's list marks a BRM
+    that does not fit); the default the nearest that can, the one below on a tie."""
+    from .transforms import _locate, partners
+
+    _, _, around = _locate(g, map)
+    above = {o.id: len(around) - k for k, o in enumerate(around) if o.kind == "map"}
+    depth = {n.id: len(outer) - len(around) for n, outer in g.walk()}
+    choices = []
+    for pid, why in partners(g, map):
+        where = "above" if pid in above else "below"
+        choices.append({"value": pid, "label": f"{pid} ({where})", "ok": why is None,
+                        "message": why})  # fmt: skip
+    ok = [c["value"] for c in choices if c["ok"]]
+    dist = {pid: above[pid] if pid in above else depth[pid] for pid in ok}
+    best = min(ok, key=lambda pid: (dist[pid], pid in above), default=None)
+    return {"type": "choice", "readonly": False, "value": best, "choices": choices}
+
+
+def _pair_field(name: str, g: Graph, map: str, filled: dict[str, Any]) -> dict[str, Any]:
+    """fuse_map's or fuse_seed's one field on one selected map: a choice per pair it takes
+    with ``map`` on either side (compose.py's ``fuse_choices``, seed.py's ``seed_choices``),
+    its value ``{"first", "second"}``, labelled with the partner and the transient between the
+    nests (``link_text``); the site's pair the default."""
+    from .compose import fuse_choices, fuse_link, link_text
+    from .seed import seed_choices, seed_link
+
+    pairs, link = ((fuse_choices, fuse_link) if name == "fuse_map"
+                   else (seed_choices, seed_link))  # fmt: skip
+    choices = []
+    for c in pairs(g, map):
+        other = c["second"] if c["first"] == map else c["first"]
+        label = f"{other} · {link_text(link(g, c['first'], c['second']))}"
+        choices.append({"value": c, "label": label, "ok": True})
+    value = {"first": filled["first"], "second": filled["second"]}
+    hint = ("the nest fused with this one: its first and second by body order, the transient "
+            "between them a local value" if name == "fuse_map" else
+            "the elementwise nest x' = x (+) t that the fold takes as its seed: the fold starts "
+            "each job from x, one beat per job, and t and the nest go")  # fmt: skip
+    return {"name": "pair", "type": "choice", "spread": True, "readonly": False, "sweepable": False,
+            "value": value, "choices": choices, "hint": hint}  # fmt: skip
+
+
+def _second_field(g: Graph, first: str, second: str | None) -> dict[str, Any]:
+    """fuse_seed's ``second``: a choice per map of the elementwise nest that reads ``first``'s
+    fold (seed.py's ``seed_seconds``), outermost first, the site's (or the selection's) the
+    default; and the form's hint."""
+    from .compose import link_text
+    from .seed import seed_link, seed_seconds
+
+    seconds = seed_seconds(g, first)
+    choices = [{"value": m, "label": f"{m} · {link_text(seed_link(g, first, m))}", "ok": True}
+               for m in seconds]  # fmt: skip
+    hint = ("the elementwise nest x' = x (+) t that the fold takes as its seed: the fold starts "
+            "each job from x, one beat per job, and t and the nest go")  # fmt: skip
+    value = second if second in seconds else seconds[0]
+    return {"type": "choice", "readonly": False, "value": value, "choices": choices, "hint": hint}
+
+
+def _fold_field(g: Graph, map: str) -> dict[str, Any]:
+    """unfuse_seed's ``map``: a choice per seeded fold, in the graph's order, by the map a
+    recipe names it with (seed.py's ``fold_map``), the selection's fold the default; and the
+    form's hint."""
+    from .seed import fold_map, fold_of, seeded_choices
+
+    mine = fold_map(g, fold_of(g, map, "")[0])
+    label = "{fold} writes {x} from its seed; back: {into}, then {reads}"
+    hint = "the seeded fold whose elementwise nest and transient come back (unfuse_seed)"
+    choices = [{"value": c["map"], "label": f"{c['map']} · " + label.format(**c), "ok": True}
+               for c in seeded_choices(g)]  # fmt: skip
+    return {"type": "choice", "readonly": False, "value": mine, "choices": choices, "hint": hint}
 
 
 def _timing(inst: Any) -> dict[str, int]:

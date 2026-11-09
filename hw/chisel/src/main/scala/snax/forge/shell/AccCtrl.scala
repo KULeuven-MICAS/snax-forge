@@ -45,7 +45,8 @@ object AccCtrl {
           u.span,
           outer.size,
           u.fixedT,
-          u.inPorts.indices.filterNot(j => outer.contains(u.inPorts(j)))
+          u.inPorts.indices.filterNot(j => outer.contains(u.inPorts(j))),
+          outer.lastOption.contains("seed") // a fold's seed, its last outer input (D163)
         )
       },
       g.links.map { l =>

@@ -43,6 +43,17 @@ output indexed by the spatial variable (one partial per lane, from
 first tasklet's inputs onto the BRM's inputs in fold order, the second's
 output onto its output. A tasklet is refused with "fuse_map first", a fold
 into one element with "split_reduce first" (D150).
+
+``lane_fold`` without ``attrs.op`` (``lane_accumulate``, no front op): the node
+bound is a spatial map whose body is one tasklet copying its one input into its
+one output (``out = in1``), the output folding (``reduce``) with ``attrs.fold``
+and indexed by the spatial variable, so each lane folds its own element (rowsum
+2's ``y[4 * m_1_t + m_2_s]``). The maps around it are temporal (``bind``'s site), and
+those the input names and the output does not are the ones it folds over. Refused,
+naming what is missing: the tasklet bound instead of its map, a front op (a fused
+nest, or a tasklet that is not a copy: "bind mac"), an output not indexed by the
+lane, and a fold over the bound map itself (the reduced loop spatial: "a fold
+across the lanes binds accumulate").
 """
 
 from __future__ import annotations
@@ -55,6 +66,7 @@ from typing import Any
 import numpy as np
 
 from snax_forge import expr
+from snax_forge.brm.brm import SEED
 from snax_forge.dfg import REDUCE_OPS, Memlet, Node
 
 from .recipe import SandboxError
@@ -184,7 +196,8 @@ def _reduce(
         raise SandboxError(
             f"{what}: {node.attrs['code']!r} is not a copy of its input ({cout} = {cin})"
         )
-    ins = [p for p in brm.interface.ports if p.direction == "in"]
+    # the seed's port takes no connector (bind puts a seeded fold's seed there)
+    ins = [p for p in brm.interface.ports if p.direction == "in" and p.name != SEED]
     outs = [p for p in brm.interface.ports if p.direction == "out"]
     if len(ins) != 1 or len(outs) != 1:
         raise SandboxError(f"{what}: the BRM has ports {[p.name for p in brm.interface.ports]}")
@@ -197,7 +210,7 @@ def _reduce(
     if red.op != op:
         raise SandboxError(f"{what}: the tasklet folds with {red.op!r}, the pattern with {op!r}")
     identity = REDUCE_OPS[op].identity(np.dtype(dtypes[cout]))
-    if red.identity != identity:
+    if red.seed is None and red.identity != identity:
         raise SandboxError(
             f"{what}: the fold starts from {red.identity}, the BRM from {op}'s identity {identity}"
         )
@@ -270,6 +283,8 @@ def _lane_fold(
     scalars: frozenset[str],
 ) -> dict[str, str]:  # fmt: skip
     what = f"node {node.id!r} as {brm.name!r}"
+    if "op" not in attrs:  # no front op: lane_accumulate
+        return _lane_accumulate(node, attrs, brm, dtypes, what)
     if node.kind == "tasklet":
         if any(m.reduce is not None for m in node.outputs.values()):
             raise SandboxError(f"{what}: a {brm.name} folds one partial per lane, this tasklet "
@@ -303,6 +318,58 @@ def _lane_fold(
                            f"{brm.name} keeps one partial per lane: split_reduce first (D150)")  # fmt: skip
     out = next(p for c, p in ports.items() if c in first.outputs)
     return {c: p for c, p in ports.items() if c in first.inputs} | {cout: out}
+
+
+def _lane_accumulate(node: Node, attrs: Mapping[str, Any], brm: Any, dtypes: Mapping[str, str],
+                     what: str) -> dict[str, str]:  # fmt: skip
+    """``lane_fold`` without a front op (module doc): a spatial map of one tasklet copying its
+    input into an output folded with ``attrs.fold`` and indexed by the lane."""
+    if node.kind == "tasklet":
+        raise SandboxError(f"{what}: a {brm.name} binds the spatial map around a folding "
+                           "tasklet, not the tasklet: bind its map")  # fmt: skip
+    if fused_view(node) is not None:
+        first = node.body[0]
+        raise SandboxError(f"{what}: {first.id} computes {_rhs(first)!r} before the fold, a front "
+                           f"op; a {brm.name} folds its input as it is: bind mac")  # fmt: skip
+    kids = node.body or []
+    if node.kind != "map" or len(kids) != 1 or kids[0].kind != "tasklet":
+        raise SandboxError(f"{what}: a {brm.name} binds a spatial map of one tasklet")
+    t = kids[0]
+    if len(t.outputs) != 1:
+        raise SandboxError(f"{what}: {t.id} writes {len(t.outputs)} outputs; a {brm.name} one")
+    (cout,) = t.outputs
+    red, fold = t.outputs[cout].reduce, attrs.get("fold")
+    if red is None:
+        raise SandboxError(f"{what}: {t.id}'s output {cout!r} does not fold (no reduce on the "
+                           "memlet)")  # fmt: skip
+    if len(t.inputs) != 1 or t.attrs["code"] != f"{cout} = {next(iter(t.inputs))}":
+        raise SandboxError(f"{what}: {t.id} computes {_rhs(t)!r} before the fold, a front op; a "
+                           f"{brm.name} folds its one input as it is: bind mac")  # fmt: skip
+    (cin,) = t.inputs
+    if red.op != fold:
+        raise SandboxError(f"{what}: {t.id} folds with {red.op!r}, the pattern with {fold!r}")
+    identity = REDUCE_OPS[fold].identity(np.dtype(dtypes[cout]))
+    if red.identity != identity:
+        raise SandboxError(f"{what}: {t.id}'s fold starts from {red.identity}, the BRM from "
+                           f"{fold}'s identity {identity}")  # fmt: skip
+    var, m = node.attrs["var"], t.outputs[cout]
+    if var not in m.names:
+        if var in t.inputs[cin].names:
+            raise SandboxError(f"{what}: {t.id} folds over {node.id!r} ({var}), which is spatial; a "
+                               f"{brm.name} folds each lane over the temporal maps around it, a "
+                               "fold across the lanes binds accumulate")  # fmt: skip
+        raise SandboxError(f"{what}: {t.id}'s output {m.data}{m.subset} is not indexed by the "
+                           f"lane variable {var!r}; each lane folds its own element")  # fmt: skip
+    ins = [p.name for p in brm.interface.ports if p.direction == "in"]
+    outs = [p.name for p in brm.interface.ports if p.direction == "out"]
+    if len(ins) != 1 or len(outs) != 1:
+        raise SandboxError(f"{what}: the BRM has ports {ins} -> {outs}")
+    return {cin: ins[0], cout: outs[0]}
+
+
+def _rhs(t: Node) -> str:
+    """A tasklet's code's right-hand side."""
+    return t.attrs["code"].split("=", 1)[1].strip()
 
 
 register_pattern("lane_fold", _lane_fold)

@@ -936,7 +936,8 @@ def _memory_align(design: Design) -> Iterable[Problem]:
         if "l2" not in mems:
             continue
         beat = ctx.beat_bytes
-        contiguous = type(lay).contiguous(lay.base, ctx.padded(c), elem)  # pads in, D144
+        # pads in (D144), and a pitched row's gap (padded_rows): its block, lower.layout.over
+        contiguous = type(lay).contiguous(lay.base, ctx.block(c, lay).shape, elem)
         if lay.strides != contiguous.strides:
             yield Problem(
                 "memory.align", where,

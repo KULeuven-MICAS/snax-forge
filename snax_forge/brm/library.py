@@ -16,11 +16,11 @@ Library BRMs:
                       dot's multiplier and vecmul's
     accumulate        the sum of every lane of T beats of ``a``, one element
                       of ``out`` per T beats (pattern family ``reduce``):
-                      the Chisel datapath TreeAccumulate (L = 1, II = 1,
-                      drain 0, D133) twice: chisel_accumulator at 1 lane (vsum's)
-                      and chisel_adder_tree at W lanes, summed by its tree
-                      and accumulated; chisel_serial, the Chisel datapath
-                      SerialAccumulate (L = 1, span W: lane k in cycle k)
+                      chisel_adder_tree, the Chisel datapath TreeAccumulate
+                      (L = 1, II = 1, drain 0, D133) at W lanes, summed by its
+                      tree and accumulated (vsum's at W = 1); chisel_serial,
+                      the Chisel datapath SerialAccumulate (L = 1, span W:
+                      lane k in cycle k), every recipe named serial
     mac               out = a * b folded per lane over T beats (pattern family
                       ``lane_fold``, a fused nest; D149): the Chisel datapath
                       Mac with accumulate (L = 1, II = 1, span 1)

@@ -27,7 +27,7 @@ class BlockInShellSpec extends AnyFlatSpec {
       "vsum_tree_w8",
       "acc",
       true,
-      ujson.Obj("inType" -> "int64", "outType" -> "int64", "lanes" -> 8, "op" -> "add")
+      ujson.Obj("inType" -> "int64", "outType" -> "int64", "lanes" -> 8, "op" -> "add", "seed" -> false)
     ),
     Case(
       "dot_5_w1",
@@ -42,7 +42,7 @@ class BlockInShellSpec extends AnyFlatSpec {
         "regOut"     -> false
       )
     ),
-    Case("dot_5_w1", "sum", false, ujson.Obj("inType" -> "int64", "outType" -> "int64", "lanes" -> 1))
+    Case("dot_5_w1", "sum", false, ujson.Obj("inType" -> "int64", "outType" -> "int64", "lanes" -> 1, "seed" -> false))
   )
 
   private def fixture(n: String): RtlFixtures.Fixture = RtlFixtures.all.find(_.name == n).get

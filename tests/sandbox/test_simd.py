@@ -60,7 +60,7 @@ def test_relu_binds_at_max_one_stream_k_0():
     assert n.attrs["params"] == {"W": 4, "op": "max", "streams": 1, "k": 0}
     assert n.attrs["code"] == "out = max(a, k)"
     assert list(n.inputs) == ["a"] and list(n.outputs) == ["out"]
-    assert n.inputs["a"].subset == ["4 * i_t:4 * i_t + 4"]
+    assert n.inputs["a"].subset == ["4 * n_1_t:4 * n_1_t + 4"]
     A = np.array([-3, 5, 0, -1, 7, -8, 2, -2], np.int32)
     B = execute(g, {"A": A, "B": np.zeros(8, np.int32)})["B"]
     assert B.tolist() == [0, 5, 0, 0, 7, 0, 2, 0]

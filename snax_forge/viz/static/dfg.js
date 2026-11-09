@@ -116,6 +116,7 @@ function legend() {
     ...loops.map(([k, label]) => h("li", {}, h("i", { class: `key loop-${k}` }), label)),
     h("li", {}, h("i", { class: "key c-tasklet" }), "tasklet"),
     h("li", {}, h("i", { class: "key c-unit" }), "unit"),
+    h("li", {}, h("i", { class: "key c-fold" }), "fold"),
     h("li", {}, h("i", { class: "key c-link" }), "link"),
     h("li", {}, h("i", { class: "key c-pill" }), "container"),
     h("li", {}, h("i", { class: "key c-pill transient" }), "transient"),
@@ -139,7 +140,10 @@ function nodeEl(n) {
       h("div", { class: "c-body" }, n.body.map(nodeEl)));
   }
   const cls = { tasklet: "c-tasklet", accelerated: "c-unit", link: "c-link" }[n.kind] || "c-tasklet";
-  return h("div", { class: `c-node ${cls}`, "data-sel": n.id },
+  // a fold (api.py's ``fold``): an upside-down trapezoid, its fill a layer of its own under
+  // the text (style.css), the output connectors inside its narrow bottom
+  return h("div", { class: `c-node ${cls}${n.fold ? " c-fold" : ""}`, "data-sel": n.id },
+    n.fold ? h("i", { class: "c-shape" }) : null,
     ports(n, "in"),
     h("div", { class: "c-text" }, n.text),
     n.body && n.body.length ? h("div", { class: "c-body" }, n.body.map(nodeEl)) : null,
@@ -248,10 +252,10 @@ function drawEdges(canvas, svg, edges, k) {
     const bend = Math.max(18, Math.abs(y2 - y1) * 0.45);
     const d = `M${x1},${y1} C${x1},${y1 + bend} ${x2},${y2 - bend} ${x2},${y2 - 2}`;
     out.push(svgEl("path", { d, class: "edge-hit", "data-sel": e.id }));
-    const p = svgEl("path", { d, class: `edge ${e.dir}${e.local ? " local" : ""}`, "data-sel": e.id, "marker-end": `url(#${marker})` });
+    const p = svgEl("path", { d, class: `edge ${e.dir}${e.local ? " local" : ""}${e.seed ? " seed" : ""}`, "data-sel": e.id, "marker-end": `url(#${marker})` });
     p._marker = marker;
     out.push(p);
-    if (e.label) { // a fused nest's local value (its name, no box) or a scalar's broadcast (alpha[0] · broadcast), api.py
+    if (e.label) { // a fused nest's local value (its name, no box), a scalar's broadcast (alpha[0] · broadcast) or a fold's seed (q[m_t]), api.py
       // a local value's right of its edge, halfway down (clear of the line and its arrow); a
       // broadcast's at its start, beside the hexagon, so no map bar it passes hides it
       const [tx, ty] = e.local ? [Math.max(x1, x2) + 10, (y1 + y2) / 2 + 4] : [x1 + 6, y1 + 14];
@@ -402,6 +406,40 @@ function outline() {
     for (const el of document.querySelectorAll(`#graphs [data-sel="${CSS.escape(name)}"]`)) {
       el.classList.add("sel");
       if (el._marker) el.setAttribute("marker-end", `url(#${el._marker}-sel)`);
+    }
+  }
+  showPartners();
+}
+
+// A selected map's partners (api.py's ``partners``, found by the transforms' own sites): each
+// partner map outlined in its transform's colour with a tag naming the transform, and for a
+// fuse the marker beside the transient between the two nests. Tags and markers are placed
+// absolutely, so the boxes do not move and the edges stay where they are.
+const PARTNER_CLASSES = ["p-on", "p-fuse_map", "p-fuse_seed", "p-interchange_map", "p-near"];
+
+function showPartners() {
+  for (const el of document.querySelectorAll("#graphs .p-tags, #graphs .p-marker")) el.remove();
+  for (const el of document.querySelectorAll("#graphs .p-on")) el.classList.remove(...PARTNER_CLASSES);
+  for (const panelEl of document.querySelectorAll("#graphs .c-panel")) {
+    const v = panelEl._view;
+    if (!v || !v.partners) continue;
+    for (const name of state.sels) {
+      for (const p of v.partners[name] || []) {
+        // a near partner (refused for different ranges only): grey, its tag the refusal
+        const cls = p.near ? "p-near" : `p-${p.transform}`;
+        const map = panelEl.querySelector(`.c-map[data-sel="${CSS.escape(p.map)}"]`);
+        const bar = map && map.querySelector(":scope > .c-bar");
+        if (bar) {
+          map.classList.add("p-on", cls);
+          const tags = bar.querySelector(":scope > .p-tags") || bar.appendChild(h("span", { class: "p-tags" }));
+          if (!tags.querySelector(`.${cls}`)) tags.append(h("span", { class: `p-tag ${cls}` }, p.near || p.transform));
+        }
+        const box = p.marker && p.marker.box && panelEl.querySelector(`[data-box="${CSS.escape(p.marker.box)}"]`);
+        if (box && !box.querySelector(`.p-marker.${cls}`)) {
+          box.classList.add("p-on", cls);
+          box.append(h("span", { class: `p-marker ${cls}` }, p.marker.text));
+        }
+      }
     }
   }
 }

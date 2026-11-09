@@ -36,6 +36,15 @@ $$q = A p, \quad A \in \mathbb{Z}^{M \times N}$$
 - Written as `q[:] = np.sum(A * p, axis=1)`, so the import mirrors dot's: a multiply map into the transient `tmp0[M, N]`, then a sum map folding into `q[i]`, each inside its own row map `i` (`mult_map` ⊃ `mult_map_1` ⊃ `mult`, `sum_map` ⊃ `sum_map_1` ⊃ `sum`).
 - `recipes/matvec/matvec_<k>.json` bind it as dot's variants with the row loop tagged temporal, the jobs; `p` is read again for every row (stride 0). matvec 1 runs at 8 × 512: at 16 × 512 its `tmp0` does not fit the L1 (open item 97).
 
+### matvec_acc
+
+`blas/matvec_acc.py` · no tier · int64 · M13 B2 R5's fold seed
+
+$$q \mathrel{+}= A p, \quad A \in \mathbb{Z}^{M 	imes N}$$
+
+- Written as `q += np.sum(A * p, axis=1)`: matvec's two nests, the sum folding into the transient `tmp1[m]`, then the elementwise `q[m] = q[m] + tmp1[m]` (`augassign_19_4_map`), which `fuse_seed` takes into the fold as its seed, read once per row.
+- `recipes/matvec/matvec_seed.json` (adder tree) and `matvec_seed_serial.json` (`chisel_serial`, SerialAccumulate) bind it at 8 × 512, W = 4.
+
 ## elementwise/
 
 ### matadd

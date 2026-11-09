@@ -5,8 +5,9 @@ reduction split into lane partials and a final sum, two nests fused into one,
 a transient between two bound units made a link. Registered as any transform
 (transforms.py); ``ints`` and the sites as there: ``split_reduce``'s an
 untagged map around one folding tasklet, ``join_reduce``'s and
-``unfuse_map``'s a map that records what made it, ``fuse_map``'s a map whose
-next sibling it fuses with (filling ``second``), ``link``'s a transient
+``unfuse_map``'s a map that records what made it, ``fuse_map``'s a map that
+fuses with its next sibling (filling ``second``) or its previous one (filling
+``first``; ``fuse_choices`` both, the editor's drop-down), ``link``'s a transient
 between two bound units (filling ``group`` with an end's, else the graph's
 name), ``unlink``'s a link node or its container.
 
@@ -16,20 +17,28 @@ name), ``unlink``'s a link node or its container.
     splits it: ``<map>`` temporal around a spatial ``<map>_s``; its tasklet
     now writes one partial per lane, into a new transient
     ``<output>_partial`` indexed by the output's dimensions that move with an
-    enclosing map, then the spatial variable (dot's ``out_partial[v_s]``,
-    matvec's ``q_partial[i, v_s]``), folding as before. A final sum follows
+    enclosing map, then the spatial variable (dot's ``out_partial[n_2_s]``,
+    matvec's ``q_partial[m_t, n_2_s]``), folding as before. A final sum follows
     the temporal map: tasklet ``<tasklet>_final`` in a spatial map
-    ``<map>_final`` over ``0:factor``, folding the partials into the output
+    ``<map>_final`` over ``0:factor``, a dimension of its own, ``<dim>_f``
+    (dot's ``n_f_s``, dfg/loops.py), folding the partials into the output
     as the tasklet did. The temporal map records both
     (``loop.split_reduce``); ``join_reduce`` takes them back and joins the
     map (``join_map``). A length that is not a multiple of the factor is
-    refused: the partials' padding is not placed yet (D144).
+    refused: the partials' padding is not placed yet (D144). A seeded fold
+    (seed.py's ``fuse_seed``) keeps its seed on the final sum only, which
+    takes the fold's record too; the partials start from the identity and are
+    named after the transient the seed took (matvec_acc's ``tmp1_partial``),
+    as split before the seed.
 ``fuse_map(first, second)`` and ``unfuse_map(map)``
     two adjacent nests, ``second`` right after ``first``, with the same
-    ranges and tags level by level down to one tasklet each, joined by a
-    transient the first writes and the second reads at the same index,
-    become one nest of two tasklets: the first's ids and variables (the
-    second's renamed onto them), the second's other nodes after the fused
+    ranges level by level down to one tasklet each, and the same tags, an
+    untagged map taking the other side's tag (``tag_map`` on it first, so
+    tagging then fusing and fusing then tagging give one graph; temporal
+    against spatial is refused), joined by a transient the first writes and
+    the second reads at the same index,
+    become one nest of two tasklets: the first's ids, variables, dimensions
+    and pieces (the second's renamed onto them), the second's other nodes after the fused
     one at their level (matvec's final sum inside the row map). The
     transient becomes a local value: ``loop.local`` (the fused map's id) on
     the container, so it gets no L1 space; nothing else may name it. The
@@ -38,6 +47,14 @@ name), ``unlink``'s a link node or its container.
     fused nest's spatial map (patterns.py's ``fused_view``) and the local
     value with it: the container leaves the graph for the accelerated node's
     ``locals``, and ``unbind`` puts it back where it was.
+    Different ranges at a level are refused naming the fix where one side is
+    split and the other not (``FuseRangeError``, its ``fix`` the split_map
+    that makes them agree: "mult_map_1 runs 0:512, sum_map_1 runs 0:128 and
+    its child 0:4: split_map mult_map_1 4 first"); ``fuse_near`` gives the
+    pairs that fix alone makes fuse (the viewer's near partners). ``tag_map``
+    and ``untag_map`` on a map of a fused nest whose record still holds
+    (``unfuse_map`` takes it) tag or untag that level on both nests and fuse
+    them again (``retag``), so the record follows the tag.
 ``link(container, depth, group)`` and ``unlink(container)``
     a transient with one writer and one reader, both bound (``link.unbound``
     otherwise; ``link.container`` for another container), becomes a link
@@ -65,7 +82,8 @@ from typing import Any
 
 from snax_forge import expr
 from snax_forge.common import CodedError, fresh
-from snax_forge.dfg import Container, Graph, Memlet, Node
+from snax_forge.dfg import Container, Graph, Memlet, Node, Reduction, loops
+from snax_forge.dfg.graph import SEEDED
 from snax_forge.dfg.subset import dim_names, map_range, parse_dim
 
 from .recipe import SandboxError
@@ -81,7 +99,17 @@ from .transforms import (
     load_brm,
     register_transform,
     split_map,
+    tag_map,
 )
+
+
+class FuseRangeError(SandboxError):
+    """fuse_map's refusal of two nests whose ranges differ at a level because one side is split
+    and the other not; ``fix`` the split that makes them agree, ``{"map", "factor"}``."""
+
+    def __init__(self, message: str, fix: dict[str, Any] | None = None) -> None:
+        super().__init__(message)
+        self.fix = fix
 
 
 class LinkError(CodedError, SandboxError):
@@ -137,19 +165,28 @@ def split_reduce(g: Graph, map: str, factor: int) -> Graph:
     enclosing = {m.attrs["var"] for m in outer if m.kind == "map"}
     kept = [k for k, d in enumerate(om.subset) if dim_names(d) & enclosing]
     taken = _taken(g)
-    partial = fresh(f"{om.data}_partial", taken)
+    red = om.reduce
+    seeded = t.attrs.pop(SEEDED, None) if red is not None and red.seed is not None else None
+    # a seeded fold's partials are named after the transient the seed took, as before the seed
+    partial = fresh(f"{seeded['container'] if seeded else om.data}_partial", taken)
     out = g.containers[om.data]
     g.containers[partial] = Container([*(out.shape[k] for k in kept), factor], out.dtype, True)
     index = [om.subset[k] for k in kept]
-    t.outputs[cout] = Memlet(partial, [*index, smap.attrs["var"]], om.reduce)
-    var = fresh(f"{node.attrs['loop.split']['var']}_f", taken | {partial})
+    if seeded is not None:  # the partials start from the identity, the final sum from the seed
+        red = Reduction(red.op, seeded["identity"])
+    t.outputs[cout] = Memlet(partial, [*index, smap.attrs["var"]], red)
+    dim = fresh(f"{node.attrs[loops.DIM]}_f", taken | {partial})  # its own dimension
+    var = fresh(f"{dim}_s", taken)  # named by the rule below
     ids = {n.id for n, _ in g.walk()}
     final_t = Node(fresh(f"{t.id}_final", ids), "tasklet", inputs={cin: Memlet(partial, [*index, var])},
-                   outputs={cout: om}, attrs={"code": t.attrs["code"]})  # fmt: skip
+                   outputs={cout: om}, attrs={"code": t.attrs["code"],
+                                              **({SEEDED: seeded} if seeded else {})})  # fmt: skip
     final = Node(fresh(f"{map}_final", ids | {final_t.id}), "map",
-                 attrs={"var": var, "range": f"0:{factor}", "loop.kind": "spatial"}, body=[final_t])  # fmt: skip
+                 attrs={"var": var, "range": f"0:{factor}", loops.DIM: dim, loops.PIECE: 1,
+                        "loop.kind": "spatial"}, body=[final_t])  # fmt: skip
     node.attrs["loop.split_reduce"] = {"partial": partial, "final": final.id}
     body.insert(i + 1, final)
+    loops.rename(g)
     return _result(g)
 
 
@@ -194,6 +231,8 @@ def join_reduce(g: Graph, map: str) -> Graph:
         raise SandboxError(f"{what}: {rec['partial']} is named by {users} (unlink first)")
     (cout,) = inner[0].outputs
     inner[0].outputs[cout] = ft.outputs[cout]
+    if SEEDED in ft.attrs:  # the seed's record back with the seed
+        inner[0].attrs[SEEDED] = ft.attrs[SEEDED]
     del body[j]
     del g.containers[rec["partial"]]
     del node.attrs["loop.split_reduce"]
@@ -205,34 +244,64 @@ def join_reduce(g: Graph, map: str) -> Graph:
 # =============================================================================
 
 
-def _fuse(g: Graph, first: Node, second: Node, what: str) -> tuple[Node, str]:
-    """``first`` and ``second`` fused (module doc) and the local container; SandboxError."""
+def _count(g: Graph, n: Node) -> int | None:
+    try:
+        return len(map_range(n.attrs["range"], g.bound_symbols, n.id))
+    except (expr.ExprError, SandboxError, ValueError):
+        return None
+
+
+def _range_refusal(g: Graph, f: Node, s: Node, what: str) -> SandboxError:
+    """Different ranges at one level (``f`` the first's map, ``s`` the second's): with the fix
+    when one is split and the other not (its count times its one child's is the other's)."""
+    text = {f.id: f"{f.id} runs {range_text(g, f.attrs['range'])}",
+            s.id: f"{s.id} runs {range_text(g, s.attrs['range'])}"}  # fmt: skip
+    for x, y in ((s, f), (f, s)):  # x split, y not
+        kids = x.body or []
+        if len(kids) != 1 or kids[0].kind != "map":
+            continue
+        nx, nc, ny = _count(g, x), _count(g, kids[0]), _count(g, y)
+        if None in (nx, nc, ny) or nx * nc != ny:  # type: ignore[operator]
+            continue
+        text[x.id] += f" and its child {range_text(g, kids[0].attrs['range'])}"
+        return FuseRangeError(f"{what}: {text[f.id]}, {text[s.id]}: split_map {y.id} {nc} first",
+                              {"map": y.id, "factor": nc})  # fmt: skip
+    return SandboxError(f"{what}: {text[f.id]}, {text[s.id]}; fused nests have the same "
+                        "ranges")  # fmt: skip
+
+
+def _fuse(g: Graph, first: Node, second: Node, what: str) -> tuple[Node, str, list[list[str]]]:
+    """``first`` and ``second`` fused (module doc), the local container and the tags an
+    untagged side takes first (``[map, kind]`` each; the fused node is then the first's
+    untagged at those levels: fuse_map tags and fuses again); SandboxError."""
     rename: dict[str, str] = {}
+    pairs: list[tuple[Node, Node]] = []
     f, s = first, second
-    while f.kind == "map":
-        if s.kind != "map" or len(f.body or []) != 1 or not s.body:
+    while f.kind == "map" and s.kind == "map":
+        if len(f.body or []) != 1 or not s.body:
             raise SandboxError(f"{what}: {f.id} and {s.id} are not nests of the same depth down "
                                "to one tasklet each")  # fmt: skip
         rename[s.attrs["var"]] = f.attrs["var"]
+        pairs.append((f, s))
         f, s = f.body[0], s.body[0]
-    if f.kind != "tasklet" or s.kind != "tasklet":
-        raise SandboxError(f"{what}: the nests must end in one tasklet each")
     second = copy.deepcopy(second)
     _substitute_body([second], rename)
     f, s = first, second
-    levels = []
-    while f.kind == "map":
-        same = (f.attrs["range"], f.attrs.get("loop.kind")) == (
-            s.attrs["range"],
-            s.attrs.get("loop.kind"),
-        )
-        if not same:
-            raise SandboxError(f"{what}: {f.id} runs {f.attrs['range']} "
-                               f"{f.attrs.get('loop.kind') or 'untagged'}, {s.id} "
-                               f"{s.attrs['range']} {s.attrs.get('loop.kind') or 'untagged'}; "
-                               "fused nests have the same ranges and tags")  # fmt: skip
+    levels, tags = [], []
+    for of, os_ in pairs:
+        if f.attrs["range"] != s.attrs["range"]:
+            raise _range_refusal(g, of, os_, what)
+        kf, ks = f.attrs.get("loop.kind"), s.attrs.get("loop.kind")
+        if kf != ks and kf is not None and ks is not None:
+            raise SandboxError(f"{what}: {f.id} is {kf}, {s.id} {ks}; fused nests have the same "
+                               "tags (an untagged map takes the other's)")  # fmt: skip
+        if kf != ks:
+            tags.append([of.id, ks] if kf is None else [os_.id, kf])
         levels.append((f, s.body[1:]))
         f, s = f.body[0], s.body[0]
+    if f.kind != "tasklet" or s.kind != "tasklet":
+        raise SandboxError(f"{what}: {f.id} and {s.id} are not nests of the same depth down to "
+                           "one tasklet each")  # fmt: skip
     t1, t2 = f, s
     writes = list(t1.outputs.values())
     reads = [m for m in t2.inputs.values() if writes and m.data == writes[0].data]
@@ -252,11 +321,12 @@ def _fuse(g: Graph, first: Node, second: Node, what: str) -> tuple[Node, str]:
     for f, extra in reversed(levels):
         node = Node(f.id, "map", attrs=copy.deepcopy(f.attrs), body=[*inner, *extra])
         inner = [node]
-    return inner[0], local
+    return inner[0], local, tags
 
 
-def _fuse_site(g: Graph, first: str) -> dict[str, Any]:
-    """A map whose next sibling is a map it fuses with (``_fuse``); ``second`` is that map."""
+def _fuse_next(g: Graph, first: str) -> dict[str, Any]:
+    """``first`` fused with its next sibling, a map it fuses with (``_fuse``); ``second`` that
+    map."""
     body, i, _ = _locate(g, first)
     if i + 1 >= len(body):
         raise SandboxError(f"fuse_map {first!r}: nothing comes right after it in one body")
@@ -268,6 +338,36 @@ def _fuse_site(g: Graph, first: str) -> dict[str, Any]:
     return {"first": first, "second": s.id}
 
 
+def _fuse_site(g: Graph, map: str) -> dict[str, Any]:
+    """A map that fuses with its next sibling (``first``) or its previous one (``second``), the
+    next first; refused as the map fused with its next sibling is."""
+    try:
+        return _fuse_next(g, map)
+    except SandboxError as e:
+        why = e
+    body, i, _ = _locate(g, map)
+    if i > 0 and body[i - 1].kind == "map" and body[i].kind == "map":
+        try:
+            return _fuse_next(g, body[i - 1].id)
+        except SandboxError:
+            pass
+    raise why
+
+
+def fuse_choices(g: Graph, map: str) -> list[dict[str, str]]:
+    """The pairs ``fuse_map`` takes with ``map`` on one side, next sibling first then previous,
+    each ``{"first", "second"}`` in body order (the editor's drop-down)."""
+    out = []
+    body, i, _ = _locate(g, map)
+    for k in (i, i - 1):
+        if 0 <= k < len(body) and body[k].kind == "map":
+            try:
+                out.append(_fuse_next(g, body[k].id))
+            except SandboxError:
+                continue
+    return [c for c in out if map in c.values()]
+
+
 def _fuse_multi(g: Graph, selected: list[str]) -> dict[str, Any]:
     """One map, ``_fuse_site``'s; or two, ``first`` and ``second`` in the order selected, the
     second right after the first in one body."""
@@ -276,7 +376,7 @@ def _fuse_multi(g: Graph, selected: list[str]) -> dict[str, Any]:
     if len(selected) != 2:
         raise SandboxError(f"fuse_map: takes one map or two, not {len(selected)}")
     first, second = selected
-    got = _fuse_site(g, first)
+    got = _fuse_next(g, first)
     if got["second"] != second:
         raise SandboxError(f"fuse_map {first!r} {second!r}: {second!r} must come right after "
                            f"{first!r} in one body (after it comes {got['second']!r})")  # fmt: skip
@@ -285,16 +385,127 @@ def _fuse_multi(g: Graph, selected: list[str]) -> dict[str, Any]:
 
 def fuse_map(g: Graph, first: str, second: str) -> Graph:
     what = f"fuse_map {first!r} {second!r}"
-    if _fuse_site(g, first)["second"] != second:
+    if _fuse_next(g, first)["second"] != second:
         raise SandboxError(f"{what}: {second!r} must come right after {first!r} in one body")
+    body, i, _ = _locate(g, first)
+    for m, kind in _fuse(g, body[i], body[i + 1], what)[2]:  # an untagged side takes the tag
+        g = tag_map(g, m, kind)
     g = _copy(g)
     body, i, _ = _locate(g, first)
     f, s = body[i], body[i + 1]
-    fused, local = _fuse(g, f, s, what)
+    fused, local, _ = _fuse(g, f, s, what)
     fused.attrs["loop.fused"] = {"first": f.to_dict(), "second": s.to_dict(), "local": local}
     body[i : i + 2] = [fused]
     g.containers[local].attrs["loop.local"] = fused.id
     return _result(g)
+
+
+def fuse_pairs(g: Graph) -> list[tuple[str, str]]:
+    """Every (first, second) ``fuse_map`` takes in ``g`` (``_fuse_next`` on each map), in the
+    graph's order."""
+    out: list[tuple[str, str]] = []
+    for n, _ in g.walk():
+        if n.kind != "map":
+            continue
+        try:
+            out.append((n.id, _fuse_next(g, n.id)["second"]))
+        except SandboxError:
+            continue
+    return out
+
+
+def fuse_link(g: Graph, first: str, second: str) -> dict[str, Any]:
+    """The transient between the two nests ``fuse_map`` fuses and the loops matched, level by
+    level: ``{"container": "tmp0", "subset": ["m", "n"], "writer": "mult", "loops": [["m",
+    "m", "0:8"], ["n", "n", "0:512"]]}`` (matvec_acc's mult and sum), the subset the second
+    reads; SandboxError as the site."""
+    if _fuse_next(g, first)["second"] != second:
+        raise SandboxError(f"fuse_map {first!r} {second!r}: {second!r} must come right after "
+                           f"{first!r} in one body")  # fmt: skip
+    f, s = g.node(first), g.node(second)
+    matched = []
+    while f.kind == "map":
+        matched.append([f.attrs["var"], s.attrs["var"], range_text(g, f.attrs["range"])])
+        f, s = (f.body or [])[0], (s.body or [])[0]
+    ((_, write),) = f.outputs.items()
+    (read,) = [m for m in s.inputs.values() if m.data == write.data]
+    return {"container": write.data, "subset": [str(d) for d in read.subset], "writer": f.id,
+            "loops": matched}  # fmt: skip
+
+
+def fuse_near(g: Graph) -> list[tuple[str, str, str]]:
+    """Every (first, second, refusal) ``fuse_map`` refuses only for different ranges (a
+    ``FuseRangeError``) and takes after its fix alone: the viewer's near partners."""
+    out: list[tuple[str, str, str]] = []
+    for n, _ in g.walk():
+        if n.kind != "map":
+            continue
+        try:
+            _fuse_next(g, n.id)
+        except FuseRangeError as e:
+            assert e.fix is not None
+            body, i, _ = _locate(g, n.id)
+            second = body[i + 1].id
+            try:
+                if (
+                    _fuse_next(split_map(g, e.fix["map"], e.fix["factor"]), n.id)["second"]
+                    == second
+                ):
+                    out.append((n.id, second, str(e)))
+            except SandboxError:
+                continue
+        except SandboxError:
+            continue
+    return out
+
+
+def _fused_level(g: Graph, map: str) -> tuple[Node, int] | None:
+    """The fused nest whose chain holds ``map`` (``loop.fused``) and ``map``'s level in it."""
+    for n, _ in g.walk():
+        if n.kind != "map" or n.attrs.get("loop.fused") is None:
+            continue
+        x, k = n, 0
+        while x.kind == "map":
+            if x.id == map:
+                return n, k
+            if not x.body:
+                break
+            x, k = x.body[0], k + 1
+    return None
+
+
+def retag(g: Graph, map: str, fn: Any) -> Graph | None:
+    """``fn`` (tag_map's or untag_map's) on ``map``'s level of both nests of the fused nest
+    holding it, fused again (module doc); None when no fused nest holds it or its record no
+    longer holds (``unfuse_map`` refuses)."""
+    found = _fused_level(g, map)
+    if found is None:
+        return None
+    fused, k = found
+    rec = fused.attrs["loop.fused"]
+    try:
+        apart = unfuse_map(g, fused.id)
+    except SandboxError:
+        return None
+    other = rec["second"]
+    for _ in range(k):
+        other = other["body"][0]
+    return fuse_map(fn(fn(apart, map), other["id"]), fused.id, rec["second"]["id"])
+
+
+def range_text(g: Graph, rng: str) -> str:
+    """A map's range at the graph's symbols, ``0:8``; as written where they are unknown."""
+    try:
+        return ":".join(str(expr.evaluate(p, g.bound_symbols)) for p in rng.split(":"))
+    except expr.ExprError:
+        return rng
+
+
+def link_text(link: dict[str, Any]) -> str:
+    """``fuse_link``'s or seed.py's ``seed_link``'s as one line: ``tmp0[m, n] · m = m (0:8), n
+    = n (0:512)``; a loop of one side only by its name and range."""
+    loops = [f"{a} = {b} ({r})" if a and b else f"{a or b} ({r})" for a, b, r in link["loops"]]
+    return f"{link['container']}[{', '.join(link['subset'])}] · {', '.join(loops)}"
 
 
 def _unfuse_site(g: Graph, map: str) -> dict[str, Any]:
@@ -316,7 +527,7 @@ def unfuse_map(g: Graph, map: str) -> Graph:
     if rec["local"] not in g.containers:  # bind took the local value with the nest
         raise SandboxError(f"{what}: the nest changed since fuse_map (unbind first)")
     f, s = Node.from_dict(rec["first"], what), Node.from_dict(rec["second"], what)
-    again, _ = _fuse(g, f, s, what)
+    again, _, _ = _fuse(g, f, s, what)
     again.attrs["loop.fused"] = rec
     if again.to_dict() != node.to_dict():
         raise SandboxError(f"{what}: the nest changed since fuse_map (unbind first)")

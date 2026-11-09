@@ -19,31 +19,37 @@ name) stay in the transform.
 
 ``split(map, factor)`` and ``split_map(map, factor)``
     ``split`` splits a map ``v`` over ``b:e`` (step 1, no ``loop.kind``) into
-    an outer map ``v_1`` over ``0:(e - b) // factor``, keeping the map's id
-    and attrs and recording the split (``loop.split``), around an inner map
-    ``<id>_inner`` with ``v_2`` over ``0:factor``, both untagged, neutral
-    names that suggest no tag (D73); a later split takes the next free pair,
-    ``v_3`` and ``v_4``, then ``v_5`` and ``v_6``; every use of ``v`` in
-    the body becomes ``b + factor * v_1 + v_2``. A length n that is not a
-    multiple of the factor (D144) runs ``v_1`` over ceil(n / factor) and
+    an outer map over ``0:(e - b) // factor``, keeping the map's id
+    and attrs and recording the split (``loop.split``, with the record it
+    had before as ``prior`` when it was split before), around an inner map
+    ``<id>_inner`` over ``0:factor``, both untagged (D73). The variables follow
+    dfg/loops.py's rule: the map keeps its piece k of its dimension, the inner
+    map is piece k + 1, the pieces below move down one, and every variable of
+    the dimension is named again (``n`` -> ``n_1``, ``n_2``; ``n_2`` split ->
+    ``n_1``, ``n_2``, ``n_3``); every use of ``v`` in the body becomes
+    ``b + factor * v_1 + v_2`` on the two pieces. A length n that is not a
+    multiple of the factor (D144) runs the outer piece over ceil(n / factor) and
     records n in ``loop.split`` (``valid``): only the lanes with
     ``factor * v_1 + v_2`` below n are the kernel's, the rest pad lanes
     (dfg/pad.py), which the reference executor neither reads nor writes and
     the containers hold in memory as padding. ``split_map`` is ``split``,
     then ``tag_map`` ``temporal`` on the outer map and ``spatial`` on the
-    inner, in one step, with the names of the tags it gives: ``v_t``,
-    ``v_s`` and ``<id>_s`` (``SPLIT_TAGGED``), which the recipes bind and
-    compose.py's ``split_reduce`` uses too.
+    inner, in one step: ``n_1_t``, ``n_2_s`` and the inner id ``<id>_s``
+    (``SPLIT_TAGGED``), which the recipes bind and compose.py's
+    ``split_reduce`` uses too.
 ``tag_map(map, kind)`` and ``untag_map(map)``
     ``tag_map`` tags an untagged map ``temporal``, ``tile`` or ``spatial`` as
-    it is, without splitting it (matadd's row map); a tagged map is an
+    it is, without splitting it (matadd's row map), its variable taking the
+    tag's suffix (``m_t``, ``m_tile``, ``m_s``); a tagged map is an
     error. ``untag_map`` removes the tag, whatever set it, but not from a map
     a bound unit is inside (unbind first).
 ``bind(node, brm, implementation, instance, params={})``
     replaces a tasklet and the spatial map around it (the map's only
     child), or a fused nest's spatial map and its two tasklets
     (compose.py's ``fuse_map``; the first's inputs, the second's output,
-    patterns.py's ``fused_view``), by an accelerated node with the
+    patterns.py's ``fused_view``), or a spatial map whose one tasklet
+    folds, given by the map (``lane_fold`` without a front op,
+    ``lane_accumulate``), by an accelerated node with the
     (first) tasklet's id, bound to an
     instance of a library BRM. The BRM's pattern matcher (patterns.py) says
     which connector feeds which port. Every map around the spatial map
@@ -87,8 +93,34 @@ name) stay in the transform.
     it uses, one beat per T firings, T from ``named_rates`` (D102).
 ``unbind(node)`` and ``join_map(map)``
     the inverses: the subtree an accelerated node replaced, and the
-    map a split pair was split from (``loop.split``), whatever their tags,
-    so a graph at any step can go back to the imported one.
+    map a split pair was split from (``loop.split``, its ``prior`` record back),
+    whatever their tags, its inner piece gone and the pieces below it moved
+    up one (one piece left is the base again), so a graph at any step can go
+    back to the imported one; an index split wrote is put back as it was, any
+    other written back as ``k + c * v``. An inner piece split since is refused
+    (join it first), as is a child of another dimension (interchange_map it
+    back first).
+``interchange_map(map, with)``
+    two maps ``X`` and ``Y`` of one perfect nest (one inside the other, every
+    map from the outer down to the inner one's parent holding exactly one
+    map and nothing else) trade places in it, each keeping its id, variable,
+    range and attrs (its tag among them); the maps between them and the
+    inner one's body stay where they are, each its dimension's piece and name
+    (dfg/loops.py). Adjacent or not, either may be the
+    innermost map. The pair again, in either order, undoes it. rowsum's lane
+    accumulator puts the spatial row map inside the column map this way
+    (``{"map": "sum_map_s", "with": "sum_map_1"}``). ``with`` is a Python
+    keyword, so the function is ``interchange(g, map, partner)`` under a
+    registration that names its params (``TransformSpec.params``). Refused,
+    naming the map: not in one nest or not a perfect one; after the swap a
+    range naming the variable of a map then inside it (a range names only the
+    variables of the maps around it); the pair inside an accelerated node or
+    a bound unit under the inner one (unbind first); a fused nest's outer map
+    in the chain (``loop.fused``: unfuse_map first); a fold under them whose op
+    is not order-free (dfg/reduce.py's ``order_free``; every registered op is,
+    D28) over two or more of the chain's maps, one of them moved (the order of
+    its writes would change). The site takes a map with at least one partner
+    (``partners``: every map above and below it, each with its refusal).
 ``encapsulate(accelerator, units)`` and ``unencapsulate(accelerator)``
     put the groups of the instances ``units`` into one accelerator of that
     name (D148): every accelerated node of each carries ``accelerator``. A
@@ -105,17 +137,29 @@ name) stay in the transform.
 
 from __future__ import annotations
 
+import ast
 import copy
 import itertools
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
 
 from snax_forge import expr
+from snax_forge.brm.brm import SEED
 from snax_forge.common import fresh
-from snax_forge.dfg import Container, DfgError, Graph, Memlet, Node, named_rates, parse_dim
+from snax_forge.dfg import (
+    REDUCE_OPS,
+    Container,
+    DfgError,
+    Graph,
+    Memlet,
+    Node,
+    loops,
+    named_rates,
+    parse_dim,
+)
 from snax_forge.dfg.graph import SCALAR
 from snax_forge.dfg.subset import dim_names, format_dim, map_range
 from snax_forge.expr import ExprError
@@ -137,6 +181,17 @@ class TransformSpec:
     # the inputs the step fixes, {container: array} from (graph, **params): its reference check
     # runs the graph before it and after it on them (run.py's checked_step; bake_scalar's value)
     fixes: Callable[..., dict[str, Any]] | None = None
+    # the params the user gives, in order, when the function cannot name them (a keyword:
+    # interchange_map's ``with``); otherwise its signature's after the graph (``param_names``)
+    params: tuple[str, ...] | None = None
+
+    def param_names(self) -> list[str]:
+        """The params a step gives, in order."""
+        if self.params is not None:
+            return list(self.params)
+        import inspect
+
+        return list(inspect.signature(self.fn).parameters)[1:]
 
 
 TRANSFORMS: dict[str, TransformSpec] = {}
@@ -149,13 +204,15 @@ def register_transform(
     site: Site | None = None,
     multi: MultiSite | None = None,
     fixes: Callable[..., dict[str, Any]] | None = None,
+    params: tuple[str, ...] | None = None,
 ) -> None:
     """Make ``{"transform": name}`` usable in a recipe (principle 6), with its site (D72),
     for a transform that takes several items its site over a selection (``multi``), and for
-    one that fixes an input (``bake_scalar``) the inputs it fixes (``fixes``)."""
+    one that fixes an input (``bake_scalar``) the inputs it fixes (``fixes``), and for one whose
+    params a Python signature cannot name (a keyword) its params (``params``)."""
     if name in TRANSFORMS:
         raise ValueError(f"transform {name!r} already registered")
-    TRANSFORMS[name] = TransformSpec(fn, tuple(ints), site, multi, fixes)
+    TRANSFORMS[name] = TransformSpec(fn, tuple(ints), site, multi, fixes, params)
 
 
 def site_of(name: str, g: Graph, selected: str | list[str]) -> dict[str, Any]:
@@ -218,14 +275,11 @@ def _map_dims(body: list[Node], fn: Callable[[Any], Any], splits: bool = False) 
     node's ``replaced`` subtree included); with ``splits``, on each split's range too."""
     for n in body:
         for m in (*n.inputs.values(), *n.outputs.values()):
-            m.subset = [fn(d) for d in m.subset]
+            m.map_dims(fn)
         if n.kind == "map":
             n.attrs["range"] = fn(n.attrs["range"])
             if splits and n.attrs.get("loop.split"):
-                split = n.attrs["loop.split"]
-                n.attrs["loop.split"] = {**split, "range": fn(split["range"])}
-                if "valid" in split:
-                    n.attrs["loop.split"]["valid"] = fn(split["valid"])
+                n.attrs["loop.split"] = loops.split_record(n.attrs["loop.split"], fn)
         if n.kind == "accelerated" and n.attrs.get("replaced"):
             old = Node.from_dict(n.attrs["replaced"], n.id)
             _map_dims([old], fn, splits)
@@ -281,10 +335,10 @@ def _split_site(g: Graph, map: str, what: str) -> dict[str, Any]:
     return {"map": map}
 
 
-# The suffixes of a split's outer variable, inner variable and inner map id: ``split``'s
-# neutral ones and ``split_map``'s (and ``split_reduce``'s), which tag in the same step (D73).
-SPLIT_NEUTRAL = ("_1", "_2", "_inner")
-SPLIT_TAGGED = ("_t", "_s", "_s")
+# The suffix of a split's inner map id: ``split``'s neutral one and ``split_map``'s (and
+# ``split_reduce``'s), which tags in the same step (D73). The variables follow loops.py's rule.
+SPLIT_NEUTRAL = "_inner"
+SPLIT_TAGGED = "_s"
 
 
 def split(g: Graph, map: str, factor: int) -> Graph:
@@ -296,10 +350,16 @@ def split_map(g: Graph, map: str, factor: int) -> Graph:
     return tag_map(tag_map(g, map, "temporal"), inner, "spatial")
 
 
-def _split(g: Graph, map: str, factor: int, what: str,
-           names: tuple[str, str, str]) -> tuple[Graph, str]:  # fmt: skip
-    """``split`` with ``names`` (outer var, inner var, inner id suffixes): the graph and the
-    inner map's id."""
+def _named(g: Graph) -> Graph:
+    """``g`` with every variable named by loops.py's rule, as a new valid graph."""
+    loops.rename(g)
+    return _result(g)
+
+
+def _split(g: Graph, map: str, factor: int, what: str, suffix: str) -> tuple[Graph, str]:
+    """``split`` with the inner map id's ``suffix``: the graph and the inner map's id. The map
+    keeps its piece k of its dimension, the inner map is piece k + 1, the pieces below move
+    down one (loops.py)."""
     _split_site(g, map, what)
     if type(factor) is not int or factor < 1:
         raise SandboxError(f"{what}: factor {factor!r} must be a positive int")
@@ -311,23 +371,16 @@ def _split(g: Graph, map: str, factor: int, what: str,
     n = _bound(g, length, what)
     tail = n % factor != 0
     var = node.attrs["var"]
-    taken = (
-        set(g.symbols)
-        | set(g.containers)
-        | {nd.attrs["var"] for nd, _ in g.walk() if nd.kind == "map"}
-    )
-    if names == SPLIT_NEUTRAL:  # the next free pair: v_1 and v_2, then v_3 and v_4, ... (D73)
-        k = 1
-        while f"{var}_{k}" in taken or f"{var}_{k + 1}" in taken:
-            k += 2
-        var_t, var_s = f"{var}_{k}", f"{var}_{k + 1}"
-    else:
-        var_t, var_s = fresh(f"{var}{names[0]}", taken), fresh(f"{var}{names[1]}", taken)
+    taken = _names(g)
+    var_t, var_s = fresh(f"{var}_1", taken), fresh(f"{var}_2", taken)  # named below
+    loops.ensure(node)
+    dim, k = node.attrs[loops.DIM], node.attrs[loops.PIECE]
+    loops.renumber(g, node, k, 1)
     ids = {nd.id for nd, _ in g.walk()}
     inner = Node(
-        fresh(f"{map}{names[2]}", ids),
+        fresh(f"{map}{suffix}", ids),
         "map",
-        attrs={"var": var_s, "range": f"0:{factor}"},
+        attrs={"var": var_s, "range": f"0:{factor}", loops.DIM: dim, loops.PIECE: k + 1},
         body=node.body,
     )
     start = "" if begin == 0 else f"{begin} + "
@@ -336,6 +389,8 @@ def _split(g: Graph, map: str, factor: int, what: str,
     split = {"var": var, "range": node.attrs["range"]}  # for join_map
     if tail:  # the lanes past n are padding
         split["valid"] = expr.canonical(length)
+    if node.attrs.get("loop.split"):  # split before: join_map gives its record back
+        split["prior"] = node.attrs["loop.split"]
     node.attrs = {
         "var": var_t,
         "range": format_dim((0, expr.canonical(firings), 1)),
@@ -343,7 +398,13 @@ def _split(g: Graph, map: str, factor: int, what: str,
         "loop.split": split,
     }
     node.body = [inner]
-    return _result(g), inner.id
+    return _named(g), inner.id
+
+
+def _names(g: Graph) -> set[str]:
+    """The symbols, containers and map variables of ``g``: what a new name must avoid."""
+    return set(g.symbols) | set(g.containers) | {n.attrs["var"] for n, _ in g.walk()
+                                                  if n.kind == "map"}  # fmt: skip
 
 
 # =============================================================================
@@ -366,15 +427,21 @@ def tag_map(g: Graph, map: str, kind: str) -> Graph:
     _tag_site(g, map, what)
     if kind not in TAGS:
         raise SandboxError(f"{what}: kind {kind!r} is not one of {list(TAGS)}")
+    from .compose import retag  # a fused nest's level: both nests tagged (compose.py)
+
+    again = retag(g, map, lambda h, m: tag_map(h, m, kind))
+    if again is not None:
+        return again
     g = _copy(g)
     node = g.node(map)
+    loops.ensure(node)
     attrs: dict[str, Any] = {}
     for k, v in node.attrs.items():  # the kind before loop.split, as split_map writes them
         if k == "loop.split":
             attrs["loop.kind"] = kind
         attrs[k] = v
     node.attrs = {**attrs, "loop.kind": kind}
-    return _result(g)
+    return _named(g)
 
 
 def _untag_site(g: Graph, map: str, what: str) -> dict[str, Any]:
@@ -393,10 +460,16 @@ def _untag_site(g: Graph, map: str, what: str) -> dict[str, Any]:
 def untag_map(g: Graph, map: str) -> Graph:
     """The inverse of tag_map: the map without its tag."""
     _untag_site(g, map, f"untag_map {map!r}")
+    from .compose import retag  # a fused nest's level: both nests untagged (compose.py)
+
+    again = retag(g, map, untag_map)
+    if again is not None:
+        return again
     g = _copy(g)
     node = g.node(map)
+    loops.ensure(node)
     node.attrs = {k: v for k, v in node.attrs.items() if k != "loop.kind"}
-    return _result(g)
+    return _named(g)
 
 
 # =============================================================================
@@ -458,10 +531,14 @@ def _bind_site(g: Graph, node: str, what: str) -> _Site:
     body, i, outer = _locate(g, node)
     if body[i].kind == "map":  # a fused nest's spatial map (fuse_map): its two tasklets as one
         smap, found = body[i], fused_view(body[i])
-        if found is None:
+        if found is not None:
+            tasklet, pattern_node = found[2], smap
+        elif _lane_fold_map(smap):  # a spatial map of one folding tasklet (lane_accumulate)
+            tasklet, pattern_node = smap.body[0], smap
+        else:
             raise SandboxError(f"{what}: a map binds only as a fused nest, a spatial map of two "
-                               "tasklets (fuse_map)")  # fmt: skip
-        tasklet, pattern_node = found[2], smap
+                               "tasklets (fuse_map), or as a spatial map of one tasklet whose "
+                               "output folds (a lane fold)")  # fmt: skip
     else:
         tasklet = pattern_node = body[i]
         smap = outer[-1] if outer else None
@@ -474,12 +551,29 @@ def _bind_site(g: Graph, node: str, what: str) -> _Site:
         kind = m.attrs.get("loop.kind")
         if kind == "tile":
             raise SandboxError(f"{what}: map {m.id!r} is a tile; tiles are not lowered yet (LOW3b)")
-        if kind != "temporal":
+        if kind is None:
             raise SandboxError(
                 f"{what}: map {m.id!r} around it is untagged; the maps around the spatial map are "
                 "its firing loops: tag it temporal with tag_map"
             )
+        if kind != "temporal":
+            raise SandboxError(
+                f"{what}: map {m.id!r} around it is {kind}; the maps around the spatial map are "
+                "its firing loops, temporal: untag_map it, then tag_map it temporal"
+            )
     return _Site(tasklet, pattern_node, smap, temporal)
+
+
+def _lane_fold_map(m: Node) -> bool:
+    """A spatial map whose body is one tasklet with a folding output: ``bind`` takes the map
+    (patterns.py's ``lane_fold`` without a front op)."""
+    kids = m.body or []
+    return (
+        m.attrs.get("loop.kind") == "spatial"
+        and len(kids) == 1
+        and kids[0].kind == "tasklet"
+        and any(o.reduce is not None for o in kids[0].outputs.values())
+    )
 
 
 def _bind_check(g: Graph, site: _Site, brm: str, implementation: str,
@@ -497,6 +591,16 @@ def _bind_check(g: Graph, site: _Site, brm: str, implementation: str,
     conn_dtypes = {
         c: g.containers[m.data].dtype for c, m in (tasklet.inputs | tasklet.outputs).items()
     }
+    seeds = _seeds(site)
+    given_seed = (params or {}).get(SEED)
+    if seeds and not any(p.name == SEED for p in b.interface.ports):
+        (s,) = seeds.values()
+        raise SandboxError(f"{what}: the fold is seeded from {s.data}; {brm!r} has no seed port "
+                           "(TreeAccumulate and SerialAccumulate take one, D163): unfuse_seed "
+                           "first")  # fmt: skip
+    if given_seed is not None and given_seed != int(bool(seeds)):
+        raise SandboxError(f"{what}: seed = {given_seed!r} given, but the fold is "
+                           f"{'seeded' if seeds else 'not seeded'} (fuse_seed sets it)")  # fmt: skip
     scalars = _scalar_inputs(g, site, what)
     ports = match(site.pattern, b, conn_dtypes, frozenset(scalars))
     _check_port_dtypes(b, ports, conn_dtypes, what)
@@ -504,6 +608,8 @@ def _bind_check(g: Graph, site: _Site, brm: str, implementation: str,
     if not entries:
         raise SandboxError(f"{what}: brm {brm!r} does not say what it computes (function.code)")
     given = dict(params or {})
+    if seeds:
+        given[SEED] = 1  # the seed's port, on the seed's element (_bind_rewrite)
     names = _scalar_names(b, scalars)
     entry, ports, slots = _entry(b, entries, ports, tasklet, names, given)
     if entry is None:
@@ -612,6 +718,17 @@ def _bind_check(g: Graph, site: _Site, brm: str, implementation: str,
     return _Bound(b, ports, inst, var_s, end, memlets, folds, entry.code, from_scalar)
 
 
+def _seeds(site: _Site) -> dict[str, Any]:
+    """The seeded folds under the bind's site (seed.py's ``fuse_seed``): connector -> its
+    reduce's seed, over every tasklet of the spatial map (a fused nest's second too)."""
+    found = {}
+    for t in [site.tasklet, *(n for n in site.smap.body or [] if n.kind == "tasklet")]:
+        for c, m in t.outputs.items():
+            if m.reduce is not None and m.reduce.seed is not None:
+                found[c] = m.reduce.seed
+    return found
+
+
 def _scalar_inputs(g: Graph, site: _Site, what: str) -> dict[str, Memlet]:
     """The tasklet's scalar operands: each input whose memlet names no variable of the maps
     around it (the same element every firing), on a kernel's scalar argument (``sdfg.scalar``),
@@ -678,7 +795,7 @@ def _entry(b: Any, entries: list[Any], ports: Mapping[str, str], tasklet: Node,
     outs = {c: p for c, p in ports.items() if c in tasklet.outputs}
     for e in entries:
         present = b.present(b.defaults() | dict(given) | e.params)
-        ins = [p.name for p in present if p.direction == "in"]
+        ins = [p.name for p in present if p.direction == "in" and p.name != SEED]
         if {p.name for p in present if p.direction == "out"} != set(outs.values()):
             continue
         if len(ins) != len(arrays):
@@ -708,10 +825,11 @@ def _bind_rewrite(g: Graph, site: _Site, bound: _Bound, brm: str, implementation
     counts = [_bound(g, _length(m), what) for m in temporal]
     n = int(np.prod(counts, dtype=int))
     loops = [(m.attrs["var"], k) for m, k in zip(temporal, counts, strict=True)]
+    with_seed = {ports[c]: (m, b.port(ports[c]).rate) for c, m in bound.memlets.items()}
+    for seed in _seeds(site).values():  # one beat per job, as its fold's output
+        with_seed[SEED] = (Memlet(seed.data, list(seed.subset)), b.port(SEED).rate)
     try:
-        rates = named_rates(
-            {ports[c]: (m, b.port(ports[c]).rate) for c, m in bound.memlets.items()}, loops, what
-        )
+        rates = named_rates(with_seed, loops, what)
     except DfgError as e:
         raise SandboxError(str(e)) from None
     task = {"n": n} | rates
@@ -742,6 +860,10 @@ def _bind_rewrite(g: Graph, site: _Site, bound: _Bound, brm: str, implementation
             out[port] = Memlet(m.data, _lanes_dims(m, bound.var_s, bound.end, f"{what}.{side}.{c}"))
             if nest is not None:
                 _check_order(g, m, temporal, smap, nest.indices(), f"{what} port {port!r}")
+    for c, seed in _seeds(site).items():  # the seed's element, one lane as its fold's output
+        sm = Memlet(seed.data, list(seed.subset))
+        new_in[SEED] = Memlet(seed.data, [*sm.subset[:-1], _one_lane(sm.subset[-1],
+                                                                      f"{what}.seed")])  # fmt: skip
     for slot, m in bound.scalars.items():  # a slot read from a scalar: a connector of its name
         new_in[slot] = Memlet(m.data, list(m.subset))
     acc = Node(
@@ -759,7 +881,8 @@ def _bind_rewrite(g: Graph, site: _Site, bound: _Bound, brm: str, implementation
         },
         body=[],
     )
-    if site.pattern is smap and (taken := _take_locals(g, smap)):  # a fused nest's local value
+    fused = site.pattern is smap and fused_view(smap) is not None
+    if fused and (taken := _take_locals(g, smap)):  # a fused nest's local value
         acc.attrs["locals"] = taken  # goes with its two tasklets
     parent_body, j, _ = _locate(g, smap.id)
     parent_body[j] = acc
@@ -899,6 +1022,14 @@ def _join_site(g: Graph, map: str, what: str) -> dict[str, Any]:
     kids = outer.body or []
     if len(kids) != 1 or kids[0].kind != "map":
         raise SandboxError(f"{what}: its only child must be the inner map (unbind first)")
+    if kids[0].attrs.get("loop.split") is not None:
+        raise SandboxError(f"{what}: its inner piece {kids[0].id!r} was split since (join_map "
+                           f"{kids[0].id!r} first)")  # fmt: skip
+    dim, inner = outer.attrs.get(loops.DIM), kids[0].attrs.get(loops.DIM)
+    if dim is not None and inner != dim:
+        raise SandboxError(f"{what}: its only child {kids[0].id!r} is a piece of {inner!r}, not "
+                           f"of {dim!r}; join_map joins a map and its inner piece "
+                           "(interchange_map them back first)")  # fmt: skip
     return {"map": map}
 
 
@@ -907,10 +1038,13 @@ def join_map(g: Graph, map: str) -> Graph:
 
     Needs ``loop.split`` (the var and range before the split) and the
     inner map as the outer map's only child, whatever their tags; the
-    joined map has none. Every index under it is
-    written back over the old variable: an index ``k + c * (b + f * v_t + v_s)``
-    that split wrote becomes ``k + c * v``; an index in another form is
-    an error, since it is not what split wrote.
+    joined map has none, and takes back its record before (``prior``). Every
+    index under it is written back over the old variable: split's own
+    ``b + f * v_t + v_s`` wherever it still stands becomes ``v`` (the text
+    before the split), and any other index affine in the two, ``k + c * (b + f
+    * v_t + v_s)`` (one a later transform rewrote), becomes ``k + c * v``; an
+    index in another form is an error, since it is not what split wrote. The
+    variables are then named again by dfg/loops.py's rule.
     """
     what = f"join_map {map!r}"
     _join_site(g, map, what)
@@ -919,13 +1053,21 @@ def join_map(g: Graph, map: str) -> Graph:
     outer = body[i]
     split = outer.attrs["loop.split"]
     (inner,) = outer.body
-    v_t, v_s, var = outer.attrs["var"], inner.attrs["var"], split["var"]
+    v_t, v_s = outer.attrs["var"], inner.attrs["var"]
+    named = loops.DIM in outer.attrs  # renamed by the rule below, else the recorded name
+    var = fresh(f"{split['var']}_joined", _names(g)) if named else split["var"]
     begin, _, _ = parse_dim(split["range"], what)
     b0, factor, step = parse_dim(inner.attrs["range"], what)
     if b0 != 0 or step != 1 or type(factor) is not int:
         raise SandboxError(f"{what}: the inner map must run over 0:<int>")
 
+    start = "" if begin == 0 else f"{begin} + "
+    wrote = ast.dump(ast.parse(f"{start}{factor} * {v_t} + {v_s}", mode="eval").body)
+
     def back(part: Any) -> Any:
+        exact = _unsplit(part, wrote, var, {v_t, v_s})
+        if exact is not None:  # split's own expression, as it wrote it: the old text
+            return exact
         try:
             const, co = expr.linear(part, [v_t, v_s])
         except ExprError as e:
@@ -947,13 +1089,169 @@ def join_map(g: Graph, map: str) -> Graph:
         return format_dim(tuple(back(p) for p in parse_dim(d, what)))
 
     _map_dims(inner.body or [], back_dim)
-    rest = {
-        k: v for k, v in outer.attrs.items() if k not in ("var", "range", "loop.kind", "loop.split")
-    }
+    prior = split.get("prior")  # the record before this split, where it was
+    rest = {k: prior if k == "loop.split" else v for k, v in outer.attrs.items()
+            if k not in ("var", "range", "loop.kind") and (k != "loop.split" or prior)}  # fmt: skip
     body[i] = Node(
         outer.id, "map", attrs={"var": var, "range": split["range"], **rest}, body=inner.body
     )
+    if named:  # the inner piece is gone: the pieces below it move up one
+        loops.renumber(g, body[i], inner.attrs.get(loops.PIECE, 0), -1)
+    return _named(g)
+
+
+def _unsplit(part: Any, wrote: str, var: str, gone: set[str]) -> Any | None:
+    """``part`` with every sub-expression that is split's (``wrote``, an ``ast.dump``) put back
+    as ``var``, or None when a split variable is left (an index another transform rewrote)."""
+    if type(part) is int:
+        return part
+
+    class Back(ast.NodeTransformer):
+        def visit(self, node: ast.AST) -> ast.AST:
+            if ast.dump(node) == wrote:
+                return ast.Name(var, ast.Load())
+            return super().visit(node)
+
+    text = expr.canonical(ast.unparse(Back().visit(ast.parse(str(part), mode="eval").body)))
+    return None if dim_names(text) & gone else text
+
+
+# =============================================================================
+# interchange_map: its own inverse
+# =============================================================================
+
+
+def _nest(g: Graph, x_id: str, y_id: str, what: str) -> tuple[tuple[Node, ...], list[Node]]:
+    """The perfect nest from the outer of the two maps down to the inner one: the nodes around
+    its top and the chain, top first, each map but the last holding exactly one map."""
+    if x_id == y_id:
+        raise SandboxError(f"{what}: a map trades places with another map, not with itself")
+    x, y = _map_node(g, x_id, what), _map_node(g, y_id, what)
+    _, _, around_x = _locate(g, x_id)
+    _, _, around_y = _locate(g, y_id)
+    if any(o is x for o in around_y):
+        top, bottom, around = x, y, around_x
+    elif any(o is y for o in around_x):
+        top, bottom, around = y, x, around_y
+    else:
+        raise SandboxError(f"{what}: not in one nest, neither map is inside the other")
+    chain = [top]
+    while chain[-1] is not bottom:
+        kids = chain[-1].body or []
+        if len(kids) != 1 or kids[0].kind != "map":
+            held = ", ".join(f"the {k.kind} {k.id!r}" for k in kids)
+            raise SandboxError(f"{what}: not one perfect nest: {chain[-1].id!r} holds {held}; "
+                               f"every map from {top.id!r} down to {bottom.id}'s parent holds "
+                               "one map and nothing else")  # fmt: skip
+        chain.append(kids[0])
+    return around, chain
+
+
+def _interchange_check(g: Graph, x_id: str, y_id: str, what: str) -> list[Node]:
+    """The two maps free to trade places (module doc): the chain from the outer to the inner."""
+    around, chain = _nest(g, x_id, y_id, what)
+    top, bottom = chain[0], chain[-1]
+    for o in around:
+        if o.kind == "accelerated":
+            raise SandboxError(f"{what}: inside the accelerated node {o.id!r} (unbind first)")
+    under = list(_nodes_under(bottom.body or []))
+    for n in under:
+        if n.kind == "accelerated":
+            raise SandboxError(f"{what}: the bound unit {n.id!r} is inside {bottom.id!r} (unbind "
+                               "first)")  # fmt: skip
+    for m in chain:
+        if m.attrs.get("loop.fused") is not None:
+            raise SandboxError(f"{what}: {m.id!r} is a fused nest's outer map (unfuse_map "
+                               "first)")  # fmt: skip
+    after = [bottom, *chain[1:-1], top]
+    for i, m in enumerate(after):
+        for inner in after[i:]:
+            if inner.attrs["var"] in dim_names(m.attrs["range"]):
+                raise SandboxError(f"{what}: after the swap {m.id}'s range {m.attrs['range']} "
+                                   f"would name {inner.id}'s variable {inner.attrs['var']!r}, a "
+                                   "map then inside it; a range names only the variables of the "
+                                   "maps around it")  # fmt: skip
+    moved = {top.attrs["var"], bottom.attrs["var"]}
+    for n in under:
+        for c, m in n.outputs.items():
+            red = m.reduce
+            if red is None or REDUCE_OPS[red.op].order_free:
+                continue
+            over = [lp.attrs["var"] for lp in chain if lp.attrs["var"] not in m.names]
+            if len(over) >= 2 and moved & set(over):
+                raise SandboxError(
+                    f"{what}: {n.id}'s {c} folds over {', '.join(map(repr, over))} with "
+                    f"{red.op!r}, whose result depends on the order (not associative and "
+                    "commutative); the swap reorders its writes"
+                )
+    return chain
+
+
+def partners(g: Graph, map: str) -> list[tuple[str, str | None]]:
+    """Every map above and below ``map`` in its nest, top to bottom (the maps around it, then
+    those under it, depth first), each with None if it trades places with ``map`` or the
+    refusal if not."""
+    _, _, around = _locate(g, map)
+    x = _map_node(g, map, f"interchange_map {map!r}")
+    above = [o.id for o in around if o.kind == "map"]
+    below = [n.id for n in _nodes_under(x.body or []) if n.kind == "map"]
+    out: list[tuple[str, str | None]] = []
+    for p in [*above, *below]:
+        try:
+            _interchange_check(g, map, p, f"interchange_map {map!r} with {p!r}")
+            out.append((p, None))
+        except SandboxError as e:
+            out.append((p, str(e)))
+    return out
+
+
+def _interchange_site(g: Graph, map: str) -> dict[str, Any]:
+    """A map with at least one partner (``partners``); the transform's pair check is
+    ``_interchange_check``."""
+    what = f"interchange_map {map!r}"
+    _map_node(g, map, what)
+    found = partners(g, map)
+    if not found:
+        raise SandboxError(f"{what}: no map above or below it")
+    if all(why is not None for _, why in found):
+        raise SandboxError(f"{what}: no map above or below it trades places with it: "
+                           + "; ".join(why for _, why in found if why))  # fmt: skip
+    return {"map": map}
+
+
+def _nodes_under(body: list[Node]) -> Iterator[Node]:
+    """Every live node in ``body``, depth first (not an accelerated node's ``replaced``)."""
+    for n in body:
+        yield n
+        yield from _nodes_under(n.body or [])
+
+
+def interchange(g: Graph, map: str, partner: str) -> Graph:
+    """``map`` and ``partner`` trade places in their perfect nest (module doc); its own
+    inverse, the pair in either order."""
+    _interchange_site(g, map)  # the site's refusal first, as every transform's
+    g = _copy(g)
+    chain = _interchange_check(g, map, partner, f"interchange_map {map!r} with {partner!r}")
+    top, bottom = chain[0], chain[-1]
+    body, i, _ = _locate(g, top.id)
+    deepest = bottom.body
+    new_top = Node(bottom.id, "map", attrs=bottom.attrs, body=[])
+    new_bottom = Node(top.id, "map", attrs=top.attrs, body=deepest)
+    middle = chain[1:-1]
+    levels = [new_top, *middle, new_bottom]
+    for outer, inner in itertools.pairwise(levels):
+        outer.body = [inner]
+    body[i] = new_top
     return _result(g)
+
+
+def interchange_map(g: Graph, map: str, **partner: str) -> Graph:
+    """The registered transform, ``{"map": X, "with": Y}`` (``with`` is a Python keyword:
+    ``interchange``'s ``partner``)."""
+    if set(partner) != {"with"}:
+        raise SandboxError(f"interchange_map {map!r}: takes map and with, got "
+                           f"{sorted(['map', *partner])}")  # fmt: skip
+    return interchange(g, map, partner["with"])
 
 
 # =============================================================================
@@ -1080,5 +1378,8 @@ register_transform("untag_map", untag_map, site=lambda g, s: _untag_site(g, s, f
 register_transform("bind", bind, site=_bind_params)
 register_transform("unbind", unbind, site=lambda g, s: _unbind_site(g, s, f"unbind {s!r}"))
 register_transform("join_map", join_map, site=lambda g, s: _join_site(g, s, f"join_map {s!r}"))
+register_transform(
+    "interchange_map", interchange_map, site=_interchange_site, params=("map", "with")
+)
 register_transform("encapsulate", encapsulate, site=_encapsulate_site, multi=_encapsulate_multi)
 register_transform("unencapsulate", unencapsulate, site=_unencapsulate_site)

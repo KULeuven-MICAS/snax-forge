@@ -13,13 +13,13 @@
    "kind": "map",
    "inputs": {},
    "outputs": {},
-   "attrs": {"var": "i", "range": "0:N"},
+   "attrs": {"var": "n", "range": "0:N", "loop.dim": "n", "loop.piece": 1},
    "body": [
     {
      "id": "mult",
      "kind": "tasklet",
-     "inputs": {"in1": {"data": "A", "subset": ["i"]}, "in2": {"data": "B", "subset": ["i"]}},
-     "outputs": {"out": {"data": "tmp0", "subset": ["i"]}},
+     "inputs": {"in1": {"data": "A", "subset": ["n"]}, "in2": {"data": "B", "subset": ["n"]}},
+     "outputs": {"out": {"data": "tmp0", "subset": ["n"]}},
      "attrs": {"code": "out = in1 * in2"}
     }
    ]
@@ -29,12 +29,12 @@
    "kind": "map",
    "inputs": {},
    "outputs": {},
-   "attrs": {"var": "i", "range": "0:N"},
+   "attrs": {"var": "n", "range": "0:N", "loop.dim": "n", "loop.piece": 1},
    "body": [
     {
      "id": "sum",
      "kind": "tasklet",
-     "inputs": {"in1": {"data": "tmp0", "subset": ["i"]}},
+     "inputs": {"in1": {"data": "tmp0", "subset": ["n"]}},
      "outputs": {"out": {"data": "out", "subset": [0], "reduce": {"op": "add", "identity": 0}}},
      "attrs": {"code": "out = in1"}
     }

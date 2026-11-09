@@ -13,6 +13,11 @@ import snax.forge.IntType
   * (`ctrl.GroupCtrl`, L 1) pushes `out` in the cycle after a job's last beat fires, and may fire the next job's first
   * beat in that same cycle, since `acc` changes only at the cycle's end: no drain cycle.
   *
+  * Seeded (`seed`, D163, B2 R5), it has one more input, `seed`, one element of `outType` read once per job: a job's
+  * first beat starts from it, acc ← seed + tree(in), so the job's sum is the seed's plus its beats'. The control unit
+  * holds the first beat until the seed is valid and takes the seed with that firing (`ctrl.GroupRule`). Unseeded it is
+  * the block it was, the same RTL.
+  *
   * @param inType
   *   the input's type, NumPy's name ("int32", "uint8"), from the unit's input port's dtype
   * @param outType
@@ -20,9 +25,15 @@ import snax.forge.IntType
   *   run at it, wrapping as NumPy's sum into it does
   * @param lanes
   *   elements per input beat, the unit's input port's lanes
+  * @param seed
+  *   whether the unit has a seed port (the BRM's `seed`)
   */
-class TreeAccumulate(val inType: String = "int32", val outType: String = "int32", val lanes: Int = 1)
-    extends DatapathModule {
+class TreeAccumulate(
+  val inType:  String  = "int32",
+  val outType: String  = "int32",
+  val lanes:   Int     = 1,
+  val seed:    Boolean = false
+) extends DatapathModule {
   require(lanes > 0, s"lanes must be positive, got $lanes")
 
   private val inT  = IntType(inType)
@@ -32,10 +43,11 @@ class TreeAccumulate(val inType: String = "int32", val outType: String = "int32"
     s"outType $outType must be at least as wide as inType $inType, otherwise every lane is truncated on the way in"
   )
 
-  override def desiredName: String = s"TreeAccumulate_${inT.tag}_${outT.tag}_n${lanes}"
+  override def desiredName: String = s"TreeAccumulate_${inT.tag}_${outT.tag}_n${lanes}${if (seed) "_seed" else ""}"
 
   val io = IO(new Bundle {
     val in    = Input(Vec(lanes, inT.lane))
+    val seed  = Option.when(TreeAccumulate.this.seed)(Input(outT.lane))
     val out   = Output(outT.lane)
     val fire  = Input(Bool())
     val first = Input(Bool())
@@ -45,8 +57,15 @@ class TreeAccumulate(val inType: String = "int32", val outType: String = "int32"
   private val beat = VecInit(io.in.map(IntType.cast(_, inT, outT).asUInt)).reduceTree(_ + _)
   private val acc  = RegInit(0.U(outT.width.W))
 
-  when(io.fire) {
-    acc := Mux(io.first, beat, acc + beat)
+  io.seed match {
+    case None    =>
+      when(io.fire) {
+        acc := Mux(io.first, beat, acc + beat)
+      }
+    case Some(q) => // a job's first beat starts from the seed
+      when(io.fire) {
+        acc := Mux(io.first, IntType.cast(q, outT, outT).asUInt, acc) + beat
+      }
   }
 
   io.out := IntType.cast(acc, outT, outT)

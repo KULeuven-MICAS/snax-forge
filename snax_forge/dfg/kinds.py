@@ -27,7 +27,9 @@ Built-in kinds:
                  ``loop.kind`` (tile, temporal, spatial) says how SNAX-SANDBOX
                  mapped it (D73); absent as imported. ``loop.split`` (D82) on a
                  split map is the ``var`` and ``range`` it had before split or
-                 split_map, so join_map can undo the split. No connectors:
+                 split_map, so join_map can undo the split (``prior``: its
+                 record before, when the map was split before).
+                 ``loop.dim`` and ``loop.piece`` name its variable (loops.py). No connectors:
                  the memlets are its body's, and the outer ones SDFG draws on
                  a map are derived by propagation.
     tasklet      ``code``: one assignment per output connector over the input
@@ -202,12 +204,13 @@ def _check_map(node: Node, scope: Scope, what: str) -> None:
     if kind is not None and kind not in LOOP_KINDS:
         raise DfgError(f"{what}.attrs.loop.kind: {kind!r} is not one of {list(LOOP_KINDS)}")
     split = node.attrs.get("loop.split")
-    if split is not None:
-        w = f"{what}.attrs.loop.split"
-        if not isinstance(split, Mapping) or set(split) - {"valid"} != {"var", "range"}:
+    w = f"{what}.attrs.loop.split"
+    while split is not None:
+        if not isinstance(split, Mapping) or set(split) - {"valid", "prior"} != {"var", "range"}:
             raise DfgError(
-                f"{w}: must be {{var, range}} of the map before split_map, and its valid count "
-                "(valid) when the split left a tail"
+                f"{w}: must be {{var, range}} of the map before split_map, its valid count "
+                "(valid) when the split left a tail, and the map's record before it (prior) when "
+                "it was split before"
             )
         ident(split["var"], f"{w}.var")
         if not is_range(split["range"]):
@@ -216,6 +219,7 @@ def _check_map(node: Node, scope: Scope, what: str) -> None:
             scope.uses(part, f"{w}.range")
         if "valid" in split:
             scope.uses(split["valid"], f"{w}.valid")
+        split, w = split.get("prior"), f"{w}.prior"
 
 
 register_kind(

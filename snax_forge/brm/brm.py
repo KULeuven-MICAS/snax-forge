@@ -133,6 +133,11 @@ class Param:
         )
 
 
+# the optional input of a fold's seed (``accumulate``'s, at its design param ``seed`` 1): no
+# tasklet connector maps onto it, ``bind`` puts a seeded fold's seed element there
+SEED = "seed"
+
+
 @dataclass
 class Port:
     """One data port: ``lanes`` elements per beat, one beat every ``rate`` firings; present only

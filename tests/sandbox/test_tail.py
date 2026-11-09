@@ -20,7 +20,7 @@ def test_vecadd_n7_w4_runs_two_firings_and_records_the_valid_count():
     imported, split, bound = steps("vecadd", W=4, N=7)
     m = _map(split, "add_map")
     assert m.attrs["range"] == "0:(N + 3) // 4"
-    assert m.attrs["loop.split"] == {"var": "i", "range": "0:N", "valid": "N"}
+    assert m.attrs["loop.split"] == {"var": "n", "range": "0:N", "valid": "N"}
     assert len(range(*[int(x) for x in ("0", (7 + 3) // 4)])) == 2  # 2 firings at N = 7
     a = np.array([3, -1, 4, 1, -5, 9, 2])
     b = np.array([10, 20, 30, 40, 50, 60, 70])
@@ -31,7 +31,7 @@ def test_vecadd_n7_w4_runs_two_firings_and_records_the_valid_count():
 
 def test_a_dividing_split_records_no_valid_count():
     _, split, _ = steps("vecadd", W=4, N=8)
-    assert _map(split, "add_map").attrs["loop.split"] == {"var": "i", "range": "0:N"}
+    assert _map(split, "add_map").attrs["loop.split"] == {"var": "n", "range": "0:N"}
 
 
 def test_join_map_undoes_a_tailed_split_exactly():

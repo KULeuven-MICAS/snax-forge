@@ -38,7 +38,7 @@ def test_the_function_is_the_simd_kind():
 
 
 def test_the_reducer_is_the_reduce_kind():
-    inst = Brm.from_dict(reducer()).resolve("chisel_accumulator", {"W": 4})
+    inst = Brm.from_dict(reducer()).resolve("chisel_adder_tree", {"W": 4})
     assert function_of(inst).ports == reduce_kind(lanes=4, lanes_out=1).ports
 
 
@@ -73,7 +73,7 @@ def test_rejected_values(case, impl, params, msg):
 
 def test_missing_value_without_default():
     with pytest.raises(BrmError, match="no value for 'W'"):
-        Brm.from_dict(reducer()).resolve("chisel_accumulator")
+        Brm.from_dict(reducer()).resolve("chisel_adder_tree")
 
 
 def test_resolved_timing_out_of_range():
@@ -117,7 +117,7 @@ def test_rate_mismatch():
     d = reducer()
     d["interface"]["params"]["K"] = d["interface"]["params"].pop("T")
     d["interface"]["ports"][1]["rate"] = "K"
-    inst = Brm.from_dict(d).resolve("chisel_accumulator", {"W": 4})
+    inst = Brm.from_dict(d).resolve("chisel_adder_tree", {"W": 4})
     with pytest.raises(BrmError, match="differ from kind 'reduce'"):
         function_of(inst)
 

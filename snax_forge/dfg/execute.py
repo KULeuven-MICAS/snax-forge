@@ -34,7 +34,9 @@ How a node runs is registered per kind (``register_executor``, principle
     ``reduce`` (D102): then the elements it writes are set to its identity and
     every iteration's value is folded in with the op's ufunc (``ufunc.at``,
     which wraps as C does), so dot's sum map leaves ``sum(tmp0)`` in
-    ``out[0]`` whatever ``out`` held before.
+    ``out[0]`` whatever ``out`` held before; a seeded fold (``reduce.seed``)
+    starts each element from its seed's element instead, read with the inputs
+    (matvec_acc's ``q[m]`` from ``q[m]`` itself: ``q + sum(A * p)``).
 ``accelerated``
     one firing at a time, through the BRM's function, its registered
     kind's ``fn(k, ins, state, params)`` (``brm.function_of``, given the node's
@@ -364,6 +366,13 @@ def _run_tasklet(node: Node, ctx: Context) -> None:
     values = {}
     for c, m in node.inputs.items():
         values[c] = ctx.data[m.data][_grid_indices(m, env, ctx, f"{what}.inputs.{c}", valid)]
+    seeds = {}  # a seeded fold's start values, read with the inputs, before any write
+    for c, m in node.outputs.items():
+        if m.reduce is not None and m.reduce.seed is not None:
+            sm = Memlet(m.reduce.seed.data, list(m.reduce.seed.subset))
+            idx = _grid_indices(sm, env, ctx, f"{what}.outputs.{c}.reduce.seed", valid)
+            seed = np.broadcast_to(ctx.data[sm.data][idx], grid)
+            seeds[c] = np.array(seed[valid] if valid is not None else seed)
     results = {}
     for target, rhs in expr.statements(node.attrs["code"], f"{what}.attrs.code"):
         try:
@@ -377,8 +386,9 @@ def _run_tasklet(node: Node, ctx: Context) -> None:
         value = np.broadcast_to(results[c], grid).astype(arr.dtype)
         if valid is not None:  # the pad lanes write nothing
             full, value = tuple(i[valid] for i in full), value[valid]
-        if m.reduce is not None:  # a reduction: start from the identity, fold every write
-            arr[full] = np.array(m.reduce.identity).astype(arr.dtype)
+        if m.reduce is not None:  # a reduction: start from the identity (or the seed), fold
+            start = seeds[c] if c in seeds else np.array(m.reduce.identity)
+            arr[full] = start.astype(arr.dtype)
             m.reduce.ufunc.at(arr, full, value)
             continue
         flat = np.ravel_multi_index(full, arr.shape)

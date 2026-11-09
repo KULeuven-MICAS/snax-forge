@@ -16,7 +16,9 @@ import snax.forge.{ForgeTester, Seeds}
   * out.valid, poked with out.ready low and high (it never depends on it); per unit fire, first, read, lane, adv, give;
   * per buffer load, its slots and its occupancy; the class; the done pulse (high in a run's last cycle E, and in the
   * cycle an empty run's start is accepted). At each run's end the head's firings. COUNTER, which `<tag>_csr` keeps from
-  * busy (D152), is AccCsrRandomSpec's and the shell specs'.
+  * busy (D152), is AccCsrRandomSpec's and the shell specs'. The whole runs again with seeded units (D163, B2 R5): half
+  * the units with an outer input to spare (the head two, another one) seeded, their last outer input the seed, its
+  * valid at random; a seed's ready is its unit's firing on its job's first beat (the model's `seed`).
   */
 class GroupCtrlSpec extends AnyFlatSpec with ForgeTester {
 
@@ -26,8 +28,13 @@ class GroupCtrlSpec extends AnyFlatSpec with ForgeTester {
 
   behavior of "GroupCtrl against SnaxGroupRule's model"
 
-  for (seed <- Seeds())
-    it should s"give the model's cycles on random groups (seed $seed)" in Seeds.run(seed) { r =>
+  for {
+    seeded <- Seq(false, true)
+    seed   <- Seeds()
+  }
+    it should s"give the model's cycles on random${if (seeded) " seeded" else ""} groups (seed $seed)" in Seeds.run(
+      seed
+    ) { r =>
       for (g <- 0 until Groups) {
         val n     = 1 + g % 3
         val chain = { // the units in chain order, head first
@@ -49,6 +56,9 @@ class GroupCtrlSpec extends AnyFlatSpec with ForgeTester {
             if (r.chance(0.5)) Some(r.between(1, 4)) else None,
             if (k == chain.head) Nil else Seq(ins)
           )
+        }.map { u => // seeded: drawn only in the seeded run, so the unseeded one's groups stay as they were
+          val spare = u.inputs >= (if (u.linked.isEmpty) 2 else 1)
+          if (seeded && spare && r.chance(0.5)) u.copy(seeded = true) else u
         }
         val links = chain.zip(chain.tail).map { case (a, b) => Link(a, b, units(b).inputs, r.between(0, 2)) }
         val desc  = GroupDesc("rand", units, links)
@@ -83,7 +93,11 @@ class GroupCtrlSpec extends AnyFlatSpec with ForgeTester {
             val busy   = model.busy
             assert(high(dut.io.busy) == busy, s"$clue: busy")
             val heads  = model.headFirings
-            val step   = model.step(valids.map(_.forall(identity)), ready)
+            val step   = model.step(
+              valids.zip(units).map { case (v, u) => (if (u.seeded) v.init else v).forall(identity) },
+              ready,
+              valids.zip(units).map { case (v, u) => !u.seeded || v.last }
+            )
             val pulse  = answer == "ignored" || step.exists(_.end)
             assert(high(dut.io.pulse) == pulse, s"$clue: the done pulse, the model $pulse")
             step match {
@@ -94,8 +108,9 @@ class GroupCtrlSpec extends AnyFlatSpec with ForgeTester {
                 var at = 0
                 for (k      <- 0 until n) {
                   val e = dut.io.units(k); val m = s.units(k); val uc = s"$clue, ${units(k).name}"
-                  for (_ <- 0 until units(k).inputs) {
-                    assert(high(dut.io.in(at).ready) == m.fire, s"$uc: ready"); at += 1
+                  for (j <- 0 until units(k).inputs) {
+                    val want = if (units(k).seeded && j == units(k).inputs - 1) m.seed else m.fire
+                    assert(high(dut.io.in(at).ready) == want, s"$uc: ready"); at += 1
                   }
                   assert(high(e.fire) == m.fire, s"$uc: fire")
                   assert(high(e.give) == m.push, s"$uc: give")
@@ -126,6 +141,6 @@ class GroupCtrlSpec extends AnyFlatSpec with ForgeTester {
 
   it should "have ended enough random runs" in {
     info(s"$ended runs ended")
-    assert(ended >= 60 * Seeds().size, s"$ended runs ended")
+    assert(ended >= 2 * 60 * Seeds().size, s"$ended runs ended")
   }
 }

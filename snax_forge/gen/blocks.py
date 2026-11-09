@@ -50,6 +50,10 @@ lanes summed by an adder tree in front of its register.
     op           add: the BRM's op param, the only one an adder tree runs
                  (``gen.op`` until a datapath takes another)
     params       ``op``: add, as SimdLanes' ``op``; args are lanes only
+    seed         optional (the BRM's port ``seed``, present at its design
+                 param ``seed`` 1): an input of one word at the output's rate,
+                 the sum's start in a job's first firing (``fuse_seed``); its
+                 presence in ``ports`` says so, no param
 
 **SerialAccumulate** (L 1, span lanes, D149): TreeAccumulate's ports, op and
 args, its lanes added one a cycle (lane k in cycle k) into one sum; params
@@ -61,6 +65,12 @@ output of a named rate (T), each lane summing T products; otherwise the plain
 ``a * b + c``, ``c`` an input of rate 1 with ``out``'s dtype and lanes, every
 rate 1. Every port args.lanes lanes of whole 64-bit channels; ``opType`` the
 result type of ``a`` and ``b``; params ``accumulate`` and ``regOut``.
+
+**LaneAccumulate** (L 1): Mac's accumulating form without the product, each
+lane summing its own T inputs: an input ``a`` of rate 1 and an output of a named
+rate (T), both args.lanes lanes of whole 64-bit channels; args lanes only; op
+add (``gen.op``); no opType (the input is extended to the output's type, which
+the sum runs at) and no params.
 
 An instance judged without a graph (brm/instance.py's check of its datapath)
 has no dtypes: its adapter checks everything but the widths and gives ports
@@ -75,7 +85,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from snax_forge import expr
-from snax_forge.brm import Instance
+from snax_forge.brm import SEED, Instance
 from snax_forge.brm.dtypes import fits, result_type
 from snax_forge.common import CodedError
 
@@ -286,14 +296,19 @@ def tree_accumulate(inst: Instance, dtypes: Mapping[str, str] | None = None,
     op = inst.params.get("op")
     if op != "add":
         raise GenError("gen.op", f"{what}: op {op!r}; {who} adds")
-    (a,), (out,) = _ports(inst, 1, 1, who, what)
+    seeded = any(p.name == SEED for p in inst.ports)
+    ins, (out,) = _ports(inst, 2 if seeded else 1, 1, who, what)
+    a = next(p for p in ins if p.name != SEED)
     if a.rate != 1 or not isinstance(out.rate, str):
         raise GenError(
             "gen.rate",
             f"{what}: rates {a.rate!r} in and {out.rate!r} out; {who} takes 1 in and "
             "a named rate out (one sum per T inputs)",
         )
-    _lanes(inst, {a.name: lanes, out.name: 1}, what)
+    if seeded and inst.brm.port(SEED).rate != out.rate:
+        raise GenError("gen.rate", f"{what}: the seed's rate {inst.brm.port(SEED).rate!r}, the "
+                       f"output's {out.rate!r}; {who} reads one seed per sum")  # fmt: skip
+    _lanes(inst, {a.name: lanes, out.name: 1, **({SEED: 1} if seeded else {})}, what)
     params = {"op": op} if who == "TreeAccumulate" else {}
     return Fill(_fill_ports(inst, dtypes, {a.name}, what), params=params)
 
@@ -337,3 +352,26 @@ def mac(inst: Instance, dtypes: Mapping[str, str] | None = None) -> Fill:
 
 
 register_datapath("Mac", "max(accumulate, regOut)", mac)
+
+
+def lane_accumulate(inst: Instance, dtypes: Mapping[str, str] | None = None) -> Fill:
+    """LaneAccumulate's fill; see the module doc."""
+    brm, b = inst.brm, inst.impl.binding
+    what = f"{brm.name}.{inst.implementation}"
+    if set(b["args"]) != {"lanes"}:
+        raise GenError("gen.args", f"{what}: args {sorted(b['args'])}; LaneAccumulate takes "
+                       "lanes only")  # fmt: skip
+    lanes = _lanes_arg(inst, what)
+    op = inst.params.get("op")
+    if op != "add":
+        raise GenError("gen.op", f"{what}: op {op!r}; LaneAccumulate adds")
+    (a,), (out,) = _ports(inst, 1, 1, "LaneAccumulate", what)
+    if a.rate != 1 or not isinstance(out.rate, str):
+        raise GenError("gen.rate", f"{what}: rates {a.rate!r} in and {out.rate!r} out; "
+                       "LaneAccumulate takes 1 in and a named rate out (one sum per lane per T "
+                       "inputs)")  # fmt: skip
+    _lanes(inst, {a.name: lanes, out.name: lanes}, what)
+    return Fill(_fill_ports(inst, dtypes, {a.name, out.name}, what))
+
+
+register_datapath("LaneAccumulate", 1, lane_accumulate)

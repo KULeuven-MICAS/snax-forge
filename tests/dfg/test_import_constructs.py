@@ -46,9 +46,9 @@ def test_axpy_alpha_is_a_scalar_container(axpy):
     assert (a.shape, a.dtype, a.transient, a.attrs) == ([1], "int32", False, {"sdfg.scalar": True})
     assert axpy.node("mult").inputs["in1"].to_dict() == {"data": "alpha", "subset": [0]}
     assert _loops(axpy) == [
-        ("mult_map", "i", "0:N"),
+        ("mult_map", "n", "0:N"),
         ("mult", "out = in1 * in2"),
-        ("augassign_19_4_map", "i", "0:N"),
+        ("augassign_19_4_map", "n", "0:N"),
         ("augassign_19_4", "out = in1 + in2"),
     ]
 
@@ -73,12 +73,12 @@ def test_rowsum_view_is_folded():
     g = import_kernel("rowsum")
     assert list(g.containers) == ["A", "y"]
     assert _loops(g) == [
-        ("sum_map", "i", "0:M"),
-        ("sum_map_1", "j", "0:N"),
+        ("sum_map", "m", "0:M"),
+        ("sum_map_1", "n", "0:N"),
         ("sum", "out = in1"),
     ]
     out = g.node("sum").outputs["out"].to_dict()
-    assert out == {"data": "y", "subset": ["i"], "reduce": {"op": "add", "identity": 0}}
+    assert out == {"data": "y", "subset": ["m"], "reduce": {"op": "add", "identity": 0}}
     A = np.array([[1, 2], [3, 4]], dtype=np.int64)
     assert execute(g, {"A": A, "y": np.zeros(2, np.int64)})["y"].tolist() == [3, 7]
 
@@ -112,7 +112,7 @@ def test_relu_at_int64_and_int32_reads_max():
         (import_sdfg(_relu_int32(), "relu"), "int32"),
     ):
         assert _loops(g) == [
-            ("numpy_maximum_map", "i", "0:N"),
+            ("numpy_maximum_map", "n", "0:N"),
             ("numpy_maximum", "out = max(in1, 0)"),
         ]
         assert {c.dtype for c in g.containers.values()} == {dtype}
@@ -151,14 +151,14 @@ def test_cast_rule(code, message):
 
 
 def test_matadd_is_two_nested_maps():
-    """add_map keeps the label's id, the inner map takes a fresh one; i outer, j inner."""
+    """add_map keeps the label's id, the inner map takes a fresh one; m outer, n inner."""
     g = import_kernel("matadd")
     assert _loops(g) == [
-        ("add_map", "i", "0:M"),
-        ("add_map_1", "j", "0:N"),
+        ("add_map", "m", "0:M"),
+        ("add_map_1", "n", "0:N"),
         ("add", "out = in1 + in2"),
     ]
-    assert [m.subset for m in g.node("add").inputs.values()] == [["i", "j"], ["i", "j"]]
+    assert [m.subset for m in g.node("add").inputs.values()] == [["m", "n"], ["m", "n"]]
     A = np.arange(6, dtype=np.int32).reshape(2, 3)
     B = 10 * np.arange(6, dtype=np.int32).reshape(2, 3)
     C = execute(g, {"A": A, "B": B, "C": np.zeros((2, 3), np.int32)})["C"]
@@ -166,7 +166,7 @@ def test_matadd_is_two_nested_maps():
 
 
 def test_a_map_over_three_parameters():
-    """Three maps in DaCe's parameter order, variables by depth."""
+    """Three maps in DaCe's parameter order, variables by depth (int ranges keep them)."""
     g = import_sdfg(progs.three_params(), "t")
     assert _loops(g) == [
         ("c_map", "i", "0:2"),

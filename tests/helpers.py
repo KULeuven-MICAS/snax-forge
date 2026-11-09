@@ -45,8 +45,8 @@ def graph_dict(name: str = "vecadd_accelerated") -> dict[str, Any]:
     return json.loads((FIXTURES / f"{name}.snaxdfg").read_text())
 
 
-def bound_vsum(w: int = 1, impl: str = "chisel_accumulator") -> Graph:
-    """vsum bound by the checked-in recipe (W = 1, N = 64; accumulate's chisel_accumulator,
+def bound_vsum(w: int = 1, impl: str = "chisel_adder_tree") -> Graph:
+    """vsum bound by the checked-in recipe (W = 1, N = 64; accumulate's chisel_adder_tree,
     instance acc), or with W = ``w`` to ``impl``."""
     d = Recipe.load(recipe_path("vsum")).with_params({"W": w}).to_dict()
     d["steps"][-1]["params"]["implementation"] = impl

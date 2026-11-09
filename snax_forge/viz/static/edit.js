@@ -259,8 +259,19 @@ function field(f) {
         h("span", {}, c.label), h("small", {}, timing));
     }));
   }
-  if (f.type === "choice") {
-    return h("select", attrs, f.choices.map((c) => h("option", { value: c.value, selected: c.value === f.value }, c.label)));
+  if (f.type === "choice" && f.spread) { // a choice whose value gives several params (fuse_map's and fuse_seed's pair)
+    const same = (c) => JSON.stringify(c.value) === JSON.stringify(f.value);
+    return h("select", { ...attrs, title: f.hint || "" }, f.choices.map((c, i) => h("option",
+      { value: String(i), selected: same(c) }, c.label)));
+  }
+  if (f.type === "choice") { // a choice the server marks not ok is disabled, its refusal below (interchange_map's with)
+    const select = h("select", { ...attrs, title: f.hint || "" }, f.choices.map((c) => h("option",
+      { value: c.value, selected: c.value === f.value, disabled: c.ok === false, title: c.message || "" },
+      c.ok === false ? `${c.label} · cannot` : c.label)));
+    const no = f.choices.filter((c) => c.ok === false);
+    if (!no.length) return select;
+    return h("span", { class: "dfg-choice-why" }, select,
+      h("details", {}, h("summary", {}, `why not (${no.length})`), no.map((c) => h("p", { class: "muted" }, `${c.label}: ${c.message}`))));
   }
   if (f.type === "checklist") {
     const ticked = new Set(f.value || []);
@@ -314,6 +325,8 @@ function params(form, el) {
     if (f.name === "binding") {
       const picked = node.querySelector("input:checked");
       if (picked) Object.assign(out, f.choices[Number(picked.value)].value);
+    } else if (f.spread) {
+      Object.assign(out, f.choices[Number(node.value)].value);
     } else if (f.type === "checklist") {
       out[f.name] = [...node.querySelectorAll("input:checked")].map((x) => x.value);
     } else if (f.type === "int") {
