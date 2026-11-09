@@ -1563,8 +1563,57 @@ def packing(g: Graph, n: Node, port: str, data: str) -> str | None:
     return f"{dtype} · num_slc {num_slc} · num_ch {-(-lanes // num_slc)}"
 
 
+def _touches(top: Node) -> tuple[set[str], set[str]]:
+    """The containers a top-level node reads and writes, every memlet under it counted; a
+    link node its container, both ways."""
+    if top.kind == "link":
+        return {top.attrs["container"]}, {top.attrs["container"]}
+    r: set[str] = set()
+    w: set[str] = set()
+    for side, _, _, m in _uses(top):
+        (r if side == "read" else w).add(m.data)
+    return r, w
+
+
+def columns(tops: Sequence[Node]) -> tuple[list[int], list[dict[str, Any]]]:
+    """The top-level nodes' independent chains, each a column: each node's column and the
+    columns, ``{"id", "tops", "joins"}`` in the order made, ``tops`` indices into ``tops``.
+    Two nodes are in one chain when one writes a container the other reads or writes; a node
+    linked so to two columns starts a new one, ``joins`` those columns, and is its first top."""
+    touch = [_touches(t) for t in tops]
+    cols: list[dict[str, Any]] = []
+    into: dict[int, int] = {}  # a joined column -> the column that joined it
+    of: list[int] = []
+    for k, (r, w) in enumerate(touch):
+        deps: list[int] = []
+        for j in range(k):
+            rj, wj = touch[j]
+            if w & (rj | wj) or r & wj:
+                c = of[j]
+                while c in into:
+                    c = into[c]
+                if c not in deps:
+                    deps.append(c)
+        if len(deps) == 1:
+            c = deps[0]
+        else:
+            c = len(cols)
+            cols.append({"id": c, "tops": [], "joins": sorted(deps)})
+            into.update(dict.fromkeys(deps, c))
+        cols[c]["tops"].append(k)
+        of.append(c)
+    return of, cols
+
+
+def drawn_once(g: Graph) -> set[str]:
+    """The containers drawn once, above the columns that read them, when the graph has more
+    than one column; every other input is drawn in each column that reads it."""
+    return set()
+
+
 def _layout(g: Graph) -> dict[str, Any]:
-    """Rows, nodes and edges (module doc)."""
+    """Rows, nodes and edges (module doc), the rows in columns, one per independent chain
+    (``columns``)."""
     tops = list(g.body)
     # A link's container gets no box: its writer's edge goes into the link, the link's out of it
     linked = {n.attrs["container"]: n.id for n, _ in g.walk() if n.kind == "link"}
@@ -1588,42 +1637,100 @@ def _layout(g: Graph) -> dict[str, Any]:
         reads.append(r)
         writes.append(w)
     used = {c for rw in (*reads, *writes) for c in rw}
+    of, cols = columns(tops)
+    joined = {d for col in cols for d in col["joins"]}
+    written = {c for w in writes for c in w}
+    once = [c for r in reads for c in r if c not in written] if len(cols) > 1 else []
+    once = [c for c in dict.fromkeys(once) if c in drawn_once(g)]
+    # the containers each column's nodes touch, a join's its columns' too
+    touched: dict[int, set[str]] = {col["id"]: set() for col in cols}
+    for k, c in enumerate(of):
+        touched[c] |= {*reads[k], *writes[k]}
+    for col in cols:
+        for d in col["joins"]:
+            touched[col["id"]] |= touched[d]
+
     version = dict.fromkeys(g.containers, 0)
     boxes: dict[str, dict[str, Any]] = {}
-    rows: list[dict[str, Any]] = []
     edges: list[dict[str, Any]] = []
-
+    top_rows: list[dict[str, Any]] = []  # the rows above every column
+    rows_of: dict[int, list[dict[str, Any]]] = {col["id"]: [] for col in cols}
+    seen: dict[int | None, set[str]] = {None: set()} | {col["id"]: set() for col in cols}
     writer: dict[str, list[str]] = {}  # container -> the nodes that wrote its latest version
+    last: dict[int, tuple[int, dict[str, list[tuple[Node, str, Memlet]]]]] = {}
 
-    def box_row(names: list[str], fresh: dict[str, list[str]], k: int) -> dict[str, str]:
-        """A row of container boxes; ``fresh`` ones are new versions, the rest shown again."""
+    def box_row(into: list[dict[str, Any]], col: int | None, names: list[str],
+                fresh: dict[str, list[str]], k: int) -> dict[str, str]:  # fmt: skip
+        """A row of container boxes in column ``col``; ``fresh`` ones are new versions, the
+        rest shown again (``again`` when the column showed them already)."""
         keys = {}
         for c in names:
             if c in fresh:
                 version[c] += 1
                 writer[c] = fresh[c]
-            key = f"{c}@{version[c]}"
-            if key in boxes:  # the same data again, in a later row
-                key = f"{key}~{k}"
+            base = f"{c}@{version[c]}"
+            key = base if base not in boxes else f"{base}~{k}"  # the same data again
             boxes[key] = {
                 "key": key,
                 "container": c,
                 "version": version[c],
                 "written_by": writer.get(c, []),
-                "again": "~" in key,
+                "again": base in seen[col],
+                "column": col,
             }
+            seen[col].add(base)
             keys[c] = key
         if keys:
-            rows.append({"kind": "containers", "boxes": list(keys.values())})
+            into.append({"kind": "containers", "column": col, "boxes": list(keys.values())})
         return keys
+
+    def close(col: int, nxt: list[str], k: int) -> dict[str, str]:
+        """The row after column ``col``'s last node: what it wrote and ``nxt``, the containers
+        node ``k`` reads from this column; the last node's write edges into it."""
+        kl, wrote = last.pop(col)
+        names = nxt + [c for c in writes[kl] if c not in nxt]
+        fresh = {c: list(dict.fromkeys(n.id for n, _, _ in wrote[c])) for c in writes[kl]}
+        below = box_row(rows_of[col], col, names, fresh, k)
+        for c in writes[kl]:
+            for n, cn, m in wrote[c]:
+                edges.append(
+                    _edge(
+                        f"{n.id}.{cn}", below[c], c, memlet_text(m), "write", packing(g, n, cn, c)
+                    )
+                )
+        return below
 
     csr_read = {n.inputs[c].data for n, _ in g.walk() for c in csr_connectors(g, n)}
     unused = [c for c in g.containers
               if c not in used and c not in linked and c not in local and c not in csr_read]  # fmt: skip
-    before = reads[0] + unused if tops else list(g.containers)
-    above = box_row(before, {}, 0)
+    if not tops:
+        box_row(top_rows, None, list(g.containers), {}, 0)
+    shared = box_row(top_rows, None, once, {}, 0)  # drawn once, above the columns
+    for col in cols:
+        seen[col["id"]] |= seen[None]
     for k, top in enumerate(tops):
-        rows.append({"kind": "node", "node": _node(g, top)})
+        col = of[k]
+        joins = cols[col]["joins"]
+        if k != cols[col]["tops"][0]:  # the row between this column's last node and this one
+            above = close(col, reads[k], k)
+        elif joins:  # a join: its columns side by side above it, each's last row what it reads
+            rows_of[col].append({"kind": "columns", "column": col,
+                                 "columns": [{"id": d, "rows": rows_of[d]} for d in joins]})  # fmt: skip
+            above = {}
+            claimed = set(shared)
+            for d in joins:
+                mine = [c for c in reads[k] if c in touched[d] and c not in claimed]
+                claimed |= set(mine)
+                above |= close(d, mine, k)
+            for d in joins:
+                seen[col] |= seen[d]
+            above |= box_row(rows_of[col], col, [c for c in reads[k] if c not in claimed], {}, k)
+        else:  # a new column: what its first node reads (the first column also what nothing uses)
+            first = [c for c in reads[k] if c not in shared] + (unused if k == 0 else [])
+            above = box_row(rows_of[col], col, first, {}, k)
+        if k == cols[col]["tops"][0]:  # an input drawn once: its edge from above the columns
+            above |= {c: key for c, key in shared.items() if c in reads[k]}
+        rows_of[col].append({"kind": "node", "column": col, "node": _node(g, top)})
         writers: dict[str, list[str]] = {}  # container -> writer connectors inside this node
         wrote: dict[str, list[tuple[Node, str, Memlet]]] = {}  # container -> its writes here
         for side, n, c, m in _uses(top):
@@ -1661,19 +1768,18 @@ def _layout(g: Graph) -> dict[str, Any]:
                     label, text = text, f"{text} (seed)"
                 edges.append(_edge(above[m.data], port, m.data, text, "read",
                                    packing(g, n, c, m.data), label=label, seed=seeded))  # fmt: skip
-        nxt = reads[k + 1] if k + 1 < len(tops) else []
-        names = nxt + [c for c in writes[k] if c not in nxt]
-        fresh = {c: list(dict.fromkeys(n.id for n, _, _ in wrote[c])) for c in writes[k]}
-        below = box_row(names, fresh, k + 1)
-        for c in writes[k]:
-            for n, cn, m in wrote[c]:
-                edges.append(
-                    _edge(
-                        f"{n.id}.{cn}", below[c], c, memlet_text(m), "write", packing(g, n, cn, c)
-                    )
-                )
-        above = below
-    return {"rows": rows, "boxes": boxes, "edges": edges}
+        last[col] = (k, wrote)
+    ends = [col["id"] for col in cols if col["id"] not in joined]
+    for col in ends:  # the last row of each column: what its last node wrote
+        close(col, [], len(tops))
+    if len(ends) <= 1:
+        rows = top_rows + (rows_of[ends[0]] if ends else [])
+    else:
+        rows = top_rows + [{"kind": "columns", "column": None,
+                            "columns": [{"id": c, "rows": rows_of[c]} for c in ends]}]  # fmt: skip
+    out = [{"id": col["id"], "tops": [tops[k].id for k in col["tops"]], "joins": col["joins"]}
+           for col in cols]  # fmt: skip
+    return {"rows": rows, "boxes": boxes, "edges": edges, "columns": out}
 
 
 def _edge(

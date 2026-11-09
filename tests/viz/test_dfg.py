@@ -151,7 +151,8 @@ def test_vecadd_accelerated():
     assert [r["kind"] for r in v["rows"]] == ["containers", "node", "containers"]
     assert v["rows"][0]["boxes"] == ["A@0", "B@0"] and v["rows"][2]["boxes"] == ["C@1"]
     assert v["boxes"]["C@1"] == {
-        "key": "C@1", "container": "C", "version": 1, "written_by": ["add"], "again": False
+        "key": "C@1", "container": "C", "version": 1, "written_by": ["add"], "again": False,
+        "column": 0,
     }  # fmt: skip
     assert v["containers"]["A"] == {
         "name": "A",

@@ -460,6 +460,9 @@ table.c-cost-table tr.differs td, table.c-cost-table tr.differs th { background:
 .c-canvas { position: relative; width: max-content; min-width: 100%; padding: 3.8rem 2rem 1.2rem; }
 .c-rows { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: 2.2rem; }
 .c-row { display: flex; gap: 1rem; justify-content: center; align-items: flex-start; }
+/* independent chains side by side, each a column of its own rows (api.py's _layout) */
+.c-cols { display: flex; gap: 3.5rem; justify-content: center; align-items: flex-start; }
+.c-col { display: flex; flex-direction: column; align-items: center; gap: 2.2rem; }
 svg.dfg-edges { position: absolute; top: 0; left: 0; z-index: 0; pointer-events: none; overflow: visible; transition: opacity 0.15s; }
 .c-panel.settling svg.dfg-edges { opacity: 0; } /* while the boxes glide (dfg.js) */
 

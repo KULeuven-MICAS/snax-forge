@@ -163,6 +163,20 @@ function pill(v, key) {
     h("b", {}, c.text), c.badge ? h("span", { class: "c-badge" }, c.badge) : null);
 }
 
+/** Rows top to bottom (api.py's ``_layout``): a row of containers, a top-level node, or the
+independent chains' columns side by side, each its own rows (a join's node below them). */
+function rowEls(v, rows) {
+  return rows.map((r) => {
+    if (r.kind === "columns") {
+      return h("div", { class: "c-cols" }, r.columns.map((c) =>
+        h("div", { class: "c-col", "data-column": c.id }, rowEls(v, c.rows))));
+    }
+    return r.kind === "containers"
+      ? h("div", { class: "c-row" }, r.boxes.map((key) => pill(v, key)))
+      : h("div", { class: "c-row" }, topEl(r.node));
+  });
+}
+
 /** The steps as a dropdown's options; from several folders, an optgroup per folder (the
 steps from one folder in a row), in the order given. */
 function stepOptionNodes(current) {
@@ -191,10 +205,7 @@ function panel(v, k, pick) {
   if (v.error) return h("section", { class: "c-panel broken" }, head, h("p", { class: "load-error" }, v.error));
   const svg = document.createElementNS(SVG, "svg");
   svg.setAttribute("class", "dfg-edges");
-  const rows = h("div", { class: "c-rows" }, v.rows.map((r) =>
-    r.kind === "containers"
-      ? h("div", { class: "c-row" }, r.boxes.map((key) => pill(v, key)))
-      : h("div", { class: "c-row" }, topEl(r.node))));
+  const rows = h("div", { class: "c-rows" }, rowEls(v, v.rows));
   const canvas = h("div", { class: "c-canvas" }, rows, svg);
   const el = h("section", { class: "c-panel" }, head, h("div", { class: "c-scroll" }, canvas));
   el._view = v;
@@ -282,7 +293,7 @@ function orderRows(panel) {
     const r = a.getBoundingClientRect();
     return r.left + r.width / 2;
   };
-  for (const row of canvas.querySelectorAll(".c-rows > .c-row")) {
+  for (const row of canvas.querySelectorAll(".c-rows .c-row")) {
     const pills = [...row.children].filter((el) => el.dataset.box);
     if (pills.length < 2) continue;
     const at = pills.map((el, i) => {
