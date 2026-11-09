@@ -439,9 +439,11 @@ class _Program:
         return f"snrt_dma_start_2d({d}, {s_}, {size}, {ds[1]}, {ss[1]}, {sb[1]});"
 
     def l2_symbol(self, symbol: str, task: str) -> str:
-        """``symbol``, checked to be an array of data.h (not a golden)."""
-        if any(a.name == symbol and a.role != "golden" for a in self.arrays):
-            return symbol
+        """The data.h array (not a golden) of container ``symbol``, the task list's name for
+        it: its C name (common.py's ``c_name``: mvt's ``y1`` is ``y1_l2``)."""
+        for a in self.arrays:
+            if a.container == symbol and a.role != "golden":
+                return a.name
         raise CError("c.dma", f"{task}: {symbol} is no array of data.h")
 
     def wait(self, comp: str, mode: str, covers: Mapping[str, str], consumers: set[int]) -> None:

@@ -92,7 +92,7 @@ from typing import Any
 
 from snax_forge import expr
 from snax_forge.brm import SEED
-from snax_forge.common import cwd_relative, repo_root, to_json
+from snax_forge.common import c_name, cwd_relative, repo_root, to_json
 from snax_forge.design.streamers import instance_nodes
 from snax_forge.estimate.cycles import group_cycles
 from snax_forge.lower.c import job_values, job_writes
@@ -399,7 +399,7 @@ def vectors(design_point: str | Path, root: str | Path | None = None) -> dict:
         values = task.values[name] if linked else task.values
         (p,) = (x for x in inst.ports if x.name == port)
         c = (node.inputs if p.direction == "in" else node.outputs)[p.name].data
-        array = c if p.direction == "in" else f"{c}_golden"
+        array = c_name(c) if p.direction == "in" else f"{c_name(c)}_golden"
         rate = 1 if p.rate == 1 else values[p.rate]
         ports.append({"port": p.name, "array": array, "lanes": inst.lanes(p.name),
                       "beats": values["n"] // rate, "values": list(data[array].values)})  # fmt: skip

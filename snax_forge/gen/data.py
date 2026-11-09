@@ -45,7 +45,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from snax_forge.common import generated_header
+from snax_forge.common import c_name, generated_header
 from snax_forge.design.point import DesignPoint
 from snax_forge.dfg.execute import execute
 from snax_forge.dfg.pad import pad_value, padded_shape
@@ -135,10 +135,10 @@ def arrays(point: DesignPoint, seed: int = 0, kernel: str | None = None,
         pad = (shape, pad_value(graph, c), block.shape)
         if c in spec.inout:  # make_inputs' value when it gives one: an in-place update
             start = inputs[c] if c in inputs else np.zeros(lay.shape, cont.dtype)
-            out.append(_array(c, c, "output", t, start, padded, beat, *pad))
-            out.append(_array(f"{c}_golden", c, "golden", t, golden[c], padded, beat, *pad))
+            out.append(_array(c_name(c), c, "output", t, start, padded, beat, *pad))
+            out.append(_array(f"{c_name(c)}_golden", c, "golden", t, golden[c], padded, beat, *pad))
         elif c in inputs:
-            out.append(_array(c, c, "input", t, inputs[c], padded, beat, *pad))
+            out.append(_array(c_name(c), c, "input", t, inputs[c], padded, beat, *pad))
         else:
             raise GenError(
                 "gen.inputs", f"{c} is moved by the DMA but is neither given by {spec.name}'s "
