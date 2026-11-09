@@ -514,6 +514,8 @@ svg.dfg-edges text.edge-label { font: 600 0.72rem ui-monospace, "SF Mono", Menlo
 svg.dfg-edges text.edge-label.sel { fill: var(--hl); }
 /* a broadcast's label at its edge's start: a band of the page behind it, so an edge it crosses does not run through it */
 svg.dfg-edges text.edge-label.at-start { paint-order: stroke; stroke: var(--bg); stroke-width: 4px; stroke-linejoin: round; }
+/* a collapsed block's port: the slice one firing takes, in the ink, not a link's green */
+svg.dfg-edges text.edge-label.slice { fill: var(--ink); font-weight: 500; }
 /* a marked read's Aᵀ: the container's font size (set in dfg.js), its ink */
 svg.dfg-edges text.edge-label.transpose { font-family: inherit; font-weight: 700; fill: var(--ink); }
 

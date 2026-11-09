@@ -58,8 +58,18 @@ def test_each_half_is_one_box_until_expanded():
 def test_expanding_shows_the_inner_block_then_the_nodes():
     g = _mvt_of_matvecs()
     one = view(g, "matvec")
-    assert drawn(one["rows"])[0][0][1] == "dot"
-    assert next(b for b in one["blocks"] if b["name"] == "matvec")["tops"] == ["dot"]
+    # the rows' loop stays drawn around the dot (both nests' row maps as one), its ports the
+    # slice one firing takes: row m_t of A in half 1, column n_t in half 2
+    (row,) = [r["node"] for r in one["rows"][0]["columns"][0]["rows"] if r["kind"] == "node"][:1]
+    assert row["text"] == "tmp0_mult_map + sum_map · m_t · 8 · temporal"
+    assert [n["id"] for n in row["body"]] == ["dot"]
+    assert next(b for b in one["blocks"] if b["name"] == "matvec")["tops"] == ["tmp0_mult_map"]
+    slices = {(e["from"], e["to"]): e["slice"] for e in one["edges"] if "slice" in e}
+    assert slices[("A@0", "dot.in:A")] == "A[m_t, 0:N]"
+    assert slices[("dot.out:tmp0", "tmp0@1")] == "tmp0[m_t]"
+    two = view(g, "matvec_1")
+    slices = {(e["from"], e["to"]): e["slice"] for e in two["edges"] if "slice" in e}
+    assert slices[("A@0~2", "dot_1.in:A")] == "A[0:M, n_t]"
     both = view(g, "matvec", "dot", "matvec_1", "dot_1")
     plain = _layout(g)  # the graph's own nodes, no block folded
     assert not [b for b in both["blocks"] if b["collapsed"]]
@@ -100,7 +110,7 @@ def test_the_step_route_takes_the_blocks_expanded(tmp_path):
     with served(make_dfg_server([tmp_path / "s"], 0)) as srv:
         _, shut = get_json(srv, "/api/step/3")
         _, open_ = get_json(srv, "/api/step/3?expand=dot")
-    assert drawn(shut["rows"])[1] == "dot"
+    assert drawn(shut["rows"])[1] == "mult_map"  # the rows' loop, the dot box inside it
     assert shut["marks"]["blocks"] == []  # applied: neither unlift nor apply_recipe takes it
     assert [x for x in drawn(open_["rows"]) if isinstance(x, str)] == [
         "mult_map",

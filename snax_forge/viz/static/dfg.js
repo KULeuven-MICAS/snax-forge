@@ -279,6 +279,13 @@ function drawEdges(canvas, svg, edges, k) {
     const p = svgEl("path", { d, class: `edge ${e.dir}${e.local ? " local" : ""}${e.seed ? " seed" : ""}`, "data-sel": e.id, "marker-end": `url(#${marker})` });
     p._marker = marker;
     out.push(p);
+    if (e.slice) { // a collapsed block's port (api.py's fold): the part one firing takes, beside its edge just outside the block's row (above an Aᵀ)
+      const row = ((e.dir === "read" ? b : a).closest(".c-row") || (e.dir === "read" ? b : a)).getBoundingClientRect();
+      const sy = e.dir === "read" ? Math.max(y1 + 14, row.top - c.top - 8 - (e.transpose ? 16 : 0)) : y2 - 8;
+      const t = svgEl("text", { x: curveX(x1, y1, x2, y2, bend, sy) + 8, y: sy, class: "edge-label at-start slice", "data-sel": e.data });
+      t.textContent = e.slice;
+      out.push(t);
+    }
     if (e.label && e.transpose) { // a marked read (mark_transpose, api.py): Aᵀ beside its edge, just above the reader's top-level map, at the container's font size
       const top = (b.closest(".c-row") || b).getBoundingClientRect().top - c.top;
       const ty = Math.max(y1 + 14, top - 8);
@@ -387,6 +394,7 @@ function drawAccelerators(canvas, svg, accelerators) {
   for (const acc of accelerators) {
     const rects = [];
     for (const grp of acc.groups) {
+      if (grp.drawn === false) continue; // its units inside a collapsed block (api.py's fold)
       const tops = grp.tops.map((id) => canvas.querySelector(`[data-top="${CSS.escape(id)}"]`));
       const r = unionRect(canvas, tops.map((t) => t && t.getBoundingClientRect()));
       if (!r) continue;

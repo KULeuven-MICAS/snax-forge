@@ -79,11 +79,16 @@ Positions are the browser's business: the boxes are HTML laid out by CSS,
 and the edges an SVG layer the viewer draws over them (static/dfg.js).
 
 **Blocks** (REUSE1, sandbox/blocks.py; ``fold``). A block not in the view's ``expanded`` is
-drawn as one top-level node of kind ``block`` in place of the top-level nodes it holds whole,
-its text ``matvec · matvec/matvec_dot3 · W = 4`` (``block_text``), an input ``in:A`` per
-container it reads from outside and an output ``out:x`` per container it writes, each with the
-first memlet met (its transients, written and read only inside it, have no box; a marked read
-keeps its ``Aᵀ``). An expanded block shows its own blocks the same way, and its nodes once they
+drawn as one node of kind ``block`` in place of the top-level nodes it holds whole, its text
+``dot · dot/dot_3 · W = 4`` (``block_text``), an input ``in:A`` per container it reads from
+outside and an output ``out:x`` per container it writes (its transients, written and read only
+inside it, have no box; a marked read keeps its ``Aᵀ``). The maps above the block in each nest,
+its firing loops (sandbox/blocks.py's R2: matvec's rows around a dot), stay drawn around it,
+one map per level standing for the nests' alike maps (``tmp0_mult_map + sum_map · m_t · 8 ·
+temporal``), when each holds one node and they agree level by level in range and tag; each
+port's edge carries the ``slice`` one firing takes, its memlet with the dimensions the outer
+loops do not index made whole (``A[m_t, 0:N]``, half 2's ``A[0:M, n_t]``, ``tmp0[m_t]``). A
+group none of whose units is drawn has ``drawn`` false, and no outline. An expanded block shows its own blocks the same way, and its nodes once they
 are expanded too. A block that holds a top-level node only in part (its outer maps hold other
 nodes) is always drawn as its nodes (``foldable`` false). The view's ``blocks`` list every
 block in the graph's order: ``name``, ``kernel``, ``recipe``, ``params``, ``text``, ``parent``,
@@ -244,7 +249,7 @@ from snax_forge.design.streamers import (
 )
 from snax_forge.dfg import DfgError, Graph, Memlet, Node
 from snax_forge.dfg.graph import BAKED, SCALAR, TRANSPOSE
-from snax_forge.dfg.subset import map_range, parse_dim
+from snax_forge.dfg.subset import dim_names, map_range, parse_dim
 from snax_forge.estimate.cost import L1_LABEL, L1Cost, caveat, dec3, heading, sig3
 from snax_forge.expr import ExprError
 from snax_forge.sandbox.blocks import BLOCK
@@ -382,6 +387,11 @@ def graph_view(e: Entry, platform: Any = None, est: Any = None,
     out["partners"] = partners(g, out["boxes"])
     out["shared"] = shared_units(g)
     out["accelerators"] = accelerators(g)
+    seen = _drawn_units(tops)
+    for acc in out["accelerators"]:  # a group no unit of which is drawn (in collapsed blocks)
+        for grp in acc["groups"]:
+            if not {u["instance"] for u in grp["units"]} & seen:
+                grp["drawn"] = False
     for acc in out["accelerators"]:
         acc["text"] = acc["name"]
         for grp in acc["groups"]:
@@ -1504,6 +1514,9 @@ def _node(g: Graph, n: Node) -> dict[str, Any]:
         d["inputs"].append({"connector": SEED, "data": seed.data, "seed": True})
     if n.kind == "map":
         d["loop_kind"] = n.attrs.get("loop.kind")
+        merged = n.attrs.get("view.merged") or []
+        if len(merged) > 1:  # a block's firing loop, one per nest it spans (fold)
+            d["text"] = d["text"].replace(n.id, " + ".join(merged), 1)
     if folds(n):  # drawn as an upside-down trapezoid (module doc, "Folds")
         d["fold"] = True
     if n.kind == "link":  # its container's edges meet it here (module doc)
@@ -1772,7 +1785,7 @@ def fold(g: Graph, expanded: Sequence[str] = ()) -> tuple[list[Node], list[dict[
     for k, t in enumerate(tops):
         for b in touching_of(t):
             shown_tops.setdefault(b, [])
-            ident = into[k] if into[k] is not None else t.id
+            ident = made[into[k]].id if into[k] is not None else t.id
             if ident not in shown_tops[b]:
                 shown_tops[b].append(ident)
     together = _together(recs)
@@ -1785,6 +1798,11 @@ def fold(g: Graph, expanded: Sequence[str] = ()) -> tuple[list[Node], list[dict[
                     "foldable": name in whole, "tops": shown_tops.get(name, []),
                     "together": together.get(name, [])})  # fmt: skip
     return drawn, out
+
+
+def _drawn_units(tops: list[Node]) -> set[str]:
+    """The instances of the units drawn (not inside a collapsed block)."""
+    return {n.attrs["instance"] for t in tops for n in _walk(t) if n.kind == "accelerated"}
 
 
 def touching_of(top: Node) -> list[str]:
@@ -1821,17 +1839,61 @@ def _together(recs: dict[str, dict[str, Any]]) -> dict[str, list[str]]:
     return out
 
 
+def _outer_chains(rec: dict[str, Any], tops: list[Node]) -> list[list[Node]] | None:
+    """Each top-level nest's maps above the block (its firing loops, sandbox/blocks.py's R2),
+    each holding one node; None when one holds more, or when the nests' loops differ level by
+    level (range or tag), so they cannot be drawn as one."""
+    chains = []
+    for t in tops:
+        if t.kind == "link":
+            continue
+        chain, n = [], t
+        while n.kind == "map" and rec["name"] not in [b["name"] for b in n.attrs.get(BLOCK, [])]:
+            if len(n.body or []) != 1:
+                return None
+            chain.append(n)
+            n = n.body[0]
+        chains.append(chain)
+    if not chains or any(len(c) != len(chains[0]) for c in chains):
+        return None
+    for level in zip(*chains, strict=True):
+        if len({(m.attrs["range"], m.attrs.get("loop.kind")) for m in level}) != 1:
+            return None
+    return chains
+
+
+def _projected(g: Graph, m: Memlet, outer: set[str]) -> Memlet:
+    """``m`` as the block takes it on one firing: a dimension indexed by the outer loops'
+    variables (and symbols) only kept, any other the container's whole dimension (``A[m_t,
+    4 * n_1_t + n_1_s]`` -> ``A[m_t, 0:N]``)."""
+    shape = g.containers[m.data].shape
+    known = outer | set(g.symbols)
+    dims = []
+    for i, d in enumerate(m.subset):
+        if not dim_names(d) <= known:
+            dims.append(f"0:{shape[i]}")
+            continue
+        parts = parse_dim(d, "subset")
+        one = len(parts) >= 2 and expr.canonical(f"({parts[0]}) + 1") == parts[1]
+        dims.append(parts[0] if one and (len(parts) == 2 or parts[2] == 1) else d)  # m:m + 1 -> m
+    return Memlet(m.data, dims, m.reduce)
+
+
 def _block_node(g: Graph, rec: dict[str, Any], tops: list[Node]) -> Node:
-    """A collapsed block as one node: an input per container read from outside it (``in:A``),
-    an output per container written to outside it (``out:x``), each with the first memlet
-    met; its transients (written and read only inside) left out; a read ``mark_transpose``
-    marked keeps its mark."""
+    """A collapsed block as one node (module doc, "Blocks"): an input per container read from
+    outside it (``in:A``), an output per container written to outside it (``out:x``), each
+    memlet as one firing takes it (``_projected``); its transients (written and read only
+    inside it) left out; a read ``mark_transpose`` marked keeps its mark. Its firing loops,
+    the maps above it in each nest when they are alike (``_outer_chains``), stay drawn around
+    it, one map per level (``view.merged`` the maps it stands for)."""
     inside = {n.id for t in tops for n in _walk(t)}
     users: dict[str, set[str]] = {}
     for n, _ in g.walk():
         for m in [*n.inputs.values(), *n.outputs.values()]:
             users.setdefault(m.data, set()).add(n.id)
     internal = {c for c, ids in users.items() if ids <= inside and g.containers[c].transient}
+    chains = _outer_chains(rec, tops)
+    outer = {m.attrs["var"] for c in chains or [] for m in c}
     ins: dict[str, Memlet] = {}
     outs: dict[str, Memlet] = {}
     marks: dict[str, Any] = {}
@@ -1840,22 +1902,24 @@ def _block_node(g: Graph, rec: dict[str, Any], tops: list[Node]) -> Node:
             if m.data in internal or (side == "read" and c in csr_connectors(g, n)):
                 continue
             if side == "read" and m.data not in ins:
-                ins[m.data] = m
+                ins[m.data] = _projected(g, m, outer)
                 perm = n.attrs.get(TRANSPOSE, {}).get(c)
                 if perm is not None:
                     marks[f"in:{m.data}"] = perm
             elif side == "write" and m.data not in outs:
-                outs[m.data] = m
+                outs[m.data] = _projected(g, m, outer)
     attrs: dict[str, Any] = {"block": dict(rec)}
     if marks:
         attrs[TRANSPOSE] = marks
-    return Node(
-        rec["name"],
-        "block",
-        {f"in:{c}": m for c, m in ins.items()},
-        {f"out:{c}": m for c, m in outs.items()},
-        attrs,
-    )
+    node = Node(rec["name"], "block", {f"in:{c}": m for c, m in ins.items()},
+                {f"out:{c}": m for c, m in outs.items()}, attrs)  # fmt: skip
+    if not chains:
+        return node
+    for level in reversed(list(zip(*chains, strict=True))):  # innermost first
+        first = level[0]
+        node = Node(first.id, "map", {}, {}, {**first.attrs, "view.merged": [m.id for m in level]},
+                    [node])  # fmt: skip
+    return node
 
 
 def _layout(g: Graph, tops: list[Node] | None = None) -> dict[str, Any]:
@@ -1942,7 +2006,13 @@ def _layout(g: Graph, tops: list[Node] | None = None) -> dict[str, Any]:
             for n, cn, m in wrote[c]:
                 edges.append(
                     _edge(
-                        f"{n.id}.{cn}", below[c], c, memlet_text(m), "write", packing(g, n, cn, c)
+                        f"{n.id}.{cn}",
+                        below[c],
+                        c,
+                        memlet_text(m),
+                        "write",
+                        packing(g, n, cn, c),
+                        slice_=memlet_text(m) if n.kind == "block" else None,
                     )
                 )
         return below
@@ -2019,7 +2089,8 @@ def _layout(g: Graph, tops: list[Node] | None = None) -> dict[str, Any]:
                     text = f"{text} (transpose {', '.join(map(str, perm))})"
                 edges.append(_edge(above[m.data], port, m.data, text, "read",
                                    packing(g, n, c, m.data), label=label, seed=seeded,
-                                   transpose=perm is not None))  # fmt: skip
+                                   transpose=perm is not None,
+                                   slice_=text if n.kind == "block" else None))  # fmt: skip
         last[col] = (k, wrote)
     ends = [col["id"] for col in cols if col["id"] not in joined]
     for col in ends:  # the last row of each column: what its last node wrote
@@ -2045,13 +2116,17 @@ def _edge(
     label: str | None = None,
     seed: bool = False,
     transpose: bool = False,
+    slice_: str | None = None,
 ) -> dict[str, Any]:
     """One memlet; ``pack`` the port's packing when it meets an accelerated node; ``local`` a
     fused nest's local value between its two tasklets, labelled with the container's name;
     ``label`` any other text drawn beside it (a scalar's ``alpha[0] · broadcast``, a fold's
     seed ``q[m_t]``); ``seed`` a fold's seed; ``transpose`` a read ``mark_transpose`` marked,
-    its label ``Aᵀ``."""
+    its label ``Aᵀ``; ``slice_`` at a collapsed block's port, the part one firing takes
+    (``A[m_t, 0:N]``), drawn beside the edge."""
     out = {"id": f"{src}->{dst}", "from": src, "to": dst, "data": data, "text": text, "dir": side}
+    if slice_ is not None:
+        out["slice"] = slice_
     if pack is not None:
         out["packing"] = pack
     if seed:
