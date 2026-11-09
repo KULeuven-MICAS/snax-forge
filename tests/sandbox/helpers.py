@@ -102,6 +102,24 @@ def default_calls(g: Graph, name: str, selected: str) -> list[dict[str, Any]]:
             for b in library_names() for i in load_brm(b).implementations]  # fmt: skip
 
 
+# mvt's sizes for mark_transpose (test_transpose.py, tests/viz/test_columns.py)
+SIZES = {"M": 8, "N": 16}
+
+
+def mvt() -> Graph:
+    """mvt as imported, at SIZES."""
+    from snax_forge.sandbox import bind_recipe_symbols
+    from tests.helpers import imported
+
+    r = Recipe.from_dict({"name": "mvt", "kernel": "mvt", "symbols": SIZES, "steps": []})
+    return bind_recipe_symbols(r, imported("mvt"))
+
+
+def step(transform: str, **params: Any) -> dict[str, Any]:
+    """A recipe step."""
+    return {"transform": transform, "params": params}
+
+
 def tagged_names(g: Graph, map: str, factor: int) -> dict[str, str]:
     """``split``'s names of ``map``'s split on ``g`` -> ``split_map``'s, where they differ: the
     inner id (``_inner``, ``_s``) and, before any tag, the variables (``n_1``, ``n_1_t``)."""

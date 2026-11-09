@@ -112,3 +112,73 @@ def test_a_chain_is_a_write_the_other_reads_or_writes():
     assert cols(_map("a", ["A"], "B"), _map("b", ["C"], "B")) == [["a", "b"]]  # both write B
     assert cols(_map("a", ["A"], "B"), _map("b", ["A"], "C"), _map("c", ["D"], "D")) == [
         ["a"], ["b"], ["c"]]  # fmt: skip
+
+
+# =============================================================================
+# mark_transpose's container: drawn once above the columns, its marked edge labelled
+# =============================================================================
+
+
+def _a_edges(v: dict) -> dict[str, dict]:
+    return {e["to"]: e for e in v["edges"] if e["data"] == "A"}
+
+
+def test_unmarked_mvt_draws_a_in_each_column():
+    from tests.sandbox.helpers import mvt
+
+    v = view_of(mvt())
+    assert [k for k, b in v["boxes"].items() if b["container"] == "A"] == ["A@0", "A@0~3"]
+    edges = _a_edges(v)
+    assert {t: e["from"] for t, e in edges.items()} == {
+        "tmp0_mult.in1": "A@0",
+        "tmp2_mult.in1": "A@0~3",
+    }
+    assert not any("label" in e for e in edges.values())
+
+
+def test_marked_mvt_draws_a_once_above_both_columns():
+    """After mark_transpose on half 2's multiply: one A box in a row above the two columns,
+    an edge into each, the tmp2_mult one labelled Aᵀ and its Details' memlet ending
+    (transpose 1, 0)."""
+    from snax_forge.sandbox import mark_transpose
+    from tests.sandbox.helpers import mvt
+
+    v = view_of(mark_transpose(mvt(), "tmp2_mult_map"))
+    assert [k for k, b in v["boxes"].items() if b["container"] == "A"] == ["A@0"]
+    top, block = drawn(v["rows"])
+    assert top == ["A@0"] and v["rows"][0]["column"] is None
+    assert block[0][0] == ["y1@0"] and block[1][0] == ["y2@0"]  # no A in either column
+    edges = _a_edges(v)
+    assert {t: e["from"] for t, e in edges.items()} == {
+        "tmp0_mult.in1": "A@0",
+        "tmp2_mult.in1": "A@0",
+    }
+    assert "label" not in edges["tmp0_mult.in1"] and edges["tmp2_mult.in1"]["label"] == "Aᵀ"
+    details = v["details"]
+    assert details["edge:A@0->tmp2_mult.in1"]["memlet"] == "A[m, n] (transpose 1, 0)"
+    assert details["edge:A@0->tmp0_mult.in1"]["memlet"] == "A[m, n]"
+
+
+def test_a_bound_unit_keeps_its_mark_on_its_port():
+    """Half 2's multiply bound to simd: the unit's port a keeps the label."""
+    from snax_forge.sandbox import Recipe, apply_recipe
+    from tests.sandbox.helpers import SIZES, step
+
+    r = Recipe.from_dict({"name": "t", "kernel": "mvt", "symbols": SIZES, "steps": [
+        step("mark_transpose", node="tmp2_mult_map", container="A"),
+        step("tag_map", map="tmp2_mult_map", kind="temporal"),
+        step("split_map", map="tmp2_mult_map_1", factor=4),
+        step("bind", node="tmp2_mult", brm="simd", implementation="chisel_tiled_spatial",
+             instance="mul"),
+    ]})  # fmt: skip
+    v = view_of(apply_recipe(r, imported("mvt"))[-1].graph)
+    edges = _a_edges(v)
+    assert edges["tmp2_mult.a"]["label"] == "Aᵀ" and edges["tmp2_mult.a"]["from"] == "A@0"
+    assert v["details"]["edge:A@0->tmp2_mult.a"]["memlet"].endswith("(transpose 1, 0)")
+
+
+def test_the_label_of_more_dimensions():
+    from snax_forge.viz.dfg.api import transpose_label
+
+    assert transpose_label("A", [1, 0]) == "Aᵀ"
+    assert transpose_label("X", [2, 0, 1]) == "X · transpose(2, 0, 1)"

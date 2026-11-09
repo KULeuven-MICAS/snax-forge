@@ -209,7 +209,7 @@ from snax_forge.design.streamers import (
     port_loops,
 )
 from snax_forge.dfg import DfgError, Graph, Memlet, Node
-from snax_forge.dfg.graph import BAKED, SCALAR
+from snax_forge.dfg.graph import BAKED, SCALAR, TRANSPOSE
 from snax_forge.dfg.subset import map_range, parse_dim
 from snax_forge.estimate.cost import L1_LABEL, L1Cost, caveat, dec3, heading, sig3
 from snax_forge.expr import ExprError
@@ -1607,8 +1607,19 @@ def columns(tops: Sequence[Node]) -> tuple[list[int], list[dict[str, Any]]]:
 
 def drawn_once(g: Graph) -> set[str]:
     """The containers drawn once, above the columns that read them, when the graph has more
-    than one column; every other input is drawn in each column that reads it."""
-    return set()
+    than one column (the inputs no node writes among them): those ``mark_transpose`` marked in
+    any column (a tasklet's or a bound unit's ``sandbox.transpose``); every other input is
+    drawn in each column that reads it."""
+    return {n.inputs[c].data for n, _ in g.walk() for c in n.attrs.get(TRANSPOSE, {})
+            if c in n.inputs}  # fmt: skip
+
+
+def transpose_label(data: str, perm: Sequence[int]) -> str:
+    """A marked edge's label (sandbox/transpose.py): ``Aᵀ`` for a matrix, else
+    ``A · transpose(2, 0, 1)``."""
+    if len(perm) == 2:
+        return f"{data}ᵀ"
+    return f"{data} · transpose({', '.join(map(str, perm))})"
 
 
 def _layout(g: Graph) -> dict[str, Any]:
@@ -1766,6 +1777,10 @@ def _layout(g: Graph) -> dict[str, Any]:
                 seeded = c == SEED and seed_memlet(n) is not None
                 if seeded:  # the fold's seed, labelled with its memlet
                     label, text = text, f"{text} (seed)"
+                perm = n.attrs.get(TRANSPOSE, {}).get(c)
+                if perm is not None:  # read across the loop order (mark_transpose): Aᵀ
+                    label = transpose_label(m.data, perm)
+                    text = f"{text} (transpose {', '.join(map(str, perm))})"
                 edges.append(_edge(above[m.data], port, m.data, text, "read",
                                    packing(g, n, c, m.data), label=label, seed=seeded))  # fmt: skip
         last[col] = (k, wrote)
