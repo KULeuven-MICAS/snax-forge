@@ -254,7 +254,7 @@ function field(f) {
       const t = c.timing;
       const timing = t ? `II ${t.ii} · latency ${t.latency} · span ${t.span}` : "";
       return h("label", { class: "dfg-choice" },
-        h("input", { type: "radio", name: "binding", value: String(i),
+        h("input", { type: "radio", name: "binding", value: String(i), "data-brm": c.value.brm, "data-impl": c.value.implementation,
           checked: f.value && c.value.brm === f.value.brm && c.value.implementation === f.value.implementation }),
         h("span", {}, c.label), h("small", {}, timing));
     }));
@@ -272,6 +272,23 @@ function field(f) {
     if (!no.length) return select;
     return h("span", { class: "dfg-choice-why" }, select,
       h("details", {}, h("summary", {}, `why not (${no.length})`), no.map((c) => h("p", { class: "muted" }, `${c.label}: ${c.message}`))));
+  }
+  if (f.name === "instance" && f.share && f.share.length) { // bind: a new instance, or one already bound to share (D165)
+    const input = h("input", { ...attrs, value: f.value === null || f.value === undefined ? "" : String(f.value) });
+    const pick = h("select", { class: "dfg-share", title: "share an instance already bound: one accelerator, run once per node" },
+      h("option", { value: "" }, "new instance"),
+      f.share.map((c, i) => h("option", { value: String(i), disabled: !c.ok, title: c.message || "" },
+        c.ok ? `share ${c.value}` : `share ${c.value} · cannot`)));
+    pick.onchange = () => {
+      const c = pick.value === "" ? null : f.share[Number(pick.value)];
+      input.value = c ? c.value : String(f.value ?? "");
+      if (!c) return;
+      const radio = pick.closest("form").querySelector(`input[name="binding"][data-brm="${CSS.escape(c.brm)}"][data-impl="${CSS.escape(c.implementation)}"]`);
+      if (radio) radio.checked = true;
+    };
+    const no = f.share.filter((c) => !c.ok);
+    return h("span", { class: "dfg-share-field" }, input, pick,
+      no.length ? h("details", {}, h("summary", {}, `why not (${no.length})`), no.map((c) => h("p", { class: "muted" }, `${c.value}: ${c.message}`))) : null);
   }
   if (f.type === "checklist") {
     const ticked = new Set(f.value || []);

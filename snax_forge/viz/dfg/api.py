@@ -58,7 +58,9 @@ reader's top-level map, at the container's font size, ``Aᵀ`` for a matrix
 (``A · transpose(2, 0, 1)`` above two dimensions, ``transpose_label``), and
 its Details' memlet ends ``(transpose 1, 0)``. A node's input connectors are
 ordered by where their edges come from (dfg.js's ``orderRows``), so mvt's
-``tmp0_mult`` takes y1 left of the shared A and the two do not cross.
+``tmp0_mult`` takes y1 left of the shared A and the two do not cross. Nodes
+bound to one instance (D165, ``shared_units``) are drawn where they are, the
+same name in each; selecting one highlights the others.
 
 Each edge is one memlet: from a container box (or a writer's connector) to
 an input connector, or from an output connector to a container box, with its ``id``
@@ -360,6 +362,7 @@ def graph_view(e: Entry, platform: Any = None, est: Any = None,
     )
     out.update(_layout(g))
     out["partners"] = partners(g, out["boxes"])
+    out["shared"] = shared_units(g)
     out["accelerators"] = accelerators(g)
     for acc in out["accelerators"]:
         acc["text"] = acc["name"]
@@ -567,7 +570,9 @@ def bindings_section(g: Graph, recipe: Any = None, editable: bool = False) -> di
 
         unit    per bound instance: its BRM, the lanes its design params give (``W = 8``) and
                 the params of the splits that set them, then its slots, read only
-                (``acc · simd · W = 8``, relu's ``acc · simd · W = 4 · k = 0``)
+                (``acc · simd · W = 8``, relu's ``acc · simd · W = 4 · k = 0``); an instance
+                several nodes share names them (``vmul_x1 · simd · tmp0_mult, tmp2_mult``),
+                the splits of every one its own
         split   a split whose map is not bound yet: its factor's params (``not bound``)
         link    a link whose depth a step gives as a param
 
@@ -588,11 +593,15 @@ def bindings_section(g: Graph, recipe: Any = None, editable: bool = False) -> di
     entries: list[dict[str, Any]] = []
     used: set[int] = set()
     seen: set[str] = set()
+    nodes_of: dict[str, list[Node]] = {}  # an instance's nodes, several when shared (D165)
+    for n, _ in g.walk():
+        if n.kind == "accelerated":
+            nodes_of.setdefault(n.attrs["instance"], []).append(n)
     for n, _ in g.walk():
         if n.kind == "accelerated" and n.attrs["instance"] not in seen:
             a = n.attrs
             seen.add(a["instance"])
-            ids = _map_ids(a.get("replaced"))
+            ids = {x for m in nodes_of[a["instance"]] for x in _map_ids(m.attrs.get("replaced"))}
             names: list[str] = []
             for i, (_, _, ps, inner, _) in enumerate(splits):
                 if any(inner.match(x) for x in ids):
@@ -602,8 +611,12 @@ def bindings_section(g: Graph, recipe: Any = None, editable: bool = False) -> di
             slots = slot_params(n)
             lanes = {k: v for k, v in design.items() if isinstance(v, int) and k not in slots
                      and k in _lanes_names(n)}  # fmt: skip
-            entries.append({"kind": "unit", "id": a["instance"], "label": f"{a['instance']} · {a['brm']}",
-                            "names": names, "lanes": lanes, "slots": slots, "note": None})  # fmt: skip
+            shared = [m.id for m in nodes_of[a["instance"]]]
+            label = f"{a['instance']} · {a['brm']}" + (
+                f" · {', '.join(shared)}" if len(shared) > 1 else ""
+            )
+            entries.append({"kind": "unit", "id": a["instance"], "label": label, "names": names,
+                            "lanes": lanes, "slots": slots, "note": None})  # fmt: skip
         elif n.kind == "link" and n.attrs["container"] in links:
             c = n.attrs["container"]
             entries.append({"kind": "link", "id": c, "label": f"link {c} · depth",
@@ -1466,6 +1479,17 @@ def _node(g: Graph, n: Node) -> dict[str, Any]:
     if n.body is not None:
         d["body"] = [_node(g, c) for c in n.body]
     return d
+
+
+def shared_units(g: Graph) -> dict[str, list[str]]:
+    """Each accelerated node whose instance other nodes share (mvt's variant 1: one ``vmul_x1``
+    for both halves, D165) -> those other nodes' ids, in the graph's order; the page highlights
+    them with a selected one. Nodes of an instance alone are left out."""
+    by: dict[str, list[str]] = {}
+    for n, _ in g.walk():
+        if n.kind == "accelerated":
+            by.setdefault(n.attrs["instance"], []).append(n.id)
+    return {i: [j for j in ids if j != i] for ids in by.values() if len(ids) > 1 for i in ids}
 
 
 # The transforms a map's partners are found by, in the order a map's list gives them

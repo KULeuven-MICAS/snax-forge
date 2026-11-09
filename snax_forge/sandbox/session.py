@@ -700,6 +700,51 @@ def bind_list(g: Graph, selected: str, order: int = 1) -> list[dict[str, Any]]:
     return out
 
 
+def share_choices(g: Graph, node: str) -> list[dict[str, Any]]:
+    """The instances already bound in ``g`` that ``node`` could be bound to as well, one
+    accelerator run once per node (D165, mvt's variant 1: half 2's multiply on half 1's
+    ``vmul_x1``): per instance, in the graph's order, ``{value, label, brm, implementation, ok,
+    message}``, ``ok`` when ``bind`` on that instance gives a valid graph, else ``message`` its
+    refusal (``vmul_x1 has W = 4, tmp2_mult would have 8``, another accelerator); an instance
+    whose BRM and implementation cannot take the node at all is left out."""
+    from snax_forge.brm import BrmError
+
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for n, _ in g.walk():
+        if n.kind != "accelerated" or n.attrs["instance"] in seen:
+            continue
+        a = n.attrs
+        seen.add(a["instance"])
+        d = {"value": a["instance"], "label": f"{a['instance']} · {a['brm']} / {a['implementation']}",
+             "brm": a["brm"], "implementation": a["implementation"], "ok": True}  # fmt: skip
+        try:  # bound alone first: a BRM that cannot take the node is no choice at all
+            alone = bind(g, node=node, brm=a["brm"], implementation=a["implementation"],
+                         instance=fresh_instance(g))  # fmt: skip
+        except (SandboxError, DfgError, BrmError, expr.ExprError, ValueError, KeyError):
+            continue
+        try:  # then on the instance, a refusal naming the params that differ
+            mine = next(m for m, _ in alone.walk() if m.id == node).attrs.get("params") or {}
+            theirs = a.get("params") or {}
+            differ = [k for k in dict.fromkeys([*theirs, *mine]) if theirs.get(k) != mine.get(k)]
+            if differ:
+                d |= {"ok": False, "message": "; ".join(
+                    f"{a['instance']} has {k} = {theirs.get(k)}, {node} would have {mine.get(k)}"
+                    for k in differ)}  # fmt: skip
+            else:
+                bind(g, node=node, brm=a["brm"], implementation=a["implementation"],
+                     instance=a["instance"])  # fmt: skip
+        except (SandboxError, DfgError, BrmError, expr.ExprError, ValueError, KeyError) as e:
+            d |= {"ok": False, "message": str(e).strip("'\"")}
+        out.append(d)
+    return out
+
+
+def fresh_instance(g: Graph) -> str:
+    """An instance name no node, group or accelerator of ``g`` has (a probe bind's)."""
+    return default_instance(_taken(g), 1 + len(_taken(g)))
+
+
 def default_instance(taken: set[str], order: int = 1) -> str:
     """``bind``'s default instance (D156): ``acc_<order>``, ``order`` the bind's in the session
     (``acc_1``, ``acc_2``), the next number while ``taken`` (the graph's instances,
@@ -816,6 +861,13 @@ def rename_split_params(recipe: Recipe, g: Graph, instance: str | None,
         users = {j for j, st in enumerate(recipe.steps) if x in _step_names(st)}
         if not users <= set(mine):
             continue  # shared with another unit or step
+        # a node joining an instance (D165): its split takes the param the instance's other
+        # splits name, at the same value (bind has checked the lanes agree)
+        other = [y for j in mine if isinstance(y := recipe.steps[j].params.get("factor"), str)
+                 and y != x and y in recipe.params and recipe.params[y] == recipe.params[x]]  # fmt: skip
+        if other:
+            renamed[x] = other[0]
+            continue
         base, k, new = f"W_{instance}", 1, f"W_{instance}"
         while new in taken:
             k += 1
@@ -986,6 +1038,9 @@ def form(
             ok = [e for e in answer.get("list", []) if e["ok"]]
             field["value"] = (ok[0]["params"]["instance"] if ok
                               else default_instance(_taken(g), order))  # fmt: skip
+            share = share_choices(g, filled["node"])
+            if share:  # an instance the node can share (D165), the page's "share with"
+                field["share"] = share
         elif name == "encapsulate" and p == "units":
             nodes = [n for n, _ in g.walk() if n.kind == "accelerated"]
             free = list(

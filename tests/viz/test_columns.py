@@ -182,3 +182,21 @@ def test_the_label_of_more_dimensions():
 
     assert transpose_label("A", [1, 0]) == "Aᵀ"
     assert transpose_label("X", [2, 0, 1]) == "X · transpose(2, 0, 1)"
+
+
+def test_a_shared_instance_is_one_bindings_entry_and_its_nodes_highlight_together():
+    """mvt_1 (D165): both halves on vmul, vsum and vadd; ``shared`` names each unit's twin, and
+    Bindings has one entry per instance with both nodes and every split it takes."""
+    from snax_forge.sandbox.recipe import Recipe, find_recipe
+    from snax_forge.viz.dfg.api import bindings_section
+    from tests.helpers import steps
+
+    g = steps("mvt_1")[-1]
+    v = view_of(g)
+    assert v["shared"]["tmp0_mult"] == ["tmp2_mult"] and v["shared"]["sum_1"] == ["sum"]
+    b = bindings_section(g, Recipe.load(find_recipe("mvt_1")))
+    units = [e for e in b["entries"] if e["kind"] == "unit"]
+    assert [e["label"] for e in units] == ["vmul · simd · tmp0_mult, tmp2_mult",
+                                           "vsum · accumulate · sum, sum_1",
+                                           "vadd · simd · augassign_18_4, augassign_19_4"]  # fmt: skip
+    assert not [e for e in b["entries"] if e["kind"] == "split"]  # no split left "not bound"

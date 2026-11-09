@@ -1,0 +1,25 @@
+{
+ "name": "mvt_1",
+ "kernel": "mvt",
+ "params": {"W": 4, "M": 8, "N": 16},
+ "symbols": {"M": "M", "N": "N"},
+ "steps": [
+  {"transform": "tag_map", "params": {"map": "tmp0_mult_map", "kind": "temporal"}},
+  {"transform": "split_map", "params": {"map": "tmp0_mult_map_1", "factor": "W"}},
+  {"transform": "bind", "params": {"node": "tmp0_mult", "brm": "simd", "implementation": "chisel_tiled_spatial", "instance": "vmul"}},
+  {"transform": "tag_map", "params": {"map": "sum_map", "kind": "temporal"}},
+  {"transform": "split_map", "params": {"map": "sum_map_1", "factor": "W"}},
+  {"transform": "bind", "params": {"node": "sum", "brm": "accumulate", "implementation": "chisel_adder_tree", "instance": "vsum"}},
+  {"transform": "split_map", "params": {"map": "augassign_18_4_map", "factor": "W"}},
+  {"transform": "bind", "params": {"node": "augassign_18_4", "brm": "simd", "implementation": "chisel_tiled_spatial", "instance": "vadd"}},
+  {"transform": "mark_transpose", "params": {"node": "tmp2_mult_map", "container": "A"}},
+  {"transform": "tag_map", "params": {"map": "tmp2_mult_map", "kind": "temporal"}},
+  {"transform": "split_map", "params": {"map": "tmp2_mult_map_1", "factor": "W"}},
+  {"transform": "bind", "params": {"node": "tmp2_mult", "brm": "simd", "implementation": "chisel_tiled_spatial", "instance": "vmul"}},
+  {"transform": "tag_map", "params": {"map": "sum_map_2", "kind": "temporal"}},
+  {"transform": "split_map", "params": {"map": "sum_map_3", "factor": "W"}},
+  {"transform": "bind", "params": {"node": "sum_1", "brm": "accumulate", "implementation": "chisel_adder_tree", "instance": "vsum"}},
+  {"transform": "split_map", "params": {"map": "augassign_19_4_map", "factor": "W"}},
+  {"transform": "bind", "params": {"node": "augassign_19_4", "brm": "simd", "implementation": "chisel_tiled_spatial", "instance": "vadd"}}
+ ]
+}

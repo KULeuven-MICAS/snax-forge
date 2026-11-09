@@ -64,7 +64,7 @@ def test_every_recipe_is_in_a_folder_once_under_its_name():
     assert not list(RECIPE_ROOT.glob("*.json"))
     paths = recipe_paths()
     assert sorted(p.name for p in RECIPE_ROOT.iterdir() if p.is_dir()) == [
-        "custom", "dot", "elementwise", "matvec", "reduce"]  # fmt: skip
+        "custom", "dot", "elementwise", "matvec", "mvt", "reduce"]  # fmt: skip
     assert {n: len(ps) for n, ps in paths.items() if len(ps) > 1} == {}
     for name, (path,) in paths.items():
         assert Recipe.load(path).name == name == path.stem, path

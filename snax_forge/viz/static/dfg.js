@@ -452,6 +452,15 @@ function outline() {
       if (el._marker) el.setAttribute("marker-end", `url(#${el._marker}-sel)`);
     }
   }
+  // a selected unit's instance shared by other nodes (api.py's ``shared``, D165): those too
+  for (const panelEl of document.querySelectorAll("#graphs .c-panel")) {
+    const shared = (panelEl._view && panelEl._view.shared) || {};
+    for (const name of state.sels) {
+      for (const other of shared[name] || []) {
+        for (const el of panelEl.querySelectorAll(`.c-node[data-sel="${CSS.escape(other)}"]`)) el.classList.add("sel");
+      }
+    }
+  }
   showPartners();
 }
 
