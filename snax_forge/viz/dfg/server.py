@@ -19,7 +19,9 @@ the server's ``--tech`` (default nangate45).
                               name, a bare stem one step has, or a number), null for none
     GET  /api/step/<k>        step k's view (api.step_view: the drawing, its compact texts and
                               Details, the marks and the estimate); a file that does not load
-                              is its entry with the error, not an HTTP error
+                              is its entry with the error, not an HTTP error; each
+                              ``?expand=<block>`` a block drawn as its nodes, the others as
+                              one box each (api.py's ``fold``), in edit mode too
     GET  /api/compare/<j>/<k> step j against step k (api.compare_view: the session's diff of the
                               two graphs, the Details fields that changed and the two columns
                               Compare lays out, step j on the left, each headed by its label,
@@ -288,8 +290,10 @@ def checks_parts(checks: dict[str, Any] | None) -> list[str]:
     return out
 
 
-def edit_step(s: Any, k: int, tech: str = DEFAULT_TECH) -> dict[str, Any]:
-    """GET /api/step/<k> in edit mode: the step's view with its diff."""
+def edit_step(s: Any, k: int, tech: str = DEFAULT_TECH,
+              expanded: Sequence[str] = ()) -> dict[str, Any]:  # fmt: skip
+    """GET /api/step/<k> in edit mode: the step's view with its diff, the blocks ``expanded``
+    drawn as their nodes."""
     from snax_forge.dfg import DfgError
 
     if not 0 <= k <= s.n:
@@ -307,7 +311,7 @@ def edit_step(s: Any, k: int, tech: str = DEFAULT_TECH) -> dict[str, Any]:
 
     upto = replace(s.recipe, steps=s.recipe.steps[:k])  # the steps that made step k
     view = api.step_view(entry, _label(name), s.platform, s.marks(k), s.diff(k), est, tech,
-                         upto, editable=True)  # fmt: skip
+                         upto, editable=True, expanded=expanded)  # fmt: skip
     return view | s.checks(k)
 
 
@@ -362,7 +366,7 @@ class DfgHandler(Handler):
             k = _index(parts[1], len(entries) - 1)
             e = entries[k]
             return api.step_view(e, _label(e.name), self.server.platform, tech=tech,
-                                 recipe=api.folder_recipe(e))  # fmt: skip
+                                 recipe=api.folder_recipe(e), expanded=q.get("expand", []))  # fmt: skip
         if len(parts) == 3 and parts[0] == "compare":
             j, k = (_index(x, len(entries) - 1) for x in parts[1:])
             labels = (_heading(entries[j]), _heading(entries[k]))
@@ -384,7 +388,7 @@ class DfgHandler(Handler):
             s = state.need()
             k = _index(parts[1], s.n)
             if len(parts) == 2:
-                return edit_step(s, k, tech)
+                return edit_step(s, k, tech, (q or {}).get("expand", []))
             if parts[2] == "site" and len(parts) == 4:  # one item, as before
                 return s.sites(k, parts[3])
             if parts[2] == "site":  # a selection: ?sel=<id>&sel=<id> (D72)

@@ -39,7 +39,7 @@ function status(msg, err = false) {
 
 // -- state ----------------------------------------------------------------------
 
-const state = { mode: "view", steps: [], k: 0, cmp: null, sel: null, sels: [], t: null, session: null, platform: null, tech: null, techs: [] };
+const state = { mode: "view", steps: [], k: 0, cmp: null, sel: null, sels: [], t: null, session: null, platform: null, tech: null, techs: [], expanded: new Set() };
 
 // The selection (D72): ``sels`` every selected item in the order selected (shift-click adds or
 // removes one), ``sel`` the last, which Details, the Bindings and the hash's ``t`` follow; the
@@ -49,7 +49,7 @@ function setSels(text) {
   state.sels = text ? String(text).split(",").filter(Boolean) : [];
   state.sel = state.sels.length ? state.sels[state.sels.length - 1] : null;
 }
-const views = new Map(); // step -> its view, until Reload
+const views = new Map(); // "step|expanded blocks" -> its view, until Reload
 const compares = new Map(); // "j/k" -> the compare answer
 
 const num = (v) => (v === null || v === "" || Number.isNaN(Number(v)) ? null : Number(v));
@@ -88,9 +88,17 @@ const clampStep = (k) => Math.min(Math.max(k, 0), state.steps.length - 1);
 
 const techQuery = () => (state.tech ? `?tech=${encodeURIComponent(state.tech)}` : "");
 
+/** The blocks drawn as their nodes (``state.expanded``) as the step route's query. */
+const expandQuery = () => [...state.expanded].sort().map((b) => `&expand=${encodeURIComponent(b)}`).join("");
+const viewKey = (k) => `${k}|${[...state.expanded].sort().join(",")}`;
+
 async function view(k) {
-  if (!views.has(k)) views.set(k, await getJSON(`/api/step/${k}${techQuery()}`));
-  return views.get(k);
+  const key = viewKey(k);
+  if (!views.has(key)) {
+    const q = techQuery() + expandQuery();
+    views.set(key, await getJSON(`/api/step/${k}${q ? `?${q.replace(/^[?&]/, "")}` : ""}`));
+  }
+  return views.get(key);
 }
 
 async function compare(j, k) {
@@ -134,6 +142,10 @@ function ports(n, side) {
 }
 
 function nodeEl(n) {
+  if (n.kind === "block") { // a collapsed block (api.py's ``fold``): one box, double-click opens it
+    return h("div", { class: "c-node c-block", "data-sel": n.id, "data-block": n.id, title: "double-click to expand" },
+      ports(n, "in"), h("div", { class: "c-text" }, n.text), ports(n, "out"));
+  }
   if (n.kind === "map") {
     return h("div", { class: `c-map loop-${n.loop_kind || "none"}`, "data-sel": n.id },
       h("div", { class: "c-bar" }, n.text),
@@ -213,6 +225,7 @@ function panel(v, k, pick) {
     if (el.classList.contains("settling")) return; // the boxes are gliding: drawn once they settle
     drawEdges(canvas, svg, v.edges, k);
     drawAccelerators(canvas, svg, v.accelerators || []);
+    drawBlocks(canvas, svg, v.blocks || []);
     outline();
   };
   new ResizeObserver(() => requestAnimationFrame(el._draw)).observe(canvas);
@@ -391,6 +404,88 @@ function drawAccelerators(canvas, svg, accelerators) {
   svg.append(...out);
 }
 
+// -- blocks (REUSE1): an open block a dotted outline, its name at the bottom left (a group's and
+// an accelerator's are on top); blocks open around the same boxes share one outline, ``matvec ›
+// dot``; a double-click on it closes the innermost ------------------------------------------
+
+function drawBlocks(canvas, svg, list) {
+  const open = list.filter((b) => !b.collapsed && !b.hidden && b.foldable);
+  if (!open.length) return;
+  const same = new Map(); // the boxes it holds -> the open blocks around them, outer first
+  for (const b of open) {
+    const key = b.tops.join(",");
+    if (!same.has(key)) same.set(key, []);
+    same.get(key).push(b);
+  }
+  const rings = [...same.values()].map((bs) => bs.sort((a, b) => a.depth - b.depth));
+  const deepest = Math.max(...rings.map((bs) => bs[0].depth));
+  const out = [];
+  for (const bs of rings) {
+    const tops = bs[0].tops.map((id) => canvas.querySelector(`[data-top="${CSS.escape(id)}"]`));
+    const r = unionRect(canvas, tops.map((t) => t && t.getBoundingClientRect()));
+    if (!r) continue;
+    const inner = bs[bs.length - 1];
+    const pad = 20 + 10 * (deepest - bs[0].depth);
+    const g = svgEl("g", { class: "block-box", "data-sel": inner.name, "data-block": inner.name });
+    const box = { x: r.left - pad, y: r.top - pad, width: r.right - r.left + 2 * pad, height: r.bottom - r.top + 2 * pad, rx: 10 };
+    g.append(svgEl("rect", { ...box, class: "outline-hit" }), svgEl("rect", box));
+    const t = svgEl("text", { x: r.left - pad + 8, y: r.bottom + pad - 6 });
+    t.textContent = `▾ ${bs.length > 1 ? bs.map((b) => b.name).join(" › ") : inner.text}`;
+    const tip = svgEl("title", {});
+    tip.textContent = `${bs.map((b) => b.text).join("\n")}\ndouble-click to collapse`;
+    g.append(t, tip);
+    out.push(g);
+  }
+  svg.append(...out);
+}
+
+/** Block ``name`` opened or closed (its view's ``blocks``): opening opens the blocks holding
+it, closing closes those inside it; the blocks sharing its units (``together``) go with it. */
+async function toggleBlock(name) {
+  const v = await view(state.k);
+  const list = v.blocks || [];
+  const by = new Map(list.map((b) => [b.name, b]));
+  const b = by.get(name);
+  if (!b || !b.foldable) return;
+  const names = [name, ...(b.together || [])];
+  const shown = b.collapsed || b.hidden ? false : true;
+  for (const x of names) {
+    if (shown) {
+      state.expanded.delete(x);
+      for (const y of list) { // the blocks inside it close too
+        let p = y.parent;
+        while (p) {
+          if (p === x) state.expanded.delete(y.name);
+          p = by.get(p) ? by.get(p).parent : null;
+        }
+      }
+    } else {
+      let p = x;
+      while (p) {
+        state.expanded.add(p);
+        p = by.get(p) ? by.get(p).parent : null;
+      }
+    }
+  }
+  draw();
+}
+
+/** The Blocks section: each block indented under the block holding it, a toggle to open or
+close it, its name to select it and its text (``dot · dot/dot_3 · W = 4``). */
+async function blocks() {
+  const box = $("blocks");
+  if (!box) return;
+  const v = await view(state.k);
+  const list = v.blocks || [];
+  $("blocks-panel").hidden = !list.length;
+  box.replaceChildren(...list.map((b) => h("div", { class: `dfg-block${state.sels.includes(b.name) ? " sel" : ""}`, style: `padding-left: ${b.depth * 0.9}rem` },
+    h("button", { type: "button", class: "dfg-block-toggle", disabled: !b.foldable,
+      title: !b.foldable ? "drawn as its nodes: it holds part of a top-level nest only" : b.collapsed || b.hidden ? "expand" : "collapse",
+      onclick: () => toggleBlock(b.name) }, b.collapsed || b.hidden ? "▸" : "▾"),
+    h("button", { type: "button", class: "dfg-cont-name", onclick: () => select(b.name) }, b.name),
+    h("span", { class: "mono muted" }, ` ${b.recipe ? `${b.recipe}${Object.entries(b.params).map(([k, x]) => ` · ${k} = ${x}`).join("")}` : `${b.kernel} · no recipe`}`))));
+}
+
 // -- the move between steps: the boxes glide from their old places --------------------------
 
 const HTML = "http://www.w3.org/1999/xhtml";
@@ -509,6 +604,7 @@ function select(name, add = false) {
   details();
   containers();
   bindings();
+  blocks();
   if (state.mode === "edit") edit.sidebar();
 }
 
@@ -521,7 +617,7 @@ function goto(k) {
   }
 }
 
-const KINDS = ["node", "container", "group", "accelerator", "edge"];
+const KINDS = ["node", "block", "container", "group", "accelerator", "edge"];
 
 function valueText(v) {
   if (v === null || v === undefined) return "–";
@@ -591,7 +687,7 @@ function costRows(cost) {
 /** Every container that a symbol's shape uses, highlighted in the Containers and the graph
 (focus or hover on the symbol in the Symbols). */
 function hlSymbol(name, on) {
-  const v = views.get(state.k);
+  const v = views.get(viewKey(state.k));
   const users = new Set(((v && v.containers_section) || []).filter((c) => c.symbols.includes(name)).map((c) => c.name));
   for (const el of document.querySelectorAll("#containers [data-cont]")) {
     el.classList.toggle("sym-hl", on && users.has(el.dataset.cont));
@@ -827,7 +923,7 @@ async function draw() {
     }
     drawn = now;
     requestAnimationFrame(() => panels.forEach((p) => p._draw && p._draw()));
-    await Promise.all([details(), estimate(), containers(), bindings(), state.mode === "edit" ? edit.sidebar() : null]);
+    await Promise.all([details(), estimate(), blocks(), containers(), bindings(), state.mode === "edit" ? edit.sidebar() : null]);
     const broken = state.steps.filter((s) => s.error).length;
     status(broken ? `${broken} of ${state.steps.length} files did not load` : "", broken > 0);
   } catch (e) {
@@ -947,6 +1043,11 @@ $("graphs").addEventListener("click", (ev) => {
   const t = ev.target.closest("[data-sel]");
   if (ev.shiftKey && !t) return; // a shift-click on empty space keeps the selection
   select(t ? t.getAttribute("data-sel") : null, ev.shiftKey);
+});
+// A double-click on a block's box or outline opens or closes it (and the blocks sharing its units).
+$("graphs").addEventListener("dblclick", (ev) => {
+  const t = ev.target.closest("[data-block]");
+  if (t) toggleBlock(t.getAttribute("data-block"));
 });
 // Keys: ← → the steps; Esc closes an open form, then clears the selection; edit mode: Enter
 // applies the form that has the focus, Ctrl+Z (⌘Z) undoes, Ctrl+Shift+Z redoes. In a text field

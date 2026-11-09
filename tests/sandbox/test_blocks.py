@@ -61,7 +61,7 @@ def test_unlift_gives_the_graph_back():
     g = mvt()
     lifted = lift(lift(g, "matvec_acc"), "dot")
     assert unlift(unlift(lifted, "dot"), "dot_1") == lift(g, "matvec_acc")
-    with pytest.raises(SandboxError, match="no block of that name"):
+    with pytest.raises(SandboxError, match="neither a block nor a node in one"):
         unlift(lifted, "mvt")
 
 
@@ -81,7 +81,7 @@ def test_dot_3_on_a_lifted_block_names_its_group_after_the_block():
     rec = next(b for n, _ in g.walk() if n.id == "tmp2_mult" for b in n.attrs[BLOCK])
     assert rec == {"name": "dot_1", "kernel": "dot", "heads": ["tmp2_mult_map_1", "sum_map_3"],
                    "recipe": "dot/dot_3", "params": {"W": 4}}  # fmt: skip
-    with pytest.raises(SandboxError, match="block dot_1 has dot/dot_3 already"):
+    with pytest.raises(SandboxError, match="block dot_1 has dot/dot_3 applied"):
         apply_block(g, "dot/dot_3", block="dot_1", params={"W": 4})
 
 
@@ -134,3 +134,60 @@ def test_mvt_from_matvec_dot3_on_both_halves_nests_the_blocks():
                      "tmp2_mult": ("mul_1", "dot_1"), "sum_1": ("sum_1", "dot_1")}  # fmt: skip
     p = _paths(g, ("accelerated", "link"))
     assert p["tmp0_prod"] == ["matvec", "dot"] and p["sum_1"] == ["matvec_1", "dot_1"]
+
+
+# -- the sites and the editor's forms (round 2) ---------------------------------------------------
+
+
+def test_lift_offers_the_kernels_matching_at_a_node_and_lifts_that_region_only():
+    from snax_forge.sandbox.blocks import lift_choices
+
+    g = mvt()
+    assert lift_choices(g, "tmp2_mult") == ["dot", "matvec", "matvec_acc", "vecmul"]
+    assert lift_choices(g, "augassign_19_4") == ["matvec_acc"]
+    one = lift(g, "dot", at="tmp2_mult")
+    assert {b for p in _paths(one).values() for b in p} == {"dot"}
+    assert _paths(one)["sum_map_3"] == ["dot"]
+    with pytest.raises(SandboxError, match="lift at 'tmp0_mult': vecadd does not match here"):
+        lift(g, "vecadd", at="tmp0_mult")
+
+
+def _matvec_session():
+    """A session on matvec, the rows' loops tagged, then dot lifted at mult."""
+    from snax_forge.sandbox.session import Session
+
+    s = Session.from_kernel("matvec", {"M": 8, "N": 64})
+    for m in ("mult_map", "sum_map"):
+        assert s.apply("tag_map", {"map": m, "kind": "temporal"})["ok"]
+    site = s.sites(s.cursor, "mult")["lift"]
+    assert site["params"] == {"at": "mult", "kernel": "dot"}
+    assert [c["value"] for c in site["form"][0]["choices"]] == ["dot", "vecmul"]
+    assert s.apply("lift", site["params"])["ok"]
+    return s
+
+
+def test_apply_recipe_from_the_editor_on_a_lifted_block():
+    s = _matvec_session()
+    a = s.sites(s.cursor, "dot")["apply_recipe"]
+    assert a["params"] == {"block": "dot", "recipe": "dot/dot_1"}
+    fields = {f["name"]: f for f in a["form"]}
+    assert fields["block"]["readonly"] and fields["params.W"]["value"] == "W"
+    assert fields["params.W"]["new_value"] == 4 and "dot/dot_3" in [
+        c["value"] for c in fields["recipe"]["choices"]
+    ]
+    r = s.apply("apply_recipe", {"block": "dot", "recipe": "dot/dot_3", "params": {"W": "W"}},
+                new_params={"W": 4})  # fmt: skip
+    assert r["ok"] and s.recipe.params["W"] == 4
+    assert s.set_params({"W": 8})["ok"]  # the session's W drives the sub-recipe's
+    units = [n.attrs["instance"] for n, _ in s.graphs[s.cursor].walk() if n.kind == "accelerated"]
+    assert units == ["mul", "sum"]
+    assert not s.sites(s.cursor, "dot")["apply_recipe"]["ok"]  # applied already
+    assert s.sites(s.cursor, "dot")["unlift"]["message"].endswith("applied (unapply)")
+
+
+def test_unlift_from_a_node_in_the_block():
+    s = _matvec_session()
+    u = s.sites(s.cursor, "mult")["unlift"]
+    assert u["params"] == {"name": "dot"}
+    assert s.apply("unlift", u["params"])["ok"]
+    assert s.graphs[s.cursor] == s.graphs[2]

@@ -47,9 +47,9 @@ def test_the_site_accepts_every_recipe_step(name):
     r, graphs = recipe_graphs(name)
     for i in range(len(r.steps)):
         transform, params = step_params(r, i)
-        if transform not in SELECTED:  # no site yet: lift, unlift, apply_recipe (REUSE1 round 2)
-            continue
         site, key = TRANSFORMS[transform].site, SELECTED[transform]
+        if key not in params:  # apply_recipe on a region, not a lifted block: no site fills it
+            continue
         for selected in params[key] if key == "units" else [params[key]]:
             filled = site(graphs[i], selected)
             for k, v in filled.items():

@@ -56,9 +56,10 @@ SELECTED = {
     "encapsulate": "units", "unencapsulate": "accelerator", "bake_scalar": "container",
     "unbake_scalar": "container", "interchange_map": "map", "fuse_seed": "first", "unfuse_seed": "map",
     "mark_transpose": "node", "unmark_transpose": "node", "share": "group", "unshare": "group",
+    "lift": "at", "unlift": "name", "apply_recipe": "block",
 }  # fmt: skip
 DEFAULTS = {"factor": 4, "kind": "temporal", "depth": 1, "group": "g", "accelerator": "acc",
-            "value": 3}  # fmt: skip
+            "value": 3, "kernel": "dot", "recipe": "dot/dot_3"}  # fmt: skip
 
 
 @cache

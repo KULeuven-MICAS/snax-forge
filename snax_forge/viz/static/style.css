@@ -526,6 +526,17 @@ svg.dfg-edges .hover rect { stroke: var(--busy); stroke-width: 2.5; stroke-dasha
 svg.dfg-edges .sel rect { stroke: var(--hl); stroke-width: 2; }
 svg.dfg-edges .group-box rect.outline-hit, svg.dfg-edges .acc-box rect.outline-hit { stroke: transparent; stroke-width: 10; stroke-dasharray: none; } /* the band a click on an outline hits (D72) */
 
+/* blocks (REUSE1): a collapsed one a box with a doubled edge, an open one a dotted outline */
+.c-node.c-block { border: 3px double var(--ink); border-radius: 8px; padding: 0.25rem 0.2rem; background: color-mix(in srgb, var(--busy) 8%, var(--panel)); }
+.c-node.c-block > .c-text { font-weight: 600; }
+svg.dfg-edges .block-box rect { fill: none; stroke: var(--ink); stroke-width: 1.2; stroke-dasharray: 1 4; stroke-linecap: round; pointer-events: stroke; cursor: pointer; }
+svg.dfg-edges .block-box rect.outline-hit { stroke: transparent; stroke-width: 10; stroke-dasharray: none; }
+svg.dfg-edges .block-box text { font-size: 0.85rem; font-weight: 600; fill: var(--ink); paint-order: stroke; stroke: var(--bg); stroke-width: 4px; stroke-linejoin: round; pointer-events: visiblePainted; cursor: pointer; }
+.dfg-block { display: flex; align-items: baseline; gap: 0.2rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dfg-block.sel .dfg-cont-name { color: var(--hl); font-weight: 600; }
+.dfg-block-toggle { padding: 0 0.3rem; border: none; background: none; cursor: pointer; color: var(--muted); }
+.dfg-block-toggle:disabled { opacity: 0.35; cursor: default; }
+
 /* the selection */
 .c-node.sel, .c-pill.sel { box-shadow: 0 0 0 2px var(--hl); }
 .c-map.sel { box-shadow: 0 0 0 2px var(--hl); }
@@ -555,8 +566,8 @@ svg.dfg-edges .group-box rect.outline-hit, svg.dfg-edges .acc-box rect.outline-h
 .dfg-sidebar h2 b { color: var(--ink); }
 /* the Containers, below the transforms (both modes): a symbol's input or name highlights the
    containers whose shape uses it, here and in the graph (dfg.js) */
-#transforms + .dfg-containers { border-top: 1px solid var(--rule); margin-top: 0.8rem; padding-top: 0.2rem; }
-.dfg-containers h2 { font-size: 0.975rem; margin: 0.4rem 0 0.4rem; color: var(--muted); font-weight: 600; }
+#transforms + .dfg-blocks, .dfg-blocks + .dfg-containers { border-top: 1px solid var(--rule); margin-top: 0.8rem; padding-top: 0.2rem; }
+.dfg-blocks h2, .dfg-containers h2 { font-size: 0.975rem; margin: 0.4rem 0 0.4rem; color: var(--muted); font-weight: 600; }
 .dfg-cont { padding: 0.2rem 0.3rem; border-radius: 3px; }
 .dfg-cont + .dfg-cont { border-top: 1px solid color-mix(in srgb, var(--rule) 60%, transparent); }
 .dfg-cont.sel { box-shadow: inset 2px 0 0 var(--hl); }

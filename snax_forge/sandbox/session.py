@@ -638,9 +638,14 @@ def _accepted(g: Graph, selected: str) -> bool:
 
 
 def marks_of(g: Graph) -> dict[str, list[str]]:
-    """The node ids and container names of ``g`` some site accepts (the view mode's marks)."""
+    """The node ids, container names and block names (sandbox/blocks.py) of ``g`` some site
+    accepts (the view mode's marks)."""
+    from .blocks import BLOCK
+
+    blocks = list(dict.fromkeys(b["name"] for n, _ in g.walk() for b in n.attrs.get(BLOCK, [])))
     return {"nodes": [n.id for n, _ in g.walk() if _accepted(g, n.id)],
-            "containers": [c for c in g.containers if _accepted(g, c)]}  # fmt: skip
+            "containers": [c for c in g.containers if _accepted(g, c)],
+            "blocks": [b for b in blocks if _accepted(g, b)]}  # fmt: skip
 
 
 def _stage(code: str) -> str:
@@ -1020,6 +1025,49 @@ def fresh_param(field: str, taken: Any) -> str:
 DEFAULT_KIND = "temporal"
 
 
+def _lift_fields(g: Graph, filled: dict[str, Any]) -> list[dict[str, Any]]:
+    """``lift``'s form: ``kernel`` a choice of the kernels whose pattern matches a region
+    holding the selected node, ``at`` that region or every region of the kernel (empty)."""
+    from .blocks import lift_choices
+
+    at = filled["at"]
+    kernels = [{"value": k, "label": k} for k in lift_choices(g, at)]
+    where = [{"value": at, "label": f"the region holding {at}"},
+             {"value": "", "label": "every region it matches"}]  # fmt: skip
+    return [
+        {"name": "kernel", "type": "choice", "sweepable": False, "readonly": False,
+         "value": filled["kernel"], "choices": kernels},
+        {"name": "at", "type": "choice", "sweepable": False, "readonly": False, "value": at,
+         "choices": where},
+    ]  # fmt: skip
+
+
+def _apply_fields(g: Graph, filled: dict[str, Any], params: dict[str, Any]) -> list[dict[str, Any]]:
+    """``apply_recipe``'s form on a lifted block: ``block`` (the selection's), ``recipe`` a
+    choice of the recipes of its kernel, and an int field ``params.<P>`` per param of the
+    first that no kernel symbol names (dot_3's W), a param of the session's own (``W``, or
+    ``W_2`` when the session has W), its value the recipe's."""
+    from .blocks import _block, recipe_path, recipes_for
+
+    rec = _block(g, filled["block"], "apply_recipe", applied=False)
+    sub = Recipe.load(recipe_path(filled["recipe"]))
+    named = {v for v in sub.symbols.values() if isinstance(v, str)}
+    fields = [
+        {"name": "block", "type": "str", "sweepable": False, "readonly": True,
+         "value": filled["block"]},
+        {"name": "recipe", "type": "choice", "sweepable": False, "readonly": False,
+         "value": filled["recipe"],
+         "choices": [{"value": r, "label": r} for r in recipes_for(rec["kernel"])]},
+    ]  # fmt: skip
+    for p, v in sub.params.items():
+        if p in named:
+            continue
+        fields.append({"name": f"params.{p}", "type": "int", "sweepable": True,
+                       "readonly": False, "value": fresh_param(p, params),
+                       "new_value": v if isinstance(v, int) else 1})  # fmt: skip
+    return fields
+
+
 # bake_scalar's value in the editor's form for a container with no seeded input
 BAKE_DEFAULT = 1
 
@@ -1063,6 +1111,10 @@ def form(
     selection = next(iter(filled), None)
     fields: list[dict[str, Any]] = []
     one = selected is None or len(selected) == 1
+    if name == "lift":  # the kernels matching here, here or every region of one
+        return _lift_fields(g, filled)
+    if name == "apply_recipe":  # the block's kernel's recipes and their params
+        return _apply_fields(g, filled, params)
     if name in ("fuse_map", "fuse_seed") and one:  # the partner, on either side
         mine = selected[0] if selected else filled["first"]
         return [_pair_field(name, g, mine, filled)]

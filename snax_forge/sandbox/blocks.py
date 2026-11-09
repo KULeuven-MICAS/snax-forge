@@ -34,9 +34,16 @@ non-overlapping one, in the graph's order.
 
 **Blocks** are records on nodes: ``sandbox.block``, the path of blocks a node is in, outer
 first, each ``{"name", "kernel", "heads"}`` (the region's chain heads), with ``recipe`` and
-``params`` once a recipe is applied. ``lift(kernel)`` makes a block of every region that
+``params`` once a recipe is applied. ``lift(kernel, at)`` makes a block of every region that
 matches the kernel's pattern (none overlapping; a region lies inside a block or holds it
-whole, in either order: lift dot then matvec, or matvec then dot), named after the kernel (``dot``, ``dot_1``, ...); ``unlift(name)`` takes its record away.
+whole, in either order: lift dot then matvec, or matvec then dot), named after the kernel (``dot``, ``dot_1``, ...), or with ``at`` the one region holding that node;
+``unlift(name)`` takes its record away.
+
+**Sites** (D72). ``lift``'s: a node in a region the pattern of a kernel some recipe under
+``recipes/`` is written on matches (``reusable``), ``at`` the node and ``kernel`` the first
+such. ``unlift``'s: a block with no recipe, or a node in it (its innermost block).
+``apply_recipe``'s: the same, ``block`` it and ``recipe`` the first recipe of its kernel
+(``recipes_for``).
 
 **apply_recipe(recipe, region, block, params, name)**: ``recipe`` as ``category/name``
 (``dot/dot_3``), on the region whose chains start at ``region`` (map ids, in P's nest order) or
@@ -400,9 +407,80 @@ def _mark(nodes: list[Node], entry: dict[str, Any], holders: set[str]) -> None:
                           + [b for b in path if b["name"] not in holders])  # fmt: skip
 
 
-def lift(g: Graph, kernel: str) -> Graph:
-    """Every region matching ``kernel``'s pattern made a block (module doc)."""
-    found = matches(g, kernel)
+@functools.cache
+def reusable() -> tuple[str, ...]:
+    """The kernels ``lift`` offers: every kernel a recipe under ``recipes/`` is written on."""
+    import json
+
+    out = set()
+    for f in sorted(RECIPE_ROOT.glob("*/*.json")):
+        try:
+            out.add(json.loads(f.read_text())["kernel"])
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+    return tuple(sorted(out))
+
+
+_FOUND: dict[int, tuple[Graph, dict[str, list[Match]]]] = {}
+
+
+def _found(g: Graph) -> dict[str, list[Match]]:
+    """Every reusable kernel's matches in ``g`` (not ``g``'s own kernel), worked out once per
+    graph (the editor asks on every node of a step)."""
+    hit = _FOUND.get(id(g))
+    if hit is not None and hit[0] is g:
+        return hit[1]
+    out = {}
+    for k in reusable():
+        if k == g.name:
+            continue
+        try:
+            got = matches(g, k)
+        except (SandboxError, DfgError, KeyError):
+            continue
+        if got:
+            out[k] = got
+    if len(_FOUND) > 32:
+        _FOUND.clear()
+    _FOUND[id(g)] = (g, out)
+    return out
+
+
+def _lift_choices(g: Graph, at: str) -> list[tuple[str, Match]]:
+    """The kernels whose pattern matches a region holding node ``at``, with that match;
+    refused (the site's and the transform's message) when none does."""
+    out = []
+    for k, found in _found(g).items():
+        for m in found:
+            if at in {n.id for n in _region_nodes(g, m)}:
+                out.append((k, m))
+    if not out:
+        raise SandboxError(f"lift at {at!r}: no kernel of the recipes matches a region here "
+                           f"({', '.join(reusable())})")  # fmt: skip
+    return out
+
+
+def _lift_site(g: Graph, selected: str) -> dict[str, Any]:
+    """A node in a region some recipe kernel's pattern matches: ``at`` it, ``kernel`` the
+    first such (the editor offers the others and every region of the kernel, ``at`` empty)."""
+    return {"at": selected, "kernel": _lift_choices(g, selected)[0][0]}
+
+
+def lift_choices(g: Graph, at: str) -> list[str]:
+    """The kernels ``lift`` takes at node ``at`` (the editor's choice)."""
+    return list(dict.fromkeys(k for k, _ in _lift_choices(g, at)))
+
+
+def lift(g: Graph, kernel: str, at: str | None = None) -> Graph:
+    """The regions matching ``kernel``'s pattern made blocks (module doc): every one, or with
+    ``at`` the one holding node ``at``."""
+    if at:
+        found = [m for k, m in _lift_choices(g, at) if k == kernel]
+        if not found:
+            raise SandboxError(f"lift at {at!r}: {kernel} does not match here (here: "
+                               f"{', '.join(lift_choices(g, at))})")  # fmt: skip
+    else:
+        found = matches(g, kernel)
     if not found:
         raise SandboxError(f"lift {kernel}: no region of the graph matches {kernel}'s pattern")
     g = _copy(g)
@@ -414,17 +492,40 @@ def lift(g: Graph, kernel: str) -> Graph:
     return _result(g)
 
 
+def _block(g: Graph, selected: str, what: str, applied: bool) -> dict[str, Any]:
+    """The block ``selected`` names: a block's name, or a node's innermost block; refused
+    (one message for the site and the transform) when there is none, or when it has a recipe
+    and ``applied`` is False, or none and ``applied`` is True."""
+    rec = None
+    for n, _ in g.walk():
+        for b in _blocks_of(n):
+            if b["name"] == selected:
+                rec = b
+        if rec is None and n.id == selected and _blocks_of(n):
+            rec = _blocks_of(n)[-1]
+        if rec is not None:
+            break
+    if rec is None:
+        raise SandboxError(f"{what} {selected!r}: neither a block nor a node in one (lift)")
+    if "recipe" in rec and not applied:
+        raise SandboxError(f"{what} {selected!r}: block {rec['name']} has {rec['recipe']} "
+                           "applied (unapply)")  # fmt: skip
+    if "recipe" not in rec and applied:
+        raise SandboxError(f"{what} {selected!r}: block {rec['name']} has no recipe applied")
+    return rec
+
+
+def _unlift_site(g: Graph, selected: str) -> dict[str, Any]:
+    return {"name": _block(g, selected, "unlift", applied=False)["name"]}
+
+
 def unlift(g: Graph, name: str) -> Graph:
-    """Block ``name``'s record taken away; refused once a recipe is applied there."""
-    nodes = [n for n, _ in g.walk() if any(b["name"] == name for b in _blocks_of(n))]
-    if not nodes:
-        raise SandboxError(f"unlift {name!r}: no block of that name ({sorted(_block_names(g))})")
+    """Block ``name``'s record taken away (``name`` as the site takes it: the block, or a node
+    in it); refused once a recipe is applied there."""
+    name = _unlift_site(g, name)["name"]
     g = _copy(g)
     for n, _ in g.walk():
         path = _blocks_of(n)
-        for b in path:
-            if b["name"] == name and "recipe" in b:
-                raise SandboxError(f"unlift {name!r}: {b['recipe']} is applied there (unapply)")
         if any(b["name"] == name for b in path):
             rest = [b for b in path if b["name"] != name]
             if rest:
@@ -432,6 +533,32 @@ def unlift(g: Graph, name: str) -> Graph:
             else:
                 del n.attrs[BLOCK]
     return _result(g)
+
+
+def recipes_for(kernel: str) -> list[str]:
+    """The recipes under ``recipes/`` written on ``kernel``, as ``category/name``, those in the
+    kernel's own folder first."""
+    import json
+
+    out = []
+    for f in sorted(RECIPE_ROOT.glob("*/*.json")):
+        try:
+            if json.loads(f.read_text()).get("kernel") == kernel:
+                out.append(f"{f.parent.name}/{f.stem}")
+        except (OSError, ValueError, AttributeError):
+            continue
+    return sorted(out, key=lambda r: r.split("/")[0] != kernel)  # the kernel's own folder first
+
+
+def _apply_site(g: Graph, selected: str) -> dict[str, Any]:
+    """A lifted block with no recipe yet (or a node in it): ``block`` it, ``recipe`` the
+    first recipe of its kernel."""
+    rec = _block(g, selected, "apply_recipe", applied=False)
+    found = recipes_for(rec["kernel"])
+    if not found:
+        raise SandboxError(f"apply_recipe {selected!r}: no recipe under recipes/ is written on "
+                           f"{rec['kernel']}")  # fmt: skip
+    return {"block": rec["name"], "recipe": found[0]}
 
 
 # -- apply_recipe -------------------------------------------------------------------------------
@@ -496,17 +623,16 @@ def apply_recipe(g: Graph, recipe: str, region: list[str] | None = None,
     from .transforms import TRANSFORMS
 
     what = f"apply_recipe {recipe!r}"
+    if block is not None:  # the site's check first, its message
+        _block(g, block, "apply_recipe", applied=False)
     sub = Recipe.load(recipe_path(recipe))
     if block is not None:
-        mine = [b for n, _ in g.walk() for b in _blocks_of(n) if b["name"] == block]
-        if not mine:
-            raise SandboxError(f"{what}: no block {block!r}")
-        if mine[0]["kernel"] != sub.kernel:
-            raise SandboxError(f"{what}: block {block} is a {mine[0]['kernel']}, the recipe is "
+        rec = _block(g, block, "apply_recipe", applied=False)
+        block = rec["name"]
+        if rec["kernel"] != sub.kernel:
+            raise SandboxError(f"{what}: block {block} is a {rec['kernel']}, the recipe is "
                                f"{sub.kernel}'s")  # fmt: skip
-        if "recipe" in mine[0]:
-            raise SandboxError(f"{what}: block {block} has {mine[0]['recipe']} already")
-        region, name = list(mine[0]["heads"]), block
+        region, name = list(rec["heads"]), block
     if not region:
         raise SandboxError(f"{what}: give region (the chain heads) or block")
     m = match(g, sub.kernel, list(region), block=block)
@@ -586,6 +712,6 @@ def apply_recipe(g: Graph, recipe: str, region: list[str] | None = None,
     return _result(out)
 
 
-register_transform("lift", lift)
-register_transform("unlift", unlift)
-register_transform("apply_recipe", apply_recipe)
+register_transform("lift", lift, site=_lift_site)
+register_transform("unlift", unlift, site=_unlift_site)
+register_transform("apply_recipe", apply_recipe, site=_apply_site)

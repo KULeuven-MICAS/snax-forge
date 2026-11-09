@@ -353,6 +353,12 @@ function params(form, el) {
       out[f.name] = node.value;
     }
   }
+  for (const key of Object.keys(out)) { // ``params.W``: apply_recipe's sub-recipe params, nested
+    const [outer, inner] = key.split(".");
+    if (inner === undefined) continue;
+    out[outer] = { ...(out[outer] || {}), [inner]: out[key] };
+    delete out[key];
+  }
   return out;
 }
 
@@ -395,7 +401,7 @@ export async function sidebar() {
     return;
   }
   const v = await ctx.view(st.k);
-  const kindsOf = (id) => ["node", "container", "group", "accelerator", "edge"].filter((kind) => v.details && v.details[`${kind}:${id}`]);
+  const kindsOf = (id) => ["node", "block", "container", "group", "accelerator", "edge"].filter((kind) => v.details && v.details[`${kind}:${id}`]);
   const kinds = kindsOf(sels[0]);
   // the selection's sites (D72): one route for one item or several, in the order selected
   const r = await get(`/api/step/${st.k}/site?${sels.map((x) => `sel=${enc(x)}`).join("&")}`);
@@ -431,7 +437,8 @@ export async function sidebar() {
 
 /** A dot on every item some site accepts. */
 export function decorate(v, root) {
-  const marked = new Set([...(v.marks ? v.marks.nodes : []), ...(v.marks ? v.marks.containers : [])]);
+  const m = v.marks || {};
+  const marked = new Set([...(m.nodes || []), ...(m.containers || []), ...(m.blocks || [])]);
   for (const el of root.querySelectorAll("[data-sel]")) {
     const name = el.getAttribute("data-sel");
     if (el.namespaceURI !== "http://www.w3.org/1999/xhtml") continue; // edges and outlines stay plain

@@ -78,6 +78,21 @@ nodes are the graph's own tree, each with its compact text, a map's tag and its 
 Positions are the browser's business: the boxes are HTML laid out by CSS,
 and the edges an SVG layer the viewer draws over them (static/dfg.js).
 
+**Blocks** (REUSE1, sandbox/blocks.py; ``fold``). A block not in the view's ``expanded`` is
+drawn as one top-level node of kind ``block`` in place of the top-level nodes it holds whole,
+its text ``matvec · matvec/matvec_dot3 · W = 4`` (``block_text``), an input ``in:A`` per
+container it reads from outside and an output ``out:x`` per container it writes, each with the
+first memlet met (its transients, written and read only inside it, have no box; a marked read
+keeps its ``Aᵀ``). An expanded block shows its own blocks the same way, and its nodes once they
+are expanded too. A block that holds a top-level node only in part (its outer maps hold other
+nodes) is always drawn as its nodes (``foldable`` false). The view's ``blocks`` list every
+block in the graph's order: ``name``, ``kernel``, ``recipe``, ``params``, ``text``, ``parent``,
+``depth``, ``collapsed`` (drawn as a box), ``hidden`` (inside a collapsed one), ``foldable``,
+``tops`` (the drawn top-level ids it covers, which the page outlines when it is open) and
+``together`` (the blocks of its depth sharing its units, D165, which open and close with it);
+Details ``block:<name>`` its kernel, recipe, params, heads, the block it is in, its blocks and
+units.
+
 **Accelerators** (D148). A bound graph nests accelerator ⊃ groups ⊃ units:
 ``accelerators`` lists each accelerator in the order the graph first uses
 it, its groups in the graph's order (a unit alone, or the units ``link``
@@ -232,6 +247,7 @@ from snax_forge.dfg.graph import BAKED, SCALAR, TRANSPOSE
 from snax_forge.dfg.subset import map_range, parse_dim
 from snax_forge.estimate.cost import L1_LABEL, L1Cost, caveat, dec3, heading, sig3
 from snax_forge.expr import ExprError
+from snax_forge.sandbox.blocks import BLOCK
 
 # A bank word, in bits: num_slc = WORD_BITS / b slices of a b-bit dtype
 WORD_BITS = 64
@@ -344,10 +360,11 @@ def entry_summary(e: Entry) -> dict[str, Any]:
 
 
 def graph_view(e: Entry, platform: Any = None, est: Any = None,
-               error: str | None = None, tech: str = DEFAULT_TECH) -> dict[str, Any]:  # fmt: skip
+               error: str | None = None, tech: str = DEFAULT_TECH,
+               expanded: Sequence[str] = ()) -> dict[str, Any]:  # fmt: skip
     """The rows, nodes and edges a panel draws, with their compact texts and Details (module
     doc); ``est`` the graph's estimate (or ``error`` why there is none), else made on
-    ``platform`` and costed on ``tech``."""
+    ``platform`` and costed on ``tech``; the blocks not ``expanded`` drawn as one box each."""
     out: dict[str, Any] = entry_summary(e)
     if e.graph is None:
         return out
@@ -360,7 +377,8 @@ def graph_view(e: Entry, platform: Any = None, est: Any = None,
         symbols=dict(g.symbols),
         containers={k: _container(g, k, placed.get(k)) for k in g.containers},
     )
-    out.update(_layout(g))
+    tops, out["blocks"] = fold(g, expanded)
+    out.update(_layout(g, tops))
     out["partners"] = partners(g, out["boxes"])
     out["shared"] = shared_units(g)
     out["accelerators"] = accelerators(g)
@@ -369,6 +387,8 @@ def graph_view(e: Entry, platform: Any = None, est: Any = None,
         for grp in acc["groups"]:
             grp["text"] = grp["name"]
     out["details"] = details(g, out, est)
+    for b in out["blocks"]:
+        out["details"][f"block:{b['name']}"] = block_details(g, b)
     for edge in out["edges"]:  # their memlet and packing are in Details
         edge.pop("text")
         edge.pop("packing", None)
@@ -377,15 +397,16 @@ def graph_view(e: Entry, platform: Any = None, est: Any = None,
 
 def step_view(e: Entry, label: str, platform: Any = None, marks: dict[str, list[str]] | None = None,
               diff: dict[str, Any] | None = None, est: Any = None, tech: str = DEFAULT_TECH,
-              recipe: Any = None, editable: bool = False) -> dict[str, Any]:  # fmt: skip
+              recipe: Any = None, editable: bool = False,
+              expanded: Sequence[str] = ()) -> dict[str, Any]:  # fmt: skip
     """One step (module doc): the graph's view, its label, marks, estimate and its summary,
     and diff; the cost on ``tech``; ``recipe`` the steps up to this one (a session's, or a
     sandbox folder's ``recipe.json``), whose params the left column's sections name, inputs
-    where ``editable`` (edit mode)."""
+    where ``editable`` (edit mode); the blocks ``expanded`` drawn as their nodes."""
     error = None
     if e.graph is not None and est is None:
         est, error = _estimated(e.graph, platform, tech)
-    out = graph_view(e, platform, est, error, tech)
+    out = graph_view(e, platform, est, error, tech, expanded)
     out["label"] = label
     out["tech"] = tech
     if e.graph is None:
@@ -1354,6 +1375,17 @@ def details(g: Graph, view: dict[str, Any], est: Any) -> dict[str, dict[str, Any
     return out
 
 
+def block_details(g: Graph, b: dict[str, Any]) -> dict[str, Any]:
+    """A block's Details: its kernel, recipe and params, where it sits, the units in it."""
+    rec = block_records(g)[b["name"]]
+    inner = [x["name"] for x in block_records(g).values() if x["parent"] == b["name"]]
+    return {"kind": "block", "kernel": rec["kernel"], "recipe": rec.get("recipe"),
+            "params": rec.get("params") or {}, "heads": list(rec["heads"]),
+            "in": rec["parent"], "blocks": inner, "units": rec["instances"],
+            "expands with": b["together"],
+            "drawn": "one box" if b["collapsed"] else "its nodes"}  # fmt: skip
+
+
 def _node_details(n: Node) -> dict[str, Any]:
     a = n.attrs
     if n.kind == "map":
@@ -1453,6 +1485,10 @@ def csr_connectors(g: Graph, n: Node) -> set[str]:
 def _node(g: Graph, n: Node) -> dict[str, Any]:
     """A node as the compact drawing shows it: its text, a map's tag, its connectors (where
     the edges meet it) and its body; the rest is in Details."""
+    if n.kind == "block":  # a collapsed block (fold)
+        return {"id": n.id, "kind": "block", "text": block_text(n.attrs["block"]),
+                "inputs": [_conn(c, m) for c, m in n.inputs.items()],
+                "outputs": [_conn(c, m) for c, m in n.outputs.items()]}  # fmt: skip
     csr = csr_connectors(g, n)
     d: dict[str, Any] = {
         "id": n.id,
@@ -1663,10 +1699,169 @@ def transpose_label(data: str, perm: Sequence[int]) -> str:
     return f"{data} · transpose({', '.join(map(str, perm))})"
 
 
-def _layout(g: Graph) -> dict[str, Any]:
-    """Rows, nodes and edges (module doc), the rows in columns, one per independent chain
-    (``columns``)."""
+# -- blocks (REUSE1, sandbox/blocks.py): a collapsed block drawn as one box --------------------
+
+LEAVES = ("tasklet", "accelerated", "link")
+
+
+def block_records(g: Graph) -> dict[str, dict[str, Any]]:
+    """Every block of ``g`` by name, in the graph's order: its record (sandbox/blocks.py) with
+    ``parent`` (the block holding it, or None), ``depth`` and ``instances`` (the units bound
+    in it)."""
+    out: dict[str, dict[str, Any]] = {}
+    for n, _ in g.walk():
+        path = n.attrs.get(BLOCK) or []
+        for i, b in enumerate(path):
+            rec = out.setdefault(b["name"], {**b, "parent": path[i - 1]["name"] if i else None,
+                                             "depth": i, "instances": []})  # fmt: skip
+            if n.kind == "accelerated" and n.attrs["instance"] not in rec["instances"]:
+                rec["instances"].append(n.attrs["instance"])
+    return out
+
+
+def _held(top: Node) -> list[str]:
+    """The blocks holding every leaf under ``top`` (tasklets, units, links), outer first."""
+    paths = [[b["name"] for b in n.attrs.get(BLOCK) or []] for n in _walk(top) if n.kind in LEAVES]
+    if not paths:
+        return []
+    out = []
+    for names in zip(*paths, strict=False):
+        if len(set(names)) != 1:
+            break
+        out.append(names[0])
+    return out
+
+
+def block_text(rec: dict[str, Any]) -> str:
+    """A block's text: ``dot · dot/dot_3 · W = 4``, a lifted one ``dot · dot · no recipe``."""
+    if "recipe" not in rec:
+        return f"{rec['name']} · {rec['kernel']} · no recipe"
+    params = "".join(f" · {k} = {v}" for k, v in (rec.get("params") or {}).items())
+    return f"{rec['name']} · {rec['recipe']}{params}"
+
+
+def fold(g: Graph, expanded: Sequence[str] = ()) -> tuple[list[Node], list[dict[str, Any]]]:
+    """The top-level nodes as drawn, a block not ``expanded`` as one node (module doc,
+    "Blocks"), and the blocks' list."""
+    recs = block_records(g)
     tops = list(g.body)
+    held = [_held(t) for t in tops]
+    touching: dict[str, list[int]] = {}
+    for k, t in enumerate(tops):
+        for n in _walk(t):
+            for b in n.attrs.get(BLOCK) or []:
+                if k not in touching.setdefault(b["name"], []):
+                    touching[b["name"]].append(k)
+    # a block whose top-level nodes it holds only in part stays drawn as its nodes
+    whole = {b for b, ks in touching.items() if all(b in held[k] for k in ks)}
+    open_ = set(expanded)
+    into: list[str | None] = []
+    for k in range(len(tops)):
+        into.append(next((b for b in held[k] if b in whole and b not in open_), None))
+    drawn: list[Node] = []
+    made: dict[str, Node] = {}
+    for k, t in enumerate(tops):
+        b = into[k]
+        if b is None:
+            drawn.append(t)
+        elif b not in made:
+            made[b] = _block_node(g, recs[b], [tops[j] for j in range(len(tops)) if into[j] == b])
+            drawn.append(made[b])
+    hidden = {b for b in recs if any(a in made for a in _ancestors(recs, b))}
+    shown_tops: dict[str, list[str]] = {}
+    for k, t in enumerate(tops):
+        for b in touching_of(t):
+            shown_tops.setdefault(b, [])
+            ident = into[k] if into[k] is not None else t.id
+            if ident not in shown_tops[b]:
+                shown_tops[b].append(ident)
+    together = _together(recs)
+    out = []
+    for name, rec in recs.items():
+        out.append({"name": name, "kernel": rec["kernel"], "recipe": rec.get("recipe"),
+                    "params": rec.get("params") or {}, "text": block_text(rec),
+                    "parent": rec["parent"], "depth": rec["depth"],
+                    "collapsed": name in made, "hidden": name in hidden,
+                    "foldable": name in whole, "tops": shown_tops.get(name, []),
+                    "together": together.get(name, [])})  # fmt: skip
+    return drawn, out
+
+
+def touching_of(top: Node) -> list[str]:
+    """The blocks some node under ``top`` is in, in the order met."""
+    out: list[str] = []
+    for n in _walk(top):
+        for b in n.attrs.get(BLOCK) or []:
+            if b["name"] not in out:
+                out.append(b["name"])
+    return out
+
+
+def _ancestors(recs: dict[str, dict[str, Any]], name: str) -> list[str]:
+    out = []
+    p = recs[name]["parent"]
+    while p is not None:
+        out.append(p)
+        p = recs[p]["parent"]
+    return out
+
+
+def _together(recs: dict[str, dict[str, Any]]) -> dict[str, list[str]]:
+    """Each block -> the blocks of its depth whose units it shares (D165: mvt's halves on one
+    vmul): they expand and collapse together."""
+    out: dict[str, list[str]] = {}
+    for a, ra in recs.items():
+        for b, rb in recs.items():
+            if (
+                a != b
+                and ra["depth"] == rb["depth"]
+                and set(ra["instances"]) & set(rb["instances"])
+            ):
+                out.setdefault(a, []).append(b)
+    return out
+
+
+def _block_node(g: Graph, rec: dict[str, Any], tops: list[Node]) -> Node:
+    """A collapsed block as one node: an input per container read from outside it (``in:A``),
+    an output per container written to outside it (``out:x``), each with the first memlet
+    met; its transients (written and read only inside) left out; a read ``mark_transpose``
+    marked keeps its mark."""
+    inside = {n.id for t in tops for n in _walk(t)}
+    users: dict[str, set[str]] = {}
+    for n, _ in g.walk():
+        for m in [*n.inputs.values(), *n.outputs.values()]:
+            users.setdefault(m.data, set()).add(n.id)
+    internal = {c for c, ids in users.items() if ids <= inside and g.containers[c].transient}
+    ins: dict[str, Memlet] = {}
+    outs: dict[str, Memlet] = {}
+    marks: dict[str, Any] = {}
+    for t in tops:
+        for side, n, c, m in _uses(t):
+            if m.data in internal or (side == "read" and c in csr_connectors(g, n)):
+                continue
+            if side == "read" and m.data not in ins:
+                ins[m.data] = m
+                perm = n.attrs.get(TRANSPOSE, {}).get(c)
+                if perm is not None:
+                    marks[f"in:{m.data}"] = perm
+            elif side == "write" and m.data not in outs:
+                outs[m.data] = m
+    attrs: dict[str, Any] = {"block": dict(rec)}
+    if marks:
+        attrs[TRANSPOSE] = marks
+    return Node(
+        rec["name"],
+        "block",
+        {f"in:{c}": m for c, m in ins.items()},
+        {f"out:{c}": m for c, m in outs.items()},
+        attrs,
+    )
+
+
+def _layout(g: Graph, tops: list[Node] | None = None) -> dict[str, Any]:
+    """Rows, nodes and edges (module doc), the rows in columns, one per independent chain
+    (``columns``); ``tops`` the top-level nodes as drawn (``fold``), else the graph's."""
+    tops = list(g.body) if tops is None else tops
     # A link's container gets no box: its writer's edge goes into the link, the link's out of it
     linked = {n.attrs["container"]: n.id for n, _ in g.walk() if n.kind == "link"}
     # nor does a fused nest's local value: its writer's connector joins its reader's
