@@ -1,7 +1,7 @@
 {
  "name": "mvt_2",
  "kernel": "mvt",
- "params": {"W_x1": 4, "W_x2": 4, "D": 1, "M": 8, "N": 16},
+ "params": {"W_x1": 4, "W_x2": 4, "D": 1, "M": 40, "N": 40},
  "symbols": {"M": "M", "N": "N"},
  "steps": [
   {"transform": "tag_map", "params": {"map": "tmp0_mult_map", "kind": "temporal"}},

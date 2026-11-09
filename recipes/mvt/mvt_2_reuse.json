@@ -1,7 +1,7 @@
 {
  "name": "mvt_2_reuse",
  "kernel": "mvt",
- "params": {"W_x1": 4, "W_x2": 4, "M": 8, "N": 16},
+ "params": {"W_x1": 4, "W_x2": 4, "M": 40, "N": 40},
  "symbols": {"M": "M", "N": "N"},
  "steps": [
   {"transform": "mark_transpose", "params": {"node": "tmp2_mult_map", "container": "A"}},
