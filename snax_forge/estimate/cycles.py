@@ -60,8 +60,8 @@ from types import ModuleType
 from typing import Any
 
 from snax_forge.common import CodedError, repo_root
+from snax_forge.design.streamers import group_links, group_runs, instance_nodes, instances
 from snax_forge.design.streamers import groups as graph_groups
-from snax_forge.design.streamers import instance_nodes, instances, link_ends, links
 from snax_forge.dfg import Graph, Node
 from snax_forge.dfg.subset import map_range
 from snax_forge.lower.c import fold_rate, job_writes
@@ -235,7 +235,7 @@ def datapath_blocks(graph: Graph) -> dict[str, Block]:
     design note ``char.missing`` reads."""
     insts, out = instances(graph), {}
     for members in graph_groups(graph).values():
-        ends = [(k, *link_ends(graph, k)) for k in links(graph) if k.attrs["from"] in members]
+        ends = group_links(graph, members)
         zero = dict.fromkeys(members, 0)
         units, bufs, _ = _datapath_blocks(graph, insts, members, ends, zero, zero)
         out |= units | bufs
@@ -260,8 +260,9 @@ def group_blocks(graph: Graph, job_width: int = 32,
         if n.kind == "accelerated":
             nodes.setdefault(n.attrs["instance"], []).append(n)
     out = []
+    runs = group_runs(graph)
     for name, members in graph_groups(graph).items():
-        ends = [(k, *link_ends(graph, k)) for k in links(graph) if k.attrs["from"] in members]
+        ends = group_links(graph, members)  # one per pair of ports (D165)
         fed = {to for _, _, to in ends}
         taken = {frm for _, frm, _ in ends}
         rule_units = [{"name": u, "L": insts[u].latency, "ii": insts[u].initiation_interval,
@@ -273,10 +274,8 @@ def group_blocks(graph: Graph, job_width: int = 32,
                        "depth": k.attrs["depth"]} for k, frm, to in ends]  # fmt: skip
         (owner,) = {u for u in members for p in insts[u].ports
                     if p.direction == "out" and f"{u}.{p.name}" not in taken}  # fmt: skip
-        tasks = (
-            [{u: nodes[u][0] for u in members}]
-            if len(members) > 1
-            else [{members[0]: n} for n in nodes[members[0]]]
+        tasks = (  # a linked group once per run (several when nests share it, D165)
+            runs[name] if len(members) > 1 else [{members[0]: n} for n in nodes[members[0]]]
         )
         cycles = bottleneck = 0
         firings, gives = dict.fromkeys(members, 0), dict.fromkeys(members, 0)
@@ -295,10 +294,12 @@ def group_blocks(graph: Graph, job_width: int = 32,
                 firings[u] += values[u]["n"]
                 t = ts[members.index(u)]
                 gives[u] += values[u]["n"] // t if t else 0  # T = 0: the empty run
-            bottleneck = max(bottleneck, *(values[u]["n"] * max(insts[u].initiation_interval,
-                                           insts[u].span) for u in members))  # fmt: skip
+            # per run (a group several nests share runs once per nest, D165): its slowest unit
+            bottleneck += max(values[u]["n"] * max(insts[u].initiation_interval, insts[u].span)
+                              for u in task)  # fmt: skip
         ramp = sum(insts[u].latency + insts[u].span - 1 for u in members)
         ramp += sum(k.attrs["depth"] >= 1 for k, _, _ in ends)
+        ramp *= len(tasks)  # each run fills the group's pipeline again
         inputs = sum(u["inputs"] for u in rule_units)
         units, bufs, bits = _datapath_blocks(graph, insts, members, ends, firings, gives)
         g = GroupEstimate(name, list(members), cycles, bottleneck, ramp,

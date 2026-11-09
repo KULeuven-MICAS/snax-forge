@@ -412,6 +412,8 @@ class Session:
             if transform == "bind":  # W -> W_<instance> (D156)
                 trial, renamed = rename_split_params(trial, g, step.params.get("instance"),
                                                      self.own_params)  # fmt: skip
+            if transform == "share":  # the shared group's split params into the other's (D165)
+                trial, renamed = merge_shared_params(trial, g, self.own_params)
                 params = dict(trial.steps[k].params)
                 added = {renamed.get(x, x): v for x, v in added.items()}
             self.recipe, self.graphs = trial, [*self.graphs[: k + 1], g]
@@ -882,6 +884,74 @@ def rename_split_params(recipe: Recipe, g: Graph, instance: str | None,
     return replace(recipe, params=params, steps=steps), renamed
 
 
+def merge_shared_params(recipe: Recipe, g: Graph, own: list[str]) -> tuple[Recipe, dict[str, str]]:
+    """After ``share`` (``g`` the shared graph, share.py): each param the shared nest's steps
+    name (its units' splits, its links' depths), renamed to the param the matching step of the
+    nest it now runs with names (unit by unit, link by link), when the two have the same value
+    and only the shared nest's steps name it (not one of ``own``): one param then drives every
+    nest of the group (D165; mvt's ``W_vmul_x2`` into ``W_vmul_x1``, ``D_2`` into ``D``). The
+    recipe and ``{old: new}``."""
+    from .share import SHARED
+
+    def split_params(ids: set[str]) -> list[tuple[int, str]]:
+        out = []
+        for i, st in enumerate(recipe.steps):
+            m, x = st.params.get("map"), st.params.get("factor")
+            if st.transform in SPLIT_SUFFIXES and isinstance(m, str) and isinstance(x, str):
+                inner = re.compile(
+                    rf"^{re.escape(m)}({'|'.join(SPLIT_SUFFIXES[st.transform])})(_\d+)?$"
+                )
+                if any(inner.match(y) for y in ids):
+                    out.append((i, x))
+        return out
+
+    def link_param(container: str) -> list[tuple[int, str]]:
+        return [(i, st.params["depth"]) for i, st in enumerate(recipe.steps)
+                if st.transform == "link" and st.params.get("container") == container
+                and isinstance(st.params.get("depth"), str)]  # fmt: skip
+
+    pairs: list[tuple[list[tuple[int, str]], list[tuple[int, str]]]] = []
+    nodes = [n for n, _ in g.walk() if n.kind in ("accelerated", "link")]
+    for n in nodes:
+        if SHARED not in n.attrs:
+            continue
+        if n.kind == "accelerated":
+            twin = next((m for m in nodes if m.kind == "accelerated" and SHARED not in m.attrs
+                         and m.attrs["instance"] == n.attrs["instance"]), None)  # fmt: skip
+            if twin is not None:
+                pairs.append((split_params(_map_ids(n.attrs.get("replaced"))),
+                              split_params(_map_ids(twin.attrs.get("replaced")))))  # fmt: skip
+        else:
+            twin = next((m for m in nodes if m.kind == "link" and SHARED not in m.attrs
+                         and (m.attrs["from"], m.attrs["to"]) == (n.attrs["from"], n.attrs["to"])),
+                        None)  # fmt: skip
+            if twin is not None:
+                pairs.append(
+                    (link_param(n.attrs["container"]), link_param(twin.attrs["container"]))
+                )
+    mine = {i for a, _ in pairs for i, _ in a}  # the shared nest's steps
+    renamed: dict[str, str] = {}
+    for a, b in pairs:
+        for (_, x), (_, y) in zip(a, b, strict=False):
+            if (
+                x == y
+                or x in renamed
+                or x in own
+                or y not in recipe.params
+                or x not in recipe.params
+            ):
+                continue
+            users = {j for j, st in enumerate(recipe.steps) if x in _step_names(st)}
+            if recipe.params[x] == recipe.params[y] and users <= mine:
+                renamed[x] = y
+    if not renamed:
+        return recipe, {}
+    steps = [Step(st.transform, {p: _renamed(v, renamed) for p, v in st.params.items()})
+             for st in recipe.steps]  # fmt: skip
+    params = {renamed.get(p, p): v for p, v in recipe.params.items() if p not in renamed}
+    return replace(recipe, params=params, steps=steps), renamed
+
+
 def _renamed(v: Any, renamed: dict[str, str]) -> Any:
     """A step param with the renamed params in place (a bare name; an expression rewritten)."""
     if not isinstance(v, str):
@@ -1012,6 +1082,12 @@ def form(
                 "value": value,
                 "hint": "an int baked into the hardware, or csr: read at run time from a CSR",
             }
+        elif name == "share" and p == "with":  # every group of its shape (share.py)
+            from .share import share_choices as group_choices
+
+            choices = group_choices(g, filled["group"])
+            field |= {"type": "choice", "readonly": False, "value": filled.get("with"),
+                      "choices": choices}  # fmt: skip
         elif name == "interchange_map" and p == "with":  # every map above and below it
             field |= _partner_field(g, filled["map"])
         elif name == "fuse_seed" and p == "second":  # the elementwise nest's maps

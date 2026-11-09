@@ -96,8 +96,9 @@ import numpy as np
 from snax_forge import expr
 from snax_forge.brm import Instance, port_dtypes
 from snax_forge.common import JsonFile
+from snax_forge.design.streamers import group_links as shared_links
 from snax_forge.design.streamers import groups as graph_groups
-from snax_forge.design.streamers import instance_nodes, link_ends, linked_ports, links
+from snax_forge.design.streamers import instance_nodes, linked_ports
 from snax_forge.dfg import Graph, Node
 from snax_forge.dfg.subset import map_range, parse_dim
 from snax_forge.lower.c import accelerators as c_accelerators
@@ -538,12 +539,8 @@ def describe(point: DesignPoint, point_path: str) -> Description:
             group_units = [_unit(point, u, mine[u], offsets) for u in members]
             status = Csr("STATUS", "ro", next(offsets), FIXED_WIDTH["STATUS"])
             counter = Csr("COUNTER", "ro", next(offsets), widths.counter)
-            group_links = []
-            for k in links(g):
-                if k.attrs["from"] in members:
-                    end_from, end_to = link_ends(g, k)
-                    group_links.append(Link(k.attrs["container"], end_from, end_to,
-                                            k.attrs["depth"]))  # fmt: skip
+            group_links = [Link(k.attrs["container"], end_from, end_to, k.attrs["depth"])
+                           for k, end_from, end_to in shared_links(g, members)]  # fmt: skip
             groups.append(Group(group_name, [start, jobs, status, counter], group_units,
                                 group_links))  # fmt: skip
             for u in members:
