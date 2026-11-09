@@ -53,10 +53,12 @@ chains are independent, not that they run at once: the body's order, and the
 accelerators' run in series (D158), stay. Each column draws its own input
 boxes (mvt's A once in each), but a container ``mark_transpose`` marked
 (``drawn_once``) is one box above the columns that read it, an edge into
-each; a marked edge is labelled at its start, under the box and outside the
-reader's map, ``Aᵀ`` for a matrix (``A · transpose(2, 0, 1)`` above two
-dimensions, ``transpose_label``), and its Details' memlet ends ``(transpose
-1, 0)``.
+each; a marked edge (``transpose``) is labelled beside it just above the
+reader's top-level map, at the container's font size, ``Aᵀ`` for a matrix
+(``A · transpose(2, 0, 1)`` above two dimensions, ``transpose_label``), and
+its Details' memlet ends ``(transpose 1, 0)``. A node's input connectors are
+ordered by where their edges come from (dfg.js's ``orderRows``), so mvt's
+``tmp0_mult`` takes y1 left of the shared A and the two do not cross.
 
 Each edge is one memlet: from a container box (or a writer's connector) to
 an input connector, or from an output connector to a container box, with its ``id``
@@ -1797,7 +1799,8 @@ def _layout(g: Graph) -> dict[str, Any]:
                     label = transpose_label(m.data, perm)
                     text = f"{text} (transpose {', '.join(map(str, perm))})"
                 edges.append(_edge(above[m.data], port, m.data, text, "read",
-                                   packing(g, n, c, m.data), label=label, seed=seeded))  # fmt: skip
+                                   packing(g, n, c, m.data), label=label, seed=seeded,
+                                   transpose=perm is not None))  # fmt: skip
         last[col] = (k, wrote)
     ends = [col["id"] for col in cols if col["id"] not in joined]
     for col in ends:  # the last row of each column: what its last node wrote
@@ -1822,16 +1825,20 @@ def _edge(
     local: bool = False,
     label: str | None = None,
     seed: bool = False,
+    transpose: bool = False,
 ) -> dict[str, Any]:
     """One memlet; ``pack`` the port's packing when it meets an accelerated node; ``local`` a
     fused nest's local value between its two tasklets, labelled with the container's name;
     ``label`` any other text drawn beside it (a scalar's ``alpha[0] · broadcast``, a fold's
-    seed ``q[m_t]``); ``seed`` a fold's seed."""
+    seed ``q[m_t]``); ``seed`` a fold's seed; ``transpose`` a read ``mark_transpose`` marked,
+    its label ``Aᵀ``."""
     out = {"id": f"{src}->{dst}", "from": src, "to": dst, "data": data, "text": text, "dir": side}
     if pack is not None:
         out["packing"] = pack
     if seed:
         out["seed"] = True
+    if transpose:
+        out["transpose"] = True
     if local:
         out |= {"local": True, "label": data}
     elif label is not None:

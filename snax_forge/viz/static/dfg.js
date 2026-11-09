@@ -266,7 +266,14 @@ function drawEdges(canvas, svg, edges, k) {
     const p = svgEl("path", { d, class: `edge ${e.dir}${e.local ? " local" : ""}${e.seed ? " seed" : ""}`, "data-sel": e.id, "marker-end": `url(#${marker})` });
     p._marker = marker;
     out.push(p);
-    if (e.label) { // a fused nest's local value (its name, no box), a scalar's broadcast (alpha[0] · broadcast) or a fold's seed (q[m_t]), api.py
+    if (e.label && e.transpose) { // a marked read (mark_transpose, api.py): Aᵀ beside its edge, just above the reader's top-level map, at the container's font size
+      const top = (b.closest(".c-row") || b).getBoundingClientRect().top - c.top;
+      const ty = Math.max(y1 + 14, top - 8);
+      const t = svgEl("text", { x: curveX(x1, y1, x2, y2, bend, ty) + 8, y: ty, class: "edge-label at-start transpose", "data-sel": e.data });
+      t.style.fontSize = getComputedStyle(a).fontSize;
+      t.textContent = e.label;
+      out.push(t);
+    } else if (e.label) { // a fused nest's local value (its name, no box), a scalar's broadcast (alpha[0] · broadcast) or a fold's seed (q[m_t]), api.py
       // a local value's right of its edge, halfway down (clear of the line and its arrow); a
       // broadcast's at its start, beside the hexagon, so no map bar it passes hides it
       const [tx, ty] = e.local ? [Math.max(x1, x2) + 10, (y1 + y2) / 2 + 4] : [x1 + 6, y1 + 14];
@@ -278,11 +285,25 @@ function drawEdges(canvas, svg, edges, k) {
   svg.replaceChildren(defs, ...out);
 }
 
+/** The x of an edge's curve (drawEdges's cubic) at height ``y``, by bisection: its y only
+grows from the start to the end. */
+function curveX(x1, y1, x2, y2, bend, y) {
+  const at = (t, p0, p1, p2, p3) => (1 - t) ** 3 * p0 + 3 * (1 - t) ** 2 * t * p1 + 3 * (1 - t) * t ** 2 * p2 + t ** 3 * p3;
+  let lo = 0, hi = 1;
+  for (let i = 0; i < 30; i++) {
+    const mid = (lo + hi) / 2;
+    if (at(mid, y1, y1 + bend, y2 - bend, y2 - 2) < y) lo = mid; else hi = mid;
+  }
+  return at(lo, x1, x1, x2, x2);
+}
+
 /** Each row of containers left to right by where its edges land: a box takes the place of the
 leftmost connector it feeds (else of the leftmost that wrote it), ties and boxes without edges in
 api.py's order, so an edge does not cross the row for want of an order (axpy's fused nest: y,
 read by augassign's left connector, first). The connectors sit in node rows, which the order
-does not move, so one pass settles it; it runs before the glide measures where the boxes are. */
+does not move, so one pass settles it. Then each node's input connectors by where their edges come
+from, so two edges into one node do not cross (mvt's tmp0_mult: y1, then the shared A). It runs
+before the glide measures where the boxes are. */
 function orderRows(panel) {
   const canvas = panel.querySelector(".c-canvas");
   if (!canvas || !panel._view) return;
@@ -302,6 +323,18 @@ function orderRows(panel) {
       const wrote = edges.filter((e) => e.to === key).map((e) => xOf(e.from));
       return { el, x: Math.min(...(fed.length ? fed : wrote.length ? wrote : [Infinity])), i };
     });
+    at.sort((a, b) => (a.x === b.x ? a.i - b.i : a.x - b.x));
+    at.forEach(({ el }, k) => { el.style.order = String(k); });
+  }
+  // then each node's input connectors left to right by where their edges come from (the box
+  // above, or the writer's connector), ties in the node's order: mvt's tmp0_mult takes y1 left of
+  // the shared A, so their edges do not cross
+  for (const row of canvas.querySelectorAll(".c-ports.in")) {
+    const at = [...row.children].map((el, i) => {
+      const from = edges.filter((e) => e.to === el.dataset.port).map((e) => xOf(e.from));
+      return { el, x: from.length ? Math.min(...from) : Infinity, i };
+    });
+    if (at.length < 2) continue;
     at.sort((a, b) => (a.x === b.x ? a.i - b.i : a.x - b.x));
     at.forEach(({ el }, k) => { el.style.order = String(k); });
   }
