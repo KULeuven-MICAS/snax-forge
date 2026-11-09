@@ -427,18 +427,15 @@ export async function sidebar() {
   ].filter(Boolean)); // replaceChildren would write a null as "null"
 }
 
-// -- the graph's marks and diff ---------------------------------------------------------------
+// -- the graph's marks ----------------------------------------------------------------------
 
-/** A dot on every item some site accepts, a highlight on what the step added or changed. */
+/** A dot on every item some site accepts. */
 export function decorate(v, root) {
   const marked = new Set([...(v.marks ? v.marks.nodes : []), ...(v.marks ? v.marks.containers : [])]);
-  const d = v.diff || { nodes: { added: [], changed: [] }, containers: { added: [], changed: [] } };
-  const diffed = new Set([...d.nodes.added, ...d.nodes.changed, ...d.containers.added, ...d.containers.changed]);
   for (const el of root.querySelectorAll("[data-sel]")) {
     const name = el.getAttribute("data-sel");
     if (el.namespaceURI !== "http://www.w3.org/1999/xhtml") continue; // edges and outlines stay plain
     el.classList.toggle("marked", marked.has(name));
-    el.classList.toggle("diffed", diffed.has(name));
   }
 }
 

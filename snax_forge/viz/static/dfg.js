@@ -407,8 +407,8 @@ function places() {
 }
 
 /** A new step's panel: each box that was on screen moves from there to its place, a box inside
-another by what is left of its own move; a new one fades in; the step's added and changed
-boxes (decorate's ``diffed``) arrive from a highlight; the edges are drawn when all settle. */
+another by what is left of its own move; a new one fades in; the edges are drawn when all
+settle. */
 function glide(panel, old) {
   const moved = new Map(); // box -> its whole move, which the boxes inside it share
   const runs = [];
@@ -416,7 +416,6 @@ function glide(panel, old) {
     const up = el.parentElement.closest(".c-canvas [data-sel]");
     const carried = (up && moved.get(up)) || [0, 0];
     const was = old.get(boxKey(el));
-    if (el.classList.contains("diffed")) el.classList.add("arrive");
     if (!was) {
       moved.set(el, carried);
       runs.push(el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: GLIDE_MS * 1.5, easing: "ease-out" }));

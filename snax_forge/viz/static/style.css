@@ -614,16 +614,10 @@ button.primary:disabled { opacity: 0.4; cursor: not-allowed; }
 .dfg-not-here ul { padding-left: 1rem; margin: 0.3rem 0; }
 .dfg-not-here li { margin-bottom: 0.25rem; overflow-wrap: anywhere; }
 .dfg-not-here b { color: var(--ink); font-weight: 600; }
-/* marks (a transform applies here) and the step's diff (added or changed) */
+/* marks (a transform applies here) */
 .c-node.marked::after, .c-pill.marked::after, .c-map.marked > .c-bar::after { content: ""; display: inline-block; width: 6px; height: 6px; margin-left: 0.35rem; border-radius: 50%; background: var(--hl); vertical-align: middle; }
 .c-node.marked { position: relative; }
 .c-node.marked::after { position: absolute; top: 3px; right: 3px; margin: 0; }
-/* the step's diff: a ring just outside the box, so a box keeps its own fill (a unit its green) */
-.c-node.diffed, .c-pill.diffed, .c-map.diffed > .c-bar { outline: 2px solid var(--wait); outline-offset: 3px; }
-/* a step just shown: its added and changed boxes arrive from a wider ring */
-.c-node.diffed.arrive, .c-pill.diffed.arrive, .c-map.diffed.arrive > .c-bar { animation: dfg-arrive 1.4s ease-out; }
-@keyframes dfg-arrive { from { outline-offset: 7px; outline-color: color-mix(in srgb, var(--wait) 85%, var(--ink)); } }
-@media (prefers-reduced-motion: reduce) { .arrive, .arrive > .c-bar { animation: none !important; } }
 /* the log */
 .dfg-log-bar { display: flex; gap: 0.5rem; }
 .dfg-log-bar button { padding: 0.05rem 0.5rem; font-size: 0.95em; }
