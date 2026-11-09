@@ -98,6 +98,7 @@ from snax_forge.design.streamers import (
     accelerator_of,
     accelerators,
     firing_loops,
+    group_runs,
     instances,
     linked_ports,
     port_loops,
@@ -254,6 +255,9 @@ class _Derivation:
         self.groups = accelerators(g)
         self.group_of = {u: k for k, units in unit_groups(g).items() for u in units}
         self.linked = {k: units for k, units in unit_groups(g).items() if len(units) > 1}
+        self.runs = {
+            m.id: run for runs in group_runs(g).values() for run in runs for m in run.values()
+        }  # a linked group's runs (D165)
         self.linked_ports = linked_ports(g)
         self.last_write = {m.data: n.id for n in self.nodes for m in n.outputs.values()}
         self.steps: list[Any] = []
@@ -265,11 +269,13 @@ class _Derivation:
         done: set[str] = set()
         for n in self.nodes:
             group = self.group_of[n.attrs["instance"]]
-            if group in done:  # a linked group's units are one task, at its first node
+            if n.id in done:  # a linked group's units are one task, at its first node
                 continue
             members = self.linked.get(group)
-            if members is not None:
-                done.add(group)
+            self.run_nodes = None
+            if members is not None:  # one run of the group: the nodes its links join (D165)
+                self.run_nodes = self.runs[n.id]
+                done.update(m.id for m in self.run_nodes.values())
             self.group(n, group, members)
         for c, cont in self.g.containers.items():
             if c in self.final and not cont.transient:
@@ -289,6 +295,7 @@ class _Derivation:
         self.stores(unit_nodes, own)
 
     # -- helpers ----------------------------------------------------------------------------
+    run_nodes: dict[str, Any] | None = None
 
     def slot_values(self, un: Any) -> dict[str, dict[str, str]]:
         """A unit's slots read from a container (CSRs, ``Instance.read``), each
@@ -297,11 +304,11 @@ class _Derivation:
         return {k: {"from": un.inputs[k].data} for k in inst.read}
 
     def unit_node(self, u: str) -> Any:
-        """A linked unit's one node."""
-        mine = [m for m in self.nodes if m.attrs["instance"] == u]
-        if len(mine) != 1:
-            raise LowerError(f"unit {u}: {len(mine)} nodes; a linked unit runs as one node")
-        return mine[0]
+        """A linked unit's node in the group's run being lowered (streamers.py's
+        ``group_runs``)."""
+        if self.run_nodes is None or u not in self.run_nodes:
+            raise LowerError(f"unit {u}: no node in this run of its group")
+        return self.run_nodes[u]
 
     def layout(self, c: str, mem: str) -> Layout | None:
         return self.plan.layouts.get(c, {}).get(mem)

@@ -55,9 +55,12 @@ SELECTED = {
     "bind": "node", "unbind": "node", "link": "container", "unlink": "container",
     "encapsulate": "units", "unencapsulate": "accelerator", "bake_scalar": "container",
     "unbake_scalar": "container", "interchange_map": "map", "fuse_seed": "first", "unfuse_seed": "map",
+    "mark_transpose": "node", "unmark_transpose": "node", "share": "group", "unshare": "group",
+    "lift": "at", "unlift": "name", "apply_recipe": "block", "unapply": "block",
+    "name_block": "nodes",
 }  # fmt: skip
 DEFAULTS = {"factor": 4, "kind": "temporal", "depth": 1, "group": "g", "accelerator": "acc",
-            "value": 3}  # fmt: skip
+            "value": 3, "kernel": "dot", "recipe": "dot/dot_3", "name": "block"}  # fmt: skip
 
 
 @cache
@@ -83,7 +86,7 @@ def default_calls(g: Graph, name: str, selected: str) -> list[dict[str, Any]]:
     params: dict[str, Any] = {}
     for p in TRANSFORMS[name].param_names():
         if p == SELECTED[name]:
-            params[p] = [selected] if p == "units" else selected
+            params[p] = [selected] if p in ("units", "nodes") else selected
         elif p == "with":  # interchange_map: the first other map, any
             maps = [n.id for n, _ in g.walk() if n.kind == "map" and n.id != selected]
             params[p] = maps[0] if maps else selected
@@ -99,6 +102,24 @@ def default_calls(g: Graph, name: str, selected: str) -> list[dict[str, Any]]:
         return [params]
     return [params | {"brm": b, "implementation": i, "instance": "u"}
             for b in library_names() for i in load_brm(b).implementations]  # fmt: skip
+
+
+# mvt's sizes for mark_transpose (test_transpose.py, tests/viz/test_columns.py)
+SIZES = {"M": 8, "N": 16}
+
+
+def mvt() -> Graph:
+    """mvt as imported, at SIZES."""
+    from snax_forge.sandbox import bind_recipe_symbols
+    from tests.helpers import imported
+
+    r = Recipe.from_dict({"name": "mvt", "kernel": "mvt", "symbols": SIZES, "steps": []})
+    return bind_recipe_symbols(r, imported("mvt"))
+
+
+def step(transform: str, **params: Any) -> dict[str, Any]:
+    """A recipe step."""
+    return {"transform": transform, "params": params}
 
 
 def tagged_names(g: Graph, map: str, factor: int) -> dict[str, str]:

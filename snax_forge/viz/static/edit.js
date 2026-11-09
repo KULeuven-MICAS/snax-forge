@@ -254,7 +254,7 @@ function field(f) {
       const t = c.timing;
       const timing = t ? `II ${t.ii} · latency ${t.latency} · span ${t.span}` : "";
       return h("label", { class: "dfg-choice" },
-        h("input", { type: "radio", name: "binding", value: String(i),
+        h("input", { type: "radio", name: "binding", value: String(i), "data-brm": c.value.brm, "data-impl": c.value.implementation,
           checked: f.value && c.value.brm === f.value.brm && c.value.implementation === f.value.implementation }),
         h("span", {}, c.label), h("small", {}, timing));
     }));
@@ -272,6 +272,23 @@ function field(f) {
     if (!no.length) return select;
     return h("span", { class: "dfg-choice-why" }, select,
       h("details", {}, h("summary", {}, `why not (${no.length})`), no.map((c) => h("p", { class: "muted" }, `${c.label}: ${c.message}`))));
+  }
+  if (f.name === "instance" && f.share && f.share.length) { // bind: a new instance, or one already bound to share (D165)
+    const input = h("input", { ...attrs, value: f.value === null || f.value === undefined ? "" : String(f.value) });
+    const pick = h("select", { class: "dfg-share", title: "share an instance already bound: one accelerator, run once per node" },
+      h("option", { value: "" }, "new instance"),
+      f.share.map((c, i) => h("option", { value: String(i), disabled: !c.ok, title: c.message || "" },
+        c.ok ? `share ${c.value}` : `share ${c.value} · cannot`)));
+    pick.onchange = () => {
+      const c = pick.value === "" ? null : f.share[Number(pick.value)];
+      input.value = c ? c.value : String(f.value ?? "");
+      if (!c) return;
+      const radio = pick.closest("form").querySelector(`input[name="binding"][data-brm="${CSS.escape(c.brm)}"][data-impl="${CSS.escape(c.implementation)}"]`);
+      if (radio) radio.checked = true;
+    };
+    const no = f.share.filter((c) => !c.ok);
+    return h("span", { class: "dfg-share-field" }, input, pick,
+      no.length ? h("details", {}, h("summary", {}, `why not (${no.length})`), no.map((c) => h("p", { class: "muted" }, `${c.value}: ${c.message}`))) : null);
   }
   if (f.type === "checklist") {
     const ticked = new Set(f.value || []);
@@ -336,6 +353,12 @@ function params(form, el) {
       out[f.name] = node.value;
     }
   }
+  for (const key of Object.keys(out)) { // ``params.W``: apply_recipe's sub-recipe params, nested
+    const [outer, inner] = key.split(".");
+    if (inner === undefined) continue;
+    out[outer] = { ...(out[outer] || {}), [inner]: out[key] };
+    delete out[key];
+  }
   return out;
 }
 
@@ -354,6 +377,33 @@ async function apply(transform, form, el) {
     ctx.state.t = null;
     await changed();
   }
+}
+
+/** ``apply_recipe``'s form: another recipe chosen, its own params' fields in place of the
+last one's (session.py's ``_apply_fields``), each a session param named as the server names
+one (``W``, or ``W_2`` when the session has W). */
+function recipeParams(form, formEl, label) {
+  const pick = formEl.querySelector('[data-field="recipe"]');
+  const field = form.find((f) => f.name === "recipe");
+  if (!pick || !field) return;
+  pick.addEventListener("change", () => {
+    const c = field.choices.find((x) => x.value === pick.value);
+    const known = { ...((ctx.state.session && ctx.state.session.params) || {}) };
+    const fresh = (p) => {
+      let n = p;
+      for (let k = 2; Object.prototype.hasOwnProperty.call(known, n); k++) n = `${p}_${k}`;
+      known[n] = true;
+      return n;
+    };
+    for (const el of formEl.querySelectorAll('[data-label^="params."]')) el.remove();
+    for (let i = form.length - 1; i >= 0; i--) if (form[i].name.startsWith("params.")) form.splice(i, 1);
+    const button = formEl.querySelector('button[type="submit"]');
+    for (const [p, v] of Object.entries((c && c.params) || {})) {
+      const f = { name: `params.${p}`, type: "int", sweepable: true, readonly: false, value: fresh(p), new_value: v };
+      form.push(f);
+      formEl.insertBefore(label(f), button);
+    }
+  });
 }
 
 /** The open form closed (Esc). */
@@ -378,7 +428,7 @@ export async function sidebar() {
     return;
   }
   const v = await ctx.view(st.k);
-  const kindsOf = (id) => ["node", "container", "group", "accelerator", "edge"].filter((kind) => v.details && v.details[`${kind}:${id}`]);
+  const kindsOf = (id) => ["node", "block", "container", "group", "accelerator", "edge"].filter((kind) => v.details && v.details[`${kind}:${id}`]);
   const kinds = kindsOf(sels[0]);
   // the selection's sites (D72): one route for one item or several, in the order selected
   const r = await get(`/api/step/${st.k}/site?${sels.map((x) => `sel=${enc(x)}`).join("&")}`);
@@ -387,9 +437,11 @@ export async function sidebar() {
   const no = Object.entries(answers).filter(([, a]) => !a.ok);
   const rows = ok.map(([name, a]) => {
     const isOpen = st.t === name;
+    const label = (f) => h("label", { class: `dfg-field${f.readonly ? " readonly" : ""}`, "data-label": f.name }, h("span", {}, f.name), field(f));
     const formEl = isOpen ? h("form", { class: "dfg-form", onsubmit: (ev) => { ev.preventDefault(); apply(name, a.form, formEl); } },
-      a.form.map((f) => h("label", { class: `dfg-field${f.readonly ? " readonly" : ""}` }, h("span", {}, f.name), field(f))),
+      a.form.map(label),
       h("button", { type: "submit", class: "primary", disabled: unfit(a.form) }, "Apply")) : null;
+    if (formEl && name === "apply_recipe") recipeParams(a.form, formEl, label);
     return h("div", { class: `dfg-transform${isOpen ? " open" : ""}` },
       h("button", { type: "button", class: "dfg-transform-name", "aria-expanded": isOpen ? "true" : "false",
         onclick: () => {
@@ -410,18 +462,16 @@ export async function sidebar() {
   ].filter(Boolean)); // replaceChildren would write a null as "null"
 }
 
-// -- the graph's marks and diff ---------------------------------------------------------------
+// -- the graph's marks ----------------------------------------------------------------------
 
-/** A dot on every item some site accepts, a highlight on what the step added or changed. */
+/** A dot on every item some site accepts. */
 export function decorate(v, root) {
-  const marked = new Set([...(v.marks ? v.marks.nodes : []), ...(v.marks ? v.marks.containers : [])]);
-  const d = v.diff || { nodes: { added: [], changed: [] }, containers: { added: [], changed: [] } };
-  const diffed = new Set([...d.nodes.added, ...d.nodes.changed, ...d.containers.added, ...d.containers.changed]);
+  const m = v.marks || {};
+  const marked = new Set([...(m.nodes || []), ...(m.containers || []), ...(m.blocks || [])]);
   for (const el of root.querySelectorAll("[data-sel]")) {
     const name = el.getAttribute("data-sel");
     if (el.namespaceURI !== "http://www.w3.org/1999/xhtml") continue; // edges and outlines stay plain
     el.classList.toggle("marked", marked.has(name));
-    el.classList.toggle("diffed", diffed.has(name));
   }
 }
 

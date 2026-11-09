@@ -155,10 +155,75 @@ def link_ends(graph: Graph, link: Node) -> tuple[str, str]:
     reader's whose memlets name its container."""
     a, ends = link.attrs, []
     for inst, side in ((a["from"], "outputs"), (a["to"], "inputs")):
-        node = instance_nodes(graph)[inst]
-        (port,) = [p for p, m in getattr(node, side).items() if m.data == a["container"]]
+        # the instance's node whose memlet names the container: one of several when nodes share
+        # the instance (D165), each with its own link (mvt's tmp0_prod and tmp2_prod)
+        (port,) = {p for n in accelerated(graph) if n.attrs["instance"] == inst
+                   for p, m in getattr(n, side).items() if m.data == a["container"]}  # fmt: skip
         ends.append(f"{inst}.{port}")
     return ends[0], ends[1]
+
+
+def group_links(graph: Graph, members: list[str]) -> list[tuple[Node, str, str]]:
+    """A group's links as ``(link node, from, to)``, one per pair of ports: a group several nests
+    share (D165) has a link node per nest on the same ports (mvt's tmp0_prod and tmp2_prod), one
+    piece of hardware; the first in the body's order stands for them."""
+    out, depth = [], {}
+    for k in links(graph):
+        if k.attrs["from"] in members:
+            ends = link_ends(graph, k)
+            if ends in depth:
+                if depth[ends] != k.attrs["depth"]:
+                    raise ValueError(f"links {ends[0]} -> {ends[1]}: depths {depth[ends]} and "
+                                     f"{k.attrs['depth']}; nests sharing a group link alike")  # fmt: skip
+                continue
+            depth[ends] = k.attrs["depth"]
+            out.append((k, *ends))
+    return out
+
+
+def group_runs(graph: Graph) -> dict[str, list[dict[str, Node]]]:
+    """Each linked group's runs, in the body's order: per run its units' nodes (instance ->
+    node), the nodes its links join (a writer of a link's container and its reader). A group
+    whose units each have one node is one run; a group several nests share (D165: mvt's half 2,
+    ``tmp2_mult -> tmp2_prod -> sum_1`` on half 1's ``vmul`` and ``vsum``) runs once per set of
+    nodes its links join. A run missing one of the group's units, or holding two nodes of one,
+    is a ``ValueError``."""
+    grouped = groups(graph)
+    linked = {k: units for k, units in grouped.items() if len(units) > 1}
+    group_of = {u: k for k, units in linked.items() for u in units}
+    mine = [n for n in accelerated(graph) if n.attrs["instance"] in group_of]
+    parent = {n.id: n.id for n in mine}
+
+    def root(x: str) -> str:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    contained = {k.attrs["container"] for k in links(graph)}
+    writer = {m.data: n.id for n in mine for m in n.outputs.values() if m.data in contained}
+    for n in mine:
+        for m in n.inputs.values():
+            if m.data in writer:
+                parent[root(n.id)] = root(writer[m.data])
+    runs: dict[str, dict[str, Node]] = {}
+    for n in mine:
+        run = runs.setdefault(root(n.id), {})
+        u = n.attrs["instance"]
+        if u in run:
+            raise ValueError(f"unit {u}: nodes {run[u].id} and {n.id} in one run "
+                              f"of group {group_of[u]}; a run holds one node per unit")  # fmt: skip
+        run[u] = n
+    out: dict[str, list[dict[str, Node]]] = {k: [] for k in linked}
+    for run in runs.values():
+        group = group_of[next(iter(run))]
+        missing = [u for u in linked[group] if u not in run]
+        if missing:
+            raise ValueError(f"group {group}: the run of "
+                              f"{', '.join(m.id for m in run.values())} has no node of "
+                              f"{', '.join(missing)}")  # fmt: skip
+        out[group].append({u: run[u] for u in linked[group]})
+    return out
 
 
 def linked_ports(graph: Graph) -> set[str]:

@@ -87,6 +87,9 @@ BAKED = "sandbox.baked"
 # a fold tasklet's record of the sandbox's fuse_seed: the transient and the elementwise nest it
 # took, for unfuse_seed (sandbox/seed.py)
 SEEDED = "sandbox.seeded"
+# a tasklet's mark of the sandbox's mark_transpose: {connector: π}, the input read across its
+# loop order (sandbox/transpose.py); a bound unit's keyed by the port
+TRANSPOSE = "sandbox.transpose"
 
 
 def baked_values(d: Any) -> dict[str, tuple[int, str]]:

@@ -10,7 +10,7 @@ Rules (D117):
 - A replaced or merged entry is removed, and its number goes under Retired with the entry that holds it now. A number is never changed or reused, since code, tests and docs cite them; the text of every retired entry is in git history (tag `pre-gvsoc`; RET1's at `cad6619`, CLN1's at `6079d24`).
 - Closing a milestone compacts this file and removes the done tasks from STATUS.
 - Markdown prose is never hard-wrapped: one line per paragraph, list item and table row (`util/md_reflow.py --check` in lint); headings, code blocks, tables, display maths and HTML stay as they are. An entry's three lines are about 300 characters.
-- A new decision gets the next number at the end of this file, with its area tag. Next free number: **D164**.
+- A new decision gets the next number at the end of this file, with its area tag. Next free number: **D167**.
 
 Area tags: `scope` (plan, ownership, order), `lower` (SNAX-LOWER), `gvsoc` (SNAX-GVSoC), `brm` (SNAX-BRM), `dfg` (SNAX-DFG and importers), `ref` (reference executor), `sandbox`, `design` (platform, checks, memory plan, design point), `flow`, `estimate` (the ideal estimate of a bound graph), `viz`, `docs`.
 
@@ -20,9 +20,9 @@ Area tags: `scope` (plan, ownership, order), `lower` (SNAX-LOWER), `gvsoc` (SNAX
 | lower | D64 D75 D105 D135 D144 D158 |
 | gvsoc | D120–D122 D125 D134 D137 |
 | brm | D68 D70 D82 D103 D129 D133 D143 D147 D149 D153 D163 |
-| dfg | D19 D71 D102 D148 D150 |
+| dfg | D19 D71 D102 D148 D150 D164 |
 | ref | D28 D79 |
-| sandbox | D72 D73 D156 |
+| sandbox | D72 D73 D156 D165 D166 |
 | design | D12 D84–D87 D131 D142 |
 | flow | D50 D108 D136 |
 | estimate | D154 D155 D160 |
@@ -214,3 +214,9 @@ Retired, and where each now lives:
 **D162** · dfg — A loop variable says which dimension it runs over, which piece of it, and its tag: a map over `0:X` (X one symbol) is named `lower(X)` at import (rowsum's `m` and `n`, so `A[m, n]`), unless the range is anything else or the name is taken, when it keeps DaCe's; the pieces of a split dimension are numbered outer to inner (`n_1`, `n_2`, `n_3`, renumbered as pieces are split or joined) and a tag adds `_t`, `_s` or `_tile` (`n_1_t`, `n_2_t`, `n_3_s`), the name derived from the map's `loop.dim` and `loop.piece` after every step, never typed; map ids stay as they are, so recipes do not change. Replaces DaCe's `i` and `j` and the `<var>_t` and next-free-pair names (D73). → C§11, C§12.
 
 **D163** · brm — A fold's result read only by an elementwise nest of the same op (mvt's x₁ + A y₁) is folded in as the fold's seed, a per-job port read on a job's first firing, by a step of its own, `fuse_seed` (inverse `unfuse_seed`), not a vecadd after the fold nor an "init" port; only `TreeAccumulate` and `SerialAccumulate` take one, the folds ending a reduction across lanes (`Mac` and `LaneAccumulate` need one only in the column form, tier A), their unseeded RTL unchanged. → C§10, C§11, C§12, C§17.
+
+**D164** · dfg — A read across the loop order (mvt's `A[m, n]` under the loops (n, m)) is marked by a step, `mark_transpose`, as an annotation on the reader (`sandbox.transpose`, the permutation π), not as a view container as DaCe's Transpose makes: the memlets keep the read order, LOWER derives the strides from them, and the mark is what a recipe's match (open item 117) and a later DMA-transpose variant read; the viewer draws the container once with `Aᵀ` on the edge. → C§11, C§12.
+
+**D165** · sandbox — Two nests run on one set of hardware by binding them to one instance (mvt's variant 1: both halves on one `vmul`, `vsum` and `vadd`), chosen in `bind`'s form ("share with") for a unit, and by `share` for a linked group once each nest is linked (its links make it a group): the graph holds an instance's nodes to one BRM, implementation and params, LOWER runs a group once per nest on the same streamers, the generator makes one link per pair of ports, and the estimate counts the area once. → C§11, C§12, C§19.
+
+**D166** · sandbox — A recipe is the unit of reuse: a recipe applies another on a region of its graph that matches the other's kernel (`apply_recipe`), so matvec is written as dot's variant on each row and mvt as matvec's on each half, and the user lifts a kernel's regions as blocks by hand, smaller first or larger first (`lift`), rather than a search applying recipes unasked; the match leaves the outer loops free and the transpose mark decorative, and the editor draws a block as one box in its firing loops. → C§12, `sandbox/blocks.py`.

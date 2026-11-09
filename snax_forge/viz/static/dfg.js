@@ -10,10 +10,11 @@
 // arrives; then its boxes glide from where they were (glide), unless the
 // browser asks for reduced motion.
 //
-// The URL hash holds the state, as in the run viewer: #step=<k>&sel=<id>&cmp=<j>&t=<transform>&tech=<tech>
+// The URL hash holds the state, as in the run viewer: #step=<k>&sel=<id>&cmp=<j>&t=<transform>&tech=<tech>&open=<blocks>
 // (step and cmp, view mode: the steps' names, dot4_w8/6_link from several folders, and an old
 // hash's bare stem or number still opens its step, /api/find; edit mode: numbers; t, edit mode: that transform's form open for the selection; tech, the technology the cost
-// estimate is on, one of /api/mode's techs, passed to every step and compare request). A selection is a name:
+// estimate is on, one of /api/mode's techs, passed to every step and compare request; open, the blocks drawn
+// as their nodes, comma-separated, passed as ?expand=). A selection is a name:
 // everything of that name is outlined (a link node and its container share one) and Details
 // shows each. In edit mode (edit.js) the steps are the session's, the shown one its cursor.
 
@@ -39,7 +40,7 @@ function status(msg, err = false) {
 
 // -- state ----------------------------------------------------------------------
 
-const state = { mode: "view", steps: [], k: 0, cmp: null, sel: null, sels: [], t: null, session: null, platform: null, tech: null, techs: [] };
+const state = { mode: "view", steps: [], k: 0, cmp: null, sel: null, sels: [], t: null, session: null, platform: null, tech: null, techs: [], expanded: new Set() };
 
 // The selection (D72): ``sels`` every selected item in the order selected (shift-click adds or
 // removes one), ``sel`` the last, which Details, the Bindings and the hash's ``t`` follow; the
@@ -49,7 +50,7 @@ function setSels(text) {
   state.sels = text ? String(text).split(",").filter(Boolean) : [];
   state.sel = state.sels.length ? state.sels[state.sels.length - 1] : null;
 }
-const views = new Map(); // step -> its view, until Reload
+const views = new Map(); // "step|expanded blocks" -> its view, until Reload
 const compares = new Map(); // "j/k" -> the compare answer
 
 const num = (v) => (v === null || v === "" || Number.isNaN(Number(v)) ? null : Number(v));
@@ -57,7 +58,7 @@ const num = (v) => (v === null || v === "" || Number.isNaN(Number(v)) ? null : N
 /** The hash as written; ``k`` and ``cmp`` are still its text until ``resolve``. */
 function readHash() {
   const q = new URLSearchParams(location.hash.slice(1));
-  return { k: q.get("step") || null, sel: q.get("sel") || null, cmp: q.get("cmp") || null, t: q.get("t") || null, tech: q.get("tech") || null };
+  return { k: q.get("step") || null, sel: q.get("sel") || null, cmp: q.get("cmp") || null, t: q.get("t") || null, tech: q.get("tech") || null, open: q.get("open") || null };
 }
 
 /** The hash's steps as numbers: edit mode's are; view mode's are names, an old hash's a bare
@@ -81,6 +82,7 @@ function writeHash() {
   if (state.cmp !== null) q.set("cmp", ref(state.cmp));
   if (state.t && state.sel) q.set("t", state.t);
   if (state.tech) q.set("tech", state.tech);
+  if (state.expanded.size) q.set("open", [...state.expanded].sort().join(","));
   history.replaceState(null, "", `#${q}`);
 }
 
@@ -88,9 +90,17 @@ const clampStep = (k) => Math.min(Math.max(k, 0), state.steps.length - 1);
 
 const techQuery = () => (state.tech ? `?tech=${encodeURIComponent(state.tech)}` : "");
 
+/** The blocks drawn as their nodes (``state.expanded``) as the step route's query. */
+const expandQuery = () => [...state.expanded].sort().map((b) => `&expand=${encodeURIComponent(b)}`).join("");
+const viewKey = (k) => `${k}|${[...state.expanded].sort().join(",")}`;
+
 async function view(k) {
-  if (!views.has(k)) views.set(k, await getJSON(`/api/step/${k}${techQuery()}`));
-  return views.get(k);
+  const key = viewKey(k);
+  if (!views.has(key)) {
+    const q = techQuery() + expandQuery();
+    views.set(key, await getJSON(`/api/step/${k}${q ? `?${q.replace(/^[?&]/, "")}` : ""}`));
+  }
+  return views.get(key);
 }
 
 async function compare(j, k) {
@@ -134,6 +144,10 @@ function ports(n, side) {
 }
 
 function nodeEl(n) {
+  if (n.kind === "block") { // a collapsed block (api.py's ``fold``): one box, double-click opens it
+    return h("div", { class: "c-node c-block", "data-sel": n.id, "data-block": n.id, title: "double-click to expand" },
+      ports(n, "in"), h("div", { class: "c-text" }, n.text), ports(n, "out"));
+  }
   if (n.kind === "map") {
     return h("div", { class: `c-map loop-${n.loop_kind || "none"}`, "data-sel": n.id },
       h("div", { class: "c-bar" }, n.text),
@@ -161,6 +175,20 @@ function pill(v, key) {
   const c = v.containers[b.container];
   return h("div", { class: `c-pill${c.transient ? " transient" : ""}${c.scalar ? " scalar" : ""}${b.again ? " again" : ""}`, "data-box": key, "data-sel": c.name },
     h("b", {}, c.text), c.badge ? h("span", { class: "c-badge" }, c.badge) : null);
+}
+
+/** Rows top to bottom (api.py's ``_layout``): a row of containers, a top-level node, or the
+independent chains' columns side by side, each its own rows (a join's node below them). */
+function rowEls(v, rows) {
+  return rows.map((r) => {
+    if (r.kind === "columns") {
+      return h("div", { class: "c-cols" }, r.columns.map((c) =>
+        h("div", { class: "c-col", "data-column": c.id }, rowEls(v, c.rows))));
+    }
+    return r.kind === "containers"
+      ? h("div", { class: "c-row" }, r.boxes.map((key) => pill(v, key)))
+      : h("div", { class: "c-row" }, topEl(r.node));
+  });
 }
 
 /** The steps as a dropdown's options; from several folders, an optgroup per folder (the
@@ -191,17 +219,14 @@ function panel(v, k, pick) {
   if (v.error) return h("section", { class: "c-panel broken" }, head, h("p", { class: "load-error" }, v.error));
   const svg = document.createElementNS(SVG, "svg");
   svg.setAttribute("class", "dfg-edges");
-  const rows = h("div", { class: "c-rows" }, v.rows.map((r) =>
-    r.kind === "containers"
-      ? h("div", { class: "c-row" }, r.boxes.map((key) => pill(v, key)))
-      : h("div", { class: "c-row" }, topEl(r.node))));
+  const rows = h("div", { class: "c-rows" }, rowEls(v, v.rows));
   const canvas = h("div", { class: "c-canvas" }, rows, svg);
   const el = h("section", { class: "c-panel" }, head, h("div", { class: "c-scroll" }, canvas));
   el._view = v;
   el._draw = () => {
     if (el.classList.contains("settling")) return; // the boxes are gliding: drawn once they settle
     drawEdges(canvas, svg, v.edges, k);
-    drawAccelerators(canvas, svg, v.accelerators || []);
+    drawOutlines(canvas, svg, v);
     outline();
   };
   new ResizeObserver(() => requestAnimationFrame(el._draw)).observe(canvas);
@@ -255,7 +280,23 @@ function drawEdges(canvas, svg, edges, k) {
     const p = svgEl("path", { d, class: `edge ${e.dir}${e.local ? " local" : ""}${e.seed ? " seed" : ""}`, "data-sel": e.id, "marker-end": `url(#${marker})` });
     p._marker = marker;
     out.push(p);
-    if (e.label) { // a fused nest's local value (its name, no box), a scalar's broadcast (alpha[0] · broadcast) or a fold's seed (q[m_t]), api.py
+    if (e.slice) { // a collapsed block's port (api.py's fold): the part one firing takes, beside its edge by the container's box
+      // a read's a third of the way down (edges from one box apart by then), a write's by the box below
+      const sy = e.dir === "read" ? Math.max(y1 + 14, y1 + (y2 - y1) * 0.3) : y2 - 8;
+      const left = e.dir === "read" && x2 < x1 - 4; // an edge going left: its label on its left side
+      const t = svgEl("text", { x: curveX(x1, y1, x2, y2, bend, sy) + (left ? -8 : 8), y: sy, "text-anchor": left ? "end" : "start",
+        class: "edge-label at-start slice", "data-sel": e.data });
+      t.textContent = e.slice;
+      out.push(t);
+    }
+    if (e.label && e.transpose) { // a marked read (mark_transpose, api.py): Aᵀ beside its edge, just above the reader's top-level map, at the container's font size
+      const top = (b.closest(".c-row") || b).getBoundingClientRect().top - c.top;
+      const ty = Math.max(y1 + 14, top - 8);
+      const t = svgEl("text", { x: curveX(x1, y1, x2, y2, bend, ty) + 8, y: ty, class: "edge-label at-start transpose", "data-sel": e.data });
+      t.style.fontSize = getComputedStyle(a).fontSize;
+      t.textContent = e.label;
+      out.push(t);
+    } else if (e.label) { // a fused nest's local value (its name, no box), a scalar's broadcast (alpha[0] · broadcast) or a fold's seed (q[m_t]), api.py
       // a local value's right of its edge, halfway down (clear of the line and its arrow); a
       // broadcast's at its start, beside the hexagon, so no map bar it passes hides it
       const [tx, ty] = e.local ? [Math.max(x1, x2) + 10, (y1 + y2) / 2 + 4] : [x1 + 6, y1 + 14];
@@ -267,11 +308,25 @@ function drawEdges(canvas, svg, edges, k) {
   svg.replaceChildren(defs, ...out);
 }
 
+/** The x of an edge's curve (drawEdges's cubic) at height ``y``, by bisection: its y only
+grows from the start to the end. */
+function curveX(x1, y1, x2, y2, bend, y) {
+  const at = (t, p0, p1, p2, p3) => (1 - t) ** 3 * p0 + 3 * (1 - t) ** 2 * t * p1 + 3 * (1 - t) * t ** 2 * p2 + t ** 3 * p3;
+  let lo = 0, hi = 1;
+  for (let i = 0; i < 30; i++) {
+    const mid = (lo + hi) / 2;
+    if (at(mid, y1, y1 + bend, y2 - bend, y2 - 2) < y) lo = mid; else hi = mid;
+  }
+  return at(lo, x1, x1, x2, x2);
+}
+
 /** Each row of containers left to right by where its edges land: a box takes the place of the
 leftmost connector it feeds (else of the leftmost that wrote it), ties and boxes without edges in
 api.py's order, so an edge does not cross the row for want of an order (axpy's fused nest: y,
 read by augassign's left connector, first). The connectors sit in node rows, which the order
-does not move, so one pass settles it; it runs before the glide measures where the boxes are. */
+does not move, so one pass settles it. Then each node's input connectors by where their edges come
+from, so two edges into one node do not cross (mvt's tmp0_mult: y1, then the shared A). It runs
+before the glide measures where the boxes are. */
 function orderRows(panel) {
   const canvas = panel.querySelector(".c-canvas");
   if (!canvas || !panel._view) return;
@@ -282,7 +337,7 @@ function orderRows(panel) {
     const r = a.getBoundingClientRect();
     return r.left + r.width / 2;
   };
-  for (const row of canvas.querySelectorAll(".c-rows > .c-row")) {
+  for (const row of canvas.querySelectorAll(".c-rows .c-row")) {
     const pills = [...row.children].filter((el) => el.dataset.box);
     if (pills.length < 2) continue;
     const at = pills.map((el, i) => {
@@ -294,9 +349,27 @@ function orderRows(panel) {
     at.sort((a, b) => (a.x === b.x ? a.i - b.i : a.x - b.x));
     at.forEach(({ el }, k) => { el.style.order = String(k); });
   }
+  // then each node's input connectors left to right by where their edges come from (the box
+  // above, or the writer's connector), ties in the node's order: mvt's tmp0_mult takes y1 left of
+  // the shared A, so their edges do not cross
+  for (const row of canvas.querySelectorAll(".c-ports.in")) {
+    const at = [...row.children].map((el, i) => {
+      const from = edges.filter((e) => e.to === el.dataset.port).map((e) => xOf(e.from));
+      return { el, x: from.length ? Math.min(...from) : Infinity, i };
+    });
+    if (at.length < 2) continue;
+    at.sort((a, b) => (a.x === b.x ? a.i - b.i : a.x - b.x));
+    at.forEach(({ el }, k) => { el.style.order = String(k); });
+  }
 }
 
-// -- groups and accelerators (D148): a thin dashed outline each, the name on top ---------
+// -- outlines: groups and accelerators (D148), open blocks (REUSE1) ------------------------------
+// One pass for the three kinds, from the inside out: an outline holds the outlines whose boxes
+// it holds (a group inside its accelerator, both inside an open block around the same boxes),
+// each GAP px outside the ones it holds and its name in a band of its own (a group's on top at
+// the left, an accelerator's on top at the right, a block's at the bottom left), so none
+// crosses another or its name. The rows that hold an outline's first and last box get the
+// margin it needs above and below, so it clears the containers' rows too.
 
 function unionRect(canvas, rects) {
   const c = canvas.getBoundingClientRect();
@@ -308,43 +381,152 @@ function unionRect(canvas, rects) {
   };
 }
 
-const LABEL = 17; // px above an outline's content for its name (style.css: 0.85rem)
+const LABEL = 17; // px of an outline's band for its name (style.css: 0.85rem)
+const GAP = 8; // px between an outline and what it holds
 
-/** An outline with its name on top: a group's at the left, an accelerator's at the right. */
-function outlineBox(r, pad, cls, name) {
-  const g = svgEl("g", { class: cls, "data-sel": name, ...(cls === "group-box" ? { "data-group": name } : {}) });
-  const box = { x: r.left - pad, y: r.top - pad - LABEL, width: r.right - r.left + 2 * pad,
-    height: r.bottom - r.top + 2 * pad + LABEL, rx: 6 };
-  g.append(svgEl("rect", { ...box, class: "outline-hit" })); // a wide band to click, as an edge's
-  g.append(svgEl("rect", box));
-  const right = cls === "acc-box";
-  const t = svgEl("text", { x: right ? r.right + pad - 6 : r.left - pad + 6, y: r.top - pad - 4,
-    "text-anchor": right ? "end" : "start" });
-  t.textContent = name;
-  g.append(t);
-  return g;
+/** Every outline to draw: ``{kind, name, text, tops, rank}``, ``rank`` ordering outlines
+around the same boxes (a group inside its accelerator inside a block, a deeper block inside). */
+function outlines(v) {
+  const out = [];
+  for (const acc of v.accelerators || []) {
+    const groups = acc.groups.filter((g) => g.drawn !== false);
+    for (const grp of groups) out.push({ kind: "group", name: grp.text, text: grp.text, tops: grp.tops, rank: 0 });
+    // an accelerator that is one group of its name (dot 2 to 6) is drawn once, as the group
+    if (!groups.length || (acc.groups.length === 1 && acc.groups[0].name === acc.name)) continue;
+    out.push({ kind: "acc", name: acc.text, text: acc.text, tops: [...new Set(groups.flatMap((g) => g.tops))], rank: 1 });
+  }
+  const open = (v.blocks || []).filter((b) => !b.collapsed && !b.hidden && b.foldable);
+  const same = new Map(); // blocks open around the same boxes: one outline, ``matvec › dot``
+  for (const b of open) {
+    const key = b.tops.join(",");
+    if (!same.has(key)) same.set(key, []);
+    same.get(key).push(b);
+  }
+  const deepest = Math.max(0, ...open.map((b) => b.depth));
+  for (const bs of same.values()) {
+    bs.sort((a, b) => a.depth - b.depth);
+    const inner = bs[bs.length - 1];
+    out.push({ kind: "block", name: inner.name, block: inner.name, tops: bs[0].tops, rank: 2 + deepest - bs[0].depth,
+      text: `▾ ${bs.length > 1 ? bs.map((b) => b.name).join(" › ") : inner.text}`,
+      tip: `${bs.map((b) => b.text).join("\n")}\ndouble-click to collapse` });
+  }
+  return out;
 }
 
-function drawAccelerators(canvas, svg, accelerators) {
-  const out = [];
-  for (const acc of accelerators) {
-    const rects = [];
-    for (const grp of acc.groups) {
-      const tops = grp.tops.map((id) => canvas.querySelector(`[data-top="${CSS.escape(id)}"]`));
-      const r = unionRect(canvas, tops.map((t) => t && t.getBoundingClientRect()));
-      if (!r) continue;
-      rects.push(r);
-      out.push(outlineBox(r, 8, "group-box", grp.text));
+/** ``a`` holds ``b``: every box of ``b`` is one of ``a``'s, and ``a`` ranks above ``b`` when
+they hold the same. */
+function holds(a, b) {
+  if (a === b || !b.tops.every((t) => a.tops.includes(t))) return false;
+  return a.tops.length > b.tops.length || a.rank > b.rank;
+}
+
+function drawOutlines(canvas, svg, v) {
+  const list = outlines(v);
+  const top = (id) => canvas.querySelector(`[data-top="${CSS.escape(id)}"]`);
+  for (const o of list) o.els = o.tops.map(top).filter(Boolean);
+  const shown = list.filter((o) => o.els.length);
+  const boxOf = new Map();
+  const box = (o) => { // the outline's box, its name's band included, after those it holds
+    if (boxOf.has(o)) return boxOf.get(o);
+    const r = unionRect(canvas, o.els.map((el) => el.getBoundingClientRect()));
+    for (const inner of shown) {
+      if (!holds(o, inner)) continue;
+      const b = box(inner);
+      r.left = Math.min(r.left, b.left); r.right = Math.max(r.right, b.right);
+      r.top = Math.min(r.top, b.top); r.bottom = Math.max(r.bottom, b.bottom);
     }
-    // An accelerator that is one group of its name (dot 2 to 6) is drawn once, as the group.
-    if (!rects.length || (acc.groups.length === 1 && acc.groups[0].name === acc.name)) continue;
-    const all = {
-      left: Math.min(...rects.map((x) => x.left)), top: Math.min(...rects.map((x) => x.top)) - LABEL - 4,
-      right: Math.max(...rects.map((x) => x.right)), bottom: Math.max(...rects.map((x) => x.bottom)),
-    };
-    out.push(outlineBox(all, 16, "acc-box", acc.text));
+    const b = { left: r.left - GAP, right: r.right + GAP, top: r.top - GAP - (o.kind === "block" ? 0 : LABEL),
+      bottom: r.bottom + GAP + (o.kind === "block" ? LABEL : 0) };
+    boxOf.set(o, b);
+    return b;
+  };
+  const out = [];
+  const room = new Map(); // a row -> the room its outlines need above and below it
+  for (const o of shown) {
+    const b = box(o);
+    const cls = { group: "group-box", acc: "acc-box", block: "block-box" }[o.kind];
+    const g = svgEl("g", { class: cls, "data-sel": o.name, ...(o.kind === "group" ? { "data-group": o.name } : {}),
+      ...(o.block ? { "data-block": o.block } : {}) });
+    const rect = { x: b.left, y: b.top, width: b.right - b.left, height: b.bottom - b.top, rx: o.kind === "block" ? 10 : 6 };
+    g.append(svgEl("rect", { ...rect, class: "outline-hit" }), svgEl("rect", rect));
+    const t = o.kind === "acc"
+      ? svgEl("text", { x: b.right - 6, y: b.top + LABEL - 5, "text-anchor": "end" })
+      : svgEl("text", { x: b.left + 6, y: o.kind === "block" ? b.bottom - 5 : b.top + LABEL - 5 });
+    t.textContent = o.text;
+    g.append(t);
+    if (o.tip) {
+      const tip = svgEl("title", {});
+      tip.textContent = o.tip;
+      g.append(tip);
+    }
+    out.push(g);
+    const rows = o.els.map((el) => el.closest(".c-row")).filter(Boolean);
+    const c = canvas.getBoundingClientRect();
+    const first = rows.reduce((x, y) => (y.getBoundingClientRect().top < x.getBoundingClientRect().top ? y : x));
+    const last = rows.reduce((x, y) => (y.getBoundingClientRect().bottom > x.getBoundingClientRect().bottom ? y : x));
+    const up = first.getBoundingClientRect().top - c.top - b.top;
+    const down = b.bottom - (last.getBoundingClientRect().bottom - c.top);
+    room.set(first, { ...(room.get(first) || { up: 0, down: 0 }), up: Math.max(up, (room.get(first) || { up: 0 }).up) });
+    room.set(last, { ...(room.get(last) || { up: 0, down: 0 }), down: Math.max(down, (room.get(last) || { down: 0 }).down) });
   }
   svg.append(...out);
+  // the room each row needs: a margin, set only when it changes (the panel's ResizeObserver
+  // redraws once with it)
+  for (const row of canvas.querySelectorAll(".c-row")) {
+    const want = room.get(row) || { up: 0, down: 0 };
+    const gap = parseFloat(getComputedStyle(row.parentElement).rowGap) || 0; // what the rows keep already
+    const mt = `${Math.max(0, Math.ceil(want.up - gap + 22))}px`; // a pill's height clear of it
+    const mb = `${Math.max(0, Math.ceil(want.down - gap + 22))}px`;
+    if (row.style.marginTop !== mt) row.style.marginTop = mt;
+    if (row.style.marginBottom !== mb) row.style.marginBottom = mb;
+  }
+}
+
+/** Block ``name`` opened or closed (its view's ``blocks``): opening opens the blocks holding
+it, closing closes those inside it; the blocks sharing its units (``together``) go with it. */
+async function toggleBlock(name) {
+  const v = await view(state.k);
+  const list = v.blocks || [];
+  const by = new Map(list.map((b) => [b.name, b]));
+  const b = by.get(name);
+  if (!b || !b.foldable) return;
+  const names = [name, ...(b.together || [])];
+  const shown = b.collapsed || b.hidden ? false : true;
+  for (const x of names) {
+    if (shown) {
+      state.expanded.delete(x);
+      for (const y of list) { // the blocks inside it close too
+        let p = y.parent;
+        while (p) {
+          if (p === x) state.expanded.delete(y.name);
+          p = by.get(p) ? by.get(p).parent : null;
+        }
+      }
+    } else {
+      let p = x;
+      while (p) {
+        state.expanded.add(p);
+        p = by.get(p) ? by.get(p).parent : null;
+      }
+    }
+  }
+  draw();
+}
+
+/** The Blocks section: each block indented under the block holding it, a toggle to open or
+close it, its name to select it and its text (``dot · dot/dot_3 · W = 4``). */
+async function blocks() {
+  const box = $("blocks");
+  if (!box) return;
+  const v = await view(state.k);
+  const list = v.blocks || [];
+  $("blocks-panel").hidden = !list.length;
+  box.replaceChildren(...list.map((b) => h("div", { class: `dfg-block${state.sels.includes(b.name) ? " sel" : ""}`, style: `padding-left: ${b.depth * 0.9}rem` },
+    h("button", { type: "button", class: "dfg-block-toggle", disabled: !b.foldable,
+      title: !b.foldable ? "drawn as its nodes: it holds part of a top-level nest only" : b.collapsed || b.hidden ? "expand" : "collapse",
+      onclick: () => toggleBlock(b.name) }, b.collapsed || b.hidden ? "▸" : "▾"),
+    h("button", { type: "button", class: "dfg-cont-name", onclick: () => select(b.name) }, b.name),
+    h("span", { class: "mono muted" }, ` ${b.recipe ? `${b.recipe}${Object.entries(b.params).map(([k, x]) => ` · ${k} = ${x}`).join("")}` : b.kernel ? `${b.kernel} · no recipe` : "by hand"}`))));
 }
 
 // -- the move between steps: the boxes glide from their old places --------------------------
@@ -363,8 +545,8 @@ function places() {
 }
 
 /** A new step's panel: each box that was on screen moves from there to its place, a box inside
-another by what is left of its own move; a new one fades in; the step's added and changed
-boxes (decorate's ``diffed``) arrive from a highlight; the edges are drawn when all settle. */
+another by what is left of its own move; a new one fades in; the edges are drawn when all
+settle. */
 function glide(panel, old) {
   const moved = new Map(); // box -> its whole move, which the boxes inside it share
   const runs = [];
@@ -372,7 +554,6 @@ function glide(panel, old) {
     const up = el.parentElement.closest(".c-canvas [data-sel]");
     const carried = (up && moved.get(up)) || [0, 0];
     const was = old.get(boxKey(el));
-    if (el.classList.contains("diffed")) el.classList.add("arrive");
     if (!was) {
       moved.set(el, carried);
       runs.push(el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: GLIDE_MS * 1.5, easing: "ease-out" }));
@@ -406,6 +587,15 @@ function outline() {
     for (const el of document.querySelectorAll(`#graphs [data-sel="${CSS.escape(name)}"]`)) {
       el.classList.add("sel");
       if (el._marker) el.setAttribute("marker-end", `url(#${el._marker}-sel)`);
+    }
+  }
+  // a selected unit's instance shared by other nodes (api.py's ``shared``, D165): those too
+  for (const panelEl of document.querySelectorAll("#graphs .c-panel")) {
+    const shared = (panelEl._view && panelEl._view.shared) || {};
+    for (const name of state.sels) {
+      for (const other of shared[name] || []) {
+        for (const el of panelEl.querySelectorAll(`.c-node[data-sel="${CSS.escape(other)}"]`)) el.classList.add("sel");
+      }
     }
   }
   showPartners();
@@ -457,6 +647,7 @@ function select(name, add = false) {
   details();
   containers();
   bindings();
+  blocks();
   if (state.mode === "edit") edit.sidebar();
 }
 
@@ -469,7 +660,7 @@ function goto(k) {
   }
 }
 
-const KINDS = ["node", "container", "group", "accelerator", "edge"];
+const KINDS = ["node", "block", "container", "group", "accelerator", "edge"];
 
 function valueText(v) {
   if (v === null || v === undefined) return "–";
@@ -539,7 +730,7 @@ function costRows(cost) {
 /** Every container that a symbol's shape uses, highlighted in the Containers and the graph
 (focus or hover on the symbol in the Symbols). */
 function hlSymbol(name, on) {
-  const v = views.get(state.k);
+  const v = views.get(viewKey(state.k));
   const users = new Set(((v && v.containers_section) || []).filter((c) => c.symbols.includes(name)).map((c) => c.name));
   for (const el of document.querySelectorAll("#containers [data-cont]")) {
     el.classList.toggle("sym-hl", on && users.has(el.dataset.cont));
@@ -775,7 +966,7 @@ async function draw() {
     }
     drawn = now;
     requestAnimationFrame(() => panels.forEach((p) => p._draw && p._draw()));
-    await Promise.all([details(), estimate(), containers(), bindings(), state.mode === "edit" ? edit.sidebar() : null]);
+    await Promise.all([details(), estimate(), blocks(), containers(), bindings(), state.mode === "edit" ? edit.sidebar() : null]);
     const broken = state.steps.filter((s) => s.error).length;
     status(broken ? `${broken} of ${state.steps.length} files did not load` : "", broken > 0);
   } catch (e) {
@@ -807,6 +998,7 @@ async function show() {
 async function load() {
   status("Loading…");
   let want = readHash();
+  state.expanded = new Set((want.open || "").split(",").filter(Boolean));
   try {
     const mode = await getJSON("/api/mode");
     state.mode = mode.mode;
@@ -896,6 +1088,11 @@ $("graphs").addEventListener("click", (ev) => {
   if (ev.shiftKey && !t) return; // a shift-click on empty space keeps the selection
   select(t ? t.getAttribute("data-sel") : null, ev.shiftKey);
 });
+// A double-click on a block's box or outline opens or closes it (and the blocks sharing its units).
+$("graphs").addEventListener("dblclick", (ev) => {
+  const t = ev.target.closest("[data-block]");
+  if (t) toggleBlock(t.getAttribute("data-block"));
+});
 // Keys: ← → the steps; Esc closes an open form, then clears the selection; edit mode: Enter
 // applies the form that has the focus, Ctrl+Z (⌘Z) undoes, Ctrl+Shift+Z redoes. In a text field
 // only Enter and Esc in a form count; a dialog keeps its own keys.
@@ -927,6 +1124,12 @@ window.addEventListener("hashchange", async () => {
     want = await resolve(readHash());
   } catch (e) {
     status(String(e.message || e), true);
+    return;
+  }
+  const open = (want.open || "").split(",").filter(Boolean).sort().join(",");
+  if (open !== [...state.expanded].sort().join(",")) { // another block opened or closed: redraw
+    state.expanded = new Set(open.split(",").filter(Boolean));
+    draw();
     return;
   }
   const tech = pickTech(want.tech, state.tech);

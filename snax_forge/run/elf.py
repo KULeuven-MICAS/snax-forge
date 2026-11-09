@@ -26,6 +26,7 @@ from typing import Any
 
 import numpy as np
 
+from snax_forge.common import c_name
 from snax_forge.dfg.pad import padded_shape
 from snax_forge.lower.layout import l2_bytes, over
 
@@ -72,10 +73,11 @@ def l2_symbols(point: Any, symbols: dict[str, tuple[int, int]]) -> dict[str, dic
         if "l2" not in lays:
             continue
         want = l2_bytes(point, name)
-        if name not in symbols:
+        sym = c_name(name)  # data.h's array of the container
+        if sym not in symbols:
             raise RunError("elf.missing", f"container {name} lives in L2, the ELF has no symbol "
-                           f"{name!r} (data.h declares it)")  # fmt: skip
-        addr, size = symbols[name]
+                           f"{sym!r} (data.h declares it)")  # fmt: skip
+        addr, size = symbols[sym]
         if size != want:
             block = over(point.memory.layouts[name]["l2"], padded_shape(point.graph, name))
             n = int(np.prod(block.shape))  # a tail's pads and a pitched row's gap

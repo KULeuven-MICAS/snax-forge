@@ -603,9 +603,16 @@ def _ends(g: Graph, container: str) -> tuple[Node, Node]:
 
 
 def _link_site(g: Graph, container: str) -> dict[str, Any]:
-    """``container`` and a ``group``: an end's group name, else the graph's."""
+    """``container`` and a ``group``: an end's group name, else the graph's, or the next free
+    one (``mvt_2``) when another unit's instance or group has it (mvt's second half)."""
     w, r = _ends(g, container)
-    return {"container": container, "group": w.attrs.get("group", r.attrs.get("group", g.name))}
+    named = w.attrs.get("group", r.attrs.get("group"))
+    if named is not None:
+        return {"container": container, "group": named}
+    mine = {w.attrs["instance"], r.attrs["instance"]}
+    others = [n for n in _accelerated(g) if n.attrs["instance"] not in mine]
+    taken = {n.attrs["instance"] for n in others} | {_group(n) for n in others}
+    return {"container": container, "group": fresh(g.name, taken)}
 
 
 def link(g: Graph, container: str, depth: int, group: str) -> Graph:

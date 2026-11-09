@@ -282,3 +282,49 @@ class JsonFile:
     @classmethod
     def load(cls, path: str | Path) -> Any:
         return cls.from_dict(json.loads(Path(path).read_text()))  # type: ignore[attr-defined]
+
+
+# The names a container may not have as a C array in data.h: C's keywords, what the runtime's
+# headers declare at file scope (snRuntime's sync.h includes snax-gvsoc's sw/math/include/math.h,
+# whose POSIX Bessel functions j0, j1, jn, y0, y1, yn are mvt's y1), and the libc and main.c names
+# a program may meet. c_name gives such a container a name of its own.
+RESERVED_C = frozenset({
+    "auto", "break", "case", "char", "const", "continue", "default", "do", "double", "else",
+    "enum", "extern", "float", "for", "goto", "if", "inline", "int", "long", "register",
+    "restrict", "return", "short", "signed", "sizeof", "static", "struct", "switch", "typedef",
+    "union", "unsigned", "void", "volatile", "while", "abort", "abs", "atoi", "calloc", "div",
+    "exit", "free", "labs", "main", "malloc", "memcmp", "memcpy", "memmove", "memset", "printf",
+    "putchar", "puts", "rand", "realloc", "signgam", "srand", "strcmp", "strcpy", "strlen",
+    "acos", "acosf", "acosh", "acoshf", "acoshl", "acosl", "asin", "asinf", "asinh", "asinhf",
+    "asinhl", "asinl", "atan", "atan2", "atan2f", "atan2l", "atanf", "atanh", "atanhf", "atanhl",
+    "atanl", "cbrt", "cbrtf", "cbrtl", "ceil", "ceilf", "ceill", "copysign", "copysignf",
+    "copysignl", "cos", "cosf", "cosh", "coshf", "coshl", "cosl", "drem", "dremf", "erf", "erfc",
+    "erfcf", "erfcl", "erff", "erfl", "exp", "exp10", "exp10f", "exp10l", "exp2", "exp2f",
+    "exp2l", "expf", "expl", "expm1", "expm1f", "expm1l", "fabs", "fabsf", "fabsl", "fdim",
+    "fdimf", "fdiml", "finite", "finitef", "floor", "floorf", "floorl", "fma", "fmaf", "fmal",
+    "fmax", "fmaxf", "fmaxl", "fmin", "fminf", "fminl", "fmod", "fmodf", "fmodl", "fpclassify",
+    "frexp", "frexpf", "frexpl", "hypot", "hypotf", "hypotl", "ilogb", "ilogbf", "ilogbl",
+    "isfinite", "isgreater", "isgreaterequal", "isinf", "isless", "islessequal", "islessgreater",
+    "isnan", "isnormal", "isunordered", "j0", "j0f", "j1", "j1f", "jn", "jnf", "ldexp", "ldexpf",
+    "ldexpl", "lgamma", "lgamma_r", "lgammaf", "lgammaf_r", "lgammal", "lgammal_r", "llrint",
+    "llrintf", "llrintl", "llround", "llroundf", "llroundl", "log", "log10", "log10f", "log10l",
+    "log1p", "log1pf", "log1pl", "log2", "log2f", "log2l", "logb", "logbf", "logbl", "logf",
+    "logl", "lrint", "lrintf", "lrintl", "lround", "lroundf", "lroundl", "modf", "modff", "modfl",
+    "nan", "nanf", "nanl", "nearbyint", "nearbyintf", "nearbyintl", "nextafter", "nextafterf",
+    "nextafterl", "nexttoward", "nexttowardf", "nexttowardl", "pow", "pow10", "pow10f", "pow10l",
+    "powf", "powl", "remainder", "remainderf", "remainderl", "remquo", "remquof", "remquol",
+    "rint", "rintf", "rintl", "round", "roundf", "roundl", "scalb", "scalbf", "scalbln",
+    "scalblnf", "scalblnl", "scalbn", "scalbnf", "scalbnl", "signbit", "significand",
+    "significandf", "sin", "sincos", "sincosf", "sincosl", "sinf", "sinh", "sinhf", "sinhl",
+    "sinl", "sqrt", "sqrtf", "sqrtl", "tan", "tanf", "tanh", "tanhf", "tanhl", "tanl", "tgamma",
+    "tgammaf", "tgammal", "trunc", "truncf", "truncl", "y0", "y0f", "y1", "y1f", "yn", "ynf",
+})  # fmt: skip
+
+
+def c_name(container: str) -> str:
+    """The C name of ``container``'s array in data.h (and its ``<name>_golden``): its own, or
+    ``<name>_l2`` when C, libc or the runtime's headers take it (``RESERVED_C``: mvt's ``y1``
+    is math.h's Bessel function). Every place a container becomes a C symbol goes through
+    here: gen/data.py, gen/rtl.py, lower/c.py's DMA and scalar sources, run/elf.py's
+    regions."""
+    return f"{container}_l2" if container in RESERVED_C else container

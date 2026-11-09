@@ -460,6 +460,9 @@ table.c-cost-table tr.differs td, table.c-cost-table tr.differs th { background:
 .c-canvas { position: relative; width: max-content; min-width: 100%; padding: 3.8rem 2rem 1.2rem; }
 .c-rows { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: 2.2rem; }
 .c-row { display: flex; gap: 1rem; justify-content: center; align-items: flex-start; }
+/* independent chains side by side, each a column of its own rows (api.py's _layout) */
+.c-cols { display: flex; gap: 3.5rem; justify-content: center; align-items: flex-start; }
+.c-col { display: flex; flex-direction: column; align-items: center; gap: 2.2rem; }
 svg.dfg-edges { position: absolute; top: 0; left: 0; z-index: 0; pointer-events: none; overflow: visible; transition: opacity 0.15s; }
 .c-panel.settling svg.dfg-edges { opacity: 0; } /* while the boxes glide (dfg.js) */
 
@@ -486,7 +489,6 @@ svg.dfg-edges { position: absolute; top: 0; left: 0; z-index: 0; pointer-events:
 .c-fold > .c-shape { position: absolute; inset: 0; z-index: -1; background: var(--fold-fill); clip-path: polygon(calc(var(--bw) * 1.7) var(--bw), calc(100% - var(--bw) * 1.7) var(--bw), calc(100% - var(--slant) - var(--bw) * 0.6) calc(100% - var(--bw)), calc(var(--slant) + var(--bw) * 0.6) calc(100% - var(--bw))); }
 .c-fold > .c-ports.out { margin: 0 var(--slant); }
 .c-node.c-fold.sel { box-shadow: none; --fold-edge: var(--hl); --bw: 2.5px; }
-.c-node.c-fold.diffed { background: none; --fold-fill: color-mix(in srgb, var(--wait) 35%, var(--panel)); }
 .c-ports { display: flex; justify-content: space-evenly; height: 0; }
 .c-port { display: block; width: 7px; height: 7px; margin-top: -4px; border-radius: 50%; background: var(--edge); }
 .c-ports.out .c-port { margin-top: -3px; }
@@ -512,6 +514,10 @@ svg.dfg-edges text.edge-label { font: 600 0.72rem ui-monospace, "SF Mono", Menlo
 svg.dfg-edges text.edge-label.sel { fill: var(--hl); }
 /* a broadcast's label at its edge's start: a band of the page behind it, so an edge it crosses does not run through it */
 svg.dfg-edges text.edge-label.at-start { paint-order: stroke; stroke: var(--bg); stroke-width: 4px; stroke-linejoin: round; }
+/* a collapsed block's port: the slice one firing takes, in the ink, not a link's green */
+svg.dfg-edges text.edge-label.slice { fill: var(--ink); font-weight: 500; }
+/* a marked read's Aᵀ: the container's font size (set in dfg.js), its ink */
+svg.dfg-edges text.edge-label.transpose { font-family: inherit; font-weight: 700; fill: var(--ink); }
 
 /* groups and accelerators: a thin dashed outline, the name on top */
 svg.dfg-edges .group-box rect, svg.dfg-edges .acc-box rect { fill: none; stroke-dasharray: 5 4; pointer-events: stroke; cursor: pointer; }
@@ -521,6 +527,17 @@ svg.dfg-edges .group-box text, svg.dfg-edges .acc-box text { font-size: 0.85rem;
 svg.dfg-edges .hover rect { stroke: var(--busy); stroke-width: 2.5; stroke-dasharray: none; }
 svg.dfg-edges .sel rect { stroke: var(--hl); stroke-width: 2; }
 svg.dfg-edges .group-box rect.outline-hit, svg.dfg-edges .acc-box rect.outline-hit { stroke: transparent; stroke-width: 10; stroke-dasharray: none; } /* the band a click on an outline hits (D72) */
+
+/* blocks (REUSE1): a collapsed one a box with a doubled edge, an open one a dotted outline */
+.c-node.c-block { border: 3px double var(--ink); border-radius: 8px; padding: 0.25rem 0.2rem; background: color-mix(in srgb, var(--busy) 8%, var(--panel)); }
+.c-node.c-block > .c-text { font-weight: 600; }
+svg.dfg-edges .block-box rect { fill: none; stroke: var(--ink); stroke-width: 1.2; stroke-dasharray: 1 4; stroke-linecap: round; pointer-events: stroke; cursor: pointer; }
+svg.dfg-edges .block-box rect.outline-hit { stroke: transparent; stroke-width: 10; stroke-dasharray: none; }
+svg.dfg-edges .block-box text { font-size: 0.85rem; font-weight: 600; fill: var(--ink); paint-order: stroke; stroke: var(--bg); stroke-width: 4px; stroke-linejoin: round; pointer-events: visiblePainted; cursor: pointer; }
+.dfg-block { display: flex; align-items: baseline; gap: 0.2rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dfg-block.sel .dfg-cont-name { color: var(--hl); font-weight: 600; }
+.dfg-block-toggle { padding: 0 0.3rem; border: none; background: none; cursor: pointer; color: var(--muted); }
+.dfg-block-toggle:disabled { opacity: 0.35; cursor: default; }
 
 /* the selection */
 .c-node.sel, .c-pill.sel { box-shadow: 0 0 0 2px var(--hl); }
@@ -551,8 +568,8 @@ svg.dfg-edges .group-box rect.outline-hit, svg.dfg-edges .acc-box rect.outline-h
 .dfg-sidebar h2 b { color: var(--ink); }
 /* the Containers, below the transforms (both modes): a symbol's input or name highlights the
    containers whose shape uses it, here and in the graph (dfg.js) */
-#transforms + .dfg-containers { border-top: 1px solid var(--rule); margin-top: 0.8rem; padding-top: 0.2rem; }
-.dfg-containers h2 { font-size: 0.975rem; margin: 0.4rem 0 0.4rem; color: var(--muted); font-weight: 600; }
+#transforms + .dfg-blocks, .dfg-blocks + .dfg-containers { border-top: 1px solid var(--rule); margin-top: 0.8rem; padding-top: 0.2rem; }
+.dfg-blocks h2, .dfg-containers h2 { font-size: 0.975rem; margin: 0.4rem 0 0.4rem; color: var(--muted); font-weight: 600; }
 .dfg-cont { padding: 0.2rem 0.3rem; border-radius: 3px; }
 .dfg-cont + .dfg-cont { border-top: 1px solid color-mix(in srgb, var(--rule) 60%, transparent); }
 .dfg-cont.sel { box-shadow: inset 2px 0 0 var(--hl); }
@@ -599,6 +616,8 @@ svg.dfg-edges .group-box rect.outline-hit, svg.dfg-edges .acc-box rect.outline-h
 .dfg-new-param { color: var(--muted); font-size: 0.92em; }
 .dfg-new-param input { width: 4rem; }
 .dfg-field:has(.dfg-choices) { grid-template-columns: 1fr; }
+/* bind's instance: the name, then a choice to share an instance already bound (D165) */
+.dfg-share-field { display: flex; flex-direction: column; gap: 0.25rem; min-width: 0; }
 .dfg-choices { display: flex; flex-direction: column; gap: 0.15rem; }
 .dfg-choice { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 0.35rem; align-items: baseline; }
 .dfg-choice small { grid-column: 2; color: var(--muted); }
@@ -608,16 +627,10 @@ button.primary:disabled { opacity: 0.4; cursor: not-allowed; }
 .dfg-not-here ul { padding-left: 1rem; margin: 0.3rem 0; }
 .dfg-not-here li { margin-bottom: 0.25rem; overflow-wrap: anywhere; }
 .dfg-not-here b { color: var(--ink); font-weight: 600; }
-/* marks (a transform applies here) and the step's diff (added or changed) */
+/* marks (a transform applies here) */
 .c-node.marked::after, .c-pill.marked::after, .c-map.marked > .c-bar::after { content: ""; display: inline-block; width: 6px; height: 6px; margin-left: 0.35rem; border-radius: 50%; background: var(--hl); vertical-align: middle; }
 .c-node.marked { position: relative; }
 .c-node.marked::after { position: absolute; top: 3px; right: 3px; margin: 0; }
-.c-node.diffed, .c-pill.diffed { background: color-mix(in srgb, var(--wait) 35%, var(--panel)); }
-.c-map.diffed > .c-bar { background: color-mix(in srgb, var(--wait) 45%, var(--panel)); }
-/* a step just shown: its added and changed boxes arrive from a stronger highlight */
-.c-node.diffed.arrive, .c-pill.diffed.arrive, .c-map.diffed.arrive > .c-bar { animation: dfg-arrive 1.4s ease-out; }
-@keyframes dfg-arrive { from { background-color: color-mix(in srgb, var(--wait) 85%, var(--panel)); box-shadow: 0 0 0 4px color-mix(in srgb, var(--wait) 70%, transparent); } }
-@media (prefers-reduced-motion: reduce) { .arrive, .arrive > .c-bar { animation: none !important; } }
 /* the log */
 .dfg-log-bar { display: flex; gap: 0.5rem; }
 .dfg-log-bar button { padding: 0.05rem 0.5rem; font-size: 0.95em; }

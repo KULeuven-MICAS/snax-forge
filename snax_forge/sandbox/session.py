@@ -412,6 +412,8 @@ class Session:
             if transform == "bind":  # W -> W_<instance> (D156)
                 trial, renamed = rename_split_params(trial, g, step.params.get("instance"),
                                                      self.own_params)  # fmt: skip
+            if transform == "share":  # the shared group's split params into the other's (D165)
+                trial, renamed = merge_shared_params(trial, g, self.own_params)
                 params = dict(trial.steps[k].params)
                 added = {renamed.get(x, x): v for x, v in added.items()}
             self.recipe, self.graphs = trial, [*self.graphs[: k + 1], g]
@@ -622,10 +624,14 @@ def graph_diff(old: Graph | None, new: Graph, placed_old: Any = None,
     return out
 
 
+# transforms whose site takes nearly any node: no mark (name_block names any region)
+UNMARKED = ("name_block",)
+
+
 def _accepted(g: Graph, selected: str) -> bool:
-    """Whether some transform's site accepts ``selected``."""
-    for spec in TRANSFORMS.values():
-        if spec.site is None:
+    """Whether some transform's site accepts ``selected`` (``UNMARKED`` left out)."""
+    for name, spec in TRANSFORMS.items():
+        if spec.site is None or name in UNMARKED:
             continue
         try:
             spec.site(g, selected)
@@ -636,9 +642,14 @@ def _accepted(g: Graph, selected: str) -> bool:
 
 
 def marks_of(g: Graph) -> dict[str, list[str]]:
-    """The node ids and container names of ``g`` some site accepts (the view mode's marks)."""
+    """The node ids, container names and block names (sandbox/blocks.py) of ``g`` some site
+    accepts (the view mode's marks)."""
+    from .blocks import BLOCK
+
+    blocks = list(dict.fromkeys(b["name"] for n, _ in g.walk() for b in n.attrs.get(BLOCK, [])))
     return {"nodes": [n.id for n, _ in g.walk() if _accepted(g, n.id)],
-            "containers": [c for c in g.containers if _accepted(g, c)]}  # fmt: skip
+            "containers": [c for c in g.containers if _accepted(g, c)],
+            "blocks": [b for b in blocks if _accepted(g, b)]}  # fmt: skip
 
 
 def _stage(code: str) -> str:
@@ -698,6 +709,51 @@ def bind_list(g: Graph, selected: str, order: int = 1) -> list[dict[str, Any]]:
                     entry["timing"] = None
             out.append(entry)
     return out
+
+
+def share_choices(g: Graph, node: str) -> list[dict[str, Any]]:
+    """The instances already bound in ``g`` that ``node`` could be bound to as well, one
+    accelerator run once per node (D165, mvt's variant 1: half 2's multiply on half 1's
+    ``vmul_x1``): per instance, in the graph's order, ``{value, label, brm, implementation, ok,
+    message}``, ``ok`` when ``bind`` on that instance gives a valid graph, else ``message`` its
+    refusal (``vmul_x1 has W = 4, tmp2_mult would have 8``, another accelerator); an instance
+    whose BRM and implementation cannot take the node at all is left out."""
+    from snax_forge.brm import BrmError
+
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for n, _ in g.walk():
+        if n.kind != "accelerated" or n.attrs["instance"] in seen:
+            continue
+        a = n.attrs
+        seen.add(a["instance"])
+        d = {"value": a["instance"], "label": f"{a['instance']} · {a['brm']} / {a['implementation']}",
+             "brm": a["brm"], "implementation": a["implementation"], "ok": True}  # fmt: skip
+        try:  # bound alone first: a BRM that cannot take the node is no choice at all
+            alone = bind(g, node=node, brm=a["brm"], implementation=a["implementation"],
+                         instance=fresh_instance(g))  # fmt: skip
+        except (SandboxError, DfgError, BrmError, expr.ExprError, ValueError, KeyError):
+            continue
+        try:  # then on the instance, a refusal naming the params that differ
+            mine = next(m for m, _ in alone.walk() if m.id == node).attrs.get("params") or {}
+            theirs = a.get("params") or {}
+            differ = [k for k in dict.fromkeys([*theirs, *mine]) if theirs.get(k) != mine.get(k)]
+            if differ:
+                d |= {"ok": False, "message": "; ".join(
+                    f"{a['instance']} has {k} = {theirs.get(k)}, {node} would have {mine.get(k)}"
+                    for k in differ)}  # fmt: skip
+            else:
+                bind(g, node=node, brm=a["brm"], implementation=a["implementation"],
+                     instance=a["instance"])  # fmt: skip
+        except (SandboxError, DfgError, BrmError, expr.ExprError, ValueError, KeyError) as e:
+            d |= {"ok": False, "message": str(e).strip("'\"")}
+        out.append(d)
+    return out
+
+
+def fresh_instance(g: Graph) -> str:
+    """An instance name no node, group or accelerator of ``g`` has (a probe bind's)."""
+    return default_instance(_taken(g), 1 + len(_taken(g)))
 
 
 def default_instance(taken: set[str], order: int = 1) -> str:
@@ -816,6 +872,13 @@ def rename_split_params(recipe: Recipe, g: Graph, instance: str | None,
         users = {j for j, st in enumerate(recipe.steps) if x in _step_names(st)}
         if not users <= set(mine):
             continue  # shared with another unit or step
+        # a node joining an instance (D165): its split takes the param the instance's other
+        # splits name, at the same value (bind has checked the lanes agree)
+        other = [y for j in mine if isinstance(y := recipe.steps[j].params.get("factor"), str)
+                 and y != x and y in recipe.params and recipe.params[y] == recipe.params[x]]  # fmt: skip
+        if other:
+            renamed[x] = other[0]
+            continue
         base, k, new = f"W_{instance}", 1, f"W_{instance}"
         while new in taken:
             k += 1
@@ -827,6 +890,74 @@ def rename_split_params(recipe: Recipe, g: Graph, instance: str | None,
     steps = [Step(st.transform, {p: _renamed(v, renamed) for p, v in st.params.items()})
              for st in recipe.steps]  # fmt: skip
     params = {renamed.get(p, p): v for p, v in recipe.params.items()}
+    return replace(recipe, params=params, steps=steps), renamed
+
+
+def merge_shared_params(recipe: Recipe, g: Graph, own: list[str]) -> tuple[Recipe, dict[str, str]]:
+    """After ``share`` (``g`` the shared graph, share.py): each param the shared nest's steps
+    name (its units' splits, its links' depths), renamed to the param the matching step of the
+    nest it now runs with names (unit by unit, link by link), when the two have the same value
+    and only the shared nest's steps name it (not one of ``own``): one param then drives every
+    nest of the group (D165; mvt's ``W_vmul_x2`` into ``W_vmul_x1``, ``D_2`` into ``D``). The
+    recipe and ``{old: new}``."""
+    from .share import SHARED
+
+    def split_params(ids: set[str]) -> list[tuple[int, str]]:
+        out = []
+        for i, st in enumerate(recipe.steps):
+            m, x = st.params.get("map"), st.params.get("factor")
+            if st.transform in SPLIT_SUFFIXES and isinstance(m, str) and isinstance(x, str):
+                inner = re.compile(
+                    rf"^{re.escape(m)}({'|'.join(SPLIT_SUFFIXES[st.transform])})(_\d+)?$"
+                )
+                if any(inner.match(y) for y in ids):
+                    out.append((i, x))
+        return out
+
+    def link_param(container: str) -> list[tuple[int, str]]:
+        return [(i, st.params["depth"]) for i, st in enumerate(recipe.steps)
+                if st.transform == "link" and st.params.get("container") == container
+                and isinstance(st.params.get("depth"), str)]  # fmt: skip
+
+    pairs: list[tuple[list[tuple[int, str]], list[tuple[int, str]]]] = []
+    nodes = [n for n, _ in g.walk() if n.kind in ("accelerated", "link")]
+    for n in nodes:
+        if SHARED not in n.attrs:
+            continue
+        if n.kind == "accelerated":
+            twin = next((m for m in nodes if m.kind == "accelerated" and SHARED not in m.attrs
+                         and m.attrs["instance"] == n.attrs["instance"]), None)  # fmt: skip
+            if twin is not None:
+                pairs.append((split_params(_map_ids(n.attrs.get("replaced"))),
+                              split_params(_map_ids(twin.attrs.get("replaced")))))  # fmt: skip
+        else:
+            twin = next((m for m in nodes if m.kind == "link" and SHARED not in m.attrs
+                         and (m.attrs["from"], m.attrs["to"]) == (n.attrs["from"], n.attrs["to"])),
+                        None)  # fmt: skip
+            if twin is not None:
+                pairs.append(
+                    (link_param(n.attrs["container"]), link_param(twin.attrs["container"]))
+                )
+    mine = {i for a, _ in pairs for i, _ in a}  # the shared nest's steps
+    renamed: dict[str, str] = {}
+    for a, b in pairs:
+        for (_, x), (_, y) in zip(a, b, strict=False):
+            if (
+                x == y
+                or x in renamed
+                or x in own
+                or y not in recipe.params
+                or x not in recipe.params
+            ):
+                continue
+            users = {j for j, st in enumerate(recipe.steps) if x in _step_names(st)}
+            if recipe.params[x] == recipe.params[y] and users <= mine:
+                renamed[x] = y
+    if not renamed:
+        return recipe, {}
+    steps = [Step(st.transform, {p: _renamed(v, renamed) for p, v in st.params.items()})
+             for st in recipe.steps]  # fmt: skip
+    params = {renamed.get(p, p): v for p, v in recipe.params.items() if p not in renamed}
     return replace(recipe, params=params, steps=steps), renamed
 
 
@@ -898,6 +1029,53 @@ def fresh_param(field: str, taken: Any) -> str:
 DEFAULT_KIND = "temporal"
 
 
+def _lift_fields(g: Graph, filled: dict[str, Any]) -> list[dict[str, Any]]:
+    """``lift``'s form: ``kernel`` a choice of the kernels whose pattern matches a region
+    holding the selected node, ``at`` that region or every region of the kernel (empty)."""
+    from .blocks import lift_choices
+
+    at = filled["at"]
+    kernels = [{"value": k, "label": k} for k in lift_choices(g, at)]
+    where = [{"value": at, "label": f"the region holding {at}"},
+             {"value": "", "label": "every region it matches"}]  # fmt: skip
+    return [
+        {"name": "kernel", "type": "choice", "sweepable": False, "readonly": False,
+         "value": filled["kernel"], "choices": kernels},
+        {"name": "at", "type": "choice", "sweepable": False, "readonly": False, "value": at,
+         "choices": where},
+    ]  # fmt: skip
+
+
+def _apply_fields(g: Graph, filled: dict[str, Any], params: dict[str, Any]) -> list[dict[str, Any]]:
+    """``apply_recipe``'s form on a lifted block: ``block`` (the selection's), ``recipe`` a
+    choice of the recipes of its kernel, each with its ``params`` that no kernel symbol names
+    (dot_3's ``{"W": 4}``, which the page swaps in when the choice changes), and an int field
+    ``params.<P>`` per param of the first, a param of the session's own (``W``, or ``W_2`` when
+    the session has W), its value the recipe's."""
+    from .blocks import _block, recipe_path, recipes_for
+
+    rec = _block(g, filled["block"], "apply_recipe", applied=False)
+
+    def own(ref: str) -> dict[str, Any]:  # a recipe's params no kernel symbol names
+        sub = Recipe.load(recipe_path(ref))
+        named = {v for v in sub.symbols.values() if isinstance(v, str)}
+        return {
+            p: (v if isinstance(v, int) else 1) for p, v in sub.params.items() if p not in named
+        }
+
+    choices = [{"value": r, "label": r, "params": own(r)} for r in recipes_for(rec["kernel"])]
+    fields = [
+        {"name": "block", "type": "str", "sweepable": False, "readonly": True,
+         "value": filled["block"]},
+        {"name": "recipe", "type": "choice", "sweepable": False, "readonly": False,
+         "value": filled["recipe"], "choices": choices},
+    ]  # fmt: skip
+    for p, v in own(filled["recipe"]).items():
+        fields.append({"name": f"params.{p}", "type": "int", "sweepable": True,
+                       "readonly": False, "value": fresh_param(p, params), "new_value": v})  # fmt: skip
+    return fields
+
+
 # bake_scalar's value in the editor's form for a container with no seeded input
 BAKE_DEFAULT = 1
 
@@ -928,8 +1106,9 @@ def form(
     field, ``pair``, a choice per pair the transform takes with the selected map on either
     side, its ``value`` giving both params, labelled with the partner and the transient's
     marker, ``_pair_field``; on two maps ``first`` the selection's and fuse_seed's ``second`` a
-    choice per map of the elementwise nest, ``_second_field``) and ``unfuse_seed``'s ``map`` (a
-    choice per seeded fold, ``_fold_field``)."""
+    choice per map of the elementwise nest, ``_second_field``), ``unfuse_seed``'s ``map`` (a
+    choice per seeded fold, ``_fold_field``) and ``mark_transpose``'s and ``unmark_transpose``'s
+    ``container`` (its one container, or a choice when there are several, ``_transpose_field``)."""
 
     from snax_forge.common import fresh
 
@@ -940,6 +1119,18 @@ def form(
     selection = next(iter(filled), None)
     fields: list[dict[str, Any]] = []
     one = selected is None or len(selected) == 1
+    if name == "lift":  # the kernels matching here, here or every region of one
+        return _lift_fields(g, filled)
+    if name == "apply_recipe":  # the block's kernel's recipes and their params
+        return _apply_fields(g, filled, params)
+    if name == "name_block":  # the selected nodes, ticked, and a free name
+        return [
+            {"name": "nodes", "type": "checklist", "sweepable": False, "readonly": False,
+             "value": list(filled["nodes"]),
+             "choices": [{"value": x, "label": x} for x in filled["nodes"]]},
+            {"name": "name", "type": "str", "sweepable": False, "readonly": False,
+             "value": filled["name"]},
+        ]  # fmt: skip
     if name in ("fuse_map", "fuse_seed") and one:  # the partner, on either side
         mine = selected[0] if selected else filled["first"]
         return [_pair_field(name, g, mine, filled)]
@@ -959,12 +1150,20 @@ def form(
                 "value": value,
                 "hint": "an int baked into the hardware, or csr: read at run time from a CSR",
             }
+        elif name == "share" and p == "with":  # every group of its shape (share.py)
+            from .share import share_choices as group_choices
+
+            choices = group_choices(g, filled["group"])
+            field |= {"type": "choice", "readonly": False, "value": filled.get("with"),
+                      "choices": choices}  # fmt: skip
         elif name == "interchange_map" and p == "with":  # every map above and below it
             field |= _partner_field(g, filled["map"])
         elif name == "fuse_seed" and p == "second":  # the elementwise nest's maps
             field |= _second_field(g, filled["first"], filled.get("second"))
         elif name == "unfuse_seed" and p == "map":  # the seeded folds
             field |= _fold_field(g, filled["map"])
+        elif name in ("mark_transpose", "unmark_transpose") and p == "container":
+            field |= _transpose_field(name, g, filled["node"], filled.get("container"))
         elif name == "tag_map" and p == "kind":
             field |= {"type": "choice", "value": DEFAULT_KIND,
                       "choices": [{"value": t, "label": t} for t in TAGS]}  # fmt: skip
@@ -983,6 +1182,9 @@ def form(
             ok = [e for e in answer.get("list", []) if e["ok"]]
             field["value"] = (ok[0]["params"]["instance"] if ok
                               else default_instance(_taken(g), order))  # fmt: skip
+            share = share_choices(g, filled["node"])
+            if share:  # an instance the node can share (D165), the page's "share with"
+                field["share"] = share
         elif name == "encapsulate" and p == "units":
             nodes = [n for n, _ in g.walk() if n.kind == "accelerated"]
             free = list(
@@ -1071,6 +1273,24 @@ def _fold_field(g: Graph, map: str) -> dict[str, Any]:
     choices = [{"value": c["map"], "label": f"{c['map']} · " + label.format(**c), "ok": True}
                for c in seeded_choices(g)]  # fmt: skip
     return {"type": "choice", "readonly": False, "value": mine, "choices": choices, "hint": hint}
+
+
+def _transpose_field(name: str, g: Graph, node: str, container: str | None) -> dict[str, Any]:
+    """mark_transpose's or unmark_transpose's ``container``: the one container it takes at
+    ``node``, or a choice per container when there are several, each labelled with its π
+    (transpose.py's ``transpose_choices``), the first the default; and the form's hint."""
+    from .transpose import transpose_choices
+
+    found = transpose_choices(g, node, mark=name == "mark_transpose")
+    hint = ("the input read across the loop order, drawn as its transpose (Aᵀ); no memlet "
+            "changes" if name == "mark_transpose" else "the input whose transpose mark goes")  # fmt: skip
+    if len(found) == 1:
+        return {"value": found[0]["container"], "readonly": True, "hint": hint}
+    choices = [{"value": x["container"], "ok": True,
+                "label": f"{x['container']} · transpose({', '.join(map(str, x['transpose']))})"}
+               for x in found]  # fmt: skip
+    value = container if container is not None else found[0]["container"]
+    return {"type": "choice", "readonly": False, "value": value, "choices": choices, "hint": hint}
 
 
 def _timing(inst: Any) -> dict[str, int]:
