@@ -20,6 +20,7 @@ graph. The command line is ``python -m snax_forge.sandbox RECIPE`` (pixi
 ``sandbox``).
 """
 
+from .blocks import lift, unlift
 from .compose import fuse_map, join_reduce, link, split_reduce, unfuse_map, unlink
 from .patterns import PATTERNS, match, register_pattern
 from .recipe import Recipe, SandboxError, Step
@@ -58,6 +59,7 @@ __all__ = [
     "interchange_map",
     "join_map",
     "join_reduce",
+    "lift",
     "link",
     "mark_transpose",
     "match",
@@ -72,6 +74,7 @@ __all__ = [
     "unencapsulate",
     "unfuse_map",
     "unfuse_seed",
+    "unlift",
     "unlink",
     "unmark_transpose",
     "unshare",

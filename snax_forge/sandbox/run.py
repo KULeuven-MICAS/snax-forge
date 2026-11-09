@@ -71,6 +71,10 @@ def step_params(recipe: Recipe, index: int) -> tuple[str, dict[str, Any]]:
         k: recipe.value(v, f"{what}.params.{k}") if k in spec.ints else v
         for k, v in step.params.items()
     }
+    if step.transform == "apply_recipe" and isinstance(params.get("params"), dict):
+        # a sub-recipe's params: ints, or expressions over this recipe's params (blocks.py)
+        params["params"] = {k: recipe.value(v, f"{what}.params.params.{k}")
+                            for k, v in params["params"].items()}  # fmt: skip
     if spec.params is not None:  # params a signature cannot name (interchange_map's with)
         if set(params) != set(spec.params):
             raise SandboxError(f"{what}: takes {list(spec.params)}, got {sorted(params)}")
