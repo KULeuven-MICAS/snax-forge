@@ -224,8 +224,7 @@ function panel(v, k, pick) {
   el._draw = () => {
     if (el.classList.contains("settling")) return; // the boxes are gliding: drawn once they settle
     drawEdges(canvas, svg, v.edges, k);
-    drawAccelerators(canvas, svg, v.accelerators || []);
-    drawBlocks(canvas, svg, v.blocks || []);
+    drawOutlines(canvas, svg, v);
     outline();
   };
   new ResizeObserver(() => requestAnimationFrame(el._draw)).observe(canvas);
@@ -279,9 +278,8 @@ function drawEdges(canvas, svg, edges, k) {
     const p = svgEl("path", { d, class: `edge ${e.dir}${e.local ? " local" : ""}${e.seed ? " seed" : ""}`, "data-sel": e.id, "marker-end": `url(#${marker})` });
     p._marker = marker;
     out.push(p);
-    if (e.slice) { // a collapsed block's port (api.py's fold): the part one firing takes, beside its edge just outside the block's row (above an Aᵀ)
-      const row = ((e.dir === "read" ? b : a).closest(".c-row") || (e.dir === "read" ? b : a)).getBoundingClientRect();
-      const sy = e.dir === "read" ? Math.max(y1 + 14, row.top - c.top - 8 - (e.transpose ? 16 : 0)) : y2 - 8;
+    if (e.slice) { // a collapsed block's port (api.py's fold): the part one firing takes, beside its edge by the container's box
+      const sy = e.dir === "read" ? y1 + 14 : y2 - 8; // by the container's box, clear of the outlines' bands
       const t = svgEl("text", { x: curveX(x1, y1, x2, y2, bend, sy) + 8, y: sy, class: "edge-label at-start slice", "data-sel": e.data });
       t.textContent = e.slice;
       out.push(t);
@@ -360,7 +358,13 @@ function orderRows(panel) {
   }
 }
 
-// -- groups and accelerators (D148): a thin dashed outline each, the name on top ---------
+// -- outlines: groups and accelerators (D148), open blocks (REUSE1) ------------------------------
+// One pass for the three kinds, from the inside out: an outline holds the outlines whose boxes
+// it holds (a group inside its accelerator, both inside an open block around the same boxes),
+// each GAP px outside the ones it holds and its name in a band of its own (a group's on top at
+// the left, an accelerator's on top at the right, a block's at the bottom left), so none
+// crosses another or its name. The rows that hold an outline's first and last box get the
+// margin it needs above and below, so it clears the containers' rows too.
 
 function unionRect(canvas, rects) {
   const c = canvas.getBoundingClientRect();
@@ -372,79 +376,105 @@ function unionRect(canvas, rects) {
   };
 }
 
-const LABEL = 17; // px above an outline's content for its name (style.css: 0.85rem)
+const LABEL = 17; // px of an outline's band for its name (style.css: 0.85rem)
+const GAP = 8; // px between an outline and what it holds
 
-/** An outline with its name on top: a group's at the left, an accelerator's at the right. */
-function outlineBox(r, pad, cls, name) {
-  const g = svgEl("g", { class: cls, "data-sel": name, ...(cls === "group-box" ? { "data-group": name } : {}) });
-  const box = { x: r.left - pad, y: r.top - pad - LABEL, width: r.right - r.left + 2 * pad,
-    height: r.bottom - r.top + 2 * pad + LABEL, rx: 6 };
-  g.append(svgEl("rect", { ...box, class: "outline-hit" })); // a wide band to click, as an edge's
-  g.append(svgEl("rect", box));
-  const right = cls === "acc-box";
-  const t = svgEl("text", { x: right ? r.right + pad - 6 : r.left - pad + 6, y: r.top - pad - 4,
-    "text-anchor": right ? "end" : "start" });
-  t.textContent = name;
-  g.append(t);
-  return g;
-}
-
-function drawAccelerators(canvas, svg, accelerators) {
+/** Every outline to draw: ``{kind, name, text, tops, rank}``, ``rank`` ordering outlines
+around the same boxes (a group inside its accelerator inside a block, a deeper block inside). */
+function outlines(v) {
   const out = [];
-  for (const acc of accelerators) {
-    const rects = [];
-    for (const grp of acc.groups) {
-      if (grp.drawn === false) continue; // its units inside a collapsed block (api.py's fold)
-      const tops = grp.tops.map((id) => canvas.querySelector(`[data-top="${CSS.escape(id)}"]`));
-      const r = unionRect(canvas, tops.map((t) => t && t.getBoundingClientRect()));
-      if (!r) continue;
-      rects.push(r);
-      out.push(outlineBox(r, 8, "group-box", grp.text));
-    }
-    // An accelerator that is one group of its name (dot 2 to 6) is drawn once, as the group.
-    if (!rects.length || (acc.groups.length === 1 && acc.groups[0].name === acc.name)) continue;
-    const all = {
-      left: Math.min(...rects.map((x) => x.left)), top: Math.min(...rects.map((x) => x.top)) - LABEL - 4,
-      right: Math.max(...rects.map((x) => x.right)), bottom: Math.max(...rects.map((x) => x.bottom)),
-    };
-    out.push(outlineBox(all, 16, "acc-box", acc.text));
+  for (const acc of v.accelerators || []) {
+    const groups = acc.groups.filter((g) => g.drawn !== false);
+    for (const grp of groups) out.push({ kind: "group", name: grp.text, text: grp.text, tops: grp.tops, rank: 0 });
+    // an accelerator that is one group of its name (dot 2 to 6) is drawn once, as the group
+    if (!groups.length || (acc.groups.length === 1 && acc.groups[0].name === acc.name)) continue;
+    out.push({ kind: "acc", name: acc.text, text: acc.text, tops: [...new Set(groups.flatMap((g) => g.tops))], rank: 1 });
   }
-  svg.append(...out);
-}
-
-// -- blocks (REUSE1): an open block a dotted outline, its name at the bottom left (a group's and
-// an accelerator's are on top); blocks open around the same boxes share one outline, ``matvec ›
-// dot``; a double-click on it closes the innermost ------------------------------------------
-
-function drawBlocks(canvas, svg, list) {
-  const open = list.filter((b) => !b.collapsed && !b.hidden && b.foldable);
-  if (!open.length) return;
-  const same = new Map(); // the boxes it holds -> the open blocks around them, outer first
+  const open = (v.blocks || []).filter((b) => !b.collapsed && !b.hidden && b.foldable);
+  const same = new Map(); // blocks open around the same boxes: one outline, ``matvec › dot``
   for (const b of open) {
     const key = b.tops.join(",");
     if (!same.has(key)) same.set(key, []);
     same.get(key).push(b);
   }
-  const rings = [...same.values()].map((bs) => bs.sort((a, b) => a.depth - b.depth));
-  const deepest = Math.max(...rings.map((bs) => bs[0].depth));
-  const out = [];
-  for (const bs of rings) {
-    const tops = bs[0].tops.map((id) => canvas.querySelector(`[data-top="${CSS.escape(id)}"]`));
-    const r = unionRect(canvas, tops.map((t) => t && t.getBoundingClientRect()));
-    if (!r) continue;
+  const deepest = Math.max(0, ...open.map((b) => b.depth));
+  for (const bs of same.values()) {
+    bs.sort((a, b) => a.depth - b.depth);
     const inner = bs[bs.length - 1];
-    const pad = 20 + 10 * (deepest - bs[0].depth);
-    const g = svgEl("g", { class: "block-box", "data-sel": inner.name, "data-block": inner.name });
-    const box = { x: r.left - pad, y: r.top - pad, width: r.right - r.left + 2 * pad, height: r.bottom - r.top + 2 * pad, rx: 10 };
-    g.append(svgEl("rect", { ...box, class: "outline-hit" }), svgEl("rect", box));
-    const t = svgEl("text", { x: r.left - pad + 8, y: r.bottom + pad - 6 });
-    t.textContent = `▾ ${bs.length > 1 ? bs.map((b) => b.name).join(" › ") : inner.text}`;
-    const tip = svgEl("title", {});
-    tip.textContent = `${bs.map((b) => b.text).join("\n")}\ndouble-click to collapse`;
-    g.append(t, tip);
+    out.push({ kind: "block", name: inner.name, block: inner.name, tops: bs[0].tops, rank: 2 + deepest - bs[0].depth,
+      text: `▾ ${bs.length > 1 ? bs.map((b) => b.name).join(" › ") : inner.text}`,
+      tip: `${bs.map((b) => b.text).join("\n")}\ndouble-click to collapse` });
+  }
+  return out;
+}
+
+/** ``a`` holds ``b``: every box of ``b`` is one of ``a``'s, and ``a`` ranks above ``b`` when
+they hold the same. */
+function holds(a, b) {
+  if (a === b || !b.tops.every((t) => a.tops.includes(t))) return false;
+  return a.tops.length > b.tops.length || a.rank > b.rank;
+}
+
+function drawOutlines(canvas, svg, v) {
+  const list = outlines(v);
+  const top = (id) => canvas.querySelector(`[data-top="${CSS.escape(id)}"]`);
+  for (const o of list) o.els = o.tops.map(top).filter(Boolean);
+  const shown = list.filter((o) => o.els.length);
+  const boxOf = new Map();
+  const box = (o) => { // the outline's box, its name's band included, after those it holds
+    if (boxOf.has(o)) return boxOf.get(o);
+    const r = unionRect(canvas, o.els.map((el) => el.getBoundingClientRect()));
+    for (const inner of shown) {
+      if (!holds(o, inner)) continue;
+      const b = box(inner);
+      r.left = Math.min(r.left, b.left); r.right = Math.max(r.right, b.right);
+      r.top = Math.min(r.top, b.top); r.bottom = Math.max(r.bottom, b.bottom);
+    }
+    const b = { left: r.left - GAP, right: r.right + GAP, top: r.top - GAP - (o.kind === "block" ? 0 : LABEL),
+      bottom: r.bottom + GAP + (o.kind === "block" ? LABEL : 0) };
+    boxOf.set(o, b);
+    return b;
+  };
+  const out = [];
+  const room = new Map(); // a row -> the room its outlines need above and below it
+  for (const o of shown) {
+    const b = box(o);
+    const cls = { group: "group-box", acc: "acc-box", block: "block-box" }[o.kind];
+    const g = svgEl("g", { class: cls, "data-sel": o.name, ...(o.kind === "group" ? { "data-group": o.name } : {}),
+      ...(o.block ? { "data-block": o.block } : {}) });
+    const rect = { x: b.left, y: b.top, width: b.right - b.left, height: b.bottom - b.top, rx: o.kind === "block" ? 10 : 6 };
+    g.append(svgEl("rect", { ...rect, class: "outline-hit" }), svgEl("rect", rect));
+    const t = o.kind === "acc"
+      ? svgEl("text", { x: b.right - 6, y: b.top + LABEL - 5, "text-anchor": "end" })
+      : svgEl("text", { x: b.left + 6, y: o.kind === "block" ? b.bottom - 5 : b.top + LABEL - 5 });
+    t.textContent = o.text;
+    g.append(t);
+    if (o.tip) {
+      const tip = svgEl("title", {});
+      tip.textContent = o.tip;
+      g.append(tip);
+    }
     out.push(g);
+    const rows = o.els.map((el) => el.closest(".c-row")).filter(Boolean);
+    const c = canvas.getBoundingClientRect();
+    const first = rows.reduce((x, y) => (y.getBoundingClientRect().top < x.getBoundingClientRect().top ? y : x));
+    const last = rows.reduce((x, y) => (y.getBoundingClientRect().bottom > x.getBoundingClientRect().bottom ? y : x));
+    const up = first.getBoundingClientRect().top - c.top - b.top;
+    const down = b.bottom - (last.getBoundingClientRect().bottom - c.top);
+    room.set(first, { ...(room.get(first) || { up: 0, down: 0 }), up: Math.max(up, (room.get(first) || { up: 0 }).up) });
+    room.set(last, { ...(room.get(last) || { up: 0, down: 0 }), down: Math.max(down, (room.get(last) || { down: 0 }).down) });
   }
   svg.append(...out);
+  // the room each row needs: a margin, set only when it changes (the panel's ResizeObserver
+  // redraws once with it)
+  for (const row of canvas.querySelectorAll(".c-row")) {
+    const want = room.get(row) || { up: 0, down: 0 };
+    const gap = parseFloat(getComputedStyle(row.parentElement).rowGap) || 0; // what the rows keep already
+    const mt = `${Math.max(0, Math.ceil(want.up - gap + 22))}px`; // a pill's height clear of it
+    const mb = `${Math.max(0, Math.ceil(want.down - gap + 22))}px`;
+    if (row.style.marginTop !== mt) row.style.marginTop = mt;
+    if (row.style.marginBottom !== mb) row.style.marginBottom = mb;
+  }
 }
 
 /** Block ``name`` opened or closed (its view's ``blocks``): opening opens the blocks holding
