@@ -1,13 +1,13 @@
 """A set of bundles for the local RTL check, in one command.
 
-    python -m snax_forge.flow.forge_set quick|full [--sim vsim|vlt] [-j N]    (pixi forge-set)
+    python -m snax_forge.flow.forge_set quick|full|mvt [--sim vsim|vlt] [-j N]    (pixi forge-set)
 
 Runs ``pixi run forge`` (flow/forge.py) on each design of the set, ``-j`` at a time (default
 the CPU count), each in its own folders (``out/flow/<name>/``, ``out/bundle/<name>/``,
 ``out/forge/<name>/``), each forge's terminal output in ``out/forge-set/<set>/<design>.txt``. A
 design (``Design``) is a recipe and the ``--set`` values forge runs it with, none for the
 recipe's defaults (rowsum_2 at its defaults, then with ``memory.passes.layout=padded_rows``,
-rows 64 and 65 words apart); its name is forge's
+rows 64 and 65 words apart; the mvt set, its own, runs mvt's variants so at W = 4 and 8); its name is forge's
 folder name for them (flow/run.py's ``default_name``: ``rowsum_2_passes.layoutpadded_rows``). Emit is made ready once first (``rtl.warm_emit``: its
 classpath and firtool), so the bundles do not all start sbt or extract firtool at once. Then it writes ``out/forge-set/<set>.md``: per design its bundle folder and
 the lines its RTL run must print (``forge_expected.txt``, from its SNAX-GVSoC run); the one
@@ -66,13 +66,21 @@ def designs(*recipes: str | Design) -> list[Design]:
     return [r if isinstance(r, Design) else Design(r) for r in recipes]
 
 
+PADDED = "memory.passes.layout=padded_rows"  # each row a word longer (D86)
 QUICK = designs("vecadd_i32", "vsum_tree_i8", "dot_1", "dot_1_enc", "dot_4", "axpy")
 SETS = {
     "quick": QUICK,
     "full": [*QUICK, *designs("vecadd", "vsum", "rowsum_serial", "vecmul_i32_i64", "dot_2",
                               "dot_3", "dot_5", "dot_6", "dot_serial", "matvec_1", "matvec_5",
                               "matvec_6", "matvec_seed", "matvec_seed_serial", "relu", "rowsum_2",
-                              Design("rowsum_2", ("memory.passes.layout=padded_rows",)))],
+                              Design("rowsum_2", (PADDED,)))],
+    "mvt": [Design("mvt_1"), Design("mvt_1", ("W=8",)), Design("mvt_1", (PADDED,)),
+            Design("mvt_1", ("W=8", PADDED)),
+            Design("mvt_1_dot2"), Design("mvt_1_dot2", ("W=8",)), Design("mvt_1_dot2", (PADDED,)),
+            Design("mvt_1_dot2", ("W=8", PADDED)),
+            Design("mvt_2"), Design("mvt_2", ("W_x1=8", "W_x2=8")), Design("mvt_2", (PADDED,)),
+            Design("mvt_2", ("W_x1=8", "W_x2=8", PADDED)),
+            Design("mvt_2_reuse")],
 }  # fmt: skip
 
 
