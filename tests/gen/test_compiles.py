@@ -1,4 +1,4 @@
-"""Every forge-set recipe and mvt's compile (open item 122): the generator's data.h and main.c
+"""Every forge-set recipe and mvt's compile (MVT1, the y1 clash): the generator's data.h and main.c
 against the runtime's headers, as ``make sw`` includes them, so a container named after a
 libc or runtime symbol (mvt's ``y1``, math.h's Bessel function) is caught here and not at a
 flow's ``sw`` step. Syntax only (clang's ``-fsyntax-only`` for riscv32): no runtime library,
