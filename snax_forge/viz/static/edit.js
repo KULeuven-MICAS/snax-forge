@@ -379,6 +379,33 @@ async function apply(transform, form, el) {
   }
 }
 
+/** ``apply_recipe``'s form: another recipe chosen, its own params' fields in place of the
+last one's (session.py's ``_apply_fields``), each a session param named as the server names
+one (``W``, or ``W_2`` when the session has W). */
+function recipeParams(form, formEl, label) {
+  const pick = formEl.querySelector('[data-field="recipe"]');
+  const field = form.find((f) => f.name === "recipe");
+  if (!pick || !field) return;
+  pick.addEventListener("change", () => {
+    const c = field.choices.find((x) => x.value === pick.value);
+    const known = { ...((ctx.state.session && ctx.state.session.params) || {}) };
+    const fresh = (p) => {
+      let n = p;
+      for (let k = 2; Object.prototype.hasOwnProperty.call(known, n); k++) n = `${p}_${k}`;
+      known[n] = true;
+      return n;
+    };
+    for (const el of formEl.querySelectorAll('[data-label^="params."]')) el.remove();
+    for (let i = form.length - 1; i >= 0; i--) if (form[i].name.startsWith("params.")) form.splice(i, 1);
+    const button = formEl.querySelector('button[type="submit"]');
+    for (const [p, v] of Object.entries((c && c.params) || {})) {
+      const f = { name: `params.${p}`, type: "int", sweepable: true, readonly: false, value: fresh(p), new_value: v };
+      form.push(f);
+      formEl.insertBefore(label(f), button);
+    }
+  });
+}
+
 /** The open form closed (Esc). */
 export function closeForm() {
   ctx.state.t = null;
@@ -410,9 +437,11 @@ export async function sidebar() {
   const no = Object.entries(answers).filter(([, a]) => !a.ok);
   const rows = ok.map(([name, a]) => {
     const isOpen = st.t === name;
+    const label = (f) => h("label", { class: `dfg-field${f.readonly ? " readonly" : ""}`, "data-label": f.name }, h("span", {}, f.name), field(f));
     const formEl = isOpen ? h("form", { class: "dfg-form", onsubmit: (ev) => { ev.preventDefault(); apply(name, a.form, formEl); } },
-      a.form.map((f) => h("label", { class: `dfg-field${f.readonly ? " readonly" : ""}` }, h("span", {}, f.name), field(f))),
+      a.form.map(label),
       h("button", { type: "submit", class: "primary", disabled: unfit(a.form) }, "Apply")) : null;
+    if (formEl && name === "apply_recipe") recipeParams(a.form, formEl, label);
     return h("div", { class: `dfg-transform${isOpen ? " open" : ""}` },
       h("button", { type: "button", class: "dfg-transform-name", "aria-expanded": isOpen ? "true" : "false",
         onclick: () => {

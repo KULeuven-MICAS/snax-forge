@@ -624,10 +624,14 @@ def graph_diff(old: Graph | None, new: Graph, placed_old: Any = None,
     return out
 
 
+# transforms whose site takes nearly any node: no mark (name_block names any region)
+UNMARKED = ("name_block",)
+
+
 def _accepted(g: Graph, selected: str) -> bool:
-    """Whether some transform's site accepts ``selected``."""
-    for spec in TRANSFORMS.values():
-        if spec.site is None:
+    """Whether some transform's site accepts ``selected`` (``UNMARKED`` left out)."""
+    for name, spec in TRANSFORMS.items():
+        if spec.site is None or name in UNMARKED:
             continue
         try:
             spec.site(g, selected)
@@ -1044,27 +1048,31 @@ def _lift_fields(g: Graph, filled: dict[str, Any]) -> list[dict[str, Any]]:
 
 def _apply_fields(g: Graph, filled: dict[str, Any], params: dict[str, Any]) -> list[dict[str, Any]]:
     """``apply_recipe``'s form on a lifted block: ``block`` (the selection's), ``recipe`` a
-    choice of the recipes of its kernel, and an int field ``params.<P>`` per param of the
-    first that no kernel symbol names (dot_3's W), a param of the session's own (``W``, or
-    ``W_2`` when the session has W), its value the recipe's."""
+    choice of the recipes of its kernel, each with its ``params`` that no kernel symbol names
+    (dot_3's ``{"W": 4}``, which the page swaps in when the choice changes), and an int field
+    ``params.<P>`` per param of the first, a param of the session's own (``W``, or ``W_2`` when
+    the session has W), its value the recipe's."""
     from .blocks import _block, recipe_path, recipes_for
 
     rec = _block(g, filled["block"], "apply_recipe", applied=False)
-    sub = Recipe.load(recipe_path(filled["recipe"]))
-    named = {v for v in sub.symbols.values() if isinstance(v, str)}
+
+    def own(ref: str) -> dict[str, Any]:  # a recipe's params no kernel symbol names
+        sub = Recipe.load(recipe_path(ref))
+        named = {v for v in sub.symbols.values() if isinstance(v, str)}
+        return {
+            p: (v if isinstance(v, int) else 1) for p, v in sub.params.items() if p not in named
+        }
+
+    choices = [{"value": r, "label": r, "params": own(r)} for r in recipes_for(rec["kernel"])]
     fields = [
         {"name": "block", "type": "str", "sweepable": False, "readonly": True,
          "value": filled["block"]},
         {"name": "recipe", "type": "choice", "sweepable": False, "readonly": False,
-         "value": filled["recipe"],
-         "choices": [{"value": r, "label": r} for r in recipes_for(rec["kernel"])]},
+         "value": filled["recipe"], "choices": choices},
     ]  # fmt: skip
-    for p, v in sub.params.items():
-        if p in named:
-            continue
+    for p, v in own(filled["recipe"]).items():
         fields.append({"name": f"params.{p}", "type": "int", "sweepable": True,
-                       "readonly": False, "value": fresh_param(p, params),
-                       "new_value": v if isinstance(v, int) else 1})  # fmt: skip
+                       "readonly": False, "value": fresh_param(p, params), "new_value": v})  # fmt: skip
     return fields
 
 
@@ -1115,6 +1123,14 @@ def form(
         return _lift_fields(g, filled)
     if name == "apply_recipe":  # the block's kernel's recipes and their params
         return _apply_fields(g, filled, params)
+    if name == "name_block":  # the selected nodes, ticked, and a free name
+        return [
+            {"name": "nodes", "type": "checklist", "sweepable": False, "readonly": False,
+             "value": list(filled["nodes"]),
+             "choices": [{"value": x, "label": x} for x in filled["nodes"]]},
+            {"name": "name", "type": "str", "sweepable": False, "readonly": False,
+             "value": filled["name"]},
+        ]  # fmt: skip
     if name in ("fuse_map", "fuse_seed") and one:  # the partner, on either side
         mine = selected[0] if selected else filled["first"]
         return [_pair_field(name, g, mine, filled)]

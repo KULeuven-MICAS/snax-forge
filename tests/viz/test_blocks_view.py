@@ -111,7 +111,7 @@ def test_the_step_route_takes_the_blocks_expanded(tmp_path):
         _, shut = get_json(srv, "/api/step/3")
         _, open_ = get_json(srv, "/api/step/3?expand=dot")
     assert drawn(shut["rows"])[1] == "mult_map"  # the rows' loop, the dot box inside it
-    assert shut["marks"]["blocks"] == []  # applied: neither unlift nor apply_recipe takes it
+    assert shut["marks"]["blocks"] == ["dot"]  # applied: unapply takes it
     assert [x for x in drawn(open_["rows"]) if isinstance(x, str)] == [
         "mult_map",
         "tmp0",

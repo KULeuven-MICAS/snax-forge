@@ -1,0 +1,11 @@
+{
+ "name": "matvec_dot4",
+ "kernel": "matvec",
+ "params": {"W": 4, "M": 16, "N": 512},
+ "symbols": {"M": "M", "N": "N"},
+ "steps": [
+  {"transform": "tag_map", "params": {"map": "mult_map", "kind": "temporal"}},
+  {"transform": "tag_map", "params": {"map": "sum_map", "kind": "temporal"}},
+  {"transform": "apply_recipe", "params": {"recipe": "dot/dot_4", "region": ["mult_map_1", "sum_map_1"], "params": {"W": "W"}}}
+ ]
+}

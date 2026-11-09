@@ -1746,7 +1746,10 @@ def _held(top: Node) -> list[str]:
 
 
 def block_text(rec: dict[str, Any]) -> str:
-    """A block's text: ``dot · dot/dot_3 · W = 4``, a lifted one ``dot · dot · no recipe``."""
+    """A block's text: ``dot · dot/dot_3 · W = 4``, a lifted one ``dot · dot · no recipe``, one
+    named by hand ``half1 · by hand``."""
+    if rec.get("kernel") is None:
+        return f"{rec['name']} · by hand"
     if "recipe" not in rec:
         return f"{rec['name']} · {rec['kernel']} · no recipe"
     params = "".join(f" · {k} = {v}" for k, v in (rec.get("params") or {}).items())
@@ -2090,7 +2093,7 @@ def _layout(g: Graph, tops: list[Node] | None = None) -> dict[str, Any]:
                 edges.append(_edge(above[m.data], port, m.data, text, "read",
                                    packing(g, n, c, m.data), label=label, seed=seeded,
                                    transpose=perm is not None,
-                                   slice_=text if n.kind == "block" else None))  # fmt: skip
+                                   slice_=memlet_text(m) if n.kind == "block" else None))  # fmt: skip
         last[col] = (k, wrote)
     ends = [col["id"] for col in cols if col["id"] not in joined]
     for col in ends:  # the last row of each column: what its last node wrote

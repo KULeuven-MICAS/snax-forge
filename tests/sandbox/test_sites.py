@@ -50,10 +50,10 @@ def test_the_site_accepts_every_recipe_step(name):
         site, key = TRANSFORMS[transform].site, SELECTED[transform]
         if key not in params:  # apply_recipe on a region, not a lifted block: no site fills it
             continue
-        for selected in params[key] if key == "units" else [params[key]]:
+        for selected in params[key] if key in ("units", "nodes") else [params[key]]:
             filled = site(graphs[i], selected)
             for k, v in filled.items():
-                want = [selected] if k == "units" else params[k]
+                want = [selected] if k in ("units", "nodes") else params[k]
                 assert v == want, (
                     f"{name} step {i + 1} ({transform}): {k} {v!r}, the step's {want!r}"
                 )

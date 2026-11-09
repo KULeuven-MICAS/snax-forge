@@ -10,10 +10,11 @@
 // arrives; then its boxes glide from where they were (glide), unless the
 // browser asks for reduced motion.
 //
-// The URL hash holds the state, as in the run viewer: #step=<k>&sel=<id>&cmp=<j>&t=<transform>&tech=<tech>
+// The URL hash holds the state, as in the run viewer: #step=<k>&sel=<id>&cmp=<j>&t=<transform>&tech=<tech>&open=<blocks>
 // (step and cmp, view mode: the steps' names, dot4_w8/6_link from several folders, and an old
 // hash's bare stem or number still opens its step, /api/find; edit mode: numbers; t, edit mode: that transform's form open for the selection; tech, the technology the cost
-// estimate is on, one of /api/mode's techs, passed to every step and compare request). A selection is a name:
+// estimate is on, one of /api/mode's techs, passed to every step and compare request; open, the blocks drawn
+// as their nodes, comma-separated, passed as ?expand=). A selection is a name:
 // everything of that name is outlined (a link node and its container share one) and Details
 // shows each. In edit mode (edit.js) the steps are the session's, the shown one its cursor.
 
@@ -57,7 +58,7 @@ const num = (v) => (v === null || v === "" || Number.isNaN(Number(v)) ? null : N
 /** The hash as written; ``k`` and ``cmp`` are still its text until ``resolve``. */
 function readHash() {
   const q = new URLSearchParams(location.hash.slice(1));
-  return { k: q.get("step") || null, sel: q.get("sel") || null, cmp: q.get("cmp") || null, t: q.get("t") || null, tech: q.get("tech") || null };
+  return { k: q.get("step") || null, sel: q.get("sel") || null, cmp: q.get("cmp") || null, t: q.get("t") || null, tech: q.get("tech") || null, open: q.get("open") || null };
 }
 
 /** The hash's steps as numbers: edit mode's are; view mode's are names, an old hash's a bare
@@ -81,6 +82,7 @@ function writeHash() {
   if (state.cmp !== null) q.set("cmp", ref(state.cmp));
   if (state.t && state.sel) q.set("t", state.t);
   if (state.tech) q.set("tech", state.tech);
+  if (state.expanded.size) q.set("open", [...state.expanded].sort().join(","));
   history.replaceState(null, "", `#${q}`);
 }
 
@@ -279,8 +281,11 @@ function drawEdges(canvas, svg, edges, k) {
     p._marker = marker;
     out.push(p);
     if (e.slice) { // a collapsed block's port (api.py's fold): the part one firing takes, beside its edge by the container's box
-      const sy = e.dir === "read" ? y1 + 14 : y2 - 8; // by the container's box, clear of the outlines' bands
-      const t = svgEl("text", { x: curveX(x1, y1, x2, y2, bend, sy) + 8, y: sy, class: "edge-label at-start slice", "data-sel": e.data });
+      // a read's a third of the way down (edges from one box apart by then), a write's by the box below
+      const sy = e.dir === "read" ? Math.max(y1 + 14, y1 + (y2 - y1) * 0.3) : y2 - 8;
+      const left = e.dir === "read" && x2 < x1 - 4; // an edge going left: its label on its left side
+      const t = svgEl("text", { x: curveX(x1, y1, x2, y2, bend, sy) + (left ? -8 : 8), y: sy, "text-anchor": left ? "end" : "start",
+        class: "edge-label at-start slice", "data-sel": e.data });
       t.textContent = e.slice;
       out.push(t);
     }
@@ -521,7 +526,7 @@ async function blocks() {
       title: !b.foldable ? "drawn as its nodes: it holds part of a top-level nest only" : b.collapsed || b.hidden ? "expand" : "collapse",
       onclick: () => toggleBlock(b.name) }, b.collapsed || b.hidden ? "▸" : "▾"),
     h("button", { type: "button", class: "dfg-cont-name", onclick: () => select(b.name) }, b.name),
-    h("span", { class: "mono muted" }, ` ${b.recipe ? `${b.recipe}${Object.entries(b.params).map(([k, x]) => ` · ${k} = ${x}`).join("")}` : `${b.kernel} · no recipe`}`))));
+    h("span", { class: "mono muted" }, ` ${b.recipe ? `${b.recipe}${Object.entries(b.params).map(([k, x]) => ` · ${k} = ${x}`).join("")}` : b.kernel ? `${b.kernel} · no recipe` : "by hand"}`))));
 }
 
 // -- the move between steps: the boxes glide from their old places --------------------------
@@ -993,6 +998,7 @@ async function show() {
 async function load() {
   status("Loading…");
   let want = readHash();
+  state.expanded = new Set((want.open || "").split(",").filter(Boolean));
   try {
     const mode = await getJSON("/api/mode");
     state.mode = mode.mode;
@@ -1118,6 +1124,12 @@ window.addEventListener("hashchange", async () => {
     want = await resolve(readHash());
   } catch (e) {
     status(String(e.message || e), true);
+    return;
+  }
+  const open = (want.open || "").split(",").filter(Boolean).sort().join(",");
+  if (open !== [...state.expanded].sort().join(",")) { // another block opened or closed: redraw
+    state.expanded = new Set(open.split(",").filter(Boolean));
+    draw();
     return;
   }
   const tech = pickTech(want.tech, state.tech);

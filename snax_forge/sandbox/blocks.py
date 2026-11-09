@@ -39,6 +39,15 @@ matches the kernel's pattern (none overlapping; a region lies inside a block or 
 whole, in either order: lift dot then matvec, or matvec then dot), named after the kernel (``dot``, ``dot_1``, ...), or with ``at`` the one region holding that node;
 ``unlift(name)`` takes its record away.
 
+**unapply(block)** gives back the graph before ``apply_recipe`` made the block: the recipe keeps
+on the first top-level node it made (``sandbox.applied``) the top-level nodes that held the
+region before, the containers it changed or removed and a digest of what it made; refused when
+a later step changed what it made, or for a block inside another a recipe made. **name_block(
+nodes, name)** makes a block by hand of a region (the nodes and everything under them), with
+no kernel and no recipe: the bottom-up entry, transforms by hand and then the block named. A
+sub-recipe's own blocks (its ``lift`` or ``name_block``) are followed by name onto the blocks
+the steps make in the outer graph, and its ``lift`` without ``at`` lifts the region's one.
+
 **Sites** (D72). ``lift``'s: a node in a region the pattern of a kernel some recipe under
 ``recipes/`` is written on matches (``reusable``), ``at`` the node and ``kernel`` the first
 such. ``unlift``'s: a block with no recipe, or a node in it (its innermost block).
@@ -66,6 +75,7 @@ from __future__ import annotations
 
 import functools
 from dataclasses import dataclass, field, replace
+from pathlib import Path
 from typing import Any
 
 from snax_forge import expr
@@ -92,9 +102,12 @@ def pattern(kernel: str) -> Graph:
 
 def recipe_path(ref: str) -> Any:
     """``category/name`` (``dot/dot_3``) as ``recipes/<category>/<name>.json``; a bare name is
-    looked up across the folders (recipe.py's ``find_recipe``)."""
+    looked up across the folders (recipe.py's ``find_recipe``); a path to a ``.json`` is that
+    file."""
     from .recipe import find_recipe
 
+    if ref.endswith(".json") and Path(ref).is_file():  # a file of its own (a test's)
+        return Path(ref)
     if "/" not in ref:
         return find_recipe(ref)
     p = RECIPE_ROOT / f"{ref}.json"
@@ -554,6 +567,9 @@ def _apply_site(g: Graph, selected: str) -> dict[str, Any]:
     """A lifted block with no recipe yet (or a node in it): ``block`` it, ``recipe`` the
     first recipe of its kernel."""
     rec = _block(g, selected, "apply_recipe", applied=False)
+    if rec["kernel"] is None:
+        raise SandboxError(f"apply_recipe {selected!r}: block {rec['name']} was named by hand "
+                           "(name_block): no kernel to apply a recipe of")  # fmt: skip
     found = recipes_for(rec["kernel"])
     if not found:
         raise SandboxError(f"apply_recipe {selected!r}: no recipe under recipes/ is written on "
@@ -564,7 +580,9 @@ def _apply_site(g: Graph, selected: str) -> dict[str, Any]:
 # -- apply_recipe -------------------------------------------------------------------------------
 
 # a sub-step's params that name a unit, a group or an accelerator: renamed to a free name
-NAMED = ("instance", "group", "accelerator", "name")
+NAMED = ("instance", "group", "accelerator")
+# a sub-step's params that name a block: renamed onto the blocks made in the outer graph
+BLOCK_PARAMS = {"apply_recipe": "block", "unapply": "block", "unlift": "name"}
 
 
 def _ids(g: Graph) -> list[str]:
@@ -623,8 +641,8 @@ def apply_recipe(g: Graph, recipe: str, region: list[str] | None = None,
     from .transforms import TRANSFORMS
 
     what = f"apply_recipe {recipe!r}"
-    if block is not None:  # the site's check first, its message
-        _block(g, block, "apply_recipe", applied=False)
+    if block is not None:  # the site's checks first, its messages
+        _apply_site(g, block)
     sub = Recipe.load(recipe_path(recipe))
     if block is not None:
         rec = _block(g, block, "apply_recipe", applied=False)
@@ -659,6 +677,7 @@ def apply_recipe(g: Graph, recipe: str, region: list[str] | None = None,
     taken = _taken(g)
     ren = dict(m.ids) | dict(m.containers)
     units: dict[str, str] = {}  # the sub-recipe's unit, group and accelerator names
+    blocks: dict[str, str] = {}  # the blocks its steps make, the pattern's -> the outer graph's
     if block is None:
         name = fresh(name or sub.kernel, taken)
     holders = _nest(g, _region_nodes(g, m), what)  # the rest, and blocks made, are inside
@@ -678,17 +697,28 @@ def apply_recipe(g: Graph, recipe: str, region: list[str] | None = None,
                 units[v] = fresh(v, taken)
         rp = {}
         for k, v in sp.items():
-            if k in ("brm", "implementation", "kind", "recipe"):
+            if k in ("brm", "implementation", "kind", "recipe", "params"):
                 rp[k] = v
             elif k in NAMED or k == "units":  # their own namespace: dot's tasklet sum, unit sum
                 rp[k] = _renamed(v, units)
+            elif BLOCK_PARAMS.get(tname) == k:  # a block the sub-recipe made (lift, name_block)
+                rp[k] = blocks.get(v, v)
+            elif k == "name" and tname in ("name_block", "apply_recipe") and isinstance(v, str):
+                rp[k] = blocks.setdefault(v, fresh(v, taken))  # a block it names: free here
             else:
                 rp[k] = _renamed(v, ren)
         if tname == "fuse_map":
             rp |= _fuse_outer(out, rp["first"], rp["second"])
+        if tname == "lift" and not rp.get("at"):  # every region of the pattern: here, the one
+            found = matches(pg, rp["kernel"])
+            if len(found) != 1:
+                raise SandboxError(f"{what} step {i + 1} (lift): {len(found)} regions of "
+                                   f"{rp['kernel']} in {sub.kernel}; give at")  # fmt: skip
+            rp["at"] = ren.get(found[0].heads[0], found[0].heads[0])
         step_what = f"{what} step {i + 1} ({tname})"
         pb, rb = _ids(pg), _ids(out)
         pcb, rcb = list(pg.containers), list(out.containers)
+        pbb, rbb = _block_order(pg), _block_order(out)
         try:
             pg2 = spec.fn(pg, **sp)
             out2 = spec.fn(out, **rp)
@@ -696,6 +726,9 @@ def apply_recipe(g: Graph, recipe: str, region: list[str] | None = None,
             raise SandboxError(f"{step_what}: {e}") from None
         ren |= _pair(pb, _ids(pg2), rb, _ids(out2), step_what)
         ren |= _pair(pcb, list(pg2.containers), rcb, list(out2.containers), step_what)
+        new_blocks = _pair(pbb, _block_order(pg2), rbb, _block_order(out2), step_what)
+        blocks |= new_blocks
+        taken |= set(new_blocks.values())
         made += [x for x in _ids(out2) if x not in set(rb)]
         pg, out = pg2, out2
     out = _copy(out)
@@ -709,9 +742,161 @@ def apply_recipe(g: Graph, recipe: str, region: list[str] | None = None,
         path = [b for b in _blocks_of(n) if b["name"] != name]
         n.attrs[BLOCK] = ([b for b in path if b["name"] in holders] + [entry]
                           + [b for b in path if b["name"] not in holders])  # fmt: skip
+    _keep_before(g, out, {n.id for n in _region_nodes(g, m)}, name)
     return _result(out)
 
 
+# -- unapply: the graph before a recipe was applied ----------------------------------------------
+
+APPLIED = "sandbox.applied"
+
+
+def _block_order(g: Graph) -> list[str]:
+    return list(dict.fromkeys(b["name"] for n, _ in g.walk() for b in _blocks_of(n)))
+
+
+def _tops_of(g: Graph, ids: set[str]) -> list[int]:
+    """The indices of the top-level nodes holding any of ``ids``."""
+    return [k for k, t in enumerate(g.body) if any(n.id in ids for n, _ in _walk_top(t))]
+
+
+def _walk_top(t: Node) -> list[tuple[Node, None]]:
+    out = [(t, None)]
+    for c in t.body or []:
+        out += _walk_top(c)
+    return out
+
+
+def _digest(tops: list[Node], containers: dict[str, Any]) -> str:
+    """The top-level nodes and containers a block's recipe made, as unapply checks them: no
+    step after it may have changed them (``sandbox.applied`` itself left out)."""
+    import hashlib
+    import json
+
+    def strip(d: Any) -> Any:
+        if isinstance(d, dict):
+            return {k: strip(v) for k, v in d.items() if k != APPLIED}
+        if isinstance(d, list):
+            return [strip(v) for v in d]
+        return d
+
+    text = json.dumps([strip(t.to_dict()) for t in tops] + [containers], sort_keys=True)
+    return hashlib.sha256(text.encode()).hexdigest()[:16]
+
+
+def _block_ids(g: Graph, name: str) -> set[str]:
+    return {n.id for n, _ in g.walk() if any(b["name"] == name for b in _blocks_of(n))}
+
+
+def _keep_before(g: Graph, out: Graph, region: set[str], name: str) -> None:
+    """What ``unapply`` gives back, kept on the first top-level node holding block ``name``
+    after the recipe: the top-level nodes that held its region before (and their place), the
+    containers the recipe added and those it changed as they were, and the digest of what it
+    made."""
+    before = _tops_of(g, region)
+    after = _tops_of(out, _block_ids(out, name))
+    added = [c for c in out.containers if c not in g.containers]
+    changed = {c: g.containers[c].to_dict() for c in g.containers  # or removed (a fuse)
+               if c not in out.containers or g.containers[c] != out.containers[c]}  # fmt: skip
+    mine = {c: out.containers[c].to_dict() for c in [*added, *changed] if c in out.containers}
+    keep = {"tops": [g.body[k].to_dict() for k in before], "added": added, "changed": changed,
+            "order": list(g.containers),
+            "digest": _digest([out.body[k] for k in after], mine)}  # fmt: skip
+    first = out.body[after[0]]
+    first.attrs[APPLIED] = {**first.attrs.get(APPLIED, {}), name: keep}
+
+
+def _unapply_site(g: Graph, selected: str) -> dict[str, Any]:
+    """A block a recipe was applied on (or a node in it), not inside another such block."""
+    rec = _block(g, selected, "unapply", applied=True)
+    for n, _ in g.walk():
+        path = _blocks_of(n)
+        names = [b["name"] for b in path]
+        if rec["name"] in names:
+            outer = [b for b in path[: names.index(rec["name"])] if "recipe" in b]
+            if outer:
+                raise SandboxError(f"unapply {selected!r}: block {rec['name']} is inside "
+                                   f"{outer[-1]['name']}, which {outer[-1]['recipe']} made "
+                                   f"(unapply {outer[-1]['name']})")  # fmt: skip
+            break
+    return {"block": rec["name"]}
+
+
+def unapply(g: Graph, block: str) -> Graph:
+    """The graph as it was before ``apply_recipe`` made block ``block`` (as the site takes it:
+    the block, or a node in it): its top-level nodes put back, the containers the recipe added
+    removed and those it changed restored; a block the recipe applied on a lifted block stays
+    lifted. Refused when a step after it changed what it made (undo those first)."""
+    name = _unapply_site(g, block)["block"]
+    keep = next((n.attrs[APPLIED][name] for n, _ in g.walk() if name in n.attrs.get(APPLIED, {})),
+                None)  # fmt: skip
+    after = _tops_of(g, _block_ids(g, name))
+    mine = {c: g.containers[c].to_dict() for c in [*(keep or {}).get("added", []),
+                                                   *(keep or {}).get("changed", {})]
+            if c in g.containers}  # fmt: skip
+    if keep is None or _digest([g.body[k] for k in after], mine) != keep["digest"]:
+        raise SandboxError(f"unapply {block!r}: a step after its recipe changed block {name} "
+                           "(undo it first)")  # fmt: skip
+    from snax_forge.dfg.graph import Container
+
+    g = _copy(g)
+    at = after[0]
+    for k in reversed(after):
+        del g.body[k]
+    g.body[at:at] = [Node.from_dict(d, f"unapply {name}") for d in keep["tops"]]
+    for c in keep["added"]:
+        g.containers.pop(c, None)
+    order = list(keep.get("order") or g.containers)
+    for c, d in keep["changed"].items():
+        g.containers[c] = Container.from_dict(d, f"unapply {name} container {c}")
+    g.containers = {c: g.containers[c] for c in [*order, *g.containers] if c in g.containers}
+    return _result(g)
+
+
+# -- name_block: a region named by hand -----------------------------------------------------------
+
+
+def _name_multi(g: Graph, selected: list[str]) -> dict[str, Any]:
+    """Nodes, the heads of the region (each with everything under it): ``nodes`` them, ``name``
+    a free block name (``block``, ``block_1``, ...)."""
+    _region_by_hand(g, list(selected), "name_block")
+    return {"nodes": list(selected), "name": fresh("block", _taken(g))}
+
+
+def _name_site(g: Graph, selected: str) -> dict[str, Any]:
+    return _name_multi(g, [selected])
+
+
+def _region_by_hand(g: Graph, nodes: list[str], what: str) -> list[Node]:
+    ids = {n.id for n, _ in g.walk()}
+    for x in nodes:
+        if x not in ids:
+            raise SandboxError(f"{what} {x!r}: not a node of the graph")
+    out = [n for n, outer in g.walk() if n.id in nodes or any(o.id in nodes for o in outer)]
+    _nest(g, out, f"{what} {nodes[0]!r}")
+    return out
+
+
+def name_block(g: Graph, nodes: list[str], name: str) -> Graph:
+    """The region whose heads are ``nodes`` (each with everything under it) made a block named
+    ``name``, by hand: no kernel and no recipe, drawn and collapsed as any block (the
+    bottom-up entry: transforms by hand, then the block named)."""
+    if not isinstance(nodes, list) or not nodes:
+        raise SandboxError(f"name_block: nodes must be a non-empty list, got {nodes!r}")
+    region = _region_by_hand(g, nodes, "name_block")
+    if not isinstance(name, str) or not name.isidentifier():
+        raise SandboxError(f"name_block: {name!r} is not a name")
+    if name in _taken(g):
+        raise SandboxError(f"name_block: {name!r} is taken (a block, unit, group or accelerator)")
+    g = _copy(g)
+    region = _region_by_hand(g, nodes, "name_block")
+    _mark(region, {"name": name, "kernel": None, "heads": list(nodes)},
+          _nest(g, region, f"name_block {nodes[0]!r}"))  # fmt: skip
+    return _result(g)
+
+
 register_transform("lift", lift, site=_lift_site)
+register_transform("unapply", unapply, site=_unapply_site)
+register_transform("name_block", name_block, site=_name_site, multi=_name_multi)
 register_transform("unlift", unlift, site=_unlift_site)
 register_transform("apply_recipe", apply_recipe, site=_apply_site)
