@@ -928,8 +928,9 @@ def form(
     field, ``pair``, a choice per pair the transform takes with the selected map on either
     side, its ``value`` giving both params, labelled with the partner and the transient's
     marker, ``_pair_field``; on two maps ``first`` the selection's and fuse_seed's ``second`` a
-    choice per map of the elementwise nest, ``_second_field``) and ``unfuse_seed``'s ``map`` (a
-    choice per seeded fold, ``_fold_field``)."""
+    choice per map of the elementwise nest, ``_second_field``), ``unfuse_seed``'s ``map`` (a
+    choice per seeded fold, ``_fold_field``) and ``mark_transpose``'s and ``unmark_transpose``'s
+    ``container`` (its one container, or a choice when there are several, ``_transpose_field``)."""
 
     from snax_forge.common import fresh
 
@@ -965,6 +966,8 @@ def form(
             field |= _second_field(g, filled["first"], filled.get("second"))
         elif name == "unfuse_seed" and p == "map":  # the seeded folds
             field |= _fold_field(g, filled["map"])
+        elif name in ("mark_transpose", "unmark_transpose") and p == "container":
+            field |= _transpose_field(name, g, filled["node"], filled.get("container"))
         elif name == "tag_map" and p == "kind":
             field |= {"type": "choice", "value": DEFAULT_KIND,
                       "choices": [{"value": t, "label": t} for t in TAGS]}  # fmt: skip
@@ -1071,6 +1074,24 @@ def _fold_field(g: Graph, map: str) -> dict[str, Any]:
     choices = [{"value": c["map"], "label": f"{c['map']} · " + label.format(**c), "ok": True}
                for c in seeded_choices(g)]  # fmt: skip
     return {"type": "choice", "readonly": False, "value": mine, "choices": choices, "hint": hint}
+
+
+def _transpose_field(name: str, g: Graph, node: str, container: str | None) -> dict[str, Any]:
+    """mark_transpose's or unmark_transpose's ``container``: the one container it takes at
+    ``node``, or a choice per container when there are several, each labelled with its π
+    (transpose.py's ``transpose_choices``), the first the default; and the form's hint."""
+    from .transpose import transpose_choices
+
+    found = transpose_choices(g, node, mark=name == "mark_transpose")
+    hint = ("the input read across the loop order, drawn as its transpose (Aᵀ); no memlet "
+            "changes" if name == "mark_transpose" else "the input whose transpose mark goes")  # fmt: skip
+    if len(found) == 1:
+        return {"value": found[0]["container"], "readonly": True, "hint": hint}
+    choices = [{"value": x["container"], "ok": True,
+                "label": f"{x['container']} · transpose({', '.join(map(str, x['transpose']))})"}
+               for x in found]  # fmt: skip
+    value = container if container is not None else found[0]["container"]
+    return {"type": "choice", "readonly": False, "value": value, "choices": choices, "hint": hint}
 
 
 def _timing(inst: Any) -> dict[str, int]:

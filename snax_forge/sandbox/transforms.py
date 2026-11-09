@@ -160,7 +160,7 @@ from snax_forge.dfg import (
     named_rates,
     parse_dim,
 )
-from snax_forge.dfg.graph import SCALAR
+from snax_forge.dfg.graph import SCALAR, TRANSPOSE
 from snax_forge.dfg.subset import dim_names, format_dim, map_range
 from snax_forge.expr import ExprError
 
@@ -881,6 +881,9 @@ def _bind_rewrite(g: Graph, site: _Site, bound: _Bound, brm: str, implementation
         },
         body=[],
     )
+    marks = tasklet.attrs.get(TRANSPOSE, {})  # mark_transpose's, onto the port (transpose.py)
+    if any(c in ports for c in marks):
+        acc.attrs[TRANSPOSE] = {ports[c]: list(p) for c, p in marks.items() if c in ports}
     fused = site.pattern is smap and fused_view(smap) is not None
     if fused and (taken := _take_locals(g, smap)):  # a fused nest's local value
         acc.attrs["locals"] = taken  # goes with its two tasklets

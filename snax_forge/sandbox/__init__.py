@@ -9,6 +9,7 @@ params, applied to an imported graph; the transforms ``split``,
 ``unfuse_map`` and ``unlink`` (compose.py, D150);
 ``bake_scalar`` and its inverse ``unbake_scalar`` (scalar.py);
 ``fuse_seed`` and its inverse ``unfuse_seed`` (seed.py), a fold taking the elementwise nest after it as its seed;
+``mark_transpose`` and its inverse ``unmark_transpose`` (transpose.py), an input read across its loop order marked;
 each with its site, the graph-shape test of where it applies (D72);
 the pattern matchers ``bind`` uses to recognise a BRM's pattern
 (patterns.py), among them ``reduce``, with which ``bind`` binds a folding
@@ -37,6 +38,7 @@ from .transforms import (
     unbind,
     unencapsulate,
 )
+from .transpose import mark_transpose, unmark_transpose
 
 __all__ = [
     "PATTERNS",
@@ -56,6 +58,7 @@ __all__ = [
     "join_map",
     "join_reduce",
     "link",
+    "mark_transpose",
     "match",
     "register_pattern",
     "register_transform",
@@ -68,5 +71,6 @@ __all__ = [
     "unfuse_map",
     "unfuse_seed",
     "unlink",
+    "unmark_transpose",
     "write_steps",
 ]

@@ -55,6 +55,7 @@ SELECTED = {
     "bind": "node", "unbind": "node", "link": "container", "unlink": "container",
     "encapsulate": "units", "unencapsulate": "accelerator", "bake_scalar": "container",
     "unbake_scalar": "container", "interchange_map": "map", "fuse_seed": "first", "unfuse_seed": "map",
+    "mark_transpose": "node", "unmark_transpose": "node",
 }  # fmt: skip
 DEFAULTS = {"factor": 4, "kind": "temporal", "depth": 1, "group": "g", "accelerator": "acc",
             "value": 3}  # fmt: skip
