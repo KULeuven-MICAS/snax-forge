@@ -489,7 +489,6 @@ svg.dfg-edges { position: absolute; top: 0; left: 0; z-index: 0; pointer-events:
 .c-fold > .c-shape { position: absolute; inset: 0; z-index: -1; background: var(--fold-fill); clip-path: polygon(calc(var(--bw) * 1.7) var(--bw), calc(100% - var(--bw) * 1.7) var(--bw), calc(100% - var(--slant) - var(--bw) * 0.6) calc(100% - var(--bw)), calc(var(--slant) + var(--bw) * 0.6) calc(100% - var(--bw))); }
 .c-fold > .c-ports.out { margin: 0 var(--slant); }
 .c-node.c-fold.sel { box-shadow: none; --fold-edge: var(--hl); --bw: 2.5px; }
-.c-node.c-fold.diffed { background: none; --fold-fill: color-mix(in srgb, var(--wait) 35%, var(--panel)); }
 .c-ports { display: flex; justify-content: space-evenly; height: 0; }
 .c-port { display: block; width: 7px; height: 7px; margin-top: -4px; border-radius: 50%; background: var(--edge); }
 .c-ports.out .c-port { margin-top: -3px; }
@@ -619,11 +618,11 @@ button.primary:disabled { opacity: 0.4; cursor: not-allowed; }
 .c-node.marked::after, .c-pill.marked::after, .c-map.marked > .c-bar::after { content: ""; display: inline-block; width: 6px; height: 6px; margin-left: 0.35rem; border-radius: 50%; background: var(--hl); vertical-align: middle; }
 .c-node.marked { position: relative; }
 .c-node.marked::after { position: absolute; top: 3px; right: 3px; margin: 0; }
-.c-node.diffed, .c-pill.diffed { background: color-mix(in srgb, var(--wait) 35%, var(--panel)); }
-.c-map.diffed > .c-bar { background: color-mix(in srgb, var(--wait) 45%, var(--panel)); }
-/* a step just shown: its added and changed boxes arrive from a stronger highlight */
+/* the step's diff: a ring just outside the box, so a box keeps its own fill (a unit its green) */
+.c-node.diffed, .c-pill.diffed, .c-map.diffed > .c-bar { outline: 2px solid var(--wait); outline-offset: 3px; }
+/* a step just shown: its added and changed boxes arrive from a wider ring */
 .c-node.diffed.arrive, .c-pill.diffed.arrive, .c-map.diffed.arrive > .c-bar { animation: dfg-arrive 1.4s ease-out; }
-@keyframes dfg-arrive { from { background-color: color-mix(in srgb, var(--wait) 85%, var(--panel)); box-shadow: 0 0 0 4px color-mix(in srgb, var(--wait) 70%, transparent); } }
+@keyframes dfg-arrive { from { outline-offset: 7px; outline-color: color-mix(in srgb, var(--wait) 85%, var(--ink)); } }
 @media (prefers-reduced-motion: reduce) { .arrive, .arrive > .c-bar { animation: none !important; } }
 /* the log */
 .dfg-log-bar { display: flex; gap: 0.5rem; }
