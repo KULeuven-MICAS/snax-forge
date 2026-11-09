@@ -43,6 +43,21 @@ come in the order the next node's connectors read them, then the rest; the
 page then puts each box above the leftmost connector it feeds, which only the
 browser knows (dfg.js's ``orderRows``), so edges cross as little as possible.
 
+**Columns** (``columns``). The top-level nodes split into independent chains,
+each drawn as a column of its own rows, side by side: two nodes are in one
+chain when one writes a container the other reads or writes (both only
+reading one does not link them), and a node linked so to two columns starts a
+new column below them that ``joins`` them (gesummv's sum). mvt and bicg are
+two columns, a graph of one chain is drawn as before. The columns say the
+chains are independent, not that they run at once: the body's order, and the
+accelerators' run in series (D158), stay. Each column draws its own input
+boxes (mvt's A once in each), but a container ``mark_transpose`` marked
+(``drawn_once``) is one box above the columns that read it, an edge into
+each; a marked edge is labelled at its start, under the box and outside the
+reader's map, ``Aᵀ`` for a matrix (``A · transpose(2, 0, 1)`` above two
+dimensions, ``transpose_label``), and its Details' memlet ends ``(transpose
+1, 0)``.
+
 Each edge is one memlet: from a container box (or a writer's connector) to
 an input connector, or from an output connector to a container box, with its ``id``
 ``<from>-><to>``; it carries no text. Its Details hold the memlet, for a folding write
