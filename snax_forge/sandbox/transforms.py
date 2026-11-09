@@ -596,7 +596,7 @@ def _bind_check(g: Graph, site: _Site, brm: str, implementation: str,
     if seeds and not any(p.name == SEED for p in b.interface.ports):
         (s,) = seeds.values()
         raise SandboxError(f"{what}: the fold is seeded from {s.data}; {brm!r} has no seed port "
-                           "(TreeAccumulate and SerialAccumulate take one, D149): unfuse_seed "
+                           "(TreeAccumulate and SerialAccumulate take one, D163): unfuse_seed "
                            "first")  # fmt: skip
     if given_seed is not None and given_seed != int(bool(seeds)):
         raise SandboxError(f"{what}: seed = {given_seed!r} given, but the fold is "

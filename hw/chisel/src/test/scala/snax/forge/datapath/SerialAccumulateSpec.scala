@@ -12,7 +12,7 @@ import snax.forge.elementwise.ElementwiseModel
   * too, whose lane pin is 0 bits), int64 and int32 into themselves or int64, signed and unsigned; the partials (-13, 6)
   * of snax-gvsoc's vectors: -13, then -7; and jobs of a run-time T (1 to 4 beats) of random int64 at 1, 2, 4 and 8
   * lanes, read lane by lane as its control unit reads them (`first` high on a job's first beat, so high and low at lane
-  * 0, idle cycles between reads), each job's sum against the sum of its elements. Seeded (D149, B2 R5), at 1, 2 and 4
+  * 0, idle cycles between reads), each job's sum against the sum of its elements. Seeded (D163, B2 R5), at 1, 2 and 4
   * lanes: jobs read lane by lane with random gaps, a random seed each, added on the job's first beat's last lane (the
   * read that fires it), each job's sum against its seed plus its elements.
   */

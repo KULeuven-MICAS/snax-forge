@@ -10,7 +10,7 @@ Rules (D117):
 - A replaced or merged entry is removed, and its number goes under Retired with the entry that holds it now. A number is never changed or reused, since code, tests and docs cite them; the text of every retired entry is in git history (tag `pre-gvsoc`; RET1's at `cad6619`, CLN1's at `6079d24`).
 - Closing a milestone compacts this file and removes the done tasks from STATUS.
 - Markdown prose is never hard-wrapped: one line per paragraph, list item and table row (`util/md_reflow.py --check` in lint); headings, code blocks, tables, display maths and HTML stay as they are. An entry's three lines are about 300 characters.
-- A new decision gets the next number at the end of this file, with its area tag. Next free number: **D163**.
+- A new decision gets the next number at the end of this file, with its area tag. Next free number: **D164**.
 
 Area tags: `scope` (plan, ownership, order), `lower` (SNAX-LOWER), `gvsoc` (SNAX-GVSoC), `brm` (SNAX-BRM), `dfg` (SNAX-DFG and importers), `ref` (reference executor), `sandbox`, `design` (platform, checks, memory plan, design point), `flow`, `estimate` (the ideal estimate of a bound graph), `viz`, `docs`.
 
@@ -19,7 +19,7 @@ Area tags: `scope` (plan, ownership, order), `lower` (SNAX-LOWER), `gvsoc` (SNAX
 | scope | D8 D23 D51 D52 D91 D98 D100 D111–D113 D116 D118 D123 D126 D130 D141 D145 D146 D152 D157 D159 |
 | lower | D64 D75 D105 D135 D144 D158 |
 | gvsoc | D120–D122 D125 D134 D137 |
-| brm | D68 D70 D82 D103 D129 D133 D143 D147 D149 D153 |
+| brm | D68 D70 D82 D103 D129 D133 D143 D147 D149 D153 D163 |
 | dfg | D19 D71 D102 D148 D150 |
 | ref | D28 D79 |
 | sandbox | D72 D73 D156 |
@@ -123,7 +123,7 @@ Retired, and where each now lives:
 
 **D100** · scope — SNAX-FORGE is the subject of a paper for ISPASS 2027 (abstract 11 Dec 2026, paper 18 Dec): a plan (P1) runs alongside development, a draft (P2) follows the evidence. The evaluation climbs NPBench from kernels to layers to blocks and models (ResNet, Transformer, NVSA); the ISPASS paper carries kernels and composite kernels (PAP3), with Transformer decode as its end-to-end case only if softmax runs on SNAX-GVSoC by 27 Nov 2026, the rest after it. → `docs/PAPER.md` §6.
 
-**D102** · dfg — A reduction is a map whose tasklet writes through a memlet with a `reduce` (an associative op and its identity), so import, split and bind treat it as any map; bind folds every lane of an output without the spatial variable into one, its rate from `named_rates`. → C§11.
+**D102** · dfg — A reduction is a map whose tasklet writes through a memlet with a `reduce` (an associative op, and its identity or a seed, the element each output starts from, D163), so import, split and bind treat it as any map; bind folds every lane of an output without the spatial variable into one, its rate from `named_rates`. → C§11.
 
 **D103** · brm — Timing has a third number, `drain`: the cycles from a push in which no input is taken. Port names are not Python keywords and do not start with `_`, since they appear in `code` and in streamer names. → C§10.
 
@@ -189,7 +189,7 @@ Retired, and where each now lives:
 
 **D149** · brm — The MAC is one block with design-time variants (`accumulate`, or a·b + c with `regOut` for a later systolic PE; no `regIn`), not vmul into a lane accumulator; the lane accumulator without an op is its own block, `LaneAccumulate` (rowsum 2). The one-lane vsum is `SerialAccumulate` (`span` = lanes), not a serializer link; a buffer is `LinkBuffer`, not a FIFO. → C§17.
 
-**D150** · dfg — The mapping is spelled step by step: `split_reduce`, `fuse_map` (a fold, or a plain second tasklet composed into one code), `interchange_map` (two maps of a perfect nest trade places) and `link`, each with its inverse, one recipe per variant, instead of binding a group of tasklets in one step. `bind` refuses with the fix named ("fuse_map first", "split_reduce first"). → C§11, C§12.
+**D150** · dfg — The mapping is spelled step by step: `split_reduce`, `fuse_map` (a fold, or a plain second tasklet composed into one code; an untagged level takes the other's tag, so tagging and fusing go in either order), `fuse_seed` (D163), `interchange_map` (two maps of a perfect nest trade places) and `link`, each with its inverse, one recipe per variant, instead of binding a group of tasklets in one step. `bind` refuses with the fix named ("fuse_map first", "split_reduce first"). → C§11, C§12.
 
 **D152** · scope — `<tag>_csr` is the accelerator's interface, what an HLS block leaves to its driver, so `<tag>_ctrl` and `<tag>_datapath` compare with the whole HLS block: START a strobe that reads 0, STATUS's done bit and COUNTER kept there from ctrl's busy and done pulse, and every CSR at its width, the platform's `acc_csr` (JOBS and JOB_BEATS job_width, a saturating COUNTER counter_width). → C§13, C§17.
 
@@ -212,3 +212,5 @@ Retired, and where each now lives:
 **D161** · sandbox — A kernel's scalar argument (`sdfg.scalar`) binds to a slot read at run time from an R/W CSR, so one ELF serves any value (axpy's alpha as K1); how it is read is a step of its own, `bake_scalar` with a value (baked into the hardware) or `csr` (read at run time, the code naming the container), rather than a choice inside `bind` or a promote transform, so both variants are recipes with the same steps and the editor shows the choice; `bind` still reads an unmarked scalar from a CSR. → C§10, C§12, C§17.
 
 **D162** · dfg — A loop variable says which dimension it runs over, which piece of it, and its tag: a map over `0:X` (X one symbol) is named `lower(X)` at import (rowsum's `m` and `n`, so `A[m, n]`), unless the range is anything else or the name is taken, when it keeps DaCe's; the pieces of a split dimension are numbered outer to inner (`n_1`, `n_2`, `n_3`, renumbered as pieces are split or joined) and a tag adds `_t`, `_s` or `_tile` (`n_1_t`, `n_2_t`, `n_3_s`), the name derived from the map's `loop.dim` and `loop.piece` after every step, never typed; map ids stay as they are, so recipes do not change. Replaces DaCe's `i` and `j` and the `<var>_t` and next-free-pair names (D73). → C§11, C§12.
+
+**D163** · brm — A fold's result read only by an elementwise nest of the same op (mvt's x₁ + A y₁) is folded in as the fold's seed, a per-job port read on a job's first firing, by a step of its own, `fuse_seed` (inverse `unfuse_seed`), not a vecadd after the fold nor an "init" port; only `TreeAccumulate` and `SerialAccumulate` take one, the folds ending a reduction across lanes (`Mac` and `LaneAccumulate` need one only in the column form, tier A), their unseeded RTL unchanged. → C§10, C§11, C§12, C§17.

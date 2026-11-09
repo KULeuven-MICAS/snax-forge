@@ -17,7 +17,7 @@ import snax.forge.IntType
   * sum from the cycle after (latency 1 after the last lane). SNAX-GVSoC's `SnaxSerialAccumulate`
   * (`snax/snax_datapath.hpp`) is the same block.
   *
-  * Seeded (`seed`, D149, B2 R5), it has one more input, `seed`, one element of `outType` read once per job, added on
+  * Seeded (`seed`, D163, B2 R5), it has one more input, `seed`, one element of `outType` read once per job, added on
   * the job's first beat's last lane, the read that fires it (`read` ∧ `first` ∧ `lane` = lanes − 1), when its control
   * unit takes the seed: the job's sum is the seed's plus its lanes'. Unseeded it is the block it was, the same RTL.
   *

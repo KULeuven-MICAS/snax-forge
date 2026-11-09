@@ -6,7 +6,7 @@ import chisel3.util._
 /** One unit of a group's description (`accelerator.json`): its name, its timing (L, II, span), its outer inputs (the
   * streamer's ports it reads), its T when fixed at design time (`params.T`; 1 for a unit without a fold), else None: a
   * JOB_BEATS from the start; `linked`, the positions among its inputs (in port order) that no outer port takes, each
-  * fed by one link (snax_group.cpp's inputs left ""); and `seeded`, its last outer input a fold's seed (D149), one beat
+  * fed by one link (snax_group.cpp's inputs left ""); and `seeded`, its last outer input a fold's seed (D163), one beat
   * per job.
   */
 case class UnitDesc(
@@ -155,7 +155,7 @@ class LinkEnables(depth: Int) extends Bundle {
   * 0); backward, in reverse order, its room (its outer output's ready if it owns it, and every out-edge's take: a wire
   * its consumer's firing, a buffer occupancy < D or that firing), whether it is frozen (its head, or at L 0 a giving
   * firing, has no room), fires and reads. The outer ports' join is per unit: input j's ready is its unit's firing,
-  * which needs every one of that unit's outer valids; a seeded unit's seed (its last outer input, D149) only on its
+  * which needs every one of that unit's outer valids; a seeded unit's seed (its last outer input, D163) only on its
   * job's first beat (fire = a.valid ∧ (¬first ∨ seed.valid)), and its ready is that firing (seed.ready = fire ∧ first).
   * The outer output's valid is its owner's offer, never its ready's. `cls` is the cycle's class, judged at the owner,
   * as the run line counts it: busy 0, stall_in 1, stall_out 2, flush 3.

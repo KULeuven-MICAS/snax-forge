@@ -55,7 +55,7 @@ every ``--spec FILE --out DIR`` pair (``elaborate_all``).
 such param: SimdLanes' ``k`` at two streams, a ``const`` param), ``unit.scalars.<slot>`` whether
 the unit reads that slot from its CSR (SimdLanes' ``k1Csr``; each of the unit's scalars must
 then be a live pin, ``gen.port_map``), ``unit.ports.seed`` whether the unit has a seed port (a
-fold's, D149: TreeAccumulate's and SerialAccumulate's ``seed``); a buffer's ``link.depth``, ``link.lanes`` and ``link.dtype``. Inputs and outputs are
+fold's, D163: TreeAccumulate's and SerialAccumulate's ``seed``); a buffer's ``link.depth``, ``link.lanes`` and ``link.dtype``. Inputs and outputs are
 the unit's ports by their ``dir``, in the BRM's order.
 
 **The fixtures** (``write_fixture``): ``hw/chisel/src/test/resources/rtl/<design>/`` holds, for

@@ -67,7 +67,7 @@ class BlockEmitSpec extends AnyFlatSpec {
     simd(1, "max", kCsr    = true), // the pin k
     simd(2, "axpby", k1Csr = true, k2Csr = true), // the pins k1 and k2
     simd(2, "axpby", k1    = 3) // no pin
-  ) ++ Seq(false, true).map { seed => // seeded, the port seed (D149)
+  ) ++ Seq(false, true).map { seed => // seeded, the port seed (D163)
     Case(
       "TreeAccumulate",
       ujson.Obj("inType" -> "int64", "outType" -> "int64", "lanes" -> Lanes, "op" -> "add", "seed" -> seed),

@@ -23,7 +23,7 @@ class DatapathVectorsSpec extends AnyFlatSpec with ForgeTester {
       val inputs = t.datapath match {
         case "SimdLanes" | "Mac" => Seq("a", "b", "c")
         case "LaneAccumulate"    => Seq("a")
-        case _                   => Seq("in", "seed") // a fold's seed, its second input (D149)
+        case _                   => Seq("in", "seed") // a fold's seed, its second input (D163)
       }
       for ((s, k) <- t.steps.zipWithIndex) {
         bool("fire", s.fire); bool("first", s.first); bool("read", s.read); bool("en", s.en)

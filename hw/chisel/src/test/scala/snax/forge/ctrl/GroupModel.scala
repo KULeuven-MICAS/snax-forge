@@ -8,7 +8,7 @@ package snax.forge.ctrl
   * fired its n, nothing is in flight and every buffer is empty.
   *
   * Per cycle: `start(...)` first when a start is offered, then `step(inputs, room, seeds)`, which steps the rule only
-  * in a busy cycle (None otherwise). A seeded unit (`UnitDesc.seeded`, D149) takes `inputs(k)` for its other outer
+  * in a busy cycle (None otherwise). A seeded unit (`UnitDesc.seeded`, D163) takes `inputs(k)` for its other outer
   * inputs and `seeds(k)` for its seed: its job's first beat waits for the seed (fire = a.valid ∧ (¬first ∨
   * seed.valid)), and that firing takes it (`UnitStep.seed`).
   */

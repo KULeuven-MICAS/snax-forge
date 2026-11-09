@@ -50,7 +50,7 @@
     viewer's partners, viz/dfg/api.py), all through the site's check.
 
 ``bind`` takes a seeded fold only on a BRM with a ``seed`` port
-(``accumulate``: TreeAccumulate and SerialAccumulate, D149), with the design
+(``accumulate``: TreeAccumulate and SerialAccumulate, D163), with the design
 param ``seed`` 1 and the port on the seed's element, one beat per job.
 """
 

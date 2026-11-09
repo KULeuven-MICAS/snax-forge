@@ -499,7 +499,7 @@ def test_axpys_unit_fills_k1_from_its_csr_and_k1_is_a_live_pin(tmp_path):
 @pytest.mark.parametrize(("recipe", "datapath"), [("matvec_seed", "TreeAccumulate"),
                                                   ("matvec_seed_serial", "SerialAccumulate")])  # fmt: skip
 def test_a_seeded_fold_fills_seed_and_its_seed_port_is_live(tmp_path, recipe, datapath):
-    """matvec_seed's sum (B2 R5, D149): the catalogue's fill rule unit.ports.seed gives seed true,
+    """matvec_seed's sum (B2 R5, D163): the catalogue's fill rule unit.ports.seed gives seed true,
     and the datapath's port seed is live on it, so the unit passes check_unit; the mul's simd
     and an unseeded fold keep their params."""
     acc = accelerator_spec(tmp_path / designed(tmp_path, recipe, recipe), tmp_path)

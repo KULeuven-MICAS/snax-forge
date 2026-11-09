@@ -11,7 +11,7 @@ object SnaxGroupCases {
 
   val Env = "SNAX_GVSOC_GROUP_CASES"
 
-  /** A unit line; `seed`, its last outer input a fold's seed, one beat per job (`seed 1`, D149). */
+  /** A unit line; `seed`, its last outer input a fold's seed, one beat per job (`seed 1`, D163). */
   case class UnitLine(
     name:     String,
     datapath: String,

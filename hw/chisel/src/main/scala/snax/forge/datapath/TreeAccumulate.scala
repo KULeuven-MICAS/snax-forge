@@ -13,7 +13,7 @@ import snax.forge.IntType
   * (`ctrl.GroupCtrl`, L 1) pushes `out` in the cycle after a job's last beat fires, and may fire the next job's first
   * beat in that same cycle, since `acc` changes only at the cycle's end: no drain cycle.
   *
-  * Seeded (`seed`, D149, B2 R5), it has one more input, `seed`, one element of `outType` read once per job: a job's
+  * Seeded (`seed`, D163, B2 R5), it has one more input, `seed`, one element of `outType` read once per job: a job's
   * first beat starts from it, acc ← seed + tree(in), so the job's sum is the seed's plus its beats'. The control unit
   * holds the first beat until the seed is valid and takes the seed with that firing (`ctrl.GroupRule`). Unseeded it is
   * the block it was, the same RTL.

@@ -16,7 +16,7 @@ import snax.forge.{ForgeTester, Seeds}
   * out.valid, poked with out.ready low and high (it never depends on it); per unit fire, first, read, lane, adv, give;
   * per buffer load, its slots and its occupancy; the class; the done pulse (high in a run's last cycle E, and in the
   * cycle an empty run's start is accepted). At each run's end the head's firings. COUNTER, which `<tag>_csr` keeps from
-  * busy (D152), is AccCsrRandomSpec's and the shell specs'. The whole runs again with seeded units (D149, B2 R5): half
+  * busy (D152), is AccCsrRandomSpec's and the shell specs'. The whole runs again with seeded units (D163, B2 R5): half
   * the units with an outer input to spare (the head two, another one) seeded, their last outer input the seed, its
   * valid at random; a seed's ready is its unit's firing on its job's first beat (the model's `seed`).
   */

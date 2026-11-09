@@ -42,7 +42,8 @@ COUNTERS = {
     "vecadd_i32": [19], "vsum_tree_i8": [11], "dot_1": [19, 19], "dot_1_enc": [19, 19],
     "dot_4": [133], "vecadd": [19],
     "vsum": [67], "vecmul_i32_i64": [19], "dot_2": [133], "dot_3": [132], "dot_5": [136],
-    "dot_6": [137], "matvec_5": [2101], "matvec_6": [2057],
+    "dot_6": [137], "matvec_5": [2101], "matvec_6": [2057], "relu": [18], "axpy": [19],
+    "axpy_baked": [19], "dot_serial": [19, 67],
 }  # fmt: skip
 
 
