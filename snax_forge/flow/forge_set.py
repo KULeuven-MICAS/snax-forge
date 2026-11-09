@@ -7,9 +7,12 @@ the CPU count), each in its own folders (``out/flow/<name>/``, ``out/bundle/<nam
 ``out/forge/<name>/``), each forge's terminal output in ``out/forge-set/<set>/<design>.txt``. A
 design (``Design``) is a recipe and the ``--set`` values forge runs it with, none for the
 recipe's defaults (rowsum_2 at its defaults, then with ``memory.passes.layout=padded_rows``,
-rows 64 and 65 words apart; the mvt set, its own, runs mvt's variants so at W = 4 and 8); its name is forge's
-folder name for them (flow/run.py's ``default_name``: ``rowsum_2_passes.layoutpadded_rows``). Emit is made ready once first (``rtl.warm_emit``: its
-classpath and firtool), so the bundles do not all start sbt or extract firtool at once. Then it writes ``out/forge-set/<set>.md``: per design its bundle folder and
+rows 64 and 65 words apart; the mvt set, its own, runs mvt_1 and mvt_1_dot2 at W = 4 and 8,
+mvt_2 at W = 4 only, as at W = 8 its two dot groups need 85 TCDM crossbar inputs of the
+platform's 64); its name is forge's folder name for them (flow/run.py's ``default_name``:
+``rowsum_2_passes.layoutpadded_rows``). Emit is made ready once first (``rtl.warm_emit``: its
+classpath and firtool), so the bundles do not all start sbt or extract firtool at once. Then it
+writes ``out/forge-set/<set>.md``: per design its bundle folder and
 the lines its RTL run must print (``forge_expected.txt``, from its SNAX-GVSoC run); the one
 line that checks them all from snax_cluster's ``target/snitch_cluster`` (``make
 snax-forge-check BUNDLES=... SIM=... SNAX_CLUSTER_IMAGE=<image>``, the image named in
@@ -78,8 +81,7 @@ SETS = {
             Design("mvt_1", ("W=8", PADDED)),
             Design("mvt_1_dot2"), Design("mvt_1_dot2", ("W=8",)), Design("mvt_1_dot2", (PADDED,)),
             Design("mvt_1_dot2", ("W=8", PADDED)),
-            Design("mvt_2"), Design("mvt_2", ("W_x1=8", "W_x2=8")), Design("mvt_2", (PADDED,)),
-            Design("mvt_2", ("W_x1=8", "W_x2=8", PADDED)),
+            Design("mvt_2"), Design("mvt_2", (PADDED,)),
             Design("mvt_2_reuse")],
 }  # fmt: skip
 
