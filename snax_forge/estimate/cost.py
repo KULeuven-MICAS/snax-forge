@@ -9,7 +9,8 @@ streamers, crossbar and L1 banks (D167, C§20).
     memory_cost(costs, n, depth, width, reads, writes) -> MemoryCost   the L1 banks
     L1Cost                                         an accelerator's words through the crossbar
                                                    and the banks
-    Part, PARTS                                    the five parts a design's cost is shown in
+    Part, PARTS, shares(parts)                     the five parts a design's cost is shown in,
+                                                   and each one's share of the totals
     sig3(x) -> str                                 an area as shown: 3 significant figures
     dec3(x) -> str                                 an energy as shown: 3 decimal places
     heading(tech), CAVEAT                          what every shown cost is headed with
@@ -367,6 +368,18 @@ class Part:
 
     def to_dict(self) -> dict[str, Any]:
         return {"area": self.area_um2, "energy": self.energy_nj}
+
+
+def shares(parts: Mapping[str, Part]) -> dict[str, tuple[float | None, float | None]]:
+    """Each part's share of the total area and of the total energy (0..1), None for a part
+    not costed or a total of 0."""
+    area = sum(p.area_um2 or 0.0 for p in parts.values())
+    energy = sum(p.energy_nj or 0.0 for p in parts.values())
+
+    def of(x: float | None, whole: float) -> float | None:
+        return None if x is None or not whole else x / whole
+
+    return {k: (of(p.area_um2, area), of(p.energy_nj, energy)) for k, p in parts.items()}
 
 
 def block_cost(table: Table, block: Block, bits: int, c_acc: int) -> BlockCost:

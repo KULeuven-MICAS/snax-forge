@@ -441,7 +441,6 @@ table.c-cost-table th, table.c-cost-table td { padding: 0.08rem 0.3rem; text-ali
 table.c-cost-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 table.c-cost-table tr.differs .num { white-space: normal; } /* Compare's before → after wraps at the arrow */
 .c-cost-wrap { max-width: 100%; overflow-x: auto; } /* the fallback: the table scrolls inside the panel */
-table.c-cost-table tr.placeholder th, table.c-cost-table tr.placeholder td { color: var(--muted); font-style: italic; }
 .c-cost-dp { font-size: 0.86em; color: var(--muted); }
 .c-cost-tag { font-size: 0.82em; font-style: normal; padding: 0 0.25rem; border: 1px solid var(--rule); border-radius: 3px; }
 table.c-cost-table thead th { color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--rule); }
@@ -779,3 +778,20 @@ button.cyc.link { border: none; color: var(--command); background: none; padding
 .sched-labels .lab.tracer .lab-x:hover { color: var(--mem); }
 path.fire-mark { stroke: var(--panel); stroke-width: 1; }
 button.trace-toggle[aria-pressed="true"] { background: var(--req-bg); border-color: var(--req); color: var(--ink); }
+
+/* The cost by part (D167): two bars to scale, area and energy, a segment per part; these
+   colours mean the part on the Estimate panel only, as a region's colour does on the memory tab */
+:root { --part-datapath: #2f8a55; --part-control: #7a5bc2; --part-streamers: #13838c; --part-crossbar: #a87400; --part-memory: #8a96a3; }
+@media (prefers-color-scheme: dark) { :root { --part-datapath: #45b07a; --part-control: #9c83e0; --part-streamers: #3fb3bb; --part-crossbar: #e0a83a; --part-memory: #6b7682; } }
+.c-part-bar-wrap { margin: 0.3rem 0 0.4rem; }
+.c-part-bar-label { font-size: 0.82em; margin-bottom: 0.1rem; }
+.c-part-bar { position: relative; height: 1.4rem; background: var(--panel); border: 1px solid var(--rule); border-radius: 4px; overflow: hidden; }
+.c-part-seg { position: absolute; top: 0; bottom: 0; min-width: 2px; display: flex; align-items: center; justify-content: center; overflow: hidden; color: #fff; }
+.c-part-seg span { font-size: 0.78em; font-weight: 600; white-space: nowrap; padding: 0 0.2rem; }
+.c-part-seg.p-datapath, .c-part-key.p-datapath { background: var(--part-datapath); }
+.c-part-seg.p-control, .c-part-key.p-control { background: var(--part-control); }
+.c-part-seg.p-streamers, .c-part-key.p-streamers { background: var(--part-streamers); }
+.c-part-seg.p-crossbar, .c-part-key.p-crossbar { background: var(--part-crossbar); }
+.c-part-seg.p-memory, .c-part-key.p-memory { background: var(--part-memory); }
+.c-part-key { display: inline-block; width: 0.7em; height: 0.7em; border-radius: 2px; margin-right: 0.3em; vertical-align: baseline; }
+table.c-cost-table tr.streamer th, table.c-cost-table tr.streamer td { color: var(--ink); }

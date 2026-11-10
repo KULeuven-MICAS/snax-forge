@@ -529,11 +529,26 @@ def test_design_md_costs_each_group_beside_its_cycles(dot1):
         ("vmul", "vmul", "SimdLanes"), ("vmul", "ctrl", "group control unit"),
         ("vsum", "vsum", "TreeAccumulate"), ("vsum", "ctrl", "group control unit")]  # fmt: skip
     assert all(c.found for c in e.cost if c.block != "ctrl")
-    assert e.area_um2 == pytest.approx(sum(g.area_um2 for g in e.groups))
-    assert e.energy_nj == pytest.approx(sum(c.energy_nj for c in e.cost)
-                                        + sum(x.energy_nj for x in e.l1))  # fmt: skip
+    # D167: the groups are the datapath and control parts; the total adds the streamers, the
+    # crossbar and the banks, and the accelerators' L1 rows are the crossbar's and banks' energy
+    parts = {p.part: p for p in e.parts}
+    assert list(parts) == ["datapath", "control", "streamers", "crossbar", "memory"]
+    assert parts["datapath"].area_um2 + parts["control"].area_um2 == pytest.approx(
+        sum(g.area_um2 for g in e.groups))  # fmt: skip
+    assert e.area_um2 == pytest.approx(sum(p.area_um2 for p in e.parts))
+    assert e.area_design_um2 == pytest.approx(e.area_um2 - parts["memory"].area_um2)
+    assert e.energy_nj == pytest.approx(sum(p.energy_nj for p in e.parts))
+    assert sum(p.area_share for p in e.parts) == pytest.approx(1.0)
     (l1,) = e.l1
     assert (l1.accelerator, l1.bits) == ("dot", 64 * l1.words) and l1.words > 0
+    assert l1.energy_nj == pytest.approx(parts["crossbar"].energy_nj + parts["memory"].energy_nj)
+    assert [x.streamer for x in e.streamer_cost] == [
+        "vmul_a",
+        "vmul_b",
+        "vmul_out",
+        "vsum_a",
+        "vsum_out",
+    ]
     assert all(c.comb_um2 == c.flops_um2 for c in e.cost if c.block == "ctrl")
     text = render_design(r)
     assert "| Expected COUNTER | Area (µm²) | Energy (nJ) |" in text
@@ -541,8 +556,8 @@ def test_design_md_costs_each_group_beside_its_cycles(dot1):
         "### Cost estimate (first-order) on nangate45\n\nFirst-order: aimed at the large costs"
         in text
     )
-    assert (f"Accelerator on nangate45: about {sig3(e.area_um2)} µm² and {e.energy_nj:.3f} nJ "
-            "per run.") in text  # fmt: skip
+    assert (f"Design on nangate45: about {sig3(e.area_um2)} µm² ({sig3(e.area_design_um2)} µm² "
+            f"without the banks) and {e.energy_nj:.3f} nJ per run.") in text  # fmt: skip
     # an area shown to 3 significant figures, an energy to 3 decimals
     assert (
         "| vsum | vsum | TreeAccumulate | measured | 16 | 64 | 1 300 | 340 | 2.495 | 0.457 | 0.055 |"
@@ -552,19 +567,21 @@ def test_design_md_costs_each_group_beside_its_cycles(dot1):
     (mul,) = [x for x in text.splitlines()
               if x.startswith("| vmul | vmul | SimdLanes |") and len(x.split(" | ")) == 11]  # fmt: skip
     assert mul.split(" | ")[9] == "–", mul
-    assert (f"| dot | L1 accesses (placeholder, 4 × e_load per bit) | {l1.words} | {l1.bits} | "
-            f"{l1.energy_nj:.3f} |") in text  # fmt: skip
-    assert "Not characterized" not in text
+    assert (f"| dot | L1 accesses (crossbar and banks) | {l1.reads} | {l1.writes} | "
+            f"{l1.xbar_nj:.3f} | {l1.banks_nj:.3f} | {l1.energy_nj:.3f} |") in text  # fmt: skip
+    m = parts["memory"]
+    assert (f"| memory | {sig3(m.area_um2)} | {100 * m.area_share:.1f} % | {m.energy_nj:.3f} | "
+            f"{100 * m.energy_share:.1f} % |") in text  # fmt: skip
+    assert "Cost by part:" in text and "| without the banks |" in text
+    assert "Not characterized" not in text and "Not costed" not in text
     assert DesignReport.from_dict(r.to_dict()).to_dict() == r.to_dict()
 
 
-def test_design_md_on_another_technology_or_none(dot1):
-    """The report's technology (``--tech``): nangate15's heading and table; None, no cost."""
+def test_design_md_on_no_technology(dot1):
+    """The report's technology (``--tech``): None, no cost. (nangate15's case dropped: the
+    technology is no longer offered, D167.)"""
     from snax_forge.report.files import reports_of as of
 
-    r15 = of(dot1, tech="nangate15").design
-    assert r15.estimate.tech == "nangate15"
-    assert "### Cost estimate (first-order) on nangate15" in render_design(r15)
     plain = of(dot1, tech=None).design
     assert plain.estimate.tech is None and plain.estimate.cost == []
     text = render_design(plain)
@@ -641,7 +658,7 @@ def test_run_md_has_a_row_per_accelerator(dot1_sets):
 
 def test_design_md_has_a_row_per_accelerator_and_counts_the_streamers(dot1_sets):
     """The same rows from the design: each set's movers, channels, temporal dims, CSRs and its
-    groups' own CSRs; the cost leaves out dot_1's 2 streamers (40 CSRs), dot_1_enc's 1 (37)."""
+    groups' own CSRs; dot_1's 2 streamer sets (40 CSRs, not costed), dot_1_enc's 1 (37)."""
     one, enc = (reports_of(dot1_sets[d]).design for d in ("dot_1", "dot_1_enc"))
     assert [(x.name, x.movers, x.channels, x.temporal_dims, x.first, x.last, x.group_csrs)
             for x in one.sets] == [
@@ -653,7 +670,6 @@ def test_design_md_has_a_row_per_accelerator_and_counts_the_streamers(dot1_sets)
     assert (one.estimate.streamers, one.estimate.csrs) == (2, 40)
     assert (enc.estimate.streamers, enc.estimate.csrs) == (1, 37)
     text = render_design(one)
-    assert "(2 streamers not costed, open item 110)" in text
-    assert "Not costed: 2 streamers, one per accelerator" in text and "; 40 CSRs" in text
+    assert "2 streamer sets, one per accelerator; 40 CSRs" in text and "not costed." in text
     assert "| vmul | vmul | 3 | 12 | 1, 1, 1 | 960–981 | vmul 978–981 |" in text
-    assert "Not costed: 1 streamer, one per accelerator" in render_design(enc)
+    assert "1 streamer set, one per accelerator; 37 CSRs" in render_design(enc)

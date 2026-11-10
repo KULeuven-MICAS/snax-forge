@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from snax_forge.char import Table, load
+from snax_forge.char import TECHS, CharError, Table, load
 from snax_forge.design.platform import Platform
 from snax_forge.estimate import Estimate, estimate
 from snax_forge.estimate.cost import CAVEAT, Block, block_cost, dec3, group_cost, heading, sig3
@@ -156,15 +156,16 @@ def test_words_are_counted_packed_and_a_link_keeps_its_container_out():
 
 
 def test_not_costed_without_a_platform_or_the_tables():
-    """No platform: no streamer, crossbar or bank counts; nangate15: no HWCOST tables (D159).
-    The datapath and control parts stay, the others are None and named."""
+    """No platform: no streamer, crossbar or bank counts; the datapath and control parts stay,
+    the others are None and named. (nangate15's case, no HWCOST tables, dropped: the
+    technology is no longer offered, D167.)"""
     bare = estimate(steps("vecmul", W=8, N=2048)[-1], None, "nangate45")
     assert bare.not_costed == ["streamers, crossbar and memory: no platform"]
     assert bare.parts["memory"] == bare.parts["crossbar"] == bare.parts["streamers"]
     assert bare.parts["memory"].area_um2 is None and bare.l1 == {}
     assert bare.energy == pytest.approx(bare.kernel_energy)
-    fifteen = estimate(steps("vecmul", W=8, N=2048)[-1], Platform.load(SNAX_FORGE), "nangate15")
-    assert fifteen.not_costed == ["streamers, crossbar and memory: no tables for nangate15"]
+    with pytest.raises(CharError, match="no longer offered"):
+        estimate(steps("vecmul", W=8, N=2048)[-1], Platform.load(SNAX_FORGE), "nangate15")
 
 
 def test_a_point_outside_the_grid_is_extrapolated_and_named():
@@ -195,9 +196,9 @@ def test_no_technology_skips_the_cost_and_both_round_trip():
     plain = estimate(g, None, None)
     assert plain.to_dict()["cost"] is None and plain.groups[0].cost is None
     assert plain.area is None and plain.energy is None and plain.l1 == {}
-    costed = estimate(g, None, "nangate15")
-    assert costed.to_dict()["cost"]["tech"] == "nangate15"
-    assert costed.char_source == load("nangate15").source
+    costed = estimate(g, None, "nangate45")
+    assert costed.to_dict()["cost"]["tech"] == "nangate45"
+    assert costed.char_source == load("nangate45").source
     for e in (plain, costed):
         d = e.to_dict()
         assert Estimate.from_dict(json.loads(json.dumps(d))).to_dict() == d
@@ -231,17 +232,18 @@ def test_an_energy_is_shown_to_3_decimals():
 def test_dot_4_and_dot_5_read_apart():
     four, five = (estimated(r, W=8, N=2048).kernel_energy for r in ("dot_4", "dot_5"))
     assert (dec3(four), dec3(five)) == ("26.285", "26.339") and sig3(four) == sig3(five)
-    assert heading("nangate15") == "Cost estimate (first-order) on nangate15"
+    assert heading("nangate45") == "Cost estimate (first-order) on nangate45"
     assert "about 30 %" in CAVEAT and "csr" in CAVEAT and "4 × e_load" not in CAVEAT
 
 
 @pytest.mark.slow
 def test_the_kernel_energy_is_the_experiments_formula(capsys):
     """A consistency check, not one of accuracy: vecmul, vsum_tree, dot 4 and dot 5 at W = 8
-    and 32, N = 2048, on both technologies, the estimate's kernel energy (units, links and
-    ctrl) against snax-forge-experiments' model, the same formula on the same inputs (its C_acc
-    SYN2's window, its ctrl bits DC's); within 0.5 %, the table's rounding."""
-    rows = json.loads(MODEL.read_text())["rows"]
+    and 32, N = 2048, on nangate45 (its nangate15 rows skipped: the technology is no longer
+    offered, D167), the estimate's kernel energy (units, links and ctrl) against
+    snax-forge-experiments' model, the same formula on the same inputs (its C_acc SYN2's
+    window, its ctrl bits DC's); within 0.5 %, the table's rounding."""
+    rows = [r for r in json.loads(MODEL.read_text())["rows"] if r["tech"] in TECHS]
     lines = ["| tech | recipe | W | C_acc | ctrl bits | estimate nJ | model nJ | ratio |",
              "|---|---|---|---|---|---|---|---|"]  # fmt: skip
     bad = []
@@ -259,7 +261,7 @@ def test_the_kernel_energy_is_the_experiments_formula(capsys):
             "\nkernel energy, the estimate against the experiments' formula (consistency):\n"
             + "\n".join(lines)
         )
-    assert len(rows) == 16 and not bad, bad
+    assert len(rows) == 8 and not bad, bad
 
 
 def _platform():

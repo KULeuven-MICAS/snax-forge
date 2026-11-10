@@ -2,7 +2,7 @@
 
     load(tech) -> Table                                          snax_forge/char/<tech>.json
     lookup(table, datapath, params, lanes, depth=None) -> Lookup | None
-    TECHS                                                        the technologies held here
+    TECHS                                                        the technologies offered
     L1_ACCESS_LOADS, CTRL_COMB_PER_FLOP                          D154's two placeholders
 
 ``<tech>.json`` is a byte copy of snax-forge-experiments' ``results/char/<tech>/char.json``
@@ -52,7 +52,10 @@ from typing import Any
 from snax_forge.common import CodedError
 
 HERE = Path(__file__).parent
-TECHS = ("nangate45", "nangate15")
+# The technologies offered (D167): nangate45 only. nangate15's table stays in the repository
+# as data (SYN1, CHAR1) but is no longer offered, as it has no memories (D159).
+TECHS = ("nangate45",)
+RETIRED = ("nangate15",)
 DEFAULT_TECH = "nangate45"
 FOUND = ("measured", "copy", "interpolate")
 # CHAR1's two placeholders until the streamers and OpenRAM's memories are characterized (D154;
@@ -105,7 +108,9 @@ def load(tech: str) -> Table:
     """The table of ``tech`` (``snax_forge/char/<tech>.json``)."""
     path = HERE / f"{tech}.json"
     if tech not in TECHS or not path.is_file():
-        raise CharError("char.tech", f"no table for technology {tech!r}: one of {list(TECHS)}")
+        why = " (kept as data, no longer offered: D167)" if tech in RETIRED else ""
+        raise CharError("char.tech",
+                        f"no table for technology {tech!r}{why}: one of {list(TECHS)}")  # fmt: skip
     d = json.loads(path.read_text())
     return Table(d["tech"], d["clock_ns"], dict(d["source"]), d["flop"]["area_um2"],
                  d["flop"]["e_load_fj"] / 1000, d["flop"]["e_hold_fj"] / 1000,
