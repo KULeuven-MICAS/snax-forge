@@ -99,7 +99,7 @@ Dates: 27 Nov, E5's cut-off (softmax not running on SNAX-GVSoC moves E5, and E6 
 
 ## Open Items
 
-Questions not decided yet. Numbers are never reused; a closed item is removed, and where it closed is in git history. Next free number: 122.
+Questions not decided yet. Numbers are never reused; a closed item is removed, and where it closed is in git history. Next free number: 123.
 
 1. BRM dataflow notation: `affine` and `stream` (D70), frozen in M6.
 2. What automated search reads and how a sweep is configured (DSE1, M8).
@@ -207,6 +207,7 @@ Questions not decided yet. Numbers are never reused; a closed item is removed, a
 118. The run viewer (`pixi run view`: banks, interconnect, transactions) is kept working but gets no new features until after the paper (Ryan, 6 Nov 2026); the DFG views (`view-dfg`, `edit-dfg`) stay first.
 119. The cost estimate reads the graph only, so a layout pass's padding (`padded_rows`: rowsum 2's 8 × 65 words against 8 × 64) is not in its memory bytes; the design report and the memory plan do count it (B2 R4).
 120. MVT1-2's vsim check (open item 95): (1) under heavy bank conflicts (mvt's half 2 at W = 8, `padded_rows`) a counter on the RTL is 4 cycles under SNAX-GVSoC's, past its fill, likely the two crossbars resolving collisions differently; (2) the window differences between layouts are smaller than the model's window error (−4.0% to +4.8%), so three of five layout pairs rank the other way on the RTL, the model's head slower where core0's setup waits on instruction fetch behind the DMA (open item 65). E1 ranks on counters as well as windows, or compares designs further apart than that error; both looked at again if E1's mvt points depend on them.
+122. A Mac expansion: W multipliers into a W → 1 adder tree and one accumulator, as one unit. Splitting both of dot's maps at W (`split_map`, no `split_reduce`) and then `fuse_map` gives one node, W products summed per firing and accumulated over the N / W firings, that nothing binds today: `mac` refuses it (it keeps one partial per lane, so `split_reduce` first, D150) and `accumulate` takes a reduce tasklet only. Its datapath is dot 3's, SimdLanes → wire → TreeAccumulate, which binds it as two units in one group; one unit from one fused node would drop the second unit's counters from the control unit, which its cost would show (Ryan, 10 Nov).
 
 ## Sync Reminders
 
