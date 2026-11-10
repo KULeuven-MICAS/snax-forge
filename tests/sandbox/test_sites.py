@@ -1,8 +1,8 @@
 """The sites (D72): where each transform applies, tested against the transforms themselves.
 
 Every recipe's steps are accepted by their transform's site on the graph before the step, with
-the params the site fills equal to the step's; wherever a site refuses, the transform refuses
-with the same error; and ``split_map`` is ``split`` then two ``tag_map`` steps, file for file
+the params the site fills equal to the step's (a suggested name aside, ``FREE_NAMES``);
+wherever a site refuses, the transform refuses with the same error; and ``split_map`` is ``split`` then two ``tag_map`` steps, file for file
 once ``split``'s neutral names are mapped to ``split_map``'s (D73). Every recipe is imported (DaCe), hence slow.
 """
 
@@ -37,6 +37,11 @@ FIXTURES = [
     "dot_accelerated",
 ]
 
+# Params a site fills with a suggested name only (link's group: the ends' group, else the next
+# free one); the editor's form lets the user type another, which the transform accepts when
+# it is free, so a saved recipe may hold any such name (Ryan's ry_mvt_1: "mvt2" for "mvt_1").
+FREE_NAMES = {("link", "group")}
+
 
 def test_every_transform_has_a_site():
     assert {n for n, spec in TRANSFORMS.items() if spec.site} == set(SELECTED)
@@ -53,6 +58,8 @@ def test_the_site_accepts_every_recipe_step(name):
         for selected in params[key] if key in ("units", "nodes") else [params[key]]:
             filled = site(graphs[i], selected)
             for k, v in filled.items():
+                if (transform, k) in FREE_NAMES:  # a default; recipe_graphs applied the step's
+                    continue
                 want = [selected] if k in ("units", "nodes") else params[k]
                 assert v == want, (
                     f"{name} step {i + 1} ({transform}): {k} {v!r}, the step's {want!r}"

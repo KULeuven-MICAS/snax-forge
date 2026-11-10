@@ -1,5 +1,5 @@
 """One instance shared by several nodes (D165): mvt's variant 1, both halves on one vmul, vsum
-and vadd (recipes/mvt/mvt_1.json), at M = 8, N = 16. bind's form offers the instances a node
+and vadd (recipes/mvt/mvt_1.json, at its M = N = 40), the sessions at M = 8, N = 16. bind's form offers the instances a node
 can join (session.py's ``share_choices``), and a joining split's editor-named W takes the
 instance's param."""
 
@@ -149,6 +149,6 @@ def test_mvt_1_dot2_is_one_dot_group_run_twice():
     from tests.estimate.helpers import estimated
 
     e = estimated("mvt_1_dot2")
-    assert [(g.name, g.cycles) for g in e.groups] == [("mvt", 68), ("vadd", 6)]
+    assert [(g.name, g.cycles) for g in e.groups] == [("mvt", 804), ("vadd", 20)]
     two = estimated("mvt_2")
-    assert e.accelerator_cycles == two.accelerator_cycles == 74
+    assert e.accelerator_cycles == two.accelerator_cycles == 824
