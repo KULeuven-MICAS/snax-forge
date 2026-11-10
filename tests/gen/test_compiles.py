@@ -6,6 +6,7 @@ no link. Skipped without a clang that targets riscv32 or the snax-gvsoc submodul
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 from functools import cache
@@ -82,8 +83,9 @@ def test_the_generated_program_compiles(tmp_path, recipe):
 
 @pytest.mark.slow
 def test_mvt_names_y1_as_its_own(tmp_path):
-    """mvt's data.h declares y1 as ``y1_l2``, and main.c moves it by that name."""
+    """mvt's data.h declares y1 as ``y1_l2``, and main.c moves it by that name (N int64)."""
+    n = json.loads((REPO / "recipes/mvt/mvt_2.json").read_text())["params"]["N"]
     out = _generated(tmp_path, "mvt_2")
     data, main = (out / "data.h").read_text(), (out / "main.c").read_text()
-    assert "const int64_t y1_l2[16]" in data and " y1[" not in data
-    assert "y1_l2, 128);" in main
+    assert f"const int64_t y1_l2[{n}]" in data and " y1[" not in data
+    assert f"y1_l2, {8 * n});" in main
