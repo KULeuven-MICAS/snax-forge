@@ -52,8 +52,8 @@ null for a platform not read from one (small16). ``--set
 accelerator_slot=NAME`` changes it as any field.
 
 **The accelerator's CSRs** (``acc_csr``, D152): ``job_width`` (default 32)
-is the bits of JOBS and every JOB_BEATS, and of the control unit's copies
-and counters; ``busy_counter_width`` those of BUSY_COUNTER, null to follow
+is the bits of JOBS and every JOB_BEATS, and of the control units' counters
+(no copies, D168); ``busy_counter_width`` those of BUSY_COUNTER, null to follow
 ``job_width``. Each is 1 to 32; the generator writes them as the CSRs'
 widths in ``accelerator.json`` (gen/accelerator.py, C§17).
 
@@ -155,7 +155,7 @@ class L2Config(Config):
 class AccCsrConfig(Config):
     """The widths of the generated accelerator's CSRs (CONTRACTS.md 13, D152)."""
 
-    job_width: int = 32  # JOBS and every JOB_BEATS, and the control unit's copies and counters
+    job_width: int = 32  # JOBS and every JOB_BEATS, and the control units' counters
     busy_counter_width: int | None = None  # BUSY_COUNTER; None follows job_width
 
     def __post_init__(self) -> None:

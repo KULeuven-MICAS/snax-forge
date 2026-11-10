@@ -6,35 +6,35 @@
 The group description is the one ``cycles.py``'s ``group_cycles`` steps: ``units`` with
 ``name``, ``L``, ``ii`` and ``span``; ``links`` ``{from, to, to_input, depth}`` by unit name;
 ``owner`` the unit with the outer output. ``fixed`` gives per unit its T when fixed at design
-time (a fold's ``params.T``, 1 for a unit without a fold), None when the start carries it (a
-JOB_BEATS CSR); ``job_width`` is the platform's ``acc_csr.job_width`` (D152). A count of a T,
-⌈log₂ T⌉ bits for a fixed T and ``job_width`` for one from the start, is Chisel's ``log2Ceil``.
+time (a fold's ``params.T``, 1 for a unit without a fold), None when a JOB_BEATS CSR sets it,
+read live by the control unit; ``job_width`` is the platform's ``acc_csr.job_width`` (D152). A count of a T,
+⌈log₂ T⌉ bits for a fixed T and ``job_width`` for one from a JOB_BEATS, is Chisel's ``log2Ceil``.
 
 **The registers** of ``<tag>_<group>_ctrl``, every one ``GroupRule.scala`` and
-``GroupCtrl.scala`` declare (D153), by their ``suggestName``; those marked *dropped* are
-declared but never written, so firtool removes them and DC never sees them:
+``GroupCtrl.scala`` declare (D153, D168: no copy of JOBS or a JOB_BEATS, read live from the
+csr), by their ``suggestName``; those marked *dropped* are declared but never written, so
+firtool removes them and DC never sees them:
 
     busy                          1          GroupRule.scala:200
-    <owner>_jobs                  job_width  GroupRule.scala:201, the start's JOBS
     per unit k, in unit order:
-      <u>_job_beats               job_width  :203, only when its T comes from the start
-      <u>_job_beats_counter       the count of its T, none at a fixed T of 1  (:213, :221)
+      <u>_job_beats_counter       the count of its T, none at a fixed T of 1  (:222, :231)
       <u>_<j>_job_beats_counter   the count of T_j, per unit j after k (nearest first) whose T
-                                  is not a fixed 1, unless k borrows (L 0 with a wire out)  (:225)
-      <u>_jobs_counter            job_width  :231, unless k borrows
-      <u>_gap                     ⌈log₂(II + 1)⌉ at II > 1  :232
-      <u>_v                       max(L, 1)  :233, the pipeline's valid bits; dropped at L 0
-      <u>_lane                    ⌈log₂ span⌉  :234, none at span 1
+                                  is not a fixed 1, unless k borrows (L 0 with a wire out)  (:237)
+      <u>_jobs_counter            job_width  :240, unless k borrows
+      <u>_gap                     ⌈log₂(II + 1)⌉ at II > 1  :242
+      <u>_v                       max(L, 1)  :243, the pipeline's valid bits; dropped at L 0
+      <u>_lane                    ⌈log₂ span⌉  :244, none at span 1
     per link, wires included:
-      <from>_<to>_occupancy       ⌈log₂(depth + 1)⌉  :245
-      <from>_<to>_wslot, _rslot   ⌈log₂ max(depth, 2)⌉ each  :248, :251; dropped for a wire
+      <from>_<to>_occupancy       ⌈log₂(depth + 1)⌉  :255
+      <from>_<to>_wslot, _rslot   ⌈log₂ max(depth, 2)⌉ each  :258, :261; dropped for a wire
                                   and for a buffer of depth 1 (one slot)
-    done                          1          GroupCtrl.scala:100, the done pulse registered
+    done                          1          GroupCtrl.scala:92, the done pulse registered
 
 ``ctrl_registers`` lists what firtool keeps (``declared=True`` every declared one), and
 ``ctrl_bits`` sums it: DC keeps what firtool emits, so it matched SYN2's ctrl flops at all 48
 points when it was built (``util/ctrl_regs.py`` on the fixtures; ``tests/estimate/test_bits.py``
-holds it within 10 %).
+holds it within 10 %, SYN2's flops still holding CTRL1's copies of JOBS and each JOB_BEATS,
+which CTRL2 removed: the control unit reads the csr's, D168).
 """
 
 from __future__ import annotations
@@ -66,12 +66,10 @@ def ctrl_registers(units: Sequence[Mapping[str, Any]], links: Sequence[Mapping[s
         return job_width if t is None else _log2_ceil(t)
 
     by_name = {u["name"]: u for u in units}
-    regs = [("busy", 1), (f"{owner}_jobs", job_width)]
+    regs = [("busy", 1)]
     for u in units:
         k, t = u["name"], fixed[u["name"]]
         borrows = u["L"] == 0 and any(e["from"] == k and e["depth"] == 0 for e in links)
-        if t is None:
-            regs.append((f"{k}_job_beats", job_width))
         if t != 1:
             regs.append((f"{k}_job_beats_counter", count(t)))
         if not borrows:
