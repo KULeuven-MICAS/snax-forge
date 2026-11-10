@@ -9,7 +9,7 @@ It is a first-order model: registers are bits, a block is its comb energy per fi
 The known limits (C§20):
 
 - The control unit's comb area is taken equal to its flops' (`CTRL_COMB_PER_FLOP`), a rough early estimate, its comb energy as negligible. The csr, the cores, the I-cache and the DMA are not modelled.
-- The streamers and the crossbar are priced at full rate (every beat back to back, every crossbar input granted every cycle): idle inputs and conflicts are not in the tables, and a writer is priced as a reader (snax-forge-experiments X52).
+- A streamer is priced per beat and a crossbar access at one price per bank count, a full crossbar's: a streamer's clock while it waits, the crossbar's per-cycle part and its conflicts are not counted, and a writer is priced as a reader (snax-forge-experiments X52).
 - An accumulator's isolated fire costs 25 to 30 % more than a back-to-back one (its inputs change at one edge and its accumulator at the next, so its adders settle twice); the model has back-to-back fires only (X34).
 - Deep LinkBuffers come out about 1.4 to 1.8 times high on nangate45: there the stream slope PrimePower gives is 0.56 to 0.71 of one held slot per depth (X35); nangate15's is 0.96 to 1.14.
 - Comb energy is counted per fire only, so a unit fed by another unit is undercounted when its inputs change more often than it fires: dot 4's sum fires once but sees 256 new Mac outputs. The kernel stays within 4 % because such sums are small.
@@ -62,7 +62,7 @@ $$E_{\mathit{ctrl}} = f_{\mathit{ctrl}}\thinspace n_{\mathit{bits}}^{\mathit{ctr
 
 and, from HWCOST's tables, per port's streamer p (FIFO depth $D_p$, loops $L_p$, channels $C_p$, $W_p$ words in L1 over $W_p / C_p$ beats), the crossbar at its $n_{\mathit{in}}$ inputs and $n_{\mathit{banks}}$ banks and the banks' $N_{\mathit{rd}}$ reads and $N_{\mathit{wr}}$ writes (C§20 has the rule and every symbol):
 
-$$E_{\mathit{L1}} = \sum_p \frac{W_p}{C_p}\thinspace e_{\mathit{beat}}(D_p, L_p, C_p) + \Big(\sum_p W_p\Big)\thinspace e_{\mathit{acc}}(n_{\mathit{in}}, n_{\mathit{banks}}) + N_{\mathit{rd}}\thinspace e_{\mathit{rd}} + N_{\mathit{wr}}\thinspace e_{\mathit{wr}}$$
+$$E_{\mathit{L1}} = \sum_p \frac{W_p}{C_p}\thinspace e_{\mathit{beat}}(D_p, L_p, C_p) + \Big(\sum_p W_p\Big)\thinspace e_{\mathit{acc}}(n_{\mathit{banks}}, n_{\mathit{banks}}) + N_{\mathit{rd}}\thinspace e_{\mathit{rd}} + N_{\mathit{wr}}\thinspace e_{\mathit{wr}}$$
 
 A flop that loads costs $e_{\mathit{load}}$ in that cycle and one that holds $e_{\mathit{hold}}$; there is no clock gating, so every flop holds in every cycle it does not load, and $n_{\mathit{fire}}\thinspace e_{\mathit{load}} + (C_{\mathit{acc}} - n_{\mathit{fire}})\thinspace e_{\mathit{hold}}$ per bit is the form above regrouped. A group's cost is its units', buffer links' and control unit's added up; the design's is its groups' (the datapath and control parts, the kernel's) plus its streamers', its crossbar's and its banks' (D167).
 
@@ -104,13 +104,9 @@ The constants (`nangate45.json`, `flop` and `ctrl`): $e_{\mathit{load}}$ = 17.16
 - per task: 1.06 × 167 × 265 × 7.1476 fJ = 335 296 fJ, 0.335 nJ;
 - area: 167 × 5.32 = 888 µm² of flops and as much comb (the rough estimate), 1 777 µm².
 
-**The streamers, crossbar and banks** (HWCOST, D167). `mac_a` and `mac_b` read 2048 words each over 256 beats of 8 channels at FIFO depth 8 and one loop, a grid point of `streamer.csv`: 38 525 µm² and 39.65753 pJ a beat each, 10.152 nJ; `sum_out` writes 1 word on 1 channel, 5 469 µm² and 0.005 nJ. The crossbar has 8 + 8 + 1 channels and 2 cores and AXI, 20 inputs, on 32 banks: between the grid's 16 and 24 inputs, its area linear in inputs, $t = 0.5$, 103 432 µm², and its energy linear in 1/inputs,
+**The streamers, crossbar and banks** (HWCOST, D167). `mac_a` and `mac_b` read 2048 words each over 256 beats of 8 channels at FIFO depth 8 and one loop, a grid point of `streamer.csv`: 38 525 µm² and 39.65753 pJ a beat each, 10.152 nJ; `sum_out` writes 1 word on 1 channel, 5 469 µm² and 0.005 nJ. The crossbar has 8 + 8 + 1 channels and 2 cores and AXI, 20 inputs, on 32 banks: between the grid's 16 and 24 inputs, its area linear in inputs, $t = 0.5$, 103 432 µm²; every access at a full crossbar's price, `xbar.csv`'s 32 inputs on 32 banks, 2.739443 pJ, so 4097 accesses cost 11.223 nJ. The 32 banks of 512 × 64 bits are 32 × 13 522.7 = 432 726 µm², and 4096 reads at 3.53819 pJ and 1 write at 6.4677 pJ cost 14.499 nJ.
 
-$$t = \frac{1/20 - 1/16}{1/24 - 1/16} = 0.6, \qquad e_{\mathit{acc}} = 3.111931 + 0.6\thinspace(2.931514 - 3.111931) = 3.0037 \text{ pJ}$$
-
-so 4097 accesses cost 12.306 nJ. The 32 banks of 512 × 64 bits are 32 × 13 522.7 = 432 726 µm², and 4096 reads at 3.53819 pJ and 1 write at 6.4677 pJ cost 14.499 nJ.
-
-**The total**: the kernel 25.868 + 0.135 + 0.335 = 26.339 nJ per run, the streamers 20.310 nJ, the crossbar 12.306 nJ and the banks 14.499 nJ, 73.454 nJ in all; 61 049 + 1 249 + 1 777 = 64 075 µm² of datapath and control, with the streamers' 82 519 µm² and the crossbar's 103 432 µm² 250 026 µm² without the banks, 682 752 µm² with them, shown as 250 000 µm² and 683 000 µm². dot 4 at W = 8 has the kernel 26.285 nJ.
+**The total**: the kernel 25.868 + 0.135 + 0.335 = 26.339 nJ per run, the streamers 20.310 nJ, the crossbar 11.223 nJ and the banks 14.499 nJ, 72.371 nJ in all; 61 049 + 1 249 + 1 777 = 64 075 µm² of datapath and control, with the streamers' 82 519 µm² and the crossbar's 103 432 µm² 250 026 µm² without the banks, 682 752 µm² with them, shown as 250 000 µm² and 683 000 µm². dot 4 at W = 8 has the kernel 26.285 nJ.
 
 **Against SYN2** (snax-forge-experiments `results/forge/nangate45/`, the same design synthesized whole and simulated for one task, `char_table.md`'s Model): the kernel is 25.540 nJ, so the model is at 1.031; per part the Mac is 24.912 nJ (1.038), the sum 0.297 nJ (0.456: its inputs change on each of the Mac's 256 fires, which the model does not count) and the control unit 0.331 nJ (1.012). In area DC gives the Mac 61 051 µm² (1.000), the sum 1 282 µm² (0.974) and the control unit 1 750 µm², against the model's 1 777 µm² (1.015), its 888 µm² of flops and the placeholder's equal comb area; the csr's 1 103 µm² is outside the model. SYN2 has no L1 and no streamer, so HWCOST's parts are checked against their own tables (snax-forge-experiments `docs/cost_tables.md`) and later against the cluster synthesis (CSYN1).
 

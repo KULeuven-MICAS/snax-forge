@@ -4,7 +4,8 @@
 
 Copies ``results/ram/<tech>/ram_table.csv``, ``results/strm/<tech>/streamer.csv`` and
 ``results/strm/<tech>/xbar.csv`` as they are, and writes ``SOURCE`` with the repository, its
-commit and each file's path and sha256. By default it fetches the latest main of
+commit and each file's path and sha256 (no date, so a re-run that brings nothing new changes
+nothing). By default it fetches the latest main of
 snax-forge-experiments (a shallow ``git clone`` into a temporary folder); ``--experiments DIR``
 takes a local checkout instead, which must be clean. Run by hand when the tables change, never
 in CI; a new commit shows in the PR's diff as a changed ``SOURCE`` and changed tables.
@@ -19,7 +20,6 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from datetime import UTC, datetime
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -51,7 +51,6 @@ def copy(src: Path, tech: str, out: Path) -> str:
         "# HWCOST's tables, copied as they are by util/import_costs.py (pixi run import-costs)",
         f"repo: {URL}",
         f"commit: {commit}",
-        f"date: {datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')}",
     ]
     for name, rel in PATHS.items():
         f = src / rel.format(tech=tech)

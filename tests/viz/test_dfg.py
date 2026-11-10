@@ -334,7 +334,7 @@ def test_the_cost_tables_of_vecmul_and_dot_1():
     streamer and the accelerator's words through the crossbar and the banks (D167), then the
     total, one table per accelerator: vecmul at W = 8 (N = 2048) its unit 55 300 µm², 23.137 nJ,
     its control unit 702 µm² (flops and an equal comb), 0.128 nJ, three streamers of 8 channels,
-    its 4096 reads and 2048 writes 45.225 nJ; dot_1_enc at W = 8 one table for its two groups,
+    its 4096 reads and 2048 writes 44.569 nJ; dot_1_enc at W = 8 one table for its two groups,
     tmp0's round trip in its L1 row; Compare's cells before → after."""
     from snax_forge.design import Platform
     from snax_forge.estimate import estimate
@@ -347,20 +347,20 @@ def test_the_cost_tables_of_vecmul_and_dot_1():
     (t,) = cost_tables(estimate(g, platform), g)
     strm = "streamer · FIFO 8, 1 loop, 8 ch"
     assert t["accelerator"] == "acc" and _cost_rows(t) == [
-        ("acc", "SimdLanes", "55 300", "23.137", "23.4%"),
+        ("acc", "SimdLanes", "55 300", "23.137", "23.5%"),
         ("acc ctrl", "control unit", "702", "0.128", "0.1%"),
         ("acc_a", strm, "38 500", "10.152", "10.3%"),
         ("acc_b", strm, "38 500", "10.152", "10.3%"),
         ("acc_out", strm, "38 500", "10.152", "10.3%"),
-        (L1_LABEL, "4 096 reads, 2 048 writes", "–", "45.225", "45.7%"),
-        ("total", "", "172 000", "98.947", "100.0%")]  # fmt: skip
+        (L1_LABEL, "4 096 reads, 2 048 writes", "–", "44.569", "45.3%"),
+        ("total", "", "172 000", "98.291", "100.0%")]  # fmt: skip
     parts = [(p["name"], p["area_text"], p["area_share_text"], p["energy_text"],
               p["energy_share_text"]) for p in cost_parts(estimate(g, platform))]  # fmt: skip
-    assert parts == [("datapath", "55 300 µm²", "7.4%", "23.137 nJ", "23.4%"),
+    assert parts == [("datapath", "55 300 µm²", "7.4%", "23.137 nJ", "23.5%"),
                      ("control", "702 µm²", "0.1%", "0.128 nJ", "0.1%"),
-                     ("streamers", "116 000 µm²", "15.5%", "30.457 nJ", "30.8%"),
-                     ("crossbar", "139 000 µm²", "18.7%", "17.487 nJ", "17.7%"),
-                     ("memory", "433 000 µm²", "58.2%", "27.738 nJ", "28.0%")]  # fmt: skip
+                     ("streamers", "116 000 µm²", "15.5%", "30.457 nJ", "31.0%"),
+                     ("crossbar", "139 000 µm²", "18.7%", "16.831 nJ", "17.1%"),
+                     ("memory", "433 000 µm²", "58.2%", "27.738 nJ", "28.2%")]  # fmt: skip
     d = steps("dot_1_enc", N=2048, W=8)[-1]
     (t,) = cost_tables(estimate(d, platform), d)
     assert t["accelerator"] == "dot" and _cost_rows(t) == [
@@ -790,18 +790,26 @@ def test_compare_gives_two_columns_when_the_groups_differ():
                                               True)}  # fmt: skip
     assert _rows(rows, "group mac")["energy"] == ("26.136 nJ", "–", True)
     assert _rows(rows, "group dot")["cycles"] == ("–", "265 = 256 + 9", True)
-    # D167: the link drops a streamer set (two streamers and 9 crossbar inputs), the banks the same
+    # D167: the link drops a streamer set (two streamers and 16 crossbar inputs), the banks the same;
+    # its 16 fewer accesses make it the cheaper one too, as an access has one price
+    bars = c["cost_bars"]
+    assert [b["label"] for b in bars["area"]] == ["5 bind", "6 link"]
+    assert [b["total_text"] for b in bars["area"]] == ["844 000 µm²", "683 000 µm²"]
+    assert sum(x["width"] for x in bars["area"][0]["segments"]) == pytest.approx(1.0)
+    assert sum(x["width"] for x in bars["area"][1]["segments"]) == pytest.approx(
+        682751.9 / 843977.4, rel=1e-3
+    )
     assert _rows(rows, "Cost estimate (first-order) on nangate45") == {
         "area": ("844 000 µm²", "683 000 µm²", True),
         "area without the banks": ("412 000 µm²", "250 000 µm²", True),
-        "energy per run": ("72.648 nJ", "73.454 nJ", True),
+        "energy per run": ("72.648 nJ", "72.371 nJ", True),
         "datapath": ("62 300 µm² · 26.008 nJ", "62 300 µm² · 26.003 nJ", True),
         "control": ("2 140 µm² · 0.405 nJ", "1 780 µm² · 0.335 nJ", True),
         "streamers": ("160 000 µm² · 20.389 nJ", "82 500 µm² · 20.310 nJ", True),
-        "crossbar": ("188 000 µm² · 11.267 nJ", "103 000 µm² · 12.306 nJ", True),
+        "crossbar": ("188 000 µm² · 11.267 nJ", "103 000 µm² · 11.223 nJ", True),
         "memory (banks)": ("433 000 µm² · 14.579 nJ", "433 000 µm² · 14.499 nJ", True),
         "L1 accesses": ("mac: 4104 words, 25.787 nJ; sum: 9 words, 0.059 nJ",
-                        "dot: 4097 words, 26.805 nJ", True),
+                        "dot: 4097 words, 25.722 nJ", True),
         "not characterized": ("none", "none", False)}  # fmt: skip
     mult = c["details"]["node:mult"]
     assert mult["where"] == "" and _rows(mult["rows"], None)["group"] == ("mac", "dot", True)

@@ -871,9 +871,34 @@ def compare_view(a: Entry, b: Entry, platform: Any = None, tech: str = DEFAULT_T
                     for key in dict.fromkeys([*da, *db])},
         "estimate": estimate_rows(sa, sb),
         "cost_tables": compare_cost_tables(sa, sb),
+        "cost_bars": compare_cost_bars(list(labels or (a.name, b.name)), sa, sb),
         "caveat": ((sb or {}).get("cost") or (sa or {}).get("cost") or {}).get("caveat"),
     }  # fmt: skip
     return {"diff": diff, "changed": changed, "columns": columns}
+
+
+def compare_cost_bars(labels: list[str], sa: dict[str, Any] | None,
+                      sb: dict[str, Any] | None) -> dict[str, list[dict[str, Any]]] | None:  # fmt: skip
+    """Compare's cost bars (D167): for ``area`` and for ``energy``, one bar per side (the left
+    step first), both on one scale, the larger total the whole width, so the shorter bar is the
+    cheaper design; each its ``label``, ``total`` and ``total_text`` and its ``segments``, per
+    part costed its ``name``, ``label``, ``width`` (0..1 of the scale) and ``text``. None when
+    neither side has a cost."""
+    sides = [
+        (lbl, ((s or {}).get("cost") or {}).get("parts") or []) for lbl, s in zip(labels, (sa, sb))
+    ]
+    if not any(p for _, p in sides):
+        return None
+    out: dict[str, list[dict[str, Any]]] = {}
+    for key, unit in (("area", _um2), ("energy", _nj)):
+        totals = [sum(p[key] or 0.0 for p in parts) for _, parts in sides]
+        scale = max(totals) or 1.0
+        out[key] = [{"label": lbl, "total": t, "total_text": unit(t) if parts else "–",
+                     "segments": [{"name": p["name"], "label": p["label"],
+                                   "width": p[key] / scale, "text": p[f"{key}_text"]}
+                                  for p in parts if p[key]]}
+                    for (lbl, parts), t in zip(sides, totals)]  # fmt: skip
+    return out
 
 
 def value_text(v: Any) -> str:

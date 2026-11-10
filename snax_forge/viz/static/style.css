@@ -795,3 +795,8 @@ button.trace-toggle[aria-pressed="true"] { background: var(--req-bg); border-col
 .c-part-seg.p-memory, .c-part-key.p-memory { background: var(--part-memory); }
 .c-part-key { display: inline-block; width: 0.7em; height: 0.7em; border-radius: 2px; margin-right: 0.3em; vertical-align: baseline; }
 table.c-cost-table tr.streamer th, table.c-cost-table tr.streamer td { color: var(--ink); }
+.c-part-details { margin: 0.1rem 0 0.4rem; }
+.c-part-details summary { cursor: pointer; color: var(--muted); font-size: 0.9em; }
+.c-part-row { display: grid; grid-template-columns: minmax(5rem, auto) 1fr; gap: 0.4rem; align-items: center; margin-bottom: 0.2rem; }
+.c-part-side { display: flex; flex-direction: column; font-size: 0.82em; line-height: 1.2; }
+.c-part-side span:first-child { font-weight: 600; }

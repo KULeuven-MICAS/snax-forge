@@ -41,12 +41,15 @@ words it moves in L1 in one run (a link's container is not in L1, and the DMA's 
 same for every variant, is not counted), so W_p / C_p beats:
 
     streamer   area A_strm(D_p, L_p, C_p), energy (W_p / C_p) e_beat(D_p, L_p, C_p)
-    crossbar   area A_xbar(n_in, n_banks), energy (Σ_p W_p) e_acc(n_in, n_banks),
+    crossbar   area A_xbar(n_in, n_banks), energy (Σ_p W_p) e_acc(n_banks, n_banks),
                n_in the streamers' channels plus the cores' and AXI's ports
-               (check.py's ``crossbar_inputs``)
+               (check.py's ``crossbar_inputs``); one price per access for a bank count,
+               a full crossbar's, so the energy follows the accesses alone, whatever the
+               inputs and whether the accelerators run in series or not
     memory     area n_banks A_bank, energy N_rd e_rd + N_wr e_wr, the words read and written
 
-A writer is priced as a reader (X52). A query outside a table's grid is extrapolated, its
+A writer is priced as a reader (X52); a streamer is priced per beat, its clock while it waits
+for its accelerator's turn left out, as the crossbar's per-cycle part is. A query outside a table's grid is extrapolated, its
 ``extrapolated`` axes named (tables.py). An accelerator's ``L1Cost`` is its words' share of the
 crossbar's and the banks' energy, so the accelerators' L1 rows add up to those two parts.
 
@@ -75,7 +78,7 @@ from snax_forge.char.tables import xbar_cost as _xbar
 
 CAVEAT = ("First-order: aimed at the large costs (about 30 % of synthesis there; small blocks "
           "can be much further off); the control unit's comb area (equal to its flops') is a "
-          "rough estimate; the streamers and the crossbar are priced at full rate; the csr, "
+          "rough estimate; the streamers are priced per beat and the crossbar per access; the csr, "
           "the cores, the I-cache and the DMA are left out.")  # fmt: skip
 
 
@@ -280,10 +283,13 @@ class XbarCost:
 
 
 def xbar_cost(costs: Costs, inputs: int, banks: int, accesses: int) -> XbarCost:
-    """The crossbar's area and energy per run on ``costs`` (module doc)."""
-    got = _xbar(costs, inputs, banks)
-    return XbarCost(inputs, banks, accesses, got.area_um2, got.energy_pj,
-                    accesses * got.energy_pj / 1000, got.extrapolated)  # fmt: skip
+    """The crossbar's area and energy per run on ``costs`` (module doc): its area at its
+    inputs, its accesses at one price per bank count, a full crossbar's (inputs = banks)."""
+    area = _xbar(costs, inputs, banks)
+    price = _xbar(costs, banks, banks)
+    out = tuple(dict.fromkeys(area.extrapolated + price.extrapolated))
+    return XbarCost(inputs, banks, accesses, area.area_um2, price.energy_pj,
+                    accesses * price.energy_pj / 1000, out)  # fmt: skip
 
 
 @dataclass(frozen=True)
