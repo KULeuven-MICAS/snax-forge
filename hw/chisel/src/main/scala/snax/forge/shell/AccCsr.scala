@@ -34,7 +34,7 @@ class CsrRsp extends Bundle {
   *     - STATUS {done, busy}: done is sticky, set by the done pulse, so it reads 1 from E + 1, and cleared by an
   *       accepted start, so it reads 0 from a + 1; a set wins over a clear in the same cycle (the empty run: STATUS
   *       reads 2 from a + 1).
-  *     - COUNTER: cleared by an accepted start, + 1 per busy cycle, held after the run (BlockGemm's performance
+  *     - BUSY_COUNTER: cleared by an accepted start, + 1 per busy cycle, held after the run (BlockGemm's performance
   *       counter): at c the busy cycles after a and before c, saturating at 2^w - 1 for its width w.
   *   - A read is answered in the cycle it fires, from the registers or the read-only CSRs in that cycle; when `rsp` is
   *     not ready the answer is kept (the widest CSR's bits) and `req.ready` stays low until it leaves.
@@ -72,7 +72,7 @@ class AccCsr(spec: AcceleratorSpec) extends Module {
     c.offset -> reg
   }).toMap
 
-  // Per group: a request that is its start, the start's handshake, STATUS and COUNTER
+  // Per group: a request that is its start, the start's handshake, STATUS and BUSY_COUNTER
   private val startReq = groups.zipWithIndex.map { case (g, i) =>
     val at   = g.csr("START").get.offset
     val hit  = io.req.valid && io.req.bits.write && io.req.bits.addr === at.U && io.req.bits.data(0)
@@ -94,7 +94,7 @@ class AccCsr(spec: AcceleratorSpec) extends Module {
     Cat(done, io.busy(i))
   })
   private val counter = groups.zipWithIndex.map { case (g, i) =>
-    val w = g.csr("COUNTER").get.width
+    val w = g.csr("BUSY_COUNTER").get.width
     val c = RegInit(0.U(w.W)).suggestName(s"${g.name}_counter")
     when(accepted(i)) {
       c := 0.U
@@ -114,7 +114,7 @@ class AccCsr(spec: AcceleratorSpec) extends Module {
     c.offset.U -> (c.name match {
       case "START" if c.access == "rw"   => 0.U(w.W)
       case "STATUS" if c.access == "ro"  => status(g).pad(w)
-      case "COUNTER" if c.access == "ro" => counter(g).pad(w)
+      case "BUSY_COUNTER" if c.access == "ro" => counter(g).pad(w)
       case _                             => regs(c.offset).pad(w)
     })
   }

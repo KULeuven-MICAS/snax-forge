@@ -28,7 +28,7 @@ the kernel from the run's functional check.
                  to a whole DMA beat, D144), banks (L1) or words of a beat
                  (L2), rows or beats
     estimate     the ideal estimate (D155, C§19): per group its cycles, bottleneck,
-                 ramp, stall and its expected COUNTER (the cycles plus the streamers'
+                 ramp, stall and its expected BUSY_COUNTER (the cycles plus the streamers'
                  fill), a guide and not a check, a bank-bound note per group whose
                  bank_bound (its streams' L1 time) exceeds its cycles and, on the
                  estimate's technology, its area and
@@ -697,13 +697,13 @@ def render_sets(rows: list[SetRow]) -> list[str]:
 def render_estimate(e: EstimateTable) -> list[str]:
     """The estimate section: per group its cycles, then the accelerator's (D155)."""
     out = [("The ideal estimate (D155): the group rule on ideal streams, with no bank conflicts, "
-            "streamer fill, DMA or core control. The expected COUNTER, the cycles plus the "
+            "streamer fill, DMA or core control. The expected BUSY_COUNTER, the cycles plus the "
             "streamers' fill (3, or 2 for a group with one outer input), is a guide, not a check: "
-            "a run's COUNTER counts from its group's START until busy drops, so it includes bank "
+            "a run's BUSY_COUNTER counts from its group's START until busy drops, so it includes bank "
             "conflicts and is shortened by the streamers' head start; its window is longer."),
            ""]  # fmt: skip
     costed = e.tech is not None
-    cols = ["Group", "Cycles", "Bottleneck", "Ramp", "Stall", "Expected COUNTER"]
+    cols = ["Group", "Cycles", "Bottleneck", "Ramp", "Stall", "Expected BUSY_COUNTER"]
     cols += ["Area (µm²)", "Energy (nJ)"] if costed else []
     out += table(cols, [[g.group, g.cycles, g.bottleneck, g.ramp, g.stall, g.counter]
                         + ([_shown(g.area_um2), _energy(g.energy_nj)] if costed else [])
@@ -715,7 +715,7 @@ def render_estimate(e: EstimateTable) -> list[str]:
     if e.bank_notes:  # the bank bound over the ideal cycles (D155), a line per group
         out += ["", ("Bank bound: L1's single-port banks serve one word each per cycle, so these "
                      "groups' streams take more cycles of L1 time than the ideal cycles (a bound "
-                     "on the streams, not on the COUNTER):"), ""]  # fmt: skip
+                     "on the streams, not on the BUSY_COUNTER):"), ""]  # fmt: skip
         out += [f"- {n}." for n in e.bank_notes]
     if costed:
         out += ["", *render_cost(e)]

@@ -8,7 +8,7 @@ import snax.forge.{ForgeTester, IntType, LaneBits, Seeds, SnaxGroupCases}
 /** Each fixture end to end through its `<tag>_shell_wrapper`: per task its CSR values written by name (JOBS, and
   * JOB_BEATS for a fold) and START written 1, as `main.c` does; the inputs fed by an always-ready streamer (each port's
   * data.h array, lane i of beat t element `t * lanes + i` modulo the array's size, in two's complement at the port's
-  * dtype width, D142); STATUS polled until bit 0 reads 0; then COUNTER read, and STATUS again: done (2). The outputs
+  * dtype width, D142); STATUS polled until bit 0 reads 0; then BUSY_COUNTER read, and STATUS again: done (2). The outputs
   * must equal the goldens (NumPy's, `vectors.json`) and the counter the fixture's value, worked from the nest
   * controller's rule or, for a linked group, C§17's Cycles (`vectors.json`'s `working`).
   *
@@ -42,7 +42,7 @@ class ShellEndToEndSpec extends AnyFlatSpec with ForgeTester {
       run.csrs.foreach { case (name, v) => d.write(dut.csr(name), v) }
       d.write(dut.csr("START"), 1)
       while ((d.read(dut.csr("STATUS")) & 1) != 0) {}
-      counter.foreach(c => assert(d.read(dut.csr("COUNTER")) == c, s"$clue: the counter"))
+      counter.foreach(c => assert(d.read(dut.csr("BUSY_COUNTER")) == c, s"$clue: the counter"))
       assert(d.read(dut.csr("STATUS")) == 2, s"$clue: STATUS after the run: done, not busy")
       for (((p, want), k) <- outs.zip(run.outs).zipWithIndex) {
         val beats = want.size / p.lanes

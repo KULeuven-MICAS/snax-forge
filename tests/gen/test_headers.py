@@ -56,7 +56,7 @@ STREAMER_W4 = [
 # with its set's prefix (vecadd's one set, acc)
 PREFIXED_W4 = [(f"ACC_{k}", v) for k, v in STREAMER_W4]
 ACC_W4 = [("ACC_RW_START", 978), ("ACC_RW_JOBS", 979), ("ACC_RO_STATUS", 980),
-          ("ACC_RO_COUNTER", 981)]  # fmt: skip
+          ("ACC_RO_BUSY_COUNTER", 981)]  # fmt: skip
 
 
 def defines(text: str) -> list[tuple[str, int]]:
@@ -139,11 +139,11 @@ def test_dot_serials_headers_are_c16s_table(tmp_path):
         ("SUM_STREAMER_START_CSR", 992), ("SUM_STREAMER_BUSY_CSR", 993),
         ("SUM_STREAMER_PERFORMANCE_COUNTER_CSR", 994)])  # fmt: skip
     assert defines((inc / "mul_csr.h").read_text()) == [
-        ("MUL_RW_START", 978), ("MUL_RW_JOBS", 979), ("MUL_RO_STATUS", 980), ("MUL_RO_COUNTER", 981)
+        ("MUL_RW_START", 978), ("MUL_RW_JOBS", 979), ("MUL_RO_STATUS", 980), ("MUL_RO_BUSY_COUNTER", 981)
     ]  # fmt: skip
     assert defines((inc / "sum_csr.h").read_text()) == [
         ("SUM_RW_START", 995), ("SUM_RW_JOBS", 996), ("SUM_RW_JOB_BEATS", 997),
-        ("SUM_RO_STATUS", 998), ("SUM_RO_COUNTER", 999),
+        ("SUM_RO_STATUS", 998), ("SUM_RO_BUSY_COUNTER", 999),
     ]  # fmt: skip
     assert m.csrs.to_dict() == {
         "streamers": [
@@ -196,8 +196,8 @@ def test_two_groups_name_their_group():
     )
     assert defines(text) == [
         ("DOT_RW_VMUL_START", 978), ("DOT_RW_VMUL_JOBS", 979), ("DOT_RO_VMUL_STATUS", 980),
-        ("DOT_RO_VMUL_COUNTER", 981), ("DOT_RW_VSUM_START", 982), ("DOT_RW_VSUM_JOBS", 983),
-        ("DOT_RW_VSUM_JOB_BEATS", 984), ("DOT_RO_VSUM_STATUS", 985), ("DOT_RO_VSUM_COUNTER", 986),
+        ("DOT_RO_VMUL_BUSY_COUNTER", 981), ("DOT_RW_VSUM_START", 982), ("DOT_RW_VSUM_JOBS", 983),
+        ("DOT_RW_VSUM_JOB_BEATS", 984), ("DOT_RO_VSUM_STATUS", 985), ("DOT_RO_VSUM_BUSY_COUNTER", 986),
     ]  # fmt: skip
 
 

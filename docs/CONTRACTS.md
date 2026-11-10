@@ -586,7 +586,7 @@ dot 4's file, one accelerator `dot` of one group `dot`, the MAC's lane partials 
       {"name": "START", "access": "rw", "offset": 0, "width": 1},
       {"name": "JOBS", "access": "rw", "offset": 1, "width": 32},
       {"name": "STATUS", "access": "ro", "offset": 3, "width": 2},
-      {"name": "COUNTER", "access": "ro", "offset": 4, "width": 32}
+      {"name": "BUSY_COUNTER", "access": "ro", "offset": 4, "width": 32}
      ],
      "units": [
       {

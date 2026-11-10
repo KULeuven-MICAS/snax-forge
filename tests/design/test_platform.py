@@ -36,7 +36,7 @@ def test_missing_keys_take_defaults_and_every_field_is_written():
     assert list(d) == ["name", "base", "changes", "hjson", "accelerator_slot", "acc_csr", "l1",
                        "l2", "wait_mode", "streamers"]  # fmt: skip
     assert (d["hjson"], d["accelerator_slot"]) == (None, None)
-    assert d["acc_csr"] == {"job_width": 32, "counter_width": None} and p.acc_csr.counter == 32
+    assert d["acc_csr"] == {"job_width": 32, "busy_counter_width": None} and p.acc_csr.counter == 32
     assert d["l2"] is None and d["streamers"] == {"default": StreamerOptions().to_dict()}
 
 
@@ -226,12 +226,12 @@ def test_a_set_the_config_rejects_is_a_value_problem():
 
 
 def test_the_csr_widths_are_set_and_counter_width_follows_job_width_when_null():
-    """acc_csr (D152): job_width 1-32; counter_width 1-32, or null to follow job_width."""
+    """acc_csr (D152): job_width 1-32; busy_counter_width 1-32, or null to follow job_width."""
     w = Platform.load(SMALL16).with_changes([("acc_csr.job_width", 16)])
     assert (w.acc_csr.job_width, w.acc_csr.counter) == (16, 16)
-    w = w.with_changes([("acc_csr.counter_width", 8)])
+    w = w.with_changes([("acc_csr.busy_counter_width", 8)])
     assert (w.acc_csr.job_width, w.acc_csr.counter) == (16, 8)
-    assert w.with_changes([("acc_csr.counter_width", None)]).acc_csr.counter == 16
+    assert w.with_changes([("acc_csr.busy_counter_width", None)]).acc_csr.counter == 16
     assert Platform.from_dict(json.loads(w.to_json())) == w
 
 
@@ -250,10 +250,15 @@ def test_the_crossbar_limit_is_a_platform_value():
     "path, value, code, text",
     [
         ("acc_csr.job_width", 0, "platform.values", "job_width must be 1 to 32 bits, got 0"),
-        ("acc_csr.counter_width", 33, "platform.values", "counter_width must be 1 to 32 bits"),
+        (
+            "acc_csr.busy_counter_width",
+            33,
+            "platform.values",
+            "busy_counter_width must be 1 to 32 bits",
+        ),
         ("acc_csr.job_width", None, "platform.keys", "must be an int, got None"),
-        ("acc_csr.counter_width", True, "platform.keys", "must be an int or null, got True"),
-        ("acc_csr.counter_width", "8", "platform.keys", "must be an int or null, got '8'"),
+        ("acc_csr.busy_counter_width", True, "platform.keys", "must be an int or null, got True"),
+        ("acc_csr.busy_counter_width", "8", "platform.keys", "must be an int or null, got '8'"),
     ],
 )
 def test_a_bad_csr_width_is_refused_by_set_and_by_load(path, value, code, text):

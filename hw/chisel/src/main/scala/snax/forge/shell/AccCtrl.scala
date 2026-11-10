@@ -7,7 +7,7 @@ import snax.forge.ctrl.{GroupCtrl, GroupCtrlIO, GroupDesc, Link, UnitDesc}
 
 /** `<tag>_ctrl`: the groups' control units (`GroupCtrl`, `<tag>_<group>_ctrl`), one per group of `accelerator.json`
   * (D146, D147), each generated from its group's description (`AccCtrl.desc`). Per group its start from `<tag>_csr`,
-  * its busy and done pulse back (`<tag>_csr` keeps STATUS and COUNTER, D152), its pins; the valids and readies of its
+  * its busy and done pulse back (`<tag>_csr` keeps STATUS and BUSY_COUNTER, D152), its pins; the valids and readies of its
   * units' outer ports (the wrapper splits each Decoupled port: data to `<tag>_datapath`, handshake here), in the
   * streamer's order; each unit's and buffer's enables to `<tag>_datapath`.
   */

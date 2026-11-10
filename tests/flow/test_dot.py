@@ -126,7 +126,7 @@ def test_dot_1_converts_at_beat_level(beat_flows):
     """Two groups of one unit each at beat level (DRY1-2 R2, open item 96), dot 1's two
     accelerators: each unit's 256 fires under its own task, tmp0's words written by vmul_out
     and read by vsum_a, and the counters and the window those of the untraced run; vmul's
-    COUNTER is the expected 259, its own set's streamer started just before its START (in
+    BUSY_COUNTER is the expected 259, its own set's streamer started just before its START (in
     dot_1_enc's shared streamer it was 256, its START 10 cycles after the streamers' start)."""
     off, beat = beat_flows["off"], beat_flows["beat"]
     assert off.passed and beat.passed, summary(beat)

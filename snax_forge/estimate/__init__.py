@@ -13,18 +13,18 @@ crossbar, memory), cost.py, C§20, D154, D167; per accelerator its streamer set,
 and streamer (``accelerators``, accelerators.py, D157); and the data side, per
 container its placement, bytes and L1 traffic, per outer port its streamer's loops, beats and
 channels, per tailed split its lane use (data.py). No bank conflicts, no streamer fill, no DMA,
-no core control. A group's expected COUNTER, its cycles plus the streamers' fill (C§17), is a
-guide, not a check: a run's COUNTER counts from the group's START until busy drops, so it holds
+no core control. A group's expected BUSY_COUNTER, its cycles plus the streamers' fill (C§17), is a
+guide, not a check: a run's BUSY_COUNTER counts from the group's START until busy drops, so it holds
 bank conflicts and is shortened by the streamers' head start (D155). Beside the ideal cycles, on
 a platform, each group's ``bank_bound``: ceil(words its streams move / l1.n_banks), the fewest
-cycles of L1 time its streams take, a bound on the streams and not on the COUNTER, a note where
+cycles of L1 time its streams take, a bound on the streams and not on the BUSY_COUNTER, a note where
 it exceeds the cycles (dot 1 at W_mul = 16: mul's 192 against 128). Work no unit runs is a
 not-mapped count of iterations (spatial maps
 skipped, C§19's ``not_mapped``) and, over every map, spatial ones included, since a tag alone
 runs nothing (``unmapped_iterations``), at ``UNMAPPED_CYCLES_PER_ITERATION`` (1) cycle each,
 ``unmapped_cycles``: an assumption (a core
 takes several), held in this one constant so a measured value can replace it (D155); the
-``total_cycles`` are the accelerator's plus the unmapped ones. A group's COUNTER never holds
+``total_cycles`` are the accelerator's plus the unmapped ones. A group's BUSY_COUNTER never holds
 them. The viewers and
 ``design.md`` read it (report/design.py).
 """

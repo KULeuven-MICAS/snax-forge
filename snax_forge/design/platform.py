@@ -53,7 +53,7 @@ accelerator_slot=NAME`` changes it as any field.
 
 **The accelerator's CSRs** (``acc_csr``, D152): ``job_width`` (default 32)
 is the bits of JOBS and every JOB_BEATS, and of the control unit's copies
-and counters; ``counter_width`` those of COUNTER, null to follow
+and counters; ``busy_counter_width`` those of BUSY_COUNTER, null to follow
 ``job_width``. Each is 1 to 32; the generator writes them as the CSRs'
 widths in ``accelerator.json`` (gen/accelerator.py, C§17).
 
@@ -93,7 +93,7 @@ PROVENANCE = ("name", "base", "changes")
 # Top-level fields that are a string or null (the source hjson's)
 NULLABLE = ("hjson", "accelerator_slot")
 # Section fields that are an int or null (null: follow another field)
-INT_OR_NULL = {"acc_csr": ("counter_width",)}
+INT_OR_NULL = {"acc_csr": ("busy_counter_width",)}
 
 
 @dataclass(frozen=True)
@@ -156,17 +156,20 @@ class AccCsrConfig(Config):
     """The widths of the generated accelerator's CSRs (CONTRACTS.md 13, D152)."""
 
     job_width: int = 32  # JOBS and every JOB_BEATS, and the control unit's copies and counters
-    counter_width: int | None = None  # COUNTER; None follows job_width
+    busy_counter_width: int | None = None  # BUSY_COUNTER; None follows job_width
 
     def __post_init__(self) -> None:
-        for name, w in (("job_width", self.job_width), ("counter_width", self.counter_width)):
+        for name, w in (
+            ("job_width", self.job_width),
+            ("busy_counter_width", self.busy_counter_width),
+        ):
             if w is not None and not 1 <= w <= 32:
                 raise ValueError(f"{name} must be 1 to 32 bits, got {w}")
 
     @property
     def counter(self) -> int:
-        """COUNTER's width: ``counter_width``, or ``job_width`` when it is null."""
-        return self.job_width if self.counter_width is None else self.counter_width
+        """BUSY_COUNTER's width: ``busy_counter_width``, or ``job_width`` when it is null."""
+        return self.job_width if self.busy_counter_width is None else self.busy_counter_width
 
 
 @dataclass(frozen=True)

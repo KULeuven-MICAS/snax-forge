@@ -72,7 +72,7 @@ def one_unit(k: int = 0, name: str = "acc") -> Description:
     (``F0``, ...), offsets in CSR order."""
     rw = [Csr("START", "rw", 0, 1), Csr("JOBS", "rw", 1, 32)]
     own = [Csr(f"F{i}", "rw", 2 + i, 32) for i in range(k)]
-    ro = [Csr("STATUS", "ro", 2 + k, 2), Csr("COUNTER", "ro", 3 + k, 32)]
+    ro = [Csr("STATUS", "ro", 2 + k, 2), Csr("BUSY_COUNTER", "ro", 3 + k, 32)]
     unit = Unit(name, "simd", "SimdLanes",
                 {p: Port(p, "out" if p == "out" else "in", "int64", 4) for p in ("a", "b", "out")},
                 {"op": "add"}, 0, 1, own,

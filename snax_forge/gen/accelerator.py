@@ -38,14 +38,14 @@ with ``pin`` its slot, the datapath's pin). A link is ``name``,
 
 **The CSRs** (D146), offsets from the shell's first CSR, contiguous over the
 accelerators in order and per group in order: ``START`` and ``JOBS`` (R/W),
-each unit's R/W CSRs, ``STATUS`` and ``COUNTER`` (R/O). A CSR is ``name``,
+each unit's R/W CSRs, ``STATUS`` and ``BUSY_COUNTER`` (R/O). A CSR is ``name``,
 ``access`` (``rw``, ``ro``), ``offset``, ``width`` and ``pin`` (a scalar's
 datapath pin). The widths (D152): START 1 (a strobe, it reads 0),
 JOBS and every JOB_BEATS the platform's ``acc_csr.job_width``, a scalar's
 its dtype's bits (32 for each word of a 64-bit one), STATUS 2,
-COUNTER its ``counter_width``. ``from_dict`` checks the offsets contiguous
+BUSY_COUNTER its ``busy_counter_width``. ``from_dict`` checks the offsets contiguous
 from 0 in that order and never recomputes them, and every width 1 to 32,
-START's 1, STATUS's 2, JOBS and every JOB_BEATS one width and every COUNTER
+START's 1, STATUS's 2, JOBS and every JOB_BEATS one width and every BUSY_COUNTER
 one width, over the whole design. ``Accelerator.define`` names a CSR as the
 header does: ``<ACC>_<RW|RO>_[<GROUP>_][<UNIT>_]<NAME>``, the group part
 dropped when the accelerator has one group, the unit part when the group has
@@ -204,7 +204,7 @@ class Link:
 @dataclass(frozen=True)
 class Group:
     """A connected set of units and links with one JOBS: its own CSRs (START, JOBS,
-    then STATUS, COUNTER) and its units'."""
+    then STATUS, BUSY_COUNTER) and its units'."""
 
     name: str
     csrs: list[Csr]
@@ -224,7 +224,7 @@ class Group:
 
     def in_order(self) -> list[tuple[Unit | None, Csr]]:
         """Its CSRs in CSR order, each with its unit (None for the group's own): START, JOBS,
-        the units' R/W, STATUS, COUNTER."""
+        the units' R/W, STATUS, BUSY_COUNTER."""
         own = [(None, c) for c in self.csrs]
         rw = [x for x in own if x[1].access == "rw"]
         ro = [x for x in own if x[1].access == "ro"]
@@ -304,7 +304,7 @@ class Description(JsonFile):
             if c.width != FIXED_WIDTH.get(c.name, c.width):
                 raise ValueError(f"{self.tag}: CSR {c.name} has width {c.width}, not "
                                  f"{FIXED_WIDTH[c.name]}")  # fmt: skip
-        for names in (("JOBS", "JOB_BEATS"), ("COUNTER",)):
+        for names in (("JOBS", "JOB_BEATS"), ("BUSY_COUNTER",)):
             widths = {c.width for _, _, c in self.csrs() if c.name in names}
             if len(widths) > 1:
                 raise ValueError(f"{self.tag}: {' and '.join(names)} have the widths "
@@ -538,7 +538,7 @@ def describe(point: DesignPoint, point_path: str) -> Description:
             jobs = Csr("JOBS", "rw", next(offsets), widths.job_width)
             group_units = [_unit(point, u, mine[u], offsets) for u in members]
             status = Csr("STATUS", "ro", next(offsets), FIXED_WIDTH["STATUS"])
-            counter = Csr("COUNTER", "ro", next(offsets), widths.counter)
+            counter = Csr("BUSY_COUNTER", "ro", next(offsets), widths.counter)
             group_links = [Link(k.attrs["container"], end_from, end_to, k.attrs["depth"])
                            for k, end_from, end_to in shared_links(g, members)]  # fmt: skip
             groups.append(Group(group_name, [start, jobs, status, counter], group_units,

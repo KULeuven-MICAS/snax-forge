@@ -12,7 +12,7 @@ import java.nio.file.{Files, Path}
 object AcceleratorSpec {
 
   /** A CSR: its offset from the shell's first CSR and its width, 1 to 32 bits (D152: START 1, JOBS and JOB_BEATS
-    * job_width, a scalar its dtype's bits, 32 a word at 64, STATUS 2, COUNTER counter_width); a read gives its bits,
+    * job_width, a scalar its dtype's bits, 32 a word at 64, STATUS 2, BUSY_COUNTER busy_counter_width); a read gives its bits,
     * the upper ones 0. `pin`: a scalar's datapath pin (`k1`), which the CSR drives (two at 64 bits, low word first).
     */
   case class CsrSpec(name: String, access: String, offset: Int, width: Int, pin: Option[String] = None) {
@@ -60,9 +60,9 @@ object AcceleratorSpec {
   case class GroupSpec(name: String, csrs: Seq[CsrSpec], units: Seq[UnitSpec], links: Seq[LinkSpec]) {
     private def own(n: String): CsrSpec = csrs.find(_.name == n).get
 
-    /** Its CSRs in CSR order: START, JOBS, its units' read-write ones, STATUS, COUNTER. */
+    /** Its CSRs in CSR order: START, JOBS, its units' read-write ones, STATUS, BUSY_COUNTER. */
     def window: Seq[CsrSpec] =
-      Seq(own("START"), own("JOBS")) ++ units.flatMap(_.csrs) ++ Seq(own("STATUS"), own("COUNTER"))
+      Seq(own("START"), own("JOBS")) ++ units.flatMap(_.csrs) ++ Seq(own("STATUS"), own("BUSY_COUNTER"))
 
     def csr(n: String): Option[CsrSpec] = window.find(_.name == n)
 
@@ -116,7 +116,7 @@ object AcceleratorSpec {
     val offsets = spec.csrs.map(_.offset)
     require(offsets == offsets.indices, s"CSR offsets $offsets in CSR order are not contiguous from 0")
     spec.jobWidth
-    spec.counterWidth
+    spec.busyCounterWidth
     spec
   }
 
@@ -147,8 +147,8 @@ case class AcceleratorSpec(
   /** job_width (D152): the width of JOBS and every JOB_BEATS, one for all, and of the control units' copies. */
   lazy val jobWidth: Int = width("JOBS", "JOB_BEATS")
 
-  /** counter_width: every COUNTER's width. */
-  lazy val counterWidth: Int = width("COUNTER")
+  /** busy_counter_width: every BUSY_COUNTER's width. */
+  lazy val busyCounterWidth: Int = width("BUSY_COUNTER")
 
   /** The widest CSR a read can give: the width of `<tag>_csr`'s kept answer. */
   def readWidth: Int = csrs.map(_.width).max

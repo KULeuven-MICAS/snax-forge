@@ -27,7 +27,7 @@ from .helpers import (
 def own(base: int, rw_units: int) -> list[Csr]:
     """A group's own CSRs from offset ``base``, ``rw_units`` R/W CSRs of its units between."""
     return [Csr("START", "rw", base, 1), Csr("JOBS", "rw", base + 1, 32),
-            Csr("STATUS", "ro", base + 2 + rw_units, 2), Csr("COUNTER", "ro", base + 3 + rw_units, 32)]  # fmt: skip
+            Csr("STATUS", "ro", base + 2 + rw_units, 2), Csr("BUSY_COUNTER", "ro", base + 3 + rw_units, 32)]  # fmt: skip
 
 
 def mul_sum(v: str = "") -> tuple[Unit, Unit]:
@@ -82,7 +82,7 @@ def dot4() -> Description:
                  {"a": Port("in", "in", "int64", 4), "out": Port("out", "out", "int64", 1)},
                  {"op": "add", "T": 1}, 1, 1)  # fmt: skip
     own = [Csr("START", "rw", 0, 1), Csr("JOBS", "rw", 1, 32), Csr("STATUS", "ro", 3, 2),
-           Csr("COUNTER", "ro", 4, 32)]  # fmt: skip
+           Csr("BUSY_COUNTER", "ro", 4, 32)]  # fmt: skip
     acc = Accelerator("dot", ["mac.a", "mac.b"], ["sum.out"],
                       [Group("dot", own, [mac, total], [Link("out_partial", "mac.out", "sum.a", 0)])])  # fmt: skip
     return Description("out/design/dot_4/design_point.json", "snax_forge_dot_4", [acc])
@@ -97,13 +97,13 @@ def test_the_description_round_trips_and_meets_its_schema():
 
 
 def test_csr_order_and_counts():
-    """Per group START, JOBS, the units' R/W, STATUS, COUNTER; rw = Σ_g (2 + Σ_u (f_u + k_u)),
+    """Per group START, JOBS, the units' R/W, STATUS, BUSY_COUNTER; rw = Σ_g (2 + Σ_u (f_u + k_u)),
     ro = 2G (C§17's table: dot_1_enc is 5, 4; dot 1's accelerators 2, 2 and 3, 2)."""
     acc = dot()
     order = [
-        ("vmul", "START", 0), ("vmul", "JOBS", 1), ("vmul", "STATUS", 2), ("vmul", "COUNTER", 3),
+        ("vmul", "START", 0), ("vmul", "JOBS", 1), ("vmul", "STATUS", 2), ("vmul", "BUSY_COUNTER", 3),
         ("vsum", "START", 4), ("vsum", "JOBS", 5), ("vsum", "JOB_BEATS", 6), ("vsum", "STATUS", 7),
-        ("vsum", "COUNTER", 8),
+        ("vsum", "BUSY_COUNTER", 8),
     ]  # fmt: skip
     assert [(g.name, c.name, c.offset) for g, _, c in acc.csrs()] == order
     (a,) = acc.accelerators
@@ -122,19 +122,19 @@ def test_one_helper_names_every_csr():
     """<ACC>_<RW|RO>_[<GROUP>_][<UNIT>_]<NAME>: the group part dropped with one group, the
     unit part with one unit in the group."""
     assert one_unit(1).defines() == {"ACC_RW_START": 0, "ACC_RW_JOBS": 1, "ACC_RW_F0": 2,
-                                     "ACC_RO_STATUS": 3, "ACC_RO_COUNTER": 4}  # fmt: skip
+                                     "ACC_RO_STATUS": 3, "ACC_RO_BUSY_COUNTER": 4}  # fmt: skip
     acc = dot()
     assert acc.find("vmul", "START") == "DOT_RW_VMUL_START"
     assert acc.find("vsum", "JOB_BEATS") == "DOT_RW_VSUM_JOB_BEATS"
-    assert acc.find("vsum", "COUNTER") == "DOT_RO_VSUM_COUNTER"
+    assert acc.find("vsum", "BUSY_COUNTER") == "DOT_RO_VSUM_BUSY_COUNTER"
     with pytest.raises(KeyError):
         acc.find("vmul", "JOB_BEATS")  # the fold's CSR is the sum group's
     assert dot1().find("vsum", "JOB_BEATS") == "VSUM_RW_JOB_BEATS"  # C§17's dot 1
     # a one-group accelerator has no group part: each its own name (D157)
     assert dot_serial().defines() == {
-        "MUL_RW_START": 0, "MUL_RW_JOBS": 1, "MUL_RO_STATUS": 2, "MUL_RO_COUNTER": 3,
+        "MUL_RW_START": 0, "MUL_RW_JOBS": 1, "MUL_RO_STATUS": 2, "MUL_RO_BUSY_COUNTER": 3,
         "SUM_RW_START": 4, "SUM_RW_JOBS": 5, "SUM_RW_JOB_BEATS": 6, "SUM_RO_STATUS": 7,
-        "SUM_RO_COUNTER": 8,
+        "SUM_RO_BUSY_COUNTER": 8,
     }  # fmt: skip
     assert dot_serial().find("sum", "START") == "SUM_RW_START"
 
@@ -171,8 +171,8 @@ def test_offsets_run_on_over_the_accelerators():
 
 
 def test_the_widths_come_from_the_platform(tmp_path):
-    """D152: START 1, STATUS 2, JOBS and JOB_BEATS acc_csr.job_width, COUNTER its counter_width
-    (job_width when null); JOBS and every JOB_BEATS share one width, every COUNTER one."""
+    """D152: START 1, STATUS 2, JOBS and JOB_BEATS acc_csr.job_width, BUSY_COUNTER its busy_counter_width
+    (job_width when null); JOBS and every JOB_BEATS share one width, every BUSY_COUNTER one."""
     from snax_forge.design import DesignPoint, Platform
 
     from .helpers import SNAX_FORGE
@@ -184,10 +184,10 @@ def test_the_widths_come_from_the_platform(tmp_path):
         assert acc.job_width == plat.acc_csr.job_width
         return {c.name: c.width for _, _, c in acc.csrs()}
 
-    assert widths() == {"START": 1, "JOBS": 32, "JOB_BEATS": 32, "STATUS": 2, "COUNTER": 32}
+    assert widths() == {"START": 1, "JOBS": 32, "JOB_BEATS": 32, "STATUS": 2, "BUSY_COUNTER": 32}
     assert widths(("acc_csr.job_width", 16)) == {
-        "START": 1, "JOBS": 16, "JOB_BEATS": 16, "STATUS": 2, "COUNTER": 16}  # fmt: skip
-    assert widths(("acc_csr.job_width", 16), ("acc_csr.counter_width", 8))["COUNTER"] == 8
+        "START": 1, "JOBS": 16, "JOB_BEATS": 16, "STATUS": 2, "BUSY_COUNTER": 16}  # fmt: skip
+    assert widths(("acc_csr.job_width", 16), ("acc_csr.busy_counter_width", 8))["BUSY_COUNTER"] == 8
     acc = one_unit(1)
     g = acc.groups[0]
     with pytest.raises(ValueError, match="STATUS has width 32, not 2"):
@@ -207,14 +207,14 @@ def test_vsums_unit_has_job_beats(tmp_path):
         {"name": "JOB_BEATS", "access": "rw", "offset": 2, "width": 32}
     ]
     assert list(acc.defines()) == ["ACC_RW_START", "ACC_RW_JOBS", "ACC_RW_JOB_BEATS",
-                                   "ACC_RO_STATUS", "ACC_RO_COUNTER"]  # fmt: skip
+                                   "ACC_RO_STATUS", "ACC_RO_BUSY_COUNTER"]  # fmt: skip
 
 
 def test_a_linked_group_names_its_units_csrs():
     """One group: no group part; two units: the unit part on JOB_BEATS only (C§17's dot 2–6)."""
     acc = dot4()
     assert list(acc.defines()) == ["DOT_RW_START", "DOT_RW_JOBS", "DOT_RW_MAC_JOB_BEATS",
-                                   "DOT_RO_STATUS", "DOT_RO_COUNTER"]  # fmt: skip
+                                   "DOT_RO_STATUS", "DOT_RO_BUSY_COUNTER"]  # fmt: skip
     (a,) = acc.accelerators
     assert (a.rw, a.ro) == (3, 2)
     assert acc.find("sum", "START") == "DOT_RW_START"
@@ -278,7 +278,7 @@ def test_a_span_unit_reads_from_a_link_until_b2():
                   {"a": Port("in", "in", "int64", 4), "out": Port("out", "out", "int64", 1)},
                   {"T": 1}, 1, 1, [], None, 4)  # fmt: skip
     own = [Csr("START", "rw", 0, 1), Csr("JOBS", "rw", 1, 32), Csr("STATUS", "ro", 2, 2),
-           Csr("COUNTER", "ro", 3, 32)]  # fmt: skip
+           Csr("BUSY_COUNTER", "ro", 3, 32)]  # fmt: skip
     with pytest.raises(GenError) as e:
         acc = Accelerator("sum", ["sum.a"], ["sum.out"], [Group("sum", own, [serial])])
         Description("p", "snax_forge_p", [acc])
@@ -393,8 +393,8 @@ def test_a_seeded_fold_has_its_seed_port_and_no_new_csr(tmp_path, recipe, params
                                             "lanes": 1}  # fmt: skip
     assert list(unit.ports) == ["a", "seed", "out"] and unit.params == params
     assert [(g.name, c.name) for g, _, c in desc.csrs()] == [  # matvec_1's: none for the seed
-        *(("mul", c) for c in ("START", "JOBS", "STATUS", "COUNTER")),
-        *(("sum", c) for c in ("START", "JOBS", "JOB_BEATS", "STATUS", "COUNTER"))]  # fmt: skip
+        *(("mul", c) for c in ("START", "JOBS", "STATUS", "BUSY_COUNTER")),
+        *(("sum", c) for c in ("START", "JOBS", "JOB_BEATS", "STATUS", "BUSY_COUNTER"))]  # fmt: skip
     validate("accelerator", desc.to_dict())
     got = {a.name: np.array(a.values) for a in arrays(p)}
     want = got["q"] + got["A"].reshape(8, 512) @ got["p"]

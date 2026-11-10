@@ -317,7 +317,7 @@ def write_accelerator(design_point: str | Path, out_dir: str | Path,
 
 def counter(unit: Unit, n: int) -> tuple[int, str]:
     """The counter a task of ``n`` firings gives with an always-ready streamer, and the working."""
-    shell = ("The group's COUNTER is reset by the accepted start and counts each busy cycle; busy "
+    shell = ("The group's BUSY_COUNTER is reset by the accepted start and counts each busy cycle; busy "
              "rises the cycle after the start")  # fmt: skip
     if unit.latency == 0:  # lockstep
         return n, (
@@ -363,18 +363,21 @@ def group_counter(group: Group, jobs: int, beats: Mapping[str, int]) -> tuple[in
     """The counter of a linked group's task with an always-ready streamer, from the group rule
     (snax-gvsoc's snax_group_rule.py, estimate/cycles.py's ``group_cycles``) stepped with every input
     valid and the output ready, and the working: JOBS ``jobs``, each unit's T its JOB_BEATS
-    (``beats``, by unit) or its fixed T (``params.T``, else 1). COUNTER counts the busy cycles,
+    (``beats``, by unit) or its fixed T (``params.T``, else 1). BUSY_COUNTER counts the busy cycles,
     E - s: the rule starts the run in cycle 0. A run that does not end is ``gen.counter``."""
     units, links, owner = rule_graph(group)
     ts = [beats.get(u.name, u.params.get("T", 1)) for u in group.units]
     if jobs == 0 or 0 in ts:
-        return 0, "The group's COUNTER counts its busy cycles: JOBS or a T 0 is the empty run, none"
+        return (
+            0,
+            "The group's BUSY_COUNTER counts its busy cycles: JOBS or a T 0 is the empty run, none",
+        )
     end = group_cycles(units, links, owner, jobs, ts)
     if end is None:
         raise GenError("gen.counter", f"group {group.name}: the rule does not end")
     t = ", ".join(f"{u.name} {x}" for u, x in zip(group.units, ts, strict=True))
     return end, (
-        f"The group's COUNTER counts its busy cycles. The group rule (snax-gvsoc's "
+        f"The group's BUSY_COUNTER counts its busy cycles. The group rule (snax-gvsoc's "
         f"snax_group_rule.py) stepped with inputs always valid and the output always ready, "
         f"JOBS {jobs}, T {t}: E - s = {end}"
     )

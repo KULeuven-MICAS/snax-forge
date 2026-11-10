@@ -44,7 +44,7 @@ def test_dot6_writes_its_movers_jobs_and_the_macs_beats(tmp_path):
         "csrw_ss(DOT_RW_JOBS, 1);", "csrw_ss(DOT_RW_MAC_JOB_BEATS, 128);",
     ]  # fmt: skip
     main = (out / "main.c").read_text()
-    assert "csrw_ss(DOT_RW_START, 1);" in main and "csrr_ss(DOT_RO_COUNTER)" in main
+    assert "csrw_ss(DOT_RW_START, 1);" in main and "csrr_ss(DOT_RO_BUSY_COUNTER)" in main
     (acc,) = json.loads((out / "accelerator.json").read_text())["accelerators"]
     (group,) = acc["groups"]
     assert (acc["name"], acc["inputs"], acc["outputs"]) == ("dot", ["mac.a", "mac.b"], ["sum.out"])
@@ -81,12 +81,12 @@ def test_matvec6_rereads_p_for_every_row(tmp_path):
     ("recipe", "fold"), [("dot_2", "SUM"), ("dot_3", "SUM"), ("dot_4", "MAC"), ("dot_5", "MAC")]
 )
 def test_one_group_names_one_fold_csr(tmp_path, recipe, fold):
-    """C§17's table: START 0, JOBS 1, the fold's JOB_BEATS 2, STATUS 3, COUNTER 4; the tree or
+    """C§17's table: START 0, JOBS 1, the fold's JOB_BEATS 2, STATUS 3, BUSY_COUNTER 4; the tree or
     serial sum after a MAC has a fixed T of 1 and no JOB_BEATS."""
     out = _generated(tmp_path, recipe)
     header = (out / "include" / "dot_csr.h").read_text()
     names = [ln.split()[1] for ln in header.splitlines() if ln.startswith("#define ")]
     assert names == ["DOT_RW_START", "DOT_RW_JOBS", f"DOT_RW_{fold}_JOB_BEATS", "DOT_RO_STATUS",
-                     "DOT_RO_COUNTER"]  # fmt: skip
+                     "DOT_RO_BUSY_COUNTER"]  # fmt: skip
     hjson = (out / f"snax_forge_{recipe}_streamer_dot.hjson").read_text()
     assert hjson.count("spatial_bounds") == 2  # readers and writers: the outer ports only

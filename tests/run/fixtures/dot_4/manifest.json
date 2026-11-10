@@ -13,7 +13,7 @@
    "DOT_RW_JOBS": 979,
    "DOT_RW_MAC_JOB_BEATS": 980,
    "DOT_RO_STATUS": 981,
-   "DOT_RO_COUNTER": 982
+   "DOT_RO_BUSY_COUNTER": 982
   }
  },
  "tasks": [{"name": "mult_dot", "beats": 128, "csrs": {"JOBS": 1, "MAC_JOB_BEATS": 128}}]

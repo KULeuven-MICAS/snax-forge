@@ -842,7 +842,7 @@ def test_compare_gives_two_columns_for_the_same_group():
     w4 = Entry("w4", REPO, steps("dot_5", W=4, N=2048)[-1], None)
     rows = compare_view(e[6], w4, platform)["columns"]["estimate"]
     assert _rows(rows, "group dot") == {
-        "cycles": ("265 = 256 + 9", "517 = 512 + 5", True), "expected COUNTER": ("268", "520", True),
+        "cycles": ("265 = 256 + 9", "517 = 512 + 5", True), "expected BUSY_COUNTER": ("268", "520", True),
         "channels": ("17", "9", True), "area": ("64 100 µm²", "33 300 µm²", True),
         "energy": ("26.339 nJ", "26.615 nJ", True)}  # fmt: skip
     assert _rows(rows, "memory")["reads"] == ("4096 words", "4096 words", False)

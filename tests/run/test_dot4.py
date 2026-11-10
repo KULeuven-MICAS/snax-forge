@@ -24,7 +24,7 @@ def recorded():
 
 def test_the_recorded_run_converts_the_group_as_one_unit(recorded):
     """The group is one accelerator, dot, with its run's classes: 128 firings a cycle apart
-    from the first (no gap), COUNTER 133 = C§17's C4 (JT + 2 = 130) + the streamers' fill 3,
+    from the first (no gap), BUSY_COUNTER 133 = C§17's C4 (JT + 2 = 130) + the streamers' fill 3,
     every busy cycle in one class; its task and its movers' each start once."""
     cluster, tasks, check, lines, regions, _ = recorded
     assert cluster.accelerator.units == [Unit("dot", "dot", "group_dot", *_csrs(cluster))]

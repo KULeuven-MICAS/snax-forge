@@ -107,7 +107,7 @@ def test_vecadd_barriers_follow_the_cross_core_waits(tmp_path):
     # the loads' wait (core 1), the writer's wait (core 0, its counter stored last), the
     # store's sync (core 1): each the owner's, then the barrier on both
     assert c1[b1[0] - 1] == "snrt_dma_wait_all();"
-    assert c0[b0[1] - 1] == "forge_counter[0] = csrr_ss(ACC_RO_COUNTER);"
+    assert c0[b0[1] - 1] == "forge_counter[0] = csrr_ss(ACC_RO_BUSY_COUNTER);"
     assert c1[b1[2] - 1] == "snrt_dma_wait_all();"
     assert c0[b0[0] + 1] == "csrw_ss(ACC_STREAMER_START_CSR, 1);"
     assert c1[b1[1] + 1] == "snrt_dma_start_1d(C, (void *)0x10000400, 512);"
@@ -158,7 +158,7 @@ def test_vecadd_checks_itself(tmp_path):
     assert "err += forge_counter[0] < 16;" in src
     assert "static uint32_t forge_counter[1];" in src
     f = functions(src)
-    assert "forge_counter[0] = csrr_ss(ACC_RO_COUNTER);" in f["forge_core_0"]
+    assert "forge_counter[0] = csrr_ss(ACC_RO_BUSY_COUNTER);" in f["forge_core_0"]
     # the wait polls STATUS bit 0 (busy), then its set's streamer
     assert "while (csrr_ss(ACC_RO_STATUS) & 1) {" in f["forge_core_0"]
     assert "while (csrr_ss(ACC_STREAMER_BUSY_CSR)) {" in f["forge_core_0"]
@@ -306,7 +306,7 @@ STREAMER = "streamer_dot_csr_addr_map.h"
 def test_dot_1_runs_each_group_with_its_own_csrs(tmp_path):
     """Per task: every mover of the one set dot (the other group's at bound 0), the group's JOBS
     (and JOB_BEATS), the set's streamer start, the group's START; then its STATUS, the set's
-    streamer busy, its COUNTER."""
+    streamer busy, its BUSY_COUNTER."""
     core = functions(dot1_text(tmp_path))["forge_core_0"]
     acc = [x for x in core if "_RW_" in x or "_RO_" in x or "STREAMER_" in x
            or x.startswith("forge_counter")]  # fmt: skip
@@ -315,10 +315,10 @@ def test_dot_1_runs_each_group_with_its_own_csrs(tmp_path):
         "csrw_ss(DOT_STREAMER_START_CSR, 1);", "csrw_ss(DOT_RW_VMUL_START, 1);",
         "csrw_ss(DOT_RW_VSUM_JOBS, 1);", "csrw_ss(DOT_RW_VSUM_JOB_BEATS, 16);",
         "while (csrr_ss(DOT_RO_VMUL_STATUS) & 1) {", "while (csrr_ss(DOT_STREAMER_BUSY_CSR)) {",
-        "forge_counter[0] = csrr_ss(DOT_RO_VMUL_COUNTER);",
+        "forge_counter[0] = csrr_ss(DOT_RO_VMUL_BUSY_COUNTER);",
         "csrw_ss(DOT_STREAMER_START_CSR, 1);", "csrw_ss(DOT_RW_VSUM_START, 1);",
         "while (csrr_ss(DOT_RO_VSUM_STATUS) & 1) {", "while (csrr_ss(DOT_STREAMER_BUSY_CSR)) {",
-        "forge_counter[1] = csrr_ss(DOT_RO_VSUM_COUNTER);",
+        "forge_counter[1] = csrr_ss(DOT_RO_VSUM_BUSY_COUNTER);",
     ]  # fmt: skip
     bounds = [x for x in core if x.startswith("csrw_ss(DOT_T_BOUND_")]
     assert bounds == [
@@ -397,14 +397,14 @@ def test_two_accelerators_each_run_through_their_own_set(tmp_path):
     assert acc_lines == [
         BARRIER, "csrw_ss(MUL_STREAMER_START_CSR, 1);", "csrw_ss(MUL_RW_START, 1);",
         "while (csrr_ss(MUL_RO_STATUS) & 1) {", "while (csrr_ss(MUL_STREAMER_BUSY_CSR)) {",
-        "forge_counter[0] = csrr_ss(MUL_RO_COUNTER);", BARRIER,
+        "forge_counter[0] = csrr_ss(MUL_RO_BUSY_COUNTER);", BARRIER,
         "csrw_ss(SUM_STREAMER_START_CSR, 1);", "csrw_ss(SUM_RW_START, 1);",
         "while (csrr_ss(SUM_RO_STATUS) & 1) {", "while (csrr_ss(SUM_STREAMER_BUSY_CSR)) {",
-        "forge_counter[1] = csrr_ss(SUM_RO_COUNTER);", BARRIER, BARRIER,
+        "forge_counter[1] = csrr_ss(SUM_RO_BUSY_COUNTER);", BARRIER, BARRIER,
     ]  # fmt: skip
     i = core.index("csrw_ss(SUM_STREAMER_START_CSR, 1);")
     assert core.index("csrw_ss(SUM_RW_JOB_BEATS, 64);") < core.index("forge_counter[0] = "
-                                                                     "csrr_ss(MUL_RO_COUNTER);") < i  # fmt: skip
+                                                                     "csrr_ss(MUL_RO_BUSY_COUNTER);") < i  # fmt: skip
     assert "csrw_ss(SUM_BASE_PTR_READER_0_LOW, 0x10000440);" in core  # mul's output, tmp0
     assert "csrw_ss(SUM_RW_JOBS, 1);" in core and "csrw_ss(SUM_RW_JOB_BEATS, 64);" in core
     assert not any("_T_BOUND_" in x and x.endswith(", 0);") for x in core)  # no idle mover

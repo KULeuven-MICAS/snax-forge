@@ -44,7 +44,7 @@ def test_movers_readers_first_named_by_port(cluster):
 
 def test_csrs_as_the_generated_header_has_them(cluster):
     """vecadd's streamer_csr_addr_map.h and acc_csr.h: start 0x3cf, busy 0x3d0, the group's
-    START 0x3d2, JOBS 0x3d3, STATUS 0x3d4 (busy, bit 0), COUNTER 0x3d5."""
+    START 0x3d2, JOBS 0x3d3, STATUS 0x3d4 (busy, bit 0), BUSY_COUNTER 0x3d5."""
     a = cluster.accelerator
     c = a.csrs
     assert (c.streamer_first, c.streamer_start, c.streamer_busy, c.streamer_last) == (
@@ -65,7 +65,7 @@ def test_csrs_as_the_generated_header_has_them(cluster):
 
 @pytest.mark.parametrize("k", [0, 1, 3])
 def test_csrs_agree_with_the_generator(k):
-    """accelerator.json's CSRs as the generator numbers them: START, STATUS and COUNTER as
+    """accelerator.json's CSRs as the generator numbers them: START, STATUS and BUSY_COUNTER as
     start, busy and counter, the other R/W ones as fields."""
     from tests.gen.helpers import one_unit
 
@@ -78,7 +78,7 @@ def test_csrs_agree_with_the_generator(k):
     ((r,),) = (g.streamers,)
     assert (c.streamer_first, c.streamer_last) == (r.first, r.last)
     assert (c.start, c.busy, c.counter) == (n["ACC_RW_START"], n["ACC_RO_STATUS"],
-                                            n["ACC_RO_COUNTER"])  # fmt: skip
+                                            n["ACC_RO_BUSY_COUNTER"])  # fmt: skip
     assert c.fields == {k: v for k, v in n.items() if "_RW_" in k and k != "ACC_RW_START"}
 
 

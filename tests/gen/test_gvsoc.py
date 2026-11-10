@@ -63,7 +63,7 @@ GROUP_CSRS = [
     {"name": "START", "access": "rw", "offset": 0, "width": 1},
     {"name": "JOBS", "access": "rw", "offset": 1, "width": 32},
     {"name": "STATUS", "access": "ro", "offset": 2, "width": 2},
-    {"name": "COUNTER", "access": "ro", "offset": 3, "width": 32},
+    {"name": "BUSY_COUNTER", "access": "ro", "offset": 3, "width": 32},
 ]  # fmt: skip
 ADD_W4 = {
     "design_point": "design/vecadd/design_point.json", "tag": "snax_forge_vecadd",
@@ -141,7 +141,7 @@ def test_vecadd_w4_files_and_manifest(w4):
     assert m.csrs.to_dict() == {
         "streamers": [{"name": "acc", "first": 960, "last": 977, "trace": "snax_acc0/streamer_acc"}],
         "accelerator": {"ACC_RW_START": 978, "ACC_RW_JOBS": 979, "ACC_RO_STATUS": 980,
-                        "ACC_RO_COUNTER": 981},
+                        "ACC_RO_BUSY_COUNTER": 981},
     }  # fmt: skip
     assert [t.to_dict() for t in m.tasks] == [
         {"name": "add_acc", "beats": 16, "csrs": {"JOBS": 16}}
@@ -220,7 +220,7 @@ def test_snax_gvsocs_reader_takes_the_folder(w4):
         ("START", 0),
         ("JOBS", 1),
         ("STATUS", 2),
-        ("COUNTER", 3),
+        ("BUSY_COUNTER", 3),
     ]
     (unit,) = a.groups[0].units
     assert (unit.datapath, unit.op_type, unit.params) == (
@@ -311,7 +311,7 @@ def test_vsum_is_the_tree_accumulate(tmp_path):
     assert m.csrs.to_dict() == {
         "streamers": [{"name": "acc", "first": 960, "last": 972, "trace": "snax_acc0/streamer_acc"}],
         "accelerator": {"ACC_RW_START": 973, "ACC_RW_JOBS": 974, "ACC_RW_JOB_BEATS": 975,
-                        "ACC_RO_STATUS": 976, "ACC_RO_COUNTER": 977},
+                        "ACC_RO_STATUS": 976, "ACC_RO_BUSY_COUNTER": 977},
     }  # fmt: skip
     assert [t.to_dict() for t in m.tasks] == [
         {"name": "sum_acc", "beats": 64, "csrs": {"JOBS": 1, "JOB_BEATS": 64}}
@@ -707,7 +707,7 @@ def test_the_accelerators_counter_may_land_on_0x5fd_not_past():
     CSR an accelerator may use; one more puts it on 0x5FE, a task queue of snax_cluster's."""
     k = 0x5FD - 0x3C0 - 18 - 4 + 1
     layout = csrs_mod.csr_layout({"acc": TEMPLATE_W4}, one_unit(k))
-    assert layout.accelerator["ACC_RO_COUNTER"] == 0x5FD
+    assert layout.accelerator["ACC_RO_BUSY_COUNTER"] == 0x5FD
     with pytest.raises(GenError) as e:
         csrs_mod.csr_layout({"acc": TEMPLATE_W4}, one_unit(k + 1))
     assert e.value.code == "gen.csrs"
@@ -741,10 +741,10 @@ def test_the_whole_entrys_layout_packs_the_sets_from_960():
         {"name": "b", "first": 982, "last": 999, "trace": "snax_acc0/streamer_b"},
     ]  # fmt: skip
     assert layout.accelerator == {"A_RW_START": 978, "A_RW_JOBS": 979, "A_RO_STATUS": 980,
-                                  "A_RO_COUNTER": 981, "B_RW_START": 1000, "B_RW_JOBS": 1001,
-                                  "B_RO_STATUS": 1002, "B_RO_COUNTER": 1003}  # fmt: skip
+                                  "A_RO_BUSY_COUNTER": 981, "B_RW_START": 1000, "B_RW_JOBS": 1001,
+                                  "B_RO_STATUS": 1002, "B_RO_BUSY_COUNTER": 1003}  # fmt: skip
     k = 0x5FD - 1003
-    assert csrs_mod.csr_layout(templates, _two_sets(k)).accelerator["B_RO_COUNTER"] == 0x5FD
+    assert csrs_mod.csr_layout(templates, _two_sets(k)).accelerator["B_RO_BUSY_COUNTER"] == 0x5FD
     with pytest.raises(GenError) as e:
         csrs_mod.csr_layout(templates, _two_sets(k + 1))
     assert e.value.code == "gen.csrs" and "the entry's last CSR 1534" in str(e.value)

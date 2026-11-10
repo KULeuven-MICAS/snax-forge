@@ -28,7 +28,7 @@ class GroupCtrlIO(desc: GroupDesc, jobWidth: Int = 32) extends Bundle {
 
 /** One group's control unit (D146, D147; C§17's Control), `<tag>_<group>_ctrl`, generated from the group's description
   * (`GroupDesc`): its start and its busy and done around its control model, `GroupRule` (snax-gvsoc's SnaxGroupRule).
-  * STATUS and COUNTER are the interface's, `<tag>_csr`'s, from `busy` and `pulse` (D152).
+  * STATUS and BUSY_COUNTER are the interface's, `<tag>_csr`'s, from `busy` and `pulse` (D152).
   *
   *   - `start` is START written with bit 0 set, carrying JOBS and each JOB_BEATS in unit order as `<tag>_csr` sends
   *     them (JOBS and 1 when the group has none); a unit with `params.T` takes that fixed T. It is ready when the group
@@ -37,7 +37,7 @@ class GroupCtrlIO(desc: GroupDesc, jobWidth: Int = 32) extends Bundle {
   *   - JOBS 0 or any T 0 is the empty run: it ends in a (E = a) without starting the model, so busy never rises.
   *   - `busy`: from a + 1 to E (STATUS bit 0).
   *   - `pulse`, the done pulse: high in E (the sink's last push, or a for the empty run), for `<tag>_csr`'s sticky done
-  *     bit and COUNTER.
+  *     bit and BUSY_COUNTER.
   *   - Pins: `busy` and `done`, the done pulse registered: high in E + 1 (a + 1 for an empty run).
   *
   * Its ports: `in`, every unit's outer inputs' handshakes, unit by unit in port order; `out`, the outer output, its

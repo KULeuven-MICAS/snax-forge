@@ -30,8 +30,8 @@ object SnaxShellCases {
     */
   case class Cycle(valids: Seq[Boolean], ready: Boolean, access: Access, result: Option[BigInt], status: Int)
 
-  /** A case: the group's read-write CSRs (`csrs`: START, JOBS, the units'; STATUS and COUNTER follow), its unit and the
-    * widths (`job_width` for JOBS and JOB_BEATS, `counter_width` for COUNTER; 32 by default, D152); a unit's scalar CSR
+  /** A case: the group's read-write CSRs (`csrs`: START, JOBS, the units'; STATUS and BUSY_COUNTER follow), its unit and the
+    * widths (`job_width` for JOBS and JOB_BEATS, `busy_counter_width` for BUSY_COUNTER; 32 by default, D152); a unit's scalar CSR
     * (any other name, `K1`, `K1_LO`, `K1_HI`) has its own width (`NAME:W`, `scalarWidths`, else job_width); `words`,
     * the words each started run sends the unit (JOBS, the JOB_BEATS or 1, the scalars), which snax-gvsoc's tb checks.
     */
@@ -43,7 +43,7 @@ object SnaxShellCases {
     inputs:       Int,
     cycles:       Seq[Cycle],
     jobWidth:     Int              = 32,
-    counterWidth: Int              = 32,
+    busyCounterWidth: Int              = 32,
     scalarWidths: Map[String, Int] = Map.empty,
     words:        Seq[Seq[BigInt]] = Seq.empty
   ) {
@@ -69,7 +69,7 @@ object SnaxShellCases {
     var ii             = 1
     var inputs         = 2
     var jobWidth       = 32
-    var counterWidth   = 32
+    var busyCounterWidth   = 32
     var scalarWidths   = Map.empty[String, Int]
     var words          = Seq.empty[Seq[BigInt]]
     for (line <- header) line.split("\\s+").toList match {
@@ -82,7 +82,7 @@ object SnaxShellCases {
       case "ii" :: n :: Nil                    => ii           = n.toInt
       case "inputs" :: n :: Nil                => inputs       = n.toInt
       case "job_width" :: n :: Nil             => jobWidth     = n.toInt
-      case "counter_width" :: n :: Nil         => counterWidth = n.toInt
+      case "busy_counter_width" :: n :: Nil         => busyCounterWidth = n.toInt
       case _ => throw new IllegalArgumentException(s"$path: `$line` is not a header line")
     }
     val cycles = rows.map { line =>
@@ -110,7 +110,7 @@ object SnaxShellCases {
       }
       Cycle(valids, ready, access, result, status)
     }
-    Case(CaseFile.name(path), csrs, latency, ii, inputs, cycles, jobWidth, counterWidth, scalarWidths, words)
+    Case(CaseFile.name(path), csrs, latency, ii, inputs, cycles, jobWidth, busyCounterWidth, scalarWidths, words)
   }
 
   /** Every case of the folder `Env` names (`CaseFile.all`). */

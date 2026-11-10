@@ -29,7 +29,7 @@
    "csrs": {"JOBS": 2, "JOB_BEATS": 4},
    "firings": 8,
    "counter": 16,
-   "working": "The group's COUNTER counts its busy cycles. The group rule (snax-gvsoc's snax_group_rule.py) stepped with inputs always valid and the output always ready, JOBS 2, T mac 4, sum 1: E - s = 16"
+   "working": "The group's BUSY_COUNTER counts its busy cycles. The group rule (snax-gvsoc's snax_group_rule.py) stepped with inputs always valid and the output always ready, JOBS 2, T mac 4, sum 1: E - s = 16"
   }
  ]
 }

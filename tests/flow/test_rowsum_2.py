@@ -2,11 +2,11 @@
 rows a job, a column a beat: JOBS = M / W, JOB_BEATS = N, (M / W) * N firings.
 
 The worked example, W = 2, M = 4, N = 3: A's rows (1, 2, 3), (4, 5, 6), (7, 8, 9), (10, 11, 12)
-give y = (6, 15, 24, 33); 6 firings, COUNTER 9. At the defaults, W = 4, M = 8, N = 64: 128
+give y = (6, 15, 24, 33); 6 firings, BUSY_COUNTER 9. At the defaults, W = 4, M = 8, N = 64: 128
 firings. Contiguous, A's rows are 64 words apart and the four lanes' first reads all fall in
 bank 0; the model's lanes are channels of their own, so after that first collision (3 conflicts
-on bank 0) they run a cycle apart each and never meet again: COUNTER 134. Under padded_rows the
-rows are 65 words apart, the lanes in four banks from the first beat: COUNTER 131.
+on bank 0) they run a cycle apart each and never meet again: BUSY_COUNTER 134. Under padded_rows the
+rows are 65 words apart, the lanes in four banks from the first beat: BUSY_COUNTER 131.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ from .helpers import needs_gvsoc
 
 pytestmark = [pytest.mark.gvsoc, needs_gvsoc]
 
-# The runs' COUNTERs on SNAX-GVSoC
+# The runs' BUSY_COUNTERs on SNAX-GVSoC
 WORKED_COUNTER = 9  # 6 firings at L 1, the start and the last push
 CONTIGUOUS_COUNTER = 134  # 128 firings, 3 more than padded: the lanes' first collision in bank 0
 PADDED_COUNTER = 131  # 128 firings and the fill

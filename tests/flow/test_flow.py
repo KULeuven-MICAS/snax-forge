@@ -715,7 +715,7 @@ def test_rowsum_restarts_every_row_on_snax_gvsoc(tmp_path, design, beats):
 
 RELU_A = [-3, 5, 0, -1, 7, -8, 2, -2]
 RELU_B = [0, 5, 0, 0, 7, 0, 2, 0]
-RELU_COUNTER = 4  # the run's COUNTER on SNAX-GVSoC: 2 firings and 2 cycles of the shell
+RELU_COUNTER = 4  # the run's BUSY_COUNTER on SNAX-GVSoC: 2 firings and 2 cycles of the shell
 
 
 @pytest.mark.gvsoc

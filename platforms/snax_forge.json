@@ -4,7 +4,7 @@
  "changes": {},
  "hjson": "platforms/snax_forge_cluster.hjson",
  "accelerator_slot": "snax_forge",
- "acc_csr": {"job_width": 32, "counter_width": null},
+ "acc_csr": {"job_width": 32, "busy_counter_width": null},
  "l1": {
   "n_banks": 32,
   "width_bits": 64,

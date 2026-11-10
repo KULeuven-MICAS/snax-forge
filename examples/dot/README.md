@@ -1,6 +1,6 @@
 # EX2: dot on SNAX-GVSoC, six ways
 
-dot is `out = Σ A[i] · B[i]` over N elements (`kernels/` `dot`). Six recipes build it in the platform's one slot, from two accelerators `vmul` and `vsum` through L1 (dot 1, two streamer sets run in series, D157, D158; `recipes/dot/dot_1_enc.json` puts the two into one accelerator `dot`, D148) to one accelerator `dot` of one group of two units joined by a link (dot 2 to dot 6, D112, D147), and the flow runs each on SNAX-GVSoC: the program SNAX-LOWER writes checks the result and reads each group's COUNTER (D136). Every number below is checked by `tests/flow/test_dot_example.py`, so the text stays true as the code moves. The outputs are not in git (D98).
+dot is `out = Σ A[i] · B[i]` over N elements (`kernels/` `dot`). Six recipes build it in the platform's one slot, from two accelerators `vmul` and `vsum` through L1 (dot 1, two streamer sets run in series, D157, D158; `recipes/dot/dot_1_enc.json` puts the two into one accelerator `dot`, D148) to one accelerator `dot` of one group of two units joined by a link (dot 2 to dot 6, D112, D147), and the flow runs each on SNAX-GVSoC: the program SNAX-LOWER writes checks the result and reads each group's BUSY_COUNTER (D136). Every number below is checked by `tests/flow/test_dot_example.py`, so the text stays true as the code moves. The outputs are not in git (D98).
 
 ## 1. Run one
 
@@ -10,7 +10,7 @@ In snax-forge's image (`docs/RUN.md` section 1):
 pixi run flow recipes/dot/dot_4.json --platform platforms/snax_forge.json
 ```
 
-The folder is `out/flow/dot_4/`. Its `check` line gives the program's own check of the result and the group's COUNTER:
+The folder is `out/flow/dot_4/`. Its `check` line gives the program's own check of the result and the group's BUSY_COUNTER:
 
     check     passed: 437 cycles (main to forge_check); data 0 errors (1 words); counters mult_dot 133 (128 beats)
 
@@ -18,7 +18,7 @@ Any of the six runs the same way, at W = 4 and the recipe's N (512; dot 1's is 6
 
 ## 2. The six
 
-| Recipe | Groups | Units, in chain order | Link | COUNTER | C§17 | Fill |
+| Recipe | Groups | Units, in chain order | Link | BUSY_COUNTER | C§17 | Fill |
 |---|---|---|---|---:|---:|---:|
 | `dot_1` | `vmul`, `vsum`, an accelerator and a task each | `vmul` SimdLanes; `vsum` TreeAccumulate | none: `tmp0` in L1 | 131, 131 | 128, 129 | 3, 2 |
 | `dot_2` | `dot` | `mul` SimdLanes → `sum` TreeAccumulate | `tmp0`, a buffer of depth 1 | 133 | 130 | 3 |
@@ -27,7 +27,7 @@ Any of the six runs the same way, at W = 4 and the recipe's N (512; dot 1's is 6
 | `dot_5` | `dot` | `mac` Mac → `sum` SerialAccumulate | `out_partial`, a wire (depth 0) | 136 | 133 | 3 |
 | `dot_6` | `dot` | `mac` Mac → `sum` SerialAccumulate | `out_partial`, a buffer of depth 1 | 137 | 134 | 3 |
 
-COUNTER is the group's busy cycles at N = 512, W = 4 (T = N / W = 128 beats, one job). C§17 gives the accelerator alone on ideal streams:
+BUSY_COUNTER is the group's busy cycles at N = 512, W = 4 (T = N / W = 128 beats, one job). C§17 gives the accelerator alone on ideal streams:
 
     C2 = JT + 2, C3 = JT + 1, C4 = JT + 2, C5 = J(T + W − 1) + 2, C6 = (J − 1)·max(T, W) + T + W + 2
 
@@ -35,7 +35,7 @@ and, for dot 1's two groups, the one-unit rule: `vmul` (L 0) its firings, JT; `v
 
 What each builds:
 
-- dot 1: the multiplier writes `tmp0` to L1, then the adder tree reads it back; two accelerators, each its own streamer set, the second started once the first is done (D158), a task each; its COUNTERs are those of `recipes/dot/dot_1_enc.json`, the two encapsulated as one accelerator, too (SLOT1 G1), each group's START just after its streamer's start in both.
+- dot 1: the multiplier writes `tmp0` to L1, then the adder tree reads it back; two accelerators, each its own streamer set, the second started once the first is done (D158), a task each; its BUSY_COUNTERs are those of `recipes/dot/dot_1_enc.json`, the two encapsulated as one accelerator, too (SLOT1 G1), each group's START just after its streamer's start in both.
 - dot 2, dot 3: the same two units in one group, the products passed on in place of `tmp0`: through a buffer of one beat (dot 2, one cycle more) or a wire (dot 3).
 - dot 4: a MAC sums each lane over the job's T beats and gives one beat of W partials, which the tree adds up (its T fixed at 1).
 - dot 5, dot 6: the MAC's partials summed one lane a cycle (span W), the W − 1 lanes after the last beat the cycles over dot 4: through a wire (dot 5, where from the second job on the MAC waits while the sum reads) or a buffer of one beat (dot 6, where it goes on, one cycle more at one job).

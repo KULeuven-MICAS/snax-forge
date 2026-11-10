@@ -83,7 +83,7 @@ def test_unmapped_work_counts_as_cycles():
 
 @pytest.mark.slow
 def test_the_totals_round_trip_and_stay_out_of_the_counter():
-    """The two new fields round-trip, and a group's expected COUNTER is its cycles plus the
+    """The two new fields round-trip, and a group's expected BUSY_COUNTER is its cycles plus the
     fill alone: dot 4 at N = 512 binds everything, dot 1 one group of two runs."""
     for name in ("dot_1", "dot_4"):
         e = estimated(name)
@@ -114,7 +114,7 @@ def test_the_estimate_round_trips(name):
 def test_the_bank_bound_of_vecmul():
     """vecmul at N = 2048 (D155): three ports of W words a beat over 32 banks. At W = 16, 6144
     words take at least 192 cycles of L1 time against the ideal 128, a bound on the streams, not
-    on the COUNTER (the run's is 194), a note; at
+    on the BUSY_COUNTER (the run's is 194), a note; at
     W = 8 the same 192 is below the ideal 256, no note. Without a platform, no bound."""
     (sixteen,) = estimated("vecmul", N=2048, W=16).groups
     assert (sixteen.cycles, sixteen.bank_bound, sixteen.counter) == (128, 192, 131)

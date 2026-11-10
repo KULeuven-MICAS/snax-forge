@@ -345,7 +345,7 @@ def _alone(unit: Unit) -> Description:
     outs = [f"{unit.name}.{k}" for k, p in unit.ports.items() if p.dir == "out"]
     n = len(unit.csrs)
     own = [Csr("START", "rw", 0, 1), Csr("JOBS", "rw", 1, 32), Csr("STATUS", "ro", 2 + n, 2),
-           Csr("COUNTER", "ro", 3 + n, 32)]  # fmt: skip
+           Csr("BUSY_COUNTER", "ro", 3 + n, 32)]  # fmt: skip
     acc = Accelerator(unit.name, ins, outs, [Group(unit.name, own, [unit])])
     return Description("p", "snax_forge_p", [acc])
 
