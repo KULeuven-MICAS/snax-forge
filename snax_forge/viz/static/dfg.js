@@ -962,7 +962,7 @@ async function estimate() {
     l1.size ? h("div", { class: "c-bar-track" }, h("i", { style: { width: l1.share_css } })) : null,
     h("p", { class: "c-est-line" }, `reads ${s.reads} · writes ${s.writes} words`),
     s.splits.length ? h("p", { class: "c-est-line" }, "lanes ", s.splits.map((x) => `${x.map} ${x.text}`).join("; ")) : null,
-    s.streamers ? h("p", { id: "est-streamers", class: "c-est-line", title: "one streamer set per accelerator (D157); the streamers are not characterized yet (open item 110)" },
+    s.streamers ? h("p", { id: "est-streamers", class: "c-est-line", title: "one streamer set per accelerator (D157); each port's streamer is costed in the tables below (D167)" },
       s.streamers.text, s.streamers.accelerators.length > 1 ? ": " + s.streamers.accelerators.map((a) => `${a.name}${a.csrs_text ? " " + a.csrs_text : ""}`).join(", ") : "") : null,
     ...checks,
     ...cost,

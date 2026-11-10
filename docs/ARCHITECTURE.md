@@ -78,8 +78,8 @@ flowchart LR
 | SNAX-BRM | `brm/` | C§10 | hand-written BRMs | instances |
 | SNAX-SANDBOX | `sandbox/` | C§12 | `.snaxdfg`, BRMs, recipe | a `.snaxdfg` per step |
 | Design step | `design/` | C§13–C§15 | bound graph, platform | design point |
-| Estimate | `estimate/` | C§19, C§20 | bound graph, platform (optional), technology (optional) | the ideal estimate and its expected COUNTER, a guide (D155), its bank bound on the streams' L1 time and its cost with the L1 accesses' placeholder (D154), read by the viewers and `design.md` |
-| Cost table | `char/` ([guide](../snax_forge/char/README.md)) | C§20 | snax-forge-experiments' `char.json` per technology | the blocks' comb area and energy per fire and the flop's and ctrl's constants, looked up per block (D154) |
+| Estimate | `estimate/` | C§19, C§20 | bound graph, platform (optional), technology (optional) | the ideal estimate and its expected COUNTER, a guide (D155), its bank bound on the streams' L1 time and its cost in five parts, the groups' (D154) and the streamers', crossbar's and banks' (D167), read by the viewers and `design.md` |
+| Cost table | `char/` ([guide](../snax_forge/char/README.md)) | C§20 | snax-forge-experiments' `char.json` per technology, and its streamer, crossbar and bank tables (`pixi run import-costs`) | the blocks' comb area and energy per fire and the flop's and ctrl's constants, looked up per block (D154); a streamer's, the crossbar's and a bank's area and energy, interpolated per axis or looked up (`char/tables.py`, D167) |
 | SNAX-LOWER | `lower/` | C§9, C§16 | design point | task list, `main.c` |
 | Generator | `gen/gvsoc.py`, `gen/headers.py`, `gen/data.py` | C§16 | design point, the platform's source hjson | cluster and streamer hjson, `accelerator.json`, CSR headers, `data.h`, `main.c` |
 | HW generator | `gen/rtl.py`, `hw/chisel/` | C§17 | design point, the datapath catalogue | `accelerator.json`, the accelerator RTL |
@@ -168,7 +168,7 @@ SNAX-GVSoC is checked against snax_cluster's RTL by one ELF on both (D123). snax
 
 Done: M1, M4a, M3, M4b, M5 and X1 (git history at tag `pre-gvsoc`), M16 (the baseline) and M14 (generation to both sides, closed by CLN1). The order from here (D116, D141), each milestone's phases and tasks in `docs/STATUS.md`'s Milestones:
 
-1. **M13, the block library** (D141): M7's tier A, the composed bind and BASE1's forge side as one milestone (B0 to DRY1-3 done; then two tracks, the code with B2, L2V1, XBAR1, tier A and PORT1, and the server with RAM1 (done: memories from CACTI, D160), the streamer and interconnect sweeps and DaCe's dot, joined in HWCOST). SYN1's results, forge's accelerators beside the HLS points at n2048, are in KULeuven-MICAS/snax-forge-experiments' `results/forge_vs_hls.md`; CHAR1 and CHAR1b characterize each basic block alone into `snax_forge/char/<tech>.json`, which the estimate, the viewer and the editor cost each design from; HWCOST adds the streamers, the memory and the interconnect, on Nangate 45 nm only (D159).
+1. **M13, the block library** (D141): M7's tier A, the composed bind and BASE1's forge side as one milestone (B0 to DRY1-3 done; then two tracks, the code with B2, L2V1, XBAR1, tier A and PORT1, and the server with RAM1 (done: memories from CACTI, D160), the streamer and interconnect sweeps and DaCe's dot, joined in HWCOST). SYN1's results, forge's accelerators beside the HLS points at n2048, are in KULeuven-MICAS/snax-forge-experiments' `results/forge_vs_hls.md`; CHAR1 and CHAR1b characterize each basic block alone into `snax_forge/char/<tech>.json`, which the estimate, the viewer and the editor cost each design from; HWCOST adds the streamers, the memory and the interconnect from snax-forge-experiments' tables in `snax_forge/char/nangate45/` (D167), on Nangate 45 nm only (D159).
 2. **M7 tiers B, C and P:** multi-cycle, multi-phase, then int8 packing.
 3. **M15:** tiling, a DMA per tile.
 4. **M7 tier D** with the GeMM (M9 inside it), then **tier E**.

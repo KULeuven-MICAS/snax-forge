@@ -3,7 +3,7 @@
     load(tech) -> Table                                          snax_forge/char/<tech>.json
     lookup(table, datapath, params, lanes, depth=None) -> Lookup | None
     TECHS                                                        the technologies offered
-    L1_ACCESS_LOADS, CTRL_COMB_PER_FLOP                          D154's two placeholders
+    CTRL_COMB_PER_FLOP                                           a control unit's comb : flops (D154)
 
 ``<tech>.json`` is a byte copy of snax-forge-experiments' ``results/char/<tech>/char.json``
 (its X37), which names its own source commits: per catalogue datapath (``hw/chisel/blocks.json``)
@@ -58,11 +58,9 @@ TECHS = ("nangate45",)
 RETIRED = ("nangate15",)
 DEFAULT_TECH = "nangate45"
 FOUND = ("measured", "copy", "interpolate")
-# CHAR1's two placeholders until the streamers and OpenRAM's memories are characterized (D154;
-# HWCOST, RAM1): a word a streamer reads or writes in L1 costs L1_ACCESS_LOADS × e_load per bit,
-# and a control unit's comb area is CTRL_COMB_PER_FLOP × its flops' area (its comb energy taken
-# as negligible). Neither is in the table, a byte copy of snax-forge-experiments' char.json.
-L1_ACCESS_LOADS = 4
+# A control unit's comb area is CTRL_COMB_PER_FLOP × its flops' area, a rough early estimate (D154;
+# its comb energy taken as negligible); not in the table, a byte copy of snax-forge-experiments'
+# char.json. The L1 side is HWCOST's tables (tables.py, D167).
 CTRL_COMB_PER_FLOP = 1.0
 _IGNORED = ("lanes", "depth")
 # catalogue name -> the table's, until CHAR's next export uses the new name (module doc)
@@ -171,7 +169,6 @@ __all__ = [
     "DATAPATH_RENAMES",
     "DEFAULT_TECH",
     "FOUND",
-    "L1_ACCESS_LOADS",
     "TABLE_DEFAULTS",
     "TECHS",
     "CharError",

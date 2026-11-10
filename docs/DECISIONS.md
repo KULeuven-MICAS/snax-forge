@@ -10,7 +10,7 @@ Rules (D117):
 - A replaced or merged entry is removed, and its number goes under Retired with the entry that holds it now. A number is never changed or reused, since code, tests and docs cite them; the text of every retired entry is in git history (tag `pre-gvsoc`; RET1's at `cad6619`, CLN1's at `6079d24`).
 - Closing a milestone compacts this file and removes the done tasks from STATUS.
 - Markdown prose is never hard-wrapped: one line per paragraph, list item and table row (`util/md_reflow.py --check` in lint); headings, code blocks, tables, display maths and HTML stay as they are. An entry's three lines are about 300 characters.
-- A new decision gets the next number at the end of this file, with its area tag. Next free number: **D167**.
+- A new decision gets the next number at the end of this file, with its area tag. Next free number: **D168**.
 
 Area tags: `scope` (plan, ownership, order), `lower` (SNAX-LOWER), `gvsoc` (SNAX-GVSoC), `brm` (SNAX-BRM), `dfg` (SNAX-DFG and importers), `ref` (reference executor), `sandbox`, `design` (platform, checks, memory plan, design point), `flow`, `estimate` (the ideal estimate of a bound graph), `viz`, `docs`.
 
@@ -25,7 +25,7 @@ Area tags: `scope` (plan, ownership, order), `lower` (SNAX-LOWER), `gvsoc` (SNAX
 | sandbox | D72 D73 D156 D165 D166 |
 | design | D12 D84–D87 D131 D142 |
 | flow | D50 D108 D136 |
-| estimate | D154 D155 D160 |
+| estimate | D154 D155 D160 D167 |
 | viz | D55 D57 D99 |
 | docs | D26 D46 D117 |
 
@@ -195,7 +195,7 @@ Retired, and where each now lives:
 
 **D153** · brm — A group's control unit counts per segment with no product: a unit at L 0 on a wire borrows its consumer's test, any other counts its results in mixed radix over the Ts after it and JOBS, all at job_width; so dot 2 and 3 lose the 32 × 32 multiplier and dot 3 a count per unit. SnaxGroupRule's flat count of firings stays the spec. → C§17, `GroupRule.scala`.
 
-**D154** · estimate — CHAR1's first-order cost model, from the description before any synthesis: registers are bits (e_load when loading, e_hold every cycle), a block its comb energy per fire, ctrl its bits × e_hold × a factor; the table `snax_forge/char/<tech>.json`. An early estimate (about 20 % on the large costs), shown so. Two placeholders until the streamer, memory and interconnect costs replace them in HWCOST (the memory's are in, D160): (a) each word an accelerator's streamers read or write in L1 costs 4 × e_load per bit (nangate45 68.68 fJ per bit, 4.40 pJ per 64-bit word; nangate15 4 × 5.50 fJ), the DMA's traffic not counted, being the same for every variant; transients such as dot 1's tmp0 are in L1 by default, so their round trip counts, and a link takes a container out of L1; (b) a control unit's area is its flops' area plus an equal comb area (comb : flops = 1 : 1), its energy unchanged, its comb energy taken as negligible. → C§20.
+**D154** · estimate — CHAR1's first-order cost model of a design's groups, from the description before any synthesis: registers are bits (e_load when loading, e_hold every cycle), a block its comb energy per fire, ctrl its bits × e_hold × a factor; the table `snax_forge/char/<tech>.json`. An early estimate (about 30 % on the large costs, D167), shown so. A control unit's area is its flops' area plus an equal comb area (comb : flops = 1 : 1), a rough early estimate, its comb energy taken as negligible; the L1 side, once a placeholder of 4 × e_load per bit per word, is D167's. → C§20.
 
 **D155** · estimate — An ideal estimate: per group snax-gvsoc's group rule on ideal streams, groups adding through L1; unmapped work one cycle per iteration, a labelled assumption (a core takes several) in one constant; the total adds both. A run's COUNTER counts from its group's START, every cycle until busy drops, so it includes bank conflicts and is shortened by the streamers' head start (the program configures the streamers, then the accelerator, then starts the streamers, then the accelerator); the expected COUNTER (cycles + fill) is a guide SNAX-DFG shows, not a check, a run above or below it (dot 1 at W_mul = W_sum = 8: mul 256 against 259, its START 10 cycles after the streamers'). `bank_bound` bounds the streams' L1 time, ⌈Σ beats × num_ch / n_banks⌉, not the COUNTER (dot 1 at W_mul = 16: streams 211 cycles against the bound of 192, COUNTER 186). → ARCHITECTURE §5, C§19.
 
@@ -205,7 +205,7 @@ Retired, and where each now lives:
 
 **D158** · lower — Accelerators run in series for now: before each accelerator's start, a `sync` on the previous accelerator's task, its configures before that sync, so the next one is set up while the current one runs; overlap of independent accelerators, with data-only waits, is open item 109. → C§9.
 
-**D159** · scope — Characterization is on Nangate 45 nm only from 5 Nov 2026: the memories come from CACTI at 45 nm (D160; its smallest node is 22 nm, and OpenRAM, the first choice, has no 15 nm either), so the L1 macros, the cluster synthesis and the homogeneous comparison exist at 45 nm only, and new block, streamer and interconnect characterization follows. What exists at 15 nm stays (SYN1, SYN2, CHAR1, `nangate15.json`, HSYN1), and nangate15 keeps D154's two placeholders. → PAPER §7.
+**D159** · scope — Characterization is on Nangate 45 nm only from 5 Nov 2026: the memories come from CACTI at 45 nm (D160; its smallest node is 22 nm, and OpenRAM, the first choice, has no 15 nm either), so the L1 macros, the cluster synthesis and the homogeneous comparison exist at 45 nm only, and new block, streamer and interconnect characterization follows. What exists at 15 nm stays as data (SYN1, SYN2, CHAR1, `nangate15.json`, HSYN1), but snax-forge no longer offers nangate15 (D167). → PAPER §7.
 
 **D160** · estimate — The memories (TCDM banks, instruction cache, DaCe's buffer) are costed from CACTI 7 at 45 nm, not OpenRAM, whose analytical model gave one power for read, write and idle and an area only with layout: a lookup table of area and read and write energy per access for every depth 32–4096 (step 32) and width 8–256 (step 8), no fit, as CACTI's numbers step between neighbouring sizes; synthesis and power use `.lib` and `.v` macros generated from the same numbers, and a run's memory energy is its counted accesses times them. → snax-forge-experiments X47–X50, PAPER §7.
 
@@ -220,3 +220,5 @@ Retired, and where each now lives:
 **D165** · sandbox — Two nests run on one set of hardware by binding them to one instance (mvt's variant 1: both halves on one `vmul`, `vsum` and `vadd`), chosen in `bind`'s form ("share with") for a unit, and by `share` for a linked group once each nest is linked (its links make it a group): the graph holds an instance's nodes to one BRM, implementation and params, LOWER runs a group once per nest on the same streamers, the generator makes one link per pair of ports, and the estimate counts the area once. → C§11, C§12, C§19.
 
 **D166** · sandbox — A recipe is the unit of reuse: a recipe applies another on a region of its graph that matches the other's kernel (`apply_recipe`), so matvec is written as dot's variant on each row and mvt as matvec's on each half, and the user lifts a kernel's regions as blocks by hand, smaller first or larger first (`lift`), rather than a search applying recipes unasked; the match leaves the outer loops free and the transpose mark decorative, and the editor draws a block as one box in its firing loops. → C§12, `sandbox/blocks.py`.
+
+**D167** · estimate — HWCOST: a design's cost in five parts (datapath, control, streamers, crossbar, memory), each with its share, beside the total and the total without the banks. The streamers, crossbar and banks are priced from snax-forge-experiments' tables (X48, X52–X54), copied as they are (`pixi run import-costs`), interpolated as X53 and X54 say and extrapolated with a note where X53 refuses; the cores, I-cache, DMA and csr are not costed. nangate45 only. → C§20, `snax_forge/char/tables.py`, `estimate/cost.py`.
