@@ -2,6 +2,7 @@
 
     ctrl_registers(units, links, owner, fixed, job_width, declared=False) -> list[(str, int)]
     ctrl_bits(units, links, owner, fixed, job_width) -> int
+    accelerator_registers(accelerator) -> {module: list[(str, int)]}
 
 The group description is the one ``cycles.py``'s ``group_cycles`` steps: ``units`` with
 ``name``, ``L``, ``ii`` and ``span``; ``links`` ``{from, to, to_input, depth}`` by unit name;
@@ -35,10 +36,17 @@ firtool removes them and DC never sees them:
 points when it was built (``util/ctrl_regs.py`` on the fixtures; ``tests/estimate/test_bits.py``
 holds it within 10 %, SYN2's flops still holding CTRL1's copies of JOBS and each JOB_BEATS,
 which CTRL2 removed: the control unit reads the csr's, D168).
+
+**Against the emitted RTL**: ``accelerator_registers`` reads each group's description from an
+``accelerator.json`` (C§17) as hw/chisel's ``AccCtrl.desc`` does; ``util/ctrl_regs.py --json``
+writes it for every RTL fixture into ``ctrl_registers.json`` beside them (``registers_json``),
+which hw/chisel's ``CtrlRegistersSpec`` compares, register by register, with each emitted
+``<tag>_<group>_ctrl``, and ``tests/estimate/test_bits.py`` checks the file is current.
 """
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -96,3 +104,42 @@ def ctrl_bits(units: Sequence[Mapping[str, Any]], links: Sequence[Mapping[str, A
     """The register bits of the group's control unit firtool keeps (``ctrl_registers``
     summed)."""
     return sum(b for _, b in ctrl_registers(units, links, owner, fixed, job_width))
+
+
+# =============================================================================
+# Against the emitted RTL (hw/chisel's CtrlRegistersSpec)
+# =============================================================================
+
+
+def accelerator_registers(accelerator: Mapping[str, Any]) -> dict[str, list[tuple[str, int]]]:
+    """Per group of an ``accelerator.json`` (C§17), its control unit ``<tag>_<group>_ctrl`` and
+    ``ctrl_registers`` on the group as the RTL reads it (hw/chisel's ``AccCtrl.desc``): each
+    unit's timing, its T None with a JOB_BEATS CSR, else its ``params.T`` (1 without one), the
+    links by unit, and ``job_width`` the JOBS CSR's width."""
+    out = {}
+    for acc in accelerator["accelerators"]:
+        for g in acc["groups"]:
+            units = [{"name": u["name"], "L": u["timing"]["latency"], "ii": u["timing"]["ii"],
+                      "span": u["timing"]["span"]} for u in g["units"]]  # fmt: skip
+            links = [{"from": e["from"].split(".")[0], "to": e["to"].split(".")[0],
+                      "depth": e["depth"]} for e in g["links"]]  # fmt: skip
+            fixed = {u["name"]: None if any(c["name"] == "JOB_BEATS" for c in u["csrs"])
+                     else u.get("params", {}).get("T", 1) for u in g["units"]}  # fmt: skip
+            owner = next(u["name"] for u in units if u["name"] not in {e["from"] for e in links})
+            job_width = next(c["width"] for c in g["csrs"] if c["name"] == "JOBS")
+            regs = ctrl_registers(units, links, owner, fixed, job_width)
+            out[f"{accelerator['tag']}_{g['name']}_ctrl"] = regs
+    return out
+
+
+def registers_json(registers: Mapping[str, Mapping[str, Sequence[tuple[str, int]]]]) -> str:
+    """Per fixture its ``accelerator_registers``, as ``ctrl_registers.json``'s text: a control
+    unit per line, its registers as ``[name, bits]`` pairs in ``ctrl_registers``' order."""
+    lines = ["{"]
+    for i, (fixture, units) in enumerate(registers.items()):
+        lines.append(f"  {json.dumps(fixture)}: {{")
+        for j, (module, regs) in enumerate(units.items()):
+            comma = "," if j < len(units) - 1 else ""
+            lines.append(f"    {json.dumps(module)}: {json.dumps([list(r) for r in regs])}{comma}")
+        lines.append("  }" + ("," if i < len(registers) - 1 else ""))
+    return "\n".join([*lines, "}"]) + "\n"

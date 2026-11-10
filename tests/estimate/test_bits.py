@@ -1,9 +1,11 @@
 """The register bits of the estimate (D154, C§19): a control unit's registers from its group
-description (estimate/bits.py), and every datapath's and control unit's bits against what DC
-kept in SYN2's 48 points (``fixtures/syn2_flops.json``, util/syn2_flops.py)."""
+description (estimate/bits.py), every datapath's and control unit's bits against what DC kept in
+SYN2's 48 points (``fixtures/syn2_flops.json``, util/syn2_flops.py), and the RTL fixtures'
+``ctrl_registers.json`` (hw/chisel's CtrlRegistersSpec) current."""
 
 from __future__ import annotations
 
+import importlib.util
 import json
 from pathlib import Path
 
@@ -11,8 +13,13 @@ import pytest
 
 from snax_forge.char import DATAPATH_RENAMES
 from snax_forge.estimate import ctrl_bits, ctrl_registers
+from tests.helpers import REPO
 
 from .helpers import copies, estimated
+
+_spec = importlib.util.spec_from_file_location("ctrl_regs", REPO / "util" / "ctrl_regs.py")
+ctrl_regs = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(ctrl_regs)
 
 SYN2 = Path(__file__).parent / "fixtures" / "syn2_flops.json"
 JW = 32
@@ -78,6 +85,20 @@ def test_a_fixed_t_counts_in_its_own_bits_and_the_ii_gap_and_job_width():
     assert (regs["a_gap"], regs["b_v"], regs["a_jobs_counter"]) == (2, 2, 16)
     assert (regs["a_b_occupancy"], regs["a_b_wslot"], regs["a_b_rslot"]) == (3, 2, 2)
     assert "a_job_beats" not in regs and "b_jobs" not in regs
+
+
+def test_the_rtl_fixtures_ctrl_registers_json_is_current():
+    """hw/chisel's CtrlRegistersSpec compares every fixture's emitted control units with
+    ``ctrl_registers.json``, which must be ``ctrl_registers`` on each fixture's accelerator.json
+    as it is now (``pixi run python util/ctrl_regs.py --json`` writes it again)."""
+    if not ctrl_regs.FORGE.is_dir():
+        pytest.skip("gvsoc/snax-gvsoc is not checked out: the fixtures' accelerator.json")
+    assert ctrl_regs.REGISTERS_JSON.read_text() == ctrl_regs.estimated()
+    units = json.loads(ctrl_regs.REGISTERS_JSON.read_text())
+    assert units["dot_2"]["snax_forge_dot_2_dot_ctrl"][-2:] == [
+        ["mul_sum_occupancy", 1],
+        ["done", 1],
+    ]
 
 
 # =============================================================================

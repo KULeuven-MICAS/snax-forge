@@ -1,6 +1,7 @@
 """The flip-flops of every group control unit (``<tag>_<group>_ctrl``) of the RTL fixtures.
 
     pixi run python util/ctrl_regs.py [--sv DIR] [--out FILE] [FIXTURE ...]
+    pixi run python util/ctrl_regs.py --json
 
 For each fixture under ``hw/chisel/src/test/resources/rtl/`` (all, or those named), its
 ``accelerator.json`` (snax-gvsoc's ``forge/<design>/``, or its own) is elaborated through ``Emit --spec`` (one call for all) into ``DIR/<fixture>/`` (default ``out/ctrl_regs``); then every module of the
@@ -8,11 +9,18 @@ emitted SV whose name ends in ``_ctrl`` is read for firtool's ``reg`` declaratio
 register of its width (an unpacked array counts each element). Printed, and written to FILE:
 per module one line per register with its name and width, the module's registers and bits;
 per fixture its totals; and a summary table. ``--no-emit`` reads what ``DIR`` holds already.
+
+``--json`` elaborates nothing: it writes ``ctrl_registers.json`` beside the fixtures, every
+fixture's control units as ``snax_forge/estimate/bits.py`` counts them from its
+``accelerator.json`` (``accelerator_registers``), the file hw/chisel's ``CtrlRegistersSpec``
+compares with the emitted ones and ``tests/estimate/test_bits.py`` checks is current; write it
+again after a change to ``ctrl_registers`` or to a fixture.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 from pathlib import Path
@@ -20,11 +28,23 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 FIXTURES = REPO / "hw/chisel/src/test/resources/rtl"
 FORGE = REPO / "gvsoc/snax-gvsoc/forge"
+REGISTERS_JSON = FIXTURES / "ctrl_registers.json"
 
 _MODULE = re.compile(r"^module\s+(\w+)\s*[(;#].*?^endmodule", re.DOTALL | re.MULTILINE)
 _REG = re.compile(
     r"^\s*reg\s*(?:\[(\d+):(\d+)\])?\s*(\w+)\s*(?:\[(\d+):(\d+)\])?\s*;", re.MULTILINE
 )
+
+
+def accelerator(f: str) -> Path:
+    """A fixture's ``accelerator.json``: its own, else its forge/ twin's (RtlFixtures.file)."""
+    own = FIXTURES / f / "accelerator.json"
+    return own if own.is_file() else FORGE / f / "accelerator.json"
+
+
+def fixtures_all() -> list[str]:
+    """Every fixture's name, sorted."""
+    return sorted(p.name for p in FIXTURES.iterdir() if p.is_dir())
 
 
 def emit(fixtures: list[str], sv: Path) -> None:
@@ -33,11 +53,17 @@ def emit(fixtures: list[str], sv: Path) -> None:
     sys.path.insert(0, str(REPO))
     from snax_forge.gen.rtl import elaborate_all
 
-    def spec(f: str) -> Path:  # the fixture's own, else its forge/ twin's (RtlFixtures.file)
-        own = FIXTURES / f / "accelerator.json"
-        return own if own.is_file() else FORGE / f / "accelerator.json"
+    elaborate_all([(accelerator(f), sv / f) for f in fixtures])
 
-    elaborate_all([(spec(f), sv / f) for f in fixtures])
+
+def estimated() -> str:
+    """``ctrl_registers.json``'s text: per fixture, estimate/bits.py's ``accelerator_registers``."""
+    sys.path.insert(0, str(REPO))
+    from snax_forge.estimate.bits import accelerator_registers, registers_json
+
+    return registers_json(
+        {f: accelerator_registers(json.loads(accelerator(f).read_text())) for f in fixtures_all()}
+    )
 
 
 def registers(text: str) -> dict[str, list[tuple[str, int]]]:
@@ -83,8 +109,13 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--sv", type=Path, default=REPO / "out/ctrl_regs", help="where Emit writes")
     ap.add_argument("--out", type=Path, help="also write the table here")
     ap.add_argument("--no-emit", action="store_true", help="read the SV already in --sv")
+    ap.add_argument("--json", action="store_true", help=f"write {REGISTERS_JSON.name} only")
     a = ap.parse_args(argv)
-    fixtures = a.fixtures or sorted(p.name for p in FIXTURES.iterdir() if p.is_dir())
+    if a.json:
+        REGISTERS_JSON.write_text(estimated())
+        print(f"wrote {REGISTERS_JSON.relative_to(REPO)}")
+        return 0
+    fixtures = a.fixtures or fixtures_all()
     sv = a.sv.resolve()
     if not a.no_emit:
         emit(fixtures, sv)
