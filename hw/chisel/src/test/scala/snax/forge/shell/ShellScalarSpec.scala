@@ -7,11 +7,11 @@ import snax.forge.{ForgeTester, IntType, LaneBits, Seeds}
 import snax.forge.shell.AcceleratorSpec.{CsrSpec, GroupSpec, PortSpec, UnitSpec}
 
 /** A unit's scalar CSRs through `<tag>_shell_wrapper` (C§17): axpy's one SimdLanes unit at axpby with k1 from its CSR,
-  * as `accelerator.json` gives it (`scalars` `{"k1": <opType>}`), at int32 (K1 at offset 2, 32 bits; STATUS 3, COUNTER
-  * 4) and int64 (K1_LO 2 and K1_HI 3, 32 bits each, low word first; STATUS 4, COUNTER 5). Per seed: K1 written and read
-  * back, then runs of random a and b with a random k1 each, written as `main.c` does (K1, or K1_LO then K1_HI) before
-  * START, the outputs NumPy's `k1 * a + b` at the op type, so the datapath's pin takes what the program last wrote;
-  * with k2 from its CSR too (`K2` after `K1`), `k1 * a + k2 * b`.
+  * as `accelerator.json` gives it (`scalars` `{"k1": <opType>}`), at int32 (K1 at offset 2, 32 bits; STATUS 3,
+  * BUSY_COUNTER 4) and int64 (K1_LO 2 and K1_HI 3, 32 bits each, low word first; STATUS 4, BUSY_COUNTER 5). Per seed:
+  * K1 written and read back, then runs of random a and b with a random k1 each, written as `main.c` does (K1, or K1_LO
+  * then K1_HI) before START, the outputs NumPy's `k1 * a + b` at the op type, so the datapath's pin takes what the
+  * program last wrote; with k2 from its CSR too (`K2` after `K1`), `k1 * a + k2 * b`.
   */
 class ShellScalarSpec extends AnyFlatSpec with ForgeTester {
 
@@ -30,7 +30,7 @@ class ShellScalarSpec extends AnyFlatSpec with ForgeTester {
       else Seq(CsrSpec(n, "rw", next(), IntType(dtype).width, Some(s)))
     }
     val status = CsrSpec("STATUS", "ro", next(), 2)
-    val count  = CsrSpec("COUNTER", "ro", next(), 32)
+    val count  = CsrSpec("BUSY_COUNTER", "ro", next(), 32)
     val ports  = Seq("a", "b", "out").map(p => p -> PortSpec(p, if (p == "out") "out" else "in", dtype, Lanes))
     val unit   = UnitSpec(
       "acc",
@@ -66,7 +66,7 @@ class ShellScalarSpec extends AnyFlatSpec with ForgeTester {
         ("JOBS", 1, 32, None),
         ("K1", 2, 32, Some("k1")),
         ("STATUS", 3, 2, None),
-        ("COUNTER", 4, 32, None)
+        ("BUSY_COUNTER", 4, 32, None)
       )
     )
     val i64 = axpy("int64")
@@ -77,7 +77,7 @@ class ShellScalarSpec extends AnyFlatSpec with ForgeTester {
         ("K1_LO", 2, 32),
         ("K1_HI", 3, 32),
         ("STATUS", 4, 2),
-        ("COUNTER", 5, 32)
+        ("BUSY_COUNTER", 5, 32)
       )
     )
     test(new ShellHarness(i64)) { dut =>
@@ -119,7 +119,7 @@ class ShellScalarSpec extends AnyFlatSpec with ForgeTester {
         }
         d.write(dut.csr("START"), 1)
         while ((d.read(dut.csr("STATUS")) & 1) != 0) {}
-        assert(d.read(dut.csr("COUNTER")) == jobs, s"run $run: the counter")
+        assert(d.read(dut.csr("BUSY_COUNTER")) == jobs, s"run $run: the counter")
       }
       val want  = for {
         run <- 0 until runs

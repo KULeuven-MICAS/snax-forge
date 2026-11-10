@@ -101,11 +101,11 @@ def test_check_values_refuses_a_slot_without_its_container(made, values, message
     ("name", "csrs", "scalars"),
     [
         ("axpy", [("START", 0, 1), ("JOBS", 1, 32), ("K1", 2, 32), ("STATUS", 3, 2),
-                  ("COUNTER", 4, 32)], {"k1": "int32"}),
+                  ("BUSY_COUNTER", 4, 32)], {"k1": "int32"}),
         ("axpy_i64", [("START", 0, 1), ("JOBS", 1, 32), ("K1_LO", 2, 32), ("K1_HI", 3, 32),
-                      ("STATUS", 4, 2), ("COUNTER", 5, 32)], {"k1": "int64"}),
+                      ("STATUS", 4, 2), ("BUSY_COUNTER", 5, 32)], {"k1": "int64"}),
         ("axpy_baked", [("START", 0, 1), ("JOBS", 1, 32), ("STATUS", 2, 2),
-                        ("COUNTER", 3, 32)], None),
+                        ("BUSY_COUNTER", 3, 32)], None),
     ],
 )  # fmt: skip
 def test_the_unit_has_its_scalars_and_their_csrs(made, name, csrs, scalars):

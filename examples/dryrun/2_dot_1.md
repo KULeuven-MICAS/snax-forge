@@ -41,7 +41,7 @@ Step 8 is a design Save takes as it is: two bound units are two accelerators, ea
 
 The Estimate after step 8:
 
-| Group | Cycles | Bottleneck | Ramp | Stall | Expected COUNTER | Channels | Area (µm²) | Energy (nJ) |
+| Group | Cycles | Bottleneck | Ramp | Stall | Expected BUSY_COUNTER | Channels | Area (µm²) | Energy (nJ) |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
 | acc_1 | 256 | 256 | 0 | 0 | 259 | 24 | 56 000 | 23.393 |
 | acc_2 | 257 | 256 | 1 | 0 | 259 | 9 | 4 110 | 1.740 |
@@ -50,7 +50,7 @@ The two accelerators add through L1: the multiply runs its 256 beats, then the s
 
 $$C = \frac{N}{W_{\mathit{acc}_1}} + \frac{N}{W_{\mathit{acc}_2}} + 1 = 256 + 256 + 1 = 513.$$
 
-The expected COUNTER adds the streamers' fill (3 for a group with two inputs, 2 with one); it is a guide from SNAX-DFG, not something a run must hit (section 5). Reads are 6144 words (A, B and tmp0), writes 2049 (tmp0 and the one `out`). Under the groups the panel names the streamers: `2 streamers (not costed, open item 110) · 40 CSRs: acc_1 960–981, acc_2 982–999`.
+The expected BUSY_COUNTER adds the streamers' fill (3 for a group with two inputs, 2 with one); it is a guide from SNAX-DFG, not something a run must hit (section 5). Reads are 6144 words (A, B and tmp0), writes 2049 (tmp0 and the one `out`). Under the groups the panel names the streamers: `2 streamers (not costed, open item 110) · 40 CSRs: acc_1 960–981, acc_2 982–999`.
 
 The cost table on nangate45, one per accelerator:
 
@@ -118,7 +118,7 @@ It keeps only the params its steps and symbols use (D156). The log lists `pixi r
 
 Change `W_acc_1` or `W_acc_2` in its Bindings entry; the session replays its steps up to the cursor and runs the checks again, and the log line gives the step's problems and notes as an Apply's does (`params W_acc_1=8, W_acc_2=10  ok · 8 steps replayed · 1 problem`). On both technologies:
 
-| W_acc_1 | W_acc_2 | Cycles | Expected COUNTER | Channels | Area 45 nm (µm²) | Energy 45 nm (nJ) | of which L1 | Area 15 nm (µm²) | Energy 15 nm (nJ) |
+| W_acc_1 | W_acc_2 | Cycles | Expected BUSY_COUNTER | Channels | Area 45 nm (µm²) | Energy 45 nm (nJ) | of which L1 | Area 15 nm (µm²) | Energy 15 nm (nJ) |
 |---:|---:|---:|---|---|---:|---:|---:|---:|---:|
 | 1 | 1 | 4097 | 2051, 2051 | 3, 2 | 9 850 | 69.836 | 36.011 | 2 940 | 22.452 |
 | 4 | 4 | 1025 | 515, 515 | 12, 5 | 31 400 | 62.285 | 36.011 | 9 800 | 20.135 |
@@ -159,8 +159,8 @@ The generator writes one streamer file per accelerator, `snax_forge_dot_1_dry_st
 
 | Number | What it counts | Where it comes from |
 |---|---|---|
-| Expected COUNTER | the group's ideal cycles plus the streamers' fill (3, or 2 for one input) | the estimate, a guide (D155) |
-| COUNTER | every cycle from the group's START until its busy drops: bank conflicts included, shortened when the streamers started ahead | the group's COUNTER CSR, read by the program |
+| Expected BUSY_COUNTER | the group's ideal cycles plus the streamers' fill (3, or 2 for one input) | the estimate, a guide (D155) |
+| BUSY_COUNTER | every cycle from the group's START until its busy drops: bank conflicts included, shortened when the streamers started ahead | the group's BUSY_COUNTER CSR, read by the program |
 | Window | the program from `main` to `forge_check()` (D135): setup, the DMA loads, both accelerators, the core's handover, the DMA store | the core's `mcycle` |
 
 The other points, each in its own folder, named after its `--set`s:
@@ -169,7 +169,7 @@ The other points, each in its own folder, named after its `--set`s:
 
     flow dot_1_dry_W_acc_1-8_W_acc_2-4 (dot_1_dry: N=2048, W_acc_1=8, W_acc_2=4; N=2048) on snax_forge -> out/flow/dot_1_dry_W_acc_1-8_W_acc_2-4/
 
-| W_acc_1 | W_acc_2 | Expected COUNTER | COUNTER | Window | DMA busy |
+| W_acc_1 | W_acc_2 | Expected BUSY_COUNTER | BUSY_COUNTER | Window | DMA busy |
 |---:|---:|---|---|---:|---:|
 | 1 | 1 | 2051, 2051 | 2048, 2049 | 4822 | 534 |
 | 4 | 4 | 515, 515 | 515, 515 | 1731 | 534 |
@@ -183,11 +183,11 @@ The other points, each in its own folder, named after its `--set`s:
 
 8/10 stops at the design step with the `connect.pad` problem of section 4, and 16/16 with `connect.xbar_inputs`.
 
-**Why a COUNTER is 3 under its guide in places.** The program sets up an accelerator's streamer and JOBS, then writes its STREAMER_START and its START one after the other. The COUNTER counts from START, so it holds the fill only when START lands right after the streamer's start. With `--trace task` the two writes are 1 cycle apart for both accelerators at 4/4 and 8/8 (`acc_1` 608, 609; `acc_2` 888, 889 at 8/8), and 10 cycles apart for both at 1/1 and 8/4 (`acc_1` 620, 630; `acc_2` 899, 909 at 8/4); at 10/10, 10 for `acc_1` (622, 632) and 20 for `acc_2` (850, 870). With a 10-cycle head start the streamer's FIFOs are already full when the group starts, so its COUNTER is its ideal cycles, 256 or 513 at 8/4, not 259 or 515. That is how the COUNTER is meant to count (D155), and it is why the expected COUNTER is a guide.
+**Why a BUSY_COUNTER is 3 under its guide in places.** The program sets up an accelerator's streamer and JOBS, then writes its STREAMER_START and its START one after the other. The BUSY_COUNTER counts from START, so it holds the fill only when START lands right after the streamer's start. With `--trace task` the two writes are 1 cycle apart for both accelerators at 4/4 and 8/8 (`acc_1` 608, 609; `acc_2` 888, 889 at 8/8), and 10 cycles apart for both at 1/1 and 8/4 (`acc_1` 620, 630; `acc_2` 899, 909 at 8/4); at 10/10, 10 for `acc_1` (622, 632) and 20 for `acc_2` (850, 870). With a 10-cycle head start the streamer's FIFOs are already full when the group starts, so its BUSY_COUNTER is its ideal cycles, 256 or 513 at 8/4, not 259 or 515. That is how the BUSY_COUNTER is meant to count (D155), and it is why the expected BUSY_COUNTER is a guide.
 
-**At W_acc_1 = 16 the COUNTER is above the bank note.** The note bounds the streams' L1 time at 192 cycles; at 16/8 the multiply's streamer runs from 609 to 809, and its START lands at 610, a cycle after the streamer's, so its COUNTER is 194: the 192 cycles of L1 time and a fill of 2.
+**At W_acc_1 = 16 the BUSY_COUNTER is above the bank note.** The note bounds the streams' L1 time at 192 cycles; at 16/8 the multiply's streamer runs from 609 to 809, and its START lands at 610, a cycle after the streamer's, so its BUSY_COUNTER is 194: the 192 cycles of L1 time and a fill of 2.
 
-**The window.** At 8/8 the 1218 cycles are the DMA's two loads (77 to 603), the multiply (609 to 869), the core's handover (869 to 888: it polls `acc_1`'s STATUS and its streamer's busy, reads the COUNTER and passes a barrier, then starts `acc_2`'s streamer and `acc_2`), the sum (889 to 1149) and the store of the one word (1163 to 1171). vecmul's window at W = 8 was 1200: dot 1 adds the sum's 260 cycles and the handover, but stores 8 B in place of 16 KiB. The DMA's 534 to 537 busy cycles are about the same at every point, so past W = 8 the window gains little: 10/10 is 57 cycles under 8/8 for 14 400 µm² more.
+**The window.** At 8/8 the 1218 cycles are the DMA's two loads (77 to 603), the multiply (609 to 869), the core's handover (869 to 888: it polls `acc_1`'s STATUS and its streamer's busy, reads the BUSY_COUNTER and passes a barrier, then starts `acc_2`'s streamer and `acc_2`), the sum (889 to 1149) and the store of the one word (1163 to 1171). vecmul's window at W = 8 was 1200: dot 1 adds the sum's 260 cycles and the handover, but stores 8 B in place of 16 KiB. The DMA's 534 to 537 busy cycles are about the same at every point, so past W = 8 the window gains little: 10/10 is 57 cycles under 8/8 for 14 400 µm² more.
 
 ## 6. The run in the reports and the viewer
 
@@ -197,9 +197,9 @@ The other points, each in its own folder, named after its `--set`s:
       check     passed: 1218 cycles (main to forge_check); data 0 errors (1 words); counters mult_acc_1 259 (256 beats), sum_acc_2 259 (256 beats)
       convert   run/events.log -> profile.json, trace.jsonl (9584 events in the window; boot 6358; sources acc_1, acc_2, acc_1_a, acc_1_b, acc_1_out, acc_2_a, acc_2_out, dma)
 
-`report/run.md` opens its Accelerators with a row per accelerator, its streamer set's CSRs, its streamer's busy window and its COUNTER:
+`report/run.md` opens its Accelerators with a row per accelerator, its streamer set's CSRs, its streamer's busy window and its BUSY_COUNTER:
 
-| Accelerator | Groups | CSRs | Streamer busy | COUNTER |
+| Accelerator | Groups | CSRs | Streamer busy | BUSY_COUNTER |
 |---|---|---|---|---|
 | acc_1 | acc_1 | 960–981 | 608–870 | acc_1 259 |
 | acc_2 | acc_2 | 982–999 | 888–1150 | acc_2 259 |
@@ -238,7 +238,7 @@ In the same session, at step 8, select `tmp0`: the sidebar now offers `link`, wi
 | | Step 8 (dot 1) | Step 9 (linked) |
 |---|---:|---:|
 | Cycles | 513 | 258 |
-| Expected COUNTER | 259, 259 | 261 |
+| Expected BUSY_COUNTER | 259, 259 | 261 |
 | Channels | 24 + 9 | 17 |
 | Streamers, CSRs | 2, 40 | 1, 23 |
 | L1 footprint | 48 KiB | 32 KiB |
@@ -251,7 +251,7 @@ The link halves the cycles, since both units now run at once, and drops tmp0's 4
 
 **What the link's depth costs.** `D` is a param like the widths: it appears in Bindings under the group `dot` as `link tmp0 · depth · D = 1`, and changing it replays the steps. At W = 8:
 
-| D | Cycles | Expected COUNTER | Control bits | Area 45 nm (µm²) | Energy 45 nm (nJ) | Area 15 nm (µm²) | Energy 15 nm (nJ) |
+| D | Cycles | Expected BUSY_COUNTER | Control bits | Area 45 nm (µm²) | Energy 45 nm (nJ) | Area 15 nm (µm²) | Energy 15 nm (nJ) |
 |---:|---:|---:|---:|---:|---:|---:|---:|
 | 1 | 258 | 261 | 196 | 63 800 | 45.133 | 19 900 | 14.724 |
 | 2 | 258 | 261 | 199 | 68 500 | 49.131 | 21 000 | 16.141 |
@@ -296,10 +296,10 @@ The 33 TCDM ports are the sets' 24 and 9 channels, one interconnect group each. 
 |---|---|---|
 | 960–974 | acc_1 | `acc_1_a`, `acc_1_b`, `acc_1_out`: base pointer (low, high), spatial stride, temporal bound, temporal stride, 5 each |
 | 975, 976, 977 | acc_1 | STREAMER_START, STREAMER_BUSY, STREAMER_PERFORMANCE_COUNTER |
-| 978, 979, 980, 981 | acc_1 | START (R/W, reads 0), JOBS (R/W, 256), STATUS (R/O, bit 0 busy, bit 1 done), COUNTER (R/O) |
+| 978, 979, 980, 981 | acc_1 | START (R/W, reads 0), JOBS (R/W, 256), STATUS (R/O, bit 0 busy, bit 1 done), BUSY_COUNTER (R/O) |
 | 982–991 | acc_2 | `acc_2_a`, `acc_2_out`: the same 5 each |
 | 992, 993, 994 | acc_2 | STREAMER_START, STREAMER_BUSY, STREAMER_PERFORMANCE_COUNTER |
-| 995, 996, 997, 998, 999 | acc_2 | START, JOBS (1), JOB_BEATS (R/W, 256), STATUS, COUNTER |
+| 995, 996, 997, 998, 999 | acc_2 | START, JOBS (1), JOB_BEATS (R/W, 256), STATUS, BUSY_COUNTER |
 
 40 CSRs in all. The multiply has no fold, so every beat is a job; the tree folds 256 beats into one output, so it runs one job whose length comes with the start, its unit's own CSR JOB_BEATS. Each set has a header of its streamer's CSRs, `include/streamer_<set>_csr_addr_map.h`, its macros prefixed with the set's name:
 
@@ -323,7 +323,7 @@ The 33 TCDM ports are the sets' 24 and 9 channels, one interconnect group each. 
 #define ACC_2_STREAMER_PERFORMANCE_COUNTER_CSR 994
 ```
 
-and each accelerator one of its own CSRs, `include/acc_1_csr.h` (`ACC_1_RW_START` 978 to `ACC_1_RO_COUNTER` 981) and `include/acc_2_csr.h` (`ACC_2_RW_START` 995 to `ACC_2_RO_COUNTER` 999). The program (`gen/main.c`) drives the two in series (D158): `acc_2` is set up while `acc_1` runs, then one wait covers `acc_1` and its streamer before `acc_2` starts:
+and each accelerator one of its own CSRs, `include/acc_1_csr.h` (`ACC_1_RW_START` 978 to `ACC_1_RO_BUSY_COUNTER` 981) and `include/acc_2_csr.h` (`ACC_2_RW_START` 995 to `ACC_2_RO_BUSY_COUNTER` 999). The program (`gen/main.c`) drives the two in series (D158): `acc_2` is set up while `acc_1` runs, then one wait covers `acc_1` and its streamer before `acc_2` starts:
 
 ```c
     csrw_ss(ACC_1_RW_JOBS, 256);
@@ -338,7 +338,7 @@ and each accelerator one of its own CSRs, `include/acc_1_csr.h` (`ACC_1_RW_START
     }
     while (csrr_ss(ACC_1_STREAMER_BUSY_CSR)) {
     }
-    forge_counter[0] = csrr_ss(ACC_1_RO_COUNTER);
+    forge_counter[0] = csrr_ss(ACC_1_RO_BUSY_COUNTER);
     snrt_cluster_hw_barrier();
     csrw_ss(ACC_2_STREAMER_START_CSR, 1);
     csrw_ss(ACC_2_RW_START, 1);
@@ -356,7 +356,7 @@ It writes `out/rtl/dot_1_dry/accelerator.json`, runs `hw/chisel/`'s `Emit --spec
 
 ```text
 snax_forge_dot_1_dry_shell_wrapper
-├── csr   snax_forge_dot_1_dry_csr            both accelerators' START, JOBS, STATUS, COUNTER and acc_2's JOB_BEATS
+├── csr   snax_forge_dot_1_dry_csr            both accelerators' START, JOBS, STATUS, BUSY_COUNTER and acc_2's JOB_BEATS
 ├── ctrl  snax_forge_dot_1_dry_ctrl
 │   ├── ctrl    snax_forge_dot_1_dry_acc_1_ctrl
 │   └── ctrl_1  snax_forge_dot_1_dry_acc_2_ctrl
@@ -374,7 +374,7 @@ The streamers are not in it: snax_cluster builds one per set from the cluster fi
 flowchart LR
   core["core0<br/>CSR writes 960–999"] --> svm["streamer acc_1<br/>CSRs 960–977"]
   core --> svs["streamer acc_2<br/>CSRs 982–994"]
-  core --> csr["snax_forge_dot_1_dry_csr<br/>acc_1: START, JOBS, STATUS, COUNTER<br/>acc_2: START, JOBS, JOB_BEATS, STATUS, COUNTER"]
+  core --> csr["snax_forge_dot_1_dry_csr<br/>acc_1: START, JOBS, STATUS, BUSY_COUNTER<br/>acc_2: START, JOBS, JOB_BEATS, STATUS, BUSY_COUNTER"]
   subgraph ctrl["snax_forge_dot_1_dry_ctrl"]
     c1["snax_forge_dot_1_dry_acc_1_ctrl"]
     c2["snax_forge_dot_1_dry_acc_2_ctrl"]
@@ -400,7 +400,7 @@ The two accelerators share nothing but the CSR block and the shell's ports: each
 
 | File | Module |
 |---|---|
-| `snax_forge_dot_1_dry_csr.sv` | the CSR block: both accelerators' START, JOBS, STATUS and COUNTER and acc_2's JOB_BEATS, offsets 0 to 8 |
+| `snax_forge_dot_1_dry_csr.sv` | the CSR block: both accelerators' START, JOBS, STATUS and BUSY_COUNTER and acc_2's JOB_BEATS, offsets 0 to 8 |
 | `snax_forge_dot_1_dry_acc_1_ctrl.sv` | the group `acc_1`'s control unit |
 | `snax_forge_dot_1_dry_acc_2_ctrl.sv` | the group `acc_2`'s control unit |
 | `snax_forge_dot_1_dry_ctrl.sv` | the control units of every group, here two |
@@ -487,13 +487,13 @@ The CSR block's read mux over the nine offsets and the two saturating counters, 
         acc_2_counter <= acc_2_counter + 32'h1;
 ```
 
-Both START offsets (0 and 4) read 0: a start is a strobe (D152). Each COUNTER counts while its own accelerator's busy is high, so the two never mix.
+Both START offsets (0 and 4) read 0: a start is a strobe (D152). Each BUSY_COUNTER counts while its own accelerator's busy is high, so the two never mix.
 
 **The control.** The two control units come from each group's description in `accelerator.json`, not written per kernel. `acc_1`'s takes a beat when both inputs are valid and the output is ready (`acc_1_offer` and not `acc_1_frozen`); `acc_2`'s when its one input is valid, and it holds the beat's result for one cycle in `acc_2_v_0`, the tree's latency of 1, until the output is ready. Their registers are what the cost model counts (`estimate/bits.py`): `acc_1`'s 66 bits are `busy` (1), `acc_1_jobs` (32), `acc_1_jobs_counter` (32) and `io_done_REG` (1, the done pulse a cycle later); `acc_2`'s 131 add `acc_2_job_beats` (32, JOB_BEATS as the start gave it), `acc_2_job_beats_counter` (32) and `acc_2_v_0` (1) to the same four (`acc_2_jobs`, `acc_2_jobs_counter`).
 
 ## 9. One streamer set: dot_1_enc
 
-Back at step 8, click `acc_1`'s dashed outline and shift-click `acc_2`'s: on the two the sidebar offers only `encapsulate` (every one-item transform says `takes one selection, not 2`), with accelerator `dot` and units `acc_1` and `acc_2` both ticked. Applied at step 8 it first asks `Drop steps 9..9?`, the link of section 7; then step 9 is `encapsulate dot units=['acc_1', 'acc_2']`, `C 513 → 513`, 0 problems, 0 notes. Bindings reads as a tree, `accelerator dot ▸ group acc_1 ▸ acc_1 · simd · W_acc_1 = 8` and `group acc_2 ▸ acc_2 · accumulate · W_acc_2 = 8`. The two groups keep their own START, JOBS, STATUS, COUNTER and control unit; what they now share is one streamer set, with one streamer and one STREAMER_START.
+Back at step 8, click `acc_1`'s dashed outline and shift-click `acc_2`'s: on the two the sidebar offers only `encapsulate` (every one-item transform says `takes one selection, not 2`), with accelerator `dot` and units `acc_1` and `acc_2` both ticked. Applied at step 8 it first asks `Drop steps 9..9?`, the link of section 7; then step 9 is `encapsulate dot units=['acc_1', 'acc_2']`, `C 513 → 513`, 0 problems, 0 notes. Bindings reads as a tree, `accelerator dot ▸ group acc_1 ▸ acc_1 · simd · W_acc_1 = 8` and `group acc_2 ▸ acc_2 · accumulate · W_acc_2 = 8`. The two groups keep their own START, JOBS, STATUS, BUSY_COUNTER and control unit; what they now share is one streamer set, with one streamer and one STREAMER_START.
 
 What changes in the Estimate: nothing in the groups' cycles or cost (513, 60 100 µm², 61.144 nJ, now in one table for `dot`), and the streamers line reads `1 streamer (not costed, open item 110) · 37 CSRs`, `dot`'s set from 960 to 996. Saved as `dot_1_enc_dry`, the recipe is section 3's with one more step, `{"transform": "encapsulate", "params": {"accelerator": "dot", "units": ["acc_1", "acc_2"]}}`; `recipes/dot/dot_1_enc.json` is the same on `recipes/dot/dot_1.json`.
 
@@ -503,18 +503,18 @@ What changes in the program and the run:
 - **Idle movers in each task.** The one STREAMER_START starts all five movers, so each task sets the other group's movers to zero bounds. `acc_2`'s set-up rewrites all five movers, 25 writes, then JOBS and JOB_BEATS: 27 writes where `dot_1_dry` needs 12.
 - **The Tasks table** has five more rows, the idle movers, which finish in 2 cycles and move nothing: `mult_acc_2_a (idle)` and `mult_acc_2_out (idle)` in `acc_1`'s task (608 to 610), `sum_acc_1_a`, `sum_acc_1_b`, `sum_acc_1_out (idle)` in `acc_2`'s (894 to 896). The Accelerators table has one row, `dot | acc_1, acc_2 | 960–996 | 608–878, 894–1156 | acc_1 256, acc_2 259`, the schedule's headings read `dot ▸ acc_1` and `dot ▸ acc_2`, and the cluster view draws one streamer box, `dot` (CSRs 960–987, all five movers).
 
-At N = 2048 and W = 8 the encapsulated run's window is 1230 against `dot_1_dry`'s 1218, its COUNTERs 256 and 259 against 259 and 259: `acc_1`'s START lands 10 cycles after the streamer's (608, 618), so its COUNTER drops the fill (section 5), and `acc_1` finishes 6 cycles later.
+At N = 2048 and W = 8 the encapsulated run's window is 1230 against `dot_1_dry`'s 1218, its COUNTERs 256 and 259 against 259 and 259: `acc_1`'s START lands 10 cycles after the streamer's (608, 618), so its BUSY_COUNTER drops the fill (section 5), and `acc_1` finishes 6 cycles later.
 
 **Two sets against one, on the model and the RTL.** The checked-in recipes name their instances `vmul` and `vsum`, so this table and the two paragraphs under it use those names. The recipes `dot_1` and `dot_1_enc` (W = 4), each through `pixi run forge` at N = 64 and with `--set N=512`, then the four bundles through snax_cluster's `snax-forge-check` on vsim:
 
-| N | Design | Window, SNAX-GVSoC | Window, RTL (vsim) | COUNTER vmul, vsum, SNAX-GVSoC | COUNTER, RTL | Streamers | CSRs | Estimate (nangate45) |
+| N | Design | Window, SNAX-GVSoC | Window, RTL (vsim) | BUSY_COUNTER vmul, vsum, SNAX-GVSoC | BUSY_COUNTER, RTL | Streamers | CSRs | Estimate (nangate45) |
 |---:|---|---:|---:|---|---|---:|---|---|
 | 64 | dot_1 | 264 | 282 | 19, 19 | 19, 19 | 2 | 40 (960–999) | 31 400 µm², 1.953 nJ |
 | 64 | dot_1_enc | 304 | 302 | 19, 19 | 19, 19 | 1 | 37 (960–996) | 31 400 µm², 1.953 nJ |
 | 512 | dot_1 | 584 | 597 | 131, 131 | 131, 131 | 2 | 40 (960–999) | 31 400 µm², 15.576 nJ |
 | 512 | dot_1_enc | 586 | 609 | 131, 131 | 128, 131 | 1 | 37 (960–996) | 31 400 µm², 15.576 nJ |
 
-Every RTL run passes: `forge data: 0 errors`, and each COUNTER within its group's streamer fill of SNAX-GVSoC's (D123; `forge_expected.txt` gives each counter's `forge fill`). Three print SNAX-GVSoC's COUNTERs exactly; `dot_1_enc` at N = 512 passes with a note, `mult_vmul: counter 128 against 131, within its fill 3`, because on the RTL's core its STREAMER_START and START land 6 cycles apart (cycles 1174 and 1180 in core 0's trace), so the streamer's FIFOs are full when `vmul` starts and its COUNTER leaves out the fill (section 5's head start). The Estimate's cost is equal for both forms, since it leaves out the streamers (open item 110).
+Every RTL run passes: `forge data: 0 errors`, and each BUSY_COUNTER within its group's streamer fill of SNAX-GVSoC's (D123; `forge_expected.txt` gives each counter's `forge fill`). Three print SNAX-GVSoC's COUNTERs exactly; `dot_1_enc` at N = 512 passes with a note, `mult_vmul: counter 128 against 131, within its fill 3`, because on the RTL's core its STREAMER_START and START land 6 cycles apart (cycles 1174 and 1180 in core 0's trace), so the streamer's FIFOs are full when `vmul` starts and its BUSY_COUNTER leaves out the fill (section 5's head start). The Estimate's cost is equal for both forms, since it leaves out the streamers (open item 110).
 
 **Why two accelerators are faster.** `vsum`'s own set takes 12 CSR writes, where the shared streamer rewrites all five movers (27), and in both forms the writes overlap `vmul`'s run. At N = 64 `vmul` runs only 20 cycles (120 to 140 in `--trace beat`), shorter than either set-up: `dot_1`'s twelve writes end at 154 and `vsum` starts at 175, `dot_1_enc`'s 27 end at 189 and `vsum` starts at 209. So two sets save 40 cycles on SNAX-GVSoC and 20 on the RTL at N = 64. At N = 512 `vmul` runs about 130 cycles, longer than either set-up (the 27 writes took 67 cycles at N = 64), and the saving shrinks to 2 cycles on SNAX-GVSoC and 12 on the RTL. The gap between the model and the RTL is the core's timing, which SNAX-GVSoC does not model (open items 65, 67): the CSR writes and the handover take a different number of cycles on the RTL's core.
 

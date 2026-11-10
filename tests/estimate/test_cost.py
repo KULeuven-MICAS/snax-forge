@@ -15,7 +15,7 @@ from snax_forge.estimate import Estimate, estimate
 from snax_forge.estimate.cost import CAVEAT, Block, block_cost, dec3, group_cost, heading, sig3
 from tests.helpers import steps
 
-from .helpers import SNAX_FORGE, estimated
+from .helpers import SNAX_FORGE, copies, estimated
 
 MODEL = Path(__file__).parent / "fixtures" / "char_model.json"
 TOL = 0.005
@@ -104,10 +104,11 @@ def test_vecmul_at_w8_by_part():
     assert m.area_um2 == pytest.approx(32 * BANK[0])
     assert m.energy_nj == pytest.approx((4096 * BANK[1] + 2048 * BANK[2]) / 1000)
     shown = {k: (sig3(v.area_um2), dec3(v.energy_nj)) for k, v in p.items()}
-    assert shown == {"datapath": ("55 300", "23.137"), "control": ("702", "0.128"),
+    # control 362 µm², 0.066 nJ: 34 bits, CTRL1's 66 less its 32-bit copy of JOBS (D168)
+    assert shown == {"datapath": ("55 300", "23.137"), "control": ("362", "0.066"),
                      "streamers": ("116 000", "30.457"), "crossbar": ("139 000", "16.831"),
                      "memory": ("433 000", "27.738")}  # fmt: skip
-    assert (sig3(e.area), sig3(e.area_design), dec3(e.energy)) == ("744 000", "311 000", "98.291")
+    assert (sig3(e.area), sig3(e.area_design), dec3(e.energy)) == ("743 000", "311 000", "98.229")
     assert e.energy == pytest.approx(sum(v.energy_nj for v in p.values()))
     assert e.area_design == pytest.approx(e.area - m.area_um2)
     assert e.kernel_energy == pytest.approx(p["datapath"].energy_nj + p["control"].energy_nj)
@@ -188,7 +189,7 @@ def test_an_access_costs_the_same_whatever_the_inputs():
     assert (two.xbar.inputs, one.xbar.inputs) == (36, 20)
     assert two.xbar.e_access_pj == one.xbar.e_access_pj == 2.739443
     assert (two.xbar.accesses, one.xbar.accesses) == (4113, 4097)
-    assert (dec3(two.energy), dec3(one.energy)) == ("72.648", "72.371")
+    assert (dec3(two.energy), dec3(one.energy)) == ("72.455", "72.243")  # ctrl without copies, D168
 
 
 def test_the_cost_round_trips():
@@ -236,7 +237,7 @@ def test_a_cost_is_shown_to_3_significant_figures():
 
 def test_an_energy_is_shown_to_3_decimals():
     """Display precision only, so two close designs can be told apart (dot 4 and dot 5 at W =
-    8: 26.285 and 26.339 nJ); the caveat beside it is unchanged."""
+    8: 26.160 and 26.210 nJ); the caveat beside it is unchanged."""
     assert [dec3(x) for x in (26.28497, 26.33877, 97.2592, 3.6596, 0.1353, 0.0, 1234.5)] == [
         "26.285", "26.339", "97.259", "3.660", "0.135", "0.000", "1 234.500"]  # fmt: skip
     assert dec3(None) is None
@@ -244,7 +245,8 @@ def test_an_energy_is_shown_to_3_decimals():
 
 def test_dot_4_and_dot_5_read_apart():
     four, five = (estimated(r, W=8, N=2048).kernel_energy for r in ("dot_4", "dot_5"))
-    assert (dec3(four), dec3(five)) == ("26.285", "26.339") and sig3(four) == sig3(five)
+    # 26.160 and 26.210: their control units without CTRL1's 64 bits of copies (D168)
+    assert (dec3(four), dec3(five)) == ("26.160", "26.210") and sig3(four) == sig3(five)
     assert heading("nangate45") == "Cost estimate (first-order) on nangate45"
     assert "about 30 %" in CAVEAT and "csr" in CAVEAT and "4 × e_load" not in CAVEAT
 
@@ -255,7 +257,10 @@ def test_the_kernel_energy_is_the_experiments_formula(capsys):
     and 32, N = 2048, on nangate45 (its nangate15 rows skipped: the technology is no longer
     offered, D167), the estimate's kernel energy (units, links and ctrl) against
     snax-forge-experiments' model, the same formula on the same inputs (its C_acc SYN2's
-    window, its ctrl bits DC's); within 0.5 %, the table's rounding."""
+    window, its ctrl bits DC's); within 0.5 %, the table's rounding. DC's ctrl bits are CTRL1's,
+    with the copies of JOBS and each JOB_BEATS CTRL2 removed (D168): the estimate's bits plus
+    those (``copies``), and its kernel energy plus their control energy, are compared, until
+    CTRL2's R5 refreshes the fixture."""
     rows = [r for r in json.loads(MODEL.read_text())["rows"] if r["tech"] in TECHS]
     lines = ["| tech | recipe | W | C_acc | ctrl bits | estimate nJ | model nJ | ratio |",
              "|---|---|---|---|---|---|---|---|"]  # fmt: skip
@@ -263,10 +268,12 @@ def test_the_kernel_energy_is_the_experiments_formula(capsys):
     for r in rows:
         e = estimate(steps(r["recipe"], W=r["W"], N=2048)[-1], _platform(), r["tech"])
         (g,) = e.groups
-        ratio = e.kernel_energy / r["kernel_nj"]  # the L1 accesses are not the kernel's
+        extra = copies(r["recipe"])
+        was = e.kernel_energy + g.cost.ctrl_nj * extra / g.ctrl_bits  # with CTRL1's copies
+        ratio = was / r["kernel_nj"]  # the L1 accesses are not the kernel's
         lines.append(f"| {r['tech']} | {r['recipe']} | {r['W']} | {e.accelerator_cycles} | "
-                     f"{g.ctrl_bits} | {e.kernel_energy:.3f} | {r['kernel_nj']:.3f} | {ratio:.4f} |")  # fmt: skip
-        assert (e.accelerator_cycles, g.ctrl_bits) == (r["c_acc"], r["ctrl_bits"]), r
+                     f"{g.ctrl_bits} + {extra} | {was:.3f} | {r['kernel_nj']:.3f} | {ratio:.4f} |")  # fmt: skip
+        assert (e.accelerator_cycles, g.ctrl_bits + extra) == (r["c_acc"], r["ctrl_bits"]), r
         if abs(ratio - 1) > TOL:
             bad.append((r["tech"], r["recipe"], r["W"], ratio))
     with capsys.disabled():

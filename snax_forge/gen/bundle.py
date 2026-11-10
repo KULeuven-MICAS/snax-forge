@@ -42,7 +42,7 @@ line per counter, in the same order: the task's group's streamer fill, the
 estimate's ``fill`` (``counter_fills``, from the design point and the flow's
 ``tasks.json``). A run of the same ELF on snax_cluster's RTL must print the
 data line as it is and each counter within its fill of SNAX-GVSoC's (D123):
-the COUNTER counts the streamer's head start, which the core's timing between
+the BUSY_COUNTER counts the streamer's head start, which the core's timing between
 STREAMER_START and START sets and SNAX-GVSoC does not model (open items 65,
 67). snax_cluster's ``snax-forge-check`` applies the bound. ``bundle.json``'s
 ``expected`` names the file. A bundle alone has no run, so ``write_bundle``
@@ -50,7 +50,7 @@ removes an earlier one.
 
 **The modules** (``module_tree``, C§18), from accelerator.json, not from
 Emit's output: the wrapper's three modules, each with the submodules it holds,
-by the names hw/chisel's Emit gives them: ``<tag>_csr`` (none), ``<tag>_ctrl``
+by the names hw/chisel's Emit gives them: ``<tag>_csr`` (``<tag>_peripherals``), ``<tag>_ctrl``
 (``<tag>_<group>_ctrl`` per group of every accelerator, in CSR order) and
 ``<tag>_datapath`` (``<tag>_<unit>`` per unit, then ``<tag>_<link>`` per link
 of depth >= 1, a buffer, group by group), ``<tag>`` the entry's
@@ -106,7 +106,7 @@ def module_tree(acc: Description) -> dict[str, list[str]]:
     """The wrapper's modules and the submodules each holds; see the module doc."""
     t = acc.tag
     return {
-        f"{t}_csr": [],
+        f"{t}_csr": [f"{t}_peripherals"],
         f"{t}_ctrl": [f"{t}_{g.name}_ctrl" for g in acc.groups],
         f"{t}_datapath": [
             *(name for g in acc.groups for name in

@@ -7,7 +7,7 @@ its ``name``, its ``groups``, its CSRs (``csrs``: its first and last, its stream
 own, packed from 960 as gen/csrs.py's ``csr_layout`` numbers them, C§16) and its streamer
 (``streamer``: ``movers``, its outer ports; ``channels``, their num_ch added up;
 ``temporal_dims``, each mover's in the streamer's order, readers first; ``csrs``, the
-streamer's own, gen/csrs.py's ``streamer_csrs``). A group's own CSRs are START, JOBS, STATUS, COUNTER and per fold
+streamer's own, gen/csrs.py's ``streamer_csrs``). A group's own CSRs are START, JOBS, STATUS, BUSY_COUNTER and per fold
 of a T the design params do not fix a JOB_BEATS (gen/accelerator.py's ``_unit``). The
 streamer's CSRs depend on the platform (its streamer entries' spatial bounds, D142): without
 one, ``csrs`` is null in both places. Its cost, per port's streamer (``cost.streamers``) and its
@@ -87,7 +87,7 @@ class AcceleratorEstimate:
 
 
 def _own_csrs(graph: Graph, members: list[str], insts: dict[str, Any]) -> int:
-    """A group's own CSRs: START, JOBS, STATUS, COUNTER, and a JOB_BEATS per fold whose T the
+    """A group's own CSRs: START, JOBS, STATUS, BUSY_COUNTER, and a JOB_BEATS per fold whose T the
     design params do not fix (gen/accelerator.py's ``_unit``)."""
     from snax_forge.gen.accelerator import fixed_fold
     from snax_forge.lower.c import fold_rate

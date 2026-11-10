@@ -27,7 +27,7 @@ from .helpers import needs_gvsoc
 
 X = [1, -2, 4, 0]
 Y = [10, 20, -5, 7]
-# The run's COUNTER on SNAX-GVSoC: 2 firings and 2 cycles of the shell, as relu's
+# The run's BUSY_COUNTER on SNAX-GVSoC: 2 firings and 2 cycles of the shell, as relu's
 AXPY_COUNTER = 4
 SETS = {"W": 2, "N": 4}
 

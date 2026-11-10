@@ -8,16 +8,17 @@ import snax.forge.{ForgeTester, Seeds}
 
 /** `GroupCtrl` against `GroupModel` (SnaxGroupRule, written from snax-gvsoc's `snax/snax_group.hpp`) on random groups:
   * chains of 1, 2 and 3 units, a third each (one unit: a vecadd or vsum accelerator's whole group), each of L 0-2, II
-  * 1-2, span 1, 2 or 4, T 1-4 (fixed by `params.T` or carried by the start) and 0-2 outer inputs (the head at least 1);
-  * links of depth 0, 1 or 2, half the chains in a shuffled unit order (the head, the sink and the topological order
+  * 1-2, span 1, 2 or 4, T 1-4 (fixed by `params.T` or a JOB_BEATS on its wire) and 0-2 outer inputs (the head at least
+  * 1); links of depth 0, 1 or 2, half the chains in a shuffled unit order (the head, the sink and the topological order
   * other than the units' indices), the link on the input after a unit's outer ones; starts of J 0, 1 or 3 (and T 0 now
-  * and then) offered at random times, while busy too, at job_width 3 or 32 (D152); random input valid and output ready
+  * and then) offered at random times, while busy too, at job_width 3 or 32 (D152), JOBS and the T's on their wires
+  * drawn again only while idle, as the csr holds their writes through a run (D168); random input valid and output ready
   * gaps. Every cycle: the start's answer; busy and done; every input's ready (its unit's firing, C§17's per-unit join);
   * out.valid, poked with out.ready low and high (it never depends on it); per unit fire, first, read, lane, adv, give;
   * per buffer load, its slots and its occupancy; the class; the done pulse (high in a run's last cycle E, and in the
-  * cycle an empty run's start is accepted). At each run's end the head's firings. COUNTER, which `<tag>_csr` keeps from
-  * busy (D152), is AccCsrRandomSpec's and the shell specs'. The whole runs again with seeded units (D163, B2 R5): half
-  * the units with an outer input to spare (the head two, another one) seeded, their last outer input the seed, its
+  * cycle an empty run's start is accepted). At each run's end the head's firings. BUSY_COUNTER, which `<tag>_csr` keeps
+  * from busy (D152), is AccCsrRandomSpec's and the shell specs'. The whole runs again with seeded units (D163, B2 R5):
+  * half the units with an outer input to spare (the head two, another one) seeded, their last outer input the seed, its
   * valid at random; a seed's ready is its unit's firing on its job's first beat (the model's `seed`).
   */
 class GroupCtrlSpec extends AnyFlatSpec with ForgeTester {
@@ -67,15 +68,20 @@ class GroupCtrlSpec extends AnyFlatSpec with ForgeTester {
         val pv    = r.probability(); val pr = r.probability()
         val jw    = r.pick(Seq(3, 32)) // job_width: J <= 3 and T <= 4 fit 3 bits
         test(new GroupCtrl(desc, "t", jw)) { dut =>
-          val open = desc.open
+          val open  = desc.open
+          var jobs  = 0
+          var opent = open.map(_ => 1)
           for (c <- 0 until Cycles) {
             val clue   = s"$clue0, job_width $jw, cycle $c"
             val offer  = r.chance(0.1)
-            val jobs   = r.pick(Seq(0, 1, 3, 3, 3))
-            val opent  = open.map(_ => if (r.chance(0.05)) 0 else r.between(1, 4))
+            // JOBS and each JOB_BEATS, the csr's wires: drawn again only while idle, held through a run (D168)
+            if (model.idle) {
+              jobs  = r.pick(Seq(0, 1, 3, 3, 3))
+              opent = open.map(_ => if (r.chance(0.05)) 0 else r.between(1, 4))
+            }
             dut.io.start.valid.poke(offer.B)
-            dut.io.start.bits.jobs.poke(jobs.U)
-            dut.io.start.bits.beats.zip(if (opent.isEmpty) Seq(1) else opent).foreach { case (p, t) => p.poke(t.U) }
+            dut.io.settings.jobs.poke(jobs.U)
+            dut.io.settings.beats.zip(opent).foreach { case (p, t) => p.poke(t.U) }
             assert(high(dut.io.start.ready) == model.idle, s"$clue: start.ready")
             val answer = if (offer) {
               var next = 0

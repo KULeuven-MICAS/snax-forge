@@ -22,10 +22,10 @@ import snax.forge.{Emit, SvHeader}
   *
   * The hierarchy is `bundle.json`'s `modules` (C§18; snax-forge's `snax_forge/gen/bundle.py`, `module_tree`, which
   * writes it from `accelerator.json` without elaborating): `<tag>_shell_wrapper` holds `<tag>_csr`, `<tag>_ctrl` and
-  * `<tag>_datapath`; `<tag>_csr` nothing; `<tag>_ctrl` a `<tag>_<group>_ctrl` per group; `<tag>_datapath` a
-  * `<tag>_<unit>` per unit, then a `<tag>_<link>` per buffer, group by group; each `<tag>_<unit>` its one catalogue
-  * datapath. Read off each module's instances in the SystemVerilog (firtool's ` <module> <instance> (` lines); dot 1's
-  * (two groups), dot 4's (a wire) and dot 6's (a buffer) among them.
+  * `<tag>_datapath`; `<tag>_csr` its `<tag>_peripherals`; `<tag>_ctrl` a `<tag>_<group>_ctrl` per group;
+  * `<tag>_datapath` a `<tag>_<unit>` per unit, then a `<tag>_<link>` per buffer, group by group; each `<tag>_<unit>`
+  * its one catalogue datapath. Read off each module's instances in the SystemVerilog (firtool's ` <module> <instance>
+  * (` lines); dot 1's (two groups), dot 4's (a wire) and dot 6's (a buffer) among them.
   *
   * `emitted.json` lists a file for every module the wrapper reaches, each file exists, and `sv/` holds those only.
   */
@@ -78,7 +78,7 @@ class ShellEmitSpec extends AnyFlatSpec {
   def tree(spec: AcceleratorSpec): Seq[(String, Seq[String])] = {
     val t = spec.tag
     Seq(
-      s"${t}_csr"      -> Seq.empty,
+      s"${t}_csr"      -> Seq(s"${t}_peripherals"),
       s"${t}_ctrl"     -> spec.groups.map(g => s"${t}_${g.name}_ctrl"),
       s"${t}_datapath" -> spec.groups.flatMap { g =>
         g.units.map(u => s"${t}_${u.name}") ++ g.links.filter(_.depth > 0).map(l => s"${t}_${l.name}")

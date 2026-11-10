@@ -10,14 +10,14 @@ accelerator's ``name``, or with several the entry's ``tag``), on the core whose
 ``name``); its units (``Unit``, one per group, D148: for a group of one unit the
 instance, ``acc``, its group, its SNAX-GVSoC path, ``unit`` with one group and
 ``unit_<unit>`` with several; for a linked group, SNAX-GVSoC's one component for its units,
-the group's name, ``group_<group>``; and its group's START, STATUS and COUNTER); its movers, set by set, every unit's, readers first as its
+the group's name, ``group_<group>``; and its group's START, STATUS and BUSY_COUNTER); its movers, set by set, every unit's, readers first as its
 set's streamer orders them (``reader<i>``, ``writer<j>`` counted within the set), each named
 by its port as the design point names its streamers (``acc_a``, ``acc_out``), with its set,
 its lanes (the crossbar ports ``acc_a.lane<l>``), FIFO depth, spatial bounds and temporal
 loops (its CSRs); its CSRs (gen/csrs.py's layout: per set its streamer's range with its start,
 busy and counter and its SNAX-GVSoC trace path, ``snax_acc<i>/streamer_<set>``, as the
 manifest names it, ``sets``; the accelerators' R/W CSRs but the STARTs as ``fields``, and the
-first group's START, STATUS and COUNTER as start, busy and counter), from 0x3C0; the cores (``core<i>``) and the DMA's; the
+first group's START, STATUS and BUSY_COUNTER as start, busy and counter), from 0x3C0; the cores (``core<i>``) and the DMA's; the
 L1 (the cluster's base and TCDM size: the iDMA's local area) and its banks, word-interleaved
 (``bank_row``: bank = (a / w) mod B, row = a / (w B) for the offset a, w the bank's bytes, B
 the banks); the DMA's beat (the cluster file's ``dma_data_width``). Nothing is inferred from
@@ -152,7 +152,7 @@ class Csrs:
 @dataclass(frozen=True)
 class Unit:
     """One unit of the accelerator: its instance, its group, its SNAX-GVSoC component
-    below ``snax_acc<i>`` and its group's START, STATUS and COUNTER, which bound the group's
+    below ``snax_acc<i>`` and its group's START, STATUS and BUSY_COUNTER, which bound the group's
     CSRs (C§17)."""
 
     name: str  # C§7: the instance, acc
@@ -359,7 +359,7 @@ def csrs_of(templates: dict[str, dict[str, Any]], description: dict[str, Any],
     try:
         c = csr_layout(templates, acc)
         start, busy, counter = (c.accelerator[acc.find(instance, n)]
-                                for n in ("START", "STATUS", "COUNTER"))  # fmt: skip
+                                for n in ("START", "STATUS", "BUSY_COUNTER"))  # fmt: skip
     except (GenError, KeyError, ValueError) as e:
         raise RunError("cluster.csrs", f"accelerator.json: {e}") from None
     starts = {c.accelerator[acc.find(u.name, "START")] for u in acc.units}

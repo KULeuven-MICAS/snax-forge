@@ -50,8 +50,8 @@ def test_the_header_names_each_csr_with_its_group(made):
     (streamer,) = m.csrs.streamers
     assert (streamer.name, streamer.first, streamer.last) == ("dot", 960, 987)  # 5 movers: 3 + 25
     first = streamer.last + 1
-    names = ["VMUL_START", "VMUL_JOBS", "VMUL_STATUS", "VMUL_COUNTER", "VSUM_START", "VSUM_JOBS",
-             "VSUM_JOB_BEATS", "VSUM_STATUS", "VSUM_COUNTER"]  # fmt: skip
+    names = ["VMUL_START", "VMUL_JOBS", "VMUL_STATUS", "VMUL_BUSY_COUNTER", "VSUM_START", "VSUM_JOBS",
+             "VSUM_JOB_BEATS", "VSUM_STATUS", "VSUM_BUSY_COUNTER"]  # fmt: skip
     access = ["RW", "RW", "RO", "RO", "RW", "RW", "RW", "RO", "RO"]
     want = {f"DOT_{a}_{n}": first + i for i, (a, n) in enumerate(zip(access, names, strict=True))}
     assert m.csrs.accelerator == want
@@ -169,7 +169,7 @@ def test_dot_1_is_c16s_two_sets(plain):
     assert describe(DesignPoint.load(path), want.design_point) == want
     assert [(r.name, r.first, r.last) for r in m.csrs.streamers] == [("vmul", 960, 977),
                                                                      ("vsum", 982, 994)]  # fmt: skip
-    assert (m.csrs.accelerator["VMUL_RW_START"], m.csrs.accelerator["VSUM_RO_COUNTER"]) == (
+    assert (m.csrs.accelerator["VMUL_RW_START"], m.csrs.accelerator["VSUM_RO_BUSY_COUNTER"]) == (
         978,
         999,
     )

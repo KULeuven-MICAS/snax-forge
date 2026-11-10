@@ -40,11 +40,11 @@ At step 4 the bind list shows every BRM with its timing and, for those that don'
 
 After the bind the Estimate shows one group, `acc`:
 
-| Cycles | Bottleneck | Ramp | Stall | Expected COUNTER | Area | Energy |
+| Cycles | Bottleneck | Ramp | Stall | Expected BUSY_COUNTER | Area | Energy |
 |---:|---:|---:|---:|---:|---:|---:|
 | 256 | 256 | 0 | 0 | 259 | 55 700 µm² | 23.265 nJ |
 
-Cycles is $N / W$: one beat of W elements per cycle, nothing to fill since the unit has latency 0. The expected COUNTER adds the streamers' fill of 3 (D155, C§19). With Compare on, step 0 against step 4 shows the gain as cycles: total 2048 → 256. Below the groups, the cost table on nangate45:
+Cycles is $N / W$: one beat of W elements per cycle, nothing to fill since the unit has latency 0. The expected BUSY_COUNTER adds the streamers' fill of 3 (D155, C§19). With Compare on, step 0 against step 4 shows the gain as cycles: total 2048 → 256. Below the groups, the cost table on nangate45:
 
 | Block | Datapath | Area (µm²) | Energy (nJ) | Share |
 |---|---|---:|---:|---:|
@@ -92,7 +92,7 @@ The steps also go to `out/sandbox/vecmul_dry/` as `0_input.snaxdfg` to `4_bind.s
 
 Change W in its Bindings entry (`acc · simd · W = 8`); the session replays its four steps and the Estimate follows. The tech dropdown switches between nangate45 and nangate15.
 
-| W | Cycles | COUNTER (expected) | Channels | Area 45 nm (µm²) | Energy 45 nm (nJ) | ctrl share | Area 15 nm (µm²) | Energy 15 nm (nJ) |
+| W | Cycles | BUSY_COUNTER (expected) | Channels | Area 45 nm (µm²) | Energy 45 nm (nJ) | ctrl share | Area 15 nm (µm²) | Energy 15 nm (nJ) |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | 1 | 2048 | 2051 | 3 | 7 260 | 24.022 | 4.3 % | 2 300 | 7.945 |
 | 2 | 1024 | 1027 | 6 | 14 200 | 23.510 | 2.2 % | 4 510 | 7.802 |
@@ -112,7 +112,7 @@ So on this model vecmul's choice is area against time at equal energy. Whether t
 
 ## 5. Run it on SNAX-GVSoC
 
-The flow takes the saved recipe through the design checks, lowering and the generator, builds SNAX-GVSoC the first time (about 6 minutes), runs the program and reads each group's COUNTER:
+The flow takes the saved recipe through the design checks, lowering and the generator, builds SNAX-GVSoC the first time (about 6 minutes), runs the program and reads each group's BUSY_COUNTER:
 
     pixi run flow recipes/custom/vecmul_dry.json --platform platforms/snax_forge.json
 
@@ -128,14 +128,14 @@ The flow takes the saved recipe through the design checks, lowering and the gene
       convert   run/events.log -> profile.json (the summary lines; trace off)
       report    report/design.md, report/run.md
 
-`mult_acc 259` is the group's COUNTER for the task `mult_acc`, equal to the editor's expected 259. `1200 cycles` is the program's window, from main to its check. `report/design.md` repeats the Estimate and the cost per block; `report/run.md` holds the counters, the DMA and the per-port grants and stalls.
+`mult_acc 259` is the group's BUSY_COUNTER for the task `mult_acc`, equal to the editor's expected 259. `1200 cycles` is the program's window, from main to its check. `report/design.md` repeats the Estimate and the cost per block; `report/run.md` holds the counters, the DMA and the per-port grants and stalls.
 
 Three cycle numbers appear from here on:
 
 | Number | What it counts | Where it comes from |
 |---|---|---|
-| Expected COUNTER | the group's ideal cycles plus the streamers' fill of 3 | the estimate (D155), before any run |
-| COUNTER | the cycles the group is busy, from the cycle after its start is accepted to its last output push | the group's COUNTER CSR, read by the program |
+| Expected BUSY_COUNTER | the group's ideal cycles plus the streamers' fill of 3 | the estimate (D155), before any run |
+| BUSY_COUNTER | the cycles the group is busy, from the cycle after its start is accepted to its last output push | the group's BUSY_COUNTER CSR, read by the program |
 | Window | the program from `main` to `forge_check()` (D135): setup, the DMA loads, the accelerator, polling, the DMA store | the core's `mcycle` |
 
 Section 6's task table shows how the 1200 cycles of the window at W = 8 split up.
@@ -144,7 +144,7 @@ The other points, each into its own folder (`out/flow/vecmul_dry_W4/` and so on)
 
     pixi run flow recipes/custom/vecmul_dry.json --platform platforms/snax_forge.json --set W=4
 
-| W | Expected COUNTER | COUNTER | Window | DMA busy |
+| W | Expected BUSY_COUNTER | BUSY_COUNTER | Window | DMA busy |
 |---:|---:|---:|---:|---:|
 | 1 | 2051 | 2048 | 2999 | 789 |
 | 2 | 1027 | 1027 | 1962 | 788 |
@@ -152,11 +152,11 @@ The other points, each into its own folder (`out/flow/vecmul_dry_W4/` and so on)
 | 8 | 259 | 259 | 1200 | 789 |
 | 10 | 208 | 208 | 1169 | 792 |
 
-The COUNTER is the estimate plus 3 at every point but W = 1, where it is 3 under (STATUS open item 104). The window falls much less than the COUNTER: from W = 4 to W = 10 the accelerator saves 307 cycles but the window only 286, and every point spends about 790 cycles on DMA and 150 on the cores. vecmul does one multiply per three words moved, so it is bound by memory traffic, not by compute; section 6 shows where the time goes.
+The BUSY_COUNTER is the estimate plus 3 at every point but W = 1, where it is 3 under (STATUS open item 104). The window falls much less than the BUSY_COUNTER: from W = 4 to W = 10 the accelerator saves 307 cycles but the window only 286, and every point spends about 790 cycles on DMA and 150 on the cores. vecmul does one multiply per three words moved, so it is bound by memory traffic, not by compute; section 6 shows where the time goes.
 
 **Beyond W = 10.** Two things stop more lanes paying off, and the tool now says both before a run:
 
-- At W = 16 the three streams need $3W = 48$ words per cycle from L1's 32 banks, so a beat takes at least 1.5 cycles. The Estimate and both reports add a bank note: `acc: the outer ports move 6144 words over 32 banks, at least 192 cycles against the ideal 128`. The run's COUNTER is 194.
+- At W = 16 the three streams need $3W = 48$ words per cycle from L1's 32 banks, so a beat takes at least 1.5 cycles. The Estimate and both reports add a bank note: `acc: the outer ports move 6144 words over 32 banks, at least 192 cycles against the ideal 128`. The run's BUSY_COUNTER is 194.
 - At W = 32 the 96 streamer channels, the two cores and AXI make 99 inputs to the TCDM crossbar, which takes 64 in SNAX-GVSoC. The design step refuses it: `[connect.xbar_inputs] acc: 99 TCDM crossbar inputs, the platform takes at most 64`. Save in the editor lists the same problem.
 
 ## 6. The run in the cluster viewer
@@ -181,9 +181,9 @@ A run with a trace shows what each part of the cluster did in every cycle. `--tr
 | acc | 0 | mult_acc | acc | 620 | 880 | 260 | – | – |
 | dma | 2 | store_C | – | 894 | 1157 | 263 | L1 → L2 | 16384 |
 
-and its Accelerators open with a row per accelerator: the one streamer set `acc`, its CSRs, its streamer's busy window and the group's COUNTER:
+and its Accelerators open with a row per accelerator: the one streamer set `acc`, its CSRs, its streamer's busy window and the group's BUSY_COUNTER:
 
-| Accelerator | Groups | CSRs | Streamer busy | COUNTER |
+| Accelerator | Groups | CSRs | Streamer busy | BUSY_COUNTER |
 |---|---|---|---|---|
 | acc | acc | 960–981 | 619–883 | acc 259 |
 
@@ -237,7 +237,7 @@ It writes `out/rtl/vecmul_dry/accelerator.json`, runs `hw/chisel/`'s `Emit --spe
 
 ```mermaid
 flowchart LR
-  core["core0<br/>CSR writes"] --> csr["snax_forge_vecmul_dry_csr<br/>START, JOBS, STATUS, COUNTER"]
+  core["core0<br/>CSR writes"] --> csr["snax_forge_vecmul_dry_csr<br/>START, JOBS, STATUS, BUSY_COUNTER"]
   csr -- "start (JOBS)" --> ctrl["snax_forge_vecmul_dry_acc_ctrl<br/>GroupCtrl"]
   ctrl -- "busy, done pulse" --> csr
   sa["streamer acc: acc_a<br/>8 lanes"] -- "valid / ready" --> ctrl
@@ -252,7 +252,7 @@ The datapath is combinational and gets no enable: it multiplies whatever the str
 
 | File | Module |
 |---|---|
-| `snax_forge_vecmul_dry_csr.sv` | the CSR block: START, JOBS, STATUS, COUNTER |
+| `snax_forge_vecmul_dry_csr.sv` | the CSR block: START, JOBS, STATUS, BUSY_COUNTER |
 | `snax_forge_vecmul_dry_acc_ctrl.sv` | the group `acc`'s control unit (`GroupCtrl`) |
 | `snax_forge_vecmul_dry_ctrl.sv` | the control units of every group, here one |
 | `ElementwiseAlu_w64_mul.sv` | one 64-bit lane's multiply |
@@ -332,7 +332,7 @@ The CSR block's registers and its read mux, from `snax_forge_vecmul_dry_csr.sv`:
 | START | R/W | 0 | 978 | 1 | a write with bit 0 set starts the group; it reads 0 |
 | JOBS | R/W | 1 | 979 | 32 | how many jobs; here one job per beat, 256 |
 | STATUS | R/O | 2 | 980 | 2 | bit 0 busy, bit 1 done (sticky, cleared by the next start) |
-| COUNTER | R/O | 3 | 981 | 32 | the busy cycles of the last run, saturating at 2³² − 1 |
+| BUSY_COUNTER | R/O | 3 | 981 | 32 | the busy cycles of the last run, saturating at 2³² − 1 |
 
 The headers give them names prefixed with the set's: `include/streamer_acc_csr_addr_map.h` the streamer's (`ACC_BASE_PTR_READER_0_LOW` 960 to `ACC_STREAMER_PERFORMANCE_COUNTER_CSR` 977), `include/acc_csr.h` the accelerator's own:
 
@@ -340,12 +340,12 @@ The headers give them names prefixed with the set's: `include/streamer_acc_csr_a
 #define ACC_RW_START 978
 #define ACC_RW_JOBS 979
 #define ACC_RO_STATUS 980
-#define ACC_RO_COUNTER 981
+#define ACC_RO_BUSY_COUNTER 981
 ```
 
-The program (`gen/main.c`) sets the three movers (base address, strides, 256 temporal beats each), writes `ACC_RW_JOBS` 256, starts the streamer (`ACC_STREAMER_START_CSR`) and then `ACC_RW_START`, polls `ACC_RO_STATUS` until busy drops and `ACC_STREAMER_BUSY_CSR` until the streamer is done, and reads `ACC_RO_COUNTER`.
+The program (`gen/main.c`) sets the three movers (base address, strides, 256 temporal beats each), writes `ACC_RW_JOBS` 256, starts the streamer (`ACC_STREAMER_START_CSR`) and then `ACC_RW_START`, polls `ACC_RO_STATUS` until busy drops and `ACC_STREAMER_BUSY_CSR` until the streamer is done, and reads `ACC_RO_BUSY_COUNTER`.
 
-**The control.** `GroupCtrl` (`hw/chisel/.../ctrl/GroupCtrl.scala`) is generated from the group's description, not written per kernel: it takes the start with JOBS, runs the group rule (the same rule SNAX-GVSoC steps, `snax_group_rule.py`), and drives the handshakes. A beat is taken only when both input streams are valid and the output is ready (`acc_offer` and not `acc_frozen`); in that cycle it raises both inputs' ready and the output's valid, so the datapath's result of that cycle is the one pushed. It raises `busy` from the start to the last push and a done pulse at the end, which the CSR block turns into STATUS and COUNTER. Its 66 flops are what the cost model counts: `busy` (1), `acc_jobs` (32, JOBS as the start gave it), `acc_jobs_counter` (32) and `io_done_REG` (1, the done pulse a cycle later), as `estimate/bits.py` lists them.
+**The control.** `GroupCtrl` (`hw/chisel/.../ctrl/GroupCtrl.scala`) is generated from the group's description, not written per kernel: it takes the start with JOBS, runs the group rule (the same rule SNAX-GVSoC steps, `snax_group_rule.py`), and drives the handshakes. A beat is taken only when both input streams are valid and the output is ready (`acc_offer` and not `acc_frozen`); in that cycle it raises both inputs' ready and the output's valid, so the datapath's result of that cycle is the one pushed. It raises `busy` from the start to the last push and a done pulse at the end, which the CSR block turns into STATUS and BUSY_COUNTER. Its 66 flops are what the cost model counts: `busy` (1), `acc_jobs` (32, JOBS as the start gave it), `acc_jobs_counter` (32) and `io_done_REG` (1, the done pulse a cycle later), as `estimate/bits.py` lists them.
 
 **The datapath.** `SimdLanes` (`hw/chisel/.../datapath/SimdLanes.scala`) is data only: W copies of `ElementwiseAlu` with the casts at its edges, no valid, ready or registers. Every cycle `out(i)` is `a(i) * b(i)` at the op type, for each lane; the control's handshake says which cycle's result is pushed. That it has no registers is why its area is W times one lane and its energy is the same at every W.
 

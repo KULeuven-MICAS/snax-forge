@@ -1,9 +1,9 @@
 """The dot walk-through: every number and name examples/dot/README.md states, checked.
 
-Its table (section 2) is checked twice. On the host: each COUNTER is C§17's cycles at the
+Its table (section 2) is checked twice. On the host: each BUSY_COUNTER is C§17's cycles at the
 README's point (N = 512, W = 4: J 1, T 128) plus the fill it states, and the C§17 column is
 the formula's. On SNAX-GVSoC (marker ``gvsoc``, D134: in the image): dot 1–6 run at N = 64
-(T 16), each checks itself (``forge data: 0 errors``), each group's COUNTER is C§17's cycles
+(T 16), each checks itself (``forge data: 0 errors``), each group's BUSY_COUNTER is C§17's cycles
 plus the same fill, the second reader's one crossbar stall is the fill's, and each row's
 groups, units and link are its run's ``accelerator.json``.
 """

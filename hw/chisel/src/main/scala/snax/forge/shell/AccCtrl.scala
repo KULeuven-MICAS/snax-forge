@@ -6,9 +6,10 @@ import chisel3.util.MixedVec
 import snax.forge.ctrl.{GroupCtrl, GroupCtrlIO, GroupDesc, Link, UnitDesc}
 
 /** `<tag>_ctrl`: the groups' control units (`GroupCtrl`, `<tag>_<group>_ctrl`), one per group of `accelerator.json`
-  * (D146, D147), each generated from its group's description (`AccCtrl.desc`). Per group its start from `<tag>_csr`,
-  * its busy and done pulse back (`<tag>_csr` keeps STATUS and COUNTER, D152), its pins; the valids and readies of its
-  * units' outer ports (the wrapper splits each Decoupled port: data to `<tag>_datapath`, handshake here), in the
+  * (D146, D147), each generated from its group's description (`AccCtrl.desc`). Per group from `<tag>_csr` its start, a
+  * bare strobe, and its settings, JOBS and each JOB_BEATS as wires read live through the run (D168); its busy and done
+  * pulse back (`<tag>_csr` keeps STATUS, its `<tag>_peripherals` BUSY_COUNTER, D152), its pins; the valids and readies
+  * of its units' outer ports (the wrapper splits each Decoupled port: data to `<tag>_datapath`, handshake here), in the
   * streamer's order; each unit's and buffer's enables to `<tag>_datapath`.
   */
 class AccCtrl(spec: AcceleratorSpec) extends Module {

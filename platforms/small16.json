@@ -4,7 +4,7 @@
  "changes": {},
  "hjson": null,
  "accelerator_slot": null,
- "acc_csr": {"job_width": 32, "counter_width": null},
+ "acc_csr": {"job_width": 32, "busy_counter_width": null},
  "l1": {
   "n_banks": 16,
   "width_bits": 64,

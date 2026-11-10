@@ -353,7 +353,7 @@ def test_design_md_lists_the_design_notes(tmp_path, w):
 @pytest.mark.parametrize("w", [8, 16])
 def test_the_bank_bound_notes_in_design_md_and_run_md(tmp_path, w):
     """vecmul at N = 2048 (D155): at W = 16 design.md's Estimate has the group's bank-bound note
-    and run.md puts it beside the task's expected COUNTER; at W = 8 neither has one."""
+    and run.md puts it beside the task's expected BUSY_COUNTER; at W = 8 neither has one."""
     r = designed_report(tmp_path, "vecmul", ["N=2048", f"W={w}"])
     note = ("acc: the streams move 6144 words over 32 banks, at least 192 cycles of L1 time "
             "against the ideal 128")  # fmt: skip
@@ -551,7 +551,7 @@ def test_design_md_costs_each_group_beside_its_cycles(dot1):
     ]
     assert all(c.comb_um2 == c.flops_um2 for c in e.cost if c.block == "ctrl")
     text = render_design(r)
-    assert "| Expected COUNTER | Area (µm²) | Energy (nJ) |" in text
+    assert "| Expected BUSY_COUNTER | Area (µm²) | Energy (nJ) |" in text
     assert (
         "### Cost estimate (first-order) on nangate45\n\nFirst-order: aimed at the large costs"
         in text
@@ -601,7 +601,7 @@ def test_design_md_names_what_the_table_does_not_hold(tmp_path):
 
 
 def test_the_estimate_beside_the_counters(dot1, dot4):
-    """design.md's Estimate section (D155) per group, and run.md's expected COUNTER beside each
+    """design.md's Estimate section (D155) per group, and run.md's expected BUSY_COUNTER beside each
     measured one: equal on the recorded runs, the cycles plus the streamers' fill."""
     r = reports_of(dot1)
     e = r.design.estimate
@@ -635,7 +635,7 @@ def dot1_sets(tmp_path_factory):
 
 
 def test_run_md_has_a_row_per_accelerator(dot1_sets):
-    """dot_1: vmul 960-981 and vsum 982-999, each its own streamer busy window and COUNTER;
+    """dot_1: vmul 960-981 and vsum 982-999, each its own streamer busy window and BUSY_COUNTER;
     dot_1_enc: one accelerator dot, 960-996, its streamer started twice; each task names its
     accelerator."""
     one, enc = (reports_of(dot1_sets[d]).run for d in ("dot_1", "dot_1_enc"))
@@ -650,7 +650,7 @@ def test_run_md_has_a_row_per_accelerator(dot1_sets):
     acc_of = {t.name: t.accelerator for t in one.tasks}
     assert (acc_of["mult_vmul_a"], acc_of["sum_vsum"], acc_of["load_A"]) == ("vmul", "vsum", None)
     text = render_run(one)
-    assert "| Accelerator | Groups | CSRs | Streamer busy | COUNTER |" in text
+    assert "| Accelerator | Groups | CSRs | Streamer busy | BUSY_COUNTER |" in text
     assert "| vmul | vmul | 960–981 |" in text and "| vsum | vsum | 982–999 |" in text
     assert text.index("## Accelerators") < text.index("| Accelerator | Groups") < text.index(
         "### Units")  # fmt: skip

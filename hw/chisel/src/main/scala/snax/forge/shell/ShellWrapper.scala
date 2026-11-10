@@ -106,6 +106,7 @@ class ShellWrapper(spec: AcceleratorSpec) extends RawModule {
     for ((g, i) <- spec.groups.zipWithIndex) {
       val c = ctrl.io.groups(i)
       c.start <> csr.io.starts(i)
+      c.settings              := csr.io.settings(i)
       csr.io.busy(i)          := c.busy
       csr.io.done(i)          := c.pulse
       io(s"${g.name}_busy_o") := c.busy

@@ -89,12 +89,12 @@ def test_view_mode_over_dot_2s_steps(tmp_path):
         assert list(v["details"]["node:sum"])[-2:] == ["timing", "cost"]
         assert v["details"]["node:tmp0"]["cost"]["found"] == "copy on nangate45"
         assert v["details"]["group:dot"]["cost"] == {
-            "area": "33 200 µm²", "energy": "6.945 nJ",
-            "ctrl": "196 bits, 2 090 µm² (flops 1 040, comb 1 040), 0.193 nJ"}  # fmt: skip
+            "area": "32 500 µm²", "energy": "6.882 nJ",
+            "ctrl": "132 bits, 1 400 µm² (flops 702, comb 702), 0.130 nJ"}  # fmt: skip
         assert "cost" not in v["details"]["group:dot"]["estimate"]
         assert (s["groups"][0]["area_text"], s["groups"][0]["energy_text"]) == (
-            "33 200 µm²",
-            "6.945 nJ",
+            "32 500 µm²",
+            "6.882 nJ",
         )
         assert (s["cost"]["heading"], s["cost"]["missing"]) == (
             "Cost estimate (first-order) on nangate45", [])  # fmt: skip

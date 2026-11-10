@@ -82,7 +82,7 @@ against its golden, its valid elements only (a matrix a tail pads, D144,
 row by row over its padded rows; ``forge data: <e> errors (<words> words)``,
 the words the valid elements), each
 accelerator task's counter (``forge counter <task>: <c>``, its group's
-``COUNTER``), stored in its
+``BUSY_COUNTER``), stored in its
 slot of the global ``forge_counter[]`` right after the wait that covers the
 task, slots in the order the counters are read, and ``forge errors:
 <err>``, the data errors plus one per counter below its task's beats, which
@@ -469,7 +469,7 @@ class _Program:
                 self.counters.append(t)
                 c = self.conf[t].component
                 self.emit(self.core_of(c),
-                          f"forge_counter[{slot}] = csrr_ss({self.csr('COUNTER', c, t)});")  # fmt: skip
+                          f"forge_counter[{slot}] = csrr_ss({self.csr('BUSY_COUNTER', c, t)});")  # fmt: skip
         if consumers - {core}:
             self.barrier()
 

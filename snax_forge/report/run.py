@@ -7,7 +7,7 @@ named it (D137).
 
     summary       the program's window (total cycles), passed, data errors over
                   the output words, each task's counter as the program printed
-                  it next to the COUNTER the ideal estimate expects, a guide
+                  it next to the BUSY_COUNTER the ideal estimate expects, a guide
                   and not a check (D155: its group's cycles plus the streamers'
                   fill; with its group's bank-bound note where its streams need
                   more L1 time than the ideal cycles), the trace level and the boot's length (the cycles before
@@ -22,7 +22,7 @@ named it (D137).
                   its CSRs (its streamer's, then its own, first to last), its
                   streamer's busy windows (its STREAMER_START to its busy low:
                   the first start of its movers to their last done, one window
-                  per start; needs a task trace) and each group's COUNTER as
+                  per start; needs a task trace) and each group's BUSY_COUNTER as
                   the program printed it; then per unit (its first column
                   ``Unit``; a linked group's under its
                   name): firings, target II (the datapath file's), achieved II,
@@ -76,7 +76,7 @@ class CheckRow(Record):
     data_errors: int
     words: int
     counters: dict[str, int]  # per accelerator task, as the program printed it
-    expected: dict[str, int] = field(default_factory=dict)  # per task, the estimate's COUNTER
+    expected: dict[str, int] = field(default_factory=dict)  # per task, the estimate's BUSY_COUNTER
     notes: dict[str, str] = field(default_factory=dict)  # per task, its group's bank-bound note
 
 
@@ -98,7 +98,7 @@ class TaskRow(Record):
 @dataclass
 class AcceleratorRow(Record):
     """One accelerator, its streamer set (D157): its groups, its CSRs, its streamer's busy
-    windows (None without a task trace) and each group's COUNTERs as the program printed them."""
+    windows (None without a task trace) and each group's BUSY_COUNTERs as the program printed them."""
 
     name: str
     groups: list[str]
@@ -331,7 +331,7 @@ def _next_task(rows: list[TaskRow] | None, after: int) -> TaskRow | None:
 
 
 def expected_counters(point: Any) -> dict[str, int]:
-    """Per accelerator task, the COUNTER the ideal estimate expects (D155): its group's (a task's
+    """Per accelerator task, the BUSY_COUNTER the ideal estimate expects (D155): its group's (a task's
     component is its group), for a group that runs one task."""
     return {t: g.counter for t, g in _task_groups(point).items()}
 
@@ -476,7 +476,7 @@ def build_run(rv: api.RunView) -> RunReport:
 
 
 def counters_text(c: CheckRow) -> str:
-    """The summary's Counters cell: each task's counter, the estimate's expected COUNTER beside
+    """The summary's Counters cell: each task's counter, the estimate's expected BUSY_COUNTER beside
     it, a guide and not a check, and its group's bank-bound note there (D155)."""
 
     def one(t: str, n: int) -> str:
@@ -599,7 +599,7 @@ def render_run(r: RunReport) -> str:
 def render_sets(rows: list[AcceleratorRow], traced: bool) -> list[str]:
     """The Accelerators table: one row per accelerator, its streamer set (D157)."""
     out = table(
-        ["Accelerator", "Groups", "CSRs", "Streamer busy", "COUNTER"],
+        ["Accelerator", "Groups", "CSRs", "Streamer busy", "BUSY_COUNTER"],
         [[a.name, ", ".join(a.groups), f"{a.first}–{a.last}",
           "–" if a.busy is None else ", ".join(f"{x}–{y}" for x, y in a.busy) or "none",
           ", ".join(f"{g} {', '.join(map(str, n))}" for g, n in a.counters.items() if n) or "–"]
@@ -609,7 +609,7 @@ def render_sets(rows: list[AcceleratorRow], traced: bool) -> list[str]:
                  "Its streamer is busy from its start (STREAMER_START) until its busy drops, its "
                  "movers' first start to their last done, one window per start"
                  + ("" if traced else "; the windows need at least a task trace (--trace task)")
-                 + "; COUNTER is each group's as the program printed it.")]  # fmt: skip
+                 + "; BUSY_COUNTER is each group's as the program printed it.")]  # fmt: skip
     return out
 
 

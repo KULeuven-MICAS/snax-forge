@@ -88,7 +88,7 @@ def test_bundle_json(tmp_path, fake):
     t = "snax_forge_vecadd"  # the tag, <accelerator_slot>_<design> (D157)
     assert d == {"design_point": "design/vecadd/design_point.json", "tag": t,
                  "top": f"{t}_shell_wrapper",
-                 "modules": {f"{t}_csr": [], f"{t}_ctrl": [f"{t}_acc_ctrl"],
+                 "modules": {f"{t}_csr": [f"{t}_peripherals"], f"{t}_ctrl": [f"{t}_acc_ctrl"],
                              f"{t}_datapath": [f"{t}_acc"]},
                  "snax_forge_commit": COMMIT, "dirty": False, "expected": None}  # fmt: skip
     assert Bundle.load(out / "bundle.json") == b == Bundle.from_dict(b.to_dict())
@@ -175,12 +175,12 @@ def test_the_module_tree_names_every_group_unit_and_buffer():
 
     t = "snax_forge_dot_1_enc"
     assert bundle_mod.module_tree(dot()) == {
-        f"{t}_csr": [], f"{t}_ctrl": [f"{t}_vmul_ctrl", f"{t}_vsum_ctrl"],
+        f"{t}_csr": [f"{t}_peripherals"], f"{t}_ctrl": [f"{t}_vmul_ctrl", f"{t}_vsum_ctrl"],
         f"{t}_datapath": [f"{t}_vmul", f"{t}_vsum"],
     }  # fmt: skip
     t = "snax_forge_dot_serial"
     assert bundle_mod.module_tree(dot_serial()) == {
-        f"{t}_csr": [], f"{t}_ctrl": [f"{t}_mul_ctrl", f"{t}_sum_ctrl"],
+        f"{t}_csr": [f"{t}_peripherals"], f"{t}_ctrl": [f"{t}_mul_ctrl", f"{t}_sum_ctrl"],
         f"{t}_datapath": [f"{t}_mul", f"{t}_sum"],
     }  # fmt: skip
     wire = dot4()
@@ -189,7 +189,7 @@ def test_the_module_tree_names_every_group_unit_and_buffer():
     g = wire.groups[0]
     buffer = with_groups(wire, [replace(g, links=[replace(g.links[0], depth=1)])])
     assert bundle_mod.module_tree(buffer) == {
-        f"{t}_csr": [], f"{t}_ctrl": [f"{t}_dot_ctrl"],
+        f"{t}_csr": [f"{t}_peripherals"], f"{t}_ctrl": [f"{t}_dot_ctrl"],
         f"{t}_datapath": [f"{t}_mac", f"{t}_sum", f"{t}_out_partial"],
     }  # fmt: skip
 

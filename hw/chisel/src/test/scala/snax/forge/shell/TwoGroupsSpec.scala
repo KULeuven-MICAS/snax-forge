@@ -7,10 +7,10 @@ import snax.forge.{ForgeTester, LaneBits, Sink, Source}
 
 /** Several groups in one accelerator (D146, D148): dot 1 encapsulated, the generated `accelerator.json` of
   * `recipes/dot/dot_1_enc.json` (the fixture dot_1_enc, snax-gvsoc's `forge/dot_1_enc/`), one accelerator `dot` in one
-  * streamer set: group vmul (SimdLanes, mul, 4 lanes of int64; START 0, JOBS 1, STATUS 2, COUNTER 3) and group vsum
-  * (TreeAccumulate, 4 lanes of int64 into one; START 4, JOBS 5, JOB_BEATS 6, STATUS 7, COUNTER 8). Each group starts,
-  * runs and reports STATUS on its own: vsum is started first and starved (its input held back), vmul then runs its 3
-  * jobs to the end while vsum stays busy, then vsum's input flows and it ends.
+  * streamer set: group vmul (SimdLanes, mul, 4 lanes of int64; START 0, JOBS 1, STATUS 2, BUSY_COUNTER 3) and group
+  * vsum (TreeAccumulate, 4 lanes of int64 into one; START 4, JOBS 5, JOB_BEATS 6, STATUS 7, BUSY_COUNTER 8). Each group
+  * starts, runs and reports STATUS on its own: vsum is started first and starved (its input held back), vmul then runs
+  * its 3 jobs to the end while vsum stays busy, then vsum's input flows and it ends.
   */
 class TwoGroupsSpec extends AnyFlatSpec with ForgeTester {
 
@@ -40,7 +40,7 @@ class TwoGroupsSpec extends AnyFlatSpec with ForgeTester {
       d.write(dut.csr("START", mul), 1)
       while ((d.read(dut.csr("STATUS", mul)) & 1) != 0) {}
       assert(d.read(dut.csr("STATUS", mul)) == 2, "mul done")
-      assert(d.read(dut.csr("COUNTER", mul)) == 3, "mul's COUNTER: three busy cycles")
+      assert(d.read(dut.csr("BUSY_COUNTER", mul)) == 3, "mul's BUSY_COUNTER: three busy cycles")
       assert(d.read(dut.csr("STATUS", sum)) == 1, "sum still busy, not done")
       assert(dut.io.bool("vsum_busy_o").peek().litToBoolean && !dut.io.bool("vmul_busy_o").peek().litToBoolean)
       release = true

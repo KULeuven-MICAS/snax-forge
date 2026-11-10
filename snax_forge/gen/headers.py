@@ -26,7 +26,7 @@ in the manifest:
                               order, at its number in the entry (csrs.py):
                               ``<ACC>_<RW|RO>_[<GROUP>_][<UNIT>_]<NAME>``;
                               vecadd's ``ACC_RW_START``, ``ACC_RW_JOBS``,
-                              ``ACC_RO_STATUS``, ``ACC_RO_COUNTER``
+                              ``ACC_RO_STATUS``, ``ACC_RO_BUSY_COUNTER``
     snitch_cluster_cfg.h      the runtime's core count and first hart
                               (``CFG_CLUSTER_NR_CORES``, the cores over the
                               hives, ``$ref``s resolved, as clustergen
@@ -127,7 +127,7 @@ def accelerator_header(acc: Any, numbers: Mapping[str, int], point_path: str) ->
     """The text of <acc>_csr.h for the accelerator ``acc`` (accelerator.Accelerator), each CSR
     at its number in ``numbers`` (csrs.CsrLayout's ``accelerator``)."""
     what = (f"Accelerator {acc.name}'s own CSRs (accelerator.json, D146, D157): per group START, "
-            "JOBS, its units' R/W, STATUS, COUNTER, numbered after its streamer's.")  # fmt: skip
+            "JOBS, its units' R/W, STATUS, BUSY_COUNTER, numbered after its streamer's.")  # fmt: skip
     lines = [generated_header(point_path, what)]
     lines += [f"#define {name} {numbers[name]}" for name in acc.defines()]
     return "\n".join(lines) + "\n"

@@ -8,8 +8,8 @@
     not_mapped(graph) -> int
 
 **The rule.** A group's cycles are snax-gvsoc's group rule stepped with every outer input
-valid and the outer output ready: the COUNTER of C§17 on ideal streams. Plus the streamers'
-fill they are the expected COUNTER, a guide and not a check (D155): a run's COUNTER counts from
+valid and the outer output ready: the BUSY_COUNTER of C§17 on ideal streams. Plus the streamers'
+fill they are the expected BUSY_COUNTER, a guide and not a check (D155): a run's BUSY_COUNTER counts from
 its group's START until busy drops, so it holds bank conflicts and is shortened by the
 streamers' head start. ``group_cycles`` is that stepping, the one place it
 is done: gen/rtl.py's ``group_counter`` calls it for a fixture's counter. The rule is loaded by
@@ -30,10 +30,10 @@ one task per node; a linked unit has one node. Then:
     stall        cycles − bottleneck − ramp
     fill         the streamers' fill: 3, or 2 for a group whose units have one outer
                  input between them (C§17); ``counter``, cycles + fill, is the expected
-                 COUNTER, a guide
+                 BUSY_COUNTER, a guide
     bank_bound   on a platform, ceil(the words its streams move / l1.n_banks): the fewest
                  cycles of L1 time its streams take, a bound on the streams, not on the
-                 COUNTER (D155); its note compares only this group's streamers
+                 BUSY_COUNTER (D155); its note compares only this group's streamers
     bits         per unit and per link (by its container) the register bits of its datapath,
                  the catalogue's ``flops`` on its params (gen/rtl.py's ``unit_flops`` and
                  ``link_flops``, D154): a wire none; a unit whose implementation the generator
@@ -133,7 +133,7 @@ class GroupEstimate:
 
     @property
     def counter(self) -> int:
-        """The expected COUNTER: the cycles plus the streamers' fill, a guide and not a check
+        """The expected BUSY_COUNTER: the cycles plus the streamers' fill, a guide and not a check
         (D155): a run's counts from START until busy drops, with bank conflicts and the
         streamers' head start, so it may be above or below this."""
         return self.cycles + self.fill
@@ -142,7 +142,7 @@ class GroupEstimate:
     def bank_bound_note(self) -> str | None:
         """One line when the group's streams need more cycles of L1 time than its ideal cycles
         (``bank_bound`` > ``cycles``), else None (design.md, run.md, the page): a bound on the
-        streams, not on the COUNTER (D155)."""
+        streams, not on the BUSY_COUNTER (D155)."""
         if self.bank_bound is None or self.bank_bound <= self.cycles:
             return None
         words = round(self.words_per_cycle * self.cycles)

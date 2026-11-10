@@ -11,19 +11,23 @@ import snax.forge.shell.AcceleratorSpec.{CsrSpec, GroupSpec, LinkSpec, PortSpec,
   * (`Model`).
   *
   * Per seed, `Layouts` CSR layouts of 1..3 groups, each a fold (with JOB_BEATS) or not, the offsets in CSR order, at a
-  * random job_width (1, 5, 8, 16 or 32) and counter_width (1, 2, 3, 8 or 32; D152), each driven for `Cycles` cycles: a
-  * core that offers a request after a random gap and holds it until taken (reads, writes and starts of a random group,
-  * in range, just past the last CSR and anywhere in 32 bits), `rsp.ready` and each group's `starts` ready stalled at
-  * random, each group's busy random and its done pulse now and then. Checked every cycle: `req.ready`, `rsp.valid`,
-  * `rsp.bits` while valid (START 0, a register its written value's low bits, STATUS the sticky done and busy, COUNTER
-  * saturating), each group's `starts.valid` and its JOBS and each JOB_BEATS in unit order (a group of 0, 1 or 2 folds:
-  * JOBS and 1, or a JOB_BEATS per fold). Each unit may hold a scalar after its JOB_BEATS (`K1` of 8, 16 or 32 bits, or
-  * `K1_LO` and `K1_HI` at 64, each with the pin `k1`): `scalars` must give each one's register every cycle.
+  * random job_width (1, 5, 8, 16 or 32) and busy_counter_width (1, 2, 3, 8 or 32; D152), each driven for `Cycles`
+  * cycles: a core that offers a request after a random gap and holds it until taken (reads, writes and starts of a
+  * random group, in range, just past the last CSR and anywhere in 32 bits), `rsp.ready` and each group's `starts` ready
+  * stalled at random, each group's busy random and its done pulse now and then. A write to a busy group's read-write
+  * CSRs (START with bit 0 set or clear, JOBS, JOB_BEATS, a scalar) is held until the group is idle, then taken (D168);
+  * another group's write and every read go through. Checked every cycle: `req.ready`, `rsp.valid`, `rsp.bits` while
+  * valid (START 0, a register its written value's low bits, STATUS the sticky done and busy, BUSY_COUNTER through the
+  * read mux from `<tag>_peripherals`, whose rule `AccPeripheralsSpec` checks: the model keeps it only to know what a
+  * read gives), each group's `starts.valid` and its `settings`, JOBS and each JOB_BEATS in unit order (a group of 0, 1
+  * or 2 folds: none, or a JOB_BEATS per fold). Each unit may hold a scalar after its JOB_BEATS (`K1` of 8, 16 or 32
+  * bits, or `K1_LO` and `K1_HI` at 64, each with the pin `k1`): `scalars` must give each one's register every cycle.
   */
 class AccCsrRandomSpec extends AnyFlatSpec with ForgeTester {
 
   private val Layouts = 3
   private val Cycles  = 300
+  private var held    = 0 // writes held while their group was busy, then taken, every seed
 
   /** A layout of `folds.size` groups, group g of `folds(g)` folds (0: one unit without a JOB_BEATS; 1: one fold; 2: two
     * folds linked by a wire, a JOB_BEATS each).
@@ -59,7 +63,7 @@ class AccCsrRandomSpec extends AnyFlatSpec with ForgeTester {
         )
       }
       val status = CsrSpec("STATUS", "ro", next(), 2)
-      val count  = CsrSpec("COUNTER", "ro", next(), cw)
+      val count  = CsrSpec("BUSY_COUNTER", "ro", next(), cw)
       val links  = units
         .sliding(2)
         .collect { case Seq(a, b) =>
@@ -85,10 +89,16 @@ class AccCsrRandomSpec extends AnyFlatSpec with ForgeTester {
     val counter = Array.fill(spec.groups.size)(BigInt(0))
     var kept    = Option.empty[BigInt]             // a read's answer not yet taken
     def at(g: Int, n: String): Option[Int] = spec.groups(g).csr(n).map(_.offset)
-    def config(g: Int): (BigInt, Seq[BigInt]) = {
-      val beats = spec.groups(g).jobBeats.map(c => regs(c.offset))
-      (regs(at(g, "JOBS").get), if (beats.isEmpty) Seq(BigInt(1)) else beats)
-    }
+    var heldTaken = 0 // writes held while their group was busy, then taken
+    var waiting   = false
+
+    /** A group's settings as they stand: JOBS and each JOB_BEATS in unit order. */
+    def settings(g: Int): (BigInt, Seq[BigInt]) =
+      (regs(at(g, "JOBS").get), spec.groups(g).jobBeats.map(c => regs(c.offset)))
+
+    /** The group whose read-write CSRs hold `addr`. */
+    def group(addr: BigInt): Option[Int] =
+      spec.groups.indices.find(g => spec.groups(g).window.exists(c => c.offset == addr && c.access == "rw"))
 
     /** One cycle: req.ready, the response, which group starts; then the registers, each group's done and counter, and
       * the kept answer.
@@ -100,10 +110,14 @@ class AccCsrRandomSpec extends AnyFlatSpec with ForgeTester {
       busy:       Seq[Boolean],
       pulse:      Seq[Boolean]
     ) = {
-      val start  = req.flatMap { case (addr, data, write) =>
+      val start = req.flatMap { case (addr, data, write) =>
         spec.groups.indices.find(g => write && addr == at(g, "START").get && data.testBit(0))
       }
-      val ready  = kept.isEmpty && start.forall(startReady)
+      // a write to a busy group's read-write CSRs (START with bit 0 set or clear too) is held until it is idle
+      val busyW = req.exists { case (addr, _, write) => write && group(addr).exists(busy) }
+      val ready = kept.isEmpty && start.forall(startReady) && !busyW
+      if (req.nonEmpty && ready && waiting) heldTaken += 1
+      waiting = req.nonEmpty && busyW || (waiting && req.nonEmpty && !ready)
       val fired  = req.filter(_ => ready)
       val answer = fired.collect { case (addr, _, false) =>
         csrs
@@ -111,9 +125,9 @@ class AccCsrRandomSpec extends AnyFlatSpec with ForgeTester {
           .map { c =>
             val g = spec.groups.indexWhere(_.window.contains(c))
             c.name match {
-              case "STATUS"  => (if (done(g)) BigInt(2) else BigInt(0)) + (if (busy(g)) 1 else 0)
-              case "COUNTER" => counter(g)
-              case _         => regs(c.offset)
+              case "STATUS"       => (if (done(g)) BigInt(2) else BigInt(0)) + (if (busy(g)) 1 else 0)
+              case "BUSY_COUNTER" => counter(g)
+              case _              => regs(c.offset)
             }
           }
           .getOrElse(BigInt(0))
@@ -126,7 +140,7 @@ class AccCsrRandomSpec extends AnyFlatSpec with ForgeTester {
           .foreach(c => if (write) regs(c.offset) = data & LaneBits.mask(c.width))
       }
       for (g <- spec.groups.indices) {
-        val max = LaneBits.mask(spec.groups(g).csr("COUNTER").get.width)
+        val max = LaneBits.mask(spec.groups(g).csr("BUSY_COUNTER").get.width)
         if (pulse(g)) done(g)              = true else if (starts.contains(g)) done(g) = false
         if (starts.contains(g)) counter(g) = 0 else if (busy(g) && counter(g) < max) counter(g) += 1
       }
@@ -183,7 +197,7 @@ class AccCsrRandomSpec extends AnyFlatSpec with ForgeTester {
               busy.zipWithIndex.foreach { case (v, g) => dut.io.busy(g).poke(v.B) }
               pulse.zipWithIndex.foreach { case (v, g) => dut.io.done(g).poke(v.B) }
 
-              val configs                  = (0 until groups).map(model.config)
+              val configs                  = (0 until groups).map(model.settings)
               val scalars                  = AccCsr.scalars(spec).map(c => model.regs(c.offset))
               val (ready, answer, started) = model.cycle(req, rsp.isReady, readies, busy, pulse)
               assert(dut.io.req.ready.peek().litToBoolean == ready, s"$clue: req.ready, the model $ready (req $req)")
@@ -192,15 +206,9 @@ class AccCsrRandomSpec extends AnyFlatSpec with ForgeTester {
               for (g         <- 0 until groups) {
                 val v     = dut.io.starts(g).valid.peek().litToBoolean
                 assert(v == started.contains(g), s"$clue: group $g's start ${v}, the model ${started.mkString}")
-                assert(
-                  dut.io.starts(g).bits.jobs.peek().litValue == configs(g)._1,
-                  s"$clue: $g's JOBS"
-                )
-                val beats = dut.io.starts(g).bits.beats.toSeq
-                assert(
-                  beats.map(_.peek().litValue) == configs(g)._2,
-                  s"$clue: $g's JOB_BEATS"
-                )
+                assert(dut.io.settings(g).jobs.peek().litValue == configs(g)._1, s"$clue: $g's JOBS")
+                val beats = dut.io.settings(g).beats.toSeq
+                assert(beats.map(_.peek().litValue) == configs(g)._2, s"$clue: $g's JOB_BEATS")
               }
               for ((want, i) <- scalars.zipWithIndex)
                 assert(dut.io.scalars(i).peek().litValue == want, s"$clue: scalar CSR $i, the model $want")
@@ -208,6 +216,12 @@ class AccCsrRandomSpec extends AnyFlatSpec with ForgeTester {
               dut.clock.step()
             }
           }
+          held += model.heldTaken
         }
       }
+
+  it should "have held enough writes to a busy group" in {
+    info(s"$held writes held, then taken")
+    assert(held >= 20 * Seeds().size, s"$held writes held, then taken")
+  }
 }
