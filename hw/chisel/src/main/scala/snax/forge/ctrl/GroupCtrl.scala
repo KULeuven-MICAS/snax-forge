@@ -11,6 +11,15 @@ class GroupStart(val open: Int, bits: Int = 32) extends Bundle {
   val beats = Vec(open max 1, UInt(bits.W))
 }
 
+/** A group's settings as `<tag>_csr` keeps them, wires to its control unit (D168): JOBS, then each of its `open` units'
+  * JOB_BEATS in unit order, each `bits` wide (the CSRs' job_width, D152); constant through a run, since the csr holds
+  * their writes while the group is busy.
+  */
+class GroupSettings(val open: Int, bits: Int = 32) extends Bundle {
+  val jobs  = UInt(bits.W)
+  val beats = Vec(open, UInt(bits.W))
+}
+
 /** A group control unit's ports (`GroupCtrl`): its start, busy, its done pulse and pin; its outer handshakes; each
   * unit's and buffer's enables; the cycle's class.
   */

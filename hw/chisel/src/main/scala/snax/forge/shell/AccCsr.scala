@@ -4,7 +4,7 @@ import chisel3._
 import chisel3.experimental.noPrefix
 import chisel3.util._
 
-import snax.forge.ctrl.GroupStart
+import snax.forge.ctrl.GroupSettings
 
 /** A CSR request after `snax_csr_mux_demux`: the offset from the accelerator's first CSR, the data, write or read. */
 class CsrReq extends Bundle {
@@ -23,13 +23,16 @@ class CsrRsp extends Bundle {
   * Each CSR has its width (`AcceleratorSpec.CsrSpec`); a read gives its bits, the upper ones 0.
   *
   *   - START is a strobe: no register, it reads 0. A write to a group's START with bit 0 set fires that group's
-  *     `starts(g)` with its JOBS and each JOB_BEATS in unit order as they stand (JOBS and 1 for a group without a
-  *     JOB_BEATS), and the request is ready only when `starts(g)` is: a start while the group is busy is held,
-  *     `req.ready` low, until it is idle. A write with bit 0 clear is taken and does nothing.
+  *     `starts(g)`, a bare strobe to its control unit, ready when the group is idle; one with bit 0 clear is taken and
+  *     does nothing.
   *   - Every other read-write CSR is a register of its width (JOBS and JOB_BEATS: job_width, a unit's scalar its
-  *     dtype's bits), which takes a write's low bits when the request fires. A scalar's CSRs (those with a `pin`, after
-  *     its unit's JOB_BEATS) drive `scalars`, one element per CSR in CSR order, held until the next write: the wrapper
-  *     joins a 64-bit one's two (low word first) onto its datapath pin.
+  *     dtype's bits), which takes a write's low bits when the request fires. Per group, JOBS and each JOB_BEATS in unit
+  *     order leave as wires (`settings(g)`) to its control unit, which reads them through the run with no copy (D168),
+  *     as a scalar's CSRs (those with a `pin`, after its unit's JOB_BEATS) drive `scalars`, one element per CSR in CSR
+  *     order, to the datapath: the wrapper joins a 64-bit one's two (low word first) onto its pin.
+  *   - While a group is busy, a write to any of its read-write CSRs (START with bit 0 set or clear, JOBS, each
+  *     JOB_BEATS, each scalar) is held, `req.ready` low, until E + 1, E the cycle its run ends, so its settings stay
+  *     constant through the run (D168); a write to another group's CSRs and every read go through.
   *   - Per group, from its control unit's `busy` and `done` (the done pulse, high in the run's last cycle E):
   *     - STATUS {done, busy}: done is sticky, set by the done pulse, so it reads 1 from E + 1, and cleared by an
   *       accepted start, so it reads 0 from a + 1; a set wins over a clear in the same cycle (the empty run: STATUS
@@ -48,12 +51,13 @@ class AccCsr(spec: AcceleratorSpec) extends Module {
   private val groups = spec.groups
 
   val io = IO(new Bundle {
-    val req     = Flipped(Decoupled(new CsrReq))
-    val rsp     = Decoupled(new CsrRsp)
-    val starts  = MixedVec(groups.map(g => Decoupled(new GroupStart(g.jobBeats.size, spec.jobWidth))))
-    val busy    = Input(Vec(groups.size, Bool()))
-    val done    = Input(Vec(groups.size, Bool()))
-    val scalars = Output(MixedVec(AccCsr.scalars(spec).map(c => UInt(c.width.W))))
+    val req      = Flipped(Decoupled(new CsrReq))
+    val rsp      = Decoupled(new CsrRsp)
+    val starts   = Vec(groups.size, Decoupled(UInt(0.W)))
+    val settings = Output(MixedVec(groups.map(g => new GroupSettings(g.jobBeats.size, spec.jobWidth))))
+    val busy     = Input(Vec(groups.size, Bool()))
+    val done     = Input(Vec(groups.size, Bool()))
+    val scalars  = Output(MixedVec(AccCsr.scalars(spec).map(c => UInt(c.width.W))))
   })
 
   private val reading = io.req.fire && !io.req.bits.write
@@ -72,16 +76,21 @@ class AccCsr(spec: AcceleratorSpec) extends Module {
     c.offset -> reg
   }).toMap
 
-  // Per group: a request that is its start, the start's handshake, STATUS and BUSY_COUNTER
-  private val startReq = groups.zipWithIndex.map { case (g, i) =>
-    val at   = g.csr("START").get.offset
-    val hit  = io.req.valid && io.req.bits.write && io.req.bits.addr === at.U && io.req.bits.data(0)
-    val ones = Seq(1.U(spec.jobWidth.W))
-    io.starts(i).valid      := writing && hit
-    io.starts(i).bits.jobs  := regs(g.csr("JOBS").get.offset)
-    io.starts(i).bits.beats := VecInit(if (g.jobBeats.isEmpty) ones else g.jobBeats.map(c => regs(c.offset)))
-    hit                     -> io.starts(i).ready
-  }
+  // Per group: its settings out, a request that is its start and the start's handshake, a write held while it is
+  // busy (its read-write CSRs are contiguous, START first)
+  private val held     = groups.zipWithIndex.map { case (g, i) =>
+    val rw    = g.window.filter(_.access == "rw").map(_.offset)
+    require(rw == (rw.min to rw.max), s"group ${g.name}: read-write CSRs $rw not contiguous")
+    val write = io.req.valid && io.req.bits.write
+    val at    = g.csr("START").get.offset
+    val hit   = write        && io.req.bits.addr === at.U && io.req.bits.data(0)
+    val mine  = write        && io.req.bits.addr          >= rw.min.U && io.req.bits.addr <= rw.max.U
+    io.settings(i).jobs := regs(g.csr("JOBS").get.offset)
+    for ((c, k) <- g.jobBeats.zipWithIndex) io.settings(i).beats(k) := regs(c.offset)
+    io.starts(i).valid := writing             && hit
+    io.starts(i).bits  := DontCare
+    (mine              && io.busy(i)) || (hit && !io.starts(i).ready)
+  }.reduce(_ || _)
   private val accepted = io.starts.map(_.fire)
 
   private val status      = noPrefix(groups.zipWithIndex.map { case (g, i) =>
@@ -126,7 +135,6 @@ class AccCsr(spec: AcceleratorSpec) extends Module {
     io.rsp.bits.data := 0.U
   }
 
-  private val held = startReq.foldLeft(false.B) { case (acc, (hit, ready)) => acc || (hit && !ready) }
   io.req.ready := !answerKept && !held
 
   for ((c, i) <- AccCsr.scalars(spec).zipWithIndex) io.scalars(i) := regs(c.offset)
