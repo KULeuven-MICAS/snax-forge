@@ -16,10 +16,11 @@ import snax.forge.shell.AcceleratorSpec.{CsrSpec, GroupSpec, LinkSpec, PortSpec,
   * random group, in range, just past the last CSR and anywhere in 32 bits), `rsp.ready` and each group's `starts` ready
   * stalled at random, each group's busy random and its done pulse now and then. Checked every cycle: `req.ready`,
   * `rsp.valid`, `rsp.bits` while valid (START 0, a register its written value's low bits, STATUS the sticky done and
-  * busy, BUSY_COUNTER saturating), each group's `starts.valid` and its JOBS and each JOB_BEATS in unit order (a group
-  * of 0, 1 or 2 folds: JOBS and 1, or a JOB_BEATS per fold). Each unit may hold a scalar after its JOB_BEATS (`K1` of
-  * 8, 16 or 32 bits, or `K1_LO` and `K1_HI` at 64, each with the pin `k1`): `scalars` must give each one's register
-  * every cycle.
+  * busy, BUSY_COUNTER through the read mux from `<tag>_peripherals`, whose rule `AccPeripheralsSpec` checks: the model
+  * keeps it only to know what a read gives), each group's `starts.valid` and its JOBS and each JOB_BEATS in unit order
+  * (a group of 0, 1 or 2 folds: JOBS and 1, or a JOB_BEATS per fold). Each unit may hold a scalar after its JOB_BEATS
+  * (`K1` of 8, 16 or 32 bits, or `K1_LO` and `K1_HI` at 64, each with the pin `k1`): `scalars` must give each one's
+  * register every cycle.
   */
 class AccCsrRandomSpec extends AnyFlatSpec with ForgeTester {
 

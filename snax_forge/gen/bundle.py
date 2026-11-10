@@ -50,7 +50,7 @@ removes an earlier one.
 
 **The modules** (``module_tree``, C§18), from accelerator.json, not from
 Emit's output: the wrapper's three modules, each with the submodules it holds,
-by the names hw/chisel's Emit gives them: ``<tag>_csr`` (none), ``<tag>_ctrl``
+by the names hw/chisel's Emit gives them: ``<tag>_csr`` (``<tag>_peripherals``), ``<tag>_ctrl``
 (``<tag>_<group>_ctrl`` per group of every accelerator, in CSR order) and
 ``<tag>_datapath`` (``<tag>_<unit>`` per unit, then ``<tag>_<link>`` per link
 of depth >= 1, a buffer, group by group), ``<tag>`` the entry's
@@ -106,7 +106,7 @@ def module_tree(acc: Description) -> dict[str, list[str]]:
     """The wrapper's modules and the submodules each holds; see the module doc."""
     t = acc.tag
     return {
-        f"{t}_csr": [],
+        f"{t}_csr": [f"{t}_peripherals"],
         f"{t}_ctrl": [f"{t}_{g.name}_ctrl" for g in acc.groups],
         f"{t}_datapath": [
             *(name for g in acc.groups for name in

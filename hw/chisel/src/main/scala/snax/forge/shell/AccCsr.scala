@@ -34,8 +34,8 @@ class CsrRsp extends Bundle {
   *     - STATUS {done, busy}: done is sticky, set by the done pulse, so it reads 1 from E + 1, and cleared by an
   *       accepted start, so it reads 0 from a + 1; a set wins over a clear in the same cycle (the empty run: STATUS
   *       reads 2 from a + 1).
-  *     - BUSY_COUNTER: cleared by an accepted start, + 1 per busy cycle, held after the run (BlockGemm's performance
-  *       counter): at c the busy cycles after a and before c, saturating at 2^w - 1 for its width w.
+  *     - BUSY_COUNTER, kept by the submodule `<tag>_peripherals` (`AccPeripherals`, D168) from the accepted start and
+  *       busy, read here: at c the busy cycles after a and before c, saturating at 2^w - 1 for its width w.
   *   - A read is answered in the cycle it fires, from the registers or the read-only CSRs in that cycle; when `rsp` is
   *     not ready the answer is kept (the widest CSR's bits) and `req.ready` stays low until it leaves.
   *   - Writes get no response. A read past the last CSR answers 0 and a write to a read-only CSR or past the last is
@@ -84,7 +84,7 @@ class AccCsr(spec: AcceleratorSpec) extends Module {
   }
   private val accepted = io.starts.map(_.fire)
 
-  private val status  = noPrefix(groups.zipWithIndex.map { case (g, i) =>
+  private val status      = noPrefix(groups.zipWithIndex.map { case (g, i) =>
     val done = RegInit(false.B).suggestName(s"${g.name}_done")
     when(io.done(i)) {
       done := true.B
@@ -93,16 +93,11 @@ class AccCsr(spec: AcceleratorSpec) extends Module {
     }
     Cat(done, io.busy(i))
   })
-  private val counter = groups.zipWithIndex.map { case (g, i) =>
-    val w = g.csr("BUSY_COUNTER").get.width
-    val c = RegInit(0.U(w.W)).suggestName(s"${g.name}_counter")
-    when(accepted(i)) {
-      c := 0.U
-    }.elsewhen(io.busy(i) && c =/= ((BigInt(1) << w) - 1).U) {
-      c := c + 1.U
-    }
-    c
-  }
+  // BUSY_COUNTER, in the submodule `<tag>_peripherals` (D168)
+  private val peripherals = Module(AccPeripherals(spec))
+  peripherals.io.start := VecInit(accepted)
+  peripherals.io.busy  := io.busy
+  private val counter = peripherals.io.busyCounter
 
   // A read's answer, the widest CSR's bits, kept while rsp is not ready
   private val w          = spec.readWidth
