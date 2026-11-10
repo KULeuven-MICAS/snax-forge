@@ -775,21 +775,28 @@ def _connect_num_ch(design: Design) -> Iterable[Problem]:
         )  # fmt: skip
 
 
-def xbar_inputs(design: Design) -> tuple[int, int] | None:
+def crossbar_inputs(platform: Platform, graph: Graph,
+                    insts: dict[str, Instance]) -> tuple[int, int] | None:  # fmt: skip
     """The TCDM crossbar's inputs as the generator's cluster file gives them to SNAX-GVSoC
     (snitch_cluster.py): the accelerator's ports, its streamers' channels (``snax_tcdm_ports``,
     gen/csrs.py's ``channels``: num_ch summed, D142), then a port per core of the platform's
     hjson and one for AXI; as (channels, others). None when the streamers do not resolve
-    (another connect check names why) or there are none."""
+    (another connect check names why) or there are none. The one place the inputs are counted:
+    the check below and HWCOST's crossbar cost (estimate, D167) read it."""
     try:
-        found = resolve(design.platform, design.graph, design.instances)
-        cores = runtime_cores(design.platform)
+        found = resolve(platform, graph, insts)
+        cores = runtime_cores(platform)
     except (ValueError, DesignError):
         return None
     channels = sum(s.num_ch for s in found.values())
     if channels == 0:
         return None
     return channels, (cores or 0) + 1
+
+
+def xbar_inputs(design: Design) -> tuple[int, int] | None:
+    """``crossbar_inputs`` of a design."""
+    return crossbar_inputs(design.platform, design.graph, design.instances)
 
 
 def _connect_xbar_inputs(design: Design) -> Iterable[Problem]:
@@ -1170,5 +1177,47 @@ def _char_missing(design: Design) -> Iterable[Problem]:
         yield Problem("char.missing", name, f"not characterized: {b.datapath}{at} on {table.tech}")
 
 
+def _cost_extrapolated(design: Design) -> Iterable[Problem]:
+    """A streamer or the crossbar priced outside HWCOST's tables' grid (snax_forge/char/
+    tables.py, D167): its cost is extrapolated along the axes named; and an L1 bank the table
+    does not hold, costed 0 (C§20)."""
+    from snax_forge.char import DEFAULT_TECH
+    from snax_forge.char.tables import bank, load_costs
+
+    costs, pf = load_costs(DEFAULT_TECH), design.platform
+    if costs is None or pf is None:
+        return
+    from .streamers import instances as graph_instances
+
+    try:
+        insts = design.instances or graph_instances(design.graph)
+        found = resolve(pf, design.graph, insts)
+    except (ValueError, DesignError, BrmError, DfgError):
+        return
+
+    def outside(axes: dict[str, tuple[int, ...]], q: dict[str, int]) -> list[str]:
+        return [f"{a} {v} (grid {axes[a][0]}–{axes[a][-1]})" for a, v in q.items()
+                if not axes[a][0] <= v <= axes[a][-1]]  # fmt: skip
+
+    for s in found.values():
+        q = {"depth": s.options.fifo_depth, "loops": s.temporal_dims, "channels": s.num_ch}
+        if off := outside(costs.streamer.axes, q):
+            yield Problem("cost.extrapolated", s.name,
+                          f"streamer outside the table's grid on {', '.join(off)}: its cost "
+                          f"extrapolated on {costs.tech}")  # fmt: skip
+    counted = crossbar_inputs(pf, design.graph, insts)
+    if counted is not None:
+        q = {"inputs": sum(counted), "banks": pf.l1.n_banks}
+        if off := outside(costs.xbar.axes, q):
+            yield Problem("cost.extrapolated", "crossbar",
+                          f"crossbar outside the table's grid on {', '.join(off)}: its cost "
+                          f"extrapolated on {costs.tech}")  # fmt: skip
+    if bank(costs, pf.l1.rows, pf.l1.width_bits) is None:
+        yield Problem("cost.extrapolated", "platform.l1",
+                      f"no {pf.l1.rows} × {pf.l1.width_bits} bank in {costs.tech}'s table, which "
+                      "is never interpolated (D160): the memory costed 0")  # fmt: skip
+
+
 register_note("design.serial_one_lane", _design_serial_one_lane)
 register_note("char.missing", _char_missing)
+register_note("cost.extrapolated", _cost_extrapolated)

@@ -648,3 +648,39 @@ def test_a_buffer_link_is_noted_with_its_depth(monkeypatch):
     monkeypatch.setattr(cycles, "datapath_blocks", lambda g: {"tmp0": deep})
     assert _missing(None) == [
         "[char.missing] tmp0: not characterized: LinkBuffer at lanes 8 (depth 32) on nangate45"]  # fmt: skip
+
+
+# =============================================================================
+# The note cost.extrapolated (C§14, C§20, D167)
+# =============================================================================
+
+
+def _extrapolated(graph):
+    from snax_forge.design.check import NOTES, Design
+    from snax_forge.design.platform import Platform
+    from tests.estimate.helpers import SNAX_FORGE
+
+    return [str(p) for p in NOTES["cost.extrapolated"](Design(Platform.load(SNAX_FORGE), graph))]
+
+
+def test_a_streamer_and_the_crossbar_off_the_grid_are_noted():
+    """vecmul at W = 32: 32 channels per port (the streamer table stops at 16) and 99 crossbar
+    inputs (it stops at 64); at W = 8 nothing is noted."""
+    from tests.helpers import steps
+
+    got = _extrapolated(steps("vecmul", W=32, N=2048)[-1])
+    assert got[:3] == [f"[cost.extrapolated] acc_{p}: streamer outside the table's grid on "
+                       "channels 32 (grid 1–16): its cost extrapolated on nangate45"
+                       for p in ("a", "b", "out")]  # fmt: skip
+    assert got[3] == (
+        "[cost.extrapolated] crossbar: crossbar outside the table's grid on inputs "
+        "99 (grid 4–64): its cost extrapolated on nangate45"
+    )
+    assert _extrapolated(steps("vecmul", W=8, N=2048)[-1]) == []
+
+
+def test_without_a_platform_nothing_is_noted():
+    from snax_forge.design.check import NOTES, Design
+    from tests.helpers import steps
+
+    assert list(NOTES["cost.extrapolated"](Design(None, steps("vecmul", W=32)[-1]))) == []

@@ -1060,7 +1060,7 @@ def cost_summary(est: Any, g: Graph | None = None) -> dict[str, Any] | None:
     if est.tech is None or not est.groups:
         return None
     l1 = "; ".join(f"{a}: {x.words} words, {_nj(x.energy_nj)}" for a, x in est.l1.items())
-    return {"tech": est.tech, "heading": heading(est.tech), "caveat": caveat(est.streamers),
+    return {"tech": est.tech, "heading": heading(est.tech), "caveat": caveat(),
             "area_text": _um2(est.area), "energy_text": _nj(est.energy),
             "l1_text": l1 or None, "missing": list(est.missing),
             "tables": cost_tables(est, g)}  # fmt: skip

@@ -7,7 +7,7 @@ import json
 
 import pytest
 
-from snax_forge.estimate import STREAMER_MISSING, Estimate, estimate
+from snax_forge.estimate import Estimate, estimate
 from snax_forge.estimate.cost import caveat
 from tests.helpers import steps
 
@@ -24,7 +24,9 @@ def test_dot_1_two_streamers_40_csrs_dot_1_enc_one_and_37():
     assert (dot.name, dot.groups, dot.csrs, dot.streamer.movers, dot.streamer.channels,
             dot.streamer.temporal_dims) == ("dot", ["vmul", "vsum"], (960, 996), 5, 17,
                                             [1, 1, 1, 1, 1])  # fmt: skip
-    assert all(a.missing == [STREAMER_MISSING] for a in (*one.accelerators, dot))
+    # every port's streamer is costed under its accelerator (D167): vmul a, b, out; vsum in, out
+    costed = [[x["name"] for x in a["cost"]["streamers"]] for a in one.to_dict()["accelerators"]]
+    assert [len(x) for x in costed] == [3, 2]
 
 
 @pytest.mark.parametrize(
@@ -55,9 +57,12 @@ def test_without_a_platform_no_csrs_and_round_trip():
     for x in (e, estimated("dot_1")):
         d = x.to_dict()
         assert Estimate.from_dict(json.loads(json.dumps(d))).to_dict() == d
-        assert all(a["streamer"]["cost"] is None for a in d["accelerators"])
+        assert all("cost" not in a["streamer"] for a in d["accelerators"])
 
 
-def test_the_caveat_names_the_streamers_not_costed():
-    assert "(2 streamers not costed, open item 110)" in caveat(2)
-    assert "(1 streamer not costed, open item 110)" in caveat(1)
+def test_the_caveat_states_the_aim_and_what_is_left_out():
+    """D167: about 30 %, the control unit's comb area a rough estimate, the cores, I-cache, DMA
+    and csr left out."""
+    c = caveat()
+    assert "about 30 %" in c and "comb area" in c
+    assert all(w in c for w in ("csr", "cores", "I-cache", "DMA"))

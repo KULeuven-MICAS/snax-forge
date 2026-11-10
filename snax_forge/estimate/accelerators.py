@@ -7,17 +7,16 @@ its ``name``, its ``groups``, its CSRs (``csrs``: its first and last, its stream
 own, packed from 960 as gen/csrs.py's ``csr_layout`` numbers them, C§16) and its streamer
 (``streamer``: ``movers``, its outer ports; ``channels``, their num_ch added up;
 ``temporal_dims``, each mover's in the streamer's order, readers first; ``csrs``, the
-streamer's own, gen/csrs.py's ``streamer_csrs``; ``cost``, null until a streamer set is
-characterized, open item 110). A group's own CSRs are START, JOBS, STATUS, COUNTER and per fold
+streamer's own, gen/csrs.py's ``streamer_csrs``). A group's own CSRs are START, JOBS, STATUS, COUNTER and per fold
 of a T the design params do not fix a JOB_BEATS (gen/accelerator.py's ``_unit``). The
 streamer's CSRs depend on the platform (its streamer entries' spatial bounds, D142): without
-one, ``csrs`` is null in both places. ``missing`` names what the cost leaves out: the streamer
-(``STREAMER_MISSING``). Its L1 accesses (``cost.l1``) are the estimate's (cost.py, C§20).
+one, ``csrs`` is null in both places. Its cost, per port's streamer (``cost.streamers``) and its
+words through the crossbar and the banks (``cost.l1``), is the estimate's (cost.py, C§20, D167).
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from snax_forge.design.streamers import (
@@ -38,8 +37,6 @@ if TYPE_CHECKING:
 
 # The first SNAX CSR (gen/csrs.py's SNAX_CSR_FIRST)
 CSR_FIRST = 0x3C0
-# What an accelerator's cost leaves out until its streamer set is characterized
-STREAMER_MISSING = "streamer not characterized (open item 110)"
 
 
 @dataclass
@@ -53,8 +50,7 @@ class StreamerEstimate:
 
     def to_dict(self) -> dict[str, Any]:
         return {"movers": self.movers, "channels": self.channels,
-                "temporal_dims": list(self.temporal_dims), "csrs": self.csrs,
-                "cost": None}  # fmt: skip
+                "temporal_dims": list(self.temporal_dims), "csrs": self.csrs}  # fmt: skip
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> StreamerEstimate:
@@ -71,7 +67,6 @@ class AcceleratorEstimate:
     own_csrs: int
     streamer: StreamerEstimate
     csrs: tuple[int, int] | None = None
-    missing: list[str] = field(default_factory=lambda: [STREAMER_MISSING])
 
     @property
     def n_csrs(self) -> int | None:
@@ -81,14 +76,14 @@ class AcceleratorEstimate:
     def to_dict(self) -> dict[str, Any]:
         return {"name": self.name, "groups": list(self.groups), "own_csrs": self.own_csrs,
                 "csrs": None if self.csrs is None else list(self.csrs),
-                "streamer": self.streamer.to_dict(), "missing": list(self.missing)}  # fmt: skip
+                "streamer": self.streamer.to_dict()}  # fmt: skip
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> AcceleratorEstimate:
         csrs = d["csrs"]
         return cls(d["name"], list(d["groups"]), d["own_csrs"],
                    StreamerEstimate.from_dict(d["streamer"]),
-                   None if csrs is None else (csrs[0], csrs[1]), list(d["missing"]))  # fmt: skip
+                   None if csrs is None else (csrs[0], csrs[1]))  # fmt: skip
 
 
 def _own_csrs(graph: Graph, members: list[str], insts: dict[str, Any]) -> int:

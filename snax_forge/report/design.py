@@ -681,7 +681,7 @@ def render_cost(e: EstimateTable) -> list[str]:
     """The cost subsection (C§20): how each block is costed, then the accelerator's totals,
     an area to 3 significant figures, an energy to 3 decimals."""
     src = e.char_source.get("snax_forge_experiments", "")[:7]
-    out = [f"### {heading(e.tech)}", "", caveat(e.streamers), "",
+    out = [f"### {heading(e.tech)}", "", caveat(), "",
            (f"CHAR1's model (D154, C§20) on `snax_forge/char/{e.tech}.json` (snax-forge-experiments "
             f"{src}), per run of the accelerator: a unit or buffer link pays its comb energy per "
             "fire, from the table as measured, copied (lanes × the lanes-1 point) or "
