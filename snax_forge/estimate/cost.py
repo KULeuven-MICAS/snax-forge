@@ -1,15 +1,21 @@
-"""The cost of a bound graph's groups: CHAR1's first-order model on a technology's table (D154,
-C§20).
+"""The cost of a design: CHAR1's first-order model of its groups (D154) and HWCOST's
+streamers, crossbar and L1 banks (D167, C§20).
 
     Block(datapath, params, fires)                 a unit or a buffer link to cost
     block_cost(table, block, bits, c_acc) -> BlockCost
     group_cost(table, blocks, bits, ctrl_bits, c_acc) -> GroupCost
-    l1_cost(table, words) -> L1Cost                an accelerator's L1 accesses (placeholder)
+    StreamerCounts, streamer_cost(costs, counts) -> StreamerCost   one port's streamer
+    xbar_cost(costs, inputs, banks, accesses) -> XbarCost           the TCDM crossbar
+    memory_cost(costs, n, depth, width, reads, writes) -> MemoryCost   the L1 banks
+    L1Cost                                         an accelerator's words through the crossbar
+                                                   and the banks
+    Part, PARTS, shares(parts)                     the five parts a design's cost is shown in,
+                                                   and each one's share of the totals
     sig3(x) -> str                                 an area as shown: 3 significant figures
     dec3(x) -> str                                 an energy as shown: 3 decimal places
     heading(tech), CAVEAT                          what every shown cost is headed with
 
-**The model**, per unit and per buffer link over one run of the accelerator, with n_fire its
+**The groups**, per unit and per buffer link over one run of the accelerator, with n_fire its
 fires, n_bits its register bits (the estimate's ``bits``), C_acc the accelerator's cycles
 (``accelerator_cycles``: no clock gating, so every flop holds through every group's cycles) and
 e_comb, A_comb its comb energy per fire and area from the table (snax_forge/char/):
@@ -21,23 +27,40 @@ e_comb, A_comb its comb energy per fire and area from the table (snax_forge/char
 
 and per group its control unit, n_bits^ctrl its ``ctrl_bits`` and f_ctrl the table's counter
 factor: energy f_ctrl n_bits^ctrl C_acc e_hold, area its flops' n_bits^ctrl A_flop plus an equal
-comb area (``CTRL_COMB_PER_FLOP``, a placeholder, D154; its comb energy taken as negligible); the
-csr is left out (D152). n_fire is a unit's firings times its span (SerialAccumulate reads span
-beats per firing); a buffer link loads once per output of its producer, its firings over its T
-(a fold gives once per T beats: dot 6's Mac once per job, dot 2's mul at every firing). A
-block the table does not hold (``lookup`` None) or the generator does not fill has ``found``
-None and its comb part counted as 0; its flops are still counted, the description gives them.
+comb area (``CTRL_COMB_PER_FLOP``, a rough early estimate, D154; its comb energy taken as
+negligible); the csr is left out (D152). n_fire is a unit's firings times its span
+(SerialAccumulate reads span beats per firing); a buffer link loads once per output of its
+producer, its firings over its T (a fold gives once per T beats: dot 6's Mac once per job, dot
+2's mul at every firing). A block the table does not hold (``lookup`` None) or the generator
+does not fill has ``found`` None and its comb part counted as 0; its flops are still counted,
+the description gives them.
 
-**L1 accesses** (a placeholder until the streamers and the memories are characterized, D154):
-per accelerator, every 64-bit word its streamers read or write in L1 costs ``L1_ACCESS_LOADS``
-(4) × e_load per bit, energy 4 e_load · 64 · words; a link's container is not in L1, and the
-DMA's traffic, the same for every variant, is not counted. It adds to the accelerator's energy,
-not to a group's.
+**The streamers, crossbar and banks** (D167; the tables in snax_forge/char/<tech>/, tables.py):
+per port's streamer, D_p its FIFO depth, L_p its loops, C_p its channels and W_p the 64-bit
+words it moves in L1 in one run (a link's container is not in L1, and the DMA's traffic, the
+same for every variant, is not counted), so W_p / C_p beats:
+
+    streamer   area A_strm(D_p, L_p, C_p), energy (W_p / C_p) e_beat(D_p, L_p, C_p)
+    crossbar   area A_xbar(n_in, n_banks), energy (Σ_p W_p) e_acc(n_banks, n_banks),
+               n_in the streamers' channels plus the cores' and AXI's ports
+               (check.py's ``crossbar_inputs``); one price per access for a bank count,
+               a full crossbar's, so the energy follows the accesses alone, whatever the
+               inputs and whether the accelerators run in series or not
+    memory     area n_banks A_bank, energy N_rd e_rd + N_wr e_wr, the words read and written
+
+A writer is priced as a reader (X52); a streamer is priced per beat, its clock while it waits
+for its accelerator's turn left out, as the crossbar's per-cycle part is. A query outside a table's grid is extrapolated, its
+``extrapolated`` axes named (tables.py). An accelerator's ``L1Cost`` is its words' share of the
+crossbar's and the banks' energy, so the accelerators' L1 rows add up to those two parts.
+
+**The parts** (``PARTS``): datapath (units and buffer links), control (control units),
+streamers, crossbar, memory; each an area and an energy, None where not costed (no platform, or
+a technology without HWCOST's tables), shown with its share of the total.
 
 **Shown, not stored.** The fields keep full precision; everything a reader sees (``design.md``,
 the viewer and the editor) is rounded for display only, an area by ``sig3`` (3 significant figures) and an energy by
 ``dec3`` (3 decimal places in its unit, so two close designs can be told apart), and headed by
-``heading`` with ``caveat`` (``CAVEAT`` naming the streamers not costed): the model is first-order, aimed at about 20 % of synthesis on the
+``heading`` with ``CAVEAT``: the model is first-order, aimed at about 30 % of synthesis on the
 large costs (C§20).
 """
 
@@ -48,23 +71,25 @@ from dataclasses import dataclass, field
 from math import floor, log10
 from typing import Any
 
-from snax_forge.char import CTRL_COMB_PER_FLOP, L1_ACCESS_LOADS, Table, lookup
+from snax_forge.char import CTRL_COMB_PER_FLOP, Table, lookup
+from snax_forge.char.tables import Costs, bank
+from snax_forge.char.tables import streamer_cost as _streamer
+from snax_forge.char.tables import xbar_cost as _xbar
 
-CAVEAT = ("First-order: aimed at the large costs (about 20 % of synthesis there; small blocks "
-          "can be much further off); the L1 accesses (4 × e_load per bit) and the control unit's "
-          "comb area (equal to its flops') are placeholders, the streamers' own logic and the csr "
-          "are left out.")  # fmt: skip
-
-
-def caveat(streamers: int) -> str:
-    """``CAVEAT`` naming how many streamers are not costed (one per streamer set, open item
-    110)."""
-    n = f"{streamers} streamer{'' if streamers == 1 else 's'}"
-    return CAVEAT.replace("the streamers' own logic", f"the streamers' own logic ({n} not "
-                          "costed, open item 110)")  # fmt: skip
+CAVEAT = ("First-order: aimed at the large costs (about 30 % of synthesis there; small blocks "
+          "can be much further off); the control unit's comb area (equal to its flops') is a "
+          "rough estimate; the streamers are priced per beat and the crossbar per access; the csr, "
+          "the cores, the I-cache and the DMA are left out.")  # fmt: skip
 
 
-L1_LABEL = "L1 accesses (placeholder, 4 × e_load per bit)"  # its row in every cost table
+def caveat() -> str:
+    """The line every shown cost carries (``CAVEAT``)."""
+    return CAVEAT
+
+
+L1_LABEL = "L1 accesses (crossbar and banks)"  # its row in every cost table
+# The parts a design's cost is shown in, in order (D167)
+PARTS = ("datapath", "control", "streamers", "crossbar", "memory")
 
 
 def heading(tech: str) -> str:
@@ -188,29 +213,179 @@ class GroupCost:
                    area, c["energy"])  # fmt: skip
 
 
+@dataclass(frozen=True)
+class StreamerCounts:
+    """One port's streamer, what the tables price it by: its ``name`` (``<instance>_<port>``,
+    D75), its ``accelerator``, whether it writes, its FIFO ``depth``, ``loops`` and
+    ``channels``, and the 64-bit ``words`` it moves in L1 in one run over its ``beats``."""
+
+    name: str
+    accelerator: str
+    write: bool
+    depth: int
+    loops: int
+    channels: int
+    words: int
+    beats: int
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"name": self.name, "accelerator": self.accelerator, "write": self.write,
+                "depth": self.depth, "loops": self.loops, "channels": self.channels,
+                "words": self.words, "beats": self.beats}  # fmt: skip
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> StreamerCounts:
+        return cls(d["name"], d["accelerator"], d["write"], d["depth"], d["loops"],
+                   d["channels"], d["words"], d["beats"])  # fmt: skip
+
+
+@dataclass(frozen=True)
+class StreamerCost:
+    """A port's streamer priced: its counts, its area (µm²), its energy per beat (pJ) and per
+    run (nJ), and the axes its point lay outside the table's grid on."""
+
+    counts: StreamerCounts
+    area_um2: float
+    e_beat_pj: float
+    energy_nj: float
+    extrapolated: tuple[str, ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.counts.to_dict() | {"area": self.area_um2, "e_beat": self.e_beat_pj,
+                                        "energy": self.energy_nj,
+                                        "extrapolated": list(self.extrapolated)}  # fmt: skip
+
+
+def streamer_cost(costs: Costs, c: StreamerCounts) -> StreamerCost:
+    """A streamer's area and energy per run on ``costs`` (module doc)."""
+    got = _streamer(costs, c.depth, c.loops, c.channels)
+    return StreamerCost(c, got.area_um2, got.energy_pj, c.beats * got.energy_pj / 1000,
+                        got.extrapolated)  # fmt: skip
+
+
+@dataclass(frozen=True)
+class XbarCost:
+    """The TCDM crossbar priced: its ``inputs`` and ``banks``, the ``accesses`` it serves in one
+    run, its area (µm²), its energy per access (pJ) and per run (nJ)."""
+
+    inputs: int
+    banks: int
+    accesses: int
+    area_um2: float
+    e_access_pj: float
+    energy_nj: float
+    extrapolated: tuple[str, ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"inputs": self.inputs, "banks": self.banks, "accesses": self.accesses,
+                "area": self.area_um2, "e_access": self.e_access_pj, "energy": self.energy_nj,
+                "extrapolated": list(self.extrapolated)}  # fmt: skip
+
+
+def xbar_cost(costs: Costs, inputs: int, banks: int, accesses: int) -> XbarCost:
+    """The crossbar's area and energy per run on ``costs`` (module doc): its area at its
+    inputs, its accesses at one price per bank count, a full crossbar's (inputs = banks)."""
+    area = _xbar(costs, inputs, banks)
+    price = _xbar(costs, banks, banks)
+    out = tuple(dict.fromkeys(area.extrapolated + price.extrapolated))
+    return XbarCost(inputs, banks, accesses, area.area_um2, price.energy_pj,
+                    accesses * price.energy_pj / 1000, out)  # fmt: skip
+
+
+@dataclass(frozen=True)
+class MemoryCost:
+    """The L1 banks priced: ``n`` banks of ``depth`` words of ``width`` bits, the words read and
+    written in one run, the area of all banks (µm²), a bank's energy per read and write (pJ)
+    and the run's (nJ); ``found`` False when the table has no such bank (all costs 0)."""
+
+    n: int
+    depth: int
+    width: int
+    reads: int
+    writes: int
+    area_um2: float
+    e_rd_pj: float
+    e_wr_pj: float
+    found: bool = True
+
+    @property
+    def energy_nj(self) -> float:
+        return (self.reads * self.e_rd_pj + self.writes * self.e_wr_pj) / 1000
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"banks": self.n, "depth": self.depth, "width": self.width,
+                "reads": self.reads, "writes": self.writes, "area": self.area_um2,
+                "e_rd": self.e_rd_pj, "e_wr": self.e_wr_pj, "energy": self.energy_nj,
+                "found": self.found}  # fmt: skip
+
+
+def memory_cost(costs: Costs, n: int, depth: int, width: int, reads: int,
+                writes: int) -> MemoryCost:  # fmt: skip
+    """The banks' area and energy per run on ``costs`` (module doc); a bank the table lacks is
+    costed 0 and marked."""
+    b = bank(costs, depth, width)
+    if b is None:
+        return MemoryCost(n, depth, width, reads, writes, 0.0, 0.0, 0.0, False)
+    return MemoryCost(n, depth, width, reads, writes, n * b.area_um2, b.e_rd_pj, b.e_wr_pj)
+
+
 @dataclass
 class L1Cost:
-    """One accelerator's L1 accesses (module doc): the 64-bit words its streamers read and write
-    in L1, and their energy in nJ."""
+    """One accelerator's words in L1 (module doc): the 64-bit words its streamers read and
+    write there, and their energy in nJ, the crossbar's per access and the banks' per read and
+    write."""
 
     words: int
     energy_nj: float
+    reads: int = 0
+    writes: int = 0
+    xbar_nj: float = 0.0
+    banks_nj: float = 0.0
 
     @property
     def bits(self) -> int:
         return 64 * self.words
 
     def to_dict(self) -> dict[str, Any]:
-        return {"words": self.words, "bits": self.bits, "energy": self.energy_nj}
+        return {"words": self.words, "bits": self.bits, "reads": self.reads,
+                "writes": self.writes, "xbar": self.xbar_nj, "banks": self.banks_nj,
+                "energy": self.energy_nj}  # fmt: skip
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> L1Cost:
-        return cls(d["words"], d["energy"])
+        return cls(d["words"], d["energy"], d.get("reads", 0), d.get("writes", 0),
+                   d.get("xbar", 0.0), d.get("banks", 0.0))  # fmt: skip
 
 
-def l1_cost(table: Table, words: int) -> L1Cost:
-    """An accelerator's L1 accesses on ``table``: ``L1_ACCESS_LOADS`` × e_load per bit."""
-    return L1Cost(words, L1_ACCESS_LOADS * table.e_load_pj * 64 * words / 1000)
+def l1_cost(xbar: XbarCost, memory: MemoryCost, reads: int, writes: int) -> L1Cost:
+    """An accelerator's words through the crossbar and the banks."""
+    x = (reads + writes) * xbar.e_access_pj / 1000
+    b = (reads * memory.e_rd_pj + writes * memory.e_wr_pj) / 1000
+    return L1Cost(reads + writes, x + b, reads, writes, x, b)
+
+
+@dataclass(frozen=True)
+class Part:
+    """One part of a design's cost (``PARTS``): its area (µm²) and energy per run (nJ), None
+    where not costed."""
+
+    area_um2: float | None
+    energy_nj: float | None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"area": self.area_um2, "energy": self.energy_nj}
+
+
+def shares(parts: Mapping[str, Part]) -> dict[str, tuple[float | None, float | None]]:
+    """Each part's share of the total area and of the total energy (0..1), None for a part
+    not costed or a total of 0."""
+    area = sum(p.area_um2 or 0.0 for p in parts.values())
+    energy = sum(p.energy_nj or 0.0 for p in parts.values())
+
+    def of(x: float | None, whole: float) -> float | None:
+        return None if x is None or not whole else x / whole
+
+    return {k: (of(p.area_um2, area), of(p.energy_nj, energy)) for k, p in parts.items()}
 
 
 def block_cost(table: Table, block: Block, bits: int, c_acc: int) -> BlockCost:

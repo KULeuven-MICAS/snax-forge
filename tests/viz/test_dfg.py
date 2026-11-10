@@ -330,43 +330,62 @@ def _cost_rows(t):
 
 @pytest.mark.slow
 def test_the_cost_tables_of_vecmul_and_dot_1():
-    """C§12's cost table, a row per unit, buffer link and control unit, the L1 accesses (D154),
-    then the total, one table per accelerator: vecmul at W = 8 (N = 2048) its unit 55 300 µm²,
-    23.137 nJ, 46.0 %, its control unit 702 µm² (flops and an equal comb), 0.128 nJ, its L1
-    accesses 6144 words, 27.005 nJ, 53.7 %; dot_1_enc at W = 8 one table for its two groups,
-    tmp0's round trip in its L1 accesses; Compare's cells before → after."""
+    """C§12's cost table, a row per unit, buffer link and control unit, a row per port's
+    streamer and the accelerator's words through the crossbar and the banks (D167), then the
+    total, one table per accelerator: vecmul at W = 8 (N = 2048) its unit 55 300 µm², 23.137 nJ,
+    its control unit 702 µm² (flops and an equal comb), 0.128 nJ, three streamers of 8 channels,
+    its 4096 reads and 2048 writes 44.569 nJ; dot_1_enc at W = 8 one table for its two groups,
+    tmp0's round trip in its L1 row; Compare's cells before → after."""
     from snax_forge.design import Platform
     from snax_forge.estimate import estimate
-    from snax_forge.viz.dfg.api import Entry, compare_view, cost_tables, step_view
+    from snax_forge.viz.dfg.api import Entry, compare_view, cost_parts, cost_tables, step_view
     from tests.design.helpers import SNAX_FORGE
     from tests.helpers import steps
 
     platform = Platform.load(SNAX_FORGE)
     g = steps("vecmul", N=2048, W=8)[-1]
     (t,) = cost_tables(estimate(g, platform), g)
+    strm = "streamer · FIFO 8, 1 loop, 8 ch"
     assert t["accelerator"] == "acc" and _cost_rows(t) == [
-        ("acc", "SimdLanes", "55 300", "23.137", "46.0%"),
-        ("acc ctrl", "control unit", "702", "0.128", "0.3%"),
-        (L1_LABEL, "6144 words, 393 216 bits", "–", "27.005", "53.7%"),
-        ("total", "", "56 000", "50.269", "100.0%")]  # fmt: skip
+        ("acc", "SimdLanes", "55 300", "23.137", "23.5%"),
+        ("acc ctrl", "control unit", "702", "0.128", "0.1%"),
+        ("acc_a", strm, "38 500", "10.152", "10.3%"),
+        ("acc_b", strm, "38 500", "10.152", "10.3%"),
+        ("acc_out", strm, "38 500", "10.152", "10.3%"),
+        (L1_LABEL, "4 096 reads, 2 048 writes", "–", "44.569", "45.3%"),
+        ("total", "", "172 000", "98.291", "100.0%")]  # fmt: skip
+    parts = [(p["name"], p["area_text"], p["area_share_text"], p["energy_text"],
+              p["energy_share_text"]) for p in cost_parts(estimate(g, platform))]  # fmt: skip
+    assert parts == [("datapath", "55 300 µm²", "7.4%", "23.137 nJ", "23.5%"),
+                     ("control", "702 µm²", "0.1%", "0.128 nJ", "0.1%"),
+                     ("streamers", "116 000 µm²", "15.5%", "30.457 nJ", "31.0%"),
+                     ("crossbar", "139 000 µm²", "18.7%", "16.831 nJ", "17.1%"),
+                     ("memory", "433 000 µm²", "58.2%", "27.738 nJ", "28.2%")]  # fmt: skip
     d = steps("dot_1_enc", N=2048, W=8)[-1]
     (t,) = cost_tables(estimate(d, platform), d)
     assert t["accelerator"] == "dot" and _cost_rows(t) == [
-        ("vmul", "SimdLanes", "55 300", "23.137", "37.8%"),
-        ("vmul ctrl", "control unit", "702", "0.257", "0.4%"),
-        ("vsum", "TreeAccumulate", "2 710", "1.231", "2.0%"),
-        ("vsum ctrl", "control unit", "1 390", "0.509", "0.8%"),
-        (L1_LABEL, "8193 words, 524 352 bits", "–", "36.011", "58.9%"),
-        ("total", "", "60 100", "61.144", "100.0%")]  # fmt: skip
+        ("vmul", "SimdLanes", "55 300", "23.137", "18.8%"),
+        ("vmul ctrl", "control unit", "702", "0.257", "0.2%"),
+        ("vsum", "TreeAccumulate", "2 710", "1.231", "1.0%"),
+        ("vsum ctrl", "control unit", "1 390", "0.509", "0.4%"),
+        ("vmul_a", strm, "38 500", "10.152", "8.2%"),
+        ("vmul_b", strm, "38 500", "10.152", "8.2%"),
+        ("vmul_out", strm, "38 500", "10.152", "8.2%"),
+        ("vsum_a", strm, "38 500", "10.152", "8.2%"),
+        ("vsum_out", "streamer · FIFO 8, 1 loop, 1 ch", "5 470", "0.005", "0.0%"),
+        (L1_LABEL, "6 144 reads, 2 049 writes", "–", "57.435", "46.6%"),
+        ("total", "", "220 000", "123.183", "100.0%")]  # fmt: skip
     v = step_view(Entry("2_bind", Path("2_bind.snaxdfg"), g, None), "2 bind", platform)
     assert v["summary"]["cost"]["tables"][0]["rows"][0]["area_text"] == "55 300"
     w16 = steps("vecmul", N=2048, W=16)[-1]
     c = compare_view(Entry("w8", Path("w8"), g, None), Entry("w16", Path("w16"), w16, None),
                      platform)["columns"]["cost_tables"]  # fmt: skip
-    (unit, ctrl, l1, total) = [*c[0]["rows"], c[0]["total"]]
+    (unit, ctrl, *strm, l1, total) = [*c[0]["rows"], c[0]["total"]]
     assert unit["block"] == "acc" and unit["area_text"].startswith("55 300 → ") and unit["differs"]
     assert ctrl["datapath"] == "control unit" and total["block"] == "total"
-    assert l1["block"] == L1_LABEL and "→" not in l1["datapath"] + l1["energy_text"]  # same words
+    assert [x["block"] for x in strm] == ["acc_a", "acc_b", "acc_out"]
+    assert all(x["datapath"].endswith("8 ch → streamer · FIFO 8, 1 loop, 16 ch") for x in strm)
+    assert l1["block"] == L1_LABEL and "→" not in l1["datapath"]  # the same words
 
 
 @pytest.mark.slow
@@ -429,8 +448,8 @@ def test_the_estimate_panel_gives_the_unmapped_and_total_cycles():
         "unmapped cycles": ("2048", "0"),
         "total cycles": ("2048", "256"),
         "streamers": (
-            "0 streamers (not costed, open item 110)",
-            "1 streamer (not costed, open item 110) · 22 CSRs",
+            "0 streamer sets",
+            "1 streamer set · 22 CSRs",
         ),
     }  # fmt: skip (one unmapped count, D156)
 
@@ -759,22 +778,38 @@ def test_compare_gives_two_columns_when_the_groups_differ():
     assert [g["name"] for g in five["groups"]] == ["mac", "sum"]
     assert [g["name"] for g in six["groups"]] == ["dot"]
     c = compare_view(e[5], e[6], platform, labels=("5 bind", "6 link"))["columns"]
-    assert c["labels"] == ["5 bind", "6 link"] and "about 20 %" in c["caveat"]
+    assert c["labels"] == ["5 bind", "6 link"] and "about 30 %" in c["caveat"]
     rows = c["estimate"]
     assert not any("→" in r["a"] + r["b"] for r in rows)
     assert _rows(rows, "accelerator") == {"cycles": ("266", "265", True),
                                           "unmapped cycles": ("0", "0", False),
                                           "total cycles": ("266", "265", True),
                                           "streamers": (
-                                              "2 streamers (not costed, open item 110) · 40 CSRs",
-                                              "1 streamer (not costed, open item 110) · 23 CSRs",
+                                              "2 streamer sets · 40 CSRs",
+                                              "1 streamer set · 23 CSRs",
                                               True)}  # fmt: skip
     assert _rows(rows, "group mac")["energy"] == ("26.136 nJ", "–", True)
     assert _rows(rows, "group dot")["cycles"] == ("–", "265 = 256 + 9", True)
+    # D167: the link drops a streamer set (two streamers and 16 crossbar inputs), the banks the same;
+    # its 16 fewer accesses make it the cheaper one too, as an access has one price
+    bars = c["cost_bars"]
+    assert [b["label"] for b in bars["area"]] == ["5 bind", "6 link"]
+    assert [b["total_text"] for b in bars["area"]] == ["844 000 µm²", "683 000 µm²"]
+    assert sum(x["width"] for x in bars["area"][0]["segments"]) == pytest.approx(1.0)
+    assert sum(x["width"] for x in bars["area"][1]["segments"]) == pytest.approx(
+        682751.9 / 843977.4, rel=1e-3
+    )
     assert _rows(rows, "Cost estimate (first-order) on nangate45") == {
-        "area": ("64 400 µm²", "64 100 µm²", True), "energy per run": ("44.491 nJ", "44.346 nJ", True),
-        "L1 accesses": ("mac: 4104 words, 18.038 nJ; sum: 9 words, 0.040 nJ",
-                        "dot: 4097 words, 18.008 nJ", True),
+        "area": ("844 000 µm²", "683 000 µm²", True),
+        "area without the banks": ("412 000 µm²", "250 000 µm²", True),
+        "energy per run": ("72.648 nJ", "72.371 nJ", True),
+        "datapath": ("62 300 µm² · 26.008 nJ", "62 300 µm² · 26.003 nJ", True),
+        "control": ("2 140 µm² · 0.405 nJ", "1 780 µm² · 0.335 nJ", True),
+        "streamers": ("160 000 µm² · 20.389 nJ", "82 500 µm² · 20.310 nJ", True),
+        "crossbar": ("188 000 µm² · 11.267 nJ", "103 000 µm² · 11.223 nJ", True),
+        "memory (banks)": ("433 000 µm² · 14.579 nJ", "433 000 µm² · 14.499 nJ", True),
+        "L1 accesses": ("mac: 4104 words, 25.787 nJ; sum: 9 words, 0.059 nJ",
+                        "dot: 4097 words, 25.722 nJ", True),
         "not characterized": ("none", "none", False)}  # fmt: skip
     mult = c["details"]["node:mult"]
     assert mult["where"] == "" and _rows(mult["rows"], None)["group"] == ("mac", "dot", True)
@@ -788,7 +823,7 @@ def test_compare_gives_two_columns_when_the_groups_differ():
     first = compare_view(e[0], e[6], platform)["columns"]["estimate"]
     assert _rows(first, "Cost estimate (first-order) on nangate45")["area"] == (
         "–",
-        "64 100 µm²",
+        "683 000 µm²",
         True,
     )
     assert step_view(e[0], "0", platform)["summary"]["cost"] is None  # nothing bound

@@ -113,6 +113,8 @@ async function compare(j, k) {
 function techOptions() {
   $("tech").replaceChildren(...state.techs.map((t) => h("option", { value: t }, t)));
   $("tech").value = state.tech || "";
+  // one technology is no choice (D167: nangate45 only): the dropdown hides, the heading names it
+  $("tech").closest("label").hidden = state.techs.length < 2;
 }
 
 /** A technology from the hash or the dropdown: one of the server's, else the server's own. */
@@ -837,28 +839,83 @@ function hoverGroup(name, on) {
 
 // short labels, so the table fits the right panel at 1280 px (R3): the datapath under the block
 // in one cell, the numbers right-aligned; the units in each heading's title
-const COST_COLUMNS = [["block", "block · datapath", "the unit, buffer link, control unit or L1 accesses, its datapath under it"],
+const COST_COLUMNS = [["block", "block · datapath", "the unit, buffer link, control unit, streamer or the words through the crossbar and banks, its datapath under it"],
   ["area_text", "µm²", "area, µm² (3 significant figures)"],
   ["energy_text", "nJ", "energy per run, nJ (3 decimals)"], ["share_text", "share", "share of the accelerator's energy"]];
 
 /** One accelerator's cost table (api.py's cost_tables, or compare_cost_tables' before → after
-cells): a row per unit, buffer link and control unit, the L1 accesses, then the total. */
+cells): a row per unit, buffer link, control unit and streamer, its words through the crossbar
+and the banks, then the total. */
 function costTable(t) {
   const num = (key) => key !== "block";
-  // the L1 accesses' row is a placeholder (D154): muted, a short label, the full one as its title
   const l1 = (r) => r.kind === "l1" || String(r.block).startsWith("L1 accesses");
   const cell = (r, key) => {
     if (key !== "block") return r[key];
-    const name = l1(r) ? [h("span", {}, "L1 accesses"), " ", h("span", { class: "c-cost-tag" }, "placeholder")] : r.block;
+    const name = l1(r) ? h("span", {}, "L1 accesses") : r.block;
     return [h("div", {}, name), r.datapath ? h("div", { class: "c-cost-dp" }, r.datapath) : null];
   };
-  const tr = (r, cls) => h("tr", { class: [cls, r.differs ? "differs" : null, r.found === false ? "missing" : null, l1(r) ? "placeholder" : null].filter(Boolean).join(" ") || null,
+  const tr = (r, cls) => h("tr", { class: [cls, r.kind === "streamer" ? "streamer" : null, r.differs ? "differs" : null, r.found === false ? "missing" : null].filter(Boolean).join(" ") || null,
     title: l1(r) ? String(r.block) : null },
   COST_COLUMNS.map(([key]) => h(key === "block" ? "th" : "td", { class: num(key) ? "num" : null, scope: key === "block" ? "row" : null }, cell(r, key))));
   return h("div", { class: "c-cost-wrap" }, h("table", { class: "c-cost-table" },
     h("caption", {}, t.accelerator),
     h("thead", {}, h("tr", {}, COST_COLUMNS.map(([key, label, title]) => h("th", { scope: "col", class: num(key) ? "num" : null, title }, label)))),
     h("tbody", {}, t.rows.map((r) => tr(r, null)), tr(t.total, "total"))));
+}
+
+/** One bar of the cost by part (D167), the whole to scale with a segment per part costed, as the
+memory tab's scale bar draws a memory (``key`` "area" or "energy"; the shares are api.py's). */
+function partBar(parts, key, label) {
+  let left = 0;
+  const segs = parts.filter((p) => p[`${key}_share`] > 0).map((p) => {
+    const w = 100 * p[`${key}_share`];
+    const seg = h("div", { class: `c-part-seg p-${p.name}`, style: { left: `${left}%`, width: `${w}%` },
+      title: `${p.label}: ${p[`${key}_text`]}, ${p[`${key}_share_text`]} of the ${label}` },
+    w >= 9 ? h("span", {}, p.name) : null);
+    left += w;
+    return seg;
+  });
+  return h("div", { class: "c-part-bar-wrap" },
+    h("div", { class: "c-part-bar-label muted" }, label),
+    h("div", { class: "c-part-bar", role: "img", "aria-label": `${label} by part` }, segs));
+}
+
+/** The cost by part: its two bars, then, folded, a row per part (area, share, energy, share) and
+the totals, with and without the banks. */
+function costParts(c) {
+  const parts = c.parts || [];
+  if (!parts.length) return [];
+  const row = (p) => h("tr", {},
+    h("th", { scope: "row" }, h("i", { class: `c-part-key p-${p.name}` }), p.label),
+    ...["area_text", "area_share_text", "energy_text", "energy_share_text"].map((k) => h("td", { class: "num" }, p[k])));
+  return [partBar(parts, "area", "area"), partBar(parts, "energy", "energy per run"),
+    h("details", { class: "c-part-details" }, h("summary", {}, "cost by part, as a table"),
+      h("div", { class: "c-cost-wrap" }, h("table", { class: "c-cost-table" },
+        h("thead", {}, h("tr", {}, ["part", "area", "share", "energy", "share"].map((x, i) => h("th", { scope: "col", class: i ? "num" : null }, x)))),
+        h("tbody", {}, parts.map(row),
+          h("tr", { class: "total" }, h("th", { scope: "row" }, "total"), h("td", { class: "num" }, c.area_text), h("td", {}), h("td", { class: "num" }, c.energy_text), h("td", {})),
+          h("tr", {}, h("th", { scope: "row" }, "without the banks"), h("td", { class: "num" }, c.area_design_text), h("td", {}), h("td", {}), h("td", {}))))))];
+}
+
+/** Compare's cost bars (api.py's compare_cost_bars): per area and energy, the two steps' bars one
+above the other on one scale, the larger total the whole width. */
+function compareBars(bars) {
+  if (!bars) return [];
+  const bar = (side, what) => {
+    let left = 0;
+    const segs = side.segments.map((p) => {
+      const w = 100 * p.width;
+      const seg = h("div", { class: `c-part-seg p-${p.name}`, style: { left: `${left}%`, width: `${w}%` },
+        title: `${side.label}, ${p.label}: ${p.text}` }, w >= 9 ? h("span", {}, p.name) : null);
+      left += w;
+      return seg;
+    });
+    return h("div", { class: "c-part-row" },
+      h("div", { class: "c-part-side" }, h("span", {}, side.label), h("span", { class: "nb" }, side.total_text)),
+      h("div", { class: "c-part-bar", role: "img", "aria-label": `${side.label}: ${what} by part` }, segs));
+  };
+  return [["area", "area"], ["energy", "energy per run"]].map(([key, what]) => h("div", { class: "c-part-bar-wrap" },
+    h("div", { class: "c-part-bar-label muted" }, `${what}, on one scale`), ...bars[key].map((side) => bar(side, what))));
 }
 
 async function estimate() {
@@ -872,6 +929,7 @@ async function estimate() {
     const tables = cmp.columns.cost_tables || [];
     box.replaceChildren(...[columnsTable(cmp.columns.labels, cmp.columns.estimate),
       cmp.columns.caveat ? h("p", { class: "c-est-line muted" }, cmp.columns.caveat) : null,
+      ...compareBars(cmp.columns.cost_bars),
       tables.length ? h("p", { class: "c-est-line muted" }, `cost per block, ${cmp.columns.labels[0]} → ${cmp.columns.labels[1]}`) : null,
       ...tables.map(costTable)].filter(Boolean));
     return;
@@ -896,9 +954,12 @@ async function estimate() {
   const cost = c ? [
     h("p", { class: "c-est-head" }, h("b", {}, c.heading), ": ", h("b", { class: "nb" }, c.area_text), " · ", h("b", { class: "nb" }, c.energy_text), " per run"),
     h("p", { class: "c-est-line muted" }, c.caveat),
+    ...costParts(c),
     ...(c.tables || []).map(costTable),
     h("p", { class: "c-est-line" }, "not characterized: ", c.missing.length ? c.missing.join(", ") : "none"),
-  ] : [];
+    c.not_costed && c.not_costed.length ? h("p", { class: "c-est-line" }, "not costed: ", c.not_costed.join("; ")) : null,
+    c.extrapolated && c.extrapolated.length ? h("p", { class: "c-est-line" }, "outside the tables' grid, extrapolated: ", c.extrapolated.join(", ")) : null,
+  ].filter(Boolean) : [];
   // edit mode: Save's design checks on this step (D156): the problems first, then the notes,
   // a "before Save" one tagged so (its message's own prefix dropped); the log's counts link here
   const check = (kind, p) => h("li", { class: `c-check ${kind}${p.before_save ? " before-save" : ""}` },
@@ -923,7 +984,7 @@ async function estimate() {
     l1.size ? h("div", { class: "c-bar-track" }, h("i", { style: { width: l1.share_css } })) : null,
     h("p", { class: "c-est-line" }, `reads ${s.reads} · writes ${s.writes} words`),
     s.splits.length ? h("p", { class: "c-est-line" }, "lanes ", s.splits.map((x) => `${x.map} ${x.text}`).join("; ")) : null,
-    s.streamers ? h("p", { id: "est-streamers", class: "c-est-line", title: "one streamer set per accelerator (D157); the streamers are not characterized yet (open item 110)" },
+    s.streamers ? h("p", { id: "est-streamers", class: "c-est-line", title: "one streamer set per accelerator (D157); each port's streamer is costed in the tables below (D167)" },
       s.streamers.text, s.streamers.accelerators.length > 1 ? ": " + s.streamers.accelerators.map((a) => `${a.name}${a.csrs_text ? " " + a.csrs_text : ""}`).join(", ") : "") : null,
     ...checks,
     ...cost,

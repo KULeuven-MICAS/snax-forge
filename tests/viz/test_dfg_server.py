@@ -41,7 +41,7 @@ def test_view_mode_over_dot_2s_steps(tmp_path):
     r = Recipe.load(recipe_path("dot_2"))
     write_steps(r, apply_recipe(r, import_kernel(r.kernel)), tmp_path / "sandbox" / "dot_2")
     with served(make_dfg_server([tmp_path / "sandbox" / "dot_2"], 0, platform=PLATFORM)) as srv:
-        assert get_json(srv, "/api/mode") == (200, {"mode": "view", "techs": ["nangate45", "nangate15"],
+        assert get_json(srv, "/api/mode") == (200, {"mode": "view", "techs": ["nangate45"],
                                                     "tech": "nangate45"})  # fmt: skip
         status, steps = get_json(srv, "/api/steps")
         assert status == 200 and [s["label"] for s in steps] == [
@@ -98,13 +98,10 @@ def test_view_mode_over_dot_2s_steps(tmp_path):
         )
         assert (s["cost"]["heading"], s["cost"]["missing"]) == (
             "Cost estimate (first-order) on nangate45", [])  # fmt: skip
-        assert "about 20 %" in s["cost"]["caveat"] and v["tech"] == "nangate45"
+        assert "about 30 %" in s["cost"]["caveat"] and v["tech"] == "nangate45"
+        # nangate15 is kept as data but no longer offered (D167): refused as any other
         status, v15 = get_json(srv, "/api/step/5?tech=nangate15")
-        assert status == 200 and v15["tech"] == "nangate15"
-        assert v15["summary"]["cost"]["heading"].endswith("nangate15")
-        assert v15["details"]["node:sum"]["cost"]["found"] == "measured on nangate15"
-        assert v15["summary"]["groups"][0]["cycles"] == 130  # the cycles do not change
-        assert get_json(srv, "/api/compare/4/5?tech=nangate15")[0] == 200
+        assert status == 400 and v15["code"] == "char.tech"
         status, bad = get_json(srv, "/api/step/5?tech=tsmc7")
         assert status == 400 and bad["code"] == "char.tech"
         assert get_json(srv, "/api/compare/4/9")[0] == 404
@@ -236,9 +233,6 @@ def test_edit_mode_over_a_vecadd_session(tmp_path, monkeypatch):
             v["summary"]["cost"]["heading"].endswith("nangate45")
             and "cost" in v["details"]["node:add"]
         )
-        v15 = get_json(srv, "/api/step/4?tech=nangate15")[1]  # the session caches per technology
-        assert v15["summary"]["cost"]["heading"].endswith("nangate15")
-        assert v15["summary"]["cost"]["area_text"] != v["summary"]["cost"]["area_text"]
         assert post(srv, "/api/cursor", {"k": 2})[1] == {
             "ok": True,
             "cursor": 2,

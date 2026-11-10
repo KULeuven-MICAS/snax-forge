@@ -34,12 +34,14 @@ the kernel from the run's functional check.
                  estimate's technology, its area and
                  energy; then the accelerator's cycles, the work no unit runs as
                  cycles (one per iteration, an assumption, D155), their total and the
-                 L1 footprint against the L1; then the cost (C§20): per unit, buffer
-                 link and control unit how it is costed, per accelerator its L1
-                 accesses (a placeholder, D154), the accelerator's area and energy,
-                 the technology and its table's source, the blocks the table
-                 does not characterize, and the streamers and CSRs (one
-                 streamer per accelerator, not costed, open item 110)
+                 L1 footprint against the L1; then the cost (C§20, D167): per unit,
+                 buffer link and control unit how it is costed, per port its
+                 streamer, per accelerator its words through the crossbar and the
+                 banks, the cost by part (datapath, control, streamers, crossbar,
+                 memory) with each part's share, the total and the total without
+                 the banks, the technology and its tables' sources, the blocks the
+                 table does not characterize, the parts not costed and the points
+                 extrapolated, and the streamer sets and CSRs
     notes        the design notes first (check.py's ``run_notes``: a design that
                  passes but is worth a second look, with its fix); then
                  facts about addresses: movers of one group whose
@@ -57,7 +59,7 @@ from typing import Any
 import numpy as np
 
 from snax_forge.char import DEFAULT_TECH
-from snax_forge.estimate.cost import L1_LABEL, caveat, dec3, heading, sig3
+from snax_forge.estimate.cost import L1_LABEL, PARTS, caveat, dec3, heading, shares, sig3
 from snax_forge.lower.layout import Layout, round_up
 from snax_forge.run import Cluster, Region, padding_of, regions_of
 
@@ -194,12 +196,45 @@ class CostRow(Record):
 
 @dataclass
 class L1Row(Record):
-    """One accelerator's L1 accesses (C§20, a placeholder, D154)."""
+    """One accelerator's words in L1 (C§20, D167): through the crossbar and the banks."""
 
     accelerator: str
     words: int
     bits: int
     energy_nj: float
+    reads: int = 0
+    writes: int = 0
+    xbar_nj: float = 0.0
+    banks_nj: float = 0.0
+
+
+@dataclass
+class StreamerCostRow(Record):
+    """One port's streamer priced (C§20, D167); ``extrapolated`` the axes off the grid."""
+
+    accelerator: str
+    streamer: str
+    direction: str
+    depth: int
+    loops: int
+    channels: int
+    beats: int
+    area_um2: float
+    e_beat_pj: float
+    energy_nj: float
+    extrapolated: list[str] = field(default_factory=list)
+
+
+@dataclass
+class PartRow(Record):
+    """One part of the design's cost (D167) and its share of the totals; None where not
+    costed."""
+
+    part: str
+    area_um2: float | None
+    energy_nj: float | None
+    area_share: float | None
+    energy_share: float | None
 
 
 @dataclass
@@ -219,9 +254,17 @@ class EstimateTable(Record):
     unmapped_cycles: int = 0  # unmapped_iterations at UNMAPPED_CYCLES_PER_ITERATION (D155)
     unmapped_iterations: int = 0  # over every map, spatial ones included
     total_cycles: int = 0  # accelerator_cycles + unmapped_cycles
-    l1: list[L1Row] = field(default_factory=list)  # per accelerator, its L1 accesses
-    streamers: int = 1  # one per accelerator, none costed (open item 110)
+    l1: list[L1Row] = field(default_factory=list)  # per accelerator, its words in L1
+    streamers: int = 1  # the streamer sets, one per accelerator
     csrs: int | None = None  # every CSR of the entry; None without a platform
+    parts: list[PartRow] = field(default_factory=list)  # the cost by part (D167)
+    area_design_um2: float | None = None  # the area without the banks
+    kernel_energy_nj: float | None = None  # the datapath's and control's
+    streamer_cost: list[StreamerCostRow] = field(default_factory=list)
+    xbar: dict[str, Any] | None = None  # its inputs, banks, accesses, area and energy
+    memory: dict[str, Any] | None = None  # its banks, shape, reads, writes, area and energy
+    not_costed: list[str] = field(default_factory=list)
+    extrapolated: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -476,13 +519,27 @@ def estimate_table(point: Any, tech: str | None = DEFAULT_TECH) -> EstimateTable
         cost.append(CostRow(g.name, "ctrl", "group control unit", None, None, c.ctrl_bits,
                             c.ctrl_comb_um2, c.ctrl_flops_um2, None, None, c.ctrl_nj))  # fmt: skip
     notes = [g.bank_bound_note for g in e.groups if g.bank_bound_note]
+    got = e.parts
+    share = shares(got) if got else {}
+    parts = [PartRow(k, got[k].area_um2, got[k].energy_nj, *share[k]) for k in PARTS] if got else []
     return EstimateTable(rows, e.accelerator_cycles, e.not_mapped, e.l1_footprint, e.l1_size,
                          e.tech, dict(e.char_source or {}), e.area, e.energy, e.missing, cost,
                          notes, unmapped_cycles=e.unmapped_cycles,
                          unmapped_iterations=e.unmapped_iterations,
                          total_cycles=e.total_cycles,
-                         l1=[L1Row(a, x.words, x.bits, x.energy_nj) for a, x in e.l1.items()],
-                         streamers=e.streamers, csrs=e.csrs)  # fmt: skip
+                         l1=[L1Row(a, x.words, x.bits, x.energy_nj, x.reads, x.writes, x.xbar_nj,
+                                   x.banks_nj) for a, x in e.l1.items()],
+                         streamers=e.streamers, csrs=e.csrs, parts=parts,
+                         area_design_um2=e.area_design, kernel_energy_nj=e.kernel_energy,
+                         streamer_cost=[StreamerCostRow(
+                             c.counts.accelerator, c.counts.name,
+                             "write" if c.counts.write else "read", c.counts.depth,
+                             c.counts.loops, c.counts.channels, c.counts.beats, c.area_um2,
+                             c.e_beat_pj, c.energy_nj, list(c.extrapolated))
+                             for c in e.streamer_costs],
+                         xbar=None if e.xbar is None else e.xbar.to_dict(),
+                         memory=None if e.memory is None else e.memory.to_dict(),
+                         not_costed=e.not_costed, extrapolated=e.extrapolated)  # fmt: skip
 
 
 # =============================================================================
@@ -678,18 +735,22 @@ def _energy(x: float | None, unit: str = "") -> str | None:
 
 
 def render_cost(e: EstimateTable) -> list[str]:
-    """The cost subsection (C§20): how each block is costed, then the accelerator's totals,
-    an area to 3 significant figures, an energy to 3 decimals."""
+    """The cost subsection (C§20, D167): how each block is costed, each port's streamer, each
+    accelerator's words in L1, then the cost by part with its shares and the totals; an area
+    to 3 significant figures, an energy to 3 decimals."""
     src = e.char_source.get("snax_forge_experiments", "")[:7]
-    out = [f"### {heading(e.tech)}", "", caveat(e.streamers), "",
+    out = [f"### {heading(e.tech)}", "", caveat(), "",
            (f"CHAR1's model (D154, C§20) on `snax_forge/char/{e.tech}.json` (snax-forge-experiments "
             f"{src}), per run of the accelerator: a unit or buffer link pays its comb energy per "
             "fire, from the table as measured, copied (lanes × the lanes-1 point) or "
             "interpolated, its register bits at e_load in the cycles it fires and e_hold in every "
             "other cycle; a control unit its bits × e_hold × the counter factor every cycle, its "
-            "area its flops' and an equal comb area (a placeholder); an accelerator's L1 "
-            "accesses, the 64-bit words its streamers read and write in L1, 4 × e_load per bit "
-            "(a placeholder; a link's container is not in L1, the DMA's traffic not counted)."),
+            "area its flops' and an equal comb area (a rough estimate). HWCOST (D167) on "
+            f"`snax_forge/char/{e.tech}/`: each port's streamer its area and its beats × its "
+            "energy per beat at its FIFO depth, loops and channels; the crossbar its area and "
+            "every word through it × its energy per access at its inputs and banks; the L1 banks "
+            "their area and their reads and writes × a bank's energy per read and write (a "
+            "link's container is not in L1, the DMA's traffic not counted)."),
            ""]  # fmt: skip
     out += table(["Group", "Block", "Datapath", "Found", "Fires", "Bits", "Comb (µm²)",
                   "Flops (µm²)", "e_fire (pJ)", "Hold (pJ/cycle)", "Energy (nJ)"],
@@ -698,22 +759,61 @@ def render_cost(e: EstimateTable) -> list[str]:
                    c.bits, _shown(c.comb_um2), _shown(c.flops_um2), _energy(c.e_fire_pj),
                    _energy(c.e_hold_pj), _energy(c.energy_nj)] for c in e.cost],
                  {4, 5, 6, 7, 8, 9, 10})  # fmt: skip
+    if e.streamer_cost:
+        out += ["", *table(["Accelerator", "Streamer", "Direction", "FIFO depth", "Loops",
+                            "Channels", "Beats", "Area (µm²)", "e_beat (pJ)", "Energy (nJ)"],
+                           [[x.accelerator, x.streamer + (" (extrapolated)" if x.extrapolated
+                                                          else ""),
+                             x.direction, x.depth, x.loops, x.channels, x.beats,
+                             _shown(x.area_um2), _energy(x.e_beat_pj), _energy(x.energy_nj)]
+                            for x in e.streamer_cost], {3, 4, 5, 6, 7, 8, 9})]  # fmt: skip
     if e.l1:
-        out += ["", *table(["Accelerator", "Block", "Words", "Bits", "Energy (nJ)"],
-                           [[x.accelerator, L1_LABEL, x.words, x.bits, _energy(x.energy_nj)]
-                            for x in e.l1], {2, 3, 4})]  # fmt: skip
-    out += ["", (f"Accelerator on {e.tech}: about {_shown(e.area_um2, ' µm²')} and "
+        out += ["", *table(["Accelerator", "Block", "Reads", "Writes", "Crossbar (nJ)",
+                            "Banks (nJ)", "Energy (nJ)"],
+                           [[x.accelerator, L1_LABEL, x.reads, x.writes, _energy(x.xbar_nj),
+                             _energy(x.banks_nj), _energy(x.energy_nj)] for x in e.l1],
+                           {2, 3, 4, 5, 6})]  # fmt: skip
+    if e.parts:
+        out += ["", "Cost by part:", "", *table(
+            ["Part", "Area (µm²)", "Area share", "Energy (nJ)", "Energy share"],
+            [[p.part, _shown(p.area_um2) or "not costed", _share(p.area_share),
+              _energy(p.energy_nj) or "not costed", _share(p.energy_share)] for p in e.parts]
+            + [["total", _shown(e.area_um2), None, _energy(e.energy_nj), None],
+               ["without the banks", _shown(e.area_design_um2), None, None, None]],
+            {1, 2, 3, 4})]  # fmt: skip
+    x, m = e.xbar, e.memory
+    if x is not None and m is not None:
+        out += ["", (f"The crossbar: {x['inputs']} inputs on {x['banks']} banks, "
+                     f"{x['accesses']} accesses at {_energy(x['e_access'], ' pJ')} each. The L1: "
+                     f"{m['banks']} banks of {m['depth']} × {m['width']} bits, {m['reads']} reads "
+                     f"at {_energy(m['e_rd'], ' pJ')} and {m['writes']} writes at "
+                     f"{_energy(m['e_wr'], ' pJ')}.")]  # fmt: skip
+    out += ["", (f"Design on {e.tech}: about {_shown(e.area_um2, ' µm²')} "
+                 f"({_shown(e.area_design_um2, ' µm²')} without the banks) and "
                  f"{_energy(e.energy_nj, ' nJ')} per run.")]  # fmt: skip
     if e.missing:
         out += ["", (f"Not characterized on {e.tech} (comb counted as 0, flops counted): "
                      f"{', '.join(e.missing)}; see the notes.")]  # fmt: skip
+    if e.not_costed:
+        out += ["", f"Not costed: {'; '.join(e.not_costed)}."]
+    if e.extrapolated:
+        out += ["", (f"Outside the tables' grid, extrapolated: {', '.join(e.extrapolated)}; see "
+                     "the notes.")]  # fmt: skip
     out += ["", streamers_line(e.streamers, e.csrs)]
     return out
 
 
+def _share(x: float | None) -> str | None:
+    return None if x is None else f"{100 * x:.1f} %"
+
+
 def streamers_line(streamers: int, csrs: int | None) -> str:
-    """The streamers left out of the cost (one per accelerator, open item 110) and the
-    entry's CSRs."""
-    n = f"{streamers} streamer{'' if streamers == 1 else 's'}"
-    c = "" if csrs is None else f"; {csrs} CSRs, the streamers' and the accelerators' own"
-    return f"Not costed: {n}, one per accelerator (streamer not characterized, open item 110){c}."
+    """The streamer sets (one per accelerator) and the entry's CSRs, which are not costed
+    (D152)."""
+    n = f"{streamers} streamer set{'' if streamers == 1 else 's'}"
+    c = (
+        ""
+        if csrs is None
+        else f"; {csrs} CSRs, the streamers' and the accelerators' own, not costed"
+    )
+    return f"{n}, one per accelerator{c}."

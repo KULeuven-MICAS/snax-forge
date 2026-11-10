@@ -2,8 +2,8 @@
 
     load(tech) -> Table                                          snax_forge/char/<tech>.json
     lookup(table, datapath, params, lanes, depth=None) -> Lookup | None
-    TECHS                                                        the technologies held here
-    L1_ACCESS_LOADS, CTRL_COMB_PER_FLOP                          D154's two placeholders
+    TECHS                                                        the technologies offered
+    CTRL_COMB_PER_FLOP                                           a control unit's comb : flops (D154)
 
 ``<tech>.json`` is a byte copy of snax-forge-experiments' ``results/char/<tech>/char.json``
 (its X37), which names its own source commits: per catalogue datapath (``hw/chisel/blocks.json``)
@@ -52,14 +52,15 @@ from typing import Any
 from snax_forge.common import CodedError
 
 HERE = Path(__file__).parent
-TECHS = ("nangate45", "nangate15")
+# The technologies offered (D167): nangate45 only. nangate15's table stays in the repository
+# as data (SYN1, CHAR1) but is no longer offered, as it has no memories (D159).
+TECHS = ("nangate45",)
+RETIRED = ("nangate15",)
 DEFAULT_TECH = "nangate45"
 FOUND = ("measured", "copy", "interpolate")
-# CHAR1's two placeholders until the streamers and OpenRAM's memories are characterized (D154;
-# HWCOST, RAM1): a word a streamer reads or writes in L1 costs L1_ACCESS_LOADS × e_load per bit,
-# and a control unit's comb area is CTRL_COMB_PER_FLOP × its flops' area (its comb energy taken
-# as negligible). Neither is in the table, a byte copy of snax-forge-experiments' char.json.
-L1_ACCESS_LOADS = 4
+# A control unit's comb area is CTRL_COMB_PER_FLOP × its flops' area, a rough early estimate (D154;
+# its comb energy taken as negligible); not in the table, a byte copy of snax-forge-experiments'
+# char.json. The L1 side is HWCOST's tables (tables.py, D167).
 CTRL_COMB_PER_FLOP = 1.0
 _IGNORED = ("lanes", "depth")
 # catalogue name -> the table's, until CHAR's next export uses the new name (module doc)
@@ -105,7 +106,9 @@ def load(tech: str) -> Table:
     """The table of ``tech`` (``snax_forge/char/<tech>.json``)."""
     path = HERE / f"{tech}.json"
     if tech not in TECHS or not path.is_file():
-        raise CharError("char.tech", f"no table for technology {tech!r}: one of {list(TECHS)}")
+        why = " (kept as data, no longer offered: D167)" if tech in RETIRED else ""
+        raise CharError("char.tech",
+                        f"no table for technology {tech!r}{why}: one of {list(TECHS)}")  # fmt: skip
     d = json.loads(path.read_text())
     return Table(d["tech"], d["clock_ns"], dict(d["source"]), d["flop"]["area_um2"],
                  d["flop"]["e_load_fj"] / 1000, d["flop"]["e_hold_fj"] / 1000,
@@ -166,7 +169,6 @@ __all__ = [
     "DATAPATH_RENAMES",
     "DEFAULT_TECH",
     "FOUND",
-    "L1_ACCESS_LOADS",
     "TABLE_DEFAULTS",
     "TECHS",
     "CharError",

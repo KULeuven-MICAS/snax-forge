@@ -9,7 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from snax_forge.char import Table, load
+from snax_forge.char import TECHS, CharError, Table, load
+from snax_forge.design.platform import Platform
 from snax_forge.estimate import Estimate, estimate
 from snax_forge.estimate.cost import CAVEAT, Block, block_cost, dec3, group_cost, heading, sig3
 from tests.helpers import steps
@@ -72,29 +73,129 @@ def test_a_unit_fires_its_firings_times_its_span_a_buffer_its_producers_outputs(
     assert (g.cost.units["mac"].fires, g.cost.links["out_partial"].fires) == (256, 1)
 
 
-def test_l1_accesses_cost_4_e_load_per_bit_per_accelerator():
-    """D154's placeholder: the 64-bit words an accelerator's streamers read and write in L1, at 4
-    × e_load per bit, added to its energy (not to a group's): vecmul at W = 8 and N = 2048 6144
-    words, 27.005 nJ on nangate45 (4.40 pJ a word), 1.41 pJ a word on nangate15; a packed dtype
-    counts words, not elements (vecadd_i32: 3 × 32 words for 64 int32; vsum_tree_i8: 8 + 1 for 64
-    int8); a link's container is not in L1 (dot 2: tmp0's 2 × 2048 words gone from dot 1's)."""
+# Rows of snax_forge/char/nangate45/ HWCOST's hand-worked designs read (D167)
+READER_8_1_8 = (38525.045548, 39.65753)  # depth, loops, channels -> area µm², pJ per beat
+READER_8_1_4 = (19635.587779, 20.02126)
+READER_8_1_1 = (5469.225952, 5.315563)
+READER_8_2_4 = (20155.085786, 20.29734)
+BANK = (13522.7, 3.53819, 6.4677)  # 512 × 64: area µm², pJ per read, pJ per write
+
+
+def test_vecmul_at_w8_by_part():
+    """The hand-worked design of the HWCOST notes: vecmul at W = 8, N = 2048, three ports of 8
+    channels and one loop, 256 beats each, 6144 words; the crossbar at 24 + 2 + 1 = 27 inputs
+    on 32 banks, its area linear in inputs (t = 3/8 between 24 and 32), every access at a full
+    crossbar's price (32 inputs on 32 banks, a grid point); 32 banks, 4096 reads and 2048
+    writes."""
     e = estimated("vecmul", W=8, N=2048)
-    (x,) = e.l1.values()
-    assert (list(e.l1), x.words, x.bits, dec3(x.energy_nj)) == (["acc"], 6144, 393216, "27.005")
-    assert f"{1000 * x.energy_nj / x.words:.2f}" == "4.40"
-    assert e.energy == pytest.approx(e.kernel_energy + x.energy_nj)
-    assert e.kernel_energy == pytest.approx(sum(g.cost.energy for g in e.groups))
-    (a,) = e.to_dict()["accelerators"]  # cost.l1 under its accelerator (C§19)
-    assert (a["name"], a["cost"]) == ("acc", {"l1": {"words": 6144, "bits": 393216,
-                                                     "energy": x.energy_nj}})  # fmt: skip
-    assert "l1" not in e.to_dict()["cost"]
-    fifteen = estimate(steps("vecmul", W=8, N=2048)[-1], None, "nangate15").l1["acc"]
-    assert f"{1000 * fifteen.energy_nj / fifteen.words:.2f}" == "1.41"
+    assert [(s.counts.name, s.counts.write, s.counts.depth, s.counts.loops, s.counts.channels,
+             s.counts.words, s.counts.beats) for s in e.streamer_costs] == [
+        ("acc_a", False, 8, 1, 8, 2048, 256), ("acc_b", False, 8, 1, 8, 2048, 256),
+        ("acc_out", True, 8, 1, 8, 2048, 256)]  # fmt: skip
+    p = e.parts
+    assert p["streamers"].area_um2 == pytest.approx(3 * READER_8_1_8[0])
+    assert p["streamers"].energy_nj == pytest.approx(3 * 256 * READER_8_1_8[1] / 1000)
+    x = e.xbar
+    assert (x.inputs, x.banks, x.accesses, x.extrapolated) == (27, 32, 6144, ())
+    assert x.area_um2 == pytest.approx(124078.629252 + 3 / 8 * (164650.280089 - 124078.629252))
+    assert x.e_access_pj == 2.739443  # xbar.csv's 32 inputs on 32 banks
+    m = e.memory
+    assert (m.n, m.depth, m.width, m.reads, m.writes) == (32, 512, 64, 4096, 2048)
+    assert m.area_um2 == pytest.approx(32 * BANK[0])
+    assert m.energy_nj == pytest.approx((4096 * BANK[1] + 2048 * BANK[2]) / 1000)
+    shown = {k: (sig3(v.area_um2), dec3(v.energy_nj)) for k, v in p.items()}
+    assert shown == {"datapath": ("55 300", "23.137"), "control": ("702", "0.128"),
+                     "streamers": ("116 000", "30.457"), "crossbar": ("139 000", "16.831"),
+                     "memory": ("433 000", "27.738")}  # fmt: skip
+    assert (sig3(e.area), sig3(e.area_design), dec3(e.energy)) == ("744 000", "311 000", "98.291")
+    assert e.energy == pytest.approx(sum(v.energy_nj for v in p.values()))
+    assert e.area_design == pytest.approx(e.area - m.area_um2)
+    assert e.kernel_energy == pytest.approx(p["datapath"].energy_nj + p["control"].energy_nj)
+    (acc,) = e.l1.values()  # its words through the crossbar and the banks
+    assert (list(e.l1), acc.words, acc.reads, acc.writes) == (["acc"], 6144, 4096, 2048)
+    assert acc.energy_nj == pytest.approx(x.energy_nj + m.energy_nj)
+
+
+def test_dot_4_by_part():
+    """dot 4 at W = 4, N = 512: two readers of 4 channels (128 beats), a one-lane writer of one
+    word; the crossbar at 4 + 4 + 1 + 3 = 12 inputs, its area cost_tables.md's example 3, its
+    accesses at a full crossbar's price."""
+    e = estimated("dot_4")
+    s = {c.counts.name: c for c in e.streamer_costs}
+    assert [(k, c.counts.channels, c.counts.words, c.counts.beats) for k, c in s.items()] == [
+        ("mac_a", 4, 512, 128), ("mac_b", 4, 512, 128), ("sum_out", 1, 1, 1)]  # fmt: skip
+    assert e.parts["streamers"].area_um2 == pytest.approx(2 * READER_8_1_4[0] + READER_8_1_1[0])
+    assert e.parts["streamers"].energy_nj == pytest.approx(
+        (2 * 128 * READER_8_1_4[1] + READER_8_1_1[1]) / 1000)  # fmt: skip
+    assert (round(e.xbar.area_um2, 1), e.xbar.e_access_pj) == (61450.9, 2.739443)
+    assert (e.memory.reads, e.memory.writes) == (1024, 1)
+
+
+def test_mvt_1_dot2_counts_a_shared_set_once_and_its_words_twice():
+    """mvt 1 with dot 2 (D165): one vmul → link → vsum group run for both halves, so its
+    streamers are priced once and move both halves' words (A twice, 2 × 40 × 40 words over 4
+    channels and 2 loops); the vadd's set is its own accelerator; 24 inputs, a grid value."""
+    e = estimated("mvt_1_dot2")
+    s = {c.counts.name: c for c in e.streamer_costs}
+    assert list(s) == ["vmul_x1_a", "vmul_x1_b", "vsum_x1_out", "vadd_a", "vadd_b", "vadd_out"]
+    a = s["vmul_x1_a"]
+    assert (a.counts.loops, a.counts.channels, a.counts.words, a.counts.beats) == (2, 4, 3200, 800)
+    assert (a.area_um2, a.e_beat_pj) == READER_8_2_4
+    assert (e.xbar.inputs, e.xbar.area_um2, e.xbar.e_access_pj) == (24, 124078.629252, 2.739443)
+    assert sum(x.energy_nj for x in e.l1.values()) == pytest.approx(
+        e.xbar.energy_nj + e.memory.energy_nj)  # fmt: skip
+
+
+def test_words_are_counted_packed_and_a_link_keeps_its_container_out():
+    """A packed dtype counts words, not elements (vecadd_i32: 3 × 32 words for 64 int32;
+    vsum_tree_i8: 8 + 1 for 64 int8); a link's container is not in L1 (dot 2: tmp0's 2 × 2048
+    words gone from dot 1's)."""
     assert estimated("vecadd_i32").l1_words == {"acc": 96}
     assert estimated("vsum_tree_i8").l1_words == {"acc": 9}
     one, enc, two = (estimated(r, W=8, N=2048).l1_words for r in ("dot_1", "dot_1_enc", "dot_2"))
-    # per accelerator: dot 1's two, dot_1_enc's one (the same words), dot 2's link keeps tmp0 out
     assert (one, enc, two) == ({"vmul": 6144, "vsum": 2049}, {"dot": 8193}, {"dot": 4097})
+
+
+def test_not_costed_without_a_platform_or_the_tables():
+    """No platform: no streamer, crossbar or bank counts; the datapath and control parts stay,
+    the others are None and named. (nangate15's case, no HWCOST tables, dropped: the
+    technology is no longer offered, D167.)"""
+    bare = estimate(steps("vecmul", W=8, N=2048)[-1], None, "nangate45")
+    assert bare.not_costed == ["streamers, crossbar and memory: no platform"]
+    assert bare.parts["memory"] == bare.parts["crossbar"] == bare.parts["streamers"]
+    assert bare.parts["memory"].area_um2 is None and bare.l1 == {}
+    assert bare.energy == pytest.approx(bare.kernel_energy)
+    with pytest.raises(CharError, match="no longer offered"):
+        estimate(steps("vecmul", W=8, N=2048)[-1], Platform.load(SNAX_FORGE), "nangate15")
+
+
+def test_a_point_outside_the_grid_is_extrapolated_and_named():
+    """vecmul at W = 32: 32 channels per port, past the streamer table's 16, and 96 + 3
+    crossbar inputs, past its 64 (the check refuses the design; the estimate still prices it)."""
+    e = estimated("vecmul", W=32, N=2048)
+    assert e.extrapolated == ["acc_a", "acc_b", "acc_out", "crossbar"]
+    assert all(s.extrapolated == ("channels",) for s in e.streamer_costs)
+    assert (e.xbar.inputs, e.xbar.extrapolated) == (99, ("inputs",))
+    assert e.to_dict()["cost"]["extrapolated"] == e.extrapolated
+
+
+def test_an_access_costs_the_same_whatever_the_inputs():
+    """One price per access for a bank count (D167): the crossbar's energy follows its accesses
+    alone, so dot 5 linked (20 inputs) costs less than unlinked (36 inputs), by its 16 fewer
+    accesses, where pricing at each design's own inputs had it the other way."""
+    s = steps("dot_5", W=8, N=2048)
+    two, one = (estimate(s[k], Platform.load(SNAX_FORGE)) for k in (5, 6))
+    assert (two.xbar.inputs, one.xbar.inputs) == (36, 20)
+    assert two.xbar.e_access_pj == one.xbar.e_access_pj == 2.739443
+    assert (two.xbar.accesses, one.xbar.accesses) == (4113, 4097)
+    assert (dec3(two.energy), dec3(one.energy)) == ("72.648", "72.371")
+
+
+def test_the_cost_round_trips():
+    for e in (estimated("vecmul", W=8, N=2048), estimated("mvt_1_dot2")):
+        d = e.to_dict()
+        back = Estimate.from_dict(json.loads(json.dumps(d)))
+        assert back.to_dict() == d and back.parts == e.parts
 
 
 def test_the_estimate_lists_what_is_not_characterized():
@@ -108,9 +209,9 @@ def test_no_technology_skips_the_cost_and_both_round_trip():
     plain = estimate(g, None, None)
     assert plain.to_dict()["cost"] is None and plain.groups[0].cost is None
     assert plain.area is None and plain.energy is None and plain.l1 == {}
-    costed = estimate(g, None, "nangate15")
-    assert costed.to_dict()["cost"]["tech"] == "nangate15"
-    assert costed.char_source == load("nangate15").source
+    costed = estimate(g, None, "nangate45")
+    assert costed.to_dict()["cost"]["tech"] == "nangate45"
+    assert costed.char_source == load("nangate45").source
     for e in (plain, costed):
         d = e.to_dict()
         assert Estimate.from_dict(json.loads(json.dumps(d))).to_dict() == d
@@ -144,17 +245,18 @@ def test_an_energy_is_shown_to_3_decimals():
 def test_dot_4_and_dot_5_read_apart():
     four, five = (estimated(r, W=8, N=2048).kernel_energy for r in ("dot_4", "dot_5"))
     assert (dec3(four), dec3(five)) == ("26.285", "26.339") and sig3(four) == sig3(five)
-    assert heading("nangate15") == "Cost estimate (first-order) on nangate15"
-    assert "about 20 %" in CAVEAT and "csr" in CAVEAT and "4 × e_load per bit" in CAVEAT
+    assert heading("nangate45") == "Cost estimate (first-order) on nangate45"
+    assert "about 30 %" in CAVEAT and "csr" in CAVEAT and "4 × e_load" not in CAVEAT
 
 
 @pytest.mark.slow
 def test_the_kernel_energy_is_the_experiments_formula(capsys):
     """A consistency check, not one of accuracy: vecmul, vsum_tree, dot 4 and dot 5 at W = 8
-    and 32, N = 2048, on both technologies, the estimate's kernel energy (units, links and
-    ctrl) against snax-forge-experiments' model, the same formula on the same inputs (its C_acc
-    SYN2's window, its ctrl bits DC's); within 0.5 %, the table's rounding."""
-    rows = json.loads(MODEL.read_text())["rows"]
+    and 32, N = 2048, on nangate45 (its nangate15 rows skipped: the technology is no longer
+    offered, D167), the estimate's kernel energy (units, links and ctrl) against
+    snax-forge-experiments' model, the same formula on the same inputs (its C_acc SYN2's
+    window, its ctrl bits DC's); within 0.5 %, the table's rounding."""
+    rows = [r for r in json.loads(MODEL.read_text())["rows"] if r["tech"] in TECHS]
     lines = ["| tech | recipe | W | C_acc | ctrl bits | estimate nJ | model nJ | ratio |",
              "|---|---|---|---|---|---|---|---|"]  # fmt: skip
     bad = []
@@ -172,7 +274,7 @@ def test_the_kernel_energy_is_the_experiments_formula(capsys):
             "\nkernel energy, the estimate against the experiments' formula (consistency):\n"
             + "\n".join(lines)
         )
-    assert len(rows) == 16 and not bad, bad
+    assert len(rows) == 8 and not bad, bad
 
 
 def _platform():

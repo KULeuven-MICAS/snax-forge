@@ -157,11 +157,13 @@ comb and flops, its energy per fire, holding per cycle and per task, or "not cha
 group's its area, energy and control unit; the Estimate panel's ``summary`` per group
 ``area_text`` and ``energy_text``, ``streamers`` (the accelerators, one streamer set each, D157:
 their count, the entry's CSRs, a ``text`` line and per accelerator its groups, CSRs and
-streamer's movers and channels, none of them costed, open item 110), and ``cost`` (the heading,
-``caveat`` naming the streamers not costed, the accelerator's
-area and energy, the blocks not characterized, and ``tables``, the cost as a table per
-accelerator, ``cost_tables``, with its L1 accesses' row, a placeholder (D154); None when nothing
-is bound or there is no technology); a block with no flops holds "–".
+streamer's movers and channels), and ``cost`` (the heading, the ``caveat``, the design's area
+and energy, its area without the banks, the blocks not characterized, the parts not costed and
+the points extrapolated; ``parts``, the cost by part, D167: per part its ``name``, area and
+energy with their texts and each one's ``share`` of the total, the two bars the page draws to
+scale; and ``tables``, the cost as a table per accelerator, ``cost_tables``, with a row per
+port's streamer and its words' row through the crossbar and the banks; None when nothing is
+bound or there is no technology); a block with no flops holds "–".
 
 **A step** (``step_view``) is a graph's view with its ``label``, its ``marks`` (the nodes and
 containers some transform's site accepts), its ``estimate`` (``to_dict``) with its ``summary``
@@ -250,7 +252,7 @@ from snax_forge.design.streamers import (
 from snax_forge.dfg import DfgError, Graph, Memlet, Node
 from snax_forge.dfg.graph import BAKED, SCALAR, TRANSPOSE
 from snax_forge.dfg.subset import dim_names, map_range, parse_dim
-from snax_forge.estimate.cost import L1_LABEL, L1Cost, caveat, dec3, heading, sig3
+from snax_forge.estimate.cost import L1_LABEL, PARTS, L1Cost, caveat, dec3, heading, shares, sig3
 from snax_forge.expr import ExprError
 from snax_forge.sandbox.blocks import BLOCK
 
@@ -869,9 +871,34 @@ def compare_view(a: Entry, b: Entry, platform: Any = None, tech: str = DEFAULT_T
                     for key in dict.fromkeys([*da, *db])},
         "estimate": estimate_rows(sa, sb),
         "cost_tables": compare_cost_tables(sa, sb),
+        "cost_bars": compare_cost_bars(list(labels or (a.name, b.name)), sa, sb),
         "caveat": ((sb or {}).get("cost") or (sa or {}).get("cost") or {}).get("caveat"),
     }  # fmt: skip
     return {"diff": diff, "changed": changed, "columns": columns}
+
+
+def compare_cost_bars(labels: list[str], sa: dict[str, Any] | None,
+                      sb: dict[str, Any] | None) -> dict[str, list[dict[str, Any]]] | None:  # fmt: skip
+    """Compare's cost bars (D167): for ``area`` and for ``energy``, one bar per side (the left
+    step first), both on one scale, the larger total the whole width, so the shorter bar is the
+    cheaper design; each its ``label``, ``total`` and ``total_text`` and its ``segments``, per
+    part costed its ``name``, ``label``, ``width`` (0..1 of the scale) and ``text``. None when
+    neither side has a cost."""
+    sides = [
+        (lbl, ((s or {}).get("cost") or {}).get("parts") or []) for lbl, s in zip(labels, (sa, sb))
+    ]
+    if not any(p for _, p in sides):
+        return None
+    out: dict[str, list[dict[str, Any]]] = {}
+    for key, unit in (("area", _um2), ("energy", _nj)):
+        totals = [sum(p[key] or 0.0 for p in parts) for _, parts in sides]
+        scale = max(totals) or 1.0
+        out[key] = [{"label": lbl, "total": t, "total_text": unit(t) if parts else "–",
+                     "segments": [{"name": p["name"], "label": p["label"],
+                                   "width": p[key] / scale, "text": p[f"{key}_text"]}
+                                  for p in parts if p[key]]}
+                    for (lbl, parts), t in zip(sides, totals)]  # fmt: skip
+    return out
 
 
 def value_text(v: Any) -> str:
@@ -969,8 +996,15 @@ def estimate_rows(sa: dict[str, Any] | None, sb: dict[str, Any] | None) -> list[
         def missing(s: dict[str, Any]) -> str:
             return ", ".join(s["cost"]["missing"]) or "none"
 
+        def part(s: dict[str, Any], name: str) -> str:
+            p = next(x for x in s["cost"]["parts"] if x["name"] == name)
+            return f"{p['area_text']} · {p['energy_text']}"
+
         rows += [_row("area", *both(lambda s: s["cost"]["area_text"]), under),
+                 _row("area without the banks", *both(lambda s: s["cost"]["area_design_text"]),
+                      under),
                  _row("energy per run", *both(lambda s: s["cost"]["energy_text"]), under),
+                 *[_row(PART_LABELS[k], *both(lambda s, k=k: part(s, k)), under) for k in PARTS],
                  _row("L1 accesses", *both(lambda s: s["cost"]["l1_text"]), under),
                  _row("not characterized", *both(missing), under)]  # fmt: skip
     return rows
@@ -1045,7 +1079,7 @@ def estimate_summary(est: Any, graph: Graph | None = None) -> dict[str, Any]:
 def streamers_summary(est: Any) -> dict[str, Any]:
     """The Estimate panel's ``streamers`` (module doc): one streamer set per accelerator, D157."""
     n = est.streamers
-    text = f"{n} streamer{'' if n == 1 else 's'} (not costed, open item 110)"
+    text = f"{n} streamer set{'' if n == 1 else 's'}"
     if est.csrs is not None:
         text += f" · {est.csrs} CSRs"
     rows = [{"name": a.name, "groups": list(a.groups),
@@ -1060,10 +1094,34 @@ def cost_summary(est: Any, g: Graph | None = None) -> dict[str, Any] | None:
     if est.tech is None or not est.groups:
         return None
     l1 = "; ".join(f"{a}: {x.words} words, {_nj(x.energy_nj)}" for a, x in est.l1.items())
-    return {"tech": est.tech, "heading": heading(est.tech), "caveat": caveat(est.streamers),
+    return {"tech": est.tech, "heading": heading(est.tech), "caveat": caveat(),
             "area_text": _um2(est.area), "energy_text": _nj(est.energy),
+            "area_design_text": _um2(est.area_design),
             "l1_text": l1 or None, "missing": list(est.missing),
-            "tables": cost_tables(est, g)}  # fmt: skip
+            "not_costed": list(est.not_costed), "extrapolated": list(est.extrapolated),
+            "parts": cost_parts(est), "tables": cost_tables(est, g)}  # fmt: skip
+
+
+PART_LABELS = {"datapath": "datapath", "control": "control", "streamers": "streamers",
+               "crossbar": "crossbar", "memory": "memory (banks)"}  # fmt: skip
+
+
+def cost_parts(est: Any) -> list[dict[str, Any]]:
+    """The cost by part (D167), in ``PARTS``' order: each its ``name``, ``label``, ``area`` and
+    ``energy`` (None where not costed), their texts and their ``share`` of the totals (0..1)
+    with its text; what the page's two bars draw to scale."""
+    parts = est.parts or {}
+    share = shares(parts)
+    out = []
+    for k, p in parts.items():
+        sa, se = share[k]
+        out.append({"name": k, "label": PART_LABELS[k], "area": p.area_um2, "energy": p.energy_nj,
+                    "area_text": "not costed" if p.area_um2 is None else _um2(p.area_um2),
+                    "energy_text": "not costed" if p.energy_nj is None else _nj(p.energy_nj),
+                    "area_share": sa, "energy_share": se,
+                    "area_share_text": "–" if sa is None else f"{100 * sa:.1f}%",
+                    "energy_share_text": "–" if se is None else f"{100 * se:.1f}%"})  # fmt: skip
+    return out
 
 
 def cost_tables(est: Any, g: Graph | None = None) -> list[dict[str, Any]]:
@@ -1072,15 +1130,26 @@ def cost_tables(est: Any, g: Graph | None = None) -> list[dict[str, Any]]:
     unit, each its ``block`` (the instance, the link's container, ``<group> ctrl``), ``kind``,
     ``datapath`` (``· not characterized`` where the table has no point), area (µm², 3
     significant figures) and energy (nJ, 3 decimals) with their texts, and ``share`` of the
-    accelerator's energy; then one row of its L1 accesses (``L1_LABEL``, kind ``l1``, its
-    ``words`` and ``bits`` in ``datapath``, no area; a placeholder, D154); then the ``total``."""
+    accelerator's energy; then a row per port's streamer (kind ``streamer``, its FIFO depth, loops
+    and channels in ``datapath``, marked when extrapolated), then one row of its words through
+    the crossbar and the banks (``L1_LABEL``, kind ``l1``, its reads and writes in
+    ``datapath``, no area: the crossbar's and banks' areas are the design's, in ``parts``);
+    then the ``total``."""
     by_name = {x.name: x for x in est.groups if x.cost is not None}
     accs = [(a["name"], [grp["name"] for grp in a["groups"]]) for a in accelerators(g)] if g else []
     l1 = est.l1
+    streamers: dict[str, list[Any]] = {}
+    for x in est.streamer_costs:
+        streamers.setdefault(x.counts.accelerator, []).append(x)
     if not accs:
         accs = [("accelerator", list(by_name))]
+        streamers = {"accelerator": [x for v in streamers.values() for x in v]}
         l1 = {"accelerator": L1Cost(sum(x.words for x in l1.values()),
-                                    sum(x.energy_nj for x in l1.values()))} if l1 else {}  # fmt: skip
+                                    sum(x.energy_nj for x in l1.values()),
+                                    sum(x.reads for x in l1.values()),
+                                    sum(x.writes for x in l1.values()),
+                                    sum(x.xbar_nj for x in l1.values()),
+                                    sum(x.banks_nj for x in l1.values()))} if l1 else {}  # fmt: skip
     out = []
     for name, groups in accs:
         raw = []
@@ -1097,10 +1166,16 @@ def cost_tables(est: Any, g: Graph | None = None) -> list[dict[str, Any]]:
             raw.append((f"{gname} ctrl", "ctrl", "control unit", True, c.ctrl_um2, c.ctrl_nj))
         if not raw:
             continue
-        if name in l1:  # its streamers' words in L1, a placeholder (D154)
+        for x in streamers.get(name, []):  # each port's streamer (D167)
+            c = x.counts
+            loops = f"{c.loops} loop{'' if c.loops == 1 else 's'}"
+            dp = f"streamer · FIFO {c.depth}, {loops}, {c.channels} ch"
+            raw.append((c.name, "streamer", dp + (" · extrapolated" if x.extrapolated else ""),
+                        True, x.area_um2, x.energy_nj))  # fmt: skip
+        if name in l1:  # its words through the crossbar and the banks (D167)
             x = l1[name]
-            raw.append((L1_LABEL, "l1", f"{x.words} words, {_thousands(x.bits)} bits", True, None,
-                        x.energy_nj))  # fmt: skip
+            rw = f"{_thousands(x.reads)} reads, {_thousands(x.writes)} writes"
+            raw.append((L1_LABEL, "l1", rw, True, None, x.energy_nj))
         area, energy = sum(r[4] or 0.0 for r in raw), sum(r[5] for r in raw)
         out.append({"accelerator": name, "rows": [_cost_row(*r, energy) for r in raw],
                     "total": _cost_row("total", "total", "", True, area, energy, energy)})  # fmt: skip
