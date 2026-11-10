@@ -14,14 +14,14 @@ import snax.forge.{ForgeTester, RunLines, SnaxGroupCases}
   * that firing on its job's first beat, the unit's firings counted mod its T), each unit's fire and give, each buffer's
   * occupancy after the cycle and busy compared; at the run's end its line from `cls` per busy cycle and the head's
   * firings. Each case runs twice (the rule does not tell the two apart, the control unit's counters do, D153): with
-  * every unit's T fixed (`params.T`), the start carrying JOBS; and with every unit of T != 1 open, its T a JOB_BEATS of
-  * the start, so dot 2's and dot 3's mul counts against or borrows from a sum whose T is a latch. Without
+  * every unit's T fixed (`params.T`), JOBS on its wire; and with every unit of T != 1 open, its T a JOB_BEATS read live
+  * from its wire, so dot 2's and dot 3's mul counts against or borrows from a sum whose T is the csr's (D168). Without
   * `SNAX_GVSOC_GROUP_CASES` the spec cancels.
   */
 class GroupCasesSpec extends AnyFlatSpec with ForgeTester {
 
   /** The case's group: a linked input after the unit's outer ones (to_input = its outer inputs, as `tb.cpp`); with
-    * `open`, every unit of T != 1 takes its T from the start.
+    * `open`, every unit of T != 1 reads its T from its JOB_BEATS wire.
     */
   def desc(c: SnaxGroupCases.Case, open: Boolean = false): GroupDesc = {
     def at(name: String) = c.units.indexWhere(_.name == name)
@@ -43,18 +43,18 @@ class GroupCasesSpec extends AnyFlatSpec with ForgeTester {
       val runs  = new RunLines
       val fired = Array.fill(c.units.size)(0L) // each unit's firings so far: its job's first beat at 0 mod T
       for ((cyc, i) <- c.cycles.zipWithIndex) {
-        val clue  = s"${c.name}${if (open) " (T from the start)" else ""}: cycle $i"
+        val clue  = s"${c.name}${if (open) " (T from JOB_BEATS)" else ""}: cycle $i"
         val offer = i == c.start._1
         dut.io.start.valid.poke(offer.B)
-        dut.io.start.bits.jobs.poke(c.jobs.U)
-        dut.io.start.bits.beats.zip(if (beats.isEmpty) Seq(1) else beats).foreach { case (p, t) => p.poke(t.U) }
+        dut.io.settings.jobs.poke(c.jobs.U) // the csr's wires, the same through the case
+        dut.io.settings.beats.zip(beats).foreach { case (p, t) => p.poke(t.U) }
         if (offer) {
           val got = if (!high(dut.io.start.ready)) "refused" else if (c.jobs == 0) "ignored" else "taken"
           assert(got == c.start._2, s"$clue: start $got")
         }
         cyc.valids.zipWithIndex.foreach { case (v, k) => dut.io.in(k).valid.poke(v.B) }
         dut.io.out.ready.poke(cyc.ready.B)
-        val busy  = high(dut.io.busy)
+        val busy = high(dut.io.busy)
         assert(busy == cyc.busy, s"$clue: busy $busy")
         runs.cycle(busy, int(dut.io.cls), cyc.fire.head)
         if (busy) {
@@ -94,7 +94,7 @@ class GroupCasesSpec extends AnyFlatSpec with ForgeTester {
       it should "find the 30 group cases" in assert(all.size == 30, s"${all.size} cases")
       for (c <- all) {
         it should s"give ${c.name}'s cycles and runs" in run(c, open = false)
-        it should s"give ${c.name}'s cycles and runs with its T from the start" in run(c, open = true)
+        it should s"give ${c.name}'s cycles and runs with its T from JOB_BEATS" in run(c, open = true)
       }
   }
 }

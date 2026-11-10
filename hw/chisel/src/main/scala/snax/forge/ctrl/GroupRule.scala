@@ -5,9 +5,9 @@ import chisel3.util._
 
 /** One unit of a group's description (`accelerator.json`): its name, its timing (L, II, span), its outer inputs (the
   * streamer's ports it reads), its T when fixed at design time (`params.T`; 1 for a unit without a fold), else None: a
-  * JOB_BEATS from the start; `linked`, the positions among its inputs (in port order) that no outer port takes, each
-  * fed by one link (snax_group.cpp's inputs left ""); and `seeded`, its last outer input a fold's seed (D163), one beat
-  * per job.
+  * JOB_BEATS read live from the csr; `linked`, the positions among its inputs (in port order) that no outer port takes,
+  * each fed by one link (snax_group.cpp's inputs left ""); and `seeded`, its last outer input a fold's seed (D163), one
+  * beat per job.
   */
 case class UnitDesc(
   name:    String,
@@ -93,7 +93,7 @@ case class GroupDesc(name: String, units: Seq[UnitDesc], links: Seq[Link]) {
   val output: Int = sinks.head
   require(units(head).inputs >= 1, s"group $name: the head ${units(head).name} has no outer input")
 
-  /** The units whose T comes from the start (JOB_BEATS), in unit order. */
+  /** The units whose T is a JOB_BEATS (the csr's, read live), in unit order. */
   def open: Seq[UnitDesc] = units.filter(_.fixedT.isEmpty)
 
   /** The links that are buffers (depth >= 1), by link index: the ones with enables (a wire has none). */
@@ -104,14 +104,6 @@ case class GroupDesc(name: String, units: Seq[UnitDesc], links: Seq[Link]) {
 class Handshake extends Bundle {
   val valid = Input(Bool())
   val ready = Output(Bool())
-}
-
-/** A start resolved: JOBS and each unit's T (a unit with a fixed T keeps its constant: its entry is not read), each
-  * `width` bits (job_width, D152).
-  */
-class GroupConfig(n: Int, width: Int = 32) extends Bundle {
-  val jobs = UInt(width.W)
-  val ts   = Vec(n, UInt(width.W))
 }
 
 /** A unit's enables to its datapath (`ctrl` -> `<tag>_datapath`, the catalogue's pins), and what it gives: `fire` (a
@@ -138,16 +130,18 @@ class LinkEnables(depth: Int) extends Bundle {
 }
 
 /** The control model of a group (D147; C§17's Control): the same rule as SnaxGroupRule (snax-gvsoc's
-  * `snax/snax_group.hpp`), a register only for what changes at run time (the rules at the top of the class), over
+  * `snax/snax_group.hpp`), a register only for what a firing changes (the rules at the top of the class), over
   * datapaths of data and enables only. Not a module: it builds its registers and logic in the module that makes it
-  * (`GroupCtrl`, `<tag>_<group>_ctrl`), which drives `io.config` (a start that runs: `GroupCtrl` holds a start while
-  * busy and ends the empty run itself), the outer valids and `io.out.ready`, and reads the rest. Its per-unit signals
-  * are named after the unit (`<unit>_fire`, `<unit>_job_beats_counter`, ...).
+  * (`GroupCtrl`, `<tag>_<group>_ctrl`), which drives `io.config` (a start that runs: `GroupCtrl` refuses a start while
+  * busy and ends the empty run itself), `io.settings` (the csr's JOBS and JOB_BEATS, wires held constant through the
+  * run, D168), the outer valids and `io.out.ready`, and reads the rest. Its per-unit signals are named after the unit
+  * (`<unit>_fire`, `<unit>_job_beats_counter`, ...).
   *
   * A start of JOBS and each unit's T: the sink gives R = JOBS results, and a unit k before its successor s gives R_k =
-  * R_s · T_s (each firing of s takes one of k's results), one on every T_k-th firing (its job_beats_counter d_k = T_k −
-  * 1), so it fires n_k = R_k · T_k times. JOBS 0 or any T 0 is the empty run, which `GroupCtrl` ends without starting
-  * this. Busy from the cycle after the start to the run's last cycle E, the sink's R-th push, where `done` is high.
+  * R_s · T_s (each firing of s takes one of k's results), one on every T_k-th firing (its job_beats_counter at d_k + 1
+  * \= T_k), so it fires n_k = R_k · T_k times. JOBS 0 or any T 0 is the empty run, which `GroupCtrl` ends without
+  * starting this. Busy from the cycle after the start to the run's last cycle E, the sink's R-th push, where `done` is
+  * high.
   *
   * Each cycle is decided in two passes over the units in topological order, as `SnaxGroupRule::step()`: forward, what
   * each unit offers on its output whatever its room (its head, or at L 0 a firing that gives), so each knows whether
@@ -161,50 +155,60 @@ class LinkEnables(depth: Int) extends Bundle {
   * as the run line counts it: busy 0, stall_in 1, stall_out 2, flush 3.
   */
 class GroupRule(val desc: GroupDesc, jobWidth: Int = 32) {
-  // The C++ stays the spec (it counts firings up to n_k); here a register exists only where the description says the
-  // value changes at run time, and a unit counts its results in nested counters, never against a product (D153):
-  //   - T: a latch (`<unit>_job_beats`) only when a JOB_BEATS sets it; a fixed T (`params.T`, `UnitDesc.fixedT`) is a
-  //     constant. JOBS: a latch (`<sink>_jobs`).
-  //   - A unit with T != 1 keeps its beat counter d (`<unit>_job_beats_counter`, its firings mod T: `first` is d = 0,
-  //     and a firing at d = T − 1 gives a result).
+  // The C++ stays the spec (it counts firings up to n_k); here a register exists only for what a firing changes, and
+  // a unit counts its results in nested counters, never against a product (D153). No copy of a setting (D168): JOBS
+  // and each open T are the csr's CSRs, read live as `io.settings`, which `<tag>_csr` holds constant through the run
+  // (it holds a write to them while the group is busy); a fixed T (`params.T`, `UnitDesc.fixedT`) is a constant.
+  //   - A unit with T != 1 keeps its beat counter d (`<unit>_job_beats_counter`, its firings mod T): `first` is d = 0,
+  //     and a firing is its job's last, giving a result, at d + 1 = T for a T from the csr (the + 1 shared with the
+  //     counter's increment) or d = T − 1 for a fixed T (a constant test).
   //   - The results it has given, g_k, are tested only for g_k != R_k (it wants to fire while it has results left):
   //     - A unit at L 0 whose out-link is a wire keeps no count and borrows its consumer s's test: its giving firing
   //       is s's firing, so g_k = T_s · g_s + d_s, and g_k != R_k exactly when g_s != R_s. A wire chain at L 0 so
   //       ends at the segment's last unit.
   //     - Any other unit (the sink, one feeding a buffer, one at L >= 1) counts its giving firings in mixed radix: a
-  //       digit per unit after it with T != 1 (`<unit>_<downstream>_job_beats_counter`, nearest first, each up to that
-  //       unit's T), then a jobs digit (`<unit>_jobs_counter`, up to JOBS). R_k = JOBS · ∏ T over those units, so g_k
-  //       = R_k exactly when its jobs digit is JOBS.
-  //   - No count of the sink's pushes: with L its latency, g its jobs digit and v its pipeline's valid bits,
-  //       done = give ∧ (g + [L = 0 ∧ gives] = JOBS) ∧ ¬(v(i) for some i < L − 1)
-  //     At L = 0 the give is the giving firing, in the cycle g counts it; at L ≥ 1 g already counts the result given,
-  //     and the pipeline below the head must be empty.
+  //       digit per unit after it with T != 1 (`<unit>_<downstream>_job_beats_counter`, nearest first, each wrapping
+  //       at that unit's T as d does), then a jobs digit g (`<unit>_jobs_counter`), left = (g != JOBS). R_k = JOBS ·
+  //       ∏ T over those units, so g_k = R_k exactly when its jobs digit is JOBS.
+  //   - No count of the sink's pushes: with L its latency, g its jobs digit and v its pipeline's valid bits, done is
+  //     its push with
+  //       g + 1 = JOBS (L = 0: the push is the giving firing, in the cycle g counts it; the + 1 shared with g's)
+  //       g = JOBS ∧ ¬(v(i) for some i < L − 1) (L ≥ 1: g already counts the result given, the pipeline below the head
+  //       is empty; the test is ¬left)
   //   - The II gap: a register only at II > 1 (at II 1 it never leaves 0).
-  // Kept: those counters, the pipeline, the lane, the buffers' occupancy and slots, and the start's copies of JOBS and
-  // each JOB_BEATS: `<tag>_csr` accepts writes to those CSRs while the group runs (only START is held), so the CSRs
-  // themselves may change under a run. The copies and every counter are job_width bits (D152), a digit of a fixed T
-  // ⌈log₂ T⌉.
+  // Kept: those counters, the pipeline, the lane, the buffers' occupancy and slots. Every counter is job_width bits
+  // (D152), a digit of a fixed T ⌈log₂ T⌉; LOWER refuses JOBS or a JOB_BEATS above 2^job_width − 1, so d and g stay at
+  // most 2^job_width − 2 and d + 1, g + 1 fit.
   private val n     = desc.units.size
   private val descs = desc.units
   private val links = desc.links
   private val owner = desc.output
 
   val io = Wire(new Bundle {
-    val config = Flipped(Valid(new GroupConfig(n, jobWidth)))
-    val in     = MixedVec(descs.map(u => Vec(u.inputs, new Handshake)))
-    val out    = Flipped(new Handshake)
-    val units  = MixedVec(descs.map(u => new UnitEnables(u.span)))
-    val links  = MixedVec(desc.buffers.map(i => new LinkEnables(desc.links(i).depth)))
-    val busy   = Output(Bool())
-    val done   = Output(Bool())
-    val cls    = Output(UInt(2.W))
+    val config   = Input(Bool())
+    val settings = Input(new GroupSettings(desc.open.size, jobWidth))
+    val in       = MixedVec(descs.map(u => Vec(u.inputs, new Handshake)))
+    val out      = Flipped(new Handshake)
+    val units    = MixedVec(descs.map(u => new UnitEnables(u.span)))
+    val links    = MixedVec(desc.buffers.map(i => new LinkEnables(desc.links(i).depth)))
+    val busy     = Output(Bool())
+    val done     = Output(Bool())
+    val cls      = Output(UInt(2.W))
   })
 
-  // The group's state: busy, JOBS and each unit's T (SnaxGroupRule's jobs and job_beats, set by start())
+  // The group's state: busy. JOBS and each open unit's T are the csr's, live (SnaxGroupRule's jobs and job_beats)
   private val busy = RegInit(false.B)
-  private val jobs = RegInit(0.U(jobWidth.W)).suggestName(s"${descs(owner).name}_jobs")
-  private val ts: Seq[UInt] =
-    descs.map(u => u.fixedT.map(_.U).getOrElse(RegInit(1.U(jobWidth.W)).suggestName(s"${u.name}_job_beats")))
+  private val jobs = io.settings.jobs
+  private val open = descs.indices.filter(descs(_).fixedT.isEmpty)
+
+  /** Unit k's T from the csr, its JOB_BEATS read live; None for a fixed T. */
+  private def live(k: Int): Option[UInt] = Some(open.indexOf(k)).filter(_ >= 0).map(io.settings.beats(_))
+
+  /** Whether `c`, a count of unit k's T with `inc` = c + 1, is at its last value: inc = T for a T from the csr, c = T −
+    * 1 for a fixed T.
+    */
+  private def last(k: Int, c: UInt, inc: UInt): Bool =
+    live(k).map(inc === _).getOrElse(c === (descs(k).fixedT.get - 1).U)
   private def succ(k: Int): Option[Int] = desc.outs(k).headOption.map(links(_).to)
 
   /** The units after k, nearest first. */
@@ -213,7 +217,7 @@ class GroupRule(val desc: GroupDesc, jobWidth: Int = 32) {
   /** Whether k borrows its consumer's test: at L 0 with a wire out. */
   private def borrows(k: Int): Boolean = descs(k).latency == 0 && desc.outs(k).exists(links(_).depth == 0)
 
-  /** A counter of a T: ⌈log₂ T⌉ bits for a fixed T, job_width for one from the start. */
+  /** A counter of a T: ⌈log₂ T⌉ bits for a fixed T, job_width for one from a JOB_BEATS. */
   private def counter(t: Option[Int], name: String): UInt =
     RegInit(0.U(t.map(log2Ceil(_)).getOrElse(jobWidth).W)).suggestName(name)
 
@@ -232,7 +236,9 @@ class GroupRule(val desc: GroupDesc, jobWidth: Int = 32) {
         after(k).filter(descs(_).fixedT != Some(1)).map { j =>
           j -> counter(descs(j).fixedT, s"${u.name}_${descs(j).name}_job_beats_counter")
         }
+    val dInc   = d + 1.U
     val g      = if (borrows(k)) None else Some(RegInit(0.U(jobWidth.W)).suggestName(s"${u.name}_jobs_counter"))
+    val gInc   = g.map(_ + 1.U)
     val gap    = if (u.ii == 1) 0.U(1.W) else RegInit(0.U(log2Ceil(u.ii + 1).W)).suggestName(s"${u.name}_gap")
     val v      = RegInit(VecInit(Seq.fill(u.latency max 1)(false.B))).suggestName(s"${u.name}_v")
     val lane   = RegInit(0.U(log2Ceil(u.span).W)).suggestName(s"${u.name}_lane")
@@ -268,7 +274,7 @@ class GroupRule(val desc: GroupDesc, jobWidth: Int = 32) {
     }
     wants(k) := busy && left(k) && s.gap === 0.U
     wouldFire(k) := wants(k)     && avail(k) && (if (u.span == 1) true.B else s.lane === (u.span - 1).U)
-    gives(k)     := wouldFire(k) && s.d === ts(k) - 1.U
+    gives(k)     := wouldFire(k) && last(k, s.d, s.dInc)
     head(k)      := (if (u.latency > 0) s.v(u.latency - 1) else false.B)
     offer(k)     := (if (u.latency > 0) head(k) else gives(k))
     Seq(avail(k) -> "avail", wants(k) -> "wants", gives(k) -> "gives", offer(k) -> "offer").foreach { case (b, w) =>
@@ -330,7 +336,7 @@ class GroupRule(val desc: GroupDesc, jobWidth: Int = 32) {
   // and every buffer is empty, SnaxGroupRule's finished()
   private val sinkL = descs(owner).latency
   private val done  = busy && give(owner) &&
-    st(owner).g.get + (if (sinkL == 0) gives(owner).asUInt else 0.U) === jobs &&
+    (if (sinkL == 0) st(owner).gInc.get === jobs else !left(owner)) &&
     !(if (sinkL > 1) st(owner).v.take(sinkL - 1).reduce(_ || _) else false.B)
 
   io.done := done
@@ -363,11 +369,8 @@ class GroupRule(val desc: GroupDesc, jobWidth: Int = 32) {
     occupancy(i) := occupancy(i) + give(from) - fire(to)
   }
 
-  when(io.config.valid) {
-    val c = io.config.bits
+  when(io.config) {
     busy := true.B
-    jobs := c.jobs
-    for (k <- 0 until n if descs(k).fixedT.isEmpty) ts(k) := c.ts(k)
     for (s <- st) {
       if (s.u.fixedT != Some(1)) s.d := 0.U
       s.digits.foreach(_._2 := 0.U)
@@ -377,16 +380,20 @@ class GroupRule(val desc: GroupDesc, jobWidth: Int = 32) {
   }.otherwise {
     for (k <- 0 until n) when(fire(k)) {
       val s = st(k)
-      if (descs(k).fixedT != Some(1)) s.d := Mux(gives(k), 0.U, s.d + 1.U)
+      if (descs(k).fixedT != Some(1)) s.d := Mux(gives(k), 0.U, s.dInc)
       // A giving firing counts in mixed radix: each digit wraps at its unit's T and carries into the next, the last
       // into the jobs digit
       when(gives(k)) {
         val carry = s.digits.foldLeft(true.B) { case (in, (j, digit)) =>
-          val wrap = digit === ts(j) - 1.U
-          when(in) { digit := Mux(wrap, 0.U, digit + 1.U) }
+          val inc  = digit + 1.U
+          val wrap = last(j, digit, inc)
+          when(in) { digit := Mux(wrap, 0.U, inc) }
           in && wrap
         }
-        s.g.foreach(g => when(carry) { g := g + 1.U })
+        for {
+          g <- s.g
+          inc <- s.gInc
+        } when(carry) { g := inc }
       }
     }
     when(done) { busy := false.B }

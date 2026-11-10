@@ -32,25 +32,27 @@ class UnitHarness(val c: Case) extends Module {
   private val outLanes = if (c.inputs == 1 && c.k.isEmpty && !c.laneFold) 1 else c.lanes
 
   val io = IO(new Bundle {
-    val start = Flipped(Decoupled(new GroupStart(1)))
-    val in    = Vec(c.inputs, new Handshake)
-    val out   = Flipped(new Handshake)
-    val data  = Input(Vec(c.inputs, Vec(c.lanes, UInt(64.W))))
-    val res   = Output(Vec(outLanes, UInt(64.W)))
-    val fire  = Output(Bool())
-    val busy  = Output(Bool())
-    val cls   = Output(UInt(2.W))
-    val k1    = Input(UInt(64.W)) // axpby's slots on their pins (a CSR's value)
-    val k2    = Input(UInt(64.W))
+    val start    = Flipped(Decoupled(UInt(0.W)))
+    val settings = Input(new GroupSettings(1))
+    val in       = Vec(c.inputs, new Handshake)
+    val out      = Flipped(new Handshake)
+    val data     = Input(Vec(c.inputs, Vec(c.lanes, UInt(64.W))))
+    val res      = Output(Vec(outLanes, UInt(64.W)))
+    val fire     = Output(Bool())
+    val busy     = Output(Bool())
+    val cls      = Output(UInt(2.W))
+    val k1       = Input(UInt(64.W)) // axpby's slots on their pins (a CSR's value)
+    val k2       = Input(UInt(64.W))
   })
 
   ctrl.io.start <> io.start
+  ctrl.io.settings := io.settings
   ctrl.io.in <> io.in
   ctrl.io.out <> io.out
-  io.fire := ctrl.io.units(0).fire
-  io.busy := ctrl.io.busy
-  io.cls  := ctrl.io.cls
-  io.res  := DontCare
+  io.fire          := ctrl.io.units(0).fire
+  io.busy          := ctrl.io.busy
+  io.cls           := ctrl.io.cls
+  io.res           := DontCare
 
   private def lane(x: UInt, ty: IntType): Bits = x(ty.width - 1, 0).asTypeOf(ty.lane)
 
@@ -107,7 +109,8 @@ class UnitHarness(val c: Case) extends Module {
   * `SNAX_GVSOC_UNIT_CASES`) driven through `UnitHarness`, a group controller with its datapath.
   *
   * Cycle by cycle: each input's valid and the output's ready as the case line gives them, a start offered in the cycle
-  * the case offers it, and fire, push (`out.valid && out.ready`) and busy compared every cycle. Each start's answer:
+  * the case offers it (its JOBS and JOB_BEATS on the wires only when the controller is idle: the csr holds a busy
+  * group's writes), and fire, push (`out.valid && out.ready`) and busy compared every cycle. Each start's answer:
   * `refused` is the controller not ready (busy), `ignored` a start it takes as the empty run (JOBS or JOB_BEATS 0),
   * which the group ends without its shell (busy stays 0), `taken` the rest. With `types`, the N-th firing's input is
   * the case's `beat N` and the N-th push must be its `result N` (each lane at its type's width). The `expect run` lines
@@ -129,8 +132,10 @@ class UnitCasesSpec extends AnyFlatSpec with ForgeTester {
         c.starts.get(i) match {
           case Some(s) =>
             dut.io.start.valid.poke(true.B)
-            dut.io.start.bits.jobs.poke(s.jobs.U)
-            dut.io.start.bits.beats(0).poke(s.jobBeats.U)
+            if (!busy) { // the csr's wires: a start's JOBS and JOB_BEATS written while idle, held through a run (D168)
+              dut.io.settings.jobs.poke(s.jobs.U)
+              dut.io.settings.beats(0).poke(s.jobBeats.U)
+            }
             val got =
               if (!high(dut.io.start.ready)) "refused" else if (s.jobs == 0 || s.jobBeats == 0) "ignored" else "taken"
             assert(got == s.answer, s"$clue: start ${s.jobs} x ${s.jobBeats} $got, the case ${s.answer}")

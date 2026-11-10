@@ -6,13 +6,13 @@ import org.scalatest.flatspec.AnyFlatSpec
 
 import snax.forge.{ForgeTester, Seeds}
 
-/** `GroupCtrl`'s nested counters (GroupRule's rules, D153: a T latch only from a JOB_BEATS, a unit at L 0 on a wire
-  * borrowing its consumer's test, any other counting its results in mixed radix over the Ts after it, no product and no
-  * count of the sink's pushes) against `GroupModel`, which counts every firing as SnaxGroupRule does, on random groups:
-  * chains of 1 to 3 units, half in a shuffled unit order, each of L 0-2 and T fixed (`params.T`) or from the start,
-  * each T from {1, 2, 3, 4, 8} (1, powers of two and not); links of depth 0-2; back-to-back runs of random JOBS (every
-  * run's head firings at most 96) at job_width 4 or 32 (D152), random input gaps and output stalls. Every cycle: busy,
-  * the done pin (high in E + 1, E the model's last cycle), each unit's fire and give, and the class.
+/** `GroupCtrl`'s nested counters (GroupRule's rules, D153, D168: a T from a JOB_BEATS read live, a unit at L 0 on a
+  * wire borrowing its consumer's test, any other counting its results in mixed radix over the Ts after it, no product
+  * and no count of the sink's pushes) against `GroupModel`, which counts every firing as SnaxGroupRule does, on random
+  * groups: chains of 1 to 3 units, half in a shuffled unit order, each of L 0-2 and T fixed (`params.T`) or from the
+  * start, each T from {1, 2, 3, 4, 8} (1, powers of two and not); links of depth 0-2; back-to-back runs of random JOBS
+  * (every run's head firings at most 96) at job_width 4 or 32 (D152), random input gaps and output stalls. Every cycle:
+  * busy, the done pin (high in E + 1, E the model's last cycle), each unit's fire and give, and the class.
   */
 class GroupFoldSpec extends AnyFlatSpec with ForgeTester {
 
@@ -51,30 +51,32 @@ class GroupFoldSpec extends AnyFlatSpec with ForgeTester {
         val jw    = r.pick(Seq(4, 32)) // job_width: JOBS <= 7 and T <= 8 fit 4 bits
         test(new GroupCtrl(desc, "t", jw)) { dut =>
           var lastEnd = false
+          var jobs    = 0
+          var opent   = desc.open.map(_ => 1)
+          var ts      = Seq.empty[Long]
           for (c <- 0 until Cycles) {
-            val clue   = s"$clue0, job_width $jw, cycle $c"
-            // a start of random JOBS and T, offered now and then while idle, at most Most head firings
-            var jobs   = 0
-            var opent  = Seq.empty[Int]
-            var ts     = Seq.empty[Long]
+            val clue = s"$clue0, job_width $jw, cycle $c"
+            // a start of random JOBS and T, offered now and then while idle, at most Most head firings; JOBS and each
+            // JOB_BEATS on their wires, drawn again only while idle, held through a run (D168)
+            if (model.idle) jobs = 0
             while (jobs == 0 || ts.product * jobs > Most) {
               jobs  = r.pick(Seq(1, 2, 3, 4, 7))
               opent = desc.open.map(_ => r.pick(Ts))
               var next = 0
               ts = units.map(_.fixedT.map(_.toLong).getOrElse { next += 1; opent(next - 1).toLong })
             }
-            val offer  = model.idle && r.chance(0.3)
+            val offer = model.idle && r.chance(0.3)
             dut.io.start.valid.poke(offer.B)
-            dut.io.start.bits.jobs.poke(jobs.U)
-            dut.io.start.bits.beats.zip(if (opent.isEmpty) Seq(1) else opent).foreach { case (p, t) => p.poke(t.U) }
+            dut.io.settings.jobs.poke(jobs.U)
+            dut.io.settings.beats.zip(opent).foreach { case (p, t) => p.poke(t.U) }
             if (offer) assert(model.start(jobs, ts) == "taken", s"$clue: the model's start")
             val valids = units.map(u => Seq.fill(u.inputs)(!r.chance(pv)))
             valids.flatten.zipWithIndex.foreach { case (v, k) => dut.io.in(k).valid.poke(v.B) }
-            val ready  = !r.chance(pr)
+            val ready = !r.chance(pr)
             dut.io.out.ready.poke(ready.B)
             assert(high(dut.io.busy) == model.busy, s"$clue: busy")
             assert(high(dut.io.done) == lastEnd, s"$clue: the done pin (E + 1)")
-            lastEnd = false
+            lastEnd              = false
             model.step(valids.map(_.forall(identity)), ready).foreach { s =>
               for (k <- 0 until n) {
                 val e = dut.io.units(k); val m = s.units(k); val uc = s"$clue, ${units(k).name}"

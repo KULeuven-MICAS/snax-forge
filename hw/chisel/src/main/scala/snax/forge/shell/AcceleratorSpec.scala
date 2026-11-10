@@ -67,7 +67,7 @@ object AcceleratorSpec {
 
     def csr(n: String): Option[CsrSpec] = window.find(_.name == n)
 
-    /** Each JOB_BEATS in unit order: the start carries them after JOBS. */
+    /** Each JOB_BEATS in unit order: the control unit's `settings` after JOBS. */
     def jobBeats: Seq[CsrSpec] = units.flatMap(_.csrs.filter(_.name == "JOB_BEATS"))
   }
 
@@ -145,7 +145,7 @@ case class AcceleratorSpec(
     ws.head
   }
 
-  /** job_width (D152): the width of JOBS and every JOB_BEATS, one for all, and of the control units' copies. */
+  /** job_width (D152): the width of JOBS and every JOB_BEATS, one for all, and of the control units' counters. */
   lazy val jobWidth: Int = width("JOBS", "JOB_BEATS")
 
   /** busy_counter_width: every BUSY_COUNTER's width. */

@@ -104,12 +104,9 @@ class ShellWrapper(spec: AcceleratorSpec) extends RawModule {
     csr.io.rsp.ready      := io.bool("csr_rsp_ready_i")
 
     for ((g, i) <- spec.groups.zipWithIndex) {
-      val c   = ctrl.io.groups(i)
-      val set = csr.io.settings(i)
-      c.start.valid           := csr.io.starts(i).valid
-      csr.io.starts(i).ready  := c.start.ready
-      c.start.bits.jobs       := set.jobs
-      c.start.bits.beats      := (if (set.beats.isEmpty) VecInit(1.U(spec.jobWidth.W)) else set.beats)
+      val c = ctrl.io.groups(i)
+      c.start <> csr.io.starts(i)
+      c.settings              := csr.io.settings(i)
       csr.io.busy(i)          := c.busy
       csr.io.done(i)          := c.pulse
       io(s"${g.name}_busy_o") := c.busy
