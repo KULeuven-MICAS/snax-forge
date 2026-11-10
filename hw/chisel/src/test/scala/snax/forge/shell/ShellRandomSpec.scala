@@ -13,8 +13,9 @@ import snax.forge.elementwise.{ElementwiseModel, ElementwiseOp}
   * Per seed, `Runs` runs back to back on one wrapper. Per run: J jobs in 1..32 (and for a fold T in 1..8 beats each; an
   * SIMD unit has T = 1), one run in eight the empty run (JOBS 0), JOBS (and JOB_BEATS) written, then START; the gaps
   * and the stall drawn when it starts. The streamer's inputs hold every run's beats in turn. Then, at random, either
-  *   - STATUS is read every cycle (`rsp` always ready) until bit 0 reads 0, and BUSY_COUNTER read: it must equal the reads
-  *     whose bit 0 was 1, and the cycles from the accepted start to the run's last output (E); STATUS then reads 2; or
+  *   - STATUS is read every cycle (`rsp` always ready) until bit 0 reads 0, and BUSY_COUNTER read: it must equal the
+  *     reads whose bit 0 was 1, and the cycles from the accepted start to the run's last output (E); STATUS then reads
+  *     2; or
   *   - the next run's CSRs and START are written at once: the START is held (`req.ready` low) until E and taken in E +
   *     1, or at once when the run has already ended.
   * An empty run reads STATUS 2 and BUSY_COUNTER 0 from the cycle after its start.
@@ -132,7 +133,10 @@ class ShellRandomSpec extends AnyFlatSpec with ForgeTester {
               val count = d.read(counter)
               assert(d.outputs.head.size == done, s"$clue: busy fell with outputs left")
               assert(count == ones, s"$clue: BUSY_COUNTER $count, STATUS read busy $ones times")
-              assert(count == d.lastOut - accepted, s"$clue: BUSY_COUNTER $count, start taken $accepted, E ${d.lastOut}")
+              assert(
+                count == d.lastOut - accepted,
+                s"$clue: BUSY_COUNTER $count, start taken $accepted, E ${d.lastOut}"
+              )
               if (i + 1 < Runs) {
                 config(runs(i + 1))
                 accepted = begin()

@@ -112,10 +112,10 @@ class AccCsr(spec: AcceleratorSpec) extends Module {
   private val value = csrs.map { c =>
     val g = groups.indexWhere(_.window.contains(c))
     c.offset.U -> (c.name match {
-      case "START" if c.access == "rw"   => 0.U(w.W)
-      case "STATUS" if c.access == "ro"  => status(g).pad(w)
+      case "START" if c.access == "rw"        => 0.U(w.W)
+      case "STATUS" if c.access == "ro"       => status(g).pad(w)
       case "BUSY_COUNTER" if c.access == "ro" => counter(g).pad(w)
-      case _                             => regs(c.offset).pad(w)
+      case _                                  => regs(c.offset).pad(w)
     })
   }
   private val read  = MuxLookup(io.req.bits.addr, 0.U(w.W))(value)

@@ -13,12 +13,13 @@ import snax.forge.shell.AcceleratorSpec.CsrSpec
   *
   * A case's `csrs` line and unit pick the wrapper: `START JOBS` with an SimdLanes unit (L 0, two inputs) is vecadd's
   * (START 0, JOBS 1, STATUS 2, BUSY_COUNTER 3); `START JOBS JOB_BEATS` with a fold (L 1, one input) is vsum's
-  * (TreeAccumulate, one lane: START 0, JOBS 1, JOB_BEATS 2, STATUS 3, BUSY_COUNTER 4). Its `job_width` and `busy_counter_width`
-  * lines set the widths of JOBS and JOB_BEATS and of BUSY_COUNTER in the wrapper's description (D152). `START JOBS` and a
-  * unit's scalar CSRs (`K1`, `K1_LO K1_HI`, `K2`, each `NAME:W`) with an SimdLanes unit is vecadd's turned into axpy's
-  * unit (`axpyScalars`): op axpby, its slots read from those CSRs (pin `k1` or `k2`), at their width's type (64 bits
-  * for `_LO`/`_HI`), the CSRs after JOBS. The `words` lines are snax-gvsoc's message to its group; here the pins follow
-  * the CSRs, which `ShellScalarSpec` checks through the datapath.
+  * (TreeAccumulate, one lane: START 0, JOBS 1, JOB_BEATS 2, STATUS 3, BUSY_COUNTER 4). Its `job_width` and
+  * `busy_counter_width` lines set the widths of JOBS and JOB_BEATS and of BUSY_COUNTER in the wrapper's description
+  * (D152). `START JOBS` and a unit's scalar CSRs (`K1`, `K1_LO K1_HI`, `K2`, each `NAME:W`) with an SimdLanes unit is
+  * vecadd's turned into axpy's unit (`axpyScalars`): op axpby, its slots read from those CSRs (pin `k1` or `k2`), at
+  * their width's type (64 bits for `_LO`/`_HI`), the CSRs after JOBS; with a fold, vsum's with those CSRs after its
+  * JOB_BEATS, plain registers (`foldScalars`). The `words` lines are snax-gvsoc's message to its group; here the pins
+  * follow the CSRs, which `ShellScalarSpec` checks through the datapath.
   *
   * Each case drives the wrapper cycle by cycle: each input offers a beat from the cycles its valid column is 1 (a
   * Decoupled valid stays up until its beat is taken, so a case may not drop it before), the output is ready as the case
@@ -36,17 +37,19 @@ class ShellCasesSpec extends AnyFlatSpec with ForgeTester {
         c.csrs.take(2) == Seq("START", "JOBS") && !c.csrs.contains("JOB_BEATS") && c.latency == 0 && c.ii == 1 &&
         c.inputs == 2
       ) "vecadd"
-      else if (c.csrs == Seq("START", "JOBS", "JOB_BEATS") && c.latency == 1 && c.ii == 1 && c.inputs == 1) "vsum"
+      else if (c.csrs.take(3) == Seq("START", "JOBS", "JOB_BEATS") && c.latency == 1 && c.ii == 1 && c.inputs == 1)
+        "vsum"
       else fail(s"${c.name}: no wrapper for csrs ${c.csrs.mkString(" ")}, L ${c.latency}, II ${c.ii}, ${c.inputs} in")
     RtlFixtures.all.find(_.name == name).get
   }
 
   /** vecadd's description as axpy's with the case's scalar CSRs: op axpby, each CSR's pin its slot (`K1_LO` gives
-    * `k1`), the slots at the opType of the widest (int64 for a 64-bit scalar), every port at it; STATUS and BUSY_COUNTER
-    * after them.
+    * `k1`), the slots at the opType of the widest (int64 for a 64-bit scalar), every port at it; STATUS and
+    * BUSY_COUNTER after them.
     */
   private def axpyScalars(spec: AcceleratorSpec, c: Case): AcceleratorSpec = {
     if (c.scalars.isEmpty) return spec
+    if (c.csrs.contains("JOB_BEATS")) return foldScalars(spec, c)
     def slot(n: String) = n.stripSuffix("_LO").stripSuffix("_HI").toLowerCase
     val wide  = c.scalars.exists(n => n.endsWith("_LO") || n.endsWith("_HI"))
     val bits  = if (wide) 64 else c.scalars.map(n => c.scalarWidths.getOrElse(n, c.jobWidth)).max.max(8)
@@ -68,13 +71,29 @@ class ShellCasesSpec extends AnyFlatSpec with ForgeTester {
     spec.copy(groups = Seq(g.copy(csrs = csrs, units = Seq(unit))))
   }
 
+  /** vsum's description with the case's scalar CSRs after its JOB_BEATS, plain registers with no pin (TreeAccumulate
+    * has no slot): the case checks their writes and reads, held while the group is busy; STATUS and BUSY_COUNTER after
+    * them.
+    */
+  private def foldScalars(spec: AcceleratorSpec, c: Case): AcceleratorSpec = {
+    val g    = spec.groups.head
+    val u    = g.units.head
+    val at   = u.csrs.map(_.offset).max + 1
+    val own  = c.scalars.zipWithIndex.map { case (n, i) =>
+      CsrSpec(n, "rw", at + i, c.scalarWidths.getOrElse(n, c.jobWidth))
+    }
+    val k    = c.scalars.size
+    val csrs = g.csrs.map(x => if (x.access == "ro") x.copy(offset = x.offset + k) else x)
+    spec.copy(groups = Seq(g.copy(csrs = csrs, units = Seq(u.copy(csrs = u.csrs ++ own)))))
+  }
+
   /** The fixture's description at the case's widths. */
   private def widths(spec: AcceleratorSpec, c: Case): AcceleratorSpec = {
     def w(x: CsrSpec) =
       x.name match {
         case "JOBS" | "JOB_BEATS" => x.copy(width = c.jobWidth)
         case n if x.pin.nonEmpty  => x.copy(width = c.scalarWidths.getOrElse(n, c.jobWidth))
-        case "BUSY_COUNTER"            => x.copy(width = c.busyCounterWidth)
+        case "BUSY_COUNTER"       => x.copy(width = c.busyCounterWidth)
         case _                    => x
       }
     spec.copy(groups =

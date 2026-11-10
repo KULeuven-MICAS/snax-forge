@@ -8,8 +8,8 @@ import snax.forge.{ForgeTester, IntType, LaneBits, Seeds, SnaxGroupCases}
 /** Each fixture end to end through its `<tag>_shell_wrapper`: per task its CSR values written by name (JOBS, and
   * JOB_BEATS for a fold) and START written 1, as `main.c` does; the inputs fed by an always-ready streamer (each port's
   * data.h array, lane i of beat t element `t * lanes + i` modulo the array's size, in two's complement at the port's
-  * dtype width, D142); STATUS polled until bit 0 reads 0; then BUSY_COUNTER read, and STATUS again: done (2). The outputs
-  * must equal the goldens (NumPy's, `vectors.json`) and the counter the fixture's value, worked from the nest
+  * dtype width, D142); STATUS polled until bit 0 reads 0; then BUSY_COUNTER read, and STATUS again: done (2). The
+  * outputs must equal the goldens (NumPy's, `vectors.json`) and the counter the fixture's value, worked from the nest
   * controller's rule or, for a linked group, C§17's Cycles (`vectors.json`'s `working`).
   *
   * Then each linked variant (dot 2–6, matvec 4–6) at N 8 and 16, W 4, on random int64 data of one seed per N (the
