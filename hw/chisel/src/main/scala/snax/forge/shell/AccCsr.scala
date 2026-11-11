@@ -41,6 +41,10 @@ class CsrRsp extends Bundle {
   *       busy, read here: at c the busy cycles after a and before c, saturating at 2^w - 1 for its width w.
   *   - A read is answered in the cycle it fires, from the registers or the read-only CSRs in that cycle; when `rsp` is
   *     not ready the answer is kept (the widest CSR's bits) and `req.ready` stays low until it leaves.
+  *   - A set whose groups share its movers (D169) has PORT_MUX_SEL after its last group's CSRs: a register of its
+  *     width, reset 0, read back as written, which a write sets at once (it belongs to no group, so no write to it is
+  *     held: the program writes it only after the set's previous task), leaving as a wire (`portMuxSel`, one element
+  *     per shared set in set order) to the set's `<tag>_<set>_port_mux`.
   *   - Writes get no response. A read past the last CSR answers 0 and a write to a read-only CSR or past the last is
   *     dropped (ReqRspManager asserts on both).
   */
@@ -51,13 +55,15 @@ class AccCsr(spec: AcceleratorSpec) extends Module {
   private val groups = spec.groups
 
   val io = IO(new Bundle {
-    val req      = Flipped(Decoupled(new CsrReq))
-    val rsp      = Decoupled(new CsrRsp)
-    val starts   = Vec(groups.size, Decoupled(UInt(0.W)))
-    val settings = Output(MixedVec(groups.map(g => new GroupSettings(g.jobBeats.size, spec.jobWidth))))
-    val busy     = Input(Vec(groups.size, Bool()))
-    val done     = Input(Vec(groups.size, Bool()))
-    val scalars  = Output(MixedVec(AccCsr.scalars(spec).map(c => UInt(c.width.W))))
+    val req        = Flipped(Decoupled(new CsrReq))
+    val rsp        = Decoupled(new CsrRsp)
+    val starts     = Vec(groups.size, Decoupled(UInt(0.W)))
+    val settings   = Output(MixedVec(groups.map(g => new GroupSettings(g.jobBeats.size, spec.jobWidth))))
+    val busy       = Input(Vec(groups.size, Bool()))
+    val done       = Input(Vec(groups.size, Bool()))
+    val scalars    = Output(MixedVec(AccCsr.scalars(spec).map(c => UInt(c.width.W))))
+    val portMuxSel =
+      if (spec.portMuxCsrs.isEmpty) None else Some(Output(MixedVec(spec.portMuxCsrs.map(c => UInt(c.width.W)))))
   })
 
   private val reading = io.req.fire && !io.req.bits.write
@@ -74,7 +80,14 @@ class AccCsr(spec: AcceleratorSpec) extends Module {
       reg := io.req.bits.data(c.width - 1, 0)
     }
     c.offset -> reg
-  }).toMap
+  }).toMap ++ spec.sets.flatMap(s => s.portMux.map(s.name -> _.csr)).map { case (set, c) =>
+    // PORT_MUX_SEL, named `<set>_port_mux_sel`: no group's, so never held
+    val reg = RegInit(0.U(c.width.W)).suggestName(s"${set}_port_mux_sel")
+    when(writing && io.req.bits.addr === c.offset.U) {
+      reg := io.req.bits.data(c.width - 1, 0)
+    }
+    c.offset -> reg
+  }
 
   // Per group: its settings out, a request that is its start and the start's handshake, a write held while it is
   // busy (its read-write CSRs are contiguous, START first)
@@ -138,6 +151,10 @@ class AccCsr(spec: AcceleratorSpec) extends Module {
   io.req.ready := !answerKept && !held
 
   for ((c, i) <- AccCsr.scalars(spec).zipWithIndex) io.scalars(i) := regs(c.offset)
+  for {
+    sel       <- io.portMuxSel
+    (c, i)    <- spec.portMuxCsrs.zipWithIndex
+  } sel(i) := regs(c.offset)
 }
 
 object AccCsr {

@@ -6,8 +6,12 @@ import java.nio.file.{Files, Path}
   * accelerators, written by snax-forge (`snax_forge/gen/accelerator.py`) and checked by it against the datapath
   * catalogue (`hw/chisel/blocks.json`, D130). The file nests accelerators ⊃ groups ⊃ units; the shell is one for the
   * whole design, so the reader flattens it once: the groups in CSR order across the accelerators, the outer inputs and
-  * outputs set after set (the wrapper's port order). Nothing is checked again here beyond what construction needs: the
-  * offsets as stored, contiguous in CSR order from the shell's first CSR.
+  * outputs set after set. Nothing is checked again here beyond what construction needs: the offsets as stored,
+  * contiguous in CSR order from the shell's first CSR.
+  *
+  * A set whose groups share its movers (`share_ports`, D169) has `movers` and `port_mux`: its outer ports at the
+  * wrapper are its movers, readers then writers, each `num_channel * 64` bits, in place of its groups' inputs and
+  * outputs, which reach the movers through `<tag>_<set>_port_mux` (`PortMux`); its PORT_MUX_SEL is its last CSR.
   */
 object AcceleratorSpec {
 
@@ -71,6 +75,37 @@ object AcceleratorSpec {
     def jobBeats: Seq[CsrSpec] = units.flatMap(_.csrs.filter(_.name == "JOB_BEATS"))
   }
 
+  /** A port of a group on a shared mover: the group, the port `(unit, port)`, its channels (at most the mover's). */
+  case class MuxUser(group: String, port: (String, String), numChannel: Int)
+
+  /** A mover of a shared set (D169): `reader<k>` or `writer<k>`, its channels, whether it has `configurable_channel`
+    * (`masked`), its users, at most one per group.
+    */
+  case class MoverSpec(name: String, role: String, numChannel: Int, masked: Boolean, users: Seq[MuxUser]) {
+    require(role == "read" || role == "write", s"mover $name: role $role")
+    def reader: Boolean = role == "read"
+    def width:  Int     = numChannel * 64
+  }
+
+  /** A shared set's port mux: its groups in PORT_MUX_SEL's order and PORT_MUX_SEL, the set's last CSR. */
+  case class PortMuxSpec(groups: Seq[String], csr: CsrSpec)
+
+  /** A streamer set, one of the file's accelerators (D157): its name, its outer ports, its groups by name, and, shared,
+    * its movers and port mux.
+    */
+  case class SetSpec(
+    name:    String,
+    inputs:  Seq[(String, String)],
+    outputs: Seq[(String, String)],
+    groups:  Seq[String],
+    movers:  Seq[MoverSpec]      = Seq.empty,
+    portMux: Option[PortMuxSpec] = None
+  ) {
+    def shared:  Boolean        = portMux.nonEmpty
+    def readers: Seq[MoverSpec] = movers.filter(_.reader)
+    def writers: Seq[MoverSpec] = movers.filterNot(_.reader)
+  }
+
   def parse(text: String): AcceleratorSpec = {
     val d                   = ujson.read(text)
     def csr(c: ujson.Value) =
@@ -112,7 +147,27 @@ object AcceleratorSpec {
           }
         )
       },
-      accs.map(_("name").str)
+      accs.map { a =>
+        val movers = a.obj.get("movers").map(_.arr.toSeq).getOrElse(Seq.empty).map { m =>
+          MoverSpec(
+            m("name").str,
+            m("role").str,
+            m("num_channel").num.toInt,
+            m("masked").bool,
+            m("users").arr.toSeq.map(u => MuxUser(u("group").str, end(u("port").str), u("num_channel").num.toInt))
+          )
+        }
+        val mux    = a.obj.get("port_mux").map(x => PortMuxSpec(x("groups").arr.toSeq.map(_.str), csr(x("csr"))))
+        require(movers.isEmpty == mux.isEmpty, s"set ${a("name").str}: movers and port_mux come together (D169)")
+        SetSpec(
+          a("name").str,
+          a("inputs").arr.toSeq.map(e => end(e.str)),
+          a("outputs").arr.toSeq.map(e => end(e.str)),
+          a("groups").arr.toSeq.map(_("name").str),
+          movers,
+          mux
+        )
+      }
     )
     val offsets = spec.csrs.map(_.offset)
     require(offsets == offsets.indices, s"CSR offsets $offsets in CSR order are not contiguous from 0")
@@ -133,11 +188,14 @@ case class AcceleratorSpec(
   inputs:      Seq[(String, String)],
   outputs:     Seq[(String, String)],
   groups:      Seq[AcceleratorSpec.GroupSpec],
-  sets:        Seq[String] = Seq.empty
+  sets:        Seq[AcceleratorSpec.SetSpec] = Seq.empty
 ) {
 
-  /** Every CSR in CSR order. */
-  def csrs: Seq[AcceleratorSpec.CsrSpec] = groups.flatMap(_.window)
+  /** The shared sets' PORT_MUX_SEL CSRs, in set order. */
+  def portMuxCsrs: Seq[AcceleratorSpec.CsrSpec] = sets.flatMap(_.portMux.map(_.csr))
+
+  /** Every CSR in CSR order: the groups' windows and each shared set's PORT_MUX_SEL after its last group's. */
+  def csrs: Seq[AcceleratorSpec.CsrSpec] = (groups.flatMap(_.window) ++ portMuxCsrs).sortBy(_.offset)
 
   private def width(names: String*): Int = {
     val ws = csrs.filter(c => names.contains(c.name)).map(_.width).distinct
@@ -161,4 +219,7 @@ case class AcceleratorSpec(
   /** The unit's input (or output) BRM ports in the streamer's order, each with its index among the outer ports. */
   def ins(unit:  String): Seq[(Int, String)] = inputs.zipWithIndex.collect { case ((u, p), k) if u == unit => k -> p }
   def outs(unit: String): Seq[(Int, String)] = outputs.zipWithIndex.collect { case ((u, p), k) if u == unit => k -> p }
+
+  /** The set that holds group `g`'s ports, when it shares its movers. */
+  def sharedSet(g: String): Option[AcceleratorSpec.SetSpec] = sets.find(s => s.shared && s.groups.contains(g))
 }

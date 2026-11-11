@@ -5,7 +5,7 @@ import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
 
 import snax.forge.{ForgeTester, LaneBits, Rand, Seeds, Sink, Source}
-import snax.forge.shell.AcceleratorSpec.{CsrSpec, GroupSpec, LinkSpec, PortSpec, UnitSpec}
+import snax.forge.shell.AcceleratorSpec.{CsrSpec, GroupSpec, LinkSpec, PortMuxSpec, PortSpec, SetSpec, UnitSpec}
 
 /** `<tag>_csr` (`AccCsr`) under random requests, against a cycle-level model of the protocol in its docstring
   * (`Model`).
@@ -22,20 +22,24 @@ import snax.forge.shell.AcceleratorSpec.{CsrSpec, GroupSpec, LinkSpec, PortSpec,
   * read gives), each group's `starts.valid` and its `settings`, JOBS and each JOB_BEATS in unit order (a group of 0, 1
   * or 2 folds: none, or a JOB_BEATS per fold). Each unit may hold a scalar after its JOB_BEATS (`K1` of 8, 16 or 32
   * bits, or `K1_LO` and `K1_HI` at 64, each with the pin `k1`): `scalars` must give each one's register every cycle.
+  * The second layout of a seed, and each other at even odds, is a shared set's (D169), with PORT_MUX_SEL after the last
+  * group's CSRs at the bits a group's index takes (at least 1): read back as written, reset 0, a write taken at once
+  * even while every group is busy (it is no group's), and `portMuxSel` its register every cycle.
   */
 class AccCsrRandomSpec extends AnyFlatSpec with ForgeTester {
 
   private val Layouts = 3
   private val Cycles  = 300
   private var held    = 0 // writes held while their group was busy, then taken, every seed
+  private var busySel = 0 // PORT_MUX_SEL accesses offered while every group was busy, every seed
 
   /** A layout of `folds.size` groups, group g of `folds(g)` folds (0: one unit without a JOB_BEATS; 1: one fold; 2: two
     * folds linked by a wire, a JOB_BEATS each).
     */
-  private def layout(folds: Seq[Int], jw: Int, cw: Int, r: Rand): AcceleratorSpec = {
-    var at     = 0
-    def next() = { at += 1; at - 1 }
-    val groups = folds.zipWithIndex.map { case (n, g) =>
+  private def layout(folds: Seq[Int], jw: Int, cw: Int, shared: Boolean, r: Rand): AcceleratorSpec = {
+    var at      = 0
+    def next()  = { at += 1; at - 1 }
+    val groups  = folds.zipWithIndex.map { case (n, g) =>
       val start  = CsrSpec("START", "rw", next(), 1)
       val jobs   = CsrSpec("JOBS", "rw", next(), jw)
       val ports  = Seq("a" -> PortSpec("in", "in", "int64", 1), "out" -> PortSpec("out", "out", "int64", 1))
@@ -72,12 +76,17 @@ class AccCsrRandomSpec extends AnyFlatSpec with ForgeTester {
         .toSeq
       GroupSpec(s"g$g", Seq(start, jobs, status, count), units, links)
     }
+    val inputs  = groups.map(g => g.units.head.name -> "a")
+    val outputs = groups.map(g => g.units.last.name -> "out")
+    val bits    = math.max(1, 32 - Integer.numberOfLeadingZeros(groups.size - 1))
+    val mux = if (shared) Some(PortMuxSpec(groups.map(_.name), CsrSpec("PORT_MUX_SEL", "rw", next(), bits))) else None
     AcceleratorSpec(
       "p",
       "t",
-      groups.map(g => g.units.head.name -> "a"),
-      groups.map(g => g.units.last.name -> "out"),
-      groups
+      inputs,
+      outputs,
+      groups,
+      Seq(SetSpec("s", inputs, outputs, groups.map(_.name), Seq.empty, mux))
     )
   }
 
@@ -169,7 +178,7 @@ class AccCsrRandomSpec extends AnyFlatSpec with ForgeTester {
         for (l <- 0 until Layouts) {
           val jw     = r.pick(Seq(1, 5, 8, 16, 32))
           val cw     = r.pick(Seq(1, 2, 3, 8, 32))
-          val spec   = layout(Seq.fill(r.between(1, 3))(r.between(0, 2)), jw, cw, r)
+          val spec   = layout(Seq.fill(r.between(1, 3))(r.between(0, 2)), jw, cw, l % 2 == 1 || r.chance(0.5), r)
           val groups = spec.groups.size
           val model  = new Model(spec)
           val reqs   = IndexedSeq.fill(Cycles)(request(r, spec))
@@ -199,6 +208,7 @@ class AccCsrRandomSpec extends AnyFlatSpec with ForgeTester {
 
               val configs                  = (0 until groups).map(model.settings)
               val scalars                  = AccCsr.scalars(spec).map(c => model.regs(c.offset))
+              val sels                     = spec.portMuxCsrs.map(c => model.regs(c.offset))
               val (ready, answer, started) = model.cycle(req, rsp.isReady, readies, busy, pulse)
               assert(dut.io.req.ready.peek().litToBoolean == ready, s"$clue: req.ready, the model $ready (req $req)")
               assert(dut.io.rsp.valid.peek().litToBoolean == answer.isDefined, s"$clue: rsp.valid, the model $answer")
@@ -212,6 +222,14 @@ class AccCsrRandomSpec extends AnyFlatSpec with ForgeTester {
               }
               for ((want, i) <- scalars.zipWithIndex)
                 assert(dut.io.scalars(i).peek().litValue == want, s"$clue: scalar CSR $i, the model $want")
+              assert(dut.io.portMuxSel.isDefined == sels.nonEmpty, s"$clue: portMuxSel only with PORT_MUX_SEL")
+              for {
+                port         <- dut.io.portMuxSel
+                (want, i)    <- sels.zipWithIndex
+              }
+                assert(port(i).peek().litValue == want, s"$clue: PORT_MUX_SEL's wire, the model $want")
+              if (sels.nonEmpty && req.exists(_._1 == spec.portMuxCsrs.head.offset) && busy.forall(identity))
+                busySel += 1
               core.fired(ready)
               dut.clock.step()
             }
@@ -219,6 +237,11 @@ class AccCsrRandomSpec extends AnyFlatSpec with ForgeTester {
           held += model.heldTaken
         }
       }
+
+  it should "have offered PORT_MUX_SEL accesses while every group was busy" in {
+    info(s"$busySel accesses")
+    assert(busySel >= Seeds().size, s"$busySel accesses")
+  }
 
   it should "have held enough writes to a busy group" in {
     info(s"$held writes held, then taken")

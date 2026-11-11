@@ -19,29 +19,49 @@ class Block(name: String, d: Datapaths.Datapath, p: Map[String, ujson.Value]) ex
 }
 
 /** `<tag>_datapath`: every unit's datapath (D147), a catalogue datapath built from the unit's ports by its fill rule,
-  * in a module `<tag>_<unit>`, and every buffer's `LinkBuffer` (a link of depth >= 1), in a module `<tag>_<link>`. Data
-  * and enables only. A link is plain wiring: a wire from its producer's output to its consumer's input; a buffer
-  * between them, loaded from the producer and read by the consumer. Outside, per unit its outer ports' data, by BRM
-  * port, and the pins its catalogue entry has live (`fire`, `first`, `read`, `lane`, `en`); per buffer its pins
-  * (`load`, `wslot`, `rslot`), group by group.
+  * in a module `<tag>_<unit>`, and every buffer's `LinkBuffer` (a link of depth >= 1), in a module `<tag>_<link>`,
+  * group by group (its units, then its buffers). Data and enables only. A link is plain wiring: a wire from its
+  * producer's output to its consumer's input; a buffer between them, loaded from the producer and read by the consumer.
+  * Outside, per unit its outer ports' data, by BRM port, and the pins its catalogue entry has live (`fire`, `first`,
+  * `read`, `lane`, `en`); per buffer its pins (`load`, `wslot`, `rslot`), group by group.
   */
 class AccDatapath(spec: AcceleratorSpec) extends Module {
   override def desiredName: String = s"${spec.tag}_datapath"
 
+  // Each block made group by group, its units then its buffers (C§18's module tree), the instances named as when the
+  // units and the buffers were made in two passes (`blocks_<k>_4`, `bufs_<i>_4`), so the SV of a design whose two
+  // orders agree stays as it was; `blocks` in unit order, `bufs` in link order
+  private val made: Map[String, (Datapaths.Datapath, Map[String, ujson.Value], Block)] = {
+    var (k, i) = (0, 0)
+    spec.groups.flatMap { g =>
+      g.units.map { u =>
+        val d = Datapaths(u.datapath)
+        val p = d.fill(u)
+        val b = Module(new Block(s"${spec.tag}_${u.name}", d, p)).suggestName(s"blocks_${k}_4")
+        k += 1
+        u.name -> (d, p, b)
+      } ++ g.links.filter(_.depth > 0).map { l =>
+        val d    = Datapaths("LinkBuffer")
+        val from = spec.unit(l.from._1).port(l.from._2)
+        val p    = d.fillLink(l.depth, from.lanes, from.dtype)
+        val b    = Module(new Block(s"${spec.tag}_${l.name}", d, p)).suggestName(s"bufs_${i}_4")
+        i += 1
+        l.name -> (d, p, b)
+      }
+    }.toMap
+  }
+
   private val blocks = spec.units.map { u =>
-    val d = Datapaths(u.datapath)
-    val p = d.fill(u)
-    (u, d, p, Module(new Block(s"${spec.tag}_${u.name}", d, p)))
+    val (d, p, b) = made(u.name)
+    (u, d, p, b)
   }
 
   private val bufs = for {
     g <- spec.groups
     l <- g.links if l.depth > 0
   } yield {
-    val d    = Datapaths("LinkBuffer")
-    val from = spec.unit(l.from._1).port(l.from._2)
-    val p    = d.fillLink(l.depth, from.lanes, from.dtype)
-    (l, d, p, Module(new Block(s"${spec.tag}_${l.name}", d, p)))
+    val (d, p, b) = made(l.name)
+    (l, d, p, b)
   }
 
   /** One unit's side: its outer ports' data, by BRM port, and its live pins. */
