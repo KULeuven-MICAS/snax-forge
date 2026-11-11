@@ -201,7 +201,7 @@ The draft's line, then the author's after reading, which wins. A row whose secon
 | SIMD and the CSR scalar | E3, E7's untiered rows | M13 B2 |
 | Overlap of independent accelerators | E4 (mvt) | open item 109, in tier A |
 | One unit across DFG regions | E4 (atax) | open item 113, in tier A |
-| Shared crossbar ports across streamer sets | E4 | M13 PORT1, model level first (open item 114) |
+| Shared crossbar ports across streamer sets | E4 | M13 PORT1 (done; open item 128) |
 | DMA cost on the graph | Level 1's feedback, E4 | M13 L2V1 (open item 99 for the graph-level node) |
 | Interconnect markers | Level 1's feedback, E4 | M13 XBAR1 |
 | The engine-alone number | C3's baseline in E4 | M13 VIEW2, the ideal estimate (D155, C§19) |
