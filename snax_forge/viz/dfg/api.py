@@ -136,7 +136,9 @@ worked out here:
                  ``scalar · <dtype>``; read as CSR (a tasklet's connector ``bake_scalar`` named
                  after it, or a unit's slot) it has no box, edge or port in the drawing: the
                  operation names it ``csr(alpha)``, as a baked one shows its value, so the
-                 node shows only its streamed inputs (Containers still lists it)
+                 node shows only its streamed inputs (Containers still lists it); a
+                 container ``share_ports`` marks (D169) carries a dashed tag ``share_ports · <name>``
+                 beside its badge, as a link's or a FIFO's text marks theirs
     group, accelerator   their name
 
 Details: a map's range as written, ``loop.split``, ``loop.fused`` and ``loop.split_reduce``; a
@@ -243,6 +245,7 @@ from snax_forge.brm.dtypes import bits
 from snax_forge.char import DEFAULT_TECH
 from snax_forge.common import LoadedSet, unique_names
 from snax_forge.design.streamers import (
+    SHARE_PORTS,
     accelerator_of,
     firing_loops,
     group_of,
@@ -1518,10 +1521,11 @@ def container_text(g: Graph, name: str) -> str:
 
 def _container(g: Graph, name: str, placed: Any = None) -> dict[str, Any]:
     """A container as the drawing shows it: its name and shape, its badge, whether it is
-    transient."""
+    transient, and on a ``share_ports`` container (D169) its marker ``share_ports · <name>``."""
     c = g.containers[name]
+    shared = {"share": f"share_ports · {name}"} if SHARE_PORTS in c.attrs else {}
     return {"name": name, "text": container_text(g, name), "badge": badge(placed),
-            "transient": c.transient, "scalar": bool(c.attrs.get(SCALAR))}  # fmt: skip
+            "transient": c.transient, "scalar": bool(c.attrs.get(SCALAR))} | shared  # fmt: skip
 
 
 def memlet_text(m: Memlet) -> str:

@@ -198,7 +198,7 @@ def mover_csrs(cluster: Cluster) -> dict[str, int]:
     for m in acc.movers:
         key = m.set or acc.csrs.sets[0].name
         out[m.name] = csr[key]
-        csr[key] += mover_csr_count(m.spatial_bounds, m.temporal_dim)
+        csr[key] += mover_csr_count(m.spatial_bounds, m.temporal_dim, m.enabled)
     return out
 
 
@@ -214,10 +214,18 @@ def mover_values(cluster: Cluster, mover: Mover, regs: dict[int, int]
 
 
 def mover_nest(cluster: Cluster, mover: Mover, regs: dict[int, int]) -> list[list[int]]:
-    """Each lane's addresses (TCDM offsets) from the streamer's CSR values (``agu_nest``)."""
+    """Each lane's addresses (TCDM offsets) from the streamer's CSR values (``agu_nest``); a
+    masked mover's lane its ENABLED_CHANNEL leaves off has none (it sends no request, D169)."""
     ptr, sp, tb, ts = mover_values(cluster, mover, regs)
-    return agu_nest(ptr, mover.spatial_bounds, sp, tb, ts, mover.lanes, cluster.l1_size - 1,
-                    not mover.write)  # fmt: skip
+    out = agu_nest(ptr, mover.spatial_bounds, sp, tb, ts, mover.lanes, cluster.l1_size - 1,
+                   not mover.write)  # fmt: skip
+    if mover.enabled:
+        at = (
+            mover_csrs(cluster)[mover.name] + 2 + len(mover.spatial_bounds) + 2 * mover.temporal_dim
+        )
+        on = [regs.get(at + lane // 32, 0) >> (lane % 32) & 1 for lane in range(mover.lanes)]
+        out = [addrs if on[lane] else [] for lane, addrs in enumerate(out)]
+    return out
 
 
 def nests(ctx: Context) -> dict[tuple[str, int], list[list[int]]]:
@@ -244,6 +252,25 @@ def nests(ctx: Context) -> dict[tuple[str, int], list[list[int]]]:
     return out
 
 
+def shared_pick(tasks: Sequence[Configure]) -> Configure:
+    """Of one start's configures of a shared mover's users (D169), the one its program writes:
+    its group's own (a temporal bound not 0), else the first idle one (lower/c.py)."""
+    own = [c for c in tasks if any(c.values["temporal_bounds"])]
+    return own[0] if own else tasks[0]
+
+
+def mover_tasks(tasks: TaskList, mover: Mover) -> list[str]:
+    """A shared mover's streamer tasks in start order, one per start of its set (``shared_pick``)."""
+    conf = {s.task_name: s for s in tasks.steps if isinstance(s, Configure)}
+    out = []
+    for s in tasks.steps:
+        if isinstance(s, Start):
+            mine = [conf[t] for t in s.tasks if t in conf and conf[t].component in mover.users]
+            if mine:
+                out.append(shared_pick(mine).task_name)
+    return out
+
+
 def pairing(tasks: TaskList, cluster: Cluster) -> dict[str, dict[str, str]]:
     """Per accelerator task, the streamer task of each mover of its streamer set (D157), from the
     start step that launches them together: a unit's task with a task on every mover of its set,
@@ -266,6 +293,10 @@ def pairing(tasks: TaskList, cluster: Cluster) -> dict[str, dict[str, str]]:
         what = f"{tasks.name}: start {s.tasks}"
         unit = next(c.component for c in launched if c.task_name == mine[0])
         movers = [m.name for m in acc.movers if m.set == set_of[unit]]
+        # a port's streamer -> its mover: a shared mover's users' too (D169)
+        on = {
+            u: m.name for m in acc.movers if m.set == set_of[unit] for u in (m.users or (m.name,))
+        }
         if len(mine) > 1:
             raise RunError("index.tasks", f"{what} launches {len(mine)} tasks of {acc.name} "
                            f"({mine})")  # fmt: skip
@@ -273,10 +304,13 @@ def pairing(tasks: TaskList, cluster: Cluster) -> dict[str, dict[str, str]]:
         for c in launched:
             if c.type != "streamer":
                 continue
-            if c.component not in movers:
+            if c.component not in on:
                 raise RunError("index.tasks", f"{what}: streamer task {c.task_name!r} is on "
                                f"{c.component}, no mover of set {set_of[unit]} ({movers})")  # fmt: skip
-            by.setdefault(c.component, []).append(c.task_name)
+            by.setdefault(on[c.component], []).append(c.task_name)
+        for m in acc.movers:
+            if m.users and len(by.get(m.name, [])) > 1:  # the one its program writes
+                by[m.name] = [shared_pick([conf[t] for t in by[m.name]]).task_name]
         for m in movers:
             if len(by.get(m, [])) != 1:
                 have = by.get(m, [])
@@ -340,7 +374,7 @@ class _Beats:
                         for u in self.acc.unit_names}  # fmt: skip
         self.writers = {u: [m for m in self.acc.movers_of(u) if m.write]
                         for u in self.acc.unit_names}  # fmt: skip
-        self.words_in = {u: [m.lanes for m in rs] for u, rs in self.readers.items()}
+        self.words_in = {u: [self.acc.lanes_of(m, u) for m in rs] for u, rs in self.readers.items()}
         self.starts = {u: [sum(w[:i]) for i in range(len(w) + 1)] for u, w in self.words_in.items()}
         self.funcs: dict[str, list[tuple[int, str]]] = defaultdict(list)
         for s, x in named:
@@ -459,9 +493,10 @@ class _Beats:
         if src not in self.ctx.filter:
             return None
         writers = self.writers[src]
-        if writers and len(f["value"]) != writers[0].lanes:
+        if writers and len(f["value"]) != self.acc.lanes_of(writers[0], src):
             raise RunError("convert.beats", f"push at {t}: {len(f['value'])} words, {src}'s "
-                           f"writer moves {writers[0].lanes} (its num_channel)")  # fmt: skip
+                           f"writer moves {self.acc.lanes_of(writers[0], src)} (its num_channel, "
+                           "or on a shared mover its port's)")  # fmt: skip
         run = self.task(src, t)
         e.update(src=src, task=run[1] if run else None, n=f["n"], first=f["first"],
                  last=f["last"], value=list(f["value"]))  # fmt: skip
@@ -504,13 +539,15 @@ class _Beats:
         grants = beat_grants([e for _, _, e in out if e["k"] == "grant"], self.acc.movers)
         paired = self.ctx.paired
 
-        def vals_of(mover: Mover, run: tuple[int, str] | None, b: int, words: list[int]) -> Any:
+        def vals_of(mover: Mover, unit: str, run: tuple[int, str] | None, b: int,
+                    words: list[int]) -> Any:  # fmt: skip
             task = paired.get(run[1], {}).get(mover.name) if run else None
             g = grants.get((mover.name, task, b)) if task else None
-            if not g or len(g) != mover.lanes:
+            lanes = self.acc.lanes_of(mover, unit)
+            if not g or len(g) != lanes:
                 return None
             vals: list[Any] = []
-            for lane in range(mover.lanes):
+            for lane in range(lanes):
                 ge = g[lane]
                 data = (words[lane] & WORD_MASK).to_bytes(8, "little") if lane < len(words) else b""
                 r = region_at(self.ctx.regions, "l1", ge["addr"])
@@ -518,11 +555,11 @@ class _Beats:
             return vals
 
         for e, run in self.fires:
-            e["vals"] = {m.name: vals_of(m, run, e["b"][m.name], e["value"][m.name])
+            e["vals"] = {m.name: vals_of(m, e["src"], run, e["b"][m.name], e["value"][m.name])
                          for m in self.readers[e["src"]]}  # fmt: skip
         for e, run in self.pushes:
             w = self.writers[e["src"]]
-            e["vals"] = vals_of(w[0], run, e["n"], e["value"]) if w else None
+            e["vals"] = vals_of(w[0], e["src"], run, e["n"], e["value"]) if w else None
 
 
 # =============================================================================
@@ -674,8 +711,9 @@ def _firings(s: _Seen, unit: str) -> list[str]:
         for m in writers:
             wtask = _paired(ctx, task, m.name)
             got = sum(1 for e in s.of["grant"] if e["src"] in m.ports and e["task"] == wtask)
-            if got != n_push * m.lanes:
-                bad.append(f"{m.name} ({wtask}): {got} grants, {n_push} pushes of {m.lanes} "
+            lanes = acc.lanes_of(m, unit)
+            if got != n_push * lanes:
+                bad.append(f"{m.name} ({wtask}): {got} grants, {n_push} pushes of {lanes} "
                            "lanes")  # fmt: skip
     if fired != s.profile.accelerators[unit].firings:
         bad.append(f"{unit}: {fired} fire lines, {s.profile.accelerators[unit].firings} "
@@ -692,7 +730,7 @@ def _fired_beats(s: _Seen, unit: str) -> list[str]:
 
     def granted(m: Mover, task: str | None, b: int) -> list[Any]:
         g = by_beat.get((m.name, _paired(s.ctx, task, m.name), b), {})
-        return [g[lane]["value"] if lane in g else None for lane in range(m.lanes)]
+        return [g[lane]["value"] if lane in g else None for lane in range(acc.lanes_of(m, unit))]
 
     for e in (e for e in s.of["fire"] if e["src"] == unit):
         for m in s.traced:
@@ -812,18 +850,37 @@ def _stall_invariants(trace: Trace, profile: Profile, ctx: Context, of: dict[str
                            "in its summary")  # fmt: skip
 
     for m in traced:
-        unit = acc.unit_of_mover(m.name)
-        if unit is None or unit not in ctx.filter:
+        # its units: a shared mover's every user's (D169), each with its own tasks' words
+        units = ([u for u in acc.unit_names if m in acc.movers_of(u)] if m.users
+                 else [acc.unit_of_mover(m.name)])  # fmt: skip
+        if not units or any(u is None or u not in ctx.filter for u in units):
             continue
         lanes = defaultdict(list)
         for e in of["fifo"]:
             if e["src"] == m.name:
                 lanes[e["lane"]].append((e["t"], e["count"]))
-        words = _words(m, of, ctx, unit)
+        words: dict[int, list[tuple]] = defaultdict(list)
+        unchecked: set[int] = set()
+        for unit in units:
+            for lane, ws in _words(m, of, ctx, unit).items():
+                words[lane] += ws
+            on = acc.lanes_of(m, unit)
+            if on < m.lanes and m.write:
+                # a lane ENABLED_CHANNEL leaves off sends no request: its word, visible the cycle
+                # after the push, is dropped in that cycle (snax-gvsoc's streamer)
+                for e in of["push"]:
+                    if e["src"] == unit:
+                        for lane in range(on, m.lanes):
+                            words[lane].append((e["t"] + 1, e["t"] + 1))
+            elif on < m.lanes:
+                # a reader's lane off takes a 0 word at no grant: not rebuilt here, not checked
+                unchecked |= set(range(on, m.lanes))
         prof = profile.streamers.get(m.name)
         for lane in range(m.lanes):
+            if lane in unchecked:
+                continue
             seq = lanes.get(lane, [])
-            ws = words.get(lane, [])
+            ws = sorted(words.get(lane, []))
             want, prev = [], 0
             if ws:
                 for t in range(min(v for v, _ in ws), max(p for _, p in ws) + 2):

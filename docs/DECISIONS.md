@@ -10,7 +10,7 @@ Rules (D117):
 - A replaced or merged entry is removed, and its number goes under Retired with the entry that holds it now. A number is never changed or reused, since code, tests and docs cite them; the text of every retired entry is in git history (tag `pre-gvsoc`; RET1's at `cad6619`, CLN1's at `6079d24`).
 - Closing a milestone compacts this file and removes the done tasks from STATUS.
 - Markdown prose is never hard-wrapped: one line per paragraph, list item and table row (`util/md_reflow.py --check` in lint); headings, code blocks, tables, display maths and HTML stay as they are. An entry's three lines are about 300 characters.
-- A new decision gets the next number at the end of this file, with its area tag. Next free number: **D169**.
+- A new decision gets the next number at the end of this file, with its area tag. Next free number: **D170**.
 
 Area tags: `scope` (plan, ownership, order), `lower` (SNAX-LOWER), `gvsoc` (SNAX-GVSoC), `brm` (SNAX-BRM), `dfg` (SNAX-DFG and importers), `ref` (reference executor), `sandbox`, `design` (platform, checks, memory plan, design point), `flow`, `estimate` (the ideal estimate of a bound graph), `viz`, `docs`.
 
@@ -23,7 +23,7 @@ Area tags: `scope` (plan, ownership, order), `lower` (SNAX-LOWER), `gvsoc` (SNAX
 | dfg | D19 D71 D102 D148 D150 D164 |
 | ref | D28 D79 |
 | sandbox | D72 D73 D156 D165 D166 |
-| design | D12 D84–D87 D131 D142 |
+| design | D12 D84–D87 D131 D142 D169 |
 | flow | D50 D108 D136 |
 | estimate | D154 D155 D160 D167 |
 | viz | D55 D57 D99 |
@@ -109,7 +109,7 @@ Retired, and where each now lives:
 
 **D84** · design — The platform is its own file in `platforms/`, paired with the bound graph by the design step, so either changes alone; its cluster parameters and the streamers' FIFO depths are design knobs, never a template (D134), and the streamers' temporal loops come from the graph. → C§13.
 
-**D85** · design — Design checks report every problem before anything is written, each with its fix. A limit of the model's cluster is a platform field a check holds the design to, so a design is refused before the run would assert: the TCDM crossbar's inputs (`l1.max_xbar_inputs`, SNAX-GVSoC's 64). → C§13, C§14.
+**D85** · design — Design checks report every problem before anything is written, each with its fix. A limit of the model's cluster is a platform field a check holds the design to, so a design is refused before the run would assert: the TCDM crossbar's inputs (`l1.max_xbar_inputs`, SNAX-GVSoC's 128), with a warning note above `l1.warn_xbar_inputs` (64): the cost extrapolated beyond the tables and beyond SNAX's own crossbar. → C§13, C§14.
 
 **D86** · design — The memory plan comes from registered residency, layout and placement passes, contiguous by default, with pins, seeing each port's element-index stream to avoid bank conflicts without a run (`padded_rows`, chosen with a `--set`, never in a recipe); the L2 base is the program's link (its ELF's symbols, D50). → C§15.
 
@@ -185,7 +185,7 @@ Retired, and where each now lives:
 
 **D147** · brm — Every block is a datapath of data and enables only, under one control unit per group (`<tag>_<group>_ctrl`) generated from the description, so control is written once for model and RTL, never per variant; "shell" is the wrapper. → C§17.
 
-**D148** · dfg — A bound graph nests accelerator ⊃ groups ⊃ units and links: a group is a stand-alone accelerator (its own START, JOBS, STATUS, BUSY_COUNTER and control unit), which may hold several units joined by links and is still one accelerator; each accelerator is one streamer set of the design's entry (D157), and `encapsulate` puts several groups on one streamer set, sharing its start. `link` merges two bound units' groups, their transient becoming a link; a group is its own accelerator until `encapsulate` puts several in one (both undone by inverses): dot 1 is two accelerators, `vmul` and `vsum`, which the core drives one after the other; `dot_1_enc` encapsulates them as `dot`; dot 2–6 one group of two units. → C§11, C§12.
+**D148** · dfg — A bound graph nests accelerator ⊃ groups ⊃ units and links: a group is a stand-alone accelerator (its own START, JOBS, STATUS, BUSY_COUNTER and control unit), which may hold several units joined by links and is still one accelerator; each accelerator is one streamer set of the design's entry (D157), and `encapsulate` puts several groups on one streamer set, sharing its start, and `share_ports` its movers too (D169). `link` merges two bound units' groups, their transient becoming a link; a group is its own accelerator until `encapsulate` puts several in one (both undone by inverses): dot 1 is two accelerators, `vmul` and `vsum`, which the core drives one after the other; `dot_1_enc` encapsulates them as `dot`; dot 2–6 one group of two units. → C§11, C§12.
 
 **D149** · brm — The MAC is one block with design-time variants (`accumulate`, or a·b + c with `regOut` for a later systolic PE; no `regIn`), not vmul into a lane accumulator; the lane accumulator without an op is its own block, `LaneAccumulate` (rowsum 2). The one-lane vsum is `SerialAccumulate` (`span` = lanes), not a serializer link; a buffer is `LinkBuffer`, not a FIFO. → C§17.
 
@@ -224,3 +224,5 @@ Retired, and where each now lives:
 **D167** · estimate — HWCOST: a design's cost in five parts (datapath, control, streamers, crossbar, memory), each with its share, beside the total and the total without the banks. The streamers, crossbar and banks are priced from snax-forge-experiments' tables (X48, X52–X54), copied as they are (`pixi run import-costs`), interpolated as X53 and X54 say and extrapolated with a note where X53 refuses; a streamer priced per beat, a crossbar access at one price per bank count (a full crossbar's), so the energy follows the accesses; the cores, I-cache, DMA and csr are not costed. nangate45 only. → C§20, `snax_forge/char/tables.py`, `estimate/cost.py`.
 
 **D168** · scope — A register goes where its writer and reader are: `<tag>_csr` holds what the core writes (the settings) and reads (STATUS, the kept answer) and holds a write to a group's START or settings while that group is busy, so the settings stay constant through a run; its submodule `<tag>_peripherals` holds what only the core reads or writes and the run never needs (BUSY_COUNTER), always present and left out of every reported figure: neither in the csr nor in forge's total without csr, as no HLS block has one (snax-forge-experiments X65). `<tag>_ctrl` holds what a firing changes (busy, the counters and digits, the II gap, `v`, the lane, the buffers' occupancy and slots) and every test that decides a firing, a give or done, reading the settings live with no copy; `<tag>_datapath` holds data and the arithmetic only. Reverses CTRL1's latched copies: an elementwise ctrl loses its 32-bit copy of JOBS, a fold also its copy of JOB_BEATS; programming the next task during a run is open item 123. → C§13, C§17.
+
+**D169** · design — `share_ports` on an L1 container one accelerator writes and another reads puts both on one streamer set (as `encapsulate`, D148) whose movers they share: per role the k-th widest port of each group on mover k, as wide as the widest, a narrower port enabling its first channels (`configurable_channel`). A data-side mux in the shell picks the group by `PORT_MUX_SEL`, which the core writes before each `STREAMER_START`. Off by default; the sets still run in series (D158). → C§12, C§16, C§17.

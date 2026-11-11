@@ -11,7 +11,8 @@
   "rows": 64,
   "base_addr": 0,
   "wide_bits": 512,
-  "max_xbar_inputs": 64
+  "max_xbar_inputs": 128,
+  "warn_xbar_inputs": 64
  },
  "l2": {"size_bytes": 32768, "base_addr": 0, "beat_bits": 512, "width_bits": 64},
  "wait_mode": "poll",

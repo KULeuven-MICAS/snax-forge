@@ -3,7 +3,7 @@ then its accelerator's own, from the description (accelerator.py's defines), pac
 as snax-gvsoc's SnaxAccelerator and snax_cluster's ``snax_csr_range_demux`` number them.
 
     movers(template) -> [mover]           readers first, named as the headers name them
-    mover_csr_count(spatial_bounds, temporal_dim) -> int
+    mover_csr_count(spatial_bounds, temporal_dim, enabled=0) -> int
     streamer_csrs(template) -> int        snax_streamer.nb_csrs
     channels(template) -> int             snax_cfg.streamer_channels
     csr_layout(templates, desc) -> CsrLayout
@@ -91,16 +91,28 @@ def movers(template: dict[str, Any]) -> list[dict[str, Any]]:
     return out
 
 
-def mover_csr_count(spatial_bounds: Sequence[int], temporal_dim: int) -> int:
-    """A mover's CSRs: the pointer (2), the spatial strides, the temporal bounds and strides."""
-    return 2 + len(spatial_bounds) + 2 * temporal_dim
+def enabled_csrs(num_channel: int, configurable: bool) -> int:
+    """A mover's ENABLED_CHANNEL CSRs: ceil(num_channel / 32) with ``configurable_channel``
+    (D169, ReaderWriterParam.csrNum), else none."""
+    return (num_channel + 31) // 32 if configurable else 0
+
+
+def mover_csr_count(spatial_bounds: Sequence[int], temporal_dim: int, enabled: int = 0) -> int:
+    """A mover's CSRs: the pointer (2), the spatial strides, the temporal bounds and strides,
+    then its ``enabled`` ENABLED_CHANNEL CSRs (``enabled_csrs``)."""
+    return 2 + len(spatial_bounds) + 2 * temporal_dim + enabled
+
+
+def template_mover_csrs(m: dict[str, Any]) -> int:
+    """A template mover's (``movers``) CSRs."""
+    return mover_csr_count(m["spatial_bounds"], m["temporal_dim"],
+                           enabled_csrs(m["num_channel"], bool(m.get("configurable_channel"))))  # fmt: skip
 
 
 def streamer_csrs(template: dict[str, Any]) -> int:
-    """snax_streamer.nb_csrs: per mover its CSRs (``mover_csr_count``); then start; then busy
+    """snax_streamer.nb_csrs: per mover its CSRs (``template_mover_csrs``); then start; then busy
     and the counter."""
-    rw = sum(mover_csr_count(m["spatial_bounds"], m["temporal_dim"]) for m in movers(template))
-    return rw + 1 + 2
+    return sum(template_mover_csrs(m) for m in movers(template)) + 1 + 2
 
 
 def channels(template: dict[str, Any]) -> int:

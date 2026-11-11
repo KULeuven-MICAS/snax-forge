@@ -13,7 +13,8 @@ groups (D148); dot_2 to dot_6 and matvec_2 to matvec_6, one group of
 linked units each, and matvec_1, dot_1_enc's two groups on each row; relu, axpy and
 axpy_baked (one stream, CSR scalars); rowsum_2, the lane accumulator, and rowsum_2_padded, the
 same with ``--set memory.passes.layout=padded_rows`` (rows 65 words apart); matvec_seed and
-matvec_seed_serial, the fold's seed (B2 R5) on TreeAccumulate and SerialAccumulate. Its refresh commands
+matvec_seed_serial, the fold's seed (B2 R5) on TreeAccumulate and SerialAccumulate; dot_1_shared
+and mvt_1_dot2_shared (at W = 8), groups sharing their movers (D169, PORT1). Its refresh commands
 are run
 here as written, from a temporary folder that stands for the repo root (the
 recipe and the platform the checked-in ones, the platform's source hjson
@@ -45,9 +46,11 @@ DESIGNS = [
     "dot_2", "dot_3", "dot_4", "dot_5", "dot_6",
     "matvec_1", "matvec_2", "matvec_3", "matvec_4", "matvec_5", "matvec_6", "relu",
     "axpy", "axpy_baked", "rowsum_2", "rowsum_2_padded", "matvec_seed", "matvec_seed_serial",
+    "dot_1_shared", "mvt_1_dot2_shared",
 ]  # fmt: skip
 # A fixture made from another recipe, or with --set values: its recipe and its sets
-FROM = {"rowsum_2_padded": ("rowsum_2", ("memory.passes.layout=padded_rows",))}
+FROM = {"rowsum_2_padded": ("rowsum_2", ("memory.passes.layout=padded_rows",)),
+        "mvt_1_dot2_shared": ("mvt_1_dot2_shared", ("W=8",))}  # fmt: skip
 
 pytestmark = requires_submodule
 

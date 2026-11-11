@@ -52,7 +52,7 @@ Built-in kinds:
                  its index in the graph's containers): the ``replaced``
                  subtree is checked with them in scope, and ``unbind`` puts
                  them back where they were. ``accelerator`` (D148,
-                 written only when set, by ``encapsulate``) names the
+                 written only when set, by ``encapsulate`` or ``share_ports``) names the
                  accelerator its group is in; without it the group, named
                  after the instance, is an accelerator of its own. ``group``
                  (written only when set, by ``link``) names the group the unit

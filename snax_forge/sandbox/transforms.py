@@ -130,7 +130,7 @@ name) stay in the transform.
     the tasks follow it, C§17); a unit already in an accelerator, a name an
     instance or an accelerator has, or a unit the graph lacks is an error.
     ``unencapsulate`` takes the attr off again: each group its own
-    accelerator. Their sites take a unit (a node id or an instance) and
+    accelerator (refused while ``share_ports`` marks a container of it). Their sites take a unit (a node id or an instance) and
     fill ``units`` with its instance, or ``accelerator`` with its
     accelerator (``unencapsulate``'s also takes an accelerator's name).
 """
@@ -1361,9 +1361,15 @@ def _unencapsulate_site(g: Graph, selected: str) -> dict[str, Any]:
 
 
 def unencapsulate(g: Graph, accelerator: str) -> Graph:
-    """The inverse of encapsulate: each group of ``accelerator`` its own accelerator again."""
+    """The inverse of encapsulate: each group of ``accelerator`` its own accelerator again; one
+    whose groups share its movers (``share_ports``, D169) is refused (unshare_ports first)."""
     if _unencapsulate_site(g, accelerator)["accelerator"] != accelerator:  # a unit's name
         raise SandboxError(f"unencapsulate {accelerator!r}: no accelerator of that name")
+    shared = [c for c, cont in g.containers.items()
+              if cont.attrs.get("hw.share_ports", {}).get("accelerator") == accelerator]  # fmt: skip
+    if shared:
+        raise SandboxError(f"unencapsulate {accelerator!r}: its groups share their movers on "
+                           f"{shared} (unshare_ports first)")  # fmt: skip
     g = _copy(g)
     for n in _accelerated(g):
         if n.attrs.get("accelerator") == accelerator:

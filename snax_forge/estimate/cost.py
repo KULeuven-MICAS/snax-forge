@@ -48,6 +48,11 @@ same for every variant, is not counted), so W_p / C_p beats:
                inputs and whether the accelerators run in series or not
     memory     area n_banks A_bank, energy N_rd e_rd + N_wr e_wr, the words read and written
 
+Movers a shared set's groups share (D169) are priced once each, at their own depth, loops and
+channels (the widest user's), on their first user; each user's energy per beat at its own
+channels; the port mux between them and the groups costs nothing (it takes the port's path to
+the interconnect).
+
 A writer is priced as a reader (X52); a streamer is priced per beat, its clock while it waits
 for its accelerator's turn left out, as the crossbar's per-cycle part is. A query outside a table's grid is extrapolated, its
 ``extrapolated`` axes named (tables.py). An accelerator's ``L1Cost`` is its words' share of the
@@ -217,7 +222,11 @@ class GroupCost:
 class StreamerCounts:
     """One port's streamer, what the tables price it by: its ``name`` (``<instance>_<port>``,
     D75), its ``accelerator``, whether it writes, its FIFO ``depth``, ``loops`` and
-    ``channels``, and the 64-bit ``words`` it moves in L1 in one run over its ``beats``."""
+    ``channels``, and the 64-bit ``words`` it moves in L1 in one run over its ``beats``. On a
+    shared mover (D169) ``mover`` names it (``reader0``), ``mover_channels`` are its channels,
+    which its area is priced at, and only its first user carries that area (``area``); the
+    depth and loops are the mover's, the channels the port's, which its energy per beat is
+    priced at."""
 
     name: str
     accelerator: str
@@ -227,16 +236,23 @@ class StreamerCounts:
     channels: int
     words: int
     beats: int
+    mover: str | None = None
+    mover_channels: int | None = None
+    area: bool = True
 
     def to_dict(self) -> dict[str, Any]:
-        return {"name": self.name, "accelerator": self.accelerator, "write": self.write,
-                "depth": self.depth, "loops": self.loops, "channels": self.channels,
-                "words": self.words, "beats": self.beats}  # fmt: skip
+        d = {"name": self.name, "accelerator": self.accelerator, "write": self.write,
+             "depth": self.depth, "loops": self.loops, "channels": self.channels,
+             "words": self.words, "beats": self.beats}  # fmt: skip
+        if self.mover is not None:
+            d |= {"mover": self.mover, "mover_channels": self.mover_channels, "area": self.area}
+        return d
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> StreamerCounts:
         return cls(d["name"], d["accelerator"], d["write"], d["depth"], d["loops"],
-                   d["channels"], d["words"], d["beats"])  # fmt: skip
+                   d["channels"], d["words"], d["beats"], d.get("mover"),
+                   d.get("mover_channels"), d.get("area", True))  # fmt: skip
 
 
 @dataclass(frozen=True)
@@ -257,10 +273,16 @@ class StreamerCost:
 
 
 def streamer_cost(costs: Costs, c: StreamerCounts) -> StreamerCost:
-    """A streamer's area and energy per run on ``costs`` (module doc)."""
+    """A streamer's area and energy per run on ``costs`` (module doc); on a shared mover its area
+    at the mover's channels, on its first user only, its energy at the port's."""
     got = _streamer(costs, c.depth, c.loops, c.channels)
-    return StreamerCost(c, got.area_um2, got.energy_pj, c.beats * got.energy_pj / 1000,
-                        got.extrapolated)  # fmt: skip
+    area = got.area_um2
+    extrapolated = got.extrapolated
+    if c.mover_channels is not None:
+        mover = _streamer(costs, c.depth, c.loops, c.mover_channels)
+        area = mover.area_um2 if c.area else 0.0
+        extrapolated = tuple(dict.fromkeys((*got.extrapolated, *mover.extrapolated)))
+    return StreamerCost(c, area, got.energy_pj, c.beats * got.energy_pj / 1000, extrapolated)
 
 
 @dataclass(frozen=True)

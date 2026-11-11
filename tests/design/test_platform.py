@@ -236,14 +236,20 @@ def test_the_csr_widths_are_set_and_counter_width_follows_job_width_when_null():
 
 
 def test_the_crossbar_limit_is_a_platform_value():
-    """l1.max_xbar_inputs (D85): 64 by default and in both platform files, at least 1."""
-    assert L1Config().max_xbar_inputs == 64
+    """l1.max_xbar_inputs (D85): 128 by default and in both platform files, at least 1; the
+    warning l1.warn_xbar_inputs 64, from 1 to the limit."""
+    assert (L1Config().max_xbar_inputs, L1Config().warn_xbar_inputs) == (128, 64)
+    for path in (SMALL16, SNAX_FORGE):
+        l1 = Platform.load(path).l1
+        assert (l1.max_xbar_inputs, l1.warn_xbar_inputs) == (128, 64)
     assert (
-        Platform.load(SMALL16).with_changes([("l1.max_xbar_inputs", 128)]).l1.max_xbar_inputs == 128
+        Platform.load(SMALL16).with_changes([("l1.max_xbar_inputs", 96)]).l1.max_xbar_inputs == 96
     )
     with pytest.raises(DesignError, match="max_xbar_inputs must be >= 1") as e:
         Platform.load(SMALL16).with_changes([("l1.max_xbar_inputs", 0)])
     assert e.value.codes == ["platform.values"]
+    with pytest.raises(DesignError, match="warn_xbar_inputs must be 1 to max_xbar_inputs"):
+        Platform.load(SMALL16).with_changes([("l1.max_xbar_inputs", 32)])
 
 
 @pytest.mark.parametrize(

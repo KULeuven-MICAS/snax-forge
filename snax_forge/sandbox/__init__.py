@@ -9,7 +9,7 @@ params, applied to an imported graph; the transforms ``split``,
 ``unfuse_map`` and ``unlink`` (compose.py, D150);
 ``bake_scalar`` and its inverse ``unbake_scalar`` (scalar.py);
 ``fuse_seed`` and its inverse ``unfuse_seed`` (seed.py), a fold taking the elementwise nest after it as its seed;
-``mark_transpose`` and its inverse ``unmark_transpose`` (transpose.py), an input read across its loop order marked; ``share`` and its inverse ``unshare`` (share.py), a group run on another's units;
+``mark_transpose`` and its inverse ``unmark_transpose`` (transpose.py), an input read across its loop order marked; ``share`` and its inverse ``unshare`` (share.py), a group run on another's units; ``share_ports`` and its inverse ``unshare_ports`` (share_ports.py, D169), two accelerators on one streamer whose movers they share;
 each with its site, the graph-shape test of where it applies (D72);
 the pattern matchers ``bind`` uses to recognise a BRM's pattern
 (patterns.py), among them ``reduce``, with which ``bind`` binds a folding
@@ -28,6 +28,7 @@ from .run import Result, apply_recipe, bind_recipe_symbols, write_steps
 from .scalar import bake_scalar, unbake_scalar
 from .seed import fuse_seed, unfuse_seed
 from .share import share, unshare
+from .share_ports import share_ports, unshare_ports
 from .transforms import (
     TRANSFORMS,
     bind,
@@ -66,6 +67,7 @@ __all__ = [
     "register_pattern",
     "register_transform",
     "share",
+    "share_ports",
     "split",
     "split_map",
     "split_reduce",
@@ -78,5 +80,6 @@ __all__ = [
     "unlink",
     "unmark_transpose",
     "unshare",
+    "unshare_ports",
     "write_steps",
 ]

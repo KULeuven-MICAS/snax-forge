@@ -200,3 +200,14 @@ def test_a_shared_instance_is_one_bindings_entry_and_its_nodes_highlight_togethe
                                            "vsum · accumulate · sum, sum_1",
                                            "vadd · simd · augassign_18_4, augassign_19_4"]  # fmt: skip
     assert not [e for e in b["entries"] if e["kind"] == "split"]  # no split left "not bound"
+
+
+def test_a_shared_container_carries_its_marker():
+    """share_ports (D169): dot 1's tmp0 is drawn with the tag share_ports · tmp0 beside its
+    badge, as a link's or a FIFO's text marks theirs; an unshared container has none."""
+    from tests.helpers import steps
+
+    v = view_of(steps("dot_1_shared", W=4)[-1])
+    assert v["containers"]["tmp0"]["share"] == "share_ports · tmp0"
+    assert "share" not in v["containers"]["A"]
+    assert "share" not in view_of(steps("dot_1", W=4)[-1])["containers"]["tmp0"]

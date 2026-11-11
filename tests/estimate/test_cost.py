@@ -147,6 +147,29 @@ def test_mvt_1_dot2_counts_a_shared_set_once_and_its_words_twice():
         e.xbar.energy_nj + e.memory.energy_nj)  # fmt: skip
 
 
+def test_dot_1_shared_prices_each_mover_once():
+    """dot 1 with share_ports (D169): three movers of 4 channels, each priced once at its own
+    depth, loops and channels on its first user; vsum.out, one channel of writer0, priced per beat
+    at its one channel and no area; 15 inputs where dot 1 has 20."""
+    e = estimated("dot_1_shared")
+    s = {c.counts.name: c for c in e.streamer_costs}
+    assert [
+        (k, c.counts.mover, c.counts.channels, c.counts.mover_channels, c.counts.area)
+        for k, c in s.items()
+    ] == [
+        ("vmul_a", "reader0", 4, 4, True),
+        ("vmul_b", "reader1", 4, 4, True),
+        ("vmul_out", "writer0", 4, 4, True),
+        ("vsum_a", "reader0", 4, 4, False),
+        ("vsum_out", "writer0", 1, 4, False),
+    ]
+    assert e.parts["streamers"].area_um2 == pytest.approx(3 * READER_8_1_4[0])
+    assert (s["vsum_out"].area_um2, s["vsum_out"].e_beat_pj) == (0.0, READER_8_1_1[1])
+    assert (e.xbar.inputs, estimated("dot_1").xbar.inputs) == (15, 20)
+    assert [x.to_dict() for x in e.streamer_counts] == [
+        x.counts.to_dict() for x in e.streamer_costs]  # fmt: skip
+
+
 def test_words_are_counted_packed_and_a_link_keeps_its_container_out():
     """A packed dtype counts words, not elements (vecadd_i32: 3 × 32 words for 64 int32;
     vsum_tree_i8: 8 + 1 for 64 int8); a link's container is not in L1 (dot 2: tmp0's 2 × 2048

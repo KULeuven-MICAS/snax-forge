@@ -20,6 +20,17 @@ values only, nested as the graph is (D148), in this key order:
       inputs      its outer ports, "<unit>.<port>", in its streamer's reader
       outputs     and writer order (the BRM's port order)
       groups      in CSR order; each name, csrs, units, links
+      movers      only when its groups share its movers (D169, design/streamers.py's
+                  ``shared_movers``): per mover in the streamer's order (readers,
+                  then writers) its ``name`` (``reader<k>``, ``writer<k>``),
+                  ``role`` (``read``, ``write``), ``num_channel``, ``masked`` (it
+                  has ``configurable_channel``: a user narrower than it) and
+                  ``users``, each ``{group, port, num_channel}``, the port one of
+                  ``inputs`` or ``outputs``; every outer port on one mover
+      port_mux    with ``movers``: ``groups`` (the groups in PORT_MUX_SEL's
+                  order, the accelerator's) and ``csr``, PORT_MUX_SEL (R/W, the
+                  accelerator's last CSR, its width the bits a group's index
+                  takes)
 
 A unit: ``name`` (the instance), ``brm``, ``datapath`` (the binding's),
 ``ports`` (per BRM port in its order: ``port``, ``dir``, ``dtype``, ``lanes``,
@@ -49,7 +60,8 @@ START's 1, STATUS's 2, JOBS and every JOB_BEATS one width and every BUSY_COUNTER
 one width, over the whole design. ``Accelerator.define`` names a CSR as the
 header does: ``<ACC>_<RW|RO>_[<GROUP>_][<UNIT>_]<NAME>``, the group part
 dropped when the accelerator has one group, the unit part when the group has
-one unit; ``Description.define`` asks the accelerator that holds the group.
+one unit; PORT_MUX_SEL, no group's, is ``<ACC>_RW_PORT_MUX_SEL``;
+``Description.define`` asks the accelerator that holds the group.
 
 **The accelerators and groups** (D148): the graph's accelerators in the
 order it first uses them (design/streamers.py's ``accelerators``), each its
@@ -79,7 +91,10 @@ connect), besides the offsets and widths (a ValueError); then SNAX-GVSoC's
 limits (snax-gvsoc's SnaxGroup), ``gen.chain`` (a group that is not a chain
 in unit order: each unit's output linked to the next unit's input, only the
 last unit's output outer; lifted in tier A, fork and join) and ``gen.span``
-(a unit of span > 1 with an outer input; lifted in B2).
+(a unit of span > 1 with an outer input; lifted in B2), and ``gen.share`` (a shared
+accelerator's movers or port mux not as above: a user not one of its outer ports or of
+another group, an outer port on no mover or on two, a narrower user on a mover not masked,
+``port_mux.groups`` not its groups).
 """
 
 from __future__ import annotations
@@ -98,7 +113,7 @@ from snax_forge.brm import Instance, port_dtypes
 from snax_forge.common import JsonFile
 from snax_forge.design.streamers import group_links as shared_links
 from snax_forge.design.streamers import groups as graph_groups
-from snax_forge.design.streamers import instance_nodes, linked_ports
+from snax_forge.design.streamers import instance_nodes, linked_ports, shared_movers
 from snax_forge.dfg import Graph, Node
 from snax_forge.dfg.subset import map_range, parse_dim
 from snax_forge.lower.c import accelerators as c_accelerators
@@ -232,27 +247,91 @@ class Group:
 
 
 @dataclass(frozen=True)
+class MoverUser:
+    """A group's port on a shared mover: its group, the port (``"<unit>.<port>"``) and its
+    channels."""
+
+    group: str
+    port: str
+    num_channel: int
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"group": self.group, "port": self.port, "num_channel": self.num_channel}
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> MoverUser:
+        return cls(d["group"], d["port"], d["num_channel"])
+
+
+@dataclass(frozen=True)
+class Mover:
+    """A mover of a shared accelerator (D169); see the module doc."""
+
+    name: str
+    role: str
+    num_channel: int
+    masked: bool
+    users: list[MoverUser]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"name": self.name, "role": self.role, "num_channel": self.num_channel,
+                "masked": self.masked, "users": [u.to_dict() for u in self.users]}  # fmt: skip
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> Mover:
+        return cls(d["name"], d["role"], d["num_channel"], d["masked"],
+                   [MoverUser.from_dict(u) for u in d["users"]])  # fmt: skip
+
+
+@dataclass(frozen=True)
+class PortMux:
+    """A shared accelerator's data-side mux (D169): its groups in PORT_MUX_SEL's order and
+    PORT_MUX_SEL."""
+
+    groups: list[str]
+    csr: Csr
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"groups": list(self.groups), "csr": self.csr.to_dict()}
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> PortMux:
+        return cls(list(d["groups"]), Csr.from_dict(d["csr"]))
+
+
+@dataclass(frozen=True)
 class Accelerator:
     """One accelerator of the design: one streamer set (D157), its groups sharing its streamer
-    and, encapsulated, its start (D148)."""
+    and, encapsulated, its start (D148), and with ``share_ports`` its movers too (D169)."""
 
     name: str
     inputs: list[str]
     outputs: list[str]
     groups: list[Group]
+    movers: list[Mover] = field(default_factory=list)
+    port_mux: PortMux | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {"name": self.name, "inputs": list(self.inputs), "outputs": list(self.outputs),
-                "groups": [g.to_dict() for g in self.groups]}  # fmt: skip
+        d = {"name": self.name, "inputs": list(self.inputs), "outputs": list(self.outputs),
+             "groups": [g.to_dict() for g in self.groups]}  # fmt: skip
+        if self.port_mux is not None:
+            d |= {"movers": [m.to_dict() for m in self.movers],
+                  "port_mux": self.port_mux.to_dict()}  # fmt: skip
+        return d
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> Accelerator:
+        mux = d.get("port_mux")
         return cls(d["name"], list(d["inputs"]), list(d["outputs"]),
-                   [Group.from_dict(g) for g in d["groups"]])  # fmt: skip
+                   [Group.from_dict(g) for g in d["groups"]],
+                   [Mover.from_dict(m) for m in d.get("movers", [])],
+                   None if mux is None else PortMux.from_dict(mux))  # fmt: skip
 
-    def csrs(self) -> list[tuple[Group, Unit | None, Csr]]:
-        """Its CSRs in CSR order, with their group and unit (None for a group's own)."""
-        return [(g, u, c) for g in self.groups for u, c in g.in_order()]
+    def csrs(self) -> list[tuple[Group | None, Unit | None, Csr]]:
+        """Its CSRs in CSR order, with their group and unit (None for a group's own; group None
+        for PORT_MUX_SEL, last)."""
+        own = [] if self.port_mux is None else [(None, None, self.port_mux.csr)]
+        return [*((g, u, c) for g in self.groups for u, c in g.in_order()), *own]
 
     @property
     def rw(self) -> int:
@@ -268,10 +347,10 @@ class Accelerator:
     def units(self) -> list[Unit]:
         return [u for g in self.groups for u in g.units]
 
-    def define(self, group: Group, unit: Unit | None, csr: Csr) -> str:
+    def define(self, group: Group | None, unit: Unit | None, csr: Csr) -> str:
         """A CSR's name in the header and the program; see the module doc."""
         parts = [self.name.upper(), csr.access.upper()]
-        if len(self.groups) > 1:
+        if group is not None and len(self.groups) > 1:
             parts.append(group.name.upper())
         if unit is not None and len(group.units) > 1:
             parts.append(unit.name.upper())
@@ -322,6 +401,8 @@ class Description(JsonFile):
                                  f"CSRs {want} (name, pin), not {got}")  # fmt: skip
         for a in self.accelerators:
             _check_links(a)
+            if a.port_mux is not None or a.movers:
+                _check_shared(a)
 
     def to_dict(self) -> dict[str, Any]:
         return {"design_point": self.design_point, "tag": self.tag,
@@ -380,10 +461,16 @@ class Description(JsonFile):
                 return g
         raise KeyError(f"{self.tag} has no unit {unit!r}")
 
-    def define(self, group: Group, unit: Unit | None, csr: Csr) -> str:
+    def define(self, group: Group | None, unit: Unit | None, csr: Csr) -> str:
         """A CSR's name in the header and the program: its accelerator's ``define``."""
-        (a,) = (a for a in self.accelerators if any(g is group for g in a.groups))
+        (a,) = (a for a in self.accelerators
+                if any(g is group for g in a.groups) or (a.port_mux and a.port_mux.csr is csr))  # fmt: skip
         return a.define(group, unit, csr)
+
+    def port_mux_sel(self, acc: str) -> str | None:
+        """The define of accelerator ``acc``'s PORT_MUX_SEL, None when it shares no movers."""
+        (a,) = (a for a in self.accelerators if a.name == acc)
+        return None if a.port_mux is None else a.define(None, None, a.port_mux.csr)
 
     def defines(self) -> dict[str, int]:
         """Every CSR's ``define`` -> its offset from the shell's first CSR, in CSR order."""
@@ -438,6 +525,38 @@ def _check_links(acc: Accelerator) -> None:
         if list(have) != want:
             raise GenError("gen.outer", f"accelerator {acc.name}: {key} {list(have)}; the "
                            f"unlinked ports are {want}, in group, unit and port order")  # fmt: skip
+
+
+def _check_shared(acc: Accelerator) -> None:
+    """``gen.share``: a shared accelerator's movers and port mux (module doc)."""
+    what = f"accelerator {acc.name}"
+    if acc.port_mux is None or not acc.movers:
+        raise GenError("gen.share", f"{what}: movers and port_mux come together (D169)")
+    names = [g.name for g in acc.groups]
+    if sorted(acc.port_mux.groups) != sorted(names):
+        raise GenError("gen.share", f"{what}: port_mux.groups {acc.port_mux.groups}, not its "
+                       f"groups {names}")  # fmt: skip
+    group_of = {u.name: g.name for g in acc.groups for u in g.units}
+    placed: dict[str, str] = {}
+    for m in acc.movers:
+        outer = acc.inputs if m.role == "read" else acc.outputs
+        groups = [u.group for u in m.users]
+        if len(set(groups)) != len(groups):
+            raise GenError("gen.share", f"{what}: {m.name} serves two ports of one group")
+        for u in m.users:
+            if u.port not in outer or group_of[u.port.split(".")[0]] != u.group:
+                raise GenError("gen.share", f"{what}: {m.name}'s user {u.port} of {u.group} is not "
+                               f"one of its {m.role} ports of that group")  # fmt: skip
+            if u.port in placed:
+                raise GenError("gen.share", f"{what}: {u.port} on {placed[u.port]} and {m.name}")
+            if not 1 <= u.num_channel <= m.num_channel or (u.num_channel < m.num_channel
+                                                           and not m.masked):  # fmt: skip
+                raise GenError("gen.share", f"{what}: {u.port}'s {u.num_channel} channels on "
+                               f"{m.name}'s {m.num_channel} (masked {m.masked})")  # fmt: skip
+            placed[u.port] = m.name
+    missing = [p for p in [*acc.inputs, *acc.outputs] if p not in placed]
+    if missing:
+        raise GenError("gen.share", f"{what}: {missing} on no mover")
 
 
 def _check_chain(acc: Accelerator, g: Group, ports: dict[str, Port]) -> None:
@@ -529,6 +648,7 @@ def describe(point: DesignPoint, point_path: str) -> Description:
     offsets = iter(range(1 << 16))  # contiguous over the accelerators and groups, in CSR order
     widths = point.platform.acc_csr
     accs = []
+    shared = shared_movers(g, point.streamers)
     for acc_name, mine in found.items():
         groups, inputs, outputs = [], [], []
         for group_name, members in graph_groups(g).items():
@@ -547,7 +667,15 @@ def describe(point: DesignPoint, point_path: str) -> Description:
                 ports = [p for p in mine[u].ports if f"{u}.{p.name}" not in linked]
                 inputs += [f"{u}.{p.name}" for p in ports if p.direction == "in"]
                 outputs += [f"{u}.{p.name}" for p in ports if p.direction == "out"]
-        accs.append(Accelerator(acc_name, inputs, outputs, groups))
+        movers, mux = [], None
+        if acc_name in shared:
+            movers = [Mover(m.name, "write" if m.write else "read", m.num_ch, m.masked,
+                            [MoverUser(u.group, u.port, u.num_ch) for u in m.users])
+                      for m in shared[acc_name]]  # fmt: skip
+            width = max(1, (len(groups) - 1).bit_length())
+            mux = PortMux([x.name for x in groups],
+                          Csr("PORT_MUX_SEL", "rw", next(offsets), width))  # fmt: skip
+        accs.append(Accelerator(acc_name, inputs, outputs, groups, movers, mux))
     return Description(point_path, entry, accs)
 
 

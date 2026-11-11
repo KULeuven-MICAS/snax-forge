@@ -38,7 +38,7 @@ from typing import TYPE_CHECKING, Any
 from snax_forge.char import DEFAULT_TECH, load
 from snax_forge.char.tables import Costs, load_costs
 from snax_forge.common import JsonFile
-from snax_forge.design.streamers import accelerator_of, instances, resolve
+from snax_forge.design.streamers import accelerator_of, instances, resolve, shared_movers
 from snax_forge.design.streamers import accelerators as graph_accelerators
 
 from .accelerators import AcceleratorEstimate, StreamerEstimate, accelerators
@@ -353,9 +353,19 @@ def _hw_counts(graph: Graph, platform: Platform, data: dict[str, ContainerData]
         w = moved.setdefault((n.attrs["instance"], name), [0, 0])
         w[0] += port.beats * port.num_ch
         w[1] += port.beats
-    counts = [StreamerCounts(s.name, unit_acc[s.instance], s.write, s.options.fifo_depth,
-                             s.temporal_dims, s.num_ch, *moved.get((s.instance, s.port), (0, 0)))
-              for s in shell.values()]  # fmt: skip
+    shared = {u.streamer: (m, i == 0) for movers in shared_movers(graph, shell).values()
+              for m in movers for i, u in enumerate(m.users)}  # fmt: skip
+    counts = []
+    for s in shell.values():
+        got = moved.get((s.instance, s.port), (0, 0))
+        if s.name in shared:  # on a shared mover (D169): its depth, loops and channels
+            m, first = shared[s.name]
+            counts.append(StreamerCounts(s.name, unit_acc[s.instance], s.write, m.fifo_depth,
+                                         m.temporal_dims, s.num_ch, *got, m.name, m.num_ch,
+                                         first))  # fmt: skip
+        else:
+            counts.append(StreamerCounts(s.name, unit_acc[s.instance], s.write,
+                                         s.options.fifo_depth, s.temporal_dims, s.num_ch, *got))  # fmt: skip
     l1 = platform.l1
     return counts, crossbar_inputs(platform, graph, insts), (l1.n_banks, l1.rows, l1.width_bits)
 

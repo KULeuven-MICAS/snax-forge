@@ -37,6 +37,12 @@
      "type": "array",
      "minItems": 1,
      "items": {"$ref": "#/$defs/count"}
+    },
+    "configurable_channel": {
+     "description": "Per mover, whether it has ENABLED_CHANNEL (snax_cluster's configurable_channel): only in a shared set with a mover of this role narrower users take (D169).",
+     "type": "array",
+     "minItems": 1,
+     "items": {"type": "boolean"}
     }
    },
    "required": ["spatial_bounds", "temporal_dim", "num_channel", "fifo_depth"],

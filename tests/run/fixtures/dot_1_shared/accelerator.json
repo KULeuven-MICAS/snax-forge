@@ -1,0 +1,96 @@
+{
+ "design_point": "design/design_point.json",
+ "tag": "snax_forge_dot_1_shared",
+ "accelerators": [
+  {
+   "name": "dot",
+   "inputs": ["vmul.a", "vmul.b", "vsum.a"],
+   "outputs": ["vmul.out", "vsum.out"],
+   "groups": [
+    {
+     "name": "vmul",
+     "csrs": [
+      {"name": "START", "access": "rw", "offset": 0, "width": 1},
+      {"name": "JOBS", "access": "rw", "offset": 1, "width": 32},
+      {"name": "STATUS", "access": "ro", "offset": 2, "width": 2},
+      {"name": "BUSY_COUNTER", "access": "ro", "offset": 3, "width": 32}
+     ],
+     "units": [
+      {
+       "name": "vmul",
+       "brm": "simd",
+       "datapath": "SimdLanes",
+       "ports": {
+        "a": {"port": "a", "dir": "in", "dtype": "int64", "lanes": 4},
+        "b": {"port": "b", "dir": "in", "dtype": "int64", "lanes": 4},
+        "out": {"port": "out", "dir": "out", "dtype": "int64", "lanes": 4}
+       },
+       "opType": "int64",
+       "params": {"op": "mul"},
+       "timing": {"latency": 0, "ii": 1, "span": 1},
+       "csrs": []
+      }
+     ],
+     "links": []
+    },
+    {
+     "name": "vsum",
+     "csrs": [
+      {"name": "START", "access": "rw", "offset": 4, "width": 1},
+      {"name": "JOBS", "access": "rw", "offset": 5, "width": 32},
+      {"name": "STATUS", "access": "ro", "offset": 7, "width": 2},
+      {"name": "BUSY_COUNTER", "access": "ro", "offset": 8, "width": 32}
+     ],
+     "units": [
+      {
+       "name": "vsum",
+       "brm": "accumulate",
+       "datapath": "TreeAccumulate",
+       "ports": {
+        "a": {"port": "in", "dir": "in", "dtype": "int64", "lanes": 4},
+        "out": {"port": "out", "dir": "out", "dtype": "int64", "lanes": 1}
+       },
+       "params": {"op": "add"},
+       "timing": {"latency": 1, "ii": 1, "span": 1},
+       "csrs": [{"name": "JOB_BEATS", "access": "rw", "offset": 6, "width": 32}]
+      }
+     ],
+     "links": []
+    }
+   ],
+   "movers": [
+    {
+     "name": "reader0",
+     "role": "read",
+     "num_channel": 4,
+     "masked": false,
+     "users": [
+      {"group": "vmul", "port": "vmul.a", "num_channel": 4},
+      {"group": "vsum", "port": "vsum.a", "num_channel": 4}
+     ]
+    },
+    {
+     "name": "reader1",
+     "role": "read",
+     "num_channel": 4,
+     "masked": false,
+     "users": [{"group": "vmul", "port": "vmul.b", "num_channel": 4}]
+    },
+    {
+     "name": "writer0",
+     "role": "write",
+     "num_channel": 4,
+     "masked": true,
+     "users": [
+      {"group": "vmul", "port": "vmul.out", "num_channel": 4},
+      {"group": "vsum", "port": "vsum.out", "num_channel": 1}
+     ]
+    }
+   ],
+   "port_mux": {
+    "groups": ["vmul", "vsum"],
+    "csr": {"name": "PORT_MUX_SEL", "access": "rw", "offset": 9, "width": 1}
+   }
+  }
+ ]
+}
