@@ -1,5 +1,6 @@
-"""A shared design (D169, PORT1) beyond gen-gvsoc: the bundle refuses it until the shell
-wrapper's mux (open item 114), and the run reads its cluster as one mover per shared mover."""
+"""A shared design (D169, PORT1) beyond gen-gvsoc: gen-rtl and the bundle take it, the shell
+wrapper holding its data-side mux (``<tag>_<set>_port_mux``, C§18's modules), and the run reads
+its cluster as one mover per shared mover."""
 
 from __future__ import annotations
 
@@ -9,16 +10,16 @@ import pytest
 
 from snax_forge.design import DesignPoint
 from snax_forge.gen import generate
-from snax_forge.gen.blocks import GenError
-from snax_forge.gen.rtl import accelerator_spec
+from snax_forge.gen.bundle import write_bundle
+from snax_forge.gen.rtl import write_accelerator
 from snax_forge.lower import task_list
 from snax_forge.report.design import build_design, render_design
 from snax_forge.run.beats import mover_tasks, pairing
 from snax_forge.run.cluster import Cluster, load_cluster
 from snax_forge.sandbox import Recipe
-from tests.helpers import recipe_path
+from tests.helpers import SUB, recipe_path, requires_submodule
 
-from .helpers import designed
+from .helpers import designed, fake_emit
 
 
 @pytest.fixture(scope="module")
@@ -32,11 +33,23 @@ def shared(tmp_path_factory):
     return tmp, tmp / point, tmp / "gvsoc"
 
 
-def test_the_bundle_refuses_a_shared_design(shared):
-    tmp, point, _ = shared
-    with pytest.raises(GenError, match="share their movers") as e:
-        accelerator_spec(point, tmp)
-    assert e.value.code == "bundle.share"
+@requires_submodule
+@pytest.mark.parametrize(("name", "sets", "acc"), [("dot_1_shared", [], "dot"),
+                                                   ("mvt_1_dot2_shared", ["W=8"], "mvt_vadd")])  # fmt: skip
+def test_gen_rtl_and_the_bundle_take_a_shared_design(tmp_path, monkeypatch, name, sets, acc):
+    """Both shared fixtures: gen-rtl's accelerator.json is snax-gvsoc's forge/<name>/ byte for
+    byte, movers and port_mux in it, and the bundle (Emit faked) lists the set's port mux after
+    the datapath, holding no module."""
+    point = designed(tmp_path, name, name, sets)
+    monkeypatch.chdir(tmp_path)
+    write_accelerator(point, tmp_path / "rtl", tmp_path)
+    got = (tmp_path / "rtl" / "accelerator.json").read_bytes()
+    assert got == (SUB / "forge" / name / "accelerator.json").read_bytes()
+    fake_emit(monkeypatch)
+    b, _ = write_bundle(point, tmp_path / "bundle", tmp_path)
+    t = f"snax_forge_{name}"
+    assert list(b.modules) == [f"{t}_csr", f"{t}_ctrl", f"{t}_datapath", f"{t}_{acc}_port_mux"]
+    assert b.modules[f"{t}_{acc}_port_mux"] == []
 
 
 def test_the_run_reads_one_mover_per_shared_mover(shared, tmp_path):

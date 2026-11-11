@@ -7,6 +7,10 @@
     "snax_forge_dot_1_enc_vmul_ctrl": [["busy", 1], ["vmul_jobs_counter", 32], ["done", 1]],
     "snax_forge_dot_1_enc_vsum_ctrl": [["busy", 1], ["vsum_job_beats_counter", 32], ["vsum_jobs_counter", 32], ["vsum_v", 1], ["done", 1]]
   },
+  "dot_1_shared": {
+    "snax_forge_dot_1_shared_vmul_ctrl": [["busy", 1], ["vmul_jobs_counter", 32], ["done", 1]],
+    "snax_forge_dot_1_shared_vsum_ctrl": [["busy", 1], ["vsum_job_beats_counter", 32], ["vsum_jobs_counter", 32], ["vsum_v", 1], ["done", 1]]
+  },
   "dot_2": {
     "snax_forge_dot_2_dot_ctrl": [["busy", 1], ["mul_sum_job_beats_counter", 32], ["mul_jobs_counter", 32], ["sum_job_beats_counter", 32], ["sum_jobs_counter", 32], ["sum_v", 1], ["mul_sum_occupancy", 1], ["done", 1]]
   },
@@ -33,6 +37,10 @@
   },
   "matvec_6": {
     "snax_forge_matvec_6_matvec_ctrl": [["busy", 1], ["mac_job_beats_counter", 32], ["mac_jobs_counter", 32], ["mac_v", 1], ["sum_jobs_counter", 32], ["sum_v", 1], ["sum_lane", 2], ["mac_sum_occupancy", 1], ["done", 1]]
+  },
+  "mvt_1_dot2_shared": {
+    "snax_forge_mvt_1_dot2_shared_mvt_ctrl": [["busy", 1], ["vmul_x1_vsum_x1_job_beats_counter", 32], ["vmul_x1_jobs_counter", 32], ["vsum_x1_job_beats_counter", 32], ["vsum_x1_jobs_counter", 32], ["vsum_x1_v", 1], ["vmul_x1_vsum_x1_occupancy", 1], ["done", 1]],
+    "snax_forge_mvt_1_dot2_shared_vadd_ctrl": [["busy", 1], ["vadd_jobs_counter", 32], ["done", 1]]
   },
   "vecadd": {
     "snax_forge_vecadd_acc_ctrl": [["busy", 1], ["acc_jobs_counter", 32], ["done", 1]]

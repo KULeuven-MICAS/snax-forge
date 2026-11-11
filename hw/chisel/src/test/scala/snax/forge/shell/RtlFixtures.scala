@@ -38,7 +38,7 @@ object RtlFixtures {
     lazy val spec: AcceleratorSpec = AcceleratorSpec.load(file("accelerator.json"))
 
     /** The streamer hjsons, one per set in set order: `//` comment lines, then JSON. */
-    lazy val streamers: Seq[ujson.Value] = spec.sets.map { set =>
+    lazy val streamers: Seq[ujson.Value] = spec.sets.map(_.name).map { set =>
       ujson.read(
         Files
           .readAllLines(file(s"${spec.tag}_streamer_$set.hjson"))

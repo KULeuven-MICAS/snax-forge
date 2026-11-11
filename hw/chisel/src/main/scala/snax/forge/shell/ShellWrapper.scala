@@ -57,6 +57,11 @@ class ShellPorts(val readers: Seq[Int], val writers: Seq[Int], val groups: Seq[S
   * side, lane i at bits `[w(i+1)-1 : wi]` for the port's w-bit dtype (num_slc = 64 / w lanes a word, D142), at least
   * one 64-bit word (a fold's one-lane output); the streamer's packing, checked on snax_cluster's RTL (D123).
   *
+  * A set whose groups share its movers (D169) shows its movers at the wrapper in place of its groups' ports, readers
+  * then writers in the file's order, each `num_channel * 64` bits (the streamer template's ports for the set's hjson),
+  * and holds `<tag>_<set>_port_mux` (`PortMux`) between them and the groups' ports, its select PORT_MUX_SEL from
+  * `<tag>_csr`; the groups and their control units are as in an unshared set.
+  *
   * Clock `clk_i`, reset `rst_ni` active low and asynchronous, as snax_cluster's (`RequireAsyncReset` in ReqRspManager).
   */
 class ShellWrapper(spec: AcceleratorSpec) extends RawModule {
@@ -71,13 +76,28 @@ class ShellWrapper(spec: AcceleratorSpec) extends RawModule {
     math.max(64, p.lanes * snax.forge.IntType(p.dtype).width)
   }
 
-  val io = FlatIO(
-    new ShellPorts(
-      spec.inputs.map { case (u, p) => width(u, p) },
-      spec.outputs.map { case (u, p) => width(u, p) },
-      spec.groups.map(_.name)
-    )
-  )
+  /** The sets, or one holding every port and group for a spec read without them. */
+  private val sets =
+    if (spec.sets.nonEmpty) spec.sets
+    else Seq(AcceleratorSpec.SetSpec("", spec.inputs, spec.outputs, spec.groups.map(_.name)))
+
+  /** The wrapper's readers (writers) in order, set after set: an unshared set's outer ports `Right((unit, port))`, a
+    * shared set's movers `Left((set, mover))`.
+    */
+  private type Outer = Either[(AcceleratorSpec.SetSpec, AcceleratorSpec.MoverSpec), (String, String)]
+
+  private def outer(s: AcceleratorSpec.SetSpec, movers: Seq[AcceleratorSpec.MoverSpec], ports: Seq[(String, String)]) =
+    if (s.shared) movers.map(m => Left(s -> m): Outer) else ports.map(p => Right(p): Outer)
+
+  private val readers: Seq[Outer] = sets.flatMap(s => outer(s, s.readers, s.inputs))
+  private val writers: Seq[Outer] = sets.flatMap(s => outer(s, s.writers, s.outputs))
+
+  private def widthOf(e: Outer): Int = e.fold(_._2.width, { case (u, p) => width(u, p) })
+
+  /** The name of the group that holds `unit`. */
+  private def groupOf(unit: String): String = spec.groups.find(_.units.exists(_.name == unit)).get.name
+
+  val io = FlatIO(new ShellPorts(readers.map(widthOf), writers.map(widthOf), spec.groups.map(_.name)))
 
   /** A scalar pin's value: its unit's CSRs for it from `<tag>_csr`, the high word over the low (one at 32 bits or
     * fewer).
@@ -103,6 +123,63 @@ class ShellWrapper(spec: AcceleratorSpec) extends RawModule {
     io("csr_rsp_valid_o") := csr.io.rsp.valid
     csr.io.rsp.ready      := io.bool("csr_rsp_ready_i")
 
+    // Each shared set's mux: its movers on the wrapper's ports, its select from the csr
+    val muxes = sets
+      .filter(_.shared)
+      .zipWithIndex
+      .map { case (set, i) =>
+        val m = Module(new PortMux(spec.tag, set)).suggestName(s"${set.name}_port_mux")
+        m.io("sel_i") := csr.io.portMuxSel.get(i)
+        for (mv <- set.movers) {
+          val e: Outer = Left(set -> mv)
+          if (mv.reader) {
+            val k = readers.indexOf(e)
+            m.io(s"${mv.name}_data_i")     := io.uint(s"stream2acc_${k}_data_i")
+            m.io(s"${mv.name}_valid_i")    := io.bool(s"stream2acc_${k}_valid_i")
+            io(s"stream2acc_${k}_ready_o") := m.io.bool(s"${mv.name}_ready_o")
+          } else {
+            val k = writers.indexOf(e)
+            io(s"acc2stream_${k}_data_o")  := m.io.uint(s"${mv.name}_data_o")
+            io(s"acc2stream_${k}_valid_o") := m.io.bool(s"${mv.name}_valid_o")
+            m.io(s"${mv.name}_ready_i")    := io.bool(s"acc2stream_${k}_ready_i")
+          }
+          for (u <- mv.users)
+            require(
+              u.numChannel * 64 == width(u.port._1, u.port._2),
+              s"${set.name}: ${u.port} of ${u.numChannel} channels, its port ${width(u.port._1, u.port._2)} bits"
+            )
+        }
+        set.name -> m
+      }
+      .toMap
+
+    /** An outer input's data, valid and ready, by its index among the file's inputs: the wrapper's port, or its mux's.
+      */
+    def inPort(j: Int): (UInt, Bool, Bool) = {
+      val (u, p) = spec.inputs(j)
+      spec.sharedSet(groupOf(u)) match {
+        case Some(set) =>
+          val m = muxes(set.name).io
+          (m.uint(s"${u}_${p}_data_o"), m.bool(s"${u}_${p}_valid_o"), m.bool(s"${u}_${p}_ready_i"))
+        case None      =>
+          val k = readers.indexOf(Right(u -> p): Outer)
+          (io.uint(s"stream2acc_${k}_data_i"), io.bool(s"stream2acc_${k}_valid_i"), io.bool(s"stream2acc_${k}_ready_o"))
+      }
+    }
+
+    /** An outer output's data, valid and ready, by its index among the file's outputs. */
+    def outPort(j: Int): (UInt, Bool, Bool) = {
+      val (u, p) = spec.outputs(j)
+      spec.sharedSet(groupOf(u)) match {
+        case Some(set) =>
+          val m = muxes(set.name).io
+          (m.uint(s"${u}_${p}_data_i"), m.bool(s"${u}_${p}_valid_i"), m.bool(s"${u}_${p}_ready_o"))
+        case None      =>
+          val k = writers.indexOf(Right(u -> p): Outer)
+          (io.uint(s"acc2stream_${k}_data_o"), io.bool(s"acc2stream_${k}_valid_o"), io.bool(s"acc2stream_${k}_ready_i"))
+      }
+    }
+
     for ((g, i) <- spec.groups.zipWithIndex) {
       val c = ctrl.io.groups(i)
       c.start <> csr.io.starts(i)
@@ -119,16 +196,18 @@ class ShellWrapper(spec: AcceleratorSpec) extends RawModule {
       for ((u, k) <- g.units.zipWithIndex) {
         val d = dp.io.units(spec.units.indexOf(u))
         for ((j, brm)    <- spec.ins(u.name)) {
-          d(brm)                         := io.uint(s"stream2acc_${j}_data_i").asTypeOf(d(brm))
-          c.in(at).valid                 := io.bool(s"stream2acc_${j}_valid_i")
-          io(s"stream2acc_${j}_ready_o") := c.in(at).ready
+          val (data, valid, ready) = inPort(j)
+          d(brm)         := data.asTypeOf(d(brm))
+          c.in(at).valid := valid
+          ready          := c.in(at).ready
           at += 1
         }
         for ((j, brm)    <- spec.outs(u.name)) {
           require(k == desc.output, s"${u.name}.$brm: an outer output of a unit that has an out-edge")
-          io(s"acc2stream_${j}_data_o")  := d(brm).asUInt
-          io(s"acc2stream_${j}_valid_o") := c.out.valid
-          c.out.ready                    := io.bool(s"acc2stream_${j}_ready_i")
+          val (data, valid, ready) = outPort(j)
+          data        := d(brm).asUInt
+          valid       := c.out.valid
+          c.out.ready := ready
         }
         val e = c.units(k)
         for ((name, pin) <- d.elements if !u.ports.exists(_._1 == name))

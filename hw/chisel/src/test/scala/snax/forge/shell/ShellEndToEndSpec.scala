@@ -3,7 +3,7 @@ package snax.forge.shell
 import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
 
-import snax.forge.{ForgeTester, IntType, LaneBits, Seeds, SnaxGroupCases}
+import snax.forge.{ForgeTester, IntType, LaneBits, Seeds, Sink, SnaxGroupCases, Source}
 
 /** Each fixture end to end through its `<tag>_shell_wrapper`: per task its CSR values written by name (JOBS, and
   * JOB_BEATS for a fold) and START written 1, as `main.c` does; the inputs fed by an always-ready streamer (each port's
@@ -21,6 +21,14 @@ import snax.forge.{ForgeTester, IntType, LaneBits, Seeds, SnaxGroupCases}
   * (-2147478991, 4), the tb's MAC vector `mac_int32_wrap_w2_t8` through the whole accelerator. And dot 5 at W 1
   * (SerialAccumulate at lanes 1) on its group case `dot5_w1_j2`'s own data: J = 2 jobs of T = 4 beats, the results the
   * case's sums (NumPy's) and the counter its busy cycles.
+  *
+  * And dot_1_shared (D169): its two groups on one set's movers through `<tag>_dot_port_mux`, `main.c`'s CSR writes in
+  * its order (vmul's JOBS, PORT_MUX_SEL 0, vmul's START, vsum's JOBS and JOB_BEATS while vmul runs, vmul's STATUS
+  * polled and its BUSY_COUNTER read, PORT_MUX_SEL 1, vsum's START, its STATUS polled and BUSY_COUNTER read), an
+  * always-ready streamer per mover and task: task 1's readers vmul's a and b (random int64, one seed), task 2's reader
+  * 0 the products task 1's writer gave and reader 1 idle. The products NumPy's (wrapping), the sum on the writer's low
+  * word with the other three 0, each counter its unshared twin's (`vecmul`'s and `vsum_tree`'s `vectors.json`, the same
+  * shapes).
   */
 class ShellEndToEndSpec extends AnyFlatSpec with ForgeTester {
 
@@ -163,4 +171,51 @@ class ShellEndToEndSpec extends AnyFlatSpec with ForgeTester {
         s"${f.name} int32"
       )
     }
+
+  it should "run dot_1_shared's two tasks through its port mux as main.c does" in Seeds.run(Seeds().head) { r =>
+    val f      = RtlFixtures.all.find(_.name == "dot_1_shared").get
+    val spec   = f.spec
+    val sel    = spec.portMuxCsrs.head.offset
+    val (n, w) = (64, 4)
+    val beats  = n / w
+    def twin(name: String) = RtlFixtures.all.find(_.name == name).get.tasks.head
+    val (mulTask, sumTask) = (twin("vecmul"), twin("vsum_tree"))
+    assert(mulTask.csrs == Seq("JOBS" -> beats.toLong), s"vecmul's task ${mulTask.csrs}")
+    assert(sumTask.csrs.toMap == Map("JOBS" -> 1L, "JOB_BEATS" -> beats.toLong), s"vsum_tree's task ${sumTask.csrs}")
+    val a                  = Seq.fill(n)(LaneBits.signed(r.word(64), 64))
+    val b                  = Seq.fill(n)(LaneBits.signed(r.word(64), 64))
+    val prods              = a.zip(b).map { case (x, y) => (x * y) & LaneBits.mask(64) }
+    def beat(v: Seq[BigInt])(t: Int) = LaneBits.pack(v.slice(t * w, (t + 1) * w).map(LaneBits.signed(_, 64)), 64)
+    val (mul, sum) = (0, 1)
+    test(new ShellHarness(spec)) { dut =>
+      val one = new ShellDriver(
+        dut,
+        Seq(new Source(beats, beat(a), _ => true), new Source(beats, beat(b), _ => true)),
+        Seq(new Sink(_ => true))
+      )
+      one.write(dut.csr("JOBS", mul), beats)
+      one.write(sel, 0)
+      one.write(dut.csr("START", mul), 1)
+      one.write(dut.csr("JOBS", sum), 1)
+      one.write(dut.csr("JOB_BEATS", sum), beats)
+      while ((one.read(dut.csr("STATUS", mul)) & 1) != 0) {}
+      assert(one.read(dut.csr("BUSY_COUNTER", mul)) == mulTask.counter, "vmul's counter, vecmul's")
+      assert(one.outputs.head == (0 until beats).map(beat(prods)), "vmul's products on writer 0")
+      assert(one.taken == Seq(beats, beats), "every beat of a and b taken")
+
+      val two = new ShellDriver(
+        dut,
+        Seq(new Source(beats, t => one.outputs.head(t), _ => true), new Source(0, _ => BigInt(0), _ => true)),
+        Seq(new Sink(_ => true))
+      )
+      two.write(sel, 1)
+      assert(two.read(sel) == 1, "PORT_MUX_SEL read back")
+      two.write(dut.csr("START", sum), 1)
+      while ((two.read(dut.csr("STATUS", sum)) & 1) != 0) {}
+      assert(two.read(dut.csr("BUSY_COUNTER", sum)) == sumTask.counter, "vsum's counter, vsum_tree's")
+      assert(two.outputs.head == Seq(prods.sum & LaneBits.mask(64)), "the sum on writer 0's low word, the rest 0")
+      assert(two.taken == Seq(beats, 0), "every product taken, reader 1 idle")
+      assert(two.read(dut.csr("STATUS", mul)) == 2 && two.read(dut.csr("STATUS", sum)) == 2, "both done")
+    }
+  }
 }

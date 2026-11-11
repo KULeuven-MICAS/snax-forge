@@ -25,7 +25,9 @@ import snax.forge.{Emit, SvHeader}
   * `<tag>_datapath`; `<tag>_csr` its `<tag>_peripherals`; `<tag>_ctrl` a `<tag>_<group>_ctrl` per group;
   * `<tag>_datapath` a `<tag>_<unit>` per unit, then a `<tag>_<link>` per buffer, group by group; each `<tag>_<unit>`
   * its one catalogue datapath. Read off each module's instances in the SystemVerilog (firtool's ` <module> <instance>
-  * (` lines); dot 1's (two groups), dot 4's (a wire) and dot 6's (a buffer) among them.
+  * (` lines); dot 1's (two groups), dot 4's (a wire) and dot 6's (a buffer) among them. A set whose groups share its
+  * movers (D169) shows its movers at the wrapper (its hjson's `num_channel` are the movers') and adds
+  * `<tag>_<set>_port_mux`, which holds no module, after `<tag>_datapath`: dot_1_shared's and mvt_1_dot2_shared's.
   *
   * `emitted.json` lists a file for every module the wrapper reaches, each file exists, and `sv/` holds those only.
   */
@@ -83,7 +85,7 @@ class ShellEmitSpec extends AnyFlatSpec {
       s"${t}_datapath" -> spec.groups.flatMap { g =>
         g.units.map(u => s"${t}_${u.name}") ++ g.links.filter(_.depth > 0).map(l => s"${t}_${l.name}")
       }
-    )
+    ) ++ spec.sets.filter(_.shared).map(s => s"${t}_${s.name}_port_mux" -> Seq.empty)
   }
 
   behavior of "Emit --spec"
@@ -116,6 +118,9 @@ class ShellEmitSpec extends AnyFlatSpec {
       assert(svs == listed, s"sv/ holds ${svs -- listed} besides emitted.json's files")
     }
 
-  it should "have the fixtures of two accelerators, two groups in one, a wire and a buffer" in
-    assert(Set("dot_1", "dot_1_enc", "dot_4", "dot_6").subsetOf(RtlFixtures.all.map(_.name).toSet))
+  it should "have the fixtures of two accelerators, two groups in one, a wire, a buffer and shared movers" in
+    assert(
+      Set("dot_1", "dot_1_enc", "dot_4", "dot_6", "dot_1_shared", "mvt_1_dot2_shared")
+        .subsetOf(RtlFixtures.all.map(_.name).toSet)
+    )
 }
