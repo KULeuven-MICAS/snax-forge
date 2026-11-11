@@ -70,6 +70,7 @@ class Mover:
     users: tuple[str, ...] = ()
     user_units: tuple[str, ...] = ()
     enabled: int = 0
+    user_channels: tuple[int, ...] = ()  # each user's channels, the lanes its beats hold
 
     @property
     def ports(self) -> list[str]:
@@ -236,7 +237,28 @@ class Accelerator:
         if len(self.units) == 1 and not any(m.instance for m in self.movers):
             return list(self.movers)
         mine = set(self.members(unit))
-        return [m for m in self.movers if m.instance in mine or mine & set(m.user_units)]
+        out = [m for m in self.movers if m.instance in mine or mine & set(m.user_units)]
+        if not any(m.users for m in out):
+            return out
+        # a shared set's (D169): its movers in the order of the ports they serve the unit's
+        # group, readers first, each unit's ports in accelerator.json's order
+        order = [f"{u['name']}_{p}" for g in self.groups() for u in g["units"] if u["name"] in mine
+                 for p in u["ports"]]  # fmt: skip
+        return sorted(out, key=lambda m: (m.write, order.index(self.port_of(m, unit))))
+
+    def port_of(self, m: Mover, unit: str) -> str:
+        """The streamer (``<instance>_<port>``) of ``unit``'s group a mover serves: a shared
+        mover's user of that group, else the mover itself."""
+        mine = set(self.members(unit))
+        return next((u for u, x in zip(m.users, m.user_units) if x in mine), m.name)
+
+    def lanes_of(self, m: Mover, unit: str) -> int:
+        """The lanes of a beat between ``unit``'s group and mover ``m``: a shared mover's user's
+        channels (the ones it enables, D169), else the mover's."""
+        if not m.users:
+            return m.lanes
+        mine = set(self.members(unit))
+        return next((c for x, c in zip(m.user_units, m.user_channels) if x in mine), m.lanes)
 
     def unit_of_mover(self, mover: str) -> str | None:
         """The unit (its C§7 name) a mover belongs to."""
@@ -315,7 +337,8 @@ class Cluster:
                             "temporal_dim": m.temporal_dim, "instance": m.instance,
                             "set": m.set,
                             **({"users": list(m.users), "user_units": list(m.user_units),
-                                "enabled": m.enabled} if m.users else {})}
+                                "enabled": m.enabled,
+                                "user_channels": list(m.user_channels)} if m.users else {})}
                            for m in a.movers],
                 "csrs": {"sets": [{"name": x.name, "first": x.first, "start": x.start,
                                    "busy": x.busy, "counter": x.counter, "trace": x.trace}
@@ -336,7 +359,8 @@ class Cluster:
         acc = Accelerator(a["name"], a["core"], a["slot"], dict(a["description"]),
                           [Mover(**{**m, "spatial_bounds": tuple(m["spatial_bounds"]),
                                     "users": tuple(m.get("users", ())),
-                                    "user_units": tuple(m.get("user_units", ()))})
+                                    "user_units": tuple(m.get("user_units", ())),
+                                    "user_channels": tuple(m.get("user_channels", ()))})
                            for m in a["movers"]],
                           Csrs(**{**a["csrs"], "fields": dict(a["csrs"]["fields"]),
                                   "sets": [StreamerCsrs(**x) for x in a["csrs"]["sets"]]}),
@@ -494,6 +518,7 @@ def cluster_from(cluster: dict[str, Any], templates: dict[str, dict[str, Any]],
                     a["name"], tuple(u["port"].replace(".", "_") for u in dm["users"]),
                     tuple(u["port"].split(".")[0] for u in dm["users"]),
                     (params["num_channel"][i] + 31) // 32 if masked else 0,
+                    tuple(u["num_channel"] for u in dm["users"]),
                 ))  # fmt: skip
             continue
         for write, group, kind in ((False, "data_reader_params", "reader"),

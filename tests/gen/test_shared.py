@@ -52,6 +52,10 @@ def test_the_run_reads_one_mover_per_shared_mover(shared, tmp_path):
         ("dot_writer0", "writer0", 4, ("vmul_out", "vsum_out"), 1),
     ]  # fmt: skip
     assert [m.name for m in c.accelerator.movers_of("vsum")] == ["dot_reader0", "dot_writer0"]
+    # a beat between vsum and writer0 holds vsum.out's one word, vmul's its four (D169)
+    acc = c.accelerator
+    assert [acc.lanes_of(movers[2], u) for u in ("vmul", "vsum")] == [4, 1]
+    assert acc.port_of(movers[0], "vsum") == "vsum_a"
     assert Cluster.from_dict(c.to_dict()).accelerator == c.accelerator
     tasks = task_list(DesignPoint.load(point))
     paired = pairing(tasks, c)
