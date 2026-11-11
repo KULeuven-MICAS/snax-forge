@@ -74,6 +74,8 @@ DESIGNS = {
     "matvec_4": ("matvec_4", ["M=2", "N=16"]),
     "matvec_5": ("matvec_5", ["M=2", "N=16"]),
     "matvec_6": ("matvec_6", ["M=2", "N=16"]),
+    "dot_1_shared": ("dot_1_shared", []),
+    "mvt_1_dot2_shared": ("mvt_1_dot2_shared", ["W=8"]),
 }
 
 # SimdLanes' slot params of a unit with none (axpby's k1 and k2, each slot from its CSR or not)

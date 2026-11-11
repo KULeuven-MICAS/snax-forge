@@ -289,15 +289,10 @@ def check_link(acc: Description, link: Link, cat: Mapping[str, Any]) -> None:
 
 def accelerator_spec(design_point: str | Path, root: str | Path | None = None,
                      cat: Mapping[str, Any] | None = None) -> Description:  # fmt: skip
-    """The design point's ``accelerator.json`` (accelerator.py), checked against the catalogue;
-    a design whose groups share their movers (D169) is ``bundle.share``: the RTL's data-side mux
-    comes with PORT1's R4 (open item 114)."""
+    """The design point's ``accelerator.json`` (accelerator.py), checked against the catalogue; a
+    design whose groups share their movers (D169) is taken as any other, its movers and port mux
+    checked by accelerator.py (``gen.share``) and built by Emit (``<tag>_<set>_port_mux``)."""
     _, _, acc = load_point(design_point, ROOT if root is None else Path(root))
-    shared = [a.name for a in acc.accelerators if a.port_mux is not None]
-    if shared:
-        raise GenError("bundle.share", f"accelerators {shared} share their movers (share_ports, "
-                       "D169): the shell wrapper has no data-side mux yet (open item 114); "
-                       "SNAX-GVSoC runs it (gen-gvsoc, the flow)")  # fmt: skip
     cat = catalogue() if cat is None else cat
     for g in acc.groups:
         for u in g.units:

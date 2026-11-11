@@ -53,8 +53,10 @@ Emit's output: the wrapper's three modules, each with the submodules it holds,
 by the names hw/chisel's Emit gives them: ``<tag>_csr`` (``<tag>_peripherals``), ``<tag>_ctrl``
 (``<tag>_<group>_ctrl`` per group of every accelerator, in CSR order) and
 ``<tag>_datapath`` (``<tag>_<unit>`` per unit, then ``<tag>_<link>`` per link
-of depth >= 1, a buffer, group by group), ``<tag>`` the entry's
-``<accelerator_slot>_<name>``, the design's name (``snax_forge_dot_1``).
+of depth >= 1, a buffer, group by group), then per accelerator whose groups
+share its movers (D169) ``<tag>_<accelerator>_port_mux``, which holds none,
+``<tag>`` the entry's ``<accelerator_slot>_<name>``, the design's name
+(``snax_forge_dot_1``).
 
 snax_cluster takes it through the cluster file alone: snaxgen reads the
 slot's ``snax_forge_rtl`` and writes ``generated/snax_forge.f``, which its
@@ -112,6 +114,7 @@ def module_tree(acc: Description) -> dict[str, list[str]]:
             *(name for g in acc.groups for name in
               [*(f"{t}_{u.name}" for u in g.units), *(f"{t}_{k.name}" for k in g.links if k.depth)])
         ],
+        **{f"{t}_{a.name}_port_mux": [] for a in acc.accelerators if a.port_mux is not None},
     }  # fmt: skip
 
 
