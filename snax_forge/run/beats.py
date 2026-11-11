@@ -850,18 +850,37 @@ def _stall_invariants(trace: Trace, profile: Profile, ctx: Context, of: dict[str
                            "in its summary")  # fmt: skip
 
     for m in traced:
-        unit = acc.unit_of_mover(m.name)
-        if unit is None or unit not in ctx.filter:
+        # its units: a shared mover's every user's (D169), each with its own tasks' words
+        units = ([u for u in acc.unit_names if m in acc.movers_of(u)] if m.users
+                 else [acc.unit_of_mover(m.name)])  # fmt: skip
+        if not units or any(u is None or u not in ctx.filter for u in units):
             continue
         lanes = defaultdict(list)
         for e in of["fifo"]:
             if e["src"] == m.name:
                 lanes[e["lane"]].append((e["t"], e["count"]))
-        words = _words(m, of, ctx, unit)
+        words: dict[int, list[tuple]] = defaultdict(list)
+        unchecked: set[int] = set()
+        for unit in units:
+            for lane, ws in _words(m, of, ctx, unit).items():
+                words[lane] += ws
+            on = acc.lanes_of(m, unit)
+            if on < m.lanes and m.write:
+                # a lane ENABLED_CHANNEL leaves off sends no request: its word, visible the cycle
+                # after the push, is dropped in that cycle (snax-gvsoc's streamer)
+                for e in of["push"]:
+                    if e["src"] == unit:
+                        for lane in range(on, m.lanes):
+                            words[lane].append((e["t"] + 1, e["t"] + 1))
+            elif on < m.lanes:
+                # a reader's lane off takes a 0 word at no grant: not rebuilt here, not checked
+                unchecked |= set(range(on, m.lanes))
         prof = profile.streamers.get(m.name)
         for lane in range(m.lanes):
+            if lane in unchecked:
+                continue
             seq = lanes.get(lane, [])
-            ws = words.get(lane, [])
+            ws = sorted(words.get(lane, []))
             want, prev = [], 0
             if ws:
                 for t in range(min(v for v, _ in ws), max(p for _, p in ws) + 2):
