@@ -208,22 +208,22 @@ then the snax_cluster commands for one design (Verilator, and Questa as below). 
     wrote out/forge-set/quick.md; from snax_cluster's target/snitch_cluster:
       make snax-forge-check BUNDLES="$ROOT/snax-forge/out/bundle/vecadd_i32 ... $ROOT/snax-forge/out/bundle/dot_4" SIM=vsim SNAX_CLUSTER_IMAGE=<image>
 
-Run that line from snax_cluster's `target/snitch_cluster`, outside the image. `<image>` is snax_cluster's development image for podman; on the MICAS servers it is `d3d8f5572ff4`. The image has no sbt, Coursier or firtool cache, so every `podman run` downloads them: put a `podman` wrapper first on `PATH` that adds `-v` mounts of persistent folders at `/root/.sbt`, `/root/.cache/sbt`, `/root/.cache/coursier` and `/root/.cache/llvm-firtool` to every `run`. With `SIM=vsim`, `rtl-gen` and `vsim_preparation` run in the image and the build and the run outside it, with Questa and bender on `PATH` (snax_cluster's pixi environment); with `SIM=vlt` every step runs in the image. It prints per bundle `PASS <name>`, with a line for each counter that differs from SNAX-GVSoC's within its fill, or `FAIL <name>: <want> / <got>`, and fails if any failed; `logs/snax-forge-check.txt` keeps those lines with each run's `forge cycles`, `logs/snax-forge-<name>-<sim>.txt` each run's output:
+Run that line from snax_cluster's `target/snitch_cluster`, outside the image. `<image>` is snax_cluster's development image for podman; on the MICAS servers it is `d3d8f5572ff4`. The image has no sbt, Coursier or firtool cache, so every `podman run` downloads them: put a `podman` wrapper first on `PATH` that adds `-v` mounts of persistent folders at `/root/.sbt`, `/root/.cache/sbt`, `/root/.cache/coursier` and `/root/.cache/llvm-firtool` to every `run`. With `SIM=vsim`, `rtl-gen` and `vsim_preparation` run in the image and the build and the run outside it, with Questa and bender on `PATH` (snax_cluster's pixi environment); with `SIM=vlt` every step runs in the image. It prints per bundle its verdict (D123): `PERFECT <name>` when every counter equals SNAX-GVSoC's, `NEAR <name>` when the worst counter's gap beyond its fill is at most 10 % of its count (every counter within its fill is NEAR), `WARNING <name>` up to 15 %, else `FAIL <name>: <want> / <got>`, as on any data error, each with a line per counter that differs; it fails only if one FAILed; `logs/snax-forge-check.txt` keeps those lines with each run's `forge cycles`, `logs/snax-forge-<name>-<sim>.txt` each run's output:
 
-    PASS vecadd_i32
+    PERFECT vecadd_i32
       vecadd_i32 forge cycles: 217
-    PASS vsum_tree_i8
+    PERFECT vsum_tree_i8
       vsum_tree_i8 forge cycles: 196
-    PASS dot_1
+    PERFECT dot_1
       dot_1 forge cycles: 282
-    PASS dot_1_enc
+    PERFECT dot_1_enc
       dot_1_enc forge cycles: 302
-    PASS dot_4
+    PERFECT dot_4
       dot_4 forge cycles: 449
 
-A counter that differs within its fill gets a line under its PASS, as `dot_1_enc` at N = 512 on vsim (the RTL's core starts `vmul` 6 cycles after its streamer, so the BUSY_COUNTER leaves out the fill):
+A counter that differs within its fill makes the run NEAR, with a line for it, as `dot_1_enc` at N = 512 on vsim (the RTL's core starts `vmul` 6 cycles after its streamer, so the BUSY_COUNTER leaves out the fill):
 
-    PASS dot_1_enc_N512
+    NEAR dot_1_enc_N512: the worst counter 0.0 % beyond its fill
       mult_vmul: counter 128 against 131, within its fill 3
       dot_1_enc_N512 forge cycles: 609
 

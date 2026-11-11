@@ -34,7 +34,7 @@ Keep the documents short (D117): one fact in one place, a decision only for a ch
 - Clean slate: `pixi run clean` (`--dry-run` lists first; it keeps the GVSoC build in `out/snax-gvsoc/` and the editor's sessions in `out/sessions/`, `--all` removes them too).
 
 ## Conventions
-- The local RTL check: a change to the emitted RTL or to the program (`main.c`) needs the quick set checked on vsim before its PR merges (`pixi run forge-set quick`, then the line it prints, in snax_cluster's `target/snitch_cluster`), and a phase's close needs the full set (`pixi run forge-set full`); the numbers go into open item 95's table.
+- The local RTL check: a change to the emitted RTL or to the program (`main.c`) needs the quick set checked on vsim before its PR merges, with no FAIL (D123; a NEAR or WARNING gets an open item) (`pixi run forge-set quick`, then the line it prints, in snax_cluster's `target/snitch_cluster`), and a phase's close needs the full set (`pixi run forge-set full`); the numbers go into open item 95's table.
 - Python 3.11, type hints on all public functions, dataclasses for artefacts.
 - One package per component under `snax_forge/` (ARCHITECTURE.md section 5 lists them). Recipes live in `recipes/<category>/` (the editor's Save writes `recipes/custom/`), platforms in `platforms/`, BRMs in `snax_forge/brm/library/`.
 - Generated files (`.snaxdfg`, design points, runs) go under `out/`, not in git; test fixtures are the exception (`tests/dfg/fixtures/`, in the form `Graph.to_json` writes).

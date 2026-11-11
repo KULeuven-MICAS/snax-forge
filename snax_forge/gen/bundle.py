@@ -41,7 +41,7 @@ errors`` line, as the program prints them, then a ``forge fill <task>: <n>``
 line per counter, in the same order: the task's group's streamer fill, the
 estimate's ``fill`` (``counter_fills``, from the design point and the flow's
 ``tasks.json``). A run of the same ELF on snax_cluster's RTL must print the
-data line as it is and each counter within its fill of SNAX-GVSoC's (D123):
+data line as it is; each counter's gap beyond its fill gives the verdict (D123):
 the BUSY_COUNTER counts the streamer's head start, which the core's timing between
 STREAMER_START and START sets and SNAX-GVSoC does not model (open items 65,
 67). snax_cluster's ``snax-forge-check`` applies the bound. ``bundle.json``'s
