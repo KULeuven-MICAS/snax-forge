@@ -5,7 +5,10 @@ streamers, crossbar and L1 banks (D167, C§20).
     block_cost(table, block, bits, c_acc) -> BlockCost
     group_cost(table, blocks, bits, ctrl_bits, c_acc) -> GroupCost
     StreamerCounts, streamer_cost(costs, counts) -> StreamerCost   one port's streamer
-    xbar_cost(costs, inputs, banks, accesses) -> XbarCost           the TCDM crossbar
+    xbar_kinds(counts) -> (read_only, write_only)   the crossbar inputs the streamers only read
+                                                   or only write through
+    xbar_cost(costs, inputs, banks, accesses, read_only, write_only, form) -> XbarCost
+                                                   the TCDM crossbar
     memory_cost(costs, n, depth, width, reads, writes) -> MemoryCost   the L1 banks
     L1Cost                                         an accelerator's words through the crossbar
                                                    and the banks
@@ -41,11 +44,16 @@ words it moves in L1 in one run (a link's container is not in L1, and the DMA's 
 same for every variant, is not counted), so W_p / C_p beats:
 
     streamer   area A_strm(D_p, L_p, C_p), energy (W_p / C_p) e_beat(D_p, L_p, C_p)
-    crossbar   area A_xbar(n_in, n_banks), energy (Σ_p W_p) e_acc(n_banks, n_banks),
-               n_in the streamers' channels plus the cores' and AXI's ports
-               (check.py's ``crossbar_inputs``); one price per access for a bank count,
-               a full crossbar's, so the energy follows the accesses alone, whatever the
-               inputs and whether the accelerators run in series or not
+    crossbar   area A_xbar(n_in, n_banks) (1 − f_ro n_ro / n_in − f_wo n_wo / n_in),
+               energy (Σ_p W_p) e_acc(n_banks, n_banks), n_in the streamers' channels plus
+               the cores' and AXI's ports (check.py's ``crossbar_inputs``), n_ro of them a
+               reader's channels and n_wo a writer's (``xbar_kinds``; the cores and AXI read
+               and write); one price per access for a bank count, a full crossbar's, so the
+               energy follows the accesses alone, whatever the inputs and whether the
+               accelerators run in series or not
+
+The crossbar's area is the factor form by default; ``form="crosspoint"`` gives the option
+b (c_rw n_rw + c_ro n_ro + c_wo n_wo) + d n_in + e b + g (tables.py, X71).
     memory     area n_banks A_bank, energy N_rd e_rd + N_wr e_wr, the words read and written
 
 Movers a shared set's groups share (D169) are priced once each, at their own depth, loops and
@@ -288,7 +296,8 @@ def streamer_cost(costs: Costs, c: StreamerCounts) -> StreamerCost:
 @dataclass(frozen=True)
 class XbarCost:
     """The TCDM crossbar priced: its ``inputs`` and ``banks``, the ``accesses`` it serves in one
-    run, its area (µm²), its energy per access (pJ) and per run (nJ)."""
+    run, its area (µm²), its energy per access (pJ) and per run (nJ), how many of its inputs
+    only read or only write, and the ``form`` its area was priced in (X71)."""
 
     inputs: int
     banks: int
@@ -297,21 +306,43 @@ class XbarCost:
     e_access_pj: float
     energy_nj: float
     extrapolated: tuple[str, ...] = ()
+    read_only: int = 0
+    write_only: int = 0
+    form: str = "factor"
 
     def to_dict(self) -> dict[str, Any]:
         return {"inputs": self.inputs, "banks": self.banks, "accesses": self.accesses,
                 "area": self.area_um2, "e_access": self.e_access_pj, "energy": self.energy_nj,
-                "extrapolated": list(self.extrapolated)}  # fmt: skip
+                "extrapolated": list(self.extrapolated), "read_only": self.read_only,
+                "write_only": self.write_only, "form": self.form}  # fmt: skip
 
 
-def xbar_cost(costs: Costs, inputs: int, banks: int, accesses: int) -> XbarCost:
+def xbar_kinds(counts: list[StreamerCounts]) -> tuple[int, int]:
+    """The crossbar inputs the streamers take that only read and only write (module doc): a
+    reader's channels and a writer's, a shared mover's counted once at its own channels on its
+    first user (D169), as check.py's ``crossbar_inputs`` counts them."""
+    ro = wo = 0
+    for c in counts:
+        if c.mover is not None and not c.area:
+            continue
+        n = c.mover_channels if c.mover is not None else c.channels
+        if c.write:
+            wo += n
+        else:
+            ro += n
+    return ro, wo
+
+
+def xbar_cost(costs: Costs, inputs: int, banks: int, accesses: int, read_only: int = 0,
+              write_only: int = 0, form: str = "factor") -> XbarCost:  # fmt: skip
     """The crossbar's area and energy per run on ``costs`` (module doc): its area at its
-    inputs, its accesses at one price per bank count, a full crossbar's (inputs = banks)."""
-    area = _xbar(costs, inputs, banks)
+    inputs, ``read_only`` and ``write_only`` of them priced as such in ``form``, its accesses
+    at one price per bank count, a full crossbar's (inputs = banks)."""
+    area = _xbar(costs, inputs, banks, read_only, write_only, form)
     price = _xbar(costs, banks, banks)
     out = tuple(dict.fromkeys(area.extrapolated + price.extrapolated))
     return XbarCost(inputs, banks, accesses, area.area_um2, price.energy_pj,
-                    accesses * price.energy_pj / 1000, out)  # fmt: skip
+                    accesses * price.energy_pj / 1000, out, read_only, write_only, form)  # fmt: skip
 
 
 @dataclass(frozen=True)
