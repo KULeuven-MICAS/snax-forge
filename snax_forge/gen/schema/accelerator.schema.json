@@ -24,9 +24,45 @@
      "description": "Its outer output ports, one per writer of its streamer, in order.",
      "$ref": "#/$defs/outer"
     },
-    "groups": {"description": "In CSR order.", "type": "array", "minItems": 1, "items": {"$ref": "#/$defs/group"}}
+    "groups": {"description": "In CSR order.", "type": "array", "minItems": 1, "items": {"$ref": "#/$defs/group"}},
+    "movers": {
+     "description": "Only when its groups share its movers (D169): per mover in the streamer's order, readers first; its inputs and outputs are then on their users, not one per mover.",
+     "type": "array",
+     "minItems": 1,
+     "items": {"$ref": "#/$defs/mover"}
+    },
+    "port_mux": {
+     "description": "With movers: its groups in PORT_MUX_SEL's order and PORT_MUX_SEL, its last CSR.",
+     "type": "object",
+     "properties": {"groups": {"type": "array", "minItems": 2, "items": {"$ref": "#/$defs/name"}}, "csr": {"$ref": "#/$defs/csr"}},
+     "required": ["groups", "csr"],
+     "additionalProperties": false
+    }
    },
    "required": ["name", "inputs", "outputs", "groups"],
+   "dependentRequired": {"movers": ["port_mux"], "port_mux": ["movers"]},
+   "additionalProperties": false
+  },
+  "mover": {
+   "type": "object",
+   "properties": {
+    "name": {"description": "reader<k> or writer<k>, snax-gvsoc's mover names.", "type": "string", "pattern": "^(reader|writer)[0-9]+$"},
+    "role": {"enum": ["read", "write"]},
+    "num_channel": {"type": "integer", "minimum": 1},
+    "masked": {"description": "It has configurable_channel: a user narrower than it.", "type": "boolean"},
+    "users": {
+     "description": "At most one port per group, in the groups' order.",
+     "type": "array",
+     "minItems": 1,
+     "items": {
+      "type": "object",
+      "properties": {"group": {"$ref": "#/$defs/name"}, "port": {"$ref": "#/$defs/end"}, "num_channel": {"type": "integer", "minimum": 1}},
+      "required": ["group", "port", "num_channel"],
+      "additionalProperties": false
+     }
+    }
+   },
+   "required": ["name", "role", "num_channel", "masked", "users"],
    "additionalProperties": false
   },
   "dtype": {"enum": ["int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64"]},

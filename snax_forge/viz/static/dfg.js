@@ -176,7 +176,8 @@ function pill(v, key) {
   const b = v.boxes[key];
   const c = v.containers[b.container];
   return h("div", { class: `c-pill${c.transient ? " transient" : ""}${c.scalar ? " scalar" : ""}${b.again ? " again" : ""}`, "data-box": key, "data-sel": c.name },
-    h("b", {}, c.text), c.badge ? h("span", { class: "c-badge" }, c.badge) : null);
+    h("b", {}, c.text), c.badge ? h("span", { class: "c-badge" }, c.badge) : null,
+    c.share ? h("span", { class: "c-share" }, c.share) : null);
 }
 
 /** Rows top to bottom (api.py's ``_layout``): a row of containers, a top-level node, or the

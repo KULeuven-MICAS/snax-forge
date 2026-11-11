@@ -19,7 +19,8 @@ ports on a link with no streamer (D112) and no load or store. For each group:
                  for every port of the set's other groups' units too, every
                  temporal bound 0, so they never start: the set's streamer
                  starts all its movers with one CSR; the task list holds them
-                 in the set's order, unit by unit. Their temporal strides
+                 in the set's order, unit by unit (a shared set's too, D169: the
+                 program writes each mover once, lower/c.py). Their temporal strides
                  are a bank word, not 0: a reader whose first loop has stride
                  0 runs that loop once whatever its bound and hands each beat
                  out bound times (snax_cluster's Reader.scala), so it would

@@ -65,6 +65,11 @@ class Mover:
     temporal_dim: int
     instance: str = ""  # the unit whose port it is (the design point's streamer's instance)
     set: str = ""  # its streamer set, accelerator.json's accelerator (D157)
+    # a shared mover (D169): its users' streamers (<instance>_<port>) and units, and its
+    # ENABLED_CHANNEL CSRs (masked)
+    users: tuple[str, ...] = ()
+    user_units: tuple[str, ...] = ()
+    enabled: int = 0
 
     @property
     def ports(self) -> list[str]:
@@ -231,7 +236,7 @@ class Accelerator:
         if len(self.units) == 1 and not any(m.instance for m in self.movers):
             return list(self.movers)
         mine = set(self.members(unit))
-        return [m for m in self.movers if m.instance in mine]
+        return [m for m in self.movers if m.instance in mine or mine & set(m.user_units)]
 
     def unit_of_mover(self, mover: str) -> str | None:
         """The unit (its C§7 name) a mover belongs to."""
@@ -308,7 +313,9 @@ class Cluster:
                             "lanes": m.lanes, "fifo_depth": m.fifo_depth,
                             "spatial_bounds": list(m.spatial_bounds),
                             "temporal_dim": m.temporal_dim, "instance": m.instance,
-                            "set": m.set}
+                            "set": m.set,
+                            **({"users": list(m.users), "user_units": list(m.user_units),
+                                "enabled": m.enabled} if m.users else {})}
                            for m in a.movers],
                 "csrs": {"sets": [{"name": x.name, "first": x.first, "start": x.start,
                                    "busy": x.busy, "counter": x.counter, "trace": x.trace}
@@ -327,7 +334,9 @@ class Cluster:
     def from_dict(cls, d: dict[str, Any]) -> Cluster:
         a = d["accelerator"]
         acc = Accelerator(a["name"], a["core"], a["slot"], dict(a["description"]),
-                          [Mover(**{**m, "spatial_bounds": tuple(m["spatial_bounds"])})
+                          [Mover(**{**m, "spatial_bounds": tuple(m["spatial_bounds"]),
+                                    "users": tuple(m.get("users", ())),
+                                    "user_units": tuple(m.get("user_units", ()))})
                            for m in a["movers"]],
                           Csrs(**{**a["csrs"], "fields": dict(a["csrs"]["fields"]),
                                   "sets": [StreamerCsrs(**x) for x in a["csrs"]["sets"]]}),
@@ -470,6 +479,23 @@ def cluster_from(cluster: dict[str, Any], templates: dict[str, dict[str, Any]],
         template = templates.get(a["name"])
         if template is None:
             raise RunError("cluster.sets", f"no streamer file for the set {a['name']!r}")
+        if a.get("movers"):  # a shared set (D169): a mover per shared mover, named <set>_<mover>
+            k = {False: 0, True: 0}
+            for dm in a["movers"]:
+                write = dm["role"] == "write"
+                params = template.get("data_writer_params" if write else "data_reader_params", {})
+                i = k[write]
+                k[write] += 1
+                masked = bool(params.get("configurable_channel", [False] * (i + 1))[i])
+                movers.append(Mover(
+                    f"{a['name']}_{dm['name']}", dm["name"], dm["name"], write,
+                    params["num_channel"][i], params["fifo_depth"][i],
+                    tuple(params["spatial_bounds"][i]), params["temporal_dim"][i], "",
+                    a["name"], tuple(u["port"].replace(".", "_") for u in dm["users"]),
+                    tuple(u["port"].split(".")[0] for u in dm["users"]),
+                    (params["num_channel"][i] + 31) // 32 if masked else 0,
+                ))  # fmt: skip
+            continue
         for write, group, kind in ((False, "data_reader_params", "reader"),
                                    (True, "data_writer_params", "writer")):  # fmt: skip
             mine = [(n, s) for n, s in streamers.items()

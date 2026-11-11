@@ -91,7 +91,10 @@ of the port's container dtype a word holds, D142), ``temporal_dim`` (the
 streamer's ``temporal_dims``), ``num_channel`` (the streamer's ``num_ch``, the
 wire default W / num_slc; snax-gvsoc's streamer requires the bounds' product to
 be it)
-and ``fifo_depth``.
+and ``fifo_depth``. A set whose groups share its movers (D169) has its shared movers instead
+(design/streamers.py's ``shared_movers``), readers then writers, each at its widest user's
+channels and spatial bounds, the most temporal dims and the deepest FIFO, and
+``configurable_channel`` per mover of a role where one is masked.
 
 **The accelerators** are accelerator.py's ``describe``, written as plain JSON
 (no header comment: its ``design_point`` names the source). Each set's own
@@ -170,7 +173,7 @@ from snax_forge.design import DesignError
 from snax_forge.design.hjson_platform import accelerators, platform_from_dict
 from snax_forge.design.platform import Platform
 from snax_forge.design.point import DesignPoint
-from snax_forge.design.streamers import instance_nodes, streamer_name
+from snax_forge.design.streamers import instance_nodes, shared_movers, streamer_name
 from snax_forge.dfg.reference import Goldens
 from snax_forge.estimate.cycles import EstimateError
 from snax_forge.lower import CError
@@ -267,12 +270,25 @@ def node_dtypes(point: DesignPoint, name: str) -> dict[str, str]:
     return port_dtypes(point.graph, instance_nodes(point.graph)[name])
 
 
-def streamer_template(point: DesignPoint, found: Mapping[str, Instance]) -> dict[str, Any]:
-    """The streamer template of the accelerator's units ``found``, in the hjson's keys; see the
-    module doc."""
+def streamer_template(point: DesignPoint, found: Mapping[str, Instance],
+                      acc: str | None = None) -> dict[str, Any]:  # fmt: skip
+    """The streamer template of the accelerator's units ``found`` (``acc`` its name), in the
+    hjson's keys; see the module doc. A shared accelerator's (D169) are its movers'."""
     groups: dict[str, list[dict[str, Any]]] = {"data_reader_params": [], "data_writer_params": []}
     for name, inst in found.items():
         _movers(point, name, inst, groups)
+    shared = shared_movers(point.graph, point.streamers).get(acc) if acc is not None else None
+    if shared:
+        groups = {"data_reader_params": [], "data_writer_params": []}
+        for m in shared:
+            groups["data_writer_params" if m.write else "data_reader_params"].append({
+                "spatial_bounds": list(m.spatial_bounds), "temporal_dim": m.temporal_dims,
+                "num_channel": m.num_ch, "fifo_depth": m.fifo_depth, "configurable_channel": m.masked,
+            })  # fmt: skip
+        for movers in groups.values():
+            if movers and not any(m["configurable_channel"] for m in movers):
+                for m in movers:
+                    del m["configurable_channel"]
     return {
         g: {k: [m[k] for m in movers] for k in movers[0]} for g, movers in groups.items() if movers
     }
@@ -593,7 +609,7 @@ def generate(
     acc = describe(point, shown)
     found = units(point)
     members = {u: inst for mine in found.values() for u, inst in mine.items()}
-    templates = {a: streamer_template(point, mine) for a, mine in found.items()}
+    templates = {a: streamer_template(point, mine, a) for a, mine in found.items()}
     layout = csr_layout(templates, acc)
     tasks = task_list(point) if tasks is None else tasks
     data = arrays(point, seed, kernel, goldens)
@@ -612,8 +628,10 @@ def generate(
                              f"streamer set per accelerator: {described(found)}; each set's "
                              f"streamer in {acc.tag}_streamer_<set>.hjson, the accelerators in "
                              f"{ACCELERATOR_JSON}.", cluster),
-        **{f: _hjson(shown, f"Streamer set {a}'s streamer template: readers its input ports in "
-                     "the BRM's port order, writers its output ports.", templates[a])
+        **{f: _hjson(shown, f"Streamer set {a}'s streamer template: " + (
+                     "readers its input ports in the BRM's port order, writers its output ports."
+                     if acc.port_mux_sel(a) is None else "its movers, which its groups share "
+                     "(D169), readers then writers, as accelerator.json's movers."), templates[a])
            for a, f in streamer_files.items()},
         ACCELERATOR_JSON: acc.to_json(),
     }  # fmt: skip

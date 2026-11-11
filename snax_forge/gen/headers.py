@@ -47,9 +47,12 @@ built against them fit the design point's L1 (D126). A
 (``gen.platform``): ``CLUSTER_ADDRWIDTH`` is its log2; a missing or
 non-integer key is ``gen.source``.
 
-Streamer.scala's optional per-mover CSRs (address remap, channel and byte
-enables) and its datapath extensions are not in snax-gvsoc's streamer model,
-so they never appear (their comment lines do, as the Chisel writes them). The
+Streamer.scala's optional per-mover CSRs (address remap, byte enables) and
+its datapath extensions are not in snax-gvsoc's streamer model, so they never
+appear (their comment lines do, as the Chisel writes them); a shared set's
+masked mover (``configurable_channel``, D169) has ``ENABLED_CHANNEL_<M>`` and
+``ENABLED_CHANNEL_<M>_CSR_NUM`` after its temporal strides, as Streamer.scala
+writes them. Its ``<acc>_csr.h`` ends with ``<ACC>_RW_PORT_MUX_SEL``. The
 streamer header is checked against snax_cluster ry/slot1's (``tests/gen/``);
 more dimensions follow Streamer.scala's loops, read, not compared with a
 generated file. No header has an include guard, as the Chisel one has none.
@@ -110,6 +113,11 @@ def streamer_header(movers: list[dict[str, Any]], first: int, prefix: str,
             for i in range(n):
                 lines.append(f"#define {kind}_{tag}_{i} {csr}")
                 csr += 1
+        if m.get("configurable_channel"):  # a shared set's masked mover (D169)
+            n = (m["num_channel"] + 31) // 32
+            lines.append(f"#define ENABLED_CHANNEL_{tag} {csr}")
+            lines.append(f"#define ENABLED_CHANNEL_{tag}_CSR_NUM {n}")
+            csr += n
     lines += [
         "// Datapath extension CSRs",
         "// Other resgiters",  # sic, as Streamer.scala writes it

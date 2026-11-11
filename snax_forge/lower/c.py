@@ -73,6 +73,15 @@ passes), every core then calls ``snrt_cluster_hw_barrier()``: every core
 walks the same steps, so the barrier counts match by construction.
 
 
+**Shared movers** (D169). In a set whose groups share its movers (``share_ports``), the task
+list still holds a configure per port of the set (derive.py's idle movers); the program writes
+each mover once per start: its group's port, else the first idle user's, at the mover's
+temporal dims. A masked mover's ENABLED_CHANNEL is its user's first channels, (1 << num_ch) - 1;
+a one-channel user's spatial stride is 0, so a mask that failed would write the other lanes over
+its word and the data check would see it. Before the set's STREAMER_START the program writes
+``<ACC>_RW_PORT_MUX_SEL``, the started group's index in the port mux, when it changes
+(``c.port_mux`` refuses a change whose set's previous task has no wait yet).
+
 **Addresses.** L1 addresses are the memory plan's, absolute. A DMA's L2
 side is the data.h array its task names (``symbol``).
 
@@ -101,7 +110,7 @@ stride 0 on loop 0 forces that bound to 1 and repeats each beat the bound's
 times; ``c.idle``), a wait in
 ``signal`` mode (``c.signal``: nothing to signal with on SNAX), a DMA
 pattern that is neither form (``c.dma``), a CSR the description lacks
-(``c.csrs``), a task list whose values do
+(``c.csrs``), a select change on a busy shared set (``c.port_mux``), a task list whose values do
 not fit the design point (``c.tasks``, ``check_values``), and an
 accelerator task no wait covers (``c.wait``: its counter is never read).
 Same design point, same text.
@@ -119,8 +128,8 @@ from snax_forge.common import CodedError, generated_header
 from snax_forge.design.hjson_platform import CoreCount, dma_and_owner
 from snax_forge.design.hjson_platform import cores as hjson_cores
 from snax_forge.design.problems import DesignError
+from snax_forge.design.streamers import SharedMover, groups, instances, shared_movers, streamer_name
 from snax_forge.design.streamers import accelerators as graph_accelerators
-from snax_forge.design.streamers import groups, instances, streamer_name
 
 from .tasks import Configure, Start, TaskList, TaskListError, check_values
 from .waits import PlacedWait, placed_waits
@@ -250,7 +259,13 @@ class _Program:
         self.arrays = list(arrays)
         self.conf = tasks.configured()
         self.beat = point.platform.l2.beat_bits // 8
+        self.shared = shared_movers(point.graph, point.streamers)
         self.movers = self._movers()
+        # each streamer task -> the tasks of the start that launches it
+        self.start_of = {t: list(st.tasks) for st in tasks.steps if isinstance(st, Start)
+                         for t in st.tasks}  # fmt: skip
+        self.sel: dict[str, int] = {}  # a shared set -> its PORT_MUX_SEL as last written
+        self.last_task: dict[str, str] = {}  # a set -> its last accelerator task started
         self.lines: dict[int, list[str]] = {k: [] for k in range(self.cores.count)}
         self.barriers = 0
         self.started: dict[str, list[str]] = {}  # component -> its tasks, in start order
@@ -266,6 +281,13 @@ class _Program:
         port order, readers and writers counted apart."""
         out = {}
         for acc, units in self.accs.items():
+            if acc in self.shared:  # every user's port on its shared mover (D169)
+                n = {False: 0, True: 0}
+                for m in self.shared[acc]:
+                    for u in m.users:
+                        out[u.streamer] = (acc, mover_name(m.write, n[m.write]))
+                    n[m.write] += 1
+                continue
             n = {False: 0, True: 0}
             for unit, inst in units.items():
                 for p in inst.ports:
@@ -275,6 +297,11 @@ class _Program:
                     out[s.name] = (acc, mover_name(s.write, n[s.write]))
                     n[s.write] += 1
         return out
+
+    def shared_mover(self, component: str) -> SharedMover | None:
+        """The shared mover a port's streamer is on (D169), None in a set that shares none."""
+        acc = self.movers[component][0]
+        return next((m for m in self.shared.get(acc, []) if m.user(component)), None)
 
     def set_of(self, component: str) -> str:
         """The streamer set (accelerator) a SNAX component is in."""
@@ -372,9 +399,29 @@ class _Program:
                 raise CError("c.idle", f"{s.task_name}: an idle mover (every temporal bound 0) "
                              "with first temporal stride 0 starts anyway (Reader.scala: stride 0 "
                              "on loop 0 forces that bound to 1); give it a nonzero stride")  # fmt: skip
-        dims = self.point.streamers[s.component].temporal_dims
+        shared = self.shared_mover(s.component)
+        if shared is not None and tb and not any(tb):
+            # an idle user of a shared mover: written only when no other configure of its start
+            # is on that mover (its own group's), and then by the first such idle one
+            same = [t for t in self.start_of.get(s.task_name, [])
+                    if t in self.conf and self.conf[t].type == "streamer"
+                    and self.movers[self.conf[t].component] == (acc, mover)]  # fmt: skip
+            if (
+                any(any(self.conf[t].values["temporal_bounds"]) for t in same)
+                or same[0] != s.task_name
+            ):
+                return []
+        dims = (
+            self.point.streamers[s.component].temporal_dims
+            if shared is None
+            else shared.temporal_dims
+        )
         bounds, strides = list(v["temporal_bounds"]), list(v["temporal_strides"])
         spatial = list(v["spatial_strides"])  # check_values checked every count against the dims
+        if shared is not None and shared.masked and shared.user(s.component).num_ch == 1:
+            # one channel of a masked mover: its spatial stride is no lane's address, so 0; a
+            # mask that failed would write the other lanes over this one's word
+            spatial = [0] * len(spatial)
         bounds += [1] * (dims - len(bounds))
         strides += [0] * (dims - len(strides))
         base = v["base"]
@@ -385,6 +432,12 @@ class _Program:
         lines += [f"csrw_ss({m('S_STRIDE')}_{i}, {x});" for i, x in enumerate(spatial)]
         lines += [f"csrw_ss({m('T_BOUND')}_{i}, {x});" for i, x in enumerate(bounds)]
         lines += [f"csrw_ss({m('T_STRIDE')}_{i}, {x});" for i, x in enumerate(strides)]
+        if shared is not None and shared.masked and any(tb):
+            # its user's first channels on (ENABLED_CHANNEL, D169): (1 << num_ch) - 1, by word
+            mask = (1 << shared.user(s.component).num_ch) - 1
+            for i in range((shared.num_ch + 31) // 32):
+                at = m("ENABLED_CHANNEL") + (f" + {i}" if i else "")
+                lines.append(f"csrw_ss({at}, {_hex((mask >> (32 * i)) & 0xFFFFFFFF)});")
         return lines
 
     def start(self, s: Start, where: str) -> None:
@@ -416,10 +469,32 @@ class _Program:
             elif c.type == "streamer":
                 acc = self.movers[c.component][0]
                 if acc not in streamers_started:
+                    self.port_mux(acc, s, where, core)
                     self.emit(core, f"csrw_ss({self.prefix(acc)}STREAMER_START_CSR, 1);")
                     streamers_started.add(acc)
             else:
                 self.emit(core, f"csrw_ss({self.csr('START', c.component, t)}, 1);")
+                self.last_task[self.set_of(c.component)] = t
+
+    def port_mux(self, acc: str, s: Start, where: str, core: int) -> None:
+        """A shared set's PORT_MUX_SEL, the started group's index in its port mux (D169), written
+        when it changes, after the wait on the set's previous task (``c.port_mux``)."""
+        sel = self.acc.port_mux_sel(acc)
+        if sel is None:
+            return
+        task = next(t for t in s.tasks if self.conf[t].type == "accel")
+        group = self.acc.group(self.unit_of(self.conf[task].component)).name
+        (a,) = (a for a in self.acc.accelerators if a.name == acc)
+        index = a.port_mux.groups.index(group)
+        if self.sel.get(acc) == index:
+            return
+        prev = self.last_task.get(acc)
+        if prev is not None and prev not in self.waited:
+            raise CError("c.port_mux", f"{where}: PORT_MUX_SEL of {acc} to {group} ({index}) "
+                         f"while its previous task {prev} has no wait: the select changes only on "
+                         "an idle streamer (D169)")  # fmt: skip
+        self.emit(core, f"csrw_ss({sel}, {index});")
+        self.sel[acc] = index
 
     def dma(self, c: Configure, where: str) -> str:
         src, dst = c.values["src"], c.values["dst"]

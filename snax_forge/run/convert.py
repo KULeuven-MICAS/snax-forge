@@ -81,7 +81,7 @@ from typing import Any
 
 from snax_forge.lower.tasks import TaskList
 
-from .beats import Context, beat_events, beat_invariants, pairing
+from .beats import Context, beat_events, beat_invariants, mover_tasks, pairing
 from .cluster import DMA, Cluster, core_name, linked
 from .cores import core_counts, core_spans, merge_spans, start_mode
 from .events import Line, RunError
@@ -252,7 +252,9 @@ def trace_events(lines: Sequence[tuple[str, Line]], cluster: Cluster, tasks: Tas
         if k == "start":
             kind = "accel" if src in acc.unit_names else "streamer"
             mine = started.setdefault(src, [])
-            e["task"] = _need(_tasks(tasks, kind, src), len(mine), f"{src}'s tasks")
+            shared = next((m for m in acc.movers if m.name == src and m.users), None)
+            got = _tasks(tasks, kind, src) if shared is None else mover_tasks(tasks, shared)
+            e["task"] = _need(got, len(mine), f"{src}'s tasks")
             mine.append(e["task"])
             run_of[e["task"]] = run
         elif k == "done" and src == DMA:

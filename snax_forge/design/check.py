@@ -57,6 +57,7 @@ from .platform import DERIVED, Platform
 from .problems import DesignError, Problem
 from .streamers import (
     LoopError,
+    ShareError,
     accelerated,
     accelerators,
     firing_loops,
@@ -66,6 +67,8 @@ from .streamers import (
     memlet_spatial_bounds,
     nest_spatial_bounds,
     resolve,
+    set_channels,
+    shared_movers,
     slices_per_word,
     slot_connectors,
     streamer_name,
@@ -778,17 +781,18 @@ def _connect_num_ch(design: Design) -> Iterable[Problem]:
 def crossbar_inputs(platform: Platform, graph: Graph,
                     insts: dict[str, Instance]) -> tuple[int, int] | None:  # fmt: skip
     """The TCDM crossbar's inputs as the generator's cluster file gives them to SNAX-GVSoC
-    (snitch_cluster.py): the accelerator's ports, its streamers' channels (``snax_tcdm_ports``,
-    gen/csrs.py's ``channels``: num_ch summed, D142), then a port per core of the platform's
-    hjson and one for AXI; as (channels, others). None when the streamers do not resolve
-    (another connect check names why) or there are none. The one place the inputs are counted:
-    the check below and HWCOST's crossbar cost (estimate, D167) read it."""
+    (snitch_cluster.py): the accelerator's ports, its streamer sets' channels
+    (``snax_tcdm_ports``, gen/csrs.py's ``channels``: num_ch summed, D142, a shared set's movers'
+    in place of its ports', D169, streamers.py's ``set_channels``), then a port per core of the
+    platform's hjson and one for AXI; as (channels, others). None when the streamers do not
+    resolve (another connect check names why) or there are none. The one place the inputs are
+    counted: the check below and HWCOST's crossbar cost (estimate, D167) read it."""
     try:
         found = resolve(platform, graph, insts)
+        channels = sum(set_channels(graph, found).values())
         cores = runtime_cores(platform)
     except (ValueError, DesignError):
         return None
-    channels = sum(s.num_ch for s in found.values())
     if channels == 0:
         return None
     return channels, (cores or 0) + 1
@@ -813,9 +817,40 @@ def _connect_xbar_inputs(design: Design) -> Iterable[Problem]:
         f"{channels + others} TCDM crossbar inputs, the platform takes at most {limit} "
         f"({channels} streamer channels, {others} for the cores and AXI; l1.max_xbar_inputs, "
         "the limit SNAX-GVSoC's crossbar asserts)",
-        f"fewer lanes, or a platform with more inputs ({_set('l1.max_xbar_inputs', channels + others)} "
-        "on a model that takes them, open item 105)",
+        "fewer lanes, or share_ports on a container between two accelerators (D169)",
     )  # fmt: skip
+
+
+def _design_xbar_inputs(design: Design) -> Iterable[Problem]:
+    """More crossbar inputs than the platform's ``l1.warn_xbar_inputs`` (D85): the design passes,
+    its crossbar cost extrapolated beyond the tables and beyond SNAX's own crossbar."""
+    try:
+        counted = xbar_inputs(design)
+    except (ValueError, DesignError, BrmError, DfgError):
+        return
+    warn = design.platform.l1.warn_xbar_inputs
+    if counted is None or sum(counted) <= warn:
+        return
+    channels, others = counted
+    yield Problem(
+        "design.xbar_inputs", ", ".join(accelerators(design.graph)) or "graph",
+        f"{channels + others} TCDM crossbar inputs, above {warn} (l1.warn_xbar_inputs): beyond "
+        "SNAX's own crossbar, its cost extrapolated from the tables",
+        "fewer lanes, or share_ports on a container between two accelerators (D169)",
+    )  # fmt: skip
+
+
+def _connect_share(design: Design) -> Iterable[Problem]:
+    """A shared set's ports fit its movers (D169, streamers.py's ``shared_movers``)."""
+    try:
+        found = resolve(design.platform, design.graph, design.instances)
+    except (ValueError, DesignError, BrmError, DfgError):
+        return  # another connect check names why
+    try:
+        shared_movers(design.graph, found)
+    except ShareError as e:
+        yield Problem("share.shape", ", ".join(accelerators(design.graph)), str(e),
+                      "unshare_ports on its container, or ports of one shape")  # fmt: skip
 
 
 def _connect_temporal(design: Design) -> Iterable[Problem]:
@@ -1129,6 +1164,7 @@ for _code, _stage, _fn in (
     ("connect.pack", "connect", _connect_pack),
     ("connect.pad", "connect", _connect_pad),
     ("connect.num_ch", "connect", _connect_num_ch),
+    ("share.shape", "connect", _connect_share),
     ("connect.xbar_inputs", "connect", _connect_xbar_inputs),
     ("connect.temporal", "connect", _connect_temporal),
     ("memory.pin", "memory", _memory_pin),
@@ -1219,5 +1255,6 @@ def _cost_extrapolated(design: Design) -> Iterable[Problem]:
 
 
 register_note("design.serial_one_lane", _design_serial_one_lane)
+register_note("design.xbar_inputs", _design_xbar_inputs)
 register_note("char.missing", _char_missing)
 register_note("cost.extrapolated", _cost_extrapolated)

@@ -114,6 +114,7 @@ class SetRow(Record):
     first: int
     last: int
     group_csrs: dict[str, list[int]] = field(default_factory=dict)  # [first, last] per group
+    shared: bool = False  # its groups share its movers (share_ports, D169)
 
 
 @dataclass
@@ -477,22 +478,29 @@ def build_design(
                                    dict(inst.params) if inst else {}, m["timing"]["latency"],
                                    m["timing"]["ii"],
                                    [f"{x.port} ← {x.name}" for x in a.movers
-                                    if point.streamers[x.name].instance == m["name"]],
+                                    if (m["name"] in x.user_units if x.users
+                                        else point.streamers[x.name].instance == m["name"])],
                                    u.group))  # fmt: skip
-    streamers = [
-        StreamerRow(m.name, point.streamers[m.name].instance, m.port,
-                    "write" if m.write else "read",
-                    point.streamers[m.name].dtype, point.streamers[m.name].num_slc, m.lanes,
-                    m.fifo_depth, point.streamers[m.name].temporal_dims, containers.get(m.name))
-        for m in a.movers
-    ]  # fmt: skip
+    streamers = []
+    for m in a.movers:
+        if m.users:  # a shared mover (D169): its first user's dtype, no one port or container
+            ref = point.streamers[m.users[0]]
+            streamers.append(StreamerRow(m.name, None, m.port, "write" if m.write else "read",
+                                         ref.dtype, ref.num_slc, m.lanes, m.fifo_depth,
+                                         m.temporal_dim, None))  # fmt: skip
+            continue
+        ref = point.streamers[m.name]
+        streamers.append(StreamerRow(m.name, ref.instance, m.port, "write" if m.write else "read",
+                                     ref.dtype, ref.num_slc, m.lanes, m.fifo_depth,
+                                     ref.temporal_dims, containers.get(m.name)))  # fmt: skip
     sets = []
     for acc_name, groups in a.accelerators():
         movers = [m for m in a.movers if m.set == acc_name]
         first, last = a.window(acc_name)
         sets.append(SetRow(acc_name, groups, len(movers), sum(m.lanes for m in movers),
                            [m.temporal_dim for m in movers], first, last,
-                           {u.group: [u.start, u.counter] for u in a.units if u.group in groups}))  # fmt: skip
+                           {u.group: [u.start, u.counter] for u in a.units if u.group in groups},
+                           any(m.users for m in movers)))  # fmt: skip
     return DesignReport(name, header, components, accels, streamers,
                         _memory_tables(cluster, regions, point),
                         design_notes + _notes(cluster, regions, point, streamers), len(a.units),
@@ -691,6 +699,13 @@ def render_sets(rows: list[SetRow]) -> list[str]:
     out += ["", ("Each accelerator is one streamer set: its streamer's CSRs first, then its own, "
                  "packed from 960 (C§16); its movers are its groups' outer ports, readers "
                  "first.")]  # fmt: skip
+    shared = [x.name for x in rows if x.shared]
+    if shared:
+        out += ["", (f"{', '.join(shared)} {'shares' if len(shared) == 1 else 'share'} its movers "
+                     "among its groups (share_ports, D169): per role the k-th widest port of each "
+                     "group on mover k, a narrower one on its first channels; a port mux picks the "
+                     "group by PORT_MUX_SEL, which the program writes before each start. The mux "
+                     "costs nothing here.")]  # fmt: skip
     return out
 
 

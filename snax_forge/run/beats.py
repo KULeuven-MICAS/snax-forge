@@ -198,7 +198,7 @@ def mover_csrs(cluster: Cluster) -> dict[str, int]:
     for m in acc.movers:
         key = m.set or acc.csrs.sets[0].name
         out[m.name] = csr[key]
-        csr[key] += mover_csr_count(m.spatial_bounds, m.temporal_dim)
+        csr[key] += mover_csr_count(m.spatial_bounds, m.temporal_dim, m.enabled)
     return out
 
 
@@ -244,6 +244,25 @@ def nests(ctx: Context) -> dict[tuple[str, int], list[list[int]]]:
     return out
 
 
+def shared_pick(tasks: Sequence[Configure]) -> Configure:
+    """Of one start's configures of a shared mover's users (D169), the one its program writes:
+    its group's own (a temporal bound not 0), else the first idle one (lower/c.py)."""
+    own = [c for c in tasks if any(c.values["temporal_bounds"])]
+    return own[0] if own else tasks[0]
+
+
+def mover_tasks(tasks: TaskList, mover: Mover) -> list[str]:
+    """A shared mover's streamer tasks in start order, one per start of its set (``shared_pick``)."""
+    conf = {s.task_name: s for s in tasks.steps if isinstance(s, Configure)}
+    out = []
+    for s in tasks.steps:
+        if isinstance(s, Start):
+            mine = [conf[t] for t in s.tasks if t in conf and conf[t].component in mover.users]
+            if mine:
+                out.append(shared_pick(mine).task_name)
+    return out
+
+
 def pairing(tasks: TaskList, cluster: Cluster) -> dict[str, dict[str, str]]:
     """Per accelerator task, the streamer task of each mover of its streamer set (D157), from the
     start step that launches them together: a unit's task with a task on every mover of its set,
@@ -266,6 +285,10 @@ def pairing(tasks: TaskList, cluster: Cluster) -> dict[str, dict[str, str]]:
         what = f"{tasks.name}: start {s.tasks}"
         unit = next(c.component for c in launched if c.task_name == mine[0])
         movers = [m.name for m in acc.movers if m.set == set_of[unit]]
+        # a port's streamer -> its mover: a shared mover's users' too (D169)
+        on = {
+            u: m.name for m in acc.movers if m.set == set_of[unit] for u in (m.users or (m.name,))
+        }
         if len(mine) > 1:
             raise RunError("index.tasks", f"{what} launches {len(mine)} tasks of {acc.name} "
                            f"({mine})")  # fmt: skip
@@ -273,10 +296,13 @@ def pairing(tasks: TaskList, cluster: Cluster) -> dict[str, dict[str, str]]:
         for c in launched:
             if c.type != "streamer":
                 continue
-            if c.component not in movers:
+            if c.component not in on:
                 raise RunError("index.tasks", f"{what}: streamer task {c.task_name!r} is on "
                                f"{c.component}, no mover of set {set_of[unit]} ({movers})")  # fmt: skip
-            by.setdefault(c.component, []).append(c.task_name)
+            by.setdefault(on[c.component], []).append(c.task_name)
+        for m in acc.movers:
+            if m.users and len(by.get(m.name, [])) > 1:  # the one its program writes
+                by[m.name] = [shared_pick([conf[t] for t in by[m.name]]).task_name]
         for m in movers:
             if len(by.get(m, [])) != 1:
                 have = by.get(m, [])

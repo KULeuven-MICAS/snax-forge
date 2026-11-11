@@ -555,8 +555,8 @@ def test_every_step_lists_saves_design_checks(roots):
 def test_while_building_unbound_is_a_note_and_notes_show_beside_problems(roots):
     """D156: before the bind graph.unbound is a note ("before Save: bind it …"), not a problem,
     and Save still refuses it; vecadd_i32's int32 adder, not in nangate45's table, keeps its
-    char.missing note beside a problem (W = 64: too many crossbar inputs), with the cost.extrapolated
-    notes of a design past HWCOST's tables."""
+    char.missing note beside a problem (W = 128: too many crossbar inputs), with the
+    design.xbar_inputs and cost.extrapolated notes of a design past HWCOST's tables."""
     s = Session.from_kernel("vecadd", {"N": 64}, roots=roots)
     split_and_tag(s, "add_map", 4)
     c = s.checks(3)
@@ -566,14 +566,15 @@ def test_while_building_unbound_is_a_note_and_notes_show_beside_problems(roots):
     assert s.save("vecadd_unbound")["code"] == "save.graph"
     i32 = Session.from_kernel("vecadd", {"N": 2048}, dtypes={"A": "int32", "B": "int32", "C": "int32"},
                               roots=Roots(roots.sessions / "i32", roots.recipes, roots.sandbox))  # fmt: skip
-    split_and_tag(i32, "add_map", 64)
+    split_and_tag(i32, "add_map", 128)
     bind_default(i32, "add")
     c = i32.checks(4)
     assert [p["code"] for p in c["problems"]] == ["connect.xbar_inputs"]
-    # beside it, its three streamers of 32 channels and its 99 crossbar inputs, off HWCOST's
-    # tables' grid, are noted as extrapolated (D167)
+    # beside it, its 195 crossbar inputs above 64 (D85) and, off HWCOST's tables' grid, its three
+    # streamers of 64 channels and its crossbar, noted as extrapolated (D167)
     assert [(n["code"], n["before_save"]) for n in c["notes"]] == [
-        ("char.missing", False), *[("cost.extrapolated", False)] * 4]  # fmt: skip
+        ("design.xbar_inputs", False), ("char.missing", False),
+        *[("cost.extrapolated", False)] * 4]  # fmt: skip
     assert not c["problems"][0]["before_save"]
 
 

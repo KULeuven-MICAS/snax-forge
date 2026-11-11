@@ -36,6 +36,21 @@ value), ``slot_containers`` those read only through a slot connector (a
 CSR's value, in the core's memory); ``resolve`` builds the shell. Neither checks the pairing:
 that is check.py, which runs first and reports every problem, so
 ``resolve`` raises on the first thing that does not fit.
+
+**Shared movers** (D169). A container marked ``hw.share_ports`` (``share_ports``,
+sandbox/share_ports.py) has its writer's and its reader's groups on one accelerator, whose
+groups then share its streamer's movers: ``shared_accelerators`` names those accelerators,
+``shared_movers`` maps their ports. Per role (read, write), each group's ports on a streamer,
+unit by unit in port order, sorted by channels, widest first (a stable sort); the k-th of every
+group goes on mover k (``reader<k>``, ``writer<k>``, snax-gvsoc's names), which takes the
+widest channels and its spatial bounds (in words), the most temporal loops and the deepest
+FIFO of its users. A narrower user enables its first channels (snax_cluster's
+``configurable_channel``, the mover ``masked``). A user whose spatial bounds (in words) are not
+the mover's on every dimension but the slowest, and at most the mover's there, does not fit in
+its first channels: ``ShareError`` (``share.shape``). The pool's channels, with
+:math:`w_{s,r,k}` group s's k-th widest port of role r (0 if none):
+``C = Σ_r Σ_k max_s w_{s,r,k}``; ``set_channels`` gives each accelerator's, the one count
+check.py's ``crossbar_inputs`` sums.
 """
 
 from __future__ import annotations
@@ -256,6 +271,143 @@ def slot_containers(graph: Graph) -> set[str]:
             (slot if c in slots else other).add(m.data)
         other |= {m.data for m in n.outputs.values()}
     return slot - other
+
+
+SHARE_PORTS = "hw.share_ports"
+
+
+class ShareError(ValueError):
+    """Ports that cannot share a mover (``share.shape``)."""
+
+    code = "share.shape"
+
+
+@dataclass(frozen=True)
+class MoverUser:
+    """A group's port on a shared mover: the group, the port's streamer (``<instance>_<port>``),
+    the port as ``"<instance>.<port>"`` and its channels."""
+
+    group: str
+    streamer: str
+    port: str
+    num_ch: int
+
+
+@dataclass(frozen=True)
+class SharedMover:
+    """A mover of a shared set (module doc): its name (``reader<k>``, ``writer<k>``), whether
+    it writes, its channels, spatial bounds in words (fastest first), temporal loops and FIFO
+    depth, and its users, at most one per group, in the groups' order."""
+
+    name: str
+    write: bool
+    num_ch: int
+    spatial_bounds: tuple[int, ...]
+    temporal_dims: int
+    fifo_depth: int
+    users: tuple[MoverUser, ...]
+
+    @property
+    def masked(self) -> bool:
+        """A user narrower than it: it has ``configurable_channel``."""
+        return any(u.num_ch < self.num_ch for u in self.users)
+
+    def user(self, streamer: str) -> MoverUser | None:
+        return next((u for u in self.users if u.streamer == streamer), None)
+
+
+def word_bounds(s: Streamer) -> tuple[int, ...]:
+    """A streamer's spatial bounds in words, fastest first: the fastest over num_slc (gen.lanes
+    refuses a fastest bound that is not whole words)."""
+    s0, *rest = s.spatial_bounds
+    return (s0 // s.num_slc, *rest)
+
+
+def shared_containers(graph: Graph) -> list[str]:
+    """The containers marked ``hw.share_ports``, in the graph's order."""
+    return [c for c, cont in graph.containers.items() if SHARE_PORTS in cont.attrs]
+
+
+def shared_accelerators(graph: Graph) -> list[str]:
+    """The accelerators whose groups share their movers (module doc), in the graph's order: a
+    marked container's writer and reader in one accelerator."""
+    marked = set(shared_containers(graph))
+    out = []
+    for n in accelerated(graph):
+        for m in n.outputs.values():
+            if m.data not in marked:
+                continue
+            readers = [r for r in accelerated(graph)
+                       if any(x.data == m.data for x in r.inputs.values())]  # fmt: skip
+            if any(accelerator_of(r) == accelerator_of(n) for r in readers):
+                out.append(accelerator_of(n))
+    return list(dict.fromkeys(out))
+
+
+def shared_movers(graph: Graph, found: dict[str, Streamer]) -> dict[str, list[SharedMover]]:
+    """Each shared accelerator's movers, readers first (module doc); ``found`` is ``resolve``'s
+    shell. Raises ``ShareError`` on a user that does not fit."""
+    accs = set(shared_accelerators(graph))
+    if not accs:
+        return {}
+    by_group: dict[str, dict[str, list[Streamer]]] = {}
+    acc_groups: dict[str, list[str]] = {}
+    nodes = instance_nodes(graph)
+    for unit, n in nodes.items():
+        acc = accelerator_of(n)
+        if acc not in accs:
+            continue
+        g = group_of(n)
+        if g not in acc_groups.setdefault(acc, []):
+            acc_groups[acc].append(g)
+        mine = by_group.setdefault(g, {"read": [], "write": []})
+        for s in found.values():
+            if s.instance == unit:
+                mine["write" if s.write else "read"].append(s)
+    out: dict[str, list[SharedMover]] = {}
+    for acc, names in acc_groups.items():
+        movers: list[SharedMover] = []
+        for role in ("read", "write"):
+            ranked = {g: sorted(by_group[g][role], key=lambda s: -s.num_ch) for g in names}
+            for k in range(max((len(v) for v in ranked.values()), default=0)):
+                users = [(g, ranked[g][k]) for g in names if k < len(ranked[g])]
+                widest = max((s for _, s in users), key=lambda s: s.num_ch)
+                bounds = word_bounds(widest)
+                name = f"{'writer' if role == 'write' else 'reader'}{k}"
+                for g, s in users:
+                    b = word_bounds(s)
+                    if len(b) != len(bounds) or b[:-1] != bounds[:-1] or b[-1] > bounds[-1]:
+                        raise ShareError(
+                            f"accelerator {acc}'s {name}: {s.name}'s spatial bounds {list(b)} "
+                            f"(in words) do not fit in the first channels of {widest.name}'s "
+                            f"{list(bounds)}: a shared mover takes ports of its bounds but the "
+                            "slowest, which may be smaller"
+                        )
+                movers.append(SharedMover(
+                    name, role == "write", widest.num_ch, bounds,
+                    max(s.temporal_dims for _, s in users),
+                    max(s.options.fifo_depth for _, s in users),
+                    tuple(MoverUser(g, s.name, f"{s.instance}.{s.port}", s.num_ch)
+                          for g, s in users),
+                ))  # fmt: skip
+        out[acc] = movers
+    return out
+
+
+def set_channels(graph: Graph, found: dict[str, Streamer]) -> dict[str, int]:
+    """Each accelerator's streamer channels, the TCDM ports its streamer set takes: its ports'
+    num_ch summed, or a shared set's movers' (module doc); raises ``ShareError`` as
+    ``shared_movers``."""
+    shared = shared_movers(graph, found)
+    acc_of = {u: accelerator_of(n) for u, n in instance_nodes(graph).items()}
+    out: dict[str, int] = {}
+    for s in found.values():
+        acc = acc_of[s.instance]
+        if acc not in shared:
+            out[acc] = out.get(acc, 0) + s.num_ch
+    for acc, movers in shared.items():
+        out[acc] = sum(m.num_ch for m in movers)
+    return out
 
 
 def instance_of(node: Node) -> Instance:
