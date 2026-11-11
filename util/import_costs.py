@@ -2,8 +2,9 @@
 
     pixi run import-costs [--experiments DIR] [--tech nangate45]
 
-Copies ``results/ram/<tech>/ram_table.csv``, ``results/strm/<tech>/streamer.csv`` and
-``results/strm/<tech>/xbar.csv`` as they are, and writes ``SOURCE`` with the repository, its
+Copies ``results/ram/<tech>/ram_table.csv``, ``results/strm/<tech>/streamer.csv``,
+``results/strm/<tech>/xbar.csv`` and ``results/strm/<tech>/xbar_kinds.json`` (the crossbar's
+read-only and write-only inputs, X71) as they are, and writes ``SOURCE`` with the repository, its
 commit and each file's path and sha256 (no date, so a re-run that brings nothing new changes
 nothing). By default it fetches the latest main of
 snax-forge-experiments (a shallow ``git clone`` into a temporary folder); ``--experiments DIR``
@@ -28,6 +29,7 @@ PATHS = {
     "ram_table.csv": "results/ram/{tech}/ram_table.csv",
     "streamer.csv": "results/strm/{tech}/streamer.csv",
     "xbar.csv": "results/strm/{tech}/xbar.csv",
+    "xbar_kinds.json": "results/strm/{tech}/xbar_kinds.json",
 }
 
 
@@ -41,7 +43,7 @@ def sha256(path: Path) -> str:
 
 
 def copy(src: Path, tech: str, out: Path) -> str:
-    """Copy the three tables of ``tech`` from the checkout ``src`` to ``out`` and write SOURCE;
+    """Copy the four files of ``tech`` from the checkout ``src`` to ``out`` and write SOURCE;
     returns the commit."""
     if git(src, "status", "--porcelain"):
         sys.exit(f"{src} has uncommitted changes: import from a clean checkout")

@@ -58,6 +58,7 @@ from .cost import (
     memory_cost,
     streamer_cost,
     xbar_cost,
+    xbar_kinds,
 )
 from .cycles import EstimateError, GroupEstimate, group_blocks, group_cycles, not_mapped
 from .data import ContainerData, PortData, SplitData, containers, outer_ports, ports, splits
@@ -125,12 +126,23 @@ class Estimate(JsonFile):
 
     @cached_property
     def xbar(self) -> XbarCost | None:
-        """The crossbar priced at its inputs (check.py's ``crossbar_inputs``); None when not
-        costed."""
+        """The crossbar priced at its inputs (check.py's ``crossbar_inputs``), its readers' and
+        writers' channels as read-only and write-only inputs, in the factor form (X71); None
+        when not costed."""
+        return self.xbar_in("factor")
+
+    def xbar_in(self, form: str) -> XbarCost | None:
+        """The crossbar priced as ``xbar`` in ``form`` (``"factor"``, the default, or
+        ``"crosspoint"``, cost.py); None when not costed."""
         c = self.costs
         if c is None or self.xbar_inputs is None or self.bank_shape is None:
             return None
-        return xbar_cost(c, sum(self.xbar_inputs), self.bank_shape[0], sum(self._rw()))
+        ro, wo = xbar_kinds(self.streamer_counts)
+        if ro + wo != self.xbar_inputs[0]:
+            raise ValueError(f"the streamers' {ro} read and {wo} write channels are not the "
+                             f"crossbar's {self.xbar_inputs[0]} (crossbar_inputs)")  # fmt: skip
+        return xbar_cost(c, sum(self.xbar_inputs), self.bank_shape[0], sum(self._rw()), ro, wo,
+                         form)  # fmt: skip
 
     @cached_property
     def memory(self) -> MemoryCost | None:

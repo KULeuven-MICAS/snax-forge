@@ -84,9 +84,10 @@ BANK = (13522.7, 3.53819, 6.4677)  # 512 × 64: area µm², pJ per read, pJ per 
 def test_vecmul_at_w8_by_part():
     """The hand-worked design of the HWCOST notes: vecmul at W = 8, N = 2048, three ports of 8
     channels and one loop, 256 beats each, 6144 words; the crossbar at 24 + 2 + 1 = 27 inputs
-    on 32 banks, its area linear in inputs (t = 3/8 between 24 and 32), every access at a full
-    crossbar's price (32 inputs on 32 banks, a grid point); 32 banks, 4096 reads and 2048
-    writes."""
+    on 32 banks, its table area linear in inputs (t = 3/8 between 24 and 32), its 16 readers'
+    channels read-only and 8 writer's write-only (X71: × (1 − 0.396496 · 16/27 − 0.41077 · 8/27)),
+    every access at a full crossbar's price (32 inputs on 32 banks, a grid point); 32 banks,
+    4096 reads and 2048 writes."""
     e = estimated("vecmul", W=8, N=2048)
     assert [(s.counts.name, s.counts.write, s.counts.depth, s.counts.loops, s.counts.channels,
              s.counts.words, s.counts.beats) for s in e.streamer_costs] == [
@@ -97,7 +98,9 @@ def test_vecmul_at_w8_by_part():
     assert p["streamers"].energy_nj == pytest.approx(3 * 256 * READER_8_1_8[1] / 1000)
     x = e.xbar
     assert (x.inputs, x.banks, x.accesses, x.extrapolated) == (27, 32, 6144, ())
-    assert x.area_um2 == pytest.approx(124078.629252 + 3 / 8 * (164650.280089 - 124078.629252))
+    assert (x.read_only, x.write_only, x.form) == (16, 8, "factor")
+    table = 124078.629252 + 3 / 8 * (164650.280089 - 124078.629252)
+    assert x.area_um2 == pytest.approx(table * (1 - 0.396496 * 16 / 27 - 0.41077 * 8 / 27))
     assert x.e_access_pj == 2.739443  # xbar.csv's 32 inputs on 32 banks
     m = e.memory
     assert (m.n, m.depth, m.width, m.reads, m.writes) == (32, 512, 64, 4096, 2048)
@@ -106,9 +109,9 @@ def test_vecmul_at_w8_by_part():
     shown = {k: (sig3(v.area_um2), dec3(v.energy_nj)) for k, v in p.items()}
     # control 362 µm², 0.066 nJ: 34 bits, CTRL1's 66 less its 32-bit copy of JOBS (D168)
     assert shown == {"datapath": ("55 300", "23.137"), "control": ("362", "0.066"),
-                     "streamers": ("116 000", "30.457"), "crossbar": ("139 000", "16.831"),
+                     "streamers": ("116 000", "30.457"), "crossbar": ("89 600", "16.831"),
                      "memory": ("433 000", "27.738")}  # fmt: skip
-    assert (sig3(e.area), sig3(e.area_design), dec3(e.energy)) == ("743 000", "311 000", "98.229")
+    assert (sig3(e.area), sig3(e.area_design), dec3(e.energy)) == ("694 000", "261 000", "98.229")
     assert e.energy == pytest.approx(sum(v.energy_nj for v in p.values()))
     assert e.area_design == pytest.approx(e.area - m.area_um2)
     assert e.kernel_energy == pytest.approx(p["datapath"].energy_nj + p["control"].energy_nj)
@@ -119,8 +122,9 @@ def test_vecmul_at_w8_by_part():
 
 def test_dot_4_by_part():
     """dot 4 at W = 4, N = 512: two readers of 4 channels (128 beats), a one-lane writer of one
-    word; the crossbar at 4 + 4 + 1 + 3 = 12 inputs, its area cost_tables.md's example 3, its
-    accesses at a full crossbar's price."""
+    word; the crossbar at 4 + 4 + 1 + 3 = 12 inputs, its table area cost_tables.md's example 3
+    (61,450.9 µm²) with 8 read-only and 1 write-only (X71), its accesses at a full crossbar's
+    price."""
     e = estimated("dot_4")
     s = {c.counts.name: c for c in e.streamer_costs}
     assert [(k, c.counts.channels, c.counts.words, c.counts.beats) for k, c in s.items()] == [
@@ -128,21 +132,30 @@ def test_dot_4_by_part():
     assert e.parts["streamers"].area_um2 == pytest.approx(2 * READER_8_1_4[0] + READER_8_1_1[0])
     assert e.parts["streamers"].energy_nj == pytest.approx(
         (2 * 128 * READER_8_1_4[1] + READER_8_1_1[1]) / 1000)  # fmt: skip
-    assert (round(e.xbar.area_um2, 1), e.xbar.e_access_pj) == (61450.9, 2.739443)
+    assert (e.xbar.read_only, e.xbar.write_only) == (8, 1)
+    assert e.xbar.area_um2 == pytest.approx(
+        61450.9 * (1 - 0.396496 * 8 / 12 - 0.41077 / 12), abs=0.1
+    )
+    assert e.xbar.e_access_pj == 2.739443
     assert (e.memory.reads, e.memory.writes) == (1024, 1)
 
 
 def test_mvt_1_dot2_counts_a_shared_set_once_and_its_words_twice():
     """mvt 1 with dot 2 (D165): one vmul → link → vsum group run for both halves, so its
     streamers are priced once and move both halves' words (A twice, 2 × 40 × 40 words over 4
-    channels and 2 loops); the vadd's set is its own accelerator; 24 inputs, a grid value."""
+    channels and 2 loops); the vadd's set is its own accelerator; 24 inputs, a grid value, 16
+    of them read-only (both sets' readers) and 5 write-only (vsum's one, vadd's four)."""
     e = estimated("mvt_1_dot2")
     s = {c.counts.name: c for c in e.streamer_costs}
     assert list(s) == ["vmul_x1_a", "vmul_x1_b", "vsum_x1_out", "vadd_a", "vadd_b", "vadd_out"]
     a = s["vmul_x1_a"]
     assert (a.counts.loops, a.counts.channels, a.counts.words, a.counts.beats) == (2, 4, 3200, 800)
     assert (a.area_um2, a.e_beat_pj) == READER_8_2_4
-    assert (e.xbar.inputs, e.xbar.area_um2, e.xbar.e_access_pj) == (24, 124078.629252, 2.739443)
+    assert (e.xbar.inputs, e.xbar.read_only, e.xbar.write_only) == (24, 16, 5)
+    assert e.xbar.area_um2 == pytest.approx(
+        124078.629252 * (1 - 0.396496 * 16 / 24 - 0.41077 * 5 / 24)
+    )
+    assert e.xbar.e_access_pj == 2.739443
     assert sum(x.energy_nj for x in e.l1.values()) == pytest.approx(
         e.xbar.energy_nj + e.memory.energy_nj)  # fmt: skip
 
@@ -166,6 +179,8 @@ def test_dot_1_shared_prices_each_mover_once():
     assert e.parts["streamers"].area_um2 == pytest.approx(3 * READER_8_1_4[0])
     assert (s["vsum_out"].area_um2, s["vsum_out"].e_beat_pj) == (0.0, READER_8_1_1[1])
     assert (e.xbar.inputs, estimated("dot_1").xbar.inputs) == (15, 20)
+    # its movers on the crossbar: reader0 and reader1 (8 read-only), writer0 (4 write-only)
+    assert (e.xbar.read_only, e.xbar.write_only) == (8, 4)
     assert [x.to_dict() for x in e.streamer_counts] == [
         x.counts.to_dict() for x in e.streamer_costs]  # fmt: skip
 
@@ -329,3 +344,22 @@ def test_a_one_stream_simd_is_not_the_two_input_point():
     e = estimate(g, Platform.load(SNAX_FORGE))
     assert e.missing == ["acc"] and e.groups[0].cost.units["acc"].found is None
     assert estimated("vecadd").missing == []
+
+
+def test_the_clusters_dot_3_crossbar_in_both_forms():
+    """dot 3 at W = 16, N = 2048, the design CSYN1 synthesized in the whole cluster: two readers of
+    16 channels and a one-channel writer, 36 inputs on 32 banks (X71's check). The factor form
+    gives 119,308 µm² (the cluster's sparse interconnect is 107,685), the crosspoint option
+    115,763; the energy per access is the same."""
+    e = estimated("dot_3", W=16, N=2048)
+    f, c = e.xbar, e.xbar_in("crosspoint")
+    assert (f.inputs, f.read_only, f.write_only, f.form, c.form) == (
+        36,
+        32,
+        1,
+        "factor",
+        "crosspoint",
+    )
+    assert (round(f.area_um2), round(c.area_um2)) == (119308, 115763)
+    assert f.e_access_pj == c.e_access_pj and f.energy_nj == c.energy_nj
+    assert e.parts["crossbar"].area_um2 == f.area_um2
