@@ -360,9 +360,9 @@ def test_the_cost_tables_of_vecmul_and_dot_1():
     # the crossbar's 16 read-only and 8 write-only inputs priced as such (X71)
     assert parts == [("datapath", "55 300 µm²", "8.0%", "23.137 nJ", "23.6%"),
                      ("control", "362 µm²", "0.1%", "0.066 nJ", "0.1%"),
-                     ("streamers", "116 000 µm²", "16.7%", "30.457 nJ", "31.0%"),
-                     ("crossbar", "89 600 µm²", "12.9%", "16.831 nJ", "17.1%"),
-                     ("memory", "433 000 µm²", "62.4%", "27.738 nJ", "28.2%")]  # fmt: skip
+                     ("streamers", "116 000 µm²", "16.8%", "30.457 nJ", "31.0%"),
+                     ("crossbar", "84 500 µm²", "12.3%", "16.831 nJ", "17.1%"),
+                     ("memory", "433 000 µm²", "62.9%", "27.738 nJ", "28.2%")]  # fmt: skip
     d = steps("dot_1_enc", N=2048, W=8)[-1]
     (t,) = cost_tables(estimate(d, platform), d)
     assert t["accelerator"] == "dot" and _cost_rows(t) == [
@@ -797,19 +797,19 @@ def test_compare_gives_two_columns_when_the_groups_differ():
     # 24 + 9 and 16 + 1 read-only and write-only inputs priced as such (X71)
     bars = c["cost_bars"]
     assert [b["label"] for b in bars["area"]] == ["5 bind", "6 link"]
-    assert [b["total_text"] for b in bars["area"]] == ["774 000 µm²", "647 000 µm²"]
+    assert [b["total_text"] for b in bars["area"]] == ["769 000 µm²", "642 000 µm²"]
     assert sum(x["width"] for x in bars["area"][0]["segments"]) == pytest.approx(1.0)
     assert sum(x["width"] for x in bars["area"][1]["segments"]) == pytest.approx(
-        647138.5 / 774423.7, rel=1e-3
+        641973.2 / 768893.7, rel=1e-3
     )
     assert _rows(rows, "Cost estimate (first-order) on nangate45") == {
-        "area": ("774 000 µm²", "647 000 µm²", True),
-        "area without the banks": ("342 000 µm²", "214 000 µm²", True),
+        "area": ("769 000 µm²", "642 000 µm²", True),
+        "area without the banks": ("336 000 µm²", "209 000 µm²", True),
         "energy per run": ("72.455 nJ", "72.243 nJ", True),
         "datapath": ("62 300 µm² · 26.008 nJ", "62 300 µm² · 26.003 nJ", True),
         "control": ("1 120 µm² · 0.212 nJ", "1 100 µm² · 0.207 nJ", True),
         "streamers": ("160 000 µm² · 20.389 nJ", "82 500 µm² · 20.310 nJ", True),
-        "crossbar": ("119 000 µm² · 11.267 nJ", "68 500 µm² · 11.223 nJ", True),
+        "crossbar": ("113 000 µm² · 11.267 nJ", "63 300 µm² · 11.223 nJ", True),
         "memory (banks)": ("433 000 µm² · 14.579 nJ", "433 000 µm² · 14.499 nJ", True),
         "L1 accesses": ("mac: 4104 words, 25.787 nJ; sum: 9 words, 0.059 nJ",
                         "dot: 4097 words, 25.722 nJ", True),
@@ -826,7 +826,7 @@ def test_compare_gives_two_columns_when_the_groups_differ():
     first = compare_view(e[0], e[6], platform)["columns"]["estimate"]
     assert _rows(first, "Cost estimate (first-order) on nangate45")["area"] == (
         "–",
-        "647 000 µm²",
+        "642 000 µm²",
         True,
     )
     assert step_view(e[0], "0", platform)["summary"]["cost"] is None  # nothing bound

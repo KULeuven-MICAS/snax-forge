@@ -326,7 +326,7 @@ def test_more_crossbar_inputs_than_the_platform_takes_are_refused():
     (p,) = [p for p in problems(wide) if p.code == "connect.xbar_inputs"]
     assert (p.where, p.message) == ("acc", (
         "98 TCDM crossbar inputs, the platform takes at most 64 (96 streamer channels, 2 for "
-        "the cores and AXI; l1.max_xbar_inputs, the limit SNAX-GVSoC's crossbar asserts)"))  # fmt: skip
+        "the core and AXI; l1.max_xbar_inputs, the limit SNAX-GVSoC's crossbar asserts)"))  # fmt: skip
     assert p.fix == "fewer lanes, or share_ports on a container between two accelerators (D169)"
     half = _on_snax_forge(_vecmul(16))
     assert problems(half) == [] and xbar_inputs(half) == (48, 2)

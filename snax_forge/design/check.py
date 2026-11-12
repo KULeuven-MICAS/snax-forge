@@ -815,8 +815,8 @@ def _connect_xbar_inputs(design: Design) -> Iterable[Problem]:
     yield Problem(
         "connect.xbar_inputs", where,
         f"{channels + others} TCDM crossbar inputs, the platform takes at most {limit} "
-        f"({channels} streamer channels, {others} for the cores and AXI; l1.max_xbar_inputs, "
-        "the limit SNAX-GVSoC's crossbar asserts)",
+        f"({channels} streamer channels, {others} for the core{'s' if others > 2 else ''} and AXI; "
+        "l1.max_xbar_inputs, the limit SNAX-GVSoC's crossbar asserts)",
         "fewer lanes, or share_ports on a container between two accelerators (D169)",
     )  # fmt: skip
 

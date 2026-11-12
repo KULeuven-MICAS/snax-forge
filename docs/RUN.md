@@ -130,13 +130,13 @@ A platform without a source hjson stops at `gen`, before anything is built, and 
 
     FAILED recipes/elementwise/vecadd.json: gen: [gen.source] platform small16 has no source hjson: read it from one with `pixi run design from-hjson`
 
-A design the platform cannot take stops earlier, at the design checks (C§14), in the flow as in the design step alone, and exits 1: vecmul at W = 64 needs more TCDM crossbar inputs than SNAX-GVSoC's crossbar takes (`connect.xbar_inputs`; at W = 32 its 99 inputs pass with the note `design.xbar_inputs`, above 64):
+A design the platform cannot take stops earlier, at the design checks (C§14), in the flow as in the design step alone, and exits 1: vecmul at W = 64 needs more TCDM crossbar inputs than SNAX-GVSoC's crossbar takes (`connect.xbar_inputs`; at W = 32 its 98 inputs pass with the note `design.xbar_inputs`, above 64):
 
     pixi run sandbox recipes/elementwise/vecmul.json --set W=64 --out out/sandbox/vecmul_W64
     pixi run design out/sandbox/vecmul_W64/2_bind.snaxdfg --platform platforms/snax_forge.json
 
     design check of out/sandbox/vecmul_W64/2_bind.snaxdfg on platforms/snax_forge.json: 1 problem
-     [connect.xbar_inputs] acc: 195 TCDM crossbar inputs, the platform takes at most 128 (192 streamer channels, 3 for the cores and AXI; l1.max_xbar_inputs, the limit SNAX-GVSoC's crossbar asserts)
+     [connect.xbar_inputs] acc: 194 TCDM crossbar inputs, the platform takes at most 128 (192 streamer channels, 2 for the core and AXI; l1.max_xbar_inputs, the limit SNAX-GVSoC's crossbar asserts)
          fix: fewer lanes, or share_ports on a container between two accelerators (D169)
 
 `pixi run flow recipes/elementwise/vecmul.json --platform platforms/snax_forge.json --set W=64` prints the same problem. Two accelerators are no refusal: `recipes/dot/dot_serial.json` leaves dot's `mul` and `sum` unencapsulated, two streamer sets of the one entry `snax_forge_dot_serial` (D157).
