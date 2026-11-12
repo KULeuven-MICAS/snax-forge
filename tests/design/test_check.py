@@ -315,7 +315,8 @@ def _vecmul(w: int) -> Graph:
 @pytest.mark.slow
 def test_more_crossbar_inputs_than_the_platform_takes_are_refused():
     """connect.xbar_inputs (D85): vecmul at W = 32 has 96 streamer channels, with snax_forge's
-    two cores and AXI 99 crossbar inputs, over a platform taking 64; W = 16 has 51 and passes;
+    one core (D170) and AXI 98 crossbar inputs, over a platform taking 64; W = 16 has 50 and
+    passes;
     the platforms take 128 (snax-gvsoc's crossbar, PORT1), which lets W = 32 through (with the
     note design.xbar_inputs, tests/design/test_share_ports.py)."""
     from snax_forge.design.check import xbar_inputs
@@ -324,11 +325,11 @@ def test_more_crossbar_inputs_than_the_platform_takes_are_refused():
     wide = Design(narrow, _vecmul(32))
     (p,) = [p for p in problems(wide) if p.code == "connect.xbar_inputs"]
     assert (p.where, p.message) == ("acc", (
-        "99 TCDM crossbar inputs, the platform takes at most 64 (96 streamer channels, 3 for "
+        "98 TCDM crossbar inputs, the platform takes at most 64 (96 streamer channels, 2 for "
         "the cores and AXI; l1.max_xbar_inputs, the limit SNAX-GVSoC's crossbar asserts)"))  # fmt: skip
     assert p.fix == "fewer lanes, or share_ports on a container between two accelerators (D169)"
     half = _on_snax_forge(_vecmul(16))
-    assert problems(half) == [] and xbar_inputs(half) == (48, 3)
+    assert problems(half) == [] and xbar_inputs(half) == (48, 2)
     assert problems(_on_snax_forge(_vecmul(32))) == []
     assert (
         Platform.load(SNAX_FORGE).l1.max_xbar_inputs
@@ -523,11 +524,11 @@ def test_an_l2_layout_must_fit_the_l2():
 
 
 def test_layouts_stay_below_snruntimes_top_of_l1():
-    """snax_forge's hjson has 2 cores: snRuntime keeps 2 x 1 KiB of stacks and 256 B at the top
+    """snax_forge's hjson has 1 core (D170): snRuntime keeps 1 KiB of stack and 256 B at the top
     of L1 (start.S), so C's L1 layout (512 bytes, moved) may end there but not one beat past."""
     l1_end = 268435456 + 131072
-    top = 2 * RUNTIME_STACK + RUNTIME_MARGIN
-    assert top == 2304
+    top = 1 * RUNTIME_STACK + RUNTIME_MARGIN
+    assert top == 1280
 
     def pinned(c: int) -> Design:
         d = Design(Platform.load(SNAX_FORGE), bound_vecadd(4))
@@ -538,7 +539,7 @@ def test_layouts_stay_below_snruntimes_top_of_l1():
     (p,) = problems(pinned(l1_end - top - 512 + 64))
     assert (p.code, p.where) == ("memory.runtime", "C in l1")
     assert f"snRuntime keeps [{l1_end - top}, {l1_end}) at the top of L1" in p.message
-    assert "2 cores of platforms/snax_forge_cluster.hjson, 256 B for CLS and TLS" in p.message
+    assert "1 core of platforms/snax_forge_cluster.hjson, 256 B for CLS and TLS" in p.message
     assert p.fix == f"pin it lower (--set memory.C.l1.base={l1_end - top - 512})"
     (p,) = problems(pinned(l1_end - 256))  # past the end: memory.fit's, not this check's
     assert p.code == "memory.fit"
@@ -664,7 +665,7 @@ def _extrapolated(graph):
 
 
 def test_a_streamer_and_the_crossbar_off_the_grid_are_noted():
-    """vecmul at W = 32: 32 channels per port (the streamer table stops at 16) and 99 crossbar
+    """vecmul at W = 32: 32 channels per port (the streamer table stops at 16) and 98 crossbar
     inputs (it stops at 64); at W = 8 nothing is noted."""
     from tests.helpers import steps
 
@@ -674,7 +675,7 @@ def test_a_streamer_and_the_crossbar_off_the_grid_are_noted():
                        for p in ("a", "b", "out")]  # fmt: skip
     assert got[3] == (
         "[cost.extrapolated] crossbar: crossbar outside the table's grid on inputs "
-        "99 (grid 4–64): its cost extrapolated on nangate45"
+        "98 (grid 4–64): its cost extrapolated on nangate45"
     )
     assert _extrapolated(steps("vecmul", W=8, N=2048)[-1]) == []
 

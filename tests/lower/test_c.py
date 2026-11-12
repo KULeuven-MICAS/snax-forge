@@ -70,8 +70,28 @@ def functions(src: str) -> dict[str, list[str]]:
 BARRIER = "snrt_cluster_hw_barrier();"
 
 
-def test_vecadd_runs_the_dma_on_core_1_and_the_accelerator_on_core_0(tmp_path):
+def two_cores(c):
+    """The cluster before D170: the DMA on a second core, the slot on core 0 alone."""
+    c["snax_forge_core_template"]["xdma"] = False
+    c["dma_core_template"] = {"isa": "rv32ima", "xdma": True}
+    c["cluster"]["hives"][0]["cores"].append({"$ref": "#/dma_core_template"})
+
+
+def test_vecadd_runs_the_dma_and_the_accelerator_on_core_0(tmp_path):
+    """The base cluster's one core (D170) runs both, with no barrier."""
     src = text(tmp_path)
+    f = functions(src)
+    assert list(f) == ["forge_core_0", "forge_check", "main"]
+    assert "static int (*const forge_cores[1])(void) = {forge_core_0};" in src
+    assert BARRIER not in src and "// Core 0: the DMA and the accelerator acc" in src
+    assert "on snRuntime: core 0 runs the DMA and the accelerator" in src
+    assert f["forge_core_0"].index("snrt_dma_start_1d((void *)0x10000000, A, 512);") < f[
+        "forge_core_0"
+    ].index("csrw_ss(ACC_RW_START, 1);")
+
+
+def test_two_cores_run_the_dma_on_core_1_and_the_accelerator_on_core_0(tmp_path):
+    src = text(tmp_path, edit_cluster=two_cores)
     f = functions(src)
     assert list(f) == ["forge_core_0", "forge_core_1", "forge_check", "main"]
     assert not any("snrt_dma" in x for x in f["forge_core_0"])
@@ -98,8 +118,8 @@ def test_vecadd_has_no_marks_and_reads_mcycle_at_the_windows_ends(tmp_path):
     assert "static __attribute__((noinline)) int forge_check(uint32_t t0) {" in src
 
 
-def test_vecadd_barriers_follow_the_cross_core_waits(tmp_path):
-    f = functions(text(tmp_path))
+def test_two_cores_barriers_follow_the_cross_core_waits(tmp_path):
+    f = functions(text(tmp_path, edit_cluster=two_cores))
     c0, c1 = f["forge_core_0"], f["forge_core_1"]
     b0 = [i for i, x in enumerate(c0) if x == BARRIER]
     b1 = [i for i, x in enumerate(c1) if x == BARRIER]
@@ -123,7 +143,7 @@ def test_a_dependence_on_a_dma_task_brings_its_wait_back(tmp_path):
     def b_after_a(steps):
         next(s for s in steps if s.get("task_name") == "load_B")["after"] = ["load_A"]
 
-    lines = functions(text(tmp_path, edit_tasks=b_after_a))["forge_core_1"]
+    lines = functions(text(tmp_path, edit_tasks=b_after_a, edit_cluster=two_cores))["forge_core_1"]
     i = lines.index("snrt_dma_start_1d((void *)0x10000200, B, 512);")
     assert lines[i - 2 : i] == ["snrt_dma_start_1d((void *)0x10000000, A, 512);",
                                 "snrt_dma_wait_all();"]  # fmt: skip
@@ -178,12 +198,7 @@ def test_the_same_point_gives_the_same_text(tmp_path):
 
 
 def test_one_core_has_no_barriers(tmp_path):
-    def one_core(c):  # the slot onto the DMA core: one core runs both (open item 80)
-        dma = c["dma_core_template"]
-        dma["snax_acc_cfg"] = c["snax_forge_core_template"]["snax_acc_cfg"]
-        c["cluster"]["hives"][0]["cores"] = [{"$ref": "#/dma_core_template"}]
-
-    src = text(tmp_path, edit_cluster=one_core)
+    src = text(tmp_path)  # the base cluster: one core runs both (D170)
     assert "hw_barrier" not in src
     assert list(functions(src)) == ["forge_core_0", "forge_check", "main"]
     assert "// Core 0: the DMA and the accelerator acc" in src
@@ -191,6 +206,7 @@ def test_one_core_has_no_barriers(tmp_path):
 
 def test_a_core_with_no_task_takes_part_in_the_barriers_only(tmp_path):
     def three_cores(c):
+        two_cores(c)
         c["cluster"]["hives"][0]["cores"].append({"isa": "rv32ima", "xdma": False})
 
     src = text(tmp_path, edit_cluster=three_cores)
@@ -207,12 +223,12 @@ def test_a_core_with_no_task_takes_part_in_the_barriers_only(tmp_path):
 
 def test_refused_without_one_dma_core(tmp_path):
     def no_dma(c):
-        c["dma_core_template"]["xdma"] = False
+        c["snax_forge_core_template"]["xdma"] = False
 
     with pytest.raises(CError, match=r"\[c.cores\] .*xdma on cores \[\]"):
         text(tmp_path, edit_cluster=no_dma)
     p, *_ = parts(tmp_path)
-    assert cores(gen_mod.source(p.platform, tmp_path), "snax_forge").count == 2  # the source's
+    assert cores(gen_mod.source(p.platform, tmp_path), "snax_forge").count == 1  # the source's
 
 
 def test_refused_a_start_of_some_movers(tmp_path):
@@ -395,12 +411,12 @@ def test_two_accelerators_each_run_through_their_own_set(tmp_path):
     # serial sync (D158), the one wait between them, has waited for mul (its writer too, waits.py)
     # and read its counter
     assert acc_lines == [
-        BARRIER, "csrw_ss(MUL_STREAMER_START_CSR, 1);", "csrw_ss(MUL_RW_START, 1);",
+        "csrw_ss(MUL_STREAMER_START_CSR, 1);", "csrw_ss(MUL_RW_START, 1);",
         "while (csrr_ss(MUL_RO_STATUS) & 1) {", "while (csrr_ss(MUL_STREAMER_BUSY_CSR)) {",
-        "forge_counter[0] = csrr_ss(MUL_RO_BUSY_COUNTER);", BARRIER,
+        "forge_counter[0] = csrr_ss(MUL_RO_BUSY_COUNTER);",
         "csrw_ss(SUM_STREAMER_START_CSR, 1);", "csrw_ss(SUM_RW_START, 1);",
         "while (csrr_ss(SUM_RO_STATUS) & 1) {", "while (csrr_ss(SUM_STREAMER_BUSY_CSR)) {",
-        "forge_counter[1] = csrr_ss(SUM_RO_BUSY_COUNTER);", BARRIER, BARRIER,
+        "forge_counter[1] = csrr_ss(SUM_RO_BUSY_COUNTER);",
     ]  # fmt: skip
     i = core.index("csrw_ss(SUM_STREAMER_START_CSR, 1);")
     assert core.index("csrw_ss(SUM_RW_JOB_BEATS, 64);") < core.index("forge_counter[0] = "
@@ -466,4 +482,7 @@ def test_main_c_compiles_against_snax_gvsocs_sw(tmp_path, design):
     assert defined.count("main") == defined.count("forge_check") == 1
     # clang may split the static counters into one symbol per slot (forge_counter.0)
     forge = {x.split(".")[0] for x in defined if x.startswith("forge_")}
-    assert forge == {"forge_check", "forge_counter", "forge_cores", "forge_core_0", "forge_core_1"}
+    # one core: clang may fold the one-entry table into main
+    assert {"forge_check", "forge_counter", "forge_core_0"} <= forge <= {
+        "forge_check", "forge_counter", "forge_cores", "forge_core_0"
+    }  # fmt: skip

@@ -556,7 +556,7 @@ def test_the_beat_levels_stubbed(tmp_path, monkeypatch, level):
                           "tcdm/snax_xbar/beats"]  # fmt: skip
     assert ("snax_acc0/streamer_acc/stalls" in traces) == (level != "beat")
     assert [x for x in traces if x.endswith("/insn")] == (
-        ["pe0/insn", "pe1/insn"] if level == "finegrained" else []
+        ["pe0/insn"] if level == "finegrained" else []  # one core (D170)
     )
     lanes = ",".join(f"snax_acc0.streamer_acc.{m}.lane{i}" for m in ("reader0", "reader1", "writer0")
                      for i in range(4))  # fmt: skip
@@ -566,7 +566,7 @@ def test_the_beat_levels_stubbed(tmp_path, monkeypatch, level):
     assert ("fifo" in kinds) == ("stall" in kinds) == (level != "beat")
     assert ("insn" in kinds) == (level == "finegrained")
     sources = ["acc", "acc_a", "acc_b", "acc_out", "dma"]
-    sources += ["core0", "core1"] if level == "finegrained" else []
+    sources += ["core0"] if level == "finegrained" else []  # one core (D170)
     run = tmp_path / level / "run"
     assert json.loads((run / "trace_meta.json").read_text())["filter"] == sources
     assert json.loads((run / "run.json").read_text())["trace_sources"] == sources

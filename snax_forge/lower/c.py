@@ -623,8 +623,13 @@ class _Program:
         working = {k: v for k, v in self.lines.items()
                    if k == self.cores.slot or any(x != "snrt_cluster_hw_barrier();" for x in v)}  # fmt: skip
         what = (
-            f"The task list {self.tasks.name} on snRuntime: core {self.cores.dma} runs the DMA, "
-            f"core {self.cores.slot} {self.named}; the SNAX waits as the lowering "
+            f"The task list {self.tasks.name} on snRuntime: "
+            + (
+                f"core {self.cores.dma} runs the DMA and {self.named}; "
+                if self.cores.dma == self.cores.slot
+                else f"core {self.cores.dma} runs the DMA, core {self.cores.slot} {self.named}; "
+            )
+            + "the SNAX waits as the lowering "
             "places them (D64), the DMA's on dependences only (D135), a barrier where another "
             "core goes on. One function per core, a straight line; the window from main's entry "
             "to forge_check()'s."

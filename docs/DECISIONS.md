@@ -10,7 +10,7 @@ Rules (D117):
 - A replaced or merged entry is removed, and its number goes under Retired with the entry that holds it now. A number is never changed or reused, since code, tests and docs cite them; the text of every retired entry is in git history (tag `pre-gvsoc`; RET1's at `cad6619`, CLN1's at `6079d24`).
 - Closing a milestone compacts this file and removes the done tasks from STATUS.
 - Markdown prose is never hard-wrapped: one line per paragraph, list item and table row (`util/md_reflow.py --check` in lint); headings, code blocks, tables, display maths and HTML stay as they are. An entry's three lines are about 300 characters.
-- A new decision gets the next number at the end of this file, with its area tag. Next free number: **D170**.
+- A new decision gets the next number at the end of this file, with its area tag. Next free number: **D171**.
 
 Area tags: `scope` (plan, ownership, order), `lower` (SNAX-LOWER), `gvsoc` (SNAX-GVSoC), `brm` (SNAX-BRM), `dfg` (SNAX-DFG and importers), `ref` (reference executor), `sandbox`, `design` (platform, checks, memory plan, design point), `flow`, `estimate` (the ideal estimate of a bound graph), `viz`, `docs`.
 
@@ -23,7 +23,7 @@ Area tags: `scope` (plan, ownership, order), `lower` (SNAX-LOWER), `gvsoc` (SNAX
 | dfg | D19 D71 D102 D148 D150 D164 |
 | ref | D28 D79 |
 | sandbox | D72 D73 D156 D165 D166 |
-| design | D12 D84–D87 D131 D142 D169 |
+| design | D12 D84–D87 D131 D142 D169 D170 |
 | flow | D50 D108 D136 |
 | estimate | D154 D155 D160 D167 |
 | viz | D55 D57 D99 |
@@ -159,7 +159,7 @@ Retired, and where each now lives:
 
 **D130** · scope — A generated accelerator carries its own CSR manager (ReqRspManager's protocol, snax_cluster's off), its CSRs per group (D146): one wrapper contract. Python checks `accelerator.json` against the datapath catalogue, Scala only builds; snax_cluster sees only the bundle. → C§17, C§18.
 
-**D131** · design — The base cluster is snax-forge's own file, `platforms/snax_forge_cluster.hjson` (from snax_cluster's, its names snax-forge's), which `design from-hjson` reads: one accelerator entry, on core0, its movers agreeing (D84), the rest small16's; `accelerator_slot` names its slot (D134) and prefixes the generated entry's name, `<accelerator_slot>_<design>`, i.e. `snax_forge_<design>`. → C§13.
+**D131** · design — The base cluster is snax-forge's own file, `platforms/snax_forge_cluster.hjson` (from snax_cluster's, its names snax-forge's), which `design from-hjson` reads: one accelerator entry, on core0, which also holds the DMA (`xdma`) as the only core (D170), its movers agreeing (D84), the rest small16's; `accelerator_slot` names its slot (D134) and prefixes the generated entry's name, `<accelerator_slot>_<design>`, i.e. `snax_forge_<design>`. → C§13.
 
 **D133** · brm — The Chisel Accumulator becomes `TreeAccumulate`, a datapath under the nest controller (D147; L 1, pins `fire` and `first`, drain 0 as today): it extends its lanes by signedness (D143), and its W → 1 adder tree makes it `chisel_adder_tree` too. → C§17, `hw/chisel/`.
 
@@ -226,3 +226,5 @@ Retired, and where each now lives:
 **D168** · scope — A register goes where its writer and reader are: `<tag>_csr` holds what the core writes (the settings) and reads (STATUS, the kept answer) and holds a write to a group's START or settings while that group is busy, so the settings stay constant through a run; its submodule `<tag>_peripherals` holds what only the core reads or writes and the run never needs (BUSY_COUNTER), always present and left out of every reported figure: neither in the csr nor in forge's total without csr, as no HLS block has one (snax-forge-experiments X65). `<tag>_ctrl` holds what a firing changes (busy, the counters and digits, the II gap, `v`, the lane, the buffers' occupancy and slots) and every test that decides a firing, a give or done, reading the settings live with no copy; `<tag>_datapath` holds data and the arithmetic only. Reverses CTRL1's latched copies: an elementwise ctrl loses its 32-bit copy of JOBS, a fold also its copy of JOB_BEATS; programming the next task during a run is open item 123. → C§13, C§17.
 
 **D169** · design — `share_ports` on an L1 container one accelerator writes and another reads puts both on one streamer set (as `encapsulate`, D148) whose movers they share: per role the k-th widest port of each group on mover k, as wide as the widest, a narrower port enabling its first channels (`configurable_channel`). A data-side mux in the shell picks the group by `PORT_MUX_SEL`, which the core writes before each `STREAMER_START`. Off by default; the sets still run in series (D158). → C§12, C§16, C§17, C§18.
+
+**D170** · design — snax-forge's base cluster has one Snitch core, which drives both the DMA and the accelerator (CORE1): the second core idled at barriers and still clocked (the two cores 54,199 µm², 4.1 % of CSYN1's `dot3_w16` cluster), the I-cache served it for nothing, and only core 0's `CsrObsRegister` (CSR `0x7c5`) reaches the cluster's `obs_o`. The DMA's transfers still overlap the configuration (the iDMA queues, D135). A cluster file with more cores still lowers (`lower/c.py`). → C§13, `platforms/snax_forge_cluster.hjson`.

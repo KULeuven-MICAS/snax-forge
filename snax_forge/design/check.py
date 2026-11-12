@@ -1079,8 +1079,9 @@ def _memory_runtime(design: Design) -> Iterable[Problem]:
         yield Problem(
             "memory.runtime", f"{c} in l1",
             f"spans bytes [{lo}, {hi}); snRuntime keeps [{limit}, {end}) at the top of L1 "
-            f"({top} B: a {RUNTIME_STACK} B stack for each of the {cores} cores of "
-            f"{design.platform.hjson}, {RUNTIME_MARGIN} B for CLS and TLS)",
+            f"({top} B: a {RUNTIME_STACK} B stack for each of the {cores} "
+            f"core{'s' if cores != 1 else ''} of {design.platform.hjson}, {RUNTIME_MARGIN} B for "
+            "CLS and TLS)",
             f"pin it lower (--set memory.{c}.l1.base={base})" if base >= start else None,
         )  # fmt: skip
 
