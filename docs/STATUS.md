@@ -88,6 +88,7 @@ To do, in two tracks (D141), each task in its own PR:
   3. E7's untiered points and DaCe's dot (done, in CSYN1 above).
   4. **CSYN1** (done, above).
   5. **PWR1** (next, its own thread): the synthesized cluster's power from the netlist run, after CSYN1's step 3 (`cluster gls`), on CORE1's one-core cluster with the quiet build's obs marks (D170, D135): the VCD over the task's window, SAIF and PT on the logic, the macros' energy from their counted accesses (`RAMCOUNT`, snax-forge-experiments X50), dynamic energy first (leakage may be left out). Its design is brainstormed at its kickoff; it gives the cluster's energy against HWCOST's, as CSYN1 gave the area.
+  6. **DACE2** (later, open item 130): a `dace_tuned` case in hls-exercises beside `dace`, tuned only with DaCe's own transforms and library expansions, then through Vitis, synthesis and power as the other HLS cases (E7).
 
 ## Next Up
 
@@ -105,7 +106,7 @@ Dates: 27 Nov, E5's cut-off (softmax not running on SNAX-GVSoC moves E5, and E6 
 
 ## Open Items
 
-Questions not decided yet. Numbers are never reused; a closed item is removed, and where it closed is in git history. Next free number: 130.
+Questions not decided yet. Numbers are never reused; a closed item is removed, and where it closed is in git history. Next free number: 131.
 
 1. BRM dataflow notation: `affine` and `stream` (D70), frozen in M6.
 2. What automated search reads and how a sweep is configured (DSE1, M8).
@@ -222,6 +223,7 @@ Questions not decided yet. Numbers are never reused; a closed item is removed, a
 126. `ReaderWriter` (snax_cluster's `readerWriter/ReaderWriter.scala`: a full Reader and Writer behind one set of TCDM channels, the writer first each cycle, no mode bit) for sharing one mover between a read port and a write port (D169 shares a role's movers only); needs a SNAX-GVSoC model (`UNMODELLED_MOVERS` in `snax_cfg.py`).
 127. snax_cluster's `streamer/Streamer.scala` lines 188–189 build each `ReaderWriter` from `readerWriterParams(i / 2)` and `(i / 2 + 1)`, where `(2 * i)` and `(2 * i + 1)` are meant: a second pair would take the first pair's parameters (GeMMX has one pair, so nothing breaks today).
 129. One core's program timing on SNAX-GVSoC against the RTL (CORE1 R2, D170): the windows of the short designs run 14 to 23 % longer on vsim (28 to 41 cycles; two cores: within +8.6 %), and SNAX-GVSoC starts a group 10 cycles after its streamer at the first start after `snrt_dma_wait_all()` where the RTL does not (rowsum_2 contiguous: 129 against 134, NEAR 2.3 %; vecadd, dot_1's vmul). Likely the core's DMA instructions and waits, now on the same core as the configuration (open item 67's `dmstati` polled every 5 cycles on the RTL against 2); the quiet build's sections (D135), run on both, compare them section by section.
+130. A tuned DaCe case for the HLS comparison (E7): beside `dace` (DaCe as it comes), a `dace_tuned` case built only from DaCe's own transforms and library expansions, as DaCe's `tests/npbench/` and `tests/blas/nodes/` use them, with no hand-written C++, pragmas or edits to generated code. Per kernel: dot by `MapReduceFusion` at W = 1 (no 2048-word RAM, one loop) and a `Dot` node on `dace.vector` arrays with `FPGA_Accumulate` at W > 1; axpy by fusion and an `Axpy` node (`fpga` expansion); vsum and rowsum at W = 1 only, since `Reduce`'s FPGA expansion refuses vectors; relu left out unless a NumPy rewrite vectorizes (`max(vec, 0)` does not compile). In a sandbox C-sim at N = 2048 every tuned form computes the right result; `auto_optimize(FPGA)` alone keeps dot's RAM and adds 16 partial sums to every reduction. The lane forms need the kernel restated (`np.dot`, vector-typed arrays), which forge does not; the paper says so. Experiments in hls-exercises `bench/dace_tuned/`.
 
 ## Sync Reminders
 
