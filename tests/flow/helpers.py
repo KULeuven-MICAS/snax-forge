@@ -12,9 +12,15 @@ build's folder is the test's own. The recipe flows start from the import
 fixtures (``PLAIN``), so they need no DaCe. The full flow on SNAX-GVSoC is
 marked ``gvsoc`` and skipped where ``out/snax-gvsoc/install`` is missing.
 
+``sound`` is D171's check of a run on SNAX-GVSoC: what the program computes exactly (exit 0,
+no data error, every counter at least its beats), each counter only within 10 % of the
+estimate's (D123's NEAR); a test pins no window and no counter, and a counter beyond 10 % is
+a finding to investigate, not a number to update.
+
 ``excerpts_hold`` is the check the walk-throughs in ``examples/`` share: a
 table quoted in a README under ``<!-- excerpt: FOLDER/report/FILE -->`` must
-be, line for line, part of that report.
+be, line for line, part of that report, a number in a table row within 10 % (D171);
+``near`` is the same tolerance for a number stated in prose.
 """
 
 from __future__ import annotations
@@ -38,6 +44,7 @@ from tests.helpers import recipe_path
 from tests.run.helpers import point_symbols, synthetic, tiny_elf
 
 PLAIN = FIXTURES / "vecadd.snaxdfg"  # the import of the vecadd kernel
+SOUND = 0.10  # D171: a counter's gap beyond its fill, as a share of the expected counter
 PLAINS = {"vecadd": PLAIN, "vsum": FIXTURES / "vsum.snaxdfg"}
 
 COMMIT = "a" * 40
@@ -48,6 +55,28 @@ INSTALL = REPO / "out" / "snax-gvsoc" / "install"
 needs_gvsoc = pytest.mark.skipif(
     not INSTALL.is_dir(), reason="no SNAX-GVSoC install in out/snax-gvsoc (make -C gvsoc build)"
 )
+
+
+def sound(f: Any) -> dict[str, int]:
+    """D171 on a flow's result: exit 0, no data error, every counter at least its beats, and each
+    counter within 10 % of the estimate's expected BUSY_COUNTER beyond its fill (the gap
+    max(0, |counter - cycles| - fill) at most 10 % of cycles + fill, as D123's NEAR); the
+    counters by task."""
+    from snax_forge.report.run import expected_parts
+
+    c = f.check
+    assert f.passed and c["exit_code"] == 0 and c["data_errors"] == 0, c
+    parts = expected_parts(f.point)
+    for t, x in c["tasks"].items():
+        assert x["counter"] >= x["beats"], (t, x)
+        if t in parts:
+            cycles, fill = parts[t]
+            gap = max(0, abs(x["counter"] - cycles) - fill)
+            assert gap <= SOUND * (cycles + fill), (
+                f"{t}: counter {x['counter']} against the estimate's {cycles} + fill {fill}, "
+                "beyond 10 %: investigate (D171)"
+            )
+    return {t: x["counter"] for t, x in c["tasks"].items()}
 
 
 @dataclass
@@ -159,23 +188,47 @@ def golden(data_h: str, name: str) -> list[int]:
     return [int(x) for x in m[1].replace("\n", " ").split(",") if x.strip()]
 
 
+NUMBER = re.compile(r"(-?\d+(?:\.\d+)?)(%?)")
+
+
+def near(got: float, stated: float, rel: float = SOUND) -> bool:
+    """A number as a walk-through states it (D171): within ``rel`` of the run's."""
+    return abs(got - stated) <= rel * abs(stated)
+
+
+def _cells_near(quoted: str, line: str) -> bool:
+    """A quoted table row against a report row (D171): the same cells, a number within 10 %."""
+    a, b = quoted.split("|"), line.split("|")
+    if len(a) != len(b):
+        return False
+    for x, y in zip(a, b, strict=True):
+        if x.strip() == y.strip():
+            continue
+        mx, my = NUMBER.fullmatch(x.strip()), NUMBER.fullmatch(y.strip())
+        if not (mx and my and mx[2] == my[2] and near(float(my[1]), float(mx[1]))):
+            return False
+    return True
+
+
 def excerpts_hold(readme: str, root: Path) -> int:
     """Every excerpt of ``readme`` (the lines after its marker, up to the first empty one) is
-    made of lines of the report it names, a path under ``root``; returns how many there are."""
+    made of lines of the report it names, a path under ``root``, each line as it is or, a
+    table row, with its numbers within 10 % (D171); returns how many there are."""
     lines = readme.splitlines()
     seen = 0
     for i, line in enumerate(lines):
         m = EXCERPT.fullmatch(line.strip())
         if not m:
             continue
-        report = set((root / m.group(1)).read_text().splitlines())
+        report = (root / m.group(1)).read_text().splitlines()
         block = []
         for x in lines[i + 1 :]:
             if not x.strip():
                 break
             block.append(x)
         assert block, f"excerpt at line {i + 1} is empty"
-        missing = [x for x in block if x not in report]
+        missing = [x for x in block if x not in report
+                   and not (x.startswith("|") and any(_cells_near(x, r) for r in report))]  # fmt: skip
         assert not missing, f"README line {i + 1}: not in {m.group(1)}: {missing}"
         seen += 1
     return seen

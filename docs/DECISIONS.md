@@ -10,13 +10,13 @@ Rules (D117):
 - A replaced or merged entry is removed, and its number goes under Retired with the entry that holds it now. A number is never changed or reused, since code, tests and docs cite them; the text of every retired entry is in git history (tag `pre-gvsoc`; RET1's at `cad6619`, CLN1's at `6079d24`).
 - Closing a milestone compacts this file and removes the done tasks from STATUS.
 - Markdown prose is never hard-wrapped: one line per paragraph, list item and table row (`util/md_reflow.py --check` in lint); headings, code blocks, tables, display maths and HTML stay as they are. An entry's three lines are about 300 characters.
-- A new decision gets the next number at the end of this file, with its area tag. Next free number: **D171**.
+- A new decision gets the next number at the end of this file, with its area tag. Next free number: **D172**.
 
 Area tags: `scope` (plan, ownership, order), `lower` (SNAX-LOWER), `gvsoc` (SNAX-GVSoC), `brm` (SNAX-BRM), `dfg` (SNAX-DFG and importers), `ref` (reference executor), `sandbox`, `design` (platform, checks, memory plan, design point), `flow`, `estimate` (the ideal estimate of a bound graph), `viz`, `docs`.
 
 | Area | Decisions |
 |---|---|
-| scope | D8 D23 D51 D52 D91 D98 D100 D111–D113 D116 D118 D123 D126 D130 D141 D145 D146 D152 D157 D159 D168 |
+| scope | D8 D23 D51 D52 D91 D98 D100 D111–D113 D116 D118 D123 D126 D130 D141 D145 D146 D152 D157 D159 D168 D171 |
 | lower | D64 D75 D105 D135 D144 D158 |
 | gvsoc | D120–D122 D125 D134 D137 |
 | brm | D68 D70 D82 D103 D129 D133 D143 D147 D149 D153 D163 |
@@ -117,7 +117,7 @@ Retired, and where each now lives:
 
 **D91** · scope — The old SDFG → descriptor → RTL path is gone; the Chisel blocks and `Emit` are a project of their own in `hw/chisel/`.
 
-**D98** · scope — No run diff view: runs are compared by switching in the viewer and reading their reports, until sweeps need one. Walk-throughs live in `examples/`: those under `examples/dryrun/` are tutorials with no test, which name no commits and state their numbers as the tools printed them when written, so they can drift without the page being redone; the others keep a test checking every number they state.
+**D98** · scope — No run diff view: runs are compared by switching in the viewer and reading their reports, until sweeps need one. Walk-throughs live in `examples/`: those under `examples/dryrun/` are tutorials with no test, which name no commits and state their numbers as the tools printed them when written, so they can drift without the page being redone; the others keep a test checking every claim they make, each cycle number as D171 checks a run (within 10 %, its tables' numbers too), so a timing shift elsewhere needs no rewrite of the page.
 
 **D99** · viz — Design and run reports in the layout of HLS reports, Markdown from dataclasses, for humans and LLMs alike. Every number comes from the design point, profile or trace, nothing grows with cycles, and a wait is named by what it was for. → `report/`.
 
@@ -228,3 +228,5 @@ Retired, and where each now lives:
 **D169** · design — `share_ports` on an L1 container one accelerator writes and another reads puts both on one streamer set (as `encapsulate`, D148) whose movers they share: per role the k-th widest port of each group on mover k, as wide as the widest, a narrower port enabling its first channels (`configurable_channel`). A data-side mux in the shell picks the group by `PORT_MUX_SEL`, which the core writes before each `STREAMER_START`. Off by default; the sets still run in series (D158). → C§12, C§16, C§17, C§18.
 
 **D170** · design — snax-forge's base cluster has one Snitch core, which drives both the DMA and the accelerator (CORE1): the second core idled at barriers and still clocked (the two cores 54,199 µm², 4.1 % of CSYN1's `dot3_w16` cluster), the I-cache served it for nothing, and only core 0's `CsrObsRegister` (CSR `0x7c5`) reaches the cluster's `obs_o`. The DMA's transfers still overlap the configuration (the iDMA queues, D135). A cluster file with more cores still lowers (`lower/c.py`). → C§13, `platforms/snax_forge_cluster.hjson`.
+
+**D171** · scope — A test on a SNAX-GVSoC run checks what the program computes exactly (exit 0, no data error, every counter at least its beats, and the counts timing does not set: firings, beats, words, bytes) and its timing loosely: each counter within 10 % of the estimate's expected BUSY_COUNTER beyond its fill (D155; D123's NEAR on the same gap), no window pinned. A program or platform change moves cycles without breaking anything (CORE1's one core moved dot 1's vmul 259 → 256); the exact numbers are recorded in run notes and open item 95, and a counter beyond 10 % is investigated before any number changes. → `tests/flow/helpers.py` (`sound`, `near`).
