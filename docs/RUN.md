@@ -192,8 +192,10 @@ One ELF, snax-forge's, runs on SNAX-GVSoC and on snax_cluster's RTL, and the RTL
       flow      passed: design point out/flow/vecadd/design/design_point.json, run out/flow/vecadd/run/
       bundle    out/bundle/vecadd/: snax_forge_vecadd_shell_wrapper, snax-forge $COMMIT
       expected  out/bundle/vecadd/forge_expected.txt: the run's counter and data lines, each counter's fill
-      sw        out/forge/vecadd/sw/forge.elf from the bundle (sha256 3fa93c774886c3b3, the flow's)
+      sw        out/forge/vecadd/sw/forge.elf from the bundle (sha256 3fa93c774886c3b3, the flow's); the quiet build forge_quiet.elf and obs_marks.json beside it
     ...
+
+Beside `forge.elf` it leaves the quiet build, `forge_quiet.elf` (the same `main.c` with `-DFORGE_QUIET`, D135: every start waited on at once, each section marked in CSR `0x7c5`, which the cluster's `obs_o` shows, no prints), and its legend `obs_marks.json`, for a power run on the netlist; it runs on SNAX-GVSoC and the RTL as the default ELF does and exits with the error count.
 
 then the snax_cluster commands for one design (Verilator, and Questa as below). `pixi run forge-set quick|full|mvt [--sim vsim|vlt] [-j N]` runs forge on a set's recipes at once (quick: vecadd_i32, vsum_tree_i8, dot_1, dot_1_enc, dot_4, axpy; full: those and vecadd, vsum, rowsum_serial, vecmul_i32_i64, dot_2, dot_3, dot_5, dot_6, dot_serial, matvec_1, matvec_5, matvec_6, matvec_seed, matvec_seed_serial, relu, rowsum_2, and rowsum_2 again with its own `--set memory.passes.layout=padded_rows`, named as forge names its folder, `rowsum_2_passes.layoutpadded_rows`; mvt: mvt_1 and mvt_1_dot2 at M = N = 40, each at its defaults, at W = 8, with `memory.passes.layout=padded_rows`, and with both, mvt_2 at its defaults and with `padded_rows` (at W = 8 its two dot groups need 85 TCDM crossbar inputs, the platform takes 64), then mvt_2_reuse at its defaults, eleven bundles; not part of quick or full), writes `out/forge-set/<set>.md` (each bundle's expected lines and the commands per design) and prints one line:
 

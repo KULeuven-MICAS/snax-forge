@@ -37,6 +37,7 @@ import pytest
 from snax_forge.design import DesignPoint
 from snax_forge.flow import Checkout
 from snax_forge.flow import run as flow_run
+from snax_forge.flow.forge import QUIET_ELF
 from snax_forge.lower.tasks import TaskList
 from snax_forge.run import load_cluster
 from tests.design.helpers import FIXTURES, REPO
@@ -112,6 +113,7 @@ class FakeMake:
                 Path(variables["FORGE"]).parent / "design" / "design_point.json"
             )
             elf.write_bytes(tiny_elf(point_symbols(point)))
+            (elf.parent / QUIET_ELF).write_bytes(b"quiet")  # the forge app's second ELF (D135)
         elif goal == "run":
             text = self.stdout if self.stdout is not None else program_output(variables)
             if variables.get("EVENTS"):

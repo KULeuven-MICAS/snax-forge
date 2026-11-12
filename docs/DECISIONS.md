@@ -165,7 +165,7 @@ Retired, and where each now lives:
 
 **D134** · gvsoc — Three files per design point are the contract between snax-forge and SNAX-GVSoC (the cluster and streamer hjson, `accelerator.json`, D145), read at run time (`snax_cfg.py`), so a sweep compiles nothing; snax-gvsoc's `forge/` fixtures need no snax-forge. → C§16, C§17.
 
-**D135** · lower — The task list becomes C on snRuntime, one accelerator per program: each step on the core that owns its component, D64's waits as polls with a hardware barrier where another core goes on, the DMA waited on for dependences only, two `mcycle` reads bounding the window. → C§16.
+**D135** · lower — The task list becomes C on snRuntime, one accelerator per program: each step on the core that owns its component, D64's waits as polls with a hardware barrier where another core goes on, the DMA waited on for dependences only, two `mcycle` reads bounding the window. Amended 12 Nov 2026 (CORE1 R3), the quiet build for power (PWR1): the same `main.c` with `-DFORGE_QUIET` (`forge_quiet.elf`) waits on every start right after it, so the sections run in series, marks each section with the next value of CSR `0x7c5` (core 0's `obs_o`, where the netlist run cuts its windows; the legend `obs_marks.json`) and prints nothing; its parts are preprocessor blocks, so the default build's code is unchanged (a test compares the objects). → C§16.
 
 **D136** · flow — `pixi run flow` runs the inner loop once on SNAX-GVSoC, decides nothing and has no backend flag: lower, gen, build when needed, sw, gvsoc, check (the program's exit code, `total_cycles` its window), into a folder named after every `--set`. → `flow/run.py`, C§7.
 

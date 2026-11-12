@@ -127,9 +127,12 @@ def test_vecadd_w4_files_and_manifest(w4):
     assert m.files == [
         *FILES, "include/streamer_acc_csr_addr_map.h", "include/acc_csr.h",
         "include/snitch_cluster_cfg.h", "include/snitch_cluster_addrmap.h", "data.h", "main.c",
-        "manifest.json",
+        "obs_marks.json", "manifest.json",
     ]  # fmt: skip
     assert m.program == "main.c"
+    marks = json.loads((out / "obs_marks.json").read_text())  # the quiet build's (D135)
+    assert [x["kind"] for x in marks] == ["dma_in", "dma_in", "streamer_config", "acc_config",
+                                          "run", "dma_out", "check"]  # fmt: skip
     assert sorted(str(f.relative_to(out)) for f in out.rglob("*") if f.is_file()) == sorted(m.files)
     assert m.trace == "snax_acc0/unit"
     assert m.design_point == "design/vecadd/design_point.json"
@@ -243,13 +246,13 @@ def test_streamer_csrs_are_snax_streamers(w4):
 
 def test_every_generated_file_starts_with_the_one_header(w4):
     """hjson, headers, data.h and main.c: the generator, the design point, the command;
-    accelerator.json is plain JSON; a set's streamer header is snax_cluster's text, its
+    accelerator.json and obs_marks.json are plain JSON; a set's streamer header is snax_cluster's text, its
     timestamp line naming the design point (headers.py)."""
     out, m = w4
     head = generated_header("design/vecadd/design_point.json", "")
     assert "`pixi run gen-gvsoc design/vecadd/design_point.json`" in head.replace("\n// ", " ")
     for f in m.files:
-        if f in ("manifest.json", "accelerator.json"):
+        if f in ("manifest.json", "accelerator.json", "obs_marks.json"):
             continue
         if f.startswith("include/streamer_"):
             assert "design point design/vecadd/design_point.json" in (out / f).read_text()
@@ -363,7 +366,9 @@ def test_two_out_folders_give_byte_identical_files(tmp_path, monkeypatch):
         assert text == (b / f).read_bytes(), f
         assert str(tmp_path).encode() not in text, f
     for f in ma.files[:-1]:
-        if f != "accelerator.json" and not f.startswith("include/streamer_"):  # C§17, headers.py
+        if f not in ("accelerator.json", "obs_marks.json") and not f.startswith(
+            "include/streamer_"
+        ):  # C§17, headers.py
             head = generated_header("design/vecadd/design_point.json", "")
             assert (a / f).read_text().startswith(head), f
 

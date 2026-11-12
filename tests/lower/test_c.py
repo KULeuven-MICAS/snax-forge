@@ -16,7 +16,16 @@ from snax_forge.gen import describe
 from snax_forge.gen import gvsoc as gen_mod
 from snax_forge.gen.data import arrays as data_arrays
 from snax_forge.lower import CError, TaskList, main_c, task_list
-from snax_forge.lower.c import cores, job_values
+from snax_forge.lower import c as c_mod
+from snax_forge.lower.c import (
+    QUIET_END,
+    QUIET_OFF,
+    QUIET_ON,
+    cores,
+    job_values,
+    program,
+    strip_quiet,
+)
 from tests.gen.helpers import SUB, bound_vecmul, point
 from tests.helpers import SUBMODULE_MISSING, bound_vsum
 
@@ -50,12 +59,13 @@ def text(tmp_path, edit_tasks=None, edit_cluster=None, **kw) -> str:
     return main_c(p, tasks, cluster, acc, arrays, INCLUDES, POINT)
 
 
-def functions(src: str) -> dict[str, list[str]]:
+def functions(src: str, quiet: bool = False) -> dict[str, list[str]]:
     """main.c's functions by name (``forge_core_0``, ``forge_core_idle``, ``forge_check``,
-    ``main``): their lines, stripped."""
+    ``main``): their lines, stripped, as the default build compiles them (``strip_quiet``), or
+    with ``quiet`` the whole text, the quiet build's directives and lines too."""
     out: dict[str, list[str]] = {}
     name = None
-    for line in src.splitlines():
+    for line in (src if quiet else strip_quiet(src)).splitlines():
         m = re.fullmatch(r"(?:static __attribute__\(\(noinline\)\) )?int (\w+)\([^)]*\) \{", line)
         if m:
             name = m[1]
@@ -432,6 +442,7 @@ def test_two_accelerators_each_run_through_their_own_set(tmp_path):
 
 CLANG = shutil.which("clang")
 NM = shutil.which("llvm-nm")
+OBJCOPY = shutil.which("llvm-objcopy")
 SW = SUB / "sw"
 # sw/toolchain.mk's and sw/common.mk's compile flags (the image's clang, snax_cluster's
 # toolchain); the generated folder's headers before sw/generated/, as the forge apps put them
@@ -486,3 +497,96 @@ def test_main_c_compiles_against_snax_gvsocs_sw(tmp_path, design):
     assert {"forge_check", "forge_counter", "forge_core_0"} <= forge <= {
         "forge_check", "forge_counter", "forge_cores", "forge_core_0"
     }  # fmt: skip
+
+
+@pytest.mark.gvsoc  # the image's RISC-V clang: CI's gvsoc job runs it
+@pytest.mark.skipif(_riscv_clang() is not None or OBJCOPY is None, reason="no RISC-V clang")
+@pytest.mark.parametrize("design", ["vecadd", "vecmul", "vsum"])
+def test_the_quiet_parts_leave_the_default_build_as_it_was(tmp_path, design):
+    """D135: main.c compiled as it is and with its FORGE_QUIET blocks removed give the same
+    object once the debug information is stripped (snRuntime builds with -g, so the lines the
+    blocks take move every line number there); with -DFORGE_QUIET it compiles with -Werror."""
+    gen = tmp_path / "gen"
+    graph = {"vecmul": bound_vecmul, "vsum": bound_vsum}.get(design)
+    gen_mod.generate(point(tmp_path, name=design, graph=graph and graph()), gen, root=tmp_path)
+    (gen / "stripped.c").write_text(strip_quiet((gen / "main.c").read_text()))
+    incs = [f"-I{gen}", f"-I{gen / 'include'}", *(f"-I{SW / d}" for d in SW_INCDIRS)]
+    objects = {}
+    for name, src, extra in (("main", "main.c", []), ("stripped", "stripped.c", []),
+                             ("quiet", "main.c", ["-DFORGE_QUIET"])):  # fmt: skip
+        o = gen / f"{name}.o"
+        run = subprocess.run([CLANG, *FLAGS, *extra, *incs, "-g", "-Werror", "-c",
+                              str(gen / src), "-o", str(o)], capture_output=True, text=True,
+                             check=False)  # fmt: skip
+        assert run.returncode == 0, (name, run.stderr)
+        subprocess.run([OBJCOPY, "--strip-debug", str(o)], check=True)
+        objects[name] = o.read_bytes()
+    assert objects["main"] == objects["stripped"]
+    assert objects["quiet"] != objects["main"]
+
+
+# =============================================================================
+# The quiet build (D135 amended)
+# =============================================================================
+
+
+def quiet(tmp_path, **kw):
+    p, tasks, cluster, acc, arrays = parts(tmp_path, **kw)
+    return program(p, tasks, cluster, acc, arrays, INCLUDES, POINT)
+
+
+def test_vecadd_marks_each_section_in_order(tmp_path):
+    """dot 3's plan on vecadd: 0 from reset, then the two loads, the streamer's configuration,
+    the accelerator's, the run, the store and the check, each the next value of CSR 0x7c5."""
+    src, marks = quiet(tmp_path)
+    assert [(m["mark"], m["kind"], m["label"]) for m in marks] == [
+        (1, "dma_in", "dma load_A"), (2, "dma_in", "dma load_B"),
+        (3, "streamer_config", "streamer config acc"), (4, "acc_config", "acc config acc"),
+        (5, "run", "run acc"), (6, "dma_out", "dma store_C"), (7, "check", "check"),
+    ]  # fmt: skip
+    lines = [x.strip() for x in src.splitlines()]
+    for m in marks:  # each mark once, inside a quiet block, its label as a comment
+        line = f"write_csr(0x7c5, {m['mark']});  // {m['label']}"
+        assert lines.count(line) == 1 and lines[lines.index(line) - 1] == QUIET_ON
+
+
+def test_dot_1_repeats_the_configure_and_run_sections_per_accelerator(tmp_path):
+    from tests.gen.helpers import bound_recipe
+
+    _, marks = quiet(tmp_path, graph=bound_recipe("dot_1", "dot"), name="dot_1")
+    assert [m["kind"] for m in marks] == [
+        "dma_in", "dma_in", "streamer_config", "acc_config", "run", "streamer_config",
+        "acc_config", "run", "dma_out", "check",
+    ]  # fmt: skip
+    assert [m["label"] for m in marks if m["kind"] == "run"] == ["run vmul", "run vsum"]
+
+
+def test_every_start_is_waited_on_at_once_in_the_quiet_build(tmp_path):
+    src, _ = quiet(tmp_path)
+    f = functions(src, quiet=True)["forge_core_0"]
+    for i, x in enumerate(f):
+        if x.startswith("snrt_dma_start_"):
+            assert f[i + 1 : i + 4] == [QUIET_ON, "snrt_dma_wait_all();", QUIET_END], x
+        if x == "csrw_ss(ACC_RW_START, 1);":
+            assert f[i + 1 : i + 7] == [
+                QUIET_ON, "while (csrr_ss(ACC_RO_STATUS) & 1) {", "}",
+                "while (csrr_ss(ACC_STREAMER_BUSY_CSR)) {", "}", QUIET_END,
+            ]  # fmt: skip
+
+
+def test_the_quiet_build_prints_nothing_and_the_default_build_has_no_quiet_part(tmp_path):
+    src, _ = quiet(tmp_path)
+    lines = src.splitlines()
+    prints = [i for i, x in enumerate(lines) if "printf(" in x]
+    assert len(prints) == 4 and all(
+        lines[i - 1] == QUIET_OFF and lines[i + 1] == QUIET_END for i in prints
+    )  # fmt: skip
+    default = strip_quiet(src)
+    assert QUIET_ON not in default and "write_csr" not in default and "#endif" not in default
+    assert default.count("printf(") == 4 and src.count("snrt_mcycle()") == 2
+
+
+def test_more_marks_than_obs_o_holds_are_refused(tmp_path, monkeypatch):
+    monkeypatch.setattr(c_mod, "MAX_MARKS", 6)
+    with pytest.raises(CError, match=r"\[c.obs\] check: section 7, more than obs_o's 6 marks"):
+        quiet(tmp_path)

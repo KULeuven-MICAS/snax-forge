@@ -16,6 +16,9 @@ Three steps, each the tool of that name called as its command line would be
     sw       the bundle's program, by snax-gvsoc's generic app (``make sw``), and its
              sha256 checked against the flow's ``elf_sha256`` (docs/RUN.md section 8)
                                                              out/forge/<name>/sw/forge.elf
+             with the quiet build beside it, the same main.c with -DFORGE_QUIET
+             (D135), and its sections' legend from the bundle
+                                                             sw/forge_quiet.elf, sw/obs_marks.json
 
 ``<name>`` is the flow's folder name (the recipe's with every ``--set``, then
 the trace level above ``off``). The platform defaults to
@@ -45,12 +48,15 @@ from typing import IO, Any
 
 from snax_forge.common import cwd_relative
 from snax_forge.gen import GenError, bundle
+from snax_forge.lower.c import OBS_MARKS
 from snax_forge.run import RunError
 from snax_forge.run.sources import parse_trace
 from snax_forge.sandbox import Recipe, SandboxError
 
 from . import __main__ as flow_cli
 from . import run as flow_run
+
+QUIET_ELF = "forge_quiet.elf"  # snax-gvsoc's forge app's second ELF, -DFORGE_QUIET (D135)
 
 OUT = flow_run.ROOT / "out" / "forge"
 PLATFORM = flow_run.ROOT / "platforms" / "snax_forge.json"
@@ -101,7 +107,8 @@ def _step(log: IO[str], step: str, argv: list[str], main) -> None:
 
 def _sw(log: IO[str], name: str, bundle_dir: Path, forge_dir: Path, flow_sha: str) -> Path:
     """The bundle's program by ``make sw`` (its output into ``log``); its ELF, checked to be the
-    flow's (``flow_sha``)."""
+    flow's (``flow_sha``), with the quiet build beside it and the bundle's ``obs_marks.json``
+    copied there (D135)."""
     sw = forge_dir / "sw"
     variables = {"APPS": "forge", "FORGE": str(bundle_dir.resolve()), "DESIGN": name,
                  "FORGE_BUILD": str(sw.resolve())}  # fmt: skip
@@ -117,6 +124,12 @@ def _sw(log: IO[str], name: str, bundle_dir: Path, forge_dir: Path, flow_sha: st
                    "the bundle's program is not the flow's")  # fmt: skip
         print(message, file=log, flush=True)
         raise StepFailed(message)
+    if not (sw / QUIET_ELF).is_file():
+        raise StepFailed(f"sw: no {cwd_relative(sw / QUIET_ELF)}, the quiet build (D135)")
+    marks = bundle_dir / OBS_MARKS
+    if not marks.is_file():
+        raise StepFailed(f"sw: no {cwd_relative(marks)}, the quiet build's legend")
+    shutil.copyfile(marks, sw / OBS_MARKS)
     return elf
 
 
@@ -174,7 +187,8 @@ def forge(recipe: Path, platform: Path, sets: list[tuple[str, tuple[str, str, An
             sha = json.loads((flow_dir / "run" / "run.json").read_text())["elf_sha256"]
             elf = _sw(log, name, bundle_dir, forge_dir, sha)
             print(
-                f"  sw        {cwd_relative(elf)} from the bundle (sha256 {sha[:16]}, the flow's)"
+                f"  sw        {cwd_relative(elf)} from the bundle (sha256 {sha[:16]}, the flow's); "
+                f"the quiet build {QUIET_ELF} and {OBS_MARKS} beside it"
             )
         except StepFailed as e:
             log.flush()
