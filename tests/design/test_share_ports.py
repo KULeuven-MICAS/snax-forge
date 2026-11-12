@@ -30,13 +30,13 @@ def _inputs(name: str, **params: int) -> tuple[int, int]:
 @pytest.mark.parametrize(
     "name, params, dedicated, shared",
     [
-        ("dot_1", {"W": 4}, 20, 15),
-        ("mvt_1_dot2", {"W": 8}, 44, 27),
-        ("mvt_2", {"W_x1": 8, "W_x2": 8}, 85, 51),
+        ("dot_1", {"W": 4}, 19, 14),
+        ("mvt_1_dot2", {"W": 8}, 43, 26),
+        ("mvt_2", {"W_x1": 8, "W_x2": 8}, 84, 50),
     ],
 )  # fmt: skip
 def test_the_crossbar_inputs_by_hand(name, params, dedicated, shared):
-    """n_in = Σ movers' channels + 2 cores + AXI: dot 1 at W = 4 is 4 + 4 + 4 (reader0 vmul.a /
+    """n_in = Σ movers' channels + the core (one since D170) + AXI: dot 1 at W = 4 is 4 + 4 + 4 (reader0 vmul.a /
     vsum.a, reader1 vmul.b, writer0 vmul.out / vsum.out) against 4 · 3 + 4 + 1; mvt_1_dot2 at
     W = 8 is 8 · 3 against 8 · 5 + 1; mvt_2 two such sets against twice 41."""
     assert sum(_inputs(name, **params)) == dedicated
@@ -82,12 +82,12 @@ def test_unshared_designs_pass_unchanged():
 
 @pytest.mark.slow
 def test_above_64_inputs_a_note_above_128_a_refusal():
-    """D85 amended: mvt_2 at W = 8 (85 inputs) and vecmul at W = 32 (99) pass with the note
-    design.xbar_inputs; vecmul at W = 64 (195) is refused (connect.xbar_inputs); shared, mvt_2
-    takes 51 and gets no note."""
+    """D85 amended: mvt_2 at W = 8 (84 inputs) and vecmul at W = 32 (98) pass with the note
+    design.xbar_inputs; vecmul at W = 64 (194) is refused (connect.xbar_inputs); shared, mvt_2
+    takes 50 and gets no note."""
     pf = Platform.load(SNAX_FORGE)
-    for name, params, n in (("mvt_2", {"W_x1": 8, "W_x2": 8}, 85),
-                            ("vecmul", {"W": 32, "N": 2048}, 99)):  # fmt: skip
+    for name, params, n in (("mvt_2", {"W_x1": 8, "W_x2": 8}, 84),
+                            ("vecmul", {"W": 32, "N": 2048}, 98)):  # fmt: skip
         d = Design(pf, steps(name, **params)[-1])
         assert run_checks(d) == []
         (note,) = NOTES["design.xbar_inputs"](d)
@@ -96,7 +96,7 @@ def test_above_64_inputs_a_note_above_128_a_refusal():
     assert list(NOTES["design.xbar_inputs"](d)) == []
     wide = Design(pf, steps("vecmul", W=64, N=2048)[-1])
     (p,) = [p for p in run_checks(wide) if p.code == "connect.xbar_inputs"]
-    assert p.message.startswith("195 TCDM crossbar inputs, the platform takes at most 128")
+    assert p.message.startswith("194 TCDM crossbar inputs, the platform takes at most 128")
     assert p.fix == "fewer lanes, or share_ports on a container between two accelerators (D169)"
 
 

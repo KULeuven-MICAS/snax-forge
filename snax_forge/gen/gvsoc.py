@@ -25,6 +25,9 @@ program and its data, and the manifest:
                              outputs and goldens
     main.c                   the program (lower/c.py, D135): the
                              task list on snRuntime, self-checking
+    obs_marks.json           the quiet build's sections (-DFORGE_QUIET),
+                             each {mark, kind, label}: the value written
+                             to CSR 0x7c5 (obs_o) as it starts
     manifest.json            what was written (Manifest)
 
 A file is written only when its text changes (``write_changed``), and only the files an
@@ -150,6 +153,7 @@ template for more than one spatial dimension (every template so far has one).
 
 from __future__ import annotations
 
+import json
 import sys
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -177,7 +181,7 @@ from snax_forge.design.streamers import instance_nodes, shared_movers, streamer_
 from snax_forge.dfg.reference import Goldens
 from snax_forge.estimate.cycles import EstimateError
 from snax_forge.lower import CError
-from snax_forge.lower.c import MAIN_C, job_writes, main_c, task_beats
+from snax_forge.lower.c import MAIN_C, OBS_MARKS, job_writes, program, task_beats
 from snax_forge.lower.derive import task_list
 from snax_forge.lower.tasks import TaskList
 
@@ -648,7 +652,8 @@ def generate(
         includes += [accelerator_header_name(a.name), streamer_header_name(a.name)]
     files |= {f"include/{f}": text for f, text in cluster_headers(cluster, shown).items()}
     files[DATA_H] = data_h(point, shown, data, seed=seed)
-    files[MAIN_C] = main_c(point, tasks, cluster, acc, data, includes, shown)
+    files[MAIN_C], marks = program(point, tasks, cluster, acc, data, includes, shown)
+    files[OBS_MARKS] = json.dumps(marks, indent=1) + "\n"
     before = _written(out)
     (out / "include").mkdir(parents=True, exist_ok=True)
     for f, text in files.items():

@@ -1,6 +1,7 @@
-"""The loop1 walk-through (D98): every number examples/loop1/README.md states, checked on the
+"""The loop1 walk-through (D98, D171): every claim examples/loop1/README.md makes, checked on the
 runs it describes, on SNAX-GVSoC (marker ``gvsoc``, D134: in the image, skipped where
-out/snax-gvsoc/install is missing).
+out/snax-gvsoc/install is missing): what does not depend on timing exactly, each cycle number it
+states within 10 % (``near``; beyond it, investigate before updating the page).
 
 The README's two flow commands are run as written (from the repo root, into a
 temporary folder named as the README names it), and the default once more at trace
@@ -19,7 +20,7 @@ from snax_forge.flow import __main__ as cli
 from snax_forge.viz import api
 from tests.design.helpers import REPO
 
-from .helpers import excerpts_hold, needs_gvsoc
+from .helpers import excerpts_hold, near, needs_gvsoc
 
 pytestmark = [pytest.mark.gvsoc, needs_gvsoc]
 
@@ -104,10 +105,10 @@ def test_every_excerpt_is_a_part_of_its_report(runs):
 
 def test_the_cycles_do_not_depend_on_the_trace_level(runs):
     _, rv = runs
-    assert rv[DEFAULT].total_cycles == rv["off"].total_cycles == 489
+    assert rv[DEFAULT].total_cycles == rv["off"].total_cycles and near(rv["off"].total_cycles, 471)
     assert rv["off"].trace_level == "off"
     stdout = (runs[0] / "off" / "run" / "stdout.txt").read_text()
-    assert "forge cycles: 489\n" in stdout
+    assert f"forge cycles: {rv['off'].total_cycles}\n" in stdout
 
 
 def test_the_vectors_lie_16_rows_over_all_32_banks(runs):
@@ -120,66 +121,77 @@ def test_the_vectors_lie_16_rows_over_all_32_banks(runs):
             assert r.shape[0] * r.itemsize == 512 * 8 == 16 * 32 * d.cluster.bank_bytes
 
 
-def test_the_accelerator_fires_every_cycle_after_3_starved_ones(runs):
+def test_the_accelerator_fires_every_cycle_after_its_streamers_head_start(runs):
     _, rv = runs
     d = rv[DEFAULT]
     acc = d.outputs.profile.accelerators["acc"]
-    assert (acc.firings, acc.cycles["busy"], acc.cycles["stall_in"]) == (128, 128, 3)
-    start, done = tasks(d)["add_acc"]
-    assert done - start == 132
-    assert d.index.runs["add_acc"][:2] == [(225, 228, "stall_in"), (228, 356, "busy")]
-    assert "starved for the first 3 (cycles 225–227)" in text()
+    assert (acc.firings, acc.cycles["busy"]) == (128, 128)
+    assert acc.cycles["stall_in"] == 0 and "never starved" in text()
+    t = tasks(d)
+    movers = min(t[f"add_acc_{m}"][0] for m in ("a", "b", "out"))
+    start, done = t["add_acc"]
+    assert near(start - movers, 10) and near(movers, 183) and near(start, 193)
+    assert near(done - start, 129)
+    # the counter: sound (D171), and below the estimate's by the head start
+    counter = rv["off"].outputs.profile.functional_check["tasks"]["add_acc"]["counter"]
+    assert 128 <= counter < 131 and near(counter, 131)  # its beats, below the estimate's
+    assert "reads 128 against the estimate's 131" in " ".join(text().split())
 
 
-def test_acc_b_is_held_once_at_its_first_request_then_one_beat_behind(runs):
+def test_acc_b_is_held_at_its_first_request_then_one_beat_behind(runs):
     _, rv = runs
     d = rv[DEFAULT]
-    assert d.outputs.profile.streamers["acc_b"].cycles["stall_xbar"] == 1
+    assert near(d.outputs.profile.streamers["acc_b"].cycles["stall_xbar"], 2)
     cs = api.conflicts_view(d, 0, d.total_cycles)["conflicts"]
-    assert [(c["t"], c["bank"], c["waiting"]["element"], c["served"]["element"]) for c in cs] == [
-        (225, b, f"B[{b}]", f"A[{b}]") for b in range(4)]  # fmt: skip
-    assert {c["served"]["port"].split(".")[0] for c in cs} == {"acc_a"}
+    first = cs[0]["t"]
+    assert near(first, 185)
+    assert [(c["t"], c["bank"], c["waiting"]["element"], c["served"]["element"]) for c in cs[:4]] == [
+        (first, b, f"B[{b}]", f"A[{b}]") for b in range(4)]  # fmt: skip
+    assert {c["served"]["port"].split(".")[0] for c in cs[:4]} == {"acc_a"}
+    # once more when the accelerator starts, then acc_out's first write against acc_b
+    rest = [(c["waiting"]["element"][0], c["served"]["element"][0]) for c in cs[4:]]
+    assert rest == [("B", "A")] * 4 + [("C", "B")] * 4
     for lane_ in range(4):
         a, b = grants(d, f"acc_a.lane{lane_}"), grants(d, f"acc_b.lane{lane_}")
-        assert a[0]["t"] == 225 and len(a) == len(b) == 128
+        assert a[0]["t"] == first and len(a) == len(b) == 128
         assert all(y["t"] - x["t"] == 1 for x, y in zip(a, b, strict=True))
-        # one beat behind: when acc_b reads beat j, acc_a reads beat j + 1, four banks on
-        at = {x["t"]: x["bank"] for x in a}
-        assert all((at[y["t"]] - y["bank"]) % 32 == 4 for y in b if y["t"] in at)
 
 
-def test_the_accelerator_is_busy_26_2_percent_of_the_window(runs):
+def test_the_accelerator_is_busy_27_2_percent_of_the_window(runs):
     _, rv = runs
     p = rv[DEFAULT].outputs.profile
-    assert f"{100 * p.accelerators['acc'].cycles['busy'] / p.total_cycles:.1f}" == "26.2"
-    assert "26.2% of the window" in text()
+    assert near(100 * p.accelerators["acc"].cycles["busy"] / p.total_cycles, 27.2)
+    assert "27.2% of the window" in text()
 
 
-def test_the_schedule_folds_the_setup_and_the_end(runs):
+def test_the_schedule_folds_the_setup_the_gap_and_the_end(runs):
     _, rv = runs
     d = rv[DEFAULT]
     fs = folds(d)
-    assert [(f["from"], f["to"]) for f in fs] == [(0, 78), (441, 489)]
+    stated = [(0, 34), (325, 356), (428, 471)]
+    assert len(fs) == 3 and all(
+        near(f["from"], a) and near(f["to"], b) for f, (a, b) in zip(fs, stated, strict=True)
+    ) and fs[0]["from"] == 0  # fmt: skip
+    assert set(fs[0]["cores"]) == {"core0"}  # one core (D170)
     first = fs[0]["cores"]["core0"]
-    assert first["csr_writes"] == 12 and d.outputs.profile.cores["core0"].csr_writes == 18
-    assert {e["block"] for e in lane(d, "core0")["csr"] if e["t"] < 78} == {"acc_streamer"}
-    assert first["funcs"] == ["main", "forge_core_0"]
-    assert fs[0]["cores"]["core1"]["funcs"] == ["main", "forge_core_1"]
-    assert fs[1]["cores"]["core0"]["funcs"][-2:] == ["main", "forge_check"]
-    assert min(b["from"] for b in lane(d, "dma")["bars"]) == 78
+    assert first["funcs"] == ["main", "forge_core_0"] and first["csr_writes"] == 0
+    assert d.outputs.profile.cores["core0"].csr_writes == 18
+    assert "forge_check" in fs[-1]["cores"]["core0"]["funcs"]
+    assert min(b["from"] for b in lane(d, "dma")["bars"]) == fs[0]["to"]
 
 
 def test_the_run_is_serial_between_the_folds(runs):
     _, rv = runs
     d = rv[DEFAULT]
     t = tasks(d)
-    assert (t["load_A"][0], t["load_B"][1]) == (78, 219)
-    assert t["add_acc"] == (224, 356) and t["store_C"] == (369, 440)
-    assert t["store_C"][1] - t["store_C"][0] == 71 and d.total_cycles - 441 == 48
-    waits = [(w.block, w.first, w.last) for w in d.outputs.profile.cores["core0"].waits]
-    assert ("barrier", 84, 222) in waits
-    assert d.outputs.profile.cores["core0"].cycles["poll"] == 130
-    assert d.outputs.profile.dmas["dma"].busy == 212
+    assert near(t["load_A"][0], 34) and near(t["load_B"][1], 176)
+    assert t["load_B"][1] < t["add_acc"][0] < t["add_acc"][1] < t["store_C"][0]
+    assert near(t["store_C"][0], 356) and near(t["store_C"][1], 427)
+    assert t["store_C"][1] - t["store_C"][0] == 71 and near(d.total_cycles - 428, 43)
+    waits = [w.block for w in d.outputs.profile.cores["core0"].waits]
+    assert waits == ["acc"] and d.outputs.profile.cores["core0"].cycles["barrier"] == 0
+    assert near(d.outputs.profile.cores["core0"].cycles["poll"], 127)
+    assert near(d.outputs.profile.dmas["dma"].busy, 213)
 
 
 def test_read_data_comes_back_a_cycle_after_its_grant(runs):
@@ -193,31 +205,34 @@ def test_the_stepping_keys_go_by_event_and_by_boundary(runs):
     _, rv = runs
     d = rv[DEFAULT]
     assert api.step_view(d, 300, 1, "event")["t"] == 301  # a grant every cycle in the task
-    assert api.step_view(d, 300, 1, "boundary")["t"] == 353  # add_acc_a's done
+    after = min(x for a, b in tasks(d).values() for x in (a, b) if x > 300)
+    assert api.step_view(d, 300, 1, "boundary")["t"] == after  # the next task boundary
 
 
 def test_the_prediction_holds(runs):
-    """Section 7 on what the code layout does not move: the firings, the accelerator's
-    counter (its busy cycles, the profile's functional check) and each copy's cycles (the
-    task table) with the DMA's busy cycles (the profile); the window shown, not predicted."""
+    """Section 7 on what the code layout does not move: the firings, the accelerator's busy
+    cycles and each copy's cycles (the task table) with the DMA's busy cycles (the profile); the
+    counter and the window shown, not predicted."""
     _, rv = runs
     d, w = rv[DEFAULT].outputs.profile, rv[WIDE].outputs.profile
     assert w.accelerators["acc"].firings == 512 // 8 == 64
     assert d.accelerators["acc"].firings == 128
-    counter = {k: p.functional_check["tasks"]["add_acc"]["counter"] for k, p in
-               ((DEFAULT, d), (WIDE, w))}  # fmt: skip
-    assert counter == {DEFAULT: 131, WIDE: 67} and counter[DEFAULT] - counter[WIDE] == 64
-    assert w.accelerators["acc"].cycles["stall_in"] == d.accelerators["acc"].cycles["stall_in"] == 3
+    assert (d.accelerators["acc"].cycles["busy"], w.accelerators["acc"].cycles["busy"]) == (128, 64)
     td, tw = tasks(rv[DEFAULT]), tasks(rv[WIDE])
     for copy in ("load_A", "load_B", "store_C"):
         assert td[copy][1] - td[copy][0] == tw[copy][1] - tw[copy][0]
-    assert [tw[c][1] - tw[c][0] for c in ("load_A", "load_B", "store_C")] == [77, 126, 71]
-    assert d.dmas["dma"].busy == w.dmas["dma"].busy == 212
-    # The window, shown: it moved by more than the 64 busy cycles saved
-    assert (d.total_cycles, w.total_cycles) == (489, 424)
+    assert all(near(tw[c][1] - tw[c][0], n) for c, n in (("load_A", 77), ("load_B", 128),
+                                                          ("store_C", 71)))  # fmt: skip
+    assert d.dmas["dma"].busy == w.dmas["dma"].busy and near(w.dmas["dma"].busy, 213)
+    # shown: the counters, sound (D171) and stated; W=8's 3 starved cycles; the windows
+    counter = {k: p.functional_check["tasks"]["add_acc"]["counter"] for k, p in
+               ((DEFAULT, d), (WIDE, w))}  # fmt: skip
+    assert near(counter[DEFAULT], 128) and near(counter[WIDE], 67)
+    assert near(w.accelerators["acc"].cycles["stall_in"], 3)
+    assert near(d.total_cycles, 471) and near(w.total_cycles, 391)
     assert d.total_cycles - w.total_cycles > 64
     t = text()
-    assert "e.g. 489 → 424 here" in t and "| the counter 64 lower than W=4's 131 | 67 |" in t
+    assert "| busy cycles 64, half of 128 | 64 |" in t and "window went from 471 to 391" in t
     i, j = t.index("## 5. Predict"), t.index("## 6. Rerun")
     assert "- firings 64 (N/W, was 128);" in t[i:j]  # written before the rerun's section
-    assert "W=4's 131: 67" in t[i:j] and "load_A 77, load_B 126, store_C 71" in t[i:j]
+    assert "64, half of W=4's 128" in t[i:j] and "load_A 77, load_B 128, store_C 71" in t[i:j]

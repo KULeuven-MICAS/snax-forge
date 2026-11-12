@@ -130,13 +130,13 @@ A platform without a source hjson stops at `gen`, before anything is built, and 
 
     FAILED recipes/elementwise/vecadd.json: gen: [gen.source] platform small16 has no source hjson: read it from one with `pixi run design from-hjson`
 
-A design the platform cannot take stops earlier, at the design checks (C§14), in the flow as in the design step alone, and exits 1: vecmul at W = 64 needs more TCDM crossbar inputs than SNAX-GVSoC's crossbar takes (`connect.xbar_inputs`; at W = 32 its 99 inputs pass with the note `design.xbar_inputs`, above 64):
+A design the platform cannot take stops earlier, at the design checks (C§14), in the flow as in the design step alone, and exits 1: vecmul at W = 64 needs more TCDM crossbar inputs than SNAX-GVSoC's crossbar takes (`connect.xbar_inputs`; at W = 32 its 98 inputs pass with the note `design.xbar_inputs`, above 64):
 
     pixi run sandbox recipes/elementwise/vecmul.json --set W=64 --out out/sandbox/vecmul_W64
     pixi run design out/sandbox/vecmul_W64/2_bind.snaxdfg --platform platforms/snax_forge.json
 
     design check of out/sandbox/vecmul_W64/2_bind.snaxdfg on platforms/snax_forge.json: 1 problem
-     [connect.xbar_inputs] acc: 195 TCDM crossbar inputs, the platform takes at most 128 (192 streamer channels, 3 for the cores and AXI; l1.max_xbar_inputs, the limit SNAX-GVSoC's crossbar asserts)
+     [connect.xbar_inputs] acc: 194 TCDM crossbar inputs, the platform takes at most 128 (192 streamer channels, 2 for the core and AXI; l1.max_xbar_inputs, the limit SNAX-GVSoC's crossbar asserts)
          fix: fewer lanes, or share_ports on a container between two accelerators (D169)
 
 `pixi run flow recipes/elementwise/vecmul.json --platform platforms/snax_forge.json --set W=64` prints the same problem. Two accelerators are no refusal: `recipes/dot/dot_serial.json` leaves dot's `mul` and `sum` unencapsulated, two streamer sets of the one entry `snax_forge_dot_serial` (D157).
@@ -192,8 +192,10 @@ One ELF, snax-forge's, runs on SNAX-GVSoC and on snax_cluster's RTL, and the RTL
       flow      passed: design point out/flow/vecadd/design/design_point.json, run out/flow/vecadd/run/
       bundle    out/bundle/vecadd/: snax_forge_vecadd_shell_wrapper, snax-forge $COMMIT
       expected  out/bundle/vecadd/forge_expected.txt: the run's counter and data lines, each counter's fill
-      sw        out/forge/vecadd/sw/forge.elf from the bundle (sha256 3fa93c774886c3b3, the flow's)
+      sw        out/forge/vecadd/sw/forge.elf from the bundle (sha256 3fa93c774886c3b3, the flow's); the quiet build forge_quiet.elf and obs_marks.json beside it
     ...
+
+Beside `forge.elf` it leaves the quiet build, `forge_quiet.elf` (the same `main.c` with `-DFORGE_QUIET`, D135: every start waited on at once, each section marked in CSR `0x7c5`, which the cluster's `obs_o` shows, no prints), and its legend `obs_marks.json`, for a power run on the netlist; it runs on SNAX-GVSoC and the RTL as the default ELF does and exits with the error count.
 
 then the snax_cluster commands for one design (Verilator, and Questa as below). `pixi run forge-set quick|full|mvt [--sim vsim|vlt] [-j N]` runs forge on a set's recipes at once (quick: vecadd_i32, vsum_tree_i8, dot_1, dot_1_enc, dot_4, axpy; full: those and vecadd, vsum, rowsum_serial, vecmul_i32_i64, dot_2, dot_3, dot_5, dot_6, dot_serial, matvec_1, matvec_5, matvec_6, matvec_seed, matvec_seed_serial, relu, rowsum_2, and rowsum_2 again with its own `--set memory.passes.layout=padded_rows`, named as forge names its folder, `rowsum_2_passes.layoutpadded_rows`; mvt: mvt_1 and mvt_1_dot2 at M = N = 40, each at its defaults, at W = 8, with `memory.passes.layout=padded_rows`, and with both, mvt_2 at its defaults and with `padded_rows` (at W = 8 its two dot groups need 85 TCDM crossbar inputs, the platform takes 64), then mvt_2_reuse at its defaults, eleven bundles; not part of quick or full), writes `out/forge-set/<set>.md` (each bundle's expected lines and the commands per design) and prints one line:
 

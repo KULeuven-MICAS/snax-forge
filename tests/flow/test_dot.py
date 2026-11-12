@@ -25,7 +25,7 @@ from snax_forge.run import read_run
 from tests.design.helpers import SNAX_FORGE
 from tests.helpers import dot1_split, recipe_path
 
-from .helpers import needs_gvsoc
+from .helpers import needs_gvsoc, sound
 
 DOT1 = recipe_path("dot_1")
 DOT1_ENC = recipe_path("dot_1_enc")
@@ -125,9 +125,9 @@ def beat_flows(tmp_path_factory):
 def test_dot_1_converts_at_beat_level(beat_flows):
     """Two groups of one unit each at beat level (DRY1-2 R2, open item 96), dot 1's two
     accelerators: each unit's 256 fires under its own task, tmp0's words written by vmul_out
-    and read by vsum_a, and the counters and the window those of the untraced run; vmul's
-    BUSY_COUNTER is the expected 259, its own set's streamer started just before its START (in
-    dot_1_enc's shared streamer it was 256, its START 10 cycles after the streamers' start)."""
+    and read by vsum_a, and the counters and the window those of the untraced run, the counters
+    sound (D171; recorded in CORE1 R1 on one core: vmul 256, vsum 259, vmul's START 10 cycles
+    after its streamer's start, a head start the counter does not see, D155)."""
     off, beat = beat_flows["off"], beat_flows["beat"]
     assert off.passed and beat.passed, summary(beat)
     trace = read_run(beat.out / "run").trace
@@ -139,7 +139,7 @@ def test_dot_1_converts_at_beat_level(beat_flows):
     assert len({e["addr"] for e in tmp0 if e["op"] == "w"}) == 2048
     counters = {t: x["counter"] for t, x in beat.check["tasks"].items()}
     assert counters == {t: x["counter"] for t, x in off.check["tasks"].items()}
-    assert counters == {"mult_vmul": 259, "sum_vsum": 259}
+    assert sound(beat) == counters and set(counters) == {"mult_vmul", "sum_vsum"}
     assert (
         read_run(beat.out / "run").profile.total_cycles
         == read_run(off.out / "run").profile.total_cycles

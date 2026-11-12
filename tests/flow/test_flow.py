@@ -48,7 +48,7 @@ from tests.helpers import recipe_path
 from tests.run.helpers import point_symbols
 
 from . import helpers
-from .helpers import COMMIT, PLAIN, PLAINS, built, golden, main, needs_gvsoc, stub
+from .helpers import COMMIT, PLAIN, PLAINS, built, golden, main, needs_gvsoc, sound, stub
 
 
 def flow(tmp_path, design="vecadd", **kw):
@@ -556,7 +556,7 @@ def test_the_beat_levels_stubbed(tmp_path, monkeypatch, level):
                           "tcdm/snax_xbar/beats"]  # fmt: skip
     assert ("snax_acc0/streamer_acc/stalls" in traces) == (level != "beat")
     assert [x for x in traces if x.endswith("/insn")] == (
-        ["pe0/insn", "pe1/insn"] if level == "finegrained" else []
+        ["pe0/insn"] if level == "finegrained" else []  # one core (D170)
     )
     lanes = ",".join(f"snax_acc0.streamer_acc.{m}.lane{i}" for m in ("reader0", "reader1", "writer0")
                      for i in range(4))  # fmt: skip
@@ -566,7 +566,7 @@ def test_the_beat_levels_stubbed(tmp_path, monkeypatch, level):
     assert ("fifo" in kinds) == ("stall" in kinds) == (level != "beat")
     assert ("insn" in kinds) == (level == "finegrained")
     sources = ["acc", "acc_a", "acc_b", "acc_out", "dma"]
-    sources += ["core0", "core1"] if level == "finegrained" else []
+    sources += ["core0"] if level == "finegrained" else []  # one core (D170)
     run = tmp_path / level / "run"
     assert json.loads((run / "trace_meta.json").read_text())["filter"] == sources
     assert json.loads((run / "run.json").read_text())["trace_sources"] == sources
@@ -715,7 +715,6 @@ def test_rowsum_restarts_every_row_on_snax_gvsoc(tmp_path, design, beats):
 
 RELU_A = [-3, 5, 0, -1, 7, -8, 2, -2]
 RELU_B = [0, 5, 0, 0, 7, 0, 2, 0]
-RELU_COUNTER = 4  # the run's BUSY_COUNTER on SNAX-GVSoC: 2 firings and 2 cycles of the shell
 
 
 @pytest.mark.gvsoc
@@ -734,8 +733,10 @@ def test_relu_on_one_stream_on_snax_gvsoc(tmp_path, monkeypatch):
                  out=tmp_path / "relu")  # fmt: skip
     assert f.passed, summary(f)
     assert f.check["exit_code"] == 0 and f.check["data_errors"] == 0
-    assert f.check["tasks"] == {"numpy_maximum_acc": {"counter": RELU_COUNTER, "beats": 2,
-                                                      "group": "acc"}}  # fmt: skip
+    sound(f)  # D171; the counter was 4 as recorded, 2 firings and 2 cycles of the shell
+    assert {t: (x["beats"], x["group"]) for t, x in f.check["tasks"].items()} == {
+        "numpy_maximum_acc": (2, "acc")
+    }
     gen = tmp_path / "relu" / "gen"
     data = (gen / "data.h").read_text()  # B_golden padded to whole 64-byte beats: 16 int32
     golden = data.split("const int32_t B_golden[16]", 1)[1].split("{", 1)[1].split("}", 1)[0]

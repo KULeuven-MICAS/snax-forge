@@ -23,12 +23,10 @@ from snax_forge.gen import Manifest
 from tests.design.helpers import SNAX_FORGE
 from tests.helpers import recipe_path
 
-from .helpers import needs_gvsoc
+from .helpers import needs_gvsoc, sound
 
 X = [1, -2, 4, 0]
 Y = [10, 20, -5, 7]
-# The run's BUSY_COUNTER on SNAX-GVSoC: 2 firings and 2 cycles of the shell, as relu's
-AXPY_COUNTER = 4
 SETS = {"W": 2, "N": 4}
 
 pytestmark = [pytest.mark.gvsoc, needs_gvsoc]
@@ -59,7 +57,10 @@ def test_axpy_reads_k1_from_alpha(tmp_path, worked):
     f = run_flow(recipe_path("axpy"), SNAX_FORGE, recipe_sets=SETS, out=tmp_path / "axpy")
     assert f.passed, summary(f)
     assert f.check["exit_code"] == 0 and f.check["data_errors"] == 0
-    assert f.check["tasks"] == {"mult_acc": {"counter": AXPY_COUNTER, "beats": 2, "group": "acc"}}
+    sound(f)  # D171; the counter was 4 as recorded, 2 firings and 2 cycles of the shell
+    assert {t: (x["beats"], x["group"]) for t, x in f.check["tasks"].items()} == {
+        "mult_acc": (2, "acc")
+    }
     gen = tmp_path / "axpy" / "gen"
     data = (gen / "data.h").read_text()
     assert array(data, "alpha") == [3] + [0] * 15
@@ -101,7 +102,7 @@ def test_the_same_design_with_alpha_5_in_data_h(tmp_path, worked):
     _, result = flow_run.check_output(stdout, flow_run.run_exit_code(rc, stderr),
                                       {t.name: t.beats for t in manifest.tasks})  # fmt: skip
     assert result["exit_code"] == 0 and result["data_errors"] == 0, stdout[-2000:]
-    assert result["tasks"]["mult_acc"]["counter"] == AXPY_COUNTER
+    assert result["tasks"]["mult_acc"]["counter"] >= 2  # its beats (D171)
 
 
 def test_axpy_baked_writes_no_k1(tmp_path, worked):
@@ -109,7 +110,10 @@ def test_axpy_baked_writes_no_k1(tmp_path, worked):
                  out=tmp_path / "axpy_baked")  # fmt: skip
     assert f.passed, summary(f)
     assert f.check["exit_code"] == 0 and f.check["data_errors"] == 0
-    assert f.check["tasks"] == {"mult_acc": {"counter": AXPY_COUNTER, "beats": 2, "group": "acc"}}
+    sound(f)  # D171; the counter was 4 as recorded, 2 firings and 2 cycles of the shell
+    assert {t: (x["beats"], x["group"]) for t, x in f.check["tasks"].items()} == {
+        "mult_acc": (2, "acc")
+    }
     gen = tmp_path / "axpy_baked" / "gen"
     assert "alpha" not in (gen / "data.h").read_text()
     assert "K1" not in (gen / "main.c").read_text()

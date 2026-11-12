@@ -6,8 +6,10 @@
 // platforms/snax_forge_cluster.hjson snax_forge`: from snax_cluster's
 // target/snitch_cluster/cfg/snax_alu_cluster.hjson at the pin
 // (gvsoc/snax-gvsoc/sw/README.md, ccc7688f), its values unchanged, its names
-// snax-forge's. Its accelerator slot is the one the generator sets for a
-// design, and the one the platform's streamer template is read from.
+// snax-forge's, but for one Snitch core (D170): core 0 holds both the
+// accelerator slot and the DMA (xdma), where snax_alu_cluster.hjson has a
+// second core for the DMA. Its accelerator slot is the one the generator sets
+// for a design, and the one the platform's streamer template is read from.
 {
     nr_s1_quadrant: 1,
     s1_quadrant: {
@@ -86,7 +88,6 @@
                 },
                 cores: [
                     { $ref: "#/snax_forge_core_template" },
-                    { $ref: "#/dma_core_template" },
                 ]
             }
         ]
@@ -110,7 +111,7 @@
         isa: "rv32ima",
         xssr: false,
         xfrep: false,
-        xdma: false,
+        xdma: true,
         xf16: false,
         xf16alt: false,
         xf8: false,
@@ -137,27 +138,6 @@
         // Enable division/square root unit
         // Xdiv_sqrt: true,
     },
-    dma_core_template: {
-        isa: "rv32ima",
-        // Xdiv_sqrt: true,
-        # isa: "rv32ema",
-        xdma: true
-        xssr: false
-        xfrep: false
-        xf16: false,
-        xf16alt: false,
-        xf8: false,
-        xf8alt: false,
-        xfdotp: false,
-        xfvec: false,
-        num_int_outstanding_loads: 1,
-        num_int_outstanding_mem: 4,
-        num_fp_outstanding_loads: 4,
-        num_fp_outstanding_mem: 4,
-        num_sequencer_instructions: 16,
-        num_dtlb_entries: 1,
-        num_itlb_entries: 1,
-    }
     // SNAX Streamer Templates
     snax_forge_streamer_template :{
 

@@ -258,7 +258,10 @@ def test_the_base_clusters_address_map_values(include):
 def test_three_cores_are_counted_over_the_hives(include):
     """As clustergen counts them: every core of every hive, ``$ref``s resolved."""
     cluster = parsed(include.parent / "snax_forge.hjson")
-    cluster["cluster"]["hives"][0]["cores"].append({"$ref": "#/dma_core_template"})
+    cluster["cluster"]["hives"][0]["cores"] += [
+        {"isa": "rv32ima"},
+        {"$ref": "#/snax_forge_core_template"},
+    ]
     cfg = cluster_headers(cluster, "p")["snitch_cluster_cfg.h"]
     assert below_comments(cfg) == [
         "#define CFG_CLUSTER_NR_CORES 3",

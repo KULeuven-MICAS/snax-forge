@@ -56,6 +56,7 @@ def forged(tmp_path, monkeypatch):
         elf.parent.mkdir(parents=True)
         flows = tmp_path / "flow" / Path(forge_dir).name / "sw" / flow_run.ELF
         elf.write_bytes(fake.elf if fake.elf is not None else flows.read_bytes())
+        (elf.parent / forge_mod.QUIET_ELF).write_bytes(b"quiet")  # the second ELF (D135)
         log.write("make sw\n")  # forge.log, open: make writes straight into it
         return 0
 
@@ -65,6 +66,10 @@ def forged(tmp_path, monkeypatch):
 
 def test_forge_prints_each_step_and_snax_clusters_commands(tmp_path, forged, capsys):
     assert forge_mod.main([str(RECIPE)]) == 0
+    sw = tmp_path / "forge" / "vecadd" / "sw"
+    assert (sw / "obs_marks.json").read_bytes() == (
+        tmp_path / "bundle" / "vecadd" / "obs_marks.json"
+    ).read_bytes()  # the quiet build's legend beside its ELF (D135)
     out = capsys.readouterr().out.splitlines()
     flow, bundle = tmp_path / "flow" / "vecadd", tmp_path / "bundle" / "vecadd"
     forge = tmp_path / "forge" / "vecadd"
@@ -78,7 +83,10 @@ def test_forge_prints_each_step_and_snax_clusters_commands(tmp_path, forged, cap
         f"  flow      passed: design point {flow / 'design' / 'design_point.json'}, run {flow}/run/",
         f"  bundle    {bundle}/: snax_forge_vecadd_shell_wrapper, snax-forge {COMMIT[:12]}",
         f"  expected  {bundle / 'forge_expected.txt'}: the run's counter and data lines, each counter's fill",
-        f"  sw        {forge / 'sw' / 'forge.elf'} from the bundle (sha256 {sha[:16]}, the flow's)",
+        (
+            f"  sw        {forge / 'sw' / 'forge.elf'} from the bundle (sha256 {sha[:16]}, the "
+            "flow's); the quiet build forge_quiet.elf and obs_marks.json beside it"
+        ),
         f"SNAX-GVSoC ({flow / 'run' / 'stdout.txt'}):",
         "  forge cycles: 226",
         "  forge data: 0 errors (64 words)",

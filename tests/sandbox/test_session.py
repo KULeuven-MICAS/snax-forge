@@ -293,7 +293,7 @@ def test_save_writes_into_custom_and_a_name_in_any_folder_is_taken(roots):
 
 
 def test_save_lists_too_many_crossbar_inputs_and_saves_anyway(roots):
-    """vecmul at N = 2048, W = 64 from the editor: Save names connect.xbar_inputs (195 inputs
+    """vecmul at N = 2048, W = 64 from the editor: Save names connect.xbar_inputs (194 inputs
     over 128) as a design problem and saves when forced (C§12)."""
     s = Session.from_kernel("vecmul", {"N": 2048}, roots=roots)
     split_and_tag(s, "mult_map", "W", {"W": 64})
@@ -303,7 +303,7 @@ def test_save_lists_too_many_crossbar_inputs_and_saves_anyway(roots):
         got["code"] == "save.design" and not (roots.recipes / "custom" / "vecmul_w64.json").exists()
     )
     (p,) = got["problems"]
-    assert p.startswith("[connect.xbar_inputs] acc_1: 195 TCDM crossbar inputs, the platform "
+    assert p.startswith("[connect.xbar_inputs] acc_1: 194 TCDM crossbar inputs, the platform "
                         "takes at most 128")  # fmt: skip
     assert ok(s.save("vecmul_w64", force=True))["problems"] == got["problems"]
 
@@ -570,7 +570,7 @@ def test_while_building_unbound_is_a_note_and_notes_show_beside_problems(roots):
     bind_default(i32, "add")
     c = i32.checks(4)
     assert [p["code"] for p in c["problems"]] == ["connect.xbar_inputs"]
-    # beside it, its 195 crossbar inputs above 64 (D85) and, off HWCOST's tables' grid, its three
+    # beside it, its 194 crossbar inputs above 64 (D85) and, off HWCOST's tables' grid, its three
     # streamers of 64 channels and its crossbar, noted as extrapolated (D167)
     assert [(n["code"], n["before_save"]) for n in c["notes"]] == [
         ("design.xbar_inputs", False), ("char.missing", False),

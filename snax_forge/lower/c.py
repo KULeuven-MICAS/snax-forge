@@ -24,8 +24,27 @@ function through a table; on the accelerator's core it then adds
 **The window.** The program's cycles are one window, from ``mcycle`` at
 main's entry to ``mcycle`` read first in ``forge_check()``, which prints it
 as ``forge cycles: <n>``; the flow takes it as ``total_cycles`` (D136, C§7).
-No task marks: nothing is read inside the window but the counters, so the
-core's timing between the steps is the program's own.
+No task marks in the default build: nothing is read inside the window but the
+counters, so the core's timing between the steps is the program's own.
+
+**The quiet build** (D135 amended, CORE1), the same ``main.c`` built with
+``-DFORGE_QUIET`` (``forge_quiet.elf``), for power: its parts sit in
+``#ifdef FORGE_QUIET`` blocks and each ``printf`` in ``#ifndef FORGE_QUIET``,
+so the default build's code is the text without them (``strip_quiet``). Every
+start is waited on right after it, a DMA transaction by
+``snrt_dma_wait_all()``, an accelerator's start by its group's STATUS and its
+set's streamer-busy polls (the later wait then returns at once and reads the
+counter), so the sections run in series. Each section writes the next value
+to CSR ``0x7c5``, the core's observability register (snitch.sv's
+``CsrObsRegister``, the cluster's ``obs_o`` from core 0), counting up from 1
+(0 from reset): one per DMA transaction (``dma_in``, ``dma_out``), a set's
+streamer configuration (``streamer_config``), a group's accelerator
+configuration (``acc_config``), a start to the end of its task (``run``), and
+``forge_check`` last (``check``), which checks as the default build does and
+prints nothing. The marks, ``{mark, kind, label}`` each, are ``obs_marks``,
+which the generator writes as ``obs_marks.json``; each ``csrw`` carries its
+label as a comment. More than 255 marks, ``obs_o``'s 8 bits, is refused
+(``c.obs``).
 
 **The accelerators** (D148, D157) are the design point's, in the graph's
 order, each one streamer set: its groups in the graph's order, each with its
@@ -109,7 +128,7 @@ stride is 0, which would start and read anyway (snax_cluster's Reader.scala:
 stride 0 on loop 0 forces that bound to 1 and repeats each beat the bound's
 times; ``c.idle``), a wait in
 ``signal`` mode (``c.signal``: nothing to signal with on SNAX), a DMA
-pattern that is neither form (``c.dma``), a CSR the description lacks
+pattern that is neither form (``c.dma``), more marks than ``obs_o`` holds (``c.obs``), a CSR the description lacks
 (``c.csrs``), a select change on a busy shared set (``c.port_mux``), a task list whose values do
 not fit the design point (``c.tasks``, ``check_values``), and an
 accelerator task no wait covers (``c.wait``: its counter is never read).
@@ -140,7 +159,12 @@ if TYPE_CHECKING:  # design imports lower, gen imports lower
     from snax_forge.gen.data import Array
 
 MAIN_C = "main.c"
+OBS_MARKS = "obs_marks.json"
 INDENT = "    "
+QUIET = "FORGE_QUIET"  # the quiet build's define (D135)
+QUIET_ON, QUIET_OFF, QUIET_END = f"#ifdef {QUIET}", f"#ifndef {QUIET}", f"#endif  // {QUIET}"
+OBS_CSR = 0x7C5  # snitch.sv's CsrObsRegister; obs_o its low 8 bits
+MAX_MARKS = 255
 
 
 class CError(CodedError):
@@ -272,6 +296,8 @@ class _Program:
         self.order: list[str] = []  # every task, in start order
         self.waited: set[str] = set()
         self.counters: list[str] = []  # accelerator tasks, in the order their counters are read
+        self.marks: list[dict[str, Any]] = []  # the quiet build's sections, in order
+        self.mark_key: tuple[str, str] | None = None  # the configure section open, if any
 
     # -- what the design point gives -------------------------------------------------------
 
@@ -342,6 +368,31 @@ class _Program:
     def emit(self, core: int, *lines: str) -> None:
         self.lines[core] += lines
 
+    def quiet(self, core: int, *lines: str) -> None:
+        """Lines of the quiet build only (``#ifdef FORGE_QUIET``)."""
+        self.emit(core, QUIET_ON, *lines, QUIET_END)
+
+    def next_mark(self, kind: str, label: str) -> str:
+        """The next section's mark: its ``csrw`` of CSR 0x7c5, its label as a comment."""
+        k = len(self.marks) + 1
+        if k > MAX_MARKS:
+            raise CError("c.obs", f"{label}: section {k}, more than obs_o's {MAX_MARKS} marks")
+        self.marks.append({"mark": k, "kind": kind, "label": label})
+        return f"write_csr({_hex(OBS_CSR, 3)}, {k});  // {label}"
+
+    def mark(self, core: int, kind: str, label: str, key: tuple[str, str] | None = None) -> None:
+        """A new section in the quiet build, unless ``key`` is the configure section open."""
+        if key is not None and key == self.mark_key:
+            return
+        self.mark_key = key
+        self.quiet(core, self.next_mark(kind, label))
+
+    def polls(self, comp: str) -> list[str]:
+        """The wait on a SNAX component: its group's STATUS bit 0 (busy), then its set's
+        streamer."""
+        return [f"while (csrr_ss({self.csr('STATUS', comp, comp)}) & 1) {{", "}",
+                f"while (csrr_ss({self.prefix(self.set_of(comp))}STREAMER_BUSY_CSR)) {{", "}"]  # fmt: skip
+
     def barrier(self) -> None:
         """A barrier at this point of every core's line."""
         self.barriers += 1
@@ -353,8 +404,14 @@ class _Program:
     def configure(self, s: Configure) -> None:
         core = self.core_of(s.component)
         if s.type == "streamer":
-            self.emit(core, *self.streamer(s))
+            lines = self.streamer(s)
+            if lines:
+                acc = self.movers[s.component][0]
+                self.mark(core, "streamer_config", f"streamer config {acc}",
+                          ("streamer_config", acc))  # fmt: skip
+            self.emit(core, *lines)
         elif s.type == "accel":
+            self.mark(core, "acc_config", f"acc config {s.component}", ("acc_config", s.component))
             mine = self.linked.get(s.component, [s.component])
             for unit, k, v in job_writes({u: self.units[u] for u in mine}, s.values, self.fixed):
                 self.emit(core, f"csrw_ss({self.csr(k, unit, s.task_name)}, {v});")
@@ -461,12 +518,21 @@ class _Program:
             self.started.setdefault(self.conf[t].component, []).append(t)
             self.order.append(t)
         streamers_started: set[str] = set()
+        runs = [self.conf[t].component for t in s.tasks if types[t] == "accel"]
+        run_marked = False
         for t in s.tasks:
             c = self.conf[t]
             core = self.core_of(c.component)
             if c.type == "dma":
+                kind = "dma_in" if c.values["direction"] == "l2_to_l1" else "dma_out"
+                self.mark(core, kind, f"dma {t}")
                 self.emit(core, self.dma(c, where))
-            elif c.type == "streamer":
+                self.quiet(core, "snrt_dma_wait_all();")
+                continue
+            if not run_marked:  # the run: its streamers' start to the end of its tasks
+                self.mark(core, "run", f"run {', '.join(runs)}")
+                run_marked = True
+            if c.type == "streamer":
                 acc = self.movers[c.component][0]
                 if acc not in streamers_started:
                     self.port_mux(acc, s, where, core)
@@ -474,6 +540,7 @@ class _Program:
                     streamers_started.add(acc)
             else:
                 self.emit(core, f"csrw_ss({self.csr('START', c.component, t)}, 1);")
+                self.quiet(core, *self.polls(c.component))
                 self.last_task[self.set_of(c.component)] = t
 
     def port_mux(self, acc: str, s: Start, where: str, core: int) -> None:
@@ -530,10 +597,7 @@ class _Program:
         if comp == "dma":
             self.emit(core, "snrt_dma_wait_all();")
         else:
-            self.emit(
-                core, f"while (csrr_ss({self.csr('STATUS', comp, comp)}) & 1) {{", "}",
-                f"while (csrr_ss({self.prefix(self.set_of(comp))}STREAMER_BUSY_CSR)) {{", "}",
-            )  # fmt: skip
+            self.emit(core, *self.polls(comp))
         ended = [t for c, last in covers.items()
                  for t in self.started[c][: self.started[c].index(last) + 1]
                  if t not in self.waited]  # fmt: skip
@@ -595,39 +659,46 @@ class _Program:
         words = sum(a.elements for a in outputs)
         lines = [
             "uint32_t cycles = snrt_mcycle() - t0;",
-            'printf("forge cycles: %u\\n", cycles);',
+            QUIET_ON, self.next_mark("check", "check"), "(void)cycles;", QUIET_END,
+            *_loud('printf("forge cycles: %u\\n", cycles);'),
             "int err = 0;",
             "int data_errors = 0;",
-        ]
+        ]  # fmt: skip
         for a in outputs:
             lines += _compare(a)
         lines += [
             "err += data_errors;",
-            f'printf("forge data: %d errors (%u words)\\n", data_errors, {words}u);',
+            *_loud(f'printf("forge data: %d errors (%u words)\\n", data_errors, {words}u);'),
         ]
         for slot, t in enumerate(self.counters):
             lines += [
-                f'printf("forge counter {t}: %u\\n", forge_counter[{slot}]);',
+                *_loud(f'printf("forge counter {t}: %u\\n", forge_counter[{slot}]);'),
                 f"err += forge_counter[{slot}] < {task_beats(self.conf[t].values)};",
             ]
-        lines += ['printf("forge errors: %d\\n", err);', "return err;"]
+        lines += [*_loud('printf("forge errors: %d\\n", err);'), "return err;"]
         return lines
 
     def function(self, name: str, what: str, lines: list[str], args: str = "void") -> list[str]:
         """A ``static noinline`` function returning int: ``lines`` in order."""
         return [f"// {what}", f"static __attribute__((noinline)) int {name}({args}) {{",
-                *(INDENT + x for x in lines), "}", ""]  # fmt: skip
+                *(x if x.startswith("#") else INDENT + x for x in lines), "}", ""]  # fmt: skip
 
     def text(self, includes: Sequence[str], point_path: str) -> str:
         self.run()
         working = {k: v for k, v in self.lines.items()
                    if k == self.cores.slot or any(x != "snrt_cluster_hw_barrier();" for x in v)}  # fmt: skip
         what = (
-            f"The task list {self.tasks.name} on snRuntime: core {self.cores.dma} runs the DMA, "
-            f"core {self.cores.slot} {self.named}; the SNAX waits as the lowering "
+            f"The task list {self.tasks.name} on snRuntime: "
+            + (
+                f"core {self.cores.dma} runs the DMA and {self.named}; "
+                if self.cores.dma == self.cores.slot
+                else f"core {self.cores.dma} runs the DMA, core {self.cores.slot} {self.named}; "
+            )
+            + "the SNAX waits as the lowering "
             "places them (D64), the DMA's on dependences only (D135), a barrier where another "
             "core goes on. One function per core, a straight line; the window from main's entry "
-            "to forge_check()'s."
+            "to forge_check()'s. Built with -DFORGE_QUIET (D135): every start waited at once, "
+            "each section marked in CSR 0x7c5 (obs_marks.json), no prints."
         )
         head = [
             *generated_header(point_path, what).splitlines(),
@@ -672,14 +743,44 @@ class _Program:
         return "\n".join(out) + "\n"
 
 
-def _hex(v: int) -> str:
-    return f"0x{v:08x}"
+def _hex(v: int, digits: int = 8) -> str:
+    return f"0x{v:0{digits}x}"
+
+
+def _loud(line: str) -> list[str]:
+    """A line of the default build only (``#ifndef FORGE_QUIET``): a print."""
+    return [QUIET_OFF, line, QUIET_END]
+
+
+def program(point: DesignPoint, tasks: TaskList, cluster: Mapping[str, Any], acc: Description,
+            arrays: Sequence[Array], includes: Sequence[str],
+            point_path: str) -> tuple[str, list[dict[str, Any]]]:  # fmt: skip
+    """main.c's text, including ``includes`` in order, and the quiet build's marks
+    (``obs_marks``); see the module doc."""
+    p = _Program(point, tasks, cluster, acc, arrays)
+    text = p.text(includes, point_path)
+    return text, list(p.marks)
 
 
 def main_c(point: DesignPoint, tasks: TaskList, cluster: Mapping[str, Any], acc: Description,
            arrays: Sequence[Array], includes: Sequence[str], point_path: str) -> str:  # fmt: skip
     """The text of main.c, including ``includes`` in order; see the module doc."""
-    return _Program(point, tasks, cluster, acc, arrays).text(includes, point_path)
+    return program(point, tasks, cluster, acc, arrays, includes, point_path)[0]
+
+
+def strip_quiet(text: str) -> str:
+    """main.c as the default build compiles it: the ``#ifdef FORGE_QUIET`` blocks gone, the
+    lines of each ``#ifndef FORGE_QUIET`` block kept without the directives."""
+    out, skip = [], False
+    for line in text.splitlines(keepends=True):
+        s = line.strip()
+        if s == QUIET_ON:
+            skip = True
+        elif s == QUIET_END:
+            skip = False
+        elif s != QUIET_OFF and not skip:
+            out.append(line)
+    return "".join(out)
 
 
 def _compare(a: Any) -> list[str]:

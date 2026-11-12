@@ -16,7 +16,16 @@ from snax_forge.gen import describe
 from snax_forge.gen import gvsoc as gen_mod
 from snax_forge.gen.data import arrays as data_arrays
 from snax_forge.lower import CError, TaskList, main_c, task_list
-from snax_forge.lower.c import cores, job_values
+from snax_forge.lower import c as c_mod
+from snax_forge.lower.c import (
+    QUIET_END,
+    QUIET_OFF,
+    QUIET_ON,
+    cores,
+    job_values,
+    program,
+    strip_quiet,
+)
 from tests.gen.helpers import SUB, bound_vecmul, point
 from tests.helpers import SUBMODULE_MISSING, bound_vsum
 
@@ -50,12 +59,13 @@ def text(tmp_path, edit_tasks=None, edit_cluster=None, **kw) -> str:
     return main_c(p, tasks, cluster, acc, arrays, INCLUDES, POINT)
 
 
-def functions(src: str) -> dict[str, list[str]]:
+def functions(src: str, quiet: bool = False) -> dict[str, list[str]]:
     """main.c's functions by name (``forge_core_0``, ``forge_core_idle``, ``forge_check``,
-    ``main``): their lines, stripped."""
+    ``main``): their lines, stripped, as the default build compiles them (``strip_quiet``), or
+    with ``quiet`` the whole text, the quiet build's directives and lines too."""
     out: dict[str, list[str]] = {}
     name = None
-    for line in src.splitlines():
+    for line in (src if quiet else strip_quiet(src)).splitlines():
         m = re.fullmatch(r"(?:static __attribute__\(\(noinline\)\) )?int (\w+)\([^)]*\) \{", line)
         if m:
             name = m[1]
@@ -70,8 +80,28 @@ def functions(src: str) -> dict[str, list[str]]:
 BARRIER = "snrt_cluster_hw_barrier();"
 
 
-def test_vecadd_runs_the_dma_on_core_1_and_the_accelerator_on_core_0(tmp_path):
+def two_cores(c):
+    """The cluster before D170: the DMA on a second core, the slot on core 0 alone."""
+    c["snax_forge_core_template"]["xdma"] = False
+    c["dma_core_template"] = {"isa": "rv32ima", "xdma": True}
+    c["cluster"]["hives"][0]["cores"].append({"$ref": "#/dma_core_template"})
+
+
+def test_vecadd_runs_the_dma_and_the_accelerator_on_core_0(tmp_path):
+    """The base cluster's one core (D170) runs both, with no barrier."""
     src = text(tmp_path)
+    f = functions(src)
+    assert list(f) == ["forge_core_0", "forge_check", "main"]
+    assert "static int (*const forge_cores[1])(void) = {forge_core_0};" in src
+    assert BARRIER not in src and "// Core 0: the DMA and the accelerator acc" in src
+    assert "on snRuntime: core 0 runs the DMA and the accelerator" in src
+    assert f["forge_core_0"].index("snrt_dma_start_1d((void *)0x10000000, A, 512);") < f[
+        "forge_core_0"
+    ].index("csrw_ss(ACC_RW_START, 1);")
+
+
+def test_two_cores_run_the_dma_on_core_1_and_the_accelerator_on_core_0(tmp_path):
+    src = text(tmp_path, edit_cluster=two_cores)
     f = functions(src)
     assert list(f) == ["forge_core_0", "forge_core_1", "forge_check", "main"]
     assert not any("snrt_dma" in x for x in f["forge_core_0"])
@@ -98,8 +128,8 @@ def test_vecadd_has_no_marks_and_reads_mcycle_at_the_windows_ends(tmp_path):
     assert "static __attribute__((noinline)) int forge_check(uint32_t t0) {" in src
 
 
-def test_vecadd_barriers_follow_the_cross_core_waits(tmp_path):
-    f = functions(text(tmp_path))
+def test_two_cores_barriers_follow_the_cross_core_waits(tmp_path):
+    f = functions(text(tmp_path, edit_cluster=two_cores))
     c0, c1 = f["forge_core_0"], f["forge_core_1"]
     b0 = [i for i, x in enumerate(c0) if x == BARRIER]
     b1 = [i for i, x in enumerate(c1) if x == BARRIER]
@@ -123,7 +153,7 @@ def test_a_dependence_on_a_dma_task_brings_its_wait_back(tmp_path):
     def b_after_a(steps):
         next(s for s in steps if s.get("task_name") == "load_B")["after"] = ["load_A"]
 
-    lines = functions(text(tmp_path, edit_tasks=b_after_a))["forge_core_1"]
+    lines = functions(text(tmp_path, edit_tasks=b_after_a, edit_cluster=two_cores))["forge_core_1"]
     i = lines.index("snrt_dma_start_1d((void *)0x10000200, B, 512);")
     assert lines[i - 2 : i] == ["snrt_dma_start_1d((void *)0x10000000, A, 512);",
                                 "snrt_dma_wait_all();"]  # fmt: skip
@@ -178,12 +208,7 @@ def test_the_same_point_gives_the_same_text(tmp_path):
 
 
 def test_one_core_has_no_barriers(tmp_path):
-    def one_core(c):  # the slot onto the DMA core: one core runs both (open item 80)
-        dma = c["dma_core_template"]
-        dma["snax_acc_cfg"] = c["snax_forge_core_template"]["snax_acc_cfg"]
-        c["cluster"]["hives"][0]["cores"] = [{"$ref": "#/dma_core_template"}]
-
-    src = text(tmp_path, edit_cluster=one_core)
+    src = text(tmp_path)  # the base cluster: one core runs both (D170)
     assert "hw_barrier" not in src
     assert list(functions(src)) == ["forge_core_0", "forge_check", "main"]
     assert "// Core 0: the DMA and the accelerator acc" in src
@@ -191,6 +216,7 @@ def test_one_core_has_no_barriers(tmp_path):
 
 def test_a_core_with_no_task_takes_part_in_the_barriers_only(tmp_path):
     def three_cores(c):
+        two_cores(c)
         c["cluster"]["hives"][0]["cores"].append({"isa": "rv32ima", "xdma": False})
 
     src = text(tmp_path, edit_cluster=three_cores)
@@ -207,12 +233,12 @@ def test_a_core_with_no_task_takes_part_in_the_barriers_only(tmp_path):
 
 def test_refused_without_one_dma_core(tmp_path):
     def no_dma(c):
-        c["dma_core_template"]["xdma"] = False
+        c["snax_forge_core_template"]["xdma"] = False
 
     with pytest.raises(CError, match=r"\[c.cores\] .*xdma on cores \[\]"):
         text(tmp_path, edit_cluster=no_dma)
     p, *_ = parts(tmp_path)
-    assert cores(gen_mod.source(p.platform, tmp_path), "snax_forge").count == 2  # the source's
+    assert cores(gen_mod.source(p.platform, tmp_path), "snax_forge").count == 1  # the source's
 
 
 def test_refused_a_start_of_some_movers(tmp_path):
@@ -395,12 +421,12 @@ def test_two_accelerators_each_run_through_their_own_set(tmp_path):
     # serial sync (D158), the one wait between them, has waited for mul (its writer too, waits.py)
     # and read its counter
     assert acc_lines == [
-        BARRIER, "csrw_ss(MUL_STREAMER_START_CSR, 1);", "csrw_ss(MUL_RW_START, 1);",
+        "csrw_ss(MUL_STREAMER_START_CSR, 1);", "csrw_ss(MUL_RW_START, 1);",
         "while (csrr_ss(MUL_RO_STATUS) & 1) {", "while (csrr_ss(MUL_STREAMER_BUSY_CSR)) {",
-        "forge_counter[0] = csrr_ss(MUL_RO_BUSY_COUNTER);", BARRIER,
+        "forge_counter[0] = csrr_ss(MUL_RO_BUSY_COUNTER);",
         "csrw_ss(SUM_STREAMER_START_CSR, 1);", "csrw_ss(SUM_RW_START, 1);",
         "while (csrr_ss(SUM_RO_STATUS) & 1) {", "while (csrr_ss(SUM_STREAMER_BUSY_CSR)) {",
-        "forge_counter[1] = csrr_ss(SUM_RO_BUSY_COUNTER);", BARRIER, BARRIER,
+        "forge_counter[1] = csrr_ss(SUM_RO_BUSY_COUNTER);",
     ]  # fmt: skip
     i = core.index("csrw_ss(SUM_STREAMER_START_CSR, 1);")
     assert core.index("csrw_ss(SUM_RW_JOB_BEATS, 64);") < core.index("forge_counter[0] = "
@@ -416,6 +442,7 @@ def test_two_accelerators_each_run_through_their_own_set(tmp_path):
 
 CLANG = shutil.which("clang")
 NM = shutil.which("llvm-nm")
+OBJCOPY = shutil.which("llvm-objcopy")
 SW = SUB / "sw"
 # sw/toolchain.mk's and sw/common.mk's compile flags (the image's clang, snax_cluster's
 # toolchain); the generated folder's headers before sw/generated/, as the forge apps put them
@@ -466,4 +493,100 @@ def test_main_c_compiles_against_snax_gvsocs_sw(tmp_path, design):
     assert defined.count("main") == defined.count("forge_check") == 1
     # clang may split the static counters into one symbol per slot (forge_counter.0)
     forge = {x.split(".")[0] for x in defined if x.startswith("forge_")}
-    assert forge == {"forge_check", "forge_counter", "forge_cores", "forge_core_0", "forge_core_1"}
+    # one core: clang may fold the one-entry table into main
+    assert {"forge_check", "forge_counter", "forge_core_0"} <= forge <= {
+        "forge_check", "forge_counter", "forge_cores", "forge_core_0"
+    }  # fmt: skip
+
+
+@pytest.mark.gvsoc  # the image's RISC-V clang: CI's gvsoc job runs it
+@pytest.mark.skipif(_riscv_clang() is not None or OBJCOPY is None, reason="no RISC-V clang")
+@pytest.mark.parametrize("design", ["vecadd", "vecmul", "vsum"])
+def test_the_quiet_parts_leave_the_default_build_as_it_was(tmp_path, design):
+    """D135: main.c compiled as it is and with its FORGE_QUIET blocks removed give the same
+    object once the debug information is stripped (snRuntime builds with -g, so the lines the
+    blocks take move every line number there); with -DFORGE_QUIET it compiles with -Werror."""
+    gen = tmp_path / "gen"
+    graph = {"vecmul": bound_vecmul, "vsum": bound_vsum}.get(design)
+    gen_mod.generate(point(tmp_path, name=design, graph=graph and graph()), gen, root=tmp_path)
+    (gen / "stripped.c").write_text(strip_quiet((gen / "main.c").read_text()))
+    incs = [f"-I{gen}", f"-I{gen / 'include'}", *(f"-I{SW / d}" for d in SW_INCDIRS)]
+    objects = {}
+    for name, src, extra in (("main", "main.c", []), ("stripped", "stripped.c", []),
+                             ("quiet", "main.c", ["-DFORGE_QUIET"])):  # fmt: skip
+        o = gen / f"{name}.o"
+        run = subprocess.run([CLANG, *FLAGS, *extra, *incs, "-g", "-Werror", "-c",
+                              str(gen / src), "-o", str(o)], capture_output=True, text=True,
+                             check=False)  # fmt: skip
+        assert run.returncode == 0, (name, run.stderr)
+        subprocess.run([OBJCOPY, "--strip-debug", str(o)], check=True)
+        objects[name] = o.read_bytes()
+    assert objects["main"] == objects["stripped"]
+    assert objects["quiet"] != objects["main"]
+
+
+# =============================================================================
+# The quiet build (D135 amended)
+# =============================================================================
+
+
+def quiet(tmp_path, **kw):
+    p, tasks, cluster, acc, arrays = parts(tmp_path, **kw)
+    return program(p, tasks, cluster, acc, arrays, INCLUDES, POINT)
+
+
+def test_vecadd_marks_each_section_in_order(tmp_path):
+    """dot 3's plan on vecadd: 0 from reset, then the two loads, the streamer's configuration,
+    the accelerator's, the run, the store and the check, each the next value of CSR 0x7c5."""
+    src, marks = quiet(tmp_path)
+    assert [(m["mark"], m["kind"], m["label"]) for m in marks] == [
+        (1, "dma_in", "dma load_A"), (2, "dma_in", "dma load_B"),
+        (3, "streamer_config", "streamer config acc"), (4, "acc_config", "acc config acc"),
+        (5, "run", "run acc"), (6, "dma_out", "dma store_C"), (7, "check", "check"),
+    ]  # fmt: skip
+    lines = [x.strip() for x in src.splitlines()]
+    for m in marks:  # each mark once, inside a quiet block, its label as a comment
+        line = f"write_csr(0x7c5, {m['mark']});  // {m['label']}"
+        assert lines.count(line) == 1 and lines[lines.index(line) - 1] == QUIET_ON
+
+
+def test_dot_1_repeats_the_configure_and_run_sections_per_accelerator(tmp_path):
+    from tests.gen.helpers import bound_recipe
+
+    _, marks = quiet(tmp_path, graph=bound_recipe("dot_1", "dot"), name="dot_1")
+    assert [m["kind"] for m in marks] == [
+        "dma_in", "dma_in", "streamer_config", "acc_config", "run", "streamer_config",
+        "acc_config", "run", "dma_out", "check",
+    ]  # fmt: skip
+    assert [m["label"] for m in marks if m["kind"] == "run"] == ["run vmul", "run vsum"]
+
+
+def test_every_start_is_waited_on_at_once_in_the_quiet_build(tmp_path):
+    src, _ = quiet(tmp_path)
+    f = functions(src, quiet=True)["forge_core_0"]
+    for i, x in enumerate(f):
+        if x.startswith("snrt_dma_start_"):
+            assert f[i + 1 : i + 4] == [QUIET_ON, "snrt_dma_wait_all();", QUIET_END], x
+        if x == "csrw_ss(ACC_RW_START, 1);":
+            assert f[i + 1 : i + 7] == [
+                QUIET_ON, "while (csrr_ss(ACC_RO_STATUS) & 1) {", "}",
+                "while (csrr_ss(ACC_STREAMER_BUSY_CSR)) {", "}", QUIET_END,
+            ]  # fmt: skip
+
+
+def test_the_quiet_build_prints_nothing_and_the_default_build_has_no_quiet_part(tmp_path):
+    src, _ = quiet(tmp_path)
+    lines = src.splitlines()
+    prints = [i for i, x in enumerate(lines) if "printf(" in x]
+    assert len(prints) == 4 and all(
+        lines[i - 1] == QUIET_OFF and lines[i + 1] == QUIET_END for i in prints
+    )  # fmt: skip
+    default = strip_quiet(src)
+    assert QUIET_ON not in default and "write_csr" not in default and "#endif" not in default
+    assert default.count("printf(") == 4 and src.count("snrt_mcycle()") == 2
+
+
+def test_more_marks_than_obs_o_holds_are_refused(tmp_path, monkeypatch):
+    monkeypatch.setattr(c_mod, "MAX_MARKS", 6)
+    with pytest.raises(CError, match=r"\[c.obs\] check: section 7, more than obs_o's 6 marks"):
+        quiet(tmp_path)

@@ -815,8 +815,8 @@ def _connect_xbar_inputs(design: Design) -> Iterable[Problem]:
     yield Problem(
         "connect.xbar_inputs", where,
         f"{channels + others} TCDM crossbar inputs, the platform takes at most {limit} "
-        f"({channels} streamer channels, {others} for the cores and AXI; l1.max_xbar_inputs, "
-        "the limit SNAX-GVSoC's crossbar asserts)",
+        f"({channels} streamer channels, {others} for the core{'s' if others > 2 else ''} and AXI; "
+        "l1.max_xbar_inputs, the limit SNAX-GVSoC's crossbar asserts)",
         "fewer lanes, or share_ports on a container between two accelerators (D169)",
     )  # fmt: skip
 
@@ -1079,8 +1079,9 @@ def _memory_runtime(design: Design) -> Iterable[Problem]:
         yield Problem(
             "memory.runtime", f"{c} in l1",
             f"spans bytes [{lo}, {hi}); snRuntime keeps [{limit}, {end}) at the top of L1 "
-            f"({top} B: a {RUNTIME_STACK} B stack for each of the {cores} cores of "
-            f"{design.platform.hjson}, {RUNTIME_MARGIN} B for CLS and TLS)",
+            f"({top} B: a {RUNTIME_STACK} B stack for each of the {cores} "
+            f"core{'s' if cores != 1 else ''} of {design.platform.hjson}, {RUNTIME_MARGIN} B for "
+            "CLS and TLS)",
             f"pin it lower (--set memory.{c}.l1.base={base})" if base >= start else None,
         )  # fmt: skip
 

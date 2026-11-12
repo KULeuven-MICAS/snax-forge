@@ -111,10 +111,11 @@ else
 	git -c safe.directory='*' -C $(SNAX_GVSOC_ABS) rev-parse HEAD >> $(BUILT_FROM)
 endif
 
-# sw/ and each app of APPS; with FORGE, the generic app's ELF only (no dump)
+# sw/ and each app of APPS; with FORGE, the generic app's two ELFs only (no dump): forge.elf
+# and the quiet build forge_quiet.elf (D135)
 sw:
 	$(MAKE) -C $(SNAX_GVSOC_ABS) sw
-	$(foreach app,$(APPS),$(MAKE) -C $(SNAX_GVSOC_ABS)/sw/apps/$(app) $(if $(FORGE),FORGE=$(abspath $(FORGE)) FORGE_BUILD=$(FORGE_BUILD) $(FORGE_BUILD)/$(app).elf) &&) true
+	$(foreach app,$(APPS),$(MAKE) -C $(SNAX_GVSOC_ABS)/sw/apps/$(app) $(if $(FORGE),FORGE=$(abspath $(FORGE)) FORGE_BUILD=$(FORGE_BUILD) $(FORGE_BUILD)/$(app).elf $(FORGE_BUILD)/$(app)_quiet.elf) &&) true
 
 # The install's gvrun script sets LD_LIBRARY_PATH, PATH, PYTHONPATH,
 # USE_GVRUN and USE_GVRUN2 for the install, and passes its targets,
