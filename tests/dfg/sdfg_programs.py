@@ -1,20 +1,14 @@
 """Small SDFGs for the importer tests.
 
-DaCe programs have to live in a file (DaCe reads their source), so the ones
-the tests import are here. ``two`` keeps a transient between two maps in one
-state; ``shift`` has offset subsets and a shortened range, like one half-step
-of jacobi1d; ``amax`` is a Max reduction stored through a scalar and a copy,
-as dot's Sum is, and ``total`` a Sum over both dimensions of a matrix.
-``row_sum`` is a Reduce over one axis of two, built by hand; NumPy's ``B[:] = np.sum(A, axis=1)``
-goes through a view, which the importer folds (``row_sum_view``). ``three_params`` is
-a map over three parameters. ``matmat``, ``batched``, ``vecvec`` and
-``transpose_only`` are the MatMul and Transpose cases of ``expand``
-(test_expand.py). The ``unsupported_*`` builders make one
-construct each that the importer must reject by name.
+DaCe reads a program's source, so the programs the tests import live in this file: ``two`` (a
+transient between two maps), ``shift`` (offset subsets, a shortened range), ``amax`` and
+``total`` (reductions through a scalar), ``row_sum`` and ``row_sum_view`` (a Reduce over one
+axis, by hand and through a view), ``three_params``, the MatMul and Transpose cases of
+``expand`` (``matmat``, ``batched``, ``vecvec``, ``transpose_only``), and ``unsupported_*``,
+each one construct the importer must reject by name.
 
-No ``from __future__ import annotations`` here: DaCe reads the type hints of
-a program as objects, and postponed annotations turn every array into a
-scalar.
+No ``from __future__ import annotations`` here: DaCe reads a program's type hints as objects,
+and postponed annotations turn every array into a scalar.
 """
 
 import dace

@@ -1,29 +1,13 @@
 """snax-forge reproduces snax-gvsoc's fixtures.
 
-Each fixture is a folder of the snax-gvsoc submodule's ``forge/``, the
-generator's output for one design point, checked in untouched
-(``forge/README.md`` there): vecadd, vecmul, vsum, vsum_tree, matadd (int32,
-the first 2-D bind, two temporal loops per streamer), rowsum and rowsum_serial
-(a restart every T = N / W beats); the narrow ones (vecadd_i32, vecmul_i32,
-vsum_tree_i32, vecadd_i8, vsum_tree_i8; vecmul_i32_i64, the
-product at int32 sign-extended into int64) and the padded tails
-(vecadd_n7, vsum_tree_n21, rowsum_3x7); dot_1, two accelerators vmul and
-vsum, two streamer sets, and dot_1_enc, the two as one accelerator of two
-groups; dot_2 to dot_6 and matvec_2 to matvec_6, one group of
-linked units each, and matvec_1, dot_1_enc's two groups on each row; relu, axpy and
-axpy_baked (one stream, CSR scalars); rowsum_2, the lane accumulator, and rowsum_2_padded, the
-same with ``--set memory.passes.layout=padded_rows`` (rows 65 words apart); matvec_seed and
-matvec_seed_serial, the fold's seed on TreeAccumulate and SerialAccumulate; dot_1_shared
-and mvt_1_dot2_shared (at W = 8), groups sharing their movers. Its refresh commands
-are run
-here as written, from a temporary folder that stands for the repo root (the
-recipe and the platform the checked-in ones, the platform's source hjson
-copied into its ``platforms/``), so the design point is
-``out/design/<design>/design_point.json`` and every header comment names it
-as the fixture's do. The generated folder must equal the fixture byte for
-byte, file list included, and every folder of ``forge/`` must be one of them.
-Skipped where the submodule is not checked out (CI's python job fetches it,
-shallow).
+Each fixture is a folder of the snax-gvsoc submodule's ``forge/``, the generator's output for
+one design point (``DESIGNS``, each from its recipe unless ``FROM`` says otherwise), checked in
+untouched (``forge/README.md`` there). Its refresh commands are run here as written, from a
+temporary folder that stands for the repo root (the checked-in recipe and platform, the
+platform's source hjson copied into its ``platforms/``), so every header comment names
+``out/design/<design>/design_point.json`` as the fixture's do. The generated folder must equal
+the fixture byte for byte, file list included, and every folder of ``forge/`` must be a design.
+Skipped where the submodule is not checked out.
 """
 
 from __future__ import annotations

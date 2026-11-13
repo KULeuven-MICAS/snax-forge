@@ -1,26 +1,18 @@
 """Shared helpers for the flow tests.
 
-The flow runs on SNAX-GVSoC, so CI (which never builds it) runs everything up
-to the generator for real and SNAX-GVSoC through ``stub``: ``run_gvsoc``
-replaced by a fake make that records each call, makes the install on
-``build`` (its lines also on the terminal when called ``live``, as the real
-make's are), an ELF on ``sw`` and on ``run`` prints what the generated program
-would (a window, no data errors, each counter its beats plus 3), writes the
-events SNAX-GVSoC would for the level (``tests/run/helpers.synthetic``) and
-exits 0; the checkout is a clean one at ``COMMIT``, pinned there, and the GVSoC
-build's folder is the test's own. The recipe flows start from the import
-fixtures (``PLAIN``), so they need no DaCe. The full flow on SNAX-GVSoC is
-marked ``gvsoc`` and skipped where ``out/snax-gvsoc/install`` is missing.
+CI never builds SNAX-GVSoC, so it runs the flow for real up to the generator and SNAX-GVSoC
+through ``stub``: ``run_gvsoc`` becomes a ``FakeMake`` that records each call, makes the install
+on ``build`` (its lines on the terminal too when ``live``), an ELF on ``sw``, and on ``run``
+prints what the program would (a window, no data errors, each counter its beats plus 3), writes
+the events for the level (``tests/run/helpers.synthetic``) and exits 0. The checkout is a clean
+one pinned at ``COMMIT``, the GVSoC build's folder the test's own. The recipe flows start from
+the import fixtures (``PLAIN``), so they need no DaCe; the full flow on SNAX-GVSoC is marked
+``gvsoc`` and skipped where ``out/snax-gvsoc/install`` is missing.
 
-``sound`` checks a run on SNAX-GVSoC: what the program computes exactly (exit 0,
-no data error, every counter at least its beats), each counter only within 10 % of the
-estimate's, as the RTL comparison's NEAR; a test pins no window and no counter, and a counter beyond 10 % is
-a finding to investigate, not a number to update.
-
-``excerpts_hold`` is the check the walk-throughs in ``examples/`` share: a
-table quoted in a README under ``<!-- excerpt: FOLDER/report/FILE -->`` must
-be, line for line, part of that report, a number in a table row within 10 %;
-``near`` is the same tolerance for a number stated in prose.
+``sound`` checks a run: exit 0, no data error, every counter at least its beats and within 10 %
+of the estimate's; a counter beyond 10 % is a finding, not a number to update. ``excerpts_hold``
+checks a walk-through's tables (``<!-- excerpt: FOLDER/report/FILE -->``) line for line against
+its report, a number in a row within 10 %; ``near`` is that tolerance for a number in prose.
 """
 
 from __future__ import annotations
