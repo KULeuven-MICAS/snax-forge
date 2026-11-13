@@ -1,48 +1,20 @@
 """Values: an int, or a small integer expression over names.
 
-Shared by SNAX-BRM and SNAX-DFG. A value field holds either a plain int or a
-string. Every string is an expression: a name (``"W"``, ``"N"``, ``"i_t"``)
-or arithmetic over names and ints with ``+``, ``-``, ``*``, ``//`` and
-parentheses (``"W*n"``, ``"(n + 1) // 2"``, ``"4 * i_t + i_s"``), and
-``max(a, b)`` and ``min(a, b)``, exactly two arguments, each any expression
-(``"max(in1, 0)"``, relu's tasklet), and ``width(t)``, one argument, a name bound
-to a dtype as NumPy names it, its bits (``"lanes * width(outType)"``, the datapath
-catalogue's ``flops``); no other call. There are
-no string literals; in a BRM a fixed string such as an op name is a design
-param with a single allowed value.
+Shared by SNAX-BRM and SNAX-DFG. A value is a plain int or a string expression: names, ints,
+``+ - * //``, parentheses, ``max(a, b)`` and ``min(a, b)`` (two arguments each), and
+``width(t)``, the bits of a name bound to a NumPy dtype; no other call and no string literals.
+Expressions are parsed with ``ast`` and walked, never passed to ``eval``. The arithmetic works
+on Python ints, NumPy integer scalars and arrays (``max``, ``min`` elementwise), so the
+reference executor can evaluate a subset for a whole map nest at once. What binds the names (a
+BRM's params, a graph's symbols and map variables) is the caller's.
 
-Expressions are parsed with ``ast`` and evaluated by walking the tree;
-nothing is passed to ``eval``. A bare name may stand for a value of any type;
-the arithmetic works on integers only: Python ints, NumPy integer scalars and
-NumPy integer arrays (``max`` and ``min`` are ``np.maximum`` and
-``np.minimum``, elementwise on arrays). Arrays let the reference executor evaluate a subset for
-a whole map nest at once (``i_t`` and ``i_s`` given as broadcasting index
-arrays).
-
-What a string means is only fixed by what binds its names: a BRM's params,
-or a SNAX-DFG's symbols and the variables of the maps around it. This module
-does not know either; the caller passes the names.
-
-Operations
-----------
-``check`` / ``names`` / ``is_name`` / ``constant`` / ``evaluate``
-    on one expression; ``outside``, ``check`` then the names a caller does not allow.
-``canonical``
-    the stored form: a value without names is an int, any other string is
-    written as ``ast.unparse`` writes it (``"4 * i_t + i_s"``), so a file a
-    transform rewrites and one written by hand diff cleanly.
-``substitute``
-    replace names by values, canonical result (``split_map``: ``i`` becomes
-    ``4 * i_t + i_s``).
-``unify``
-    match code against a pattern code whose slot names each stand for an int
-    constant or a scalar argument, ``+``, ``*``, ``max`` and ``min`` commuting (a BRM's
-    code entry ``out = max(a, k)`` against ``out = max(0, a)``: ``{k: 0}``).
-``linear``
-    split a value that is affine in some variables into its constant part
-    and one int coefficient per variable, without evaluating anything
-    (``4 * i_t + i_s + N`` in ``i_t``, ``i_s`` is ``N``, ``{i_t: 4, i_s: 1}``);
-    ``max`` and ``min`` are not affine and are refused.
+Entry points: ``check``, ``names``, ``is_name``, ``constant``, ``evaluate`` and ``outside`` on
+one expression; ``canonical``, the stored form (an int, or the text ``ast.unparse`` writes), so
+rewritten and hand-written files diff cleanly; ``substitute``; ``linear``, an affine value's
+constant and per-variable coefficients; and, on tasklet code, ``statements``,
+``canonical_code``, ``rename_code``, ``check_code`` and ``unify``, a match against a code
+whose slots stand for an int constant or a scalar argument, ``+``, ``*``, ``max`` and ``min``
+commuting.
 """
 
 from __future__ import annotations

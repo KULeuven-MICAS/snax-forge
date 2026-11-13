@@ -1,25 +1,18 @@
 """What every package shares: the repository root and the JSON form of every artefact.
 
-* ``repo_root``, the directory holding ``pixi.toml``: where ``out/``, ``kernels/`` and the
-  platforms are found; ``cwd_relative``, a path as a command line prints it;
-  ``generated_header``, the comment every generated file starts with; ``fresh`` and
-  ``unique_names``, names that clash with none taken before; ``git``, a git command's output
-  in a folder, or None; ``dig``, the value at a dotted path of nested objects;
-  ``write_changed``, a file written only when its text changes.
-* ``CodedError``, the base of the refusals that carry a rule code; ``LoadedSet``, what a
-  viewer serves, reloaded whole.
-* ``plain`` and ``check_keys``: JSON-ready values, and an object's unknown keys refused (so a
-  typo never silently falls back to a default) and its required ones checked.
-* ``Config``, a mixin giving a flat dataclass ``to_dict`` / ``from_dict``. Every field is
-  written, defaults included, so a written file says everything and a missing key takes the
-  class default.
-* ``to_json``, the one JSON writer for every file snax-forge writes: insertion order, small
-  containers on one line, final newline. It is deterministic, and ``json.loads`` gives the
-  object back. ``JsonFile``, a mixin giving a class with ``to_dict`` / ``from_dict``
-  its ``to_json``, ``save`` and ``load``.
+* Paths and names: ``repo_root`` (the directory holding ``pixi.toml``), ``cwd_relative``,
+  ``generated_header`` (the comment every generated file starts with), ``fresh`` and
+  ``unique_names``, ``c_name``, ``git`` (a command's output, or None), ``dig`` (the value at a
+  dotted path) and ``write_changed`` (a file written only when its text changes).
+* Errors and serving: ``CodedError``, the base of the refusals that carry a rule code;
+  ``Missing``, ``dig``'s; ``LoadedSet``, what a viewer serves, reloaded whole.
+* JSON: ``plain`` (JSON-ready values) and ``check_keys`` (unknown keys refused, required ones
+  checked); ``Config``, a flat dataclass's ``to_dict`` / ``from_dict``, every field written and
+  a missing key the class default; ``to_json``, the one deterministic writer (insertion order,
+  small containers on one line, final newline); ``JsonFile``, ``to_json``, ``save`` and
+  ``load`` for a class with ``to_dict`` / ``from_dict``.
 
-Until the contracts freeze these are plain dataclasses and plain JSON, with versioned schemas
-after. This module imports nothing from the package, so every package can use it.
+This module imports nothing from the package, so every package can use it.
 """
 
 from __future__ import annotations
