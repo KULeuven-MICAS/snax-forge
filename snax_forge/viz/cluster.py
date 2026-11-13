@@ -9,7 +9,11 @@ Queries on the run's index (index.py); the viewer only draws them.
 
 A field the run's trace level cannot give is absent and ``needs`` names its level: open tasks
 from ``task``; classes, grants, firings and returning reads from ``beat``; stalls, FIFO counts
-and conflicts from ``stall``. ``acc`` and ``streamers`` are in CONTRACTS, "Profile and trace".
+and conflicts from ``stall``. ``linked`` says the accelerator has a group of several linked
+units, whose beat lines the converter refuses, so its runs stop at ``task``. A shared mover's
+lanes name the ``user`` (``<instance>_<port>``) its port mux serves: the one whose unit's task
+its open task was launched with, None between tasks. ``acc`` and ``streamers`` are in
+CONTRACTS, "Profile and trace".
 """
 
 from __future__ import annotations
@@ -17,7 +21,7 @@ from __future__ import annotations
 from bisect import bisect_left, bisect_right
 from typing import Any
 
-from snax_forge.run.cluster import DMA
+from snax_forge.run.cluster import DMA, Mover, linked
 
 from .index import Event, RunIndex
 from .schedule import window
@@ -51,6 +55,16 @@ def fifo_at(index: RunIndex, mover: str, lane: int, t: int) -> int:
     seq = index.fifo.get((mover, lane), [])
     k = bisect_right([c for c, _ in seq], t) - 1
     return seq[k][1] if k >= 0 else 0
+
+
+def user_at(index: RunIndex, m: Mover, task: str | None) -> str | None:
+    """The user a shared mover serves in its task ``task``: its user of the unit whose task
+    ``task`` was launched with (the task list's pairing), or None."""
+    unit = index.start.get(index.accel.get(task or "", ""), {}).get("src")
+    if unit is None:
+        return None
+    user = index.cluster.accelerator.port_of(m, unit)
+    return user if user in m.users else None
 
 
 def _access(e: Event, word: int) -> dict[str, Any]:
@@ -90,8 +104,9 @@ def cluster_at(index: RunIndex, t: int) -> dict[str, Any]:
     movers = {}
     for m in acc.movers:
         task = _open(index, m.name, t)
+        user = {"user": user_at(index, m, task)} if m.users else {}
         for lane, port in enumerate(m.ports):
-            x: dict[str, Any] = {"mover": m.name, "lane": lane, "task": task}
+            x: dict[str, Any] = {"mover": m.name, "lane": lane, "task": task, **user}
             if beat:
                 x["class"] = class_at(index, m.name, t)
                 x["grant"] = next((e for e in of["grant"] if e["src"] == port), None)
@@ -153,6 +168,7 @@ def cluster_at(index: RunIndex, t: int) -> dict[str, Any]:
 
     needs = {k: v for k, v in NEEDS.items() if not index.on(v)}
     return {"t": t, "level": index.level, "filtered": index.filtered, "needs": needs,
+            "linked": linked(acc.description),
             "dma": {"copies": copies}, "movers": movers, "acc": unit, "streamers": streamers,
             "banks": banks,
             "interconnect": xbar, "events": here}  # fmt: skip
