@@ -374,7 +374,7 @@ def shared_movers(graph: Graph, found: dict[str, Streamer]) -> dict[str, list[Sh
                 widest = max((s for _, s in users), key=lambda s: s.num_ch)
                 bounds = word_bounds(widest)
                 name = f"{'writer' if role == 'write' else 'reader'}{k}"
-                for g, s in users:
+                for _, s in users:
                     b = word_bounds(s)
                     if len(b) != len(bounds) or b[:-1] != bounds[:-1] or b[-1] > bounds[-1]:
                         raise ShareError(

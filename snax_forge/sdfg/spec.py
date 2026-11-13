@@ -74,7 +74,8 @@ class KernelSpec:
             arr = args.get(name)
             if arr is None or not hasattr(desc, "shape"):
                 continue
-            for sym, dim in zip(desc.shape, np.shape(arr)):
+            # a scalar's descriptor has shape (1,), its argument ()
+            for sym, dim in zip(desc.shape, np.shape(arr), strict=False):
                 if isinstance(sym, dace.symbolic.symbol):
                     out[str(sym)] = int(dim)
         return out

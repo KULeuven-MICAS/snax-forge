@@ -52,5 +52,5 @@ def test_the_recorded_run_refuses_beat_levels(recorded):
 
 
 def _csrs(cluster):
-    first = cluster.accelerator.csrs.streamer_last + 1
+    first = cluster.accelerator.csrs.sets[0].last + 1
     return first, first + 3, first + 4

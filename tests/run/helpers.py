@@ -198,7 +198,7 @@ def synthetic(
         if on >= LEVELS.index("beat"):
             for csr, value in streamer_csrs(cluster, config):
                 add(t - 1, pa, "events", f"csr pc=0x80000360 csr={csr:#x} op=w value={value}")
-        add(t, pa, "events", f"csr pc=0x80000370 csr={acc.csrs.streamer_start:#x} op=w value=1")
+        add(t, pa, "events", f"csr pc=0x80000370 csr={acc.csrs.sets[0].start:#x} op=w value=1")
         for m in acc.movers:
             add(t, streamer, "events", f"start mover={m.gvsoc}")
         add(t + 1, pa, "events", f"csr pc=0x80000374 csr={acc.csrs.start:#x} op=w value=1")

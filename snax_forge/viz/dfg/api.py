@@ -258,6 +258,7 @@ from snax_forge.dfg.subset import dim_names, map_range, parse_dim
 from snax_forge.estimate.cost import L1_LABEL, PARTS, L1Cost, caveat, dec3, heading, shares, sig3
 from snax_forge.expr import ExprError
 from snax_forge.sandbox.blocks import BLOCK
+from snax_forge.sandbox.session import map_ids
 
 # A bank word, in bits: num_slc = WORD_BITS / b slices of a b-bit dtype
 WORD_BITS = 64
@@ -492,20 +493,6 @@ def symbols_section(g: Graph, recipe: Any = None, editable: bool = False) -> lis
 SPLITS = {"split": ("_inner",), "split_map": ("_s",), "split_reduce": ("_s", "_final")}
 
 
-def _map_ids(d: Any) -> set[str]:
-    """Every map id in a ``replaced`` subtree (a node's dict)."""
-    out: set[str] = set()
-    if isinstance(d, dict):
-        if d.get("kind") == "map" and d.get("id"):
-            out.add(d["id"])
-        for v in d.values():
-            out |= _map_ids(v)
-    elif isinstance(d, list):
-        for v in d:
-            out |= _map_ids(v)
-    return out
-
-
 def _param_names(v: Any, params: dict[str, Any]) -> list[str]:
     """The recipe params an int step param names (a factor ``W``, ``W * 2``)."""
     if not isinstance(v, str):
@@ -538,7 +525,7 @@ def unit_params(g: Graph, recipe: Any) -> dict[str, list[str]]:
     splits, out = _splits(recipe), {}
     for n, _ in g.walk():
         if n.kind == "accelerated" and n.attrs["instance"] not in out:
-            ids = _map_ids(n.attrs.get("replaced"))
+            ids = map_ids(n.attrs.get("replaced"))
             names: list[str] = []
             for _, _, ps, inner, _ in splits:
                 if any(inner.match(x) for x in ids):
@@ -637,7 +624,7 @@ def bindings_section(g: Graph, recipe: Any = None, editable: bool = False) -> di
         if n.kind == "accelerated" and n.attrs["instance"] not in seen:
             a = n.attrs
             seen.add(a["instance"])
-            ids = {x for m in nodes_of[a["instance"]] for x in _map_ids(m.attrs.get("replaced"))}
+            ids = {x for m in nodes_of[a["instance"]] for x in map_ids(m.attrs.get("replaced"))}
             names: list[str] = []
             for i, (_, _, ps, inner, _) in enumerate(splits):
                 if any(inner.match(x) for x in ids):
@@ -888,7 +875,8 @@ def compare_cost_bars(labels: list[str], sa: dict[str, Any] | None,
     part costed its ``name``, ``label``, ``width`` (0..1 of the scale) and ``text``. None when
     neither side has a cost."""
     sides = [
-        (lbl, ((s or {}).get("cost") or {}).get("parts") or []) for lbl, s in zip(labels, (sa, sb))
+        (lbl, ((s or {}).get("cost") or {}).get("parts") or [])
+        for lbl, s in zip(labels, (sa, sb), strict=True)
     ]
     if not any(p for _, p in sides):
         return None
@@ -900,7 +888,7 @@ def compare_cost_bars(labels: list[str], sa: dict[str, Any] | None,
                      "segments": [{"name": p["name"], "label": p["label"],
                                    "width": p[key] / scale, "text": p[f"{key}_text"]}
                                   for p in parts if p[key]]}
-                    for (lbl, parts), t in zip(sides, totals)]  # fmt: skip
+                    for (lbl, parts), t in zip(sides, totals, strict=True)]  # fmt: skip
     return out
 
 
@@ -1971,7 +1959,7 @@ def _block_node(g: Graph, rec: dict[str, Any], tops: list[Node]) -> Node:
     inside = {n.id for t in tops for n in _walk(t)}
     users: dict[str, set[str]] = {}
     for n, _ in g.walk():
-        for m in [*n.inputs.values(), *n.outputs.values()]:
+        for m in n.memlets():
             users.setdefault(m.data, set()).add(n.id)
     internal = {c for c, ids in users.items() if ids <= inside and g.containers[c].transient}
     chains = _outer_chains(rec, tops)

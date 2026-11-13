@@ -495,7 +495,7 @@ class Session:
                      f"pixi run flow {shown} --platform {self.platform_path}",
                      f"pixi run forge {shown}")  # fmt: skip
             return {"ok": True, "recipe": str(path), "shown": shown, "problems": listed,
-                    "commands": [{"command": c, "what": w} for c, w in zip(lines, COMMANDS)]}  # fmt: skip
+                    "commands": [{"command": c, "what": w} for c, w in zip(lines, COMMANDS, strict=True)]}  # fmt: skip
 
     # -- asking it ------------------------------------------------------------------------
 
@@ -782,17 +782,17 @@ SPLIT_SUFFIXES = {"split": ("_inner",), "split_map": ("_s",), "split_reduce": ("
 EDITOR_FACTOR = re.compile(r"^W(_\d+)?$")
 
 
-def _map_ids(d: Any) -> set[str]:
+def map_ids(d: Any) -> set[str]:
     """Every map id in a ``replaced`` subtree (a node's dict)."""
     out: set[str] = set()
     if isinstance(d, dict):
         if d.get("kind") == "map" and d.get("id"):
             out.add(d["id"])
         for v in d.values():
-            out |= _map_ids(v)
+            out |= map_ids(v)
     elif isinstance(d, list):
         for v in d:
-            out |= _map_ids(v)
+            out |= map_ids(v)
     return out
 
 
@@ -849,7 +849,7 @@ def rename_split_params(recipe: Recipe, g: Graph, instance: str | None,
     ids: set[str] = set()
     for n, _ in g.walk():
         if n.kind == "accelerated" and n.attrs.get("instance") == instance:
-            ids |= _map_ids(n.attrs.get("replaced"))
+            ids |= map_ids(n.attrs.get("replaced"))
     mine = []  # the split steps that configure this unit
     for i, st in enumerate(recipe.steps):
         m = st.params.get("map")
@@ -928,8 +928,8 @@ def merge_shared_params(recipe: Recipe, g: Graph, own: list[str]) -> tuple[Recip
             twin = next((m for m in nodes if m.kind == "accelerated" and SHARED not in m.attrs
                          and m.attrs["instance"] == n.attrs["instance"]), None)  # fmt: skip
             if twin is not None:
-                pairs.append((split_params(_map_ids(n.attrs.get("replaced"))),
-                              split_params(_map_ids(twin.attrs.get("replaced")))))  # fmt: skip
+                pairs.append((split_params(map_ids(n.attrs.get("replaced"))),
+                              split_params(map_ids(twin.attrs.get("replaced")))))  # fmt: skip
         else:
             twin = next((m for m in nodes if m.kind == "link" and SHARED not in m.attrs
                          and (m.attrs["from"], m.attrs["to"]) == (n.attrs["from"], n.attrs["to"])),

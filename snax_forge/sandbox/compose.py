@@ -225,7 +225,7 @@ def join_reduce(g: Graph, map: str) -> Graph:
     if ft is None or ft.kind != "tasklet":
         raise SandboxError(f"{what}: the final sum {final.id!r} is bound (unbind it first)")
     users = [n.id for n, _ in g.walk() if any(m.data == rec["partial"] for m in
-             (*n.inputs.values(), *n.outputs.values()))] + [n.id for n, _ in g.walk()
+             n.memlets())] + [n.id for n, _ in g.walk()
              if n.kind == "link" and n.attrs["container"] == rec["partial"]]  # fmt: skip
     if sorted(users) != sorted([inner[0].id, ft.id]):
         raise SandboxError(f"{what}: {rec['partial']} is named by {users} (unlink first)")
@@ -312,7 +312,7 @@ def _fuse(g: Graph, first: Node, second: Node, what: str) -> tuple[Node, str, li
     if not g.containers[local].transient or writes[0].reduce is not None:
         raise SandboxError(f"{what}: {local} is not a transient written plainly")
     users = {n.id for n, _ in g.walk()
-             for m in (*n.inputs.values(), *n.outputs.values()) if m.data == local}  # fmt: skip
+             for m in n.memlets() if m.data == local}  # fmt: skip
     others = users - {t1.id, t2.id}
     if others:
         raise SandboxError(f"{what}: {local} is named by {sorted(others)} too; a local value is "

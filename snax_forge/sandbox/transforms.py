@@ -274,7 +274,7 @@ def _map_dims(body: list[Node], fn: Callable[[Any], Any], splits: bool = False) 
     """``fn`` on every memlet subset dimension and map range under ``body`` (an accelerated
     node's ``replaced`` subtree included); with ``splits``, on each split's range too."""
     for n in body:
-        for m in (*n.inputs.values(), *n.outputs.values()):
+        for m in n.memlets():
             m.map_dims(fn)
         if n.kind == "map":
             n.attrs["range"] = fn(n.attrs["range"])
@@ -581,9 +581,9 @@ def _bind_check(g: Graph, site: _Site, brm: str, implementation: str,
     """The check: the BRM's ports match the tasklet's, their dtypes are accepted, it computes
     what the tasklet computes, and its lanes are the spatial bound (the design params: the
     lanes param from that bound, the rest given or default)."""
-    from snax_forge.brm import BrmError, fits, result_type
+    from snax_forge.brm import BrmError
 
-    tasklet, smap = site.tasklet, site.smap
+    tasklet = site.tasklet
     try:
         b = load_brm(brm)
     except BrmError as e:
@@ -591,8 +591,48 @@ def _bind_check(g: Graph, site: _Site, brm: str, implementation: str,
     conn_dtypes = {
         c: g.containers[m.data].dtype for c, m in (tasklet.inputs | tasklet.outputs).items()
     }
+    given = dict(params or {})
+    seeds = _bind_seeds(site, b, brm, given, what)
+    scalars = _scalar_inputs(g, site, what)
+    ports = match(site.pattern, b, conn_dtypes, frozenset(scalars))
+    _check_port_dtypes(b, ports, conn_dtypes, what)
+    if seeds:
+        given[SEED] = 1  # the seed's port, on the seed's element (_bind_rewrite)
+    names = _scalar_names(b, scalars)
+    entry, ports, slots = _bind_entry(b, brm, tasklet, ports, names, given, what)
+    _check_port_dtypes(b, ports, conn_dtypes, what)  # the entry's assignment of the inputs
+    computes = _computes(tasklet, ports, names)
+    from_scalar = _bind_slots(b, brm, entry, tasklet, ports, slots, names, conn_dtypes, given,
+                              computes, what)  # fmt: skip
+    var_s, end, memlets, folds = _bind_lanes(g, site, b, ports, given, what)
+    try:
+        inst = b.resolve(implementation, given, from_scalar)
+    except BrmError as e:
+        raise SandboxError(f"{what}: {e}") from None
+    if inst.code != entry.code:  # a slot given that the matched entry leaves unset
+        extra = [k for k in b.all_slots() if k in inst.params and k not in slots]
+        raise SandboxError(
+            f"{what}: {', '.join(f'{k} = {inst.params[k]!r}' for k in extra)} given, but the "
+            f"tasklet computes {computes!r}, {brm!r}'s {entry.code!r}, which leaves "
+            f"{' and '.join(extra)} unset"
+        )
+    lane_port = next(ports[c] for c in memlets if c not in folds)
+    if inst.lanes(lane_port) != end:
+        raise SandboxError(f"{what}: the BRM has {inst.lanes(lane_port)} lanes, the map {end}")
+    for c in folds:
+        if inst.lanes(ports[c]) != 1:
+            raise SandboxError(
+                f"{what}: {c} folds every lane into one, port {ports[c]!r} has "
+                f"{inst.lanes(ports[c])} lanes"
+            )
+    return _Bound(b, ports, inst, var_s, end, memlets, folds, entry.code, from_scalar)
+
+
+def _bind_seeds(site: _Site, b: Any, brm: str, given: Mapping[str, Any],
+                what: str) -> dict[str, Memlet]:  # fmt: skip
+    """The fold's seeds, checked against the BRM's seed port and a given ``seed``."""
     seeds = _seeds(site)
-    given_seed = (params or {}).get(SEED)
+    given_seed = given.get(SEED)
     if seeds and not any(p.name == SEED for p in b.interface.ports):
         (s,) = seeds.values()
         raise SandboxError(f"{what}: the fold is seeded from {s.data}; {brm!r} has no seed port "
@@ -601,16 +641,16 @@ def _bind_check(g: Graph, site: _Site, brm: str, implementation: str,
     if given_seed is not None and given_seed != int(bool(seeds)):
         raise SandboxError(f"{what}: seed = {given_seed!r} given, but the fold is "
                            f"{'seeded' if seeds else 'not seeded'} (fuse_seed sets it)")  # fmt: skip
-    scalars = _scalar_inputs(g, site, what)
-    ports = match(site.pattern, b, conn_dtypes, frozenset(scalars))
-    _check_port_dtypes(b, ports, conn_dtypes, what)
+    return seeds
+
+
+def _bind_entry(b: Any, brm: str, tasklet: Node, ports: dict[str, str], names: dict[str, str],
+                given: dict[str, Any], what: str) -> tuple[Any, dict[str, str], dict[str, Any]]:  # fmt: skip
+    """The BRM's code entry that computes what the tasklet computes, its ports and slots; its
+    params go into ``given``, refused where a given one differs."""
     entries = b.function.entries()
     if not entries:
         raise SandboxError(f"{what}: brm {brm!r} does not say what it computes (function.code)")
-    given = dict(params or {})
-    if seeds:
-        given[SEED] = 1  # the seed's port, on the seed's element (_bind_rewrite)
-    names = _scalar_names(b, scalars)
     entry, ports, slots = _entry(b, entries, ports, tasklet, names, given)
     if entry is None:
         computes = _computes(tasklet, ports, names)
@@ -623,7 +663,6 @@ def _bind_check(g: Graph, site: _Site, brm: str, implementation: str,
             f"{what}: the tasklet computes {computes!r} on the BRM's ports, {brm!r} computes "
             f"{listed}"
         )
-    _check_port_dtypes(b, ports, conn_dtypes, what)  # the entry's assignment of the inputs
     computes = _computes(tasklet, ports, names)
     for k, v in entry.params.items():
         if k in given and given[k] != v:
@@ -632,6 +671,16 @@ def _bind_check(g: Graph, site: _Site, brm: str, implementation: str,
                 f"{brm!r}'s code at {k} = {v!r}"
             )
         given[k] = v
+    return entry, ports, slots
+
+
+def _bind_slots(b: Any, brm: str, entry: Any, tasklet: Node, ports: dict[str, str],
+                slots: dict[str, Any], names: dict[str, str], conn_dtypes: dict[str, Any],
+                given: dict[str, Any], computes: str, what: str) -> dict[str, Memlet]:  # fmt: skip
+    """The entry's slots: a literal goes into ``given`` (it must fit the op type), a scalar
+    operand is read from its container; the latter returned by slot."""
+    from snax_forge.brm import fits, result_type
+
     op_type = None
     if slots:
         try:
@@ -667,7 +716,14 @@ def _bind_check(g: Graph, site: _Site, brm: str, implementation: str,
                 "the input ports' dtypes; the literal is weak, NEP 50)"
             )
         given[k] = v
+    return from_scalar
 
+
+def _bind_lanes(g: Graph, site: _Site, b: Any, ports: dict[str, str], given: dict[str, Any],
+                what: str) -> tuple[str, int, dict[str, Memlet], set[str]]:  # fmt: skip
+    """The spatial map's variable and bound, the bound memlets and the folding outputs; the
+    lanes param set to the bound in ``given``."""
+    tasklet, smap = site.tasklet, site.smap
     begin, end, step = parse_dim(smap.attrs["range"], what)
     if begin != 0 or step != 1:
         raise SandboxError(
@@ -695,27 +751,7 @@ def _bind_check(g: Graph, site: _Site, brm: str, implementation: str,
                 f"{what}: {lanes_v} = {given[lanes_v]} given, the spatial bound is {end}"
             )
         given[lanes_v] = end
-    try:
-        inst = b.resolve(implementation, given, from_scalar)
-    except BrmError as e:
-        raise SandboxError(f"{what}: {e}") from None
-    if inst.code != entry.code:  # a slot given that the matched entry leaves unset
-        extra = [k for k in b.all_slots() if k in inst.params and k not in slots]
-        raise SandboxError(
-            f"{what}: {', '.join(f'{k} = {inst.params[k]!r}' for k in extra)} given, but the "
-            f"tasklet computes {computes!r}, {brm!r}'s {entry.code!r}, which leaves "
-            f"{' and '.join(extra)} unset"
-        )
-    lane_port = next(ports[c] for c in memlets if c not in folds)
-    if inst.lanes(lane_port) != end:
-        raise SandboxError(f"{what}: the BRM has {inst.lanes(lane_port)} lanes, the map {end}")
-    for c in folds:
-        if inst.lanes(ports[c]) != 1:
-            raise SandboxError(
-                f"{what}: {c} folds every lane into one, port {ports[c]!r} has "
-                f"{inst.lanes(ports[c])} lanes"
-            )
-    return _Bound(b, ports, inst, var_s, end, memlets, folds, entry.code, from_scalar)
+    return var_s, end, memlets, folds
 
 
 def _seeds(site: _Site) -> dict[str, Any]:
@@ -860,7 +896,7 @@ def _bind_rewrite(g: Graph, site: _Site, bound: _Bound, brm: str, implementation
             out[port] = Memlet(m.data, _lanes_dims(m, bound.var_s, bound.end, f"{what}.{side}.{c}"))
             if nest is not None:
                 _check_order(g, m, temporal, smap, nest.indices(), f"{what} port {port!r}")
-    for c, seed in _seeds(site).items():  # the seed's element, one lane as its fold's output
+    for seed in _seeds(site).values():  # the seed's element, one lane as its fold's output
         sm = Memlet(seed.data, list(seed.subset))
         new_in[SEED] = Memlet(seed.data, [*sm.subset[:-1], _one_lane(sm.subset[-1],
                                                                       f"{what}.seed")])  # fmt: skip

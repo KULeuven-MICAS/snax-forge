@@ -47,7 +47,8 @@ def test_csrs_as_the_generated_header_has_them(cluster):
     START 0x3d2, JOBS 0x3d3, STATUS 0x3d4 (busy, bit 0), BUSY_COUNTER 0x3d5."""
     a = cluster.accelerator
     c = a.csrs
-    assert (c.streamer_first, c.streamer_start, c.streamer_busy, c.streamer_last) == (
+    (s,) = c.sets
+    assert (s.first, s.start, s.busy, s.last) == (
         0x3C0,
         0x3CF,
         0x3D0,
@@ -76,7 +77,7 @@ def test_csrs_agree_with_the_generator(k):
     g = csr_layout(templates, acc)
     n = g.accelerator
     ((r,),) = (g.streamers,)
-    assert (c.streamer_first, c.streamer_last) == (r.first, r.last)
+    assert (c.sets[0].first, c.sets[0].last) == (r.first, r.last)
     assert (c.start, c.busy, c.counter) == (n["ACC_RW_START"], n["ACC_RO_STATUS"],
                                             n["ACC_RO_BUSY_COUNTER"])  # fmt: skip
     assert c.fields == {k: v for k, v in n.items() if "_RW_" in k and k != "ACC_RW_START"}
@@ -200,7 +201,4 @@ def test_two_sets_read_set_by_set(tmp_path):
     # each set's streamer at its own path, its movers by their names within it
     assert [s.trace for s in a.csrs.sets] == ["snax_acc0/streamer_mul", "snax_acc0/streamer_sum"]
     assert [a.mover("reader0", x).name for x in ("mul", "sum")] == ["mul_a", "sum_a"]
-    with pytest.raises(RunError) as e:
-        a.csrs.streamer_first  # noqa: B018 (two sets: name the set)
-    assert e.value.code == "cluster.sets"
     assert Cluster.from_dict(json.loads(json.dumps(c.to_dict()))) == c

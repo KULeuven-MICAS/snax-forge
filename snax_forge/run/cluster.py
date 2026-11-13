@@ -122,27 +122,6 @@ class Csrs:
                            f"{[s.name for s in self.sets]}: name the set")  # fmt: skip
         return self.sets[0]
 
-    # The one set's streamer, for an entry of one set
-    @property
-    def streamer_first(self) -> int:
-        return self._one().first
-
-    @property
-    def streamer_start(self) -> int:
-        return self._one().start
-
-    @property
-    def streamer_busy(self) -> int:
-        return self._one().busy
-
-    @property
-    def streamer_counter(self) -> int:
-        return self._one().counter
-
-    @property
-    def streamer_last(self) -> int:
-        return self._one().last
-
     def set_of(self, csr: int) -> StreamerCsrs | None:
         """The set whose streamer range holds CSR ``csr``."""
         return next((s for s in self.sets if s.first <= csr <= s.last), None)
@@ -250,7 +229,7 @@ class Accelerator:
         """The streamer (``<instance>_<port>``) of ``unit``'s group a mover serves: a shared
         mover's user of that group, else the mover itself."""
         mine = set(self.members(unit))
-        return next((u for u, x in zip(m.users, m.user_units) if x in mine), m.name)
+        return next((u for u, x in zip(m.users, m.user_units, strict=True) if x in mine), m.name)
 
     def lanes_of(self, m: Mover, unit: str) -> int:
         """The lanes of a beat between ``unit``'s group and mover ``m``: a shared mover's user's
@@ -258,7 +237,9 @@ class Accelerator:
         if not m.users:
             return m.lanes
         mine = set(self.members(unit))
-        return next((c for x, c in zip(m.user_units, m.user_channels) if x in mine), m.lanes)
+        return next(
+            (c for x, c in zip(m.user_units, m.user_channels, strict=True) if x in mine), m.lanes
+        )
 
     def unit_of_mover(self, mover: str) -> str | None:
         """The unit (its C§7 name) a mover belongs to."""

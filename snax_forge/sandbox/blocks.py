@@ -342,11 +342,11 @@ def matches(g: Graph, kernel: str) -> list[Match]:
         for h, c in chains:
             if len(c) != len(pcs[k]) or h in heads or any(x.id in used for x in c):
                 continue
-            if True:  # linked to an earlier chain through a container it writes
-                written = {mm.containers[o.data] for pc in pcs[:k] for o in pc[-1].outputs.values()
-                           if o.data in mm.containers}  # fmt: skip
-                if not {x.data for x in c[-1].inputs.values()} & written:
-                    continue
+            # linked to an earlier chain through a container it writes
+            written = {mm.containers[o.data] for pc in pcs[:k] for o in pc[-1].outputs.values()
+                       if o.data in mm.containers}  # fmt: skip
+            if not {x.data for x in c[-1].inputs.values()} & written:
+                continue
             try:
                 match(g, kernel, [*heads, h], partial=k + 1 < len(pcs))
             except SandboxError:
@@ -641,39 +641,7 @@ def apply_recipe(g: Graph, recipe: str, region: list[str] | None = None,
     from .transforms import TRANSFORMS
 
     what = f"apply_recipe {recipe!r}"
-    if block is not None:  # the site's checks first, its messages
-        _apply_site(g, block)
-    sub = Recipe.load(recipe_path(recipe))
-    if block is not None:
-        rec = _block(g, block, "apply_recipe", applied=False)
-        block = rec["name"]
-        if rec["kernel"] != sub.kernel:
-            raise SandboxError(f"{what}: block {block} is a {rec['kernel']}, the recipe is "
-                               f"{sub.kernel}'s")  # fmt: skip
-        region, name = list(rec["heads"]), block
-    if not region:
-        raise SandboxError(f"{what}: give region (the chain heads) or block")
-    m = match(g, sub.kernel, list(region), block=block)
-    env = dict(g.bound_symbols)
-    sigma = {}
-    for s, v in m.symbols.items():
-        try:
-            sigma[s] = expr.evaluate(v, env)
-        except ExprError as e:
-            raise SandboxError(f"{what}: {s} = {v} has no value: {e}") from None
-    values = dict(sub.params)
-    for s, v in sub.symbols.items():  # a param a symbol names takes the region's value
-        if isinstance(v, str) and expr.is_name(v) and s in sigma:
-            values[v] = sigma[s]
-    for k, v in (params or {}).items():
-        if k not in sub.params:
-            raise SandboxError(f"{what}: {sub.name} has no param {k!r} ({list(sub.params)})")
-        values[k] = v
-    sub = replace(sub, params=values, symbols={s: sigma[s] for s in sub.symbols if s in sigma})
-    # the pattern side, its symbols the region's
-    pd = pattern(sub.kernel).to_dict()
-    pd["symbols"] = {s: sigma.get(s) for s in pd["symbols"]}
-    pg = Graph.from_dict(pd)
+    sub, m, region, block, name, pg = _bound_recipe(g, recipe, region, block, params, name, what)
     taken = _taken(g)
     ren = dict(m.ids) | dict(m.containers)
     units: dict[str, str] = {}  # the sub-recipe's unit, group and accelerator names
@@ -685,28 +653,7 @@ def apply_recipe(g: Graph, recipe: str, region: list[str] | None = None,
     for i in range(len(sub.steps)):
         tname, sp = step_params(sub, i)
         spec = TRANSFORMS[tname]
-        for k in NAMED:  # a unit's, group's or accelerator's name: free in the outer graph
-            v = sp.get(k)
-            if isinstance(v, str) and v not in units:
-                # a group or accelerator named after the kernel (dot_3's group dot): the block's
-                units[v] = (
-                    name if k in ("group", "accelerator") and v == sub.kernel else fresh(v, taken)
-                )
-        for v in sp.get("units") or []:
-            if v not in units:
-                units[v] = fresh(v, taken)
-        rp = {}
-        for k, v in sp.items():
-            if k in ("brm", "implementation", "kind", "recipe", "params"):
-                rp[k] = v
-            elif k in NAMED or k == "units":  # their own namespace: dot's tasklet sum, unit sum
-                rp[k] = _renamed(v, units)
-            elif BLOCK_PARAMS.get(tname) == k:  # a block the sub-recipe made (lift, name_block)
-                rp[k] = blocks.get(v, v)
-            elif k == "name" and tname in ("name_block", "apply_recipe") and isinstance(v, str):
-                rp[k] = blocks.setdefault(v, fresh(v, taken))  # a block it names: free here
-            else:
-                rp[k] = _renamed(v, ren)
+        rp = _outer_step(tname, sp, units, blocks, ren, taken, name, sub.kernel)
         if tname == "fuse_map":
             rp |= _fuse_outer(out, rp["first"], rp["second"])
         if tname == "lift" and not rp.get("at"):  # every region of the pattern: here, the one
@@ -744,6 +691,76 @@ def apply_recipe(g: Graph, recipe: str, region: list[str] | None = None,
                           + [b for b in path if b["name"] not in holders])  # fmt: skip
     _keep_before(g, out, {n.id for n in _region_nodes(g, m)}, name)
     return _result(out)
+
+
+def _bound_recipe(g: Graph, recipe: str, region: list[str] | None, block: str | None,
+                  params: dict[str, Any] | None, name: str | None,
+                  what: str) -> tuple[Recipe, Any, list[str], str | None, str | None, Graph]:  # fmt: skip
+    """The sub-recipe on its region of ``g``: its params and symbols the region's, the match,
+    the region's heads, the block and its name; and the pattern graph at the region's
+    symbols."""
+    if block is not None:  # the site's checks first, its messages
+        _apply_site(g, block)
+    sub = Recipe.load(recipe_path(recipe))
+    if block is not None:
+        rec = _block(g, block, "apply_recipe", applied=False)
+        block = rec["name"]
+        if rec["kernel"] != sub.kernel:
+            raise SandboxError(f"{what}: block {block} is a {rec['kernel']}, the recipe is "
+                               f"{sub.kernel}'s")  # fmt: skip
+        region, name = list(rec["heads"]), block
+    if not region:
+        raise SandboxError(f"{what}: give region (the chain heads) or block")
+    m = match(g, sub.kernel, list(region), block=block)
+    env = dict(g.bound_symbols)
+    sigma = {}
+    for s, v in m.symbols.items():
+        try:
+            sigma[s] = expr.evaluate(v, env)
+        except ExprError as e:
+            raise SandboxError(f"{what}: {s} = {v} has no value: {e}") from None
+    values = dict(sub.params)
+    for s, v in sub.symbols.items():  # a param a symbol names takes the region's value
+        if isinstance(v, str) and expr.is_name(v) and s in sigma:
+            values[v] = sigma[s]
+    for k, v in (params or {}).items():
+        if k not in sub.params:
+            raise SandboxError(f"{what}: {sub.name} has no param {k!r} ({list(sub.params)})")
+        values[k] = v
+    sub = replace(sub, params=values, symbols={s: sigma[s] for s in sub.symbols if s in sigma})
+    # the pattern side, its symbols the region's
+    pd = pattern(sub.kernel).to_dict()
+    pd["symbols"] = {s: sigma.get(s) for s in pd["symbols"]}
+    pg = Graph.from_dict(pd)
+    return sub, m, list(region), block, name, pg
+
+
+def _outer_step(tname: str, sp: dict[str, Any], units: dict[str, str], blocks: dict[str, str],
+                ren: dict[str, str], taken: set[str], name: str | None,
+                kernel: str) -> dict[str, Any]:  # fmt: skip
+    """A sub-recipe step's params for the outer graph: unit, group and accelerator names free
+    there (``units`` grows), the blocks its steps made, the nodes and containers renamed."""
+    for k in NAMED:  # a unit's, group's or accelerator's name: free in the outer graph
+        v = sp.get(k)
+        if isinstance(v, str) and v not in units:
+            # a group or accelerator named after the kernel (dot_3's group dot): the block's
+            units[v] = name if k in ("group", "accelerator") and v == kernel else fresh(v, taken)
+    for v in sp.get("units") or []:
+        if v not in units:
+            units[v] = fresh(v, taken)
+    rp = {}
+    for k, v in sp.items():
+        if k in ("brm", "implementation", "kind", "recipe", "params"):
+            rp[k] = v
+        elif k in NAMED or k == "units":  # their own namespace: dot's tasklet sum, unit sum
+            rp[k] = _renamed(v, units)
+        elif BLOCK_PARAMS.get(tname) == k:  # a block the sub-recipe made (lift, name_block)
+            rp[k] = blocks.get(v, v)
+        elif k == "name" and tname in ("name_block", "apply_recipe") and isinstance(v, str):
+            rp[k] = blocks.setdefault(v, fresh(v, taken))  # a block it names: free here
+        else:
+            rp[k] = _renamed(v, ren)
+    return rp
 
 
 # -- unapply: the graph before a recipe was applied ----------------------------------------------

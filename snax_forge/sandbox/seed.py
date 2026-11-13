@@ -293,7 +293,7 @@ def _check(g: Graph, map: str, what: str) -> dict[str, Any]:
     order = [n for n, _ in g.walk()]
     between = order[order.index(fold) : order.index(r)]
     for n in between:
-        names = [m.data for m in (*n.inputs.values(), *n.outputs.values())]
+        names = [m.data for m in n.memlets()]
         if x in names or (n.kind == "link" and n.attrs.get("container") == x):
             raise SandboxError(f"{what}: {n.id} names {x} between the fold and its reader; the "
                                f"seed would read {x} before it")  # fmt: skip

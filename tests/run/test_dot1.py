@@ -27,7 +27,7 @@ def test_the_cluster_has_a_unit_per_group(recorded):
     cluster, *_ = recorded
     a = cluster.accelerator
     assert a.name == "dot" and a.streamer == "dot_streamer"
-    first = a.csrs.streamer_last + 1
+    first = a.csrs.sets[0].last + 1
     assert a.units == [Unit("vmul", "vmul", "unit_vmul", first, first + 2, first + 3),
                        Unit("vsum", "vsum", "unit_vsum", first + 4, first + 7, first + 8)]  # fmt: skip
     assert [(m.name, m.gvsoc) for m in a.movers] == [

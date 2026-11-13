@@ -260,7 +260,6 @@ class EstimateTable(Record):
     csrs: int | None = None  # every CSR of the entry; None without a platform
     parts: list[PartRow] = field(default_factory=list)  # the cost by part (D167)
     area_design_um2: float | None = None  # the area without the banks
-    kernel_energy_nj: float | None = None  # the datapath's and control's
     streamer_cost: list[StreamerCostRow] = field(default_factory=list)
     xbar: dict[str, Any] | None = None  # its inputs, banks, accesses, area and energy
     memory: dict[str, Any] | None = None  # its banks, shape, reads, writes, area and energy
@@ -538,7 +537,7 @@ def estimate_table(point: Any, tech: str | None = DEFAULT_TECH) -> EstimateTable
                          l1=[L1Row(a, x.words, x.bits, x.energy_nj, x.reads, x.writes, x.xbar_nj,
                                    x.banks_nj) for a, x in e.l1.items()],
                          streamers=e.streamers, csrs=e.csrs, parts=parts,
-                         area_design_um2=e.area_design, kernel_energy_nj=e.kernel_energy,
+                         area_design_um2=e.area_design,
                          streamer_cost=[StreamerCostRow(
                              c.counts.accelerator, c.counts.name,
                              "write" if c.counts.write else "read", c.counts.depth,

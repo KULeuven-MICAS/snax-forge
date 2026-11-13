@@ -56,9 +56,7 @@ def valid_count(graph: Graph, node: Node) -> int:
 
 def _users(graph: Graph, c: str) -> Iterator[tuple[Node, tuple[Node, ...]]]:
     for node, outer in graph.walk():
-        if node.kind in ("tasklet", "accelerated") and any(
-            m.data == c for m in (*node.inputs.values(), *node.outputs.values())
-        ):
+        if node.kind in ("tasklet", "accelerated") and any(m.data == c for m in node.memlets()):
             yield node, outer
 
 
@@ -73,7 +71,7 @@ def split_factor(node: Node) -> int:
         if kid.kind == "map" and (only or kid.attrs.get("loop.kind") == "spatial"):
             begin, end, _ = parse_dim(kid.attrs["range"], kid.id)
             return int(end) - int(begin)
-        for m in (*kid.inputs.values(), *kid.outputs.values()):
+        for m in kid.memlets():
             for dim in m.subset:
                 parts = parse_dim(dim, kid.id)
                 if len(parts) == 3 and var in expr.names(parts[0]):
@@ -91,7 +89,7 @@ def padded_shape(graph: Graph, c: str) -> tuple[int, ...]:
         factors = {m.attrs["var"]: split_factor(m) for m in outer if tailed_split(m)}
         if not factors:
             continue
-        for m in (*node.inputs.values(), *node.outputs.values()):
+        for m in node.memlets():
             if m.data != c:
                 continue
             for d, dim in enumerate(m.subset):

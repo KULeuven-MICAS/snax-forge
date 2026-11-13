@@ -216,6 +216,10 @@ class Node:
     attrs: dict[str, Any] = field(default_factory=dict)
     body: list[Node] | None = None
 
+    def memlets(self) -> list[Memlet]:
+        """Its input memlets, then its output memlets."""
+        return [*self.inputs.values(), *self.outputs.values()]
+
     def to_dict(self) -> dict[str, Any]:
         d = {
             "id": self.id,

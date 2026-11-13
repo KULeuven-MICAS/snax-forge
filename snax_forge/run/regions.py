@@ -127,7 +127,6 @@ def region_at(regions: list[Region], memory: str, addr: int) -> Region | None:
 class Padding:
     """What of a region is padding (module doc)."""
 
-    valid_shape: tuple[int, ...]
     padded_shape: tuple[int, ...]
     pads: tuple[tuple[int, int], ...]  # (row-major index in padded_shape, address) per pad
     data_end: int
@@ -146,7 +145,7 @@ def padding_of(point: Any, region: Region, beat_bytes: int) -> Padding:
     shape = tuple(region.shape)
     graph = getattr(point, "graph", None)
     if graph is None or region.container not in graph.containers:
-        return Padding(shape, shape, (), region.span()[1], None)
+        return Padding(shape, (), region.span()[1], None)
     block = over(region.layout, padded_shape(graph, region.container))
     padded = block.shape  # a tail's pads and a pitched row's gap (padded_rows)
     pads: tuple[tuple[int, int], ...] = ()
@@ -161,4 +160,4 @@ def padding_of(point: Any, region: Region, beat_bytes: int) -> Padding:
         end = lo + moved_bytes(block, region.itemsize, beat_bytes)
         if end > hi:
             beat_pad = (hi, end)
-    return Padding(shape, padded, pads, hi, beat_pad)
+    return Padding(padded, pads, hi, beat_pad)

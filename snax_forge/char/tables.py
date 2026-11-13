@@ -106,7 +106,7 @@ class Grid:
                 weight *= w
             v = self.fields[name].get(key)
             if v is None:
-                raise KeyError(f"{name} has no value at {dict(zip(self.axes, key))}")
+                raise KeyError(f"{name} has no value at {dict(zip(self.axes, key, strict=True))}")
             total += weight * v
         return (max(total, 0.0), tuple(outside)) if outside else (total, ())
 
