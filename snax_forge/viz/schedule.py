@@ -1,43 +1,17 @@
-"""The schedule: the program's window as lanes, its quiet stretches folded, and the beat
-and stall lines of an open range. Queries on the run's index (index.py) that read no file;
-the viewer only draws their answers.
+"""The schedule: the program's window as lanes, quiet stretches folded, and a range's detail.
 
-    schedule(index, open, cycle)    -> lanes(index) and segments(index, open, cycle) together
-    lanes(index)                    -> {"level", "total_cycles", "lanes": [...]}
-    segments(index, open, cycle)    -> {"level", "total_cycles", "fold_min", "boot": {...},
-                                        "segments": [...]}
-    detail(index, start, stop)      -> the beat and stall lines of [start, stop) per lane
+Queries on the run's index (index.py); the viewer only draws them.
 
-**Lanes**, top to bottom: one per core (``core<i>``), the DMA, then accelerator ▸ group, as
-the editor's Bindings nest them: per accelerator, its streamer set, per group its
-movers as the streamer orders them, then its unit (a linked group's one component), each
-lane with its ``accelerator`` and ``group``. A core's lane has its spans classed barrier > poll >
-sleep > run
-(``run/cores.py``, the profile's rule), its function spans and its CSR accesses (``csr`` and
-``poll`` events); the DMA's one bar per copy, issue to done; a mover's and the accelerator's
-one bar per task, start to done, with the run's class totals (its ``done``'s ``cycles``) and,
-from ``beat`` on, its class runs (index.py); a mover's task with every temporal bound 0, started
-only because the set's movers share one start (another group's in the same encapsulated
-set), is marked ``idle``
-(``RunIndex.idle``). Class names only: colours are the viewer's.
+    lanes(index)                  one lane per core, the DMA, then per accelerator its groups'
+                                  movers and units: each task a bar, start to done
+    segments(index, open, cycle)  ``[0, T)`` in segments; a quiet stretch (no accelerator, mover
+                                  or DMA task open) of ``FOLD_MIN`` cycles or more is folded
+                                  unless opened or holding ``cycle``; the boot is one more
+    schedule(index, open, cycle)  both together
+    detail(index, start, stop)    the beat and stall lines of ``[start, stop)`` per lane
 
-**Segments** cover ``[0, T)``, ``T`` the window, with no gap and no overlap. A cycle is
-active when an accelerator or mover task is open on it (from its start to its done, both
-included) or a DMA copy (issue to done, both included); the other cycles are quiet. A quiet
-stretch of at least ``FOLD_MIN`` cycles is foldable: folded unless its first cycle is in
-``open`` or it holds ``cycle``. The other cycles make unfoldable segments, adjacent ones
-merged. A folded segment carries, per core, its class counts, its CSR writes and reads (a
-``poll``'s reads all at its first cycle) and the functions it spans. The boot (the cycles
-before the window, ``trace_meta.json``'s ``boot``) is one more segment before 0 that never
-opens.
-
-**Detail** is the beat and stall lines of one range, as the converter wrote them, grouped per
-lane: each crossbar port's grants and stalls, the DMA's beats and bursts, the accelerator's
-fires and pushes (``acc``, and per unit ``units``: with several groups each unit's lane its
-own), each lane's FIFO counts (``<mover>.lane<l>``).
-
-Below ``task`` (trace ``off``) there is no schedule, below ``beat`` no detail: a
-``ScheduleUnavailable`` with the reason.
+A mover's task with every temporal bound 0 is marked ``idle``. Below ``task`` there is no
+schedule and below ``beat`` no detail: a ``ScheduleUnavailable``.
 """
 
 from __future__ import annotations

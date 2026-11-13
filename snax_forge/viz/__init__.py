@@ -1,28 +1,11 @@
-"""SNAX-FORGE visualiser.
+"""SNAX-FORGE visualiser: a local server and a static viewer of flow runs, for humans.
 
-A local server plus a static viewer, for humans: ``python -m snax_forge.viz
-DIR [DIR ...]`` serves the flow runs given (``out/flow/<name>/`` or its
-``run/``) at http://127.0.0.1:8765/. LLMs read the profile and the
-reports (``snax_forge.report``) instead.
-
-* api.py: loading runs and every answer of the API, as plain functions, each
-  route one query's dict;
-* index.py: a run's events grouped by their ids and lookups once at load
-  (``RunIndex``), and the memory tab's marks, added by registration;
-* memory.py: the memory tab's layout, folded rows and marks on them;
-* movement.py: data movement as queries on the index: journey, residency,
-  patterns, conflicts;
-* schedule.py, cluster.py: the schedule's lanes, folded segments and detail
-  rows, the cluster at one cycle and the stepping between cycles;
-* server.py: the stdlib HTTP server around them;
-* static/: the viewer (index.html, plain JS modules, CSS; no build step and
-  no external file, so it works offline). It draws the API's answers and
-  computes nothing of its own.
-
-The tabs are the profile report, the schedule with the cluster view under
-it, and the memory tab, all on the same API. The DFG viewer is the
-subpackage dfg/, a second mode of the same server for ``.snaxdfg`` files
-(``python -m snax_forge.viz.dfg``).
+``python -m snax_forge.viz DIR [DIR ...]`` serves the flow runs given at
+http://127.0.0.1:8765/; LLMs read the profile and the reports (``snax_forge.report``) instead.
+api.py answers each route as a plain function; index.py groups a run's events once; memory.py,
+movement.py, schedule.py and cluster.py are the tabs' queries; server.py is the stdlib server;
+static/ is the viewer (plain JS, no build step, no external file). The DFG viewer is the
+subpackage dfg/ (``python -m snax_forge.viz.dfg``).
 """
 
 from .api import RunSet, RunView, load_run

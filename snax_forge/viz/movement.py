@@ -1,44 +1,18 @@
-"""Data movement of a run, as queries on its index (index.py).
+"""A run's data movement, as queries on its index (index.py).
 
-What this is
-------------
-Four answers, all read off the trace's events: nothing is modelled or matched
-by order here, every link is an id the events carry (snax-gvsoc
-``docs/EVENTS.md``) and every number a cycle or a value SNAX-GVSoC wrote.
+Every link is an id the trace's events carry and every number one SNAX-GVSoC wrote; nothing is
+modelled or matched by order.
 
-  journey     every access to one element in both memories, in time order;
-              from a reader's grant its beat ``(task, mover, b)`` gives the
-              firings that name it, each with its other operands (their beats'
-              grants, the fire's ``vals``); a firing ``(task, n)`` gives the push
-              that folds it, the push the writer's grants (``b = n``), and each
-              written element its outgoing DMA beat and that copy's burst
-              (``id``); a writer's grant gives its push and the firings it folds.
-              A grant carries its streamer's task and a firing its accelerator's:
-              the index's pairing (``streamers``, ``accel``, from the task list's
-              start steps) crosses between them, both ways
-  residency   per region and memory: each element's arrival (its first write
-              there), uses (reads by anything but the DMA after it), departure
-              (the DMA's first read after it) and wait (first use - arrival),
-              and their windows
-  patterns    per streamer lane and task: the address nest its CSR writes
-              configured (``run/beats.mover_nest``, which the converter checked
-              equal to the grants), the pace (first and last grant against one
-              beat per cycle) and every cycle it was held, with the port its
-              bank served and that port's address, ``idle`` for a task with every
-              temporal bound 0 (index.py's ``idle``: another group's in the same
-              encapsulated set); per DMA copy its sides, as
-              issued, and its L1 beats' pace
-  conflicts   every L1 stall placed on the memory layout: the word the held
-              request wanted and the word its bank served in that cycle; per
-              word, per bank and per port the counts
+    journey     every access to one element in both memories, in time order, and from each
+                grant the firings and pushes it feeds, across the task pairing both ways
+    residency   per region and memory each element's arrival, uses, departure and wait
+    patterns    per streamer lane and task its configured nest, its pace and its held cycles
+                (``idle`` for another group's mover in an encapsulated set); per DMA copy
+                its sides and pace
+    conflicts   every L1 stall on the memory layout, with counts per word, bank and port
 
-Levels
-------
-Journey, residency and patterns need the beat level, conflicts and the held
-cycles the stall level; below it an answer is ``available`` false with the
-reason (``MovementUnavailable``). A filtered trace gives what it kept, and
-every answer says which sources it has (``filtered``, None when the
-accelerator, its movers and the DMA are all in).
+Journey, residency and patterns need the beat level, conflicts and held cycles the stall level;
+below it a ``MovementUnavailable``. Every answer names its ``filtered`` sources.
 """
 
 from __future__ import annotations

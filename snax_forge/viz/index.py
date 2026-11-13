@@ -1,84 +1,20 @@
-"""A run's events grouped by their ids and lookups, built once per run when the viewer loads
-it: what the memory tab's marks, the movement view, the schedule and the cluster
-view query.
+"""A run's trace events grouped once by their ids and lookups, for the viewer's queries.
 
-    RunIndex.from_run(outputs, cluster, regions, tasks) -> RunIndex
-
-The events are the trace's (``run/trace.py``), as the converter wrote them: their ids
-link lines directly and their lookups (``task``, ``mem``, absolute ``addr``, ``bank``,
-``row``, ``region``, ``elems``, ``vals``) are done already. The index only puts each event
-under its keys; it never counts lines or matches them by order. Every list keeps the trace's
-time order (by ``t``, then as SNAX-GVSoC wrote them):
-
-    elem[(container, flat)]  the grants, DMA beats, bursts and stalls whose ``elems`` hold
-                             the element, in both memories
-    word[(mem, addr)]        the same by bank word (``addr`` its first byte): a grant's or a
-                             stall's word, every word a DMA beat or a burst covers
-    beat[(task, mover, b)]   a streamer beat's grants, one per lane, by lane (``task`` the
-                             streamer's)
-    fire[(task, n)], push[(task, n)]   the accelerator's firings and pushes
-    fired[(task, mover, b)]  the firings that name a reader's beat (several with a repeat;
-                             ``task`` the accelerator's, the fire's own)
-    folded[(task, n)]        the push whose ``[first, last]`` holds firing ``n``
-    returns[t]               the reads whose data comes back in cycle ``t`` (``back``): a
-                             grant's, a DMA beat's on L1, a burst's on L2
-    dma[(id, i)]             a DMA beat on L1; ``burst[id]`` a copy's bursts
-    stalls_bank[bank], stalls_port[port]   the stalls, each with its ``task``
-    grants_port[port]        a crossbar port's grants
-    csr[block]               the cores' CSR accesses per block (``acc_streamer``, ``acc``)
-    start[task], done[task]  a component's task brackets; ``issue[id]`` a DMA copy and
-                             ``copy_done[id]`` its done; ``tasks_of[src]`` the accelerator's
-                             and each mover's tasks in start order
-    runs[task]               an accelerator or mover task's class runs, ``(first, end, mode)``
-                             (run/beats.py's ``class_runs``: each line to the next, the last
-                             to the end its ``done``'s ``cycles`` add up to)
-    fifo[(mover, lane)]      a lane's queue counts ``(t, count)``
-    dma_beats[(id, op)]      a copy's DMA beats on L1 of each op
-    core_spans[core]         its cycles classed (run/cores.py, the profile's rule, from the
-                             trace's ``start`` mode as a state at 0), checked
-                             against the profile's counts when the run has them
-    funcs[core]              its function spans ``(first, end, name)``, from its ``func``
-                             lines; from 0 to its first one in the window the function in
-                             force at 0, the trace's ``start`` (None without one)
-    core_csr[core]           its CSR accesses, ``csr`` and ``poll`` events
-    event_cycles             the distinct cycles with an event: from ``beat`` on, of a
-                             ``grant``, ``dma``, ``burst``, ``fire``, ``push``, ``class``,
-                             ``stall`` or ``fifo``; at ``task``, of any task-level event
-    boundary_cycles          the distinct cycles of a task's start or done, a copy's issue or
-                             done, a ``func`` line
-
-A beat's ``b`` and a firing's ``n`` count from 0 in each run of their component (snax-gvsoc
-``docs/EVENTS.md``), and the converter puts on every line the task its component's
-start/done bracket names, so ``task`` makes them unique. A full key named by two lines is a
-converter bug: a RunError (``index.duplicate``) naming both. An event whose ``task`` is null
-(a ``fifo`` line after a mover's last busy cycle, a core's access) is kept under its other
+``RunIndex.from_run(outputs, cluster, regions, tasks)`` puts each event of the trace (CONTRACTS,
+"Profile and trace") under its keys, each list in time order: by element and by bank word in
+both memories, by streamer beat, firing and push, DMA beat and copy, crossbar port, CSR block,
+task, core and cycle. It never counts lines or matches them by order: a full key named by two
+lines is a ``RunError`` (``index.duplicate``); an event whose ``task`` is null keeps its other
 keys.
 
-**The pairing** crosses components: a ``fire`` carries the accelerator's task, its operands'
-and results' grants their streamers' tasks. It comes from the run's task list (``tasks.json``
-in the flow folder, lower/tasks.py's ``TaskList``), whose ``start`` step launches an
-accelerator task together with its streamer tasks; each task's component is its configure
-step's. ``streamers[acc task] = {mover: streamer task}`` and ``accel[streamer task] = acc
-task``: a start launches one unit's task with a task on every mover of its streamer set; with
-several groups in one encapsulated set the movers of another group in the
-same encapsulated set are idle (every bound 0, ``idle``: ``idle_tasks``), which SNAX-GVSoC
-starts and ends at once. An accelerator task launched without a streamer task for one of its
-set's movers, or with two for one, or with a streamer task on no mover of its set, is a
-RunError (``index.tasks``)
-naming the tasks: not expected, and never guessed.
+The pairing comes from the task list (lower/tasks.py): a ``start`` launches an accelerator task
+with one task on every mover of its streamer set (``streamers``, ``accel``); another group's
+movers in the same encapsulated set get idle tasks (``idle_tasks``). A missing, doubled or stray
+streamer task is a ``RunError`` (``index.tasks``).
 
-**Marks** are the memory tab's per-word values, added by registration, as the memory passes
-are: ``register_mark(name, level, fn, kind)`` with ``fn(index) -> {(mem, addr): value}``, the
-lowest trace level that has the events it reads, and its kind (``count``: rows fold on equal
-values; ``time``: rows fold when every value moves by one step, memory.py). ``marks_of(index)``
-gives the marks a run has and, for each it lacks, the reason. The built-in ones:
-
-    conflicts  (stall)  per L1 word the stalls that wanted it plus those in which it was the
-                        word served (``by_addr``)
-    arrival    (beat)   a word's first write in its memory (none: there from the start)
-    use        (beat)   its first read after that by anything but the DMA (whose reads are
-                        departures, movement.py's residency)
-    wait       (beat)   use - arrival
+Marks are the memory tab's per-word values, added by registration: ``register_mark(name, level,
+fn, kind)`` with ``fn(index) -> {(mem, addr): value}``, ``marks_of`` the ones a run has. Built
+in: ``conflicts`` (stall level) and ``arrival``, ``use`` and ``wait = use - arrival`` (beat).
 """
 
 from __future__ import annotations

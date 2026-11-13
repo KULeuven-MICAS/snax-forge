@@ -1,84 +1,21 @@
-"""The DFG viewer's HTTP server: the viewer's server for the graph page, in two modes.
+"""The DFG viewer's HTTP server, in view and edit mode.
 
-Same stdlib ``ThreadingHTTPServer`` on 127.0.0.1, same static files and the same ``Handler``
-for them (server.py), with the page ``dfg.html`` at ``/``. One handler serves both modes;
-``GET /api/mode`` says which (``{"mode": "view"}`` or ``"edit"``). Every POST needs
-``Content-Type: application/json`` (415 otherwise, server.py) and a JSON object body.
+It uses the run viewer's ``Handler`` (server.py): the same stdlib server on 127.0.0.1 and
+static files, the page ``dfg.html`` at ``/``. ``GET /api/mode`` gives the mode, ``techs`` and
+``tech``. A route that gives a step or a comparison takes ``?tech=``, else the server's
+``--tech``; an unknown one is a 400 ``char.tech``.
 
-**View mode** (``make_dfg_server``, ``pixi run view-dfg``): the given ``.snaxdfg`` files, read
-once and on Reload, as a read-only history, each file a step in the order given (a directory as
-its files in natural order). The estimate is on ``--platform`` when given, else on none.
-Every route that gives a step or a comparison takes ``?tech=<technology>`` (one of
-snax_forge/char/'s, a 400 ``char.tech`` otherwise), the technology its cost is on; without it
-the server's ``--tech`` (default nangate45).
+``make_dfg_server`` (view mode, ``view-dfg``) serves the given files as a read-only history:
+``/api/steps``, ``/api/find``, ``/api/step/<k>`` (``?expand=<block>``), ``/api/compare/<j>/<k>``
+and ``POST /api/reload``, each an api.py function. ``make_edit_server`` (edit mode,
+``edit-dfg``) serves one session (sandbox/session.py): ``/api/kernels``, ``/api/recipes``,
+``/api/sessions``, ``/api/session``, ``/api/step/<k>`` and its ``/site``, ``/api/compare/<j>/<k>``,
+and the POSTs ``apply``, ``cursor``, ``params``, ``save`` and ``export``, each a ``Session`` method.
 
-    GET  /api/steps           per step its name, folder, label (``1 split_map``) and load error;
-                              from more than one folder a name is ``<folder>/<stem>`` and the
-                              folder its parent directory's name (api.py), else None
-    GET  /api/find?step=<ref> ``{"k": k}``, the step the URL hash names (api.find_step: its
-                              name, a bare stem one step has, or a number), null for none
-    GET  /api/step/<k>        step k's view (api.step_view: the drawing, its compact texts and
-                              Details, the marks and the estimate); a file that does not load
-                              is its entry with the error, not an HTTP error; each
-                              ``?expand=<block>`` a block drawn as its nodes, the others as
-                              one box each (api.py's ``fold``), in edit mode too
-    GET  /api/compare/<j>/<k> step j against step k (api.compare_view: the session's diff of the
-                              two graphs, the Details fields that changed and the two columns
-                              Compare lays out, step j on the left, each headed by its label,
-                              after its folder when it has one: ``dot4_w8 · 6 link``)
-    POST /api/reload          read every file again
-
-**Edit mode** (``make_edit_server``, ``pixi run edit-dfg``): one session (sandbox/session.py)
-behind routes; the page opens or starts one, then edits it. Sessions, saved recipes and step
-files go to the roots the server was given (sandbox/session.py's ``Roots``).
-
-    GET  /api/kernels               the staged kernels (kernels/) and their symbols, each with
-                                    its load error if it has one
-    GET  /api/recipes               the recipes (name, path, folder, kernel, params, steps),
-                                    every folder of the recipes root
-    GET  /api/sessions              the sessions (name, kernel, steps, cursor, platform, date)
-    POST /api/session               start or open the session: ``{kernel, params, symbols?,
-                                    dtypes?, platform?}``, ``{recipe}`` (a path, or a name
-                                    in a folder of the recipes, ``find_recipe``) or ``{session}`` (a
-                                    folder, or a name in the
-                                    sessions); answers as GET
-    GET  /api/session               its name, kernel, params, symbols, steps, cursor, n, the
-                                    steps' ``labels``, the ``undo`` and ``redo`` steps (null
-                                    at either end), ``drop``, the question an apply at the
-                                    cursor asks first (null at the last step), platform, the
-                                    working ``recipe`` and the ``command`` that replays it
-                                    (``pixi run sandbox``)
-    GET  /api/step/<k>              step k's view, with its diff against step k − 1 and Save's
-                                    design checks on it (``problems`` and ``notes``;
-                                    Session.checks); a redo step not replayed since a param
-                                    change is a 400 ``session.redo``
-    GET  /api/step/<k>/site?sel=<id>&sel=<id>
-                                    Session.sites on a selection, one item or several in the
-                                    order selected (a node's id, a container's, a group's or an
-                                    accelerator's name), bind's with the bind list, each
-                                    accepted transform with its ``form``; a transform that takes
-                                    one item refuses several, ``site.one``
-    GET  /api/step/<k>/site/<id>    the same on a one-item selection
-    GET  /api/compare/<j>/<k>       as in view mode, over the session's steps
-    POST /api/apply                 ``{transform, params, drop?, new_params?}``: Session.apply
-                                    (``new_params``, ``{"W_mul": 8}``: the params it adds)
-    POST /api/cursor                ``{k}``: Session.move, which replays and checks the redo
-                                    steps it reaches
-    POST /api/params                ``{params}``: Session.set_params, up to the cursor
-    POST /api/save                  ``{name, force?}``: Session.save; its log line names the
-                                    recipe from the repository (``saved
-                                    recipes/custom/<name>.json``)
-    POST /api/export                ``{k}``: Session.export, the file's ``path``
-
-Every POST answer, a refusal's too, carries ``log``, the page's log line for it (an apply's
-``step 2  bind add simd …  ok · 5 ms · changed add · C 0 → 16 · unmapped 64 → 0 ·
-renamed W → W_acc_1 · 1 note``, C the accelerator cycles before and after, the unmapped cycles
-where they change, the params a bind renamed and the design checks' problems and notes
-on the new step). A refusal is a 400 with ``{code, message}`` (and
-``problems`` for a save, ``question`` for ``session.drop``); a route before a session is open is
-a 400 ``session.none``; an unknown route or step is a 404, as in view mode. ``GET /api/mode``
-gives the default ``platform`` too, in edit mode, and in both modes ``techs`` (the
-technologies) and ``tech`` (the server's).
+Every POST needs ``Content-Type: application/json`` and a JSON object body, and every answer to
+one carries ``log``, the page's log line. A refusal is a 400 ``{code, message}``, a route before a
+session is open a 400 ``session.none``, an unknown route or step a 404. The editor's files and
+behaviour are in CONTRACTS, "Recipe".
 """
 
 from __future__ import annotations
