@@ -1,47 +1,15 @@
 """HWCOST's tables: the streamers, the TCDM crossbar and the L1 banks.
 
-    load_costs(tech) -> Costs | None                   snax_forge/char/<tech>/, None without one
-    streamer_cost(costs, depth, loops, channels) -> Cost   one reader (a writer priced as a reader)
-    xbar_cost(costs, inputs, banks, read_only, write_only, form) -> Cost
-                                                       the sparse interconnect, 64-bit ports
+    load_costs(tech) -> Costs | None                       snax_forge/char/<tech>/, None without
+    streamer_cost(costs, depth, loops, channels) -> Cost   one reader (a writer priced as one)
+    xbar_cost(costs, inputs, banks, read_only, write_only, form) -> Cost    the crossbar
     bank(costs, depth, width) -> Bank | None               one SRAM bank, a lookup
     Grid.at(field, **q) -> (value, extrapolated axes)      the rule both interpolated tables use
 
-``<tech>/`` holds four files copied as they are from snax-forge-experiments, named with their
-commit and sha256 in ``<tech>/SOURCE`` (``pixi run import-costs``, ``util/import_costs.py``):
-
-    streamer.csv    depth, loops, channels -> area_um2, e_beat_pj (one reader, X52)
-    xbar.csv        inputs, banks -> area_um2, e_access_pj (e_access_pj measured where
-                    inputs <= banks only, X52)
-    ram_table.csv   depth, width -> area_um2, e_rd_pj, e_wr_pj (CACTI 7, X47, X48)
-    xbar_kinds.json the crossbar's read-only and write-only inputs (X70, X71): the factor
-                    form's f_ro and f_wo, the crosspoint form's c_rw, c_ro, c_wo, d, e, g
-
-**The rule** (snax-forge-experiments' ``report/strm_table.py``, X53 and X54; worked steps in its
-``docs/cost_tables.md``): linear along one axis at a time between the two grid values around the
-query, a grid value matched exactly; each axis in the raw value except the crossbar's energy,
-which is linear in 1/inputs (it goes as a + b/inputs). The crossbar's energy where inputs > banks
-is each bank count's value at inputs = banks. Two or three axes are done one after the other.
-
-**Outside the grid** snax-forge extrapolates where X53 refuses: along an axis whose query lies
-below its first or above its last grid value, the same formula through the two nearest grid
-values, in the axis's own scale; the result is clamped at zero, the axes named in ``Cost``'s
-``extrapolated``, and a warning logged (the estimate's design note ``cost.extrapolated``).
-
-**The crossbar's input kinds** (X71). xbar.csv prices every input as a read-write port; a
-streamer's reader only reads (its write and data are constants) and a writer only writes (its
-response data is never read), and synthesis removes what the constants make dead. With n
-inputs, n_ro of them read-only, n_wo write-only and n_rw = n − n_ro − n_wo read-write, b banks:
-
-    factor (the default)   A = A_xbar(n, b) (1 − f_ro n_ro / n − f_wo n_wo / n), A_xbar the table's
-    crosspoint (an option) A = b (c_rw n_rw + c_ro n_ro + c_wo n_wo) + d n + e b + g
-
-The factor form keeps the table as the source (exact at its points, read-write inputs priced as
-before); the crosspoint form needs no table, its area extrapolated outside the grid it was fitted
-on (``XbarKinds.inputs`` and ``banks``). The energy per access is the table's in both.
-
-**The banks** are a lookup, never interpolated (X48): a depth or width off the table's grid
-(depth 32–4096 in steps of 32, width 8–256 in steps of 8) gives None.
+The four files of ``<tech>/`` are copied from snax-forge-experiments by ``pixi run
+import-costs``, their commit and sha256 in ``<tech>/SOURCE``. The tables, the interpolation and
+extrapolation rule, the crossbar's two forms (``XBAR_FORMS``, factor the default) and the banks'
+lookup are in CONTRACTS, "Cost model"; char/README.md walks through them.
 """
 
 from __future__ import annotations

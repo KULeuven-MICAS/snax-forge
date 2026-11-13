@@ -5,38 +5,12 @@
     TECHS                                                        the technologies offered
     CTRL_COMB_PER_FLOP                                           a control unit's comb : flops
 
-``<tech>.json`` is a byte copy of snax-forge-experiments' ``results/char/<tech>/char.json``
-(its X37), which names its own source commits: per catalogue datapath (``hw/chisel/blocks.json``)
-entries of ``params`` (the catalogue's but ``lanes`` and ``depth``), a ``lanes_rule`` and the
-measured ``points`` (``lanes``, LinkBuffer's ``depth``, ``comb_um2`` and ``e_comb_pj``: a fire's
-comb energy), and the technology's ``flop`` (``area_um2``, ``e_load_fj``, ``e_hold_fj``) and
-``ctrl.counter_factor``. ``tests/char/`` checks it against the catalogue.
-
-``DATAPATH_RENAMES`` maps a catalogue datapath to the name the table still has it under
-(``SimdLanes`` was ``ElementwiseLanes`` when CHAR measured it); it lasts until CHAR's next
-export uses the new name, and the lookup goes through it.
-
-**The lookup** of a block, its params as the generator fills them (``lanes`` and ``depth`` in
-them are ignored) and its lanes (and depth): the entry whose params equal them, then
-
-    measured      a point at these lanes (and depth), as is
-    copy          the rule ``copy``: lanes × the lanes-1 point (LinkBuffer: at the same depth)
-    interpolate   the rule ``interpolate``: linear between the two measured lanes around it;
-                  a LinkBuffer's depth, when no point has it, is linear between the two
-                  measured depths around it (at lanes 1, then copied), and found so
-
-A param the fill leaves None (an unset slot, SimdLanes' ``k`` at two streams) is not compared,
-and one the table's export predates takes the value its points were measured at
-(``TABLE_DEFAULTS``: SimdLanes' ``streams`` 2, and no slot from a CSR, ``kCsr``, ``k1Csr``
-and ``k2Csr`` false; TreeAccumulate's and SerialAccumulate's ``seed`` false, the seed port
-measured nowhere yet), on the entry's side and, when the caller does
-not give it, on the caller's, until the next export writes it.
-None for anything else: no entry with these params (a dtype other than int64, another op, a
-SimdLanes at one stream, whose ``inTypes`` and ``k`` no two-input point has, axpby, a slot from
-its CSR),
-lanes or depth outside the measured range (TreeAccumulate at lanes 64, SerialAccumulate at
-lanes 1, a LinkBuffer deeper than 16). None is never a refusal: the estimate counts the block as
-0 and lists it, and the design note ``char.missing`` names it.
+The table, its lookup (``measured``, ``copy``, ``interpolate``) and what None means are in
+CONTRACTS, "Cost model". ``DATAPATH_RENAMES`` maps a catalogue datapath to the name the table has
+it under (``SimdLanes`` as ``ElementwiseLanes``). ``TABLE_DEFAULTS`` gives a param the table's
+export lacks the value its points were measured at (SimdLanes' ``streams`` 2 and no slot from a
+CSR, the accumulators' ``seed`` false), on the entry's side and on the caller's when it does not
+give it. A param the fill leaves None is not compared.
 """
 
 from __future__ import annotations
