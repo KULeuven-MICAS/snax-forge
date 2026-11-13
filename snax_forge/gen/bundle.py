@@ -1,74 +1,18 @@
 """A design point -> its bundle for snax_cluster.
 
-    write_bundle(design_point, out_dir, root=None) -> (Bundle, written)
-    counter_fills(design_point, tasks) -> {task: fill}
-    write_expected(out_dir, stdout, fills) -> Path
-    python -m snax_forge.gen.bundle DESIGN_POINT [--out DIR]    (pixi bundle)
+``write_bundle`` writes one folder per design point holding what snax_cluster builds the
+design's cluster from, as CONTRACTS, "Bundle" lists it: gvsoc.py's files at its root, rtl.py's
+elaboration in ``rtl/``, the RTL's file list ``rtl/files.f`` and ``bundle.json`` (``Bundle``,
+its modules from ``module_tree``). Everything is made again by the snax-forge checked out, never
+copied from ``out/gvsoc/`` or ``out/rtl/``. ``rtl/`` is removed first; the rest of the folder is
+left as it is, but an earlier ``forge_expected.txt``, which a bundle alone has no run for.
+``main`` is ``pixi run bundle``.
 
-A bundle is one folder per design point holding what snax_cluster builds the
-design's cluster from. Everything in it is made again by the snax-forge
-checked out, never copied from ``out/gvsoc/`` or ``out/rtl/``. ``rtl/`` is
-the bundle's own, so it is removed first and holds only this run's files;
-the rest of the folder is left as it is. Then, in this order:
-
-    <the root>            gvsoc.py's ``generate``: the three description files
-                          (accelerator.json among them), the headers, data.h,
-                          main.c and manifest.json; the
-                          cluster file's slot names ``rtl/files.f``
-                          (``snax_forge_rtl``)
-    rtl/sv/, rtl/emitted.json
-                          rtl.py's ``elaborate`` (``Emit --spec``) of the
-                          root's accelerator.json, checked against the
-                          datapath catalogue first (rtl.py's
-                          ``accelerator_spec``)
-    rtl/files.f           the RTL's file list: one path per line, relative
-                          to ``rtl/``, in ``emitted.json``'s ``files`` order,
-                          ``emitted.json`` itself left out
-    bundle.json           ``Bundle``: ``design_point`` (as gvsoc.py names
-                          it), ``tag`` (accelerator.json's), ``top`` (the
-                          wrapper, ``<tag>_shell_wrapper``), ``modules``
-                          (``module_tree``), ``snax_forge_commit``
-                          (``git rev-parse HEAD`` of the checkout, null
-                          outside git) and ``dirty`` (the work tree has
-                          uncommitted changes, untracked files included;
-                          false outside git), ``expected`` (null here:
-                          see below)
-
-**The expected lines** (``write_expected``, which ``pixi run forge`` calls
-after its SNAX-GVSoC run passed): ``forge_expected.txt`` beside the bundle,
-the run's ``forge counter`` lines in order and then its ``forge data: 0
-errors`` line, as the program prints them, then a ``forge fill <task>: <n>``
-line per counter, in the same order: the task's group's streamer fill, the
-estimate's ``fill`` (``counter_fills``, from the design point and the flow's
-``tasks.json``). A run of the same ELF on snax_cluster's RTL must print the
-data line as it is; each counter's gap beyond its fill gives the verdict:
-the BUSY_COUNTER counts the streamer's head start, which the core's timing between
-STREAMER_START and START sets and SNAX-GVSoC does not model (open items 65,
-67). snax_cluster's ``snax-forge-check`` applies the bound. ``bundle.json``'s
-``expected`` names the file. A bundle alone has no run, so ``write_bundle``
-removes an earlier one.
-
-**The modules** (``module_tree``), from accelerator.json, not from
-Emit's output: the wrapper's three modules, each with the submodules it holds,
-by the names hw/chisel's Emit gives them: ``<tag>_csr`` (``<tag>_peripherals``), ``<tag>_ctrl``
-(``<tag>_<group>_ctrl`` per group of every accelerator, in CSR order) and
-``<tag>_datapath`` (``<tag>_<unit>`` per unit, then ``<tag>_<link>`` per link
-of depth >= 1, a buffer, group by group), then per accelerator whose groups
-share its movers ``<tag>_<accelerator>_port_mux``, which holds none,
-``<tag>`` the entry's ``<accelerator_slot>_<name>``, the design's name
-(``snax_forge_dot_1``).
-
-snax_cluster takes it through the cluster file alone: snaxgen reads the
-slot's ``snax_forge_rtl`` and writes ``generated/snax_forge.f``, which its
-builds read.
-
-**Refused**, each a ``GenError``: what ``generate``, ``accelerator_spec`` and
-``elaborate`` refuse (``gen.*``, the catalogue's checks and a listed file that is not there among
-them), then
-``bundle.empty`` (``emitted.json`` lists no file); and ``write_expected``'s
-``bundle.expected``: the run's lines hold no ``forge counter`` line or no
-``forge data: 0 errors`` line, or a counter's task has no fill.
-The flow does not call it.
+``write_expected`` writes ``forge_expected.txt`` after ``pixi run forge``'s SNAX-GVSoC run
+passed, its fill lines from ``counter_fills``; the flow does not call it. Refusals are
+``GenError``s: what gvsoc.py and rtl.py refuse, ``bundle.empty`` (``emitted.json`` lists no
+file) and ``bundle.expected`` (the run printed no ``forge counter`` line or no ``forge data: 0
+errors`` line, or a counter's task has no fill).
 """
 
 from __future__ import annotations

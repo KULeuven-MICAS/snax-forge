@@ -1,80 +1,20 @@
 """A design point -> its accelerator's RTL, from ``accelerator.json``.
 
-    accelerator_spec(design_point, root=None) -> Description
-    write_accelerator(design_point, out_dir, root=None) -> Description
-    vectors(design_point, root=None) -> dict
-    write_fixture(design_point, out_dir, root=None) -> list[str]
-    elaborate(spec_json, out_dir) -> list[Path]
-    elaborate_all([(spec_json, out_dir), ...]) -> list[list[Path]]
-    python -m snax_forge.gen.rtl DESIGN_POINT [OUT_DIR] [--fixture DIR]    (pixi gen-rtl)
+``accelerator_spec`` and ``write_accelerator`` give the description (accelerator.py, the same
+bytes gen-gvsoc writes) checked against the datapath catalogue ``hw/chisel/blocks.json``;
+``elaborate`` and ``elaborate_all`` run ``Emit --spec`` on it, one java call for all, on the
+cached classpath (``classpath_file``); ``main`` is ``pixi run gen-rtl``. The files and the
+checks are CONTRACTS, "Accelerator RTL spec". Python resolves and checks; Scala only constructs.
 
-``accelerator.json`` is the boundary between the Python side and ``hw/chisel/``: the one
-description of the accelerator (accelerator.py), the same bytes gen-gvsoc writes, which
-``Emit --spec`` reads to build ``<tag>_shell_wrapper`` (its ``<tag>_csr``, ``<tag>_ctrl`` and
-``<tag>_datapath``). Python resolves and checks; Scala only constructs.
-
-**The checks**, against the datapath catalogue ``hw/chisel/blocks.json`` (the signature of each
-Chisel datapath, equal to ``Emit --describe``), each a ``GenError``: first accelerator.py's
-(``gen.tag``, ``gen.binding``, ``gen.datapath``, ``gen.controller``, ``gen.drain``,
-``gen.timing``, the datapath's adapter's and a reader's link checks), then per unit, in this
-order: the params by the fill rule, the ports and pins whose ``when`` holds, the ports, the
-timing
-
-    gen.catalogue    the datapath is not in the catalogue, or a fill rule is unknown
-    gen.params       a param the fill rule gives that is not of its type or not among its values
-                     (a dtype, an op, a bool, lanes below min)
-    gen.port_map     the unit's datapath ports are not the catalogue's live ports, each once, or
-                     a direction differs (each port's ``dir``)
-    gen.timing       the unit's latency is not the catalogue's (an int, or an ``expr.py``
-                     expression over the params, a bool as 0 or 1), its span not the
-                     catalogue's, or its ii not 1
-
-and per link of depth >= 1 its ``LinkBuffer``'s params (``link.depth``, and the ends'
-``link.lanes`` and ``link.dtype``), ``gen.params``.
-
-**Ports and pins**: a port is ``"in"`` / ``"out"`` or ``{"dir": ..., "when": {param:
-value, ...}}``, a pin a name or ``{"name": ..., "when": {...}}``; one exists only when every
-param its ``when`` lists has that value (``live``), one without ``when`` always.
-
-and, from the command line, ``gen.elaborate``: ``Emit --spec`` failed or did not write a file
-its ``emitted.json`` lists.
-
-**Elaboration** runs ``snax.forge.Emit`` with ``java`` on hw/chisel's runtime classpath, which
-sbt exports once (``compile``, ``export Runtime/fullClasspath``) into
-``hw/chisel/target/emit-classpath-<hash>.txt``, one file per environment (the hash of its
-Coursier cache directory and its ``java``, ``classpath_file``: snax-forge's image and the host
-keep one each), and again only when a file under ``hw/chisel/src/main/`` or ``build.sbt`` is
-newer than it, or when an entry of it is gone or cannot be checked (a cleared jar cache): sbt's
-start and project load are paid only after a change. One java call takes
-every ``--spec FILE --out DIR`` pair (``elaborate_all``).
-
-**The fill rule** (the catalogue's ``fill``): ``inputs.dtype`` the input ports' dtypes in order
-(a ``dtypes`` param) or the first input's (a ``dtype``), ``outputs.dtype`` the output's,
-``inputs.lanes`` the first input's lanes, ``inputs.count`` how many inputs (SimdLanes'
-``streams``), ``unit.opType`` and ``unit.params.<name>`` the unit's (None where the unit has no
-such param: SimdLanes' ``k`` at two streams, a ``const`` param), ``unit.scalars.<slot>`` whether
-the unit reads that slot from its CSR (SimdLanes' ``k1Csr``; each of the unit's scalars must
-then be a live pin, ``gen.port_map``), ``unit.ports.seed`` whether the unit has a seed port (a
-fold's: TreeAccumulate's and SerialAccumulate's ``seed``); a buffer's ``link.depth``, ``link.lanes``
-and ``link.dtype``. Inputs and outputs are
-the unit's ports by their ``dir``, in the BRM's order.
-
-**The fixtures** (``write_fixture``): ``hw/chisel/src/test/resources/rtl/<design>/`` holds, for
-a design of one accelerator task, ``vectors.json``, which the Chisel specs drive the wrapper
-with (dot 1's two groups, a task each, have none: its spec drives each group itself); its
-``accelerator.json`` and streamer hjson are snax-gvsoc's ``forge/<design>/`` (the same bytes,
-gvsoc.py's), but for a design with no such folder, whose two files stay beside it. Per outer
-port, in
-``accelerator.json``'s ``inputs`` then ``outputs`` order, its BRM port, its data.h array (an
-input, or the output's golden) and how many beats a task moves (lane i of beat t is element
-t * lanes + i, modulo the array's size: matvec's vector is read again for every row), and per
-task its CSR values (JOBS, JOB_BEATS: lower/c.py's ``job_writes``), the head unit's firings
-and the counter with an always-ready streamer, the working in ``working``: one unit's worked
-from the control unit's rule (``counter``), a linked group's from snax-gvsoc's group rule
-(``group_counter``: ``snax_group_rule.py`` stepped with an always-ready streamer, any shape the
-rule accepts, by estimate/cycles.py's ``group_cycles``; ``estimate.submodule`` without the
-submodule). the Cycles state the same for dot's
-and matvec's shapes.
+Per unit the checks run in order: the params by its fill rule, its live ports and pins
+(``live``), its ports, its timing; then each buffer's ``LinkBuffer`` params. The fill rule's
+keys: ``inputs.dtype``, ``outputs.dtype``, ``inputs.lanes``, ``inputs.count``, ``unit.opType``,
+``unit.params.<name>`` (None where unset), ``unit.scalars.<slot>``, ``unit.ports.seed`` and a
+buffer's ``link.depth``, ``link.lanes``, ``link.dtype``. ``vectors`` and ``write_fixture`` write
+the Chisel specs' ``vectors.json``: per outer port its data.h array (lane i of beat t is element
+t * lanes + i, modulo the array's size) and per task its CSR values and expected counter, from
+the control unit's rule (``counter``) or, for a linked group, snax-gvsoc's group rule
+(``group_counter``; ``estimate.submodule`` without the submodule).
 """
 
 from __future__ import annotations

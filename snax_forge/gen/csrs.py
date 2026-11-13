@@ -1,19 +1,12 @@
-"""The entry's CSR numbers: per streamer set, its streamer's, from its template,
-then its accelerator's own, from the description (accelerator.py's defines), packed from 960,
-as snax-gvsoc's SnaxAccelerator and snax_cluster's ``snax_csr_range_demux`` number them.
+"""The entry's CSR numbers: per streamer set, its streamer's, then its accelerator's own.
 
-    movers(template) -> [mover]           readers first, named as the headers name them
-    mover_csr_count(spatial_bounds, temporal_dim, enabled=0) -> int
-    streamer_csrs(template) -> int        snax_streamer.nb_csrs
-    channels(template) -> int             snax_cfg.streamer_channels
-    csr_layout(templates, desc) -> CsrLayout
-
-With s_k and c_k set k's streamer and own CSRs, b_0 = 960 and b_{k+1} = b_k + s_k + c_k:
-streamer k at [b_k, b_k + s_k), its own at [b_k + s_k, b_{k+1}); a CSR at offset o from the
-shell's first (accelerator.json's, contiguous over the sets) of set k is b_k + s_k + o - o_k,
-o_k the own CSRs of the sets before it. ``gen.csrs`` when b_K - 1 is past ``SNAX_ACC_CSR_LAST``.
-The generator writes them into the headers and the manifest; ``run/`` reads them back to name
-the CSR writes of a run (``run/cluster.py``, ``run/beats.py``).
+``csr_layout`` packs them from 960, as snax-gvsoc's SnaxAccelerator and snax_cluster's
+``snax_csr_range_demux`` number them (CONTRACTS, "Generated hjson files", the CSRs), and refuses
+a last CSR past ``SNAX_ACC_CSR_LAST`` (``gen.csrs``). ``movers`` lists a template's movers,
+readers first, as the headers name them; ``streamer_csrs`` and ``channels`` are snax-gvsoc's
+``snax_streamer.nb_csrs`` and ``snax_cfg.streamer_channels``. The generator writes the numbers
+into the headers and the manifest; run/cluster.py and run/beats.py read them back to name a
+run's CSR writes.
 """
 
 from __future__ import annotations

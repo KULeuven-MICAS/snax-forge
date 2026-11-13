@@ -1,61 +1,20 @@
-"""The generated C headers: what a program needs to drive the accelerators,
-and the runtime's view of the cluster.
+"""The generated C headers: what a program needs to drive the accelerators, and the runtime's
+view of the cluster.
 
-``generate`` writes them to ``out/gvsoc/<design>/include/`` and lists them
-in the manifest:
+gvsoc.py writes them into ``include/`` (CONTRACTS, "Generated hjson files"):
+``streamer_header`` per streamer set, byte for byte what snax_cluster's StreamerSwHeaderGen
+writes (``Streamer.scala``'s ``writeCsrAddrMap``, ``--csr-base`` b_k and ``--macro-prefix
+<SET>_``) but for its timestamp line, which names the design point; ``accelerator_header`` per
+accelerator, its own CSRs by ``Accelerator.define`` in CSR order (csrs.py's numbers);
+``cluster_headers``, ``snitch_cluster_cfg.h`` (``CFG_CLUSTER_NR_CORES`` and
+``CFG_CLUSTER_BASE_HARTID``) and ``snitch_cluster_addrmap.h`` (the L1, the cluster's size and
+address width, the peripherals, the zero memory, the CLINT), text-equal to what snax_cluster's
+templates render from the cluster file but for the copyright and blank lines.
 
-    streamer_<set>_csr_addr_map.h
-                              per streamer set, its streamer's CSRs:
-                              byte for byte the header snax_cluster's
-                              StreamerSwHeaderGen writes for the set
-                              (``Streamer.scala``'s ``writeCsrAddrMap`` with
-                              ``--csr-base`` b_k, ``--macro-prefix <SET>_``
-                              and ``--header-name``, as snaxgen calls it), but
-                              its timestamp line, which names the design
-                              point instead: per mover, readers then writers
-                              (``READER_<i>``, ``WRITER_<j>``),
-                              ``BASE_PTR_<M>_LOW`` / ``_HIGH``, then for the
-                              spatial strides, the temporal bounds and the
-                              temporal strides a ``_BASE_<M>``, a ``_NUM_<M>``
-                              and one define per index; then
-                              ``STREAMER_START_CSR``, ``STREAMER_BUSY_CSR``,
-                              ``STREAMER_PERFORMANCE_COUNTER_CSR``; every
-                              define's name prefixed ``<SET>_``
-    <acc>_csr.h               per accelerator, its own CSRs (accelerator.py), each by
-    ``Accelerator.define``, in CSR
-                              order, at its number in the entry (csrs.py):
-                              ``<ACC>_<RW|RO>_[<GROUP>_][<UNIT>_]<NAME>``;
-                              vecadd's ``ACC_RW_START``, ``ACC_RW_JOBS``,
-                              ``ACC_RO_STATUS``, ``ACC_RO_BUSY_COUNTER``
-    snitch_cluster_cfg.h      the runtime's core count and first hart
-                              (``CFG_CLUSTER_NR_CORES``, the cores over the
-                              hives, ``$ref``s resolved, as clustergen
-                              counts them; ``CFG_CLUSTER_BASE_HARTID``)
-    snitch_cluster_addrmap.h  the runtime's address map: the L1's base and
-                              size, the cluster's size and address width,
-                              the peripherals and the zero memory after the
-                              L1, the CLINT
-
-The two cluster headers are what snax_cluster's templates
-``target/snitch_cluster/sw/runtime/common/snitch_cluster_cfg.h.tpl`` and
-``snitch_cluster_addrmap.h.tpl`` (at the pin of snax-gvsoc ``sw/README.md``)
-render from the cluster file, the generated one: below the header comment,
-text-equal but for the templates' copyright and blank lines. The runtime
-puts its stacks at the L1's end (``start.S``), so a program and its runtime
-built against them fit the design point's L1. A
-``cluster_base_offset`` that is not a power of two is a ``GenError``
-(``gen.platform``): ``CLUSTER_ADDRWIDTH`` is its log2; a missing or
-non-integer key is ``gen.source``.
-
-Streamer.scala's optional per-mover CSRs (address remap, byte enables) and
-its datapath extensions are not in snax-gvsoc's streamer model, so they never
-appear (their comment lines do, as the Chisel writes them); a shared set's
-masked mover (``configurable_channel``) has ``ENABLED_CHANNEL_<M>`` and
-``ENABLED_CHANNEL_<M>_CSR_NUM`` after its temporal strides, as Streamer.scala
-writes them. Its ``<acc>_csr.h`` ends with ``<ACC>_RW_PORT_MUX_SEL``. The
-streamer header is checked against snax_cluster ry/slot1's (``tests/gen/``);
-more dimensions follow Streamer.scala's loops, read, not compared with a
-generated file. No header has an include guard, as the Chisel one has none.
+Streamer.scala's optional per-mover CSRs (address remap, byte enables) are not in snax-gvsoc's
+model and never appear. No header has an include guard, as the Chisel one has none. A
+``cluster_base_offset`` that is not a power of two is ``gen.platform``; a missing or
+non-integer key ``gen.source``.
 """
 
 from __future__ import annotations

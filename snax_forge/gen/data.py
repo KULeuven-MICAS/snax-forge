@@ -1,41 +1,17 @@
 """A design point -> the program's data, ``data.h``.
 
-    arrays(point, seed=0, kernel=None, goldens=None) -> list[Array]
-    data_h(point, point_path, data=None, seed=0) -> str
+``arrays`` gives the containers' arrays and ``data_h`` writes the file CONTRACTS, "Generated hjson
+files" describes, in the graph's container order: every container the DMA moves, and every one
+the core reads to write a CSR (a slot's container, in L2 only: axpy's ``alpha``). An input is
+the kernel's ``make_inputs`` at the bound size (``dfg.reference.kernel_inputs``); an output is
+zeroed, or ``make_inputs``' value when it gives one (an in-place update, axpy's ``y``), with its
+``<name>_golden`` from the reference executor (dfg/execute.py). Inputs and goldens are
+``const``; main.c (lower/c.py) reads the arrays by name.
 
-Every container the DMA moves (it lives in L2 and L1) and every one the
-core reads to write a CSR (a slot's container, in L2 only: axpy's ``alpha``,
-main.c writes ``alpha[0]`` into K1), in the graph's container order, as one
-C array or two:
-
-    input    the kernel's ``make_inputs`` at the size the graph binds,
-             seeded (the flow's own path, ``dfg.reference.kernel_inputs``),
-             ``const``
-    output   the kernel's ``inout``, the array the DMA stores into: zeroed,
-             or ``make_inputs``' value when it gives one (an in-place
-             update, axpy's ``y``), then ``<name>_golden``: the
-             reference executor (``dfg/execute.py``) on the bound graph and
-             those inputs, as the flow checks a run, ``const``
-
-The C type is the container's dtype (``int64_t``, ``int32_t``, ``int8_t``,
-...): the arrays hold the elements packed as NumPy lays them out, several to
-a word for a narrow dtype.
-Each array, golden included, is written in the container's padded shape (a
-tail's, dfg/pad.py: its pads hold ``pad_value``), then padded with
-zeros to whole DMA beats, the container's L2 bytes (``lower/layout.py``'s ``l2_bytes``) and aligned
-to the beat (``l2.beat_bits``, 64 bytes on snax_forge).
-main.c (lower/c.py) reads the arrays by name: a DMA's L2 side is the array its task names
-(``symbol``).
-
-The file starts with a ``//`` comment naming the design point by its path
-from the root, as the other generated files do, so one design point gives
-byte-identical text wherever it is written.
-
-**Refused**, each a ``GenError``: a dtype that is not intN or uintN
-(``gen.dtype``), an L2 layout that is not the array's contiguous elements
-(``gen.layout``), a graph named after no kernel, an input ``make_inputs`` does
-not give or a moved container that is neither an input nor an output
-(``gen.inputs``).
+Refusals are ``GenError``s: a dtype that is not intN or uintN (``gen.dtype``), an L2 layout
+that is not the array's contiguous elements (``gen.layout``), a graph named after no kernel, an
+input ``make_inputs`` does not give, or a moved container that is neither an input nor an
+output (``gen.inputs``).
 """
 
 from __future__ import annotations

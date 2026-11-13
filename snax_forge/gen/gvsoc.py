@@ -1,154 +1,19 @@
-"""A design point -> its cluster on SNAX-GVSoC: its description files and headers.
+"""A design point -> its cluster on SNAX-GVSoC: its description files, headers, data and program.
 
-    generate(design_point, out_dir, root=None) -> Manifest
+``generate`` writes into ``out_dir`` the files CONTRACTS, "Generated hjson files" lists: the
+cluster file, one streamer hjson per set, ``accelerator.json`` (accelerator.py), the C headers
+(headers.py), ``data.h`` (data.py), ``main.c`` and ``obs_marks.json`` (lower/c.py) and
+``manifest.json`` (``Manifest``). SNAX-GVSoC reads the hjson at run time (snax-gvsoc
+``snax/snax_cfg.py``), so nothing is compiled and no Python is generated. The cluster file gets
+the platform's values by the reverse of design/hjson_platform.py's mapping.
 
-The hjson is the contract: SNAX-GVSoC's ``snax_hjson`` target reads it at
-run time (snax-gvsoc ``snax/snax_cfg.py``), so a design point compiles
-nothing and no Python is generated. ``out_dir`` gets the
-description files, each changing for its own reason, the C headers, the
-program and its data, and the manifest:
-
-    <platform>.hjson         the cluster: the platform's source hjson with
-                             the platform's values written back, the
-                             cluster renamed and the accelerator slot set
-    <tag>_streamer_<set>.hjson
-                             per streamer set (one per accelerator),
-                             its streamer template, as the hjson has it
-    accelerator.json         the accelerators' one description
-                             (accelerator.py)
-    include/                 the C headers (headers.py): per set
-                             streamer_<set>_csr_addr_map.h and per
-                             accelerator <acc>_csr.h, and the runtime's
-                             snitch_cluster_cfg.h and
-                             snitch_cluster_addrmap.h from the cluster file
-    data.h                   the program's data (data.py): inputs,
-                             outputs and goldens
-    main.c                   the program (lower/c.py): the
-                             task list on snRuntime, self-checking
-    obs_marks.json           the quiet build's sections (-DFORGE_QUIET),
-                             each {mark, kind, label}: the value written
-                             to CSR 0x7c5 (obs_o) as it starts
-    manifest.json            what was written (Manifest)
-
-A file is written only when its text changes (``write_changed``), and only the files an
-earlier generation into ``out_dir`` wrote (its manifest's) and this one does not are removed,
-so generating the same design point again changes no file and rebuilds no program.
-
-``<platform>`` is the platform's base (its name when it has none), ``<tag>``
-the generated entry's name, ``<accelerator_slot>_<name>``, the design's name
-(accelerator.py's ``tag``): for dot 1 on ``platforms/snax_forge.json``,
-``snax_forge.hjson``, ``snax_forge_dot_1_streamer_vmul.hjson``,
-``snax_forge_dot_1_streamer_vsum.hjson`` and ``accelerator.json``.
-
-**The cluster file.** The platform's ``hjson`` (a path from ``root``),
-parsed, with the platform's values written back by the reverse of
-``design/hjson_platform.py``'s mapping:
-
-    cluster.tcdm.banks         l1.n_banks
-    cluster.data_width         l1.width_bits (= l2.width_bits)
-    cluster.tcdm.size          l1.n_banks * l1.rows * l1.width_bits, in KiB
-    cluster.cluster_base_addr  l1.base_addr
-    cluster.dma_data_width     l1.wide_bits (= l2.beat_bits)
-    dram.address, dram.length  l2.base_addr, l2.size_bytes
-
-``cluster.name`` becomes ``CLUSTER`` (``snax_forge_cluster``), and in
-``cluster.bender_target`` the entry equal to the source's ``cluster.name``
-becomes it too, so the generated cluster takes no name of snax_cluster's own. The slot, the source's
-one ``snax_acc_cfg`` entry whatever its
-name, is renamed and set, always in the sets form, also for one set,
-its keys in this order:
-
-    snax_acc_name               the tag
-    the source's other keys     in their order, ``bender_target`` dropped
-                                (the RTL comes from the bundle, bundle.py),
-                                and ``snax_streamer_cfg``, ``snax_num_rw_csr``
-                                and ``snax_num_ro_csr`` (each set has its
-                                own), with these set (a key the source lacks
-                                after the others):
-      snax_tcdm_ports           the sum over the sets of their channels
-      sparse_interconnect_config  one group per set, of its width (the
-                                source's granularity kept), when the source
-                                has it
-    snax_disable_csr_manager    true: the wrapper carries its own manager
-    snax_forge_rtl              ``rtl/files.f``, the RTL's file list from
-                                the cluster file's folder, which only a
-                                bundle has; SNAX-GVSoC ignores it
-    snax_streamer_sets          per accelerator in CSR order ``{name,
-                                snax_streamer_cfg: {"$ref":
-                                "<tag>_streamer_<set>.hjson"},
-                                snax_num_rw_csr, snax_num_ro_csr}``, its R/W
-                                and R/O CSRs (accelerator.py)
-    snax_datapath_cfg           ``{"$ref": "accelerator.json"}``
-
-each ``$ref`` the whole file. The source's own template, a top-level key the
-slot referred to (``{"$ref": "#/<key>"}``), goes when nothing else refers to
-it. Everything else is the source's, its key order kept; its comments are
-not (the file is written as JSON, which hjson reads).
-
-**The streamers**, one per set, lowered per design point, as the design
-point's streamers give them: readers the set's input ports, writers its
-output ports, unit by unit (the accelerator's groups in order) in the
-BRM's port order, each with ``spatial_bounds`` in words, fastest
-first (``[S_0 / num_slc, S_1, ...]``: the fastest bound over num_slc, the slices
-of the port's container dtype a word holds), ``temporal_dim`` (the
-streamer's ``temporal_dims``), ``num_channel`` (the streamer's ``num_ch``, the
-wire default W / num_slc; snax-gvsoc's streamer requires the bounds' product to
-be it)
-and ``fifo_depth``. A set whose groups share its movers has its shared movers instead
-(design/streamers.py's ``shared_movers``), readers then writers, each at its widest user's
-channels and spatial bounds, the most temporal dims and the deepest FIFO, and
-``configurable_channel`` per mover of a role where one is masked.
-
-**The accelerators** are accelerator.py's ``describe``, written as plain JSON
-(no header comment: its ``design_point`` names the source). Each set's own
-CSRs follow its streamer's (csrs.py).
-
-**Refused**, each a ``GenError`` (``gen.<rule>``): a design point outside
-``root`` (``gen.point``), what accelerator.py's ``describe`` refuses
-(``gen.tag``, ``gen.binding``, ``gen.datapath``, ``gen.drain``, ``gen.timing`` and the datapath's
-adapter's), a dtype that is not intN or uintN (``gen.dtype``), a
-streamer whose fastest spatial bound is not whole words (``gen.lanes``,
-which connect.pack refuses first), the entry's CSRs past ``SNAX_ACC_CSR_LAST`` (``gen.csrs``,
-csrs.py), a platform
-without a source hjson or a source that cannot be read or written into
-(``gen.source``, also a ``cluster.bender_target`` without the source's
-``cluster.name``), a source with no slot or several (``gen.slot``), and a
-platform value the hjson cannot express
-(``gen.platform``: what the cluster file gives back through
-hjson_platform.py must be the platform's L1 and L2; a
-``cluster_base_offset`` the address map cannot take, headers.py). A symbol of the bound
-graph still null never gets here: ``DesignPoint.load`` refuses it
-(``graph.symbols``).
-
-**The manifest**: ``design``, ``design_point``, ``symbols`` (the bound
-graph's, e.g. ``{"N": 64}``: what a program sizes its data by),
-``cluster`` (the cluster file, what gvrun's ``--param hjson=`` takes),
-``files``, ``program`` (``main.c``), ``trace`` (``trace_path``: the trace path of the
-accelerator's one unit, ``snax_acc0/unit``; of its one linked group,
-``snax_acc0/group_<group>``; with several groups the accelerator's, ``snax_acc0``), ``csrs``
-(the layout, csrs.py: ``streamers``, per set ``{name, first, last, trace}``, its streamer's
-first and last CSR and its trace ``snax_acc0/streamer_<set>``, and ``accelerator``, every
-accelerator CSR's define -> its number) and ``tasks``: per accelerator task of the derived task list
-(snax_forge/lower/derive.py), in order, its name, its ``beats`` (the unit's firings,
-the task's ``n``; a linked group's most firing unit's), its ``csrs`` values (its group's
-``JOBS``, and ``JOB_BEATS`` for a fold without ``params.T``, named with its unit in a linked
-group, ``MAC_JOB_BEATS``: lower/c.py's ``job_writes``) and, with several groups, its
-group's ``trace`` path, ``snax_acc0/unit_<unit>`` or a linked group's
-``snax_acc0/group_<group>``, as snax-gvsoc's composite names them then.
-
-**Stable paths.** The design point is named once, by its path relative to
-``root`` (snax-forge's root by default; ``named_from`` when given, the
-flow's folder in a flow), ``/``-separated: the manifest's
-``design_point`` and every written file's header comment hold the same
-string (``out/design/vecadd/design_point.json``); the platform's source is
-read from ``root`` too. ``files`` and ``cluster`` are relative to the
-manifest's folder. Nothing written depends on where ``out_dir`` is, the
-working directory or the host: one design point written into two folders
-gives byte-identical files, which is what lets snax-gvsoc's checked-in
-fixture be compared with a fresh run by diff.
-
-Not verified: the order of ``spatial_bounds`` against snax_cluster's
-template for more than one spatial dimension (every template so far has one).
+A file is written only when its text changes (``write_changed``), and a file an earlier run into
+``out_dir`` wrote (by its manifest) and this one does not is removed, so the same design point
+again changes no file. The design point is named once, by its ``/``-separated path from ``root``
+(snax-forge's root, or ``named_from``: the flow's folder), so one design point gives the same
+bytes wherever written. Refusals are ``GenError``s; ``gen.point`` is a design point outside
+``root``. Not verified: the order of ``spatial_bounds`` against snax_cluster's template for more
+than one spatial dimension (every template so far has one).
 """
 
 from __future__ import annotations

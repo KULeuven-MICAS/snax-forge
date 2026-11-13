@@ -1,80 +1,18 @@
 """The datapaths the generator fills: a binding's ``datapath`` -> a unit's ports and params.
 
-An adapter reads an instance (its BRM, implementation and design params,
-snax_forge/brm/instance.py) and its ports' dtypes (the node's containers',
-``brm.port_dtypes``) and gives what ``accelerator.json`` holds of the unit
-beyond its name, BRM, timing and CSRs (accelerator.py): per BRM port its
-datapath port, dtype and lanes, ``opType`` for a SIMD unit, and
-``params``; or it refuses with a ``GenError`` naming what does not fit.
-Adapters are registered by the datapath's name with its latency L and span
-(``register_datapath``), each an int or an ``expr.py`` expression over the
-params the adapter gives and ``lanes`` (its first input's; a bool as 0 or 1,
-``timing``); the implementation's timing must be L, II 1, that span and drain
-0 (accelerator.py). Every datapath is driven by the shell's nest
-controller (``counted``): data and enables only.
+An adapter reads an instance (brm/instance.py) and its ports' dtypes (``brm.port_dtypes``) and
+gives what ``accelerator.json`` holds of the unit beyond its name, BRM, timing and CSRs: per BRM
+port its datapath port, dtype and lanes, ``opType`` for a SIMD or Mac unit, and ``params``; or
+it refuses with a ``GenError``. ``register_datapath`` registers an adapter by the datapath's
+name with its latency and span (an int or an ``expr.py`` expression over its params and
+``lanes``). The datapaths, their ports and the refusals are CONTRACTS, "Accelerator RTL spec".
 
-**SimdLanes** (L 0): one op over every lane; args lanes and op, and
-optionally streams (2 by default) and k.
-
-    ports        at two streams, two inputs and one output (SnaxUnit's op
-                 table is binary); at one, one input and one output, the op's
-                 second operand the constant k; each with args.lanes lanes;
-                 each port's lanes * N whole 64-bit channels, N its
-                 dtype's bits (intN or uintN, N in 8, 16, 32, 64); the
-                 instance's ports (``Instance.ports``) are the ones counted
-    opType       the inputs' NumPy result type (brm/dtypes.py's
-                 ``result_type``), the type the op runs at (at one
-                 stream a's dtype); the result is then extended or wrapped
-                 into the output's
-    params       ``op``: args.op, one of ElementwiseOp's names (add, sub, mul,
-                 and, or, xor, min, max; ElementwiseAlu.scala's encoding is
-                 ``ELEMENTWISE_OP``, which tests/gen reads from the source);
-                 at one stream also ``k``: args.k, an int that fits opType
-                 (``gen.k``), read only there, so an unset k at two streams is
-                 never evaluated; a k at two streams is refused; at one
-                 stream k is baked or read from a container (a CSR slot,
-                 ``Instance.read``, ``k`` left out), else refused;
-                 ``axpby`` (two streams, ``k1 * a + k2 * b``) takes args.k1 and
-                 args.k2, each baked (an int that fits opType, in params) or
-                 read (a CSR), k1 one of the two, k2 also unset (no factor)
-    scalars      each slot read from a container (k at one stream, k1, k2), in
-                 slot order, at opType: an R/W CSR the program writes, an
-                 input pin of opType's width (gen/accelerator.py)
-
-**TreeAccumulate** (L 1): a fold, one sum every T inputs, the input's
-lanes summed by an adder tree in front of its register.
-
-    ports        one input of rate 1 with args.lanes lanes, whole 64-bit
-                 channels, and one output of a named rate (T) of one lane,
-                 one word whatever its N (the lanes are cast to it)
-    op           add: the BRM's op param, the only one an adder tree runs
-                 (``gen.op`` until a datapath takes another)
-    params       ``op``: add, as SimdLanes' ``op``; args are lanes only
-    seed         optional (the BRM's port ``seed``, present at its design
-                 param ``seed`` 1): an input of one word at the output's rate,
-                 the sum's start in a job's first firing (``fuse_seed``); its
-                 presence in ``ports`` says so, no param
-
-**SerialAccumulate** (L 1, span lanes): TreeAccumulate's ports, op and
-args, its lanes added one a cycle (lane k in cycle k) into one sum; params
-none (its op is add).
-
-**Mac** (L ``max(accumulate, regOut)``): args lanes, ``accumulate`` and
-``regOut`` (bools). With ``accumulate``: inputs ``a`` and ``b`` of rate 1, an
-output of a named rate (T), each lane summing T products; otherwise the plain
-``a * b + c``, ``c`` an input of rate 1 with ``out``'s dtype and lanes, every
-rate 1. Every port args.lanes lanes of whole 64-bit channels; ``opType`` the
-result type of ``a`` and ``b``; params ``accumulate`` and ``regOut``.
-
-**LaneAccumulate** (L 1): Mac's accumulating form without the product, each
-lane summing its own T inputs: an input ``a`` of rate 1 and an output of a named
-rate (T), both args.lanes lanes of whole 64-bit channels; args lanes only; op
-add (``gen.op``); no opType (the input is extended to the output's type, which
-the sum runs at) and no params.
-
-An instance judged without a graph (brm/instance.py's check of its datapath)
-has no dtypes: its adapter checks everything but the widths and gives ports
-without dtypes, which are never written.
+The args each adapter reads: ``simd_lanes`` lanes, op, streams (2 by default) and k, or k1 and
+k2 for axpby, each baked (an int that fits opType, else ``gen.k``) or read from a container (a
+CSR); ``tree_accumulate`` and ``serial_accumulate`` lanes, op add only, a seed port when the
+BRM's design param ``seed`` is 1; ``mac`` lanes, ``accumulate`` and ``regOut``;
+``lane_accumulate`` lanes. Every port is whole 64-bit channels. An instance judged without a
+graph (brm/instance.py's check) has no dtypes: its adapter checks all but the widths.
 """
 
 from __future__ import annotations
