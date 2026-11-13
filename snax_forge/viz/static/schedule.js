@@ -1,4 +1,4 @@
-// The schedule of one run (D57), with the cluster view under it (cluster.js).
+// The schedule of one run, with the cluster view under it (cluster.js).
 // It draws /api/run/<n>/schedule and nothing else: the lanes, top to bottom
 // as the answer orders them, over the segments of the window [0, T), and the
 // boot before 0.
@@ -7,9 +7,9 @@
 //                 thin band of its function spans under them, a tick per CSR
 //                 access (a poll's at its first read)
 //   DMA lane      one bar per copy, issue to done, with its direction
-//   headings      accelerator ▸ group, as the editor's Bindings nest them
-//                 (D156): one per group, its movers' and its unit's lanes under
-//                 it (one streamer set per accelerator, D157)
+//   headings      accelerator ▸ group, as the editor's Bindings nest them:
+//                 one per group, its movers' and its unit's lanes under it
+//                 (one streamer set per accelerator)
 //   mover, acc    one bar per task, start to done, coloured by its class runs
 //                 from beat on (idle left blank), its class totals on hover
 //   detail rows   from beat on, inside the open segments in view only, from
@@ -142,14 +142,14 @@ function laneRows(detail, ans, showDetail) {
   const filter = detail.trace?.filter ?? [];
   const movers = Object.fromEntries(detail.cluster.accelerator.movers.map((m) => [m.name, m]));
   const rows = [];
-  let at = null; // the accelerator ▸ group the last heading named (D156, D157)
+  let at = null; // the accelerator ▸ group the last heading named
   for (const lane of ans.lanes) {
     const name = lane.name;
     if (lane.group !== undefined && `${lane.accelerator}|${lane.group}` !== at) {
       at = `${lane.accelerator}|${lane.group}`;
       const label = accelGroup(lane.accelerator, lane.group);
       rows.push({ label, sub: lane.accelerator !== lane.group ? "accelerator ▸ group" : "group", height: HEAD_H, head: true,
-        title: `${label}: its movers, then its unit (one streamer set per accelerator, D157)` });
+        title: `${label}: its movers, then its unit (one streamer set per accelerator)` });
     }
     if (lane.kind === "core") {
       rows.push({ label: name, sub: "core", height: LANE_H, draw(g, m) {
@@ -216,7 +216,7 @@ function laneRows(detail, ans, showDetail) {
       } });
       if (!showDetail) continue;
       if (lane.kind === "accelerator") {
-        const own = (d) => d.units?.[name] ?? d.acc; // each unit its own lines (several groups, D148)
+        const own = (d) => d.units?.[name] ?? d.acc; // each unit its own lines (several groups)
         rows.push(sub(`${name} fire`, "its firings (n)", (g, d, m) => cells(g, m, own(d).filter((e) => e.k === "fire"), () => "s-busy", (e) => e.n)));
         rows.push(sub(`${name} push`, "its results handed to the writer (n)", (g, d, m) => cells(g, m, own(d).filter((e) => e.k === "push"), () => "s-busy push", (e) => e.n)));
       } else {
@@ -570,7 +570,7 @@ export async function renderSchedule(root, detail, ctx) {
     [["busy", "Busy, run, fire, push, read data back (strip)"], ["req", "Request (accepted), DMA copy"], ["mem", "Memory stall, refused"], ["flow", "Flow stall"], ["command", "Barrier"], ["wait", "Poll"], ["fifo", "FIFO count"]]
       .map(([g, label]) => h("li", {}, h("i", { class: `key g-${g}` }), label)),
     h("li", {}, h("i", { class: "key fold-key" }), "Folded (fixed width)"),
-    h("li", { title: "a mover's task with every temporal bound 0, started with another group's task (D148): it moves nothing" },
+    h("li", { title: "a mover's task with every temporal bound 0, started with another group's task: it moves nothing" },
       h("i", { class: "key idle-key" }), "idle (shared start)"));
   const controls = h("div", { class: "sched-controls" },
     h("button", { type: "button", onclick: () => zoom(1 / 1.5), "aria-label": "Zoom out" }, "−"),

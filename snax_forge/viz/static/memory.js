@@ -1,4 +1,4 @@
-// The memory tab (D57): where a run's regions sit in each
+// The memory tab: where a run's regions sit in each
 // memory, and on a run traced at beat or above how its words move.
 //
 // Everything shown is computed by the server (viz/api.py, memory.py on index.py): per
@@ -87,7 +87,7 @@ function unravel(flat, shape) {
   return idx;
 }
 
-// Padding (D144, memory.py): flat -1 a word of the region's beat padding, -2 - p its padded
+// Padding (memory.py): flat -1 a word of the region's beat padding, -2 - p its padded
 // shape's element p, a tail's pad; anything else an element of its shape.
 const isPad = (flat) => flat < 0;
 const elemText = (region, flat) =>
@@ -267,7 +267,7 @@ function grid(ctx, m, colours, redraw) {
       }
       const [ri, flat] = cell[0];
       const r = m.regions[ri];
-      for (const [rj, fj] of cell) tip.push(isPad(fj) ? `${elemText(m.regions[rj], fj)}, kept by the memory plan (D144)` : `${elemText(m.regions[rj], fj)}, flat index ${fj}`);
+      for (const [rj, fj] of cell) tip.push(isPad(fj) ? `${elemText(m.regions[rj], fj)}, kept by the memory plan` : `${elemText(m.regions[rj], fj)}, flat index ${fj}`);
       const padOnly = cell.every(([, fj]) => isPad(fj));
       let text;
       let cls = `mem-cell r${colourOf(colours, r.name)}${cell.length > 1 ? " multi" : ""}${padOnly ? " pad" : ""}${sb(c)}`;

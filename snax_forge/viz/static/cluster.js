@@ -1,4 +1,4 @@
-// The cluster at one cycle (D57), drawn under the schedule and
+// The cluster at one cycle, drawn under the schedule and
 // following its selected cycle: the data side only, no core or controller
 // box (the cores are the schedule's lanes). Plain HTML and CSS: every arrow
 // is straight and sits in the grid column of the bank or block it points at,
@@ -17,7 +17,7 @@
 //   arrows        reader → accelerator on a fire, accelerator → writer on a
 //                 push
 //   accelerator   its class, task, firing and push; inside it one streamer
-//                 box per streamer set (D157): the set's CSRs and movers,
+//                 box per streamer set: the set's CSRs and movers,
 //                 striped busy while a task of its movers is open
 //
 // Every memory hop has two lanes, because both can happen in one cycle:
@@ -206,7 +206,7 @@ function build(detail, first) {
   const facts = accelUnits(acc.description).map((x) => h("div", { class: "cl-line muted" }, unitFacts(x)));
   const unit = block(acc.name, "accelerator");
   const unitLines = { task: h("div", { class: "cl-line" }), fire: h("div", { class: "cl-line" }), push: h("div", { class: "cl-line" }) };
-  // one streamer box per streamer set, inside the accelerator (D157)
+  // one streamer box per streamer set, inside the accelerator
   const sets = (acc.csrs?.sets ?? []).map((x) => {
     const b = block(`streamer ${x.name}`, `CSRs ${x.first}–${x.counter}`);
     const task = h("div", { class: "cl-line" });
@@ -301,7 +301,7 @@ function build(detail, first) {
         q.slotsEl.title = n === null ? `${q.port}: FIFO counts need --trace stall` : `${q.port}: ${n} of ${q.depth}`;
       }
       p.b.el.classList.toggle("bad", bad);
-      // the unit whose mover it is (several groups: each unit its own, D148)
+      // the unit whose mover it is (several groups: each unit its own)
       const mine = on ? (a.acc.units ?? [a.acc]).find((u) => !m.instance || u.name === m.instance) ?? a.acc : {};
       const fire = on && mine.fire && (m.write || m.name in (mine.fire.b ?? {})) ? mine.fire : null;
       const push = on ? mine.push : null;

@@ -1,4 +1,4 @@
-// Entry point of the viewer (D55, D57): loads the
+// Entry point of the viewer: loads the
 // run list and the selected run from the API, fills the header and hands the
 // page to one view: the profile report (report.js), the schedule with the
 // cluster view under it (schedule.js, cluster.js), or the memory layout
@@ -24,7 +24,7 @@ import { renderSchedule, selectCycle, stepSchedule } from "./schedule.js";
 
 const $ = (id) => document.getElementById(id);
 
-// Every POST is JSON: the server refuses another Content-Type (415, D55)
+// Every POST is JSON: the server refuses another Content-Type (415)
 const POST_JSON = { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" };
 
 async function getJSON(url, opts) {

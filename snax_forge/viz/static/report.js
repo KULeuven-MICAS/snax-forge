@@ -1,4 +1,4 @@
-// The profile report of one flow run (D137): the profile (CONTRACTS.md
+// The profile report of one flow run: the profile (CONTRACTS.md
 // section 7), the cluster as the run names it (run/cluster.py) and run.json,
 // drawn top to bottom. Works at both trace levels; a core's classes and waits
 // need the events (trace task) and say so when missing.
@@ -72,10 +72,10 @@ function accelSection(detail) {
   if (!names.length) return null;
   const acc = cluster.accelerator;
   return section("accelerators", "Accelerator",
-    "Utilisation is busy cycles over the program's window: a firing and the II gap after it (D59).",
+    "Utilisation is busy cycles over the program's window: a firing and the II gap after it.",
     names.map((n) => {
       const a = profile.accelerators[n];
-      // accelerator ▸ group, as the editor's Bindings nest them (D156), one streamer set each (D157)
+      // accelerator ▸ group, as the editor's Bindings nest them, one streamer set each
       const own = unitsOf(acc.description, n)[0];
       const where = own ? accelGroup(own.accelerator, own.group) : n;
       return h("div", { class: "block" },
@@ -84,7 +84,7 @@ function accelSection(detail) {
         h("div", { class: "util" },
           h("div", { class: "meter" }, h("span", { class: "g-busy", style: { width: `${100 * a.utilisation}%` } })),
           h("b", {}, `${(100 * a.utilisation).toFixed(1)}%`), ` utilisation, ${int(a.firings)} firings`),
-        // its group's movers in a collapsible (C§7: mul ▸ mul_a, mul_b, mul_out); R3 styles it
+        // its group's movers in a collapsible (mul ▸ mul_a, mul_b, mul_out)
         ((movers) => h("details", { class: "group-movers" },
           h("summary", {}, `${where} ▸ ${movers.map((m) => m.name).join(", ")}`),
           table(
@@ -101,7 +101,7 @@ function streamerSection(detail) {
   const names = Object.keys(profile.streamers);
   if (!names.length) return null;
   return section("streamers", "Streamers and FIFOs",
-    "One entry per mover. The FIFO's highest count per lane over the run, against its depth (D137 keeps the maximum only).",
+    "One entry per mover. The FIFO's highest count per lane over the run, against its depth (the profile keeps the maximum only).",
     names.map((n) => {
       const s = profile.streamers[n];
       const f = s.fifo;
