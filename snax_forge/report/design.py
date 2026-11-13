@@ -1,54 +1,15 @@
 """The design report, ``design.md``: what was built, before any cycle is counted.
 
-Everything here comes from the design point, its recipe and the cluster as a
-run names it (run/cluster.py: the generator's description files and the design
-point), its regions as run/regions.py gives them (L2's from the ELF's symbols in
-run.json); SNAX-GVSoC is not run. A flow from a bound graph has no recipe:
-its header names the graph the design point was made from instead, and takes
-the kernel from the run's functional check.
-
-    header       kernel, recipe and its params (or the graph), symbols,
-                 platform (base and changes), memory plan passes and pins
-    components   the accelerator, its movers, the DMA and the cores
-    accelerators per accelerator, one streamer set each: its groups, its
-                 streamer's movers, channels (num_ch added up) and temporal
-                 dims, its CSRs (its streamer's, then its own, first to last)
-                 and each group's own CSRs; then per unit its instance, unit,
-                 BRM and implementation, params, latency, target II (the
-                 datapath file's), ports
-    streamers    one per mover: instance port, direction, the container's
-                 dtype, num_slc (its slices, elements, per 64-bit word),
-                 num_ch (the channels the port uses, the mover's
-                 num_channel: words per beat), FIFO depth,
-                 temporal loops and the container it streams (from the
-                 graph's memlets)
-    memories     per memory the design point's layouts: base, end (the extent
-                 the memory checks use, padding included: run.padding_of),
-                 bytes, share, padding (a tail's pad elements and the bytes
-                 to a whole DMA beat), banks (L1) or words of a beat
-                 (L2), rows or beats
-    estimate     the ideal estimate: per group its cycles, bottleneck,
-                 ramp, stall and its expected BUSY_COUNTER (the cycles plus the streamers'
-                 fill), a guide and not a check, a bank-bound note per group whose
-                 bank_bound (its streams' L1 time) exceeds its cycles and, on the
-                 estimate's technology, its area and
-                 energy; then the accelerator's cycles, the work no unit runs as
-                 cycles (one per iteration, an assumption), their total and the
-                 L1 footprint against the L1; then the cost: per unit,
-                 buffer link and control unit how it is costed, per port its
-                 streamer, per accelerator its words through the crossbar and the
-                 banks, the cost by part (datapath, control, streamers, crossbar,
-                 memory) with each part's share, the total and the total without
-                 the banks, the technology and its tables' sources, the blocks the
-                 table does not characterize, the parts not costed and the points
-                 extrapolated, and the streamer sets and CSRs
-    notes        the design notes first (check.py's ``run_notes``: a design that
-                 passes but is worth a second look, with its fix); then
-                 facts about addresses: movers of one group whose
-                 containers start in the same banks, or lie a whole number of
-                 bank rows apart, so that element i of both is in one bank
-                 (two groups run one after the other);
-                 and containers the DMA moves as padded beats
+``build_design`` reads the design point, its recipe, the cluster as a run names it
+(run/cluster.py) and its regions (run/regions.py); SNAX-GVSoC is not run. A flow from a bound
+graph has no recipe: the header names the graph and takes the kernel from the run's functional
+check. ``render_design`` writes the sections: header (kernel, recipe, symbols, platform, memory
+plan), components, accelerators (per streamer set its groups, movers, channels and CSRs, then
+per unit its BRM, params, latency and target II), streamers (one per mover: dtype, num_slc,
+num_ch, FIFO depth, loops), memories (each layout with its padding), estimate
+(``estimate_table``: per group its cycles, expected BUSY_COUNTER and cost, then the cost by part;
+CONTRACTS, "Estimate" and "Cost model") and notes (the design notes, then movers whose
+containers share banks, and containers the DMA moves as padded beats).
 """
 
 from __future__ import annotations

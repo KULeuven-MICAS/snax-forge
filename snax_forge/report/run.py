@@ -1,58 +1,14 @@
 """The run report, ``run.md``: where one flow run's cycles went.
 
-Read from the run the way the viewer reads it (viz/api.py): the profile, the
-trace's task events and the cluster (run/). Nothing is modelled here;
-every number is a counter or an event SNAX-GVSoC wrote, as the converter
-named it.
-
-    summary       the program's window (total cycles), passed, data errors over
-                  the output words, each task's counter as the program printed
-                  it next to the BUSY_COUNTER the ideal estimate expects, a guide
-                  and not a check (its group's cycles plus the streamers'
-                  fill; with its group's bank-bound note where its streams need
-                  more L1 time than the ideal cycles), the trace level and the boot's length (the
-                  cycles before
-                  the window, which the profile, the cores and the trace share)
-    tasks         per block each task's start, done and length, named from the
-                  task list, with the accelerator (its streamer set) it
-                  runs on; a mover's task with every temporal bound 0 (another
-                  group's in the same encapsulated set, started only for the
-                  set's shared start) tagged idle; a DMA copy with its
-                  direction and bytes                    (needs a task trace)
-    accelerators  per accelerator, one streamer set each: its groups,
-                  its CSRs (its streamer's, then its own, first to last), its
-                  streamer's busy windows (its STREAMER_START to its busy low:
-                  the first start of its movers to their last done, one window
-                  per start; needs a task trace) and each group's BUSY_COUNTER as
-                  the program printed it; then per unit (its first column
-                  ``Unit``; a linked group's under its
-                  name): firings, target II (the datapath file's), achieved II,
-                  utilisation over the window and over its tasks' span,
-                  stall_in, stall_out, flush; then per group a collapsible
-                  ``<details>`` of its movers (mul ▸ mul_a, mul_b, mul_out):
-                  port, direction, num_ch, busy, held by the crossbar,
-                  waiting on its FIFO, FIFO highest against depth
-    cores         cycles per class in the window, SNAX CSR writes and
-                  reads, and each wait: block, first, last, cycles and the
-                  task that starts next                  (classes and waits
-                                                         need a task trace)
-    DMA           transfers, busy cycles, beats each way, bytes each way, bytes
-                  per busy cycle
-    memory        per crossbar port grants, stalls and stalls lost to the DMA
-                  (a core's or AXI's over the whole run, marked); banks with
-                  conflicts as ranges; streamers' stall cycles; FIFO highest
-                  count against depth
-    movement      from the run index (viz/movement.py), at beat and above: per
-                  region and memory its arrival, use and departure spans; per
-                  streamer lane and task its configured nest and pace against
-                  one beat per cycle, the idle tasks' lanes left out with a line
-                  saying so; at stall, the L1 stalls per bank and per
-                  port (and the held cycles per lane). At off and task one line
-                  says why there is none
-
-Achieved II = (last firing − first firing) / (firings − 1), over the
-accelerator's tasks (their ``done`` events carry both). The report's length
-grows with components, tasks and ports, never with cycles.
+``build_run(rv)`` reads the run as the viewer does (viz/api.py's ``RunView``) and ``render_run``
+writes it; nothing is modelled, every number is a counter or an event SNAX-GVSoC wrote.
+Sections: summary (the window, the check, each task's BUSY_COUNTER beside the expected one, a
+guide), tasks, accelerators (per streamer set its groups, CSRs and busy windows, then its units
+and each group's movers), cores, DMA, memory (port grants and stalls, bank conflicts, FIFO
+highs) and movement (viz/movement.py, beat level and above). A section the trace level cannot
+give says so. Achieved II = (last firing − first firing) / (firings − 1) over the accelerator's
+tasks. The report grows with components, tasks and ports, never with cycles. The Accelerators
+section is in CONTRACTS, "Profile and trace".
 """
 
 from __future__ import annotations
