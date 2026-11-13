@@ -3,33 +3,17 @@
     python -m snax_forge.flow.forge RECIPE [--platform P] [--set NAME=VALUE ...]
                                     [--trace LEVEL[:SOURCES]]          (pixi forge)
 
-Three steps, each the tool of that name called as its command line would be, nothing decided here:
+``forge`` runs three steps, each the tool of that name called as its command line would be:
+``flow`` (out/flow/<name>/), ``bundle`` on the flow's design point with the flow's expected lines
+beside it (``bundle.write_expected``; out/bundle/<name>/, CONTRACTS, "Bundle"), and ``sw``, the
+bundle's program by snax-gvsoc's generic app, its sha256 checked against the flow's
+``elf_sha256``, with the quiet build and its ``obs_marks.json`` beside it (out/forge/<name>/sw/).
+``<name>`` is the flow's folder name; the platform defaults to ``platforms/snax_forge.json``.
 
-    flow     ``python -m snax_forge.flow RECIPE --platform P [--set ...] [--trace ...]``:
-             the design point and the run on SNAX-GVSoC      out/flow/<name>/
-    bundle   ``python -m snax_forge.gen.bundle`` on the flow's design point, then the
-             flow's expected lines beside it (``bundle.write_expected``: its
-             ``forge counter`` lines, ``forge data: 0 errors`` and each
-             counter's streamer fill, the bound the RTL comparison allows)
-                                                             out/bundle/<name>/
-    sw       the bundle's program, by snax-gvsoc's generic app (``make sw``), and its
-             sha256 checked against the flow's ``elf_sha256`` (docs/RUN.md section 8)
-                                                             out/forge/<name>/sw/forge.elf
-             with the quiet build beside it, the same main.c with -DFORGE_QUIET, and its sections'
-             legend from the bundle
-                                                             sw/forge_quiet.elf, sw/obs_marks.json
-
-``<name>`` is the flow's folder name (the recipe's with every ``--set``, then
-the trace level above ``off``). The platform defaults to
-``platforms/snax_forge.json``. Each step's whole output, as its own command
-line prints it (sbt's and make's lines too), goes to ``out/forge/<name>/forge.log``;
-the terminal gets one line per step, SNAX-GVSoC's four ``forge`` lines from
-the flow's ``run/stdout.txt``, and the commands that run the bundle's ELF on
-snax_cluster's Verilator build, ``B`` and ``E`` filled in by absolute path.
-snax-forge never calls into snax_cluster.
-
-Exit 0 when every step passed, 1 when one failed (the step named, the last 30
-lines of the log and its path), 2 on bad arguments.
+Each step's whole output goes to ``out/forge/<name>/forge.log``; the terminal gets one line per
+step, SNAX-GVSoC's four ``forge`` lines and the commands that run the bundle's ELF on
+snax_cluster's Verilator build. snax-forge never calls into snax_cluster. Exit 0 when every step
+passed, 1 when one failed (the step, the log's last 30 lines and its path), 2 on bad arguments.
 """
 
 from __future__ import annotations

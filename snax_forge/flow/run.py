@@ -1,124 +1,18 @@
 """The whole path, kernel to a SNAX-GVSoC run, or from a bound graph on.
 
-    recipe + platform
-      -> SNAX-SANDBOX   the kernel's import, the recipe's steps, each
-                        checked by the reference executor         sandbox/
-      -> SNAX-DESIGN    the last graph on the platform: the checks, the
-                        memory plan, the design point               design/
-      -> SNAX-LOWER     the task list                               tasks.json
-      -> gen            the generator (gen/gvsoc.py): the three
-                        description files, the headers, data.h (the kernel's
-                        make_inputs, the reference executor's goldens)
-                        and main.c                                  gen/
-      -> build          SNAX-GVSoC, when needed (below)            out/snax-gvsoc/
-      -> sw             the program, by snax-gvsoc's generic app    sw/forge.elf
-      -> gvsoc          the run on snax_hjson with gen/'s cluster, its
-                        events into run/events.log           run/
-      -> check          the program's own check: its exit code and
-                        what it printed (``check_output``)          run/run.json
-      -> convert        the events into the profile and the trace
-                        (snax_forge/run/)                      run/profile.json
-      -> report         design.md and run.md (snax_forge/report/)  report/
-      -> log            the summary and the design checks that ran flow.log
+``run_flow(recipe, platform, ...)`` runs the stages in order, each the tool of that name called
+as its command line would be: import and sandbox, design, lower, gen (gen/gvsoc.py: description
+files, headers, data.h, main.c), build, sw, gvsoc (``run_gvsoc``: ``make`` on gvsoc/Makefile),
+check (the program's own, ``check_output``), convert (CONTRACTS, "Profile and trace") and report.
+``run_bound(graph, platform, ...)`` starts at design from a bound ``.snaxdfg``: no recipe, no
+sandbox/ and no per-step reference check. Before writing data.h's goldens, gen checks the
+reference executor against the kernel's reference.
 
-The flow runs SNAX-GVSoC only. ``build``, ``sw`` and ``gvsoc`` each call
-``run_gvsoc``, ``make`` on ``gvsoc/Makefile`` through a subprocess; that
-Makefile names the image's tools, so the flow calls it from pixi. Nothing is
-decided here: each stage is the tool of that name, called as its command
-line would be.
-
-**Build.** GVSoC is built into ``out/snax-gvsoc/`` (``gvsoc/Makefile``'s
-``build``) when its install is missing, when the checkout it was built from
-(``checkout.txt``: the path, then the snax-gvsoc commit) is not the
-submodule's path and HEAD, or when the submodule's tree is dirty; otherwise
-the stage says it is up to date. A build first prints why and where its log
-is, then make's output, stdout and stderr merged, line by line as it comes,
-to the terminal and to ``build.log`` (``run_gvsoc``'s ``live``); neither line
-goes to ``flow.log``, and ``sw`` and ``gvsoc`` write their logs only. An
-interrupted build is not up to date: ``checkout.txt`` gets its commit only
-once the build passed. When the submodule's HEAD is not the commit
-snax-forge's tree pins (``git ls-tree HEAD gvsoc/snax-gvsoc``), the summary
-and ``flow.log`` warn.
-
-**Goldens.** data.h's goldens are the reference executor's on the design
-point's graph; before writing them, gen checks that result against the
-kernel's reference on the same inputs (``dfg.reference.reference_check``), so a graph
-that computes something else stops there.
-
-**Check**. The program checks itself (the ``main.c``): its exit
-code is the run's (the ``Error N`` make prints for the run's recipe, 0 when
-it passed), and its lines give ``total_cycles`` (``forge cycles:``, the
-window from main's entry to ``forge_check()``'s entry), the data errors
-over the output words and each accelerator task's counter, beside its beats
-from the manifest and its group. ``passed`` is an exit code of 0. A missing line is a
-FlowError that names it. When the run exits non-zero or prints no ``forge cycles:`` line, the
-failure (the FlowError, or the summary's FAILED check line) adds the simulator's first error
-line (``first_error``: an assert, from ``run/stdout.txt`` then ``run/stderr.txt``, its colour
-codes stripped), e.g. ``SNAX-GVSoC: nb_inputs must be in (0, 64], got 99``.
-
-**Toolchain.** Before ``sw``, ``clang`` and ``ld.lld`` must be on PATH (``TOOLCHAIN``): without
-them the flow stops with one line naming snax-forge's image (docs/RUN.md §1), in place of
-make's ``invalid linker name in argument '-fuse-ld=lld'``. ``run/run.json`` records what ran: the
-design
-point, the three description files (``hjson``), the ELF's sha256 and the symbols of its L2
-containers'
-arrays (``elf_symbols``, ``run/elf.py``: their L2 regions), the target, the snax-gvsoc
-commit and whether its tree was dirty, the trace level, its sources and whether a VCD was
-written;
-``run/profile.json`` holds ``total_cycles`` and ``functional_check``, with
-what ``convert`` adds.
-
-**Trace**. The run writes the SNAX components' ``summary`` traces into
-``run/events.log`` at every level, their ``events`` traces from ``task``, and
-from ``beat``, ``stall`` and ``finegrained`` the ``beats``, ``stalls`` and the
-cores' ``insn`` lines of the trace's sources (``trace_sources``, by default the
-accelerator, its movers and the DMA, at ``finegrained`` every core too); the
-cluster, read from gen's files, gives ``gvsoc/Makefile``'s ``TRACES`` and the
-crossbar's ``trace_inputs`` (``run/sources.py``). With ``vcd`` the run also
-writes gtkwave's VCD of the same sources: ``run/all.vcd`` and ``run/view.gtkw``,
-never read here. ``convert`` reads the log, names it after the cluster
-(``run/cluster.py``: the generator's description files and the design point), the
-task list and the design point's regions, and writes the profile and, above
-``off``, the trace (``run/convert.py``, whose invariants hold or the stage
-fails); ``trace_meta.json`` keeps the sources as its ``filter``. ``report``
-then writes ``report/design.md`` and ``report/run.md`` from them.
-
-Everything goes to one folder, ``out/flow/<name>/``, overwritten on every
-run; the default name carries every ``--set``, so runs that differ only in
-the platform or the memory plan land in folders of their own, then the
-trace level when it is not ``off`` (``vecadd_task``). The design point (its task list and the
-generated entry's tag) is named after the design, the recipe's ``name``, whatever ``--set``
-or ``--name`` name the folder. ``flow.log``
-is what the command line prints plus the design checks that ran; a flow
-that fails writes the failure there instead. The log, the reports and ``run/`` of an
-earlier run in the same folder are removed first; ``gen/`` is written again in place, each
-file only when it changes (gen/gvsoc.py), and any other file in it removed, so an unchanged
-design rebuilds no program.
-
-**Stage times**. ``flow.log`` ends with the wall-clock seconds of each
-stage (``import``, ``sandbox``, ``design``, ``lower``, ``gen``, ``build``,
-``sw``, ``gvsoc``, ``check``, ``convert``, ``report``) and their total, on this machine. They change
-from run to run, so they are in the log only. They are the raw material of
-the paper's turnaround baseline (claim C1).
-
-**From a bound graph**. ``run_bound(graph, platform, ...)`` is
-the same path without its first stage: the graph is a bound ``.snaxdfg``
-(the last step of a sandbox run, or one edited by hand) and goes straight to
-SNAX-DESIGN, as ``steps[-1]`` does above. No recipe is read and ``sandbox/``
-is not written, so the per-step reference check does not run; the design
-checks, gen's reference check and the program's check do; the reference
-check is what stops a graph that computes something else. The kernel, needed
-for ``make_inputs`` and its reference only, is the graph's ``name`` unless
-one is given. The
-default name is the design step's (``design_name``: the sandbox folder of a
-step's graph, else the file's stem; a flow's own ``sandbox/`` gives its flow
-folder) with the platform and memory ``--set`` appended as above; the design point
-is named after the design (``design_of``: the recipe kept beside a step's graph, else the
-default name). The recipe
-and step graphs an earlier flow left in the folder's ``sandbox/`` are
-removed, unless the graph is one of them, so the folder never shows a recipe
-its run did not come from. ``flow.log`` has no ``import`` or ``sandbox``
-time.
+GVSoC is built into ``out/snax-gvsoc/`` when its install is missing, its ``checkout.txt`` (path,
+then commit, written once a build passed) is not the submodule's, or the submodule is dirty
+(``build_reason``). Everything goes to ``out/flow/<name>/`` (``default_name``, ``bound_name``):
+an earlier run's log, reports and run/ are removed, gen/ files rewritten only when they change.
+``flow.log`` holds what the command prints, the design checks that ran and each stage's seconds.
 """
 
 from __future__ import annotations
