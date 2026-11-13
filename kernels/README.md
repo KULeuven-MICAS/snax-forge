@@ -104,7 +104,7 @@ $$C_i = A_i + B_i, \qquad C_i = A_i B_i$$
 
 $$\mathit{out} = \sum_i A_i$$
 
-- The Reduce becomes a sum map folding into `out[0]` (D102), bound to the Accumulator; at W lanes, an adder tree in front of it (D133).
+- The Reduce becomes a sum map folding into `out[0]` (D102), bound to the Accumulator; at W lanes, an adder tree in front of it.
 
 ### dot
 

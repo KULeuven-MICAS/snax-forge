@@ -33,7 +33,7 @@ Under the Estimate, the design checks (Save's, run on every step) list two notes
 | 7 | `sum_map_inner` | `tag_map`, `spatial` | |
 | 8 | `sum` | `bind`, `accumulate / chisel_adder_tree`, instance `acc_2`, the field's default | `C 256 → 513 · unmapped 2048 → 0 · renamed W → W_acc_2`; 0 problems, 0 notes |
 
-Each split gets a param of its own. The factor field reads `W` both times, since the first `W` was renamed on its bind: a param the editor named and only one unit uses takes that unit's instance name, `W_acc_1` and `W_acc_2` (D156). The second split takes the next free pair of loop names, `i_3` and `i_4` (D73). The unit boxes read `acc_1 · a * b · W_acc_1 8` and `acc_2 · fold + · W_acc_2 8`, and Details give `mult_map`'s range as `0:N // W_acc_1 = 256`.
+Each split gets a param of its own. The factor field reads `W` both times, since the first `W` was renamed on its bind: a param the editor named and only one unit uses takes that unit's instance name, `W_acc_1` and `W_acc_2`. The second split takes the next free pair of loop names, `i_3` and `i_4` (D73). The unit boxes read `acc_1 · a * b · W_acc_1 8` and `acc_2 · fold + · W_acc_2 8`, and Details give `mult_map`'s range as `0:N // W_acc_1 = 256`.
 
 At step 8 the bind list offers two implementations: `chisel_adder_tree` (latency 1, II 1, span 1: the 8 lanes summed in one beat) and `chisel_serial` (span 8: one lane a cycle). `mac` needs `split_reduce` first (D150), and both element-wise patterns are refused (`'out = in1' is not one operator over distinct inputs`).
 
@@ -112,7 +112,7 @@ Save recipe, as `dot_1_dry`, runs the design checks and writes `recipes/custom/d
 }
 ```
 
-It keeps only the params its steps and symbols use (D156). The log lists `pixi run sandbox`, `pixi run flow` and `pixi run forge` on it, each with what it does, as in `1_vecmul.md` section 3. `recipes/dot/dot_1.json` builds the same structure at W = 4 and N = 64 with `split_map` and one shared `W`, its instances named `vmul` and `vsum`.
+It keeps only the params its steps and symbols use. The log lists `pixi run sandbox`, `pixi run flow` and `pixi run forge` on it, each with what it does, as in `1_vecmul.md` section 3. `recipes/dot/dot_1.json` builds the same structure at W = 4 and N = 64 with `split_map` and one shared `W`, its instances named `vmul` and `vsum`.
 
 ## 4. Sweep the two widths in Bindings
 

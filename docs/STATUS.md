@@ -10,14 +10,14 @@ Done: M1, M4a, M3, M4b, M5, X1 (GVSoC learnt in `KULeuven-MICAS/snax-gvsoc-exper
 
 | Milestone | Content | Status |
 |---|---|---|
-| M13 | The block library (D141): basic blocks, their composition (D112) and dot's six variants; M7's tier A; BASE1's forge side | `wip` |
+| M13 | The block library: basic blocks, their composition (D112) and dot's six variants; M7's tier A; BASE1's forge side | `wip` |
 | M7 | Front ends: NPBench's DaCe sources in tiers, integers first (D113); tier A is in M13 | todo |
 | M15 | Tiling: a DMA per tile | todo |
 | M9 | `jacobi1d` | todo |
-| M11 | Layers: conv2d, softmax and attention, HDC operations (D100) | todo |
-| M12 | Blocks and models: ResNet, Transformer, NVSA (D100) | todo |
-| P1 | Paper plan, alongside (D100) | `wip` |
-| P2 | Paper draft (D100) | todo |
+| M11 | Layers: conv2d, softmax and attention, HDC operations | todo |
+| M12 | Blocks and models: ResNet, Transformer, NVSA | todo |
+| P1 | Paper plan, alongside | `wip` |
+| P2 | Paper draft | todo |
 | M6 | Contract freeze, when the contracts call for it | todo |
 | M8 | Automated DSE over recipes, when sweeps call for it | todo |
 | M10 | Cosim of one accelerator (D52) | todo |
@@ -30,7 +30,7 @@ The tasks are a first cut; each milestone is planned in a round of its own.
 
 | Milestone | Tasks | Content |
 |---|---|---|
-| P1 | PAP3 (`done`), PAP2 (`brief`), BASE1, BASE2 | PAP3 chose the ISPASS 2027 paper's experiments and the order of the work (PAPER §6, Next Up; D100, D141, D159). PAP2: related work after the reading, DSAGEN and OverGen first (PAPER §8.4). BASE1 and BASE2 are E2: the vsim path timed step by step against SNAX-GVSoC's, and both simulators' cycles per second, logged on E1's runs |
+| P1 | PAP3 (`done`), PAP2 (`brief`), BASE1, BASE2 | PAP3 chose the ISPASS 2027 paper's experiments and the order of the work (PAPER §6, Next Up). PAP2: related work after the reading, DSAGEN and OverGen first (PAPER §8.4). BASE1 and BASE2 are E2: the vsim path timed step by step against SNAX-GVSoC's, and both simulators' cycles per second, logged on E1's runs |
 | M13 | B0, B1, B1x, CLN2, VIEW2, SPAN1, SYN1, CTRL1, CHAR1, CHAR1b, DRY1, DRY1-2, SLOT1, DRY1-3, RAM1, B2, REUSE1, STRM1, CTRL2, PORT1, HWCOST, CSYN1, CORE1 (`done`); track A: MVT1, PACK1a, L2V1, XBAR1, tier A; track B: PWR1 | Its tasks, below (M13) |
 | M7 | KER0 (`done`), FE1b, FE1c, PACK0 (`done`), PACK1, FE1d, FE1e, FE2, FE3 | The tiers of PAPER §6.1 after tier A (D113), which M13 does. KER0 staged every target kernel in `kernels/`, not linked to the flow (`kernels/README.md`, `pixi run kernels`). FE1b is tier B; FE1c tier C; PACK0 packed int32 and int8 into 64-bit words with NumPy's arithmetic (D142–D144); PACK1 keeps tier P: the exact products, requantization and the int8 kernels (the reference executor accumulates as the hardware does); FE1d tier D; FE1e tier E. FE3 is C2's coverage table |
 | M15 | LOW3b | A tile transform and a DMA per tile, an L2 slice per tile, reductions over tiles (open item 44) |
@@ -48,7 +48,7 @@ Done, each in its PRs and git history:
 
 | Task | PRs | What it gave |
 |---|---|---|
-| B0 | #33 | The block library's flow pieces: cluster headers per design point, the importer's scalars, views, `max`, `min`, constant casts and maps over several parameters, MatMul and Transpose, ND1's 2-D slice (D141) |
+| B0 | #33 | The block library's flow pieces: cluster headers per design point, the importer's scalars, views, `max`, `min`, constant casts and maps over several parameters, MatMul and Transpose, ND1's 2-D slice |
 | B1 | #35–#37, snax-gvsoc #34 | `accelerator.json` as the one description (C§17), per-group CSRs and pins, datapaths under a control unit per group (D145–D148) |
 | B1x | #38, #39, snax-gvsoc #37 | dot 2–6 and matvec 1–6 as one accelerator each: linked units under one control unit, `Mac`, `SerialAccumulate`, `LinkBuffer`, `split_reduce`, `fuse_map`, `link` (D112, D147, D149, D150) |
 | CLN2 | #40–#44, snax-gvsoc #38, #39, snax_cluster #666 | The clean-up after B1x; the local RTL check (`forge-set`) |
@@ -63,7 +63,7 @@ Done, each in its PRs and git history:
 | SLOT1 | #53, #54, snax_cluster #679, #680, snax-gvsoc #43 | A design's accelerators as streamer sets of one snax_cluster entry, run in series (D157, D158; D123 amended); `dot_1` two accelerators, `dot_1_enc` one; plan in the project's `claude/slot1-plan-2026-11-04.md` |
 | DRY1-3 | #55 | `examples/dryrun/3_dot_2_6.md`, dot 2–6 against SYN2 (cycles exact, area within 0.6 %, kernel energy 1.01–1.08); a buffer link loads once per output of its producer; a fused nest's local value leaves the graph at its bind and is drawn as a wire; the bind form lists only what fits; the dry-run pages name no commits (D98) |
 | B2 | #58, #59, snax-gvsoc #44, #45, snax_cluster #688 | relu, axpy, rowsum 2 and the fold's seed: one `simd` BRM over `SimdLanes` (its code a table over `op`, `streams` and scalar slots), CSR scalars and `bake_scalar`, the in-place write, `interchange_map`, `LaneAccumulate`, the `padded_rows` layout, `fuse_seed` on `TreeAccumulate` and `SerialAccumulate`, `chisel_accumulator` removed; the editor's partner highlight; StreamerGen's prefix fix (D82, D68, D86, D102, D149, D150, D161–D163; plan in the project's `claude/b2-plan-2026-11-06.md`) |
-| RAM1 | snax-forge-experiments #4 | SRAM area and read and write energy per access from CACTI 7 at 45 nm (OpenRAM probed and dropped), a lookup table over depth 32–4096 and width 8–256, `.lib` and `.v` macros generated from it, memory energy as counted accesses times the table (D159, D160) |
+| RAM1 | snax-forge-experiments #4 | SRAM area and read and write energy per access from CACTI 7 at 45 nm (OpenRAM probed and dropped), a lookup table over depth 32–4096 and width 8–256, `.lib` and `.v` macros generated from it, memory energy as counted accesses times the table |
 | STRM1 | snax-forge-experiments #6 | The streamer's reader and the TCDM interconnect synthesized and powered over their parameters (depth, loops, channels; inputs against banks), the tables and their interpolation in its `docs/cost_tables.md` (X52–X54) |
 | REUSE1 | #60 | A recipe as the unit of reuse (D166): `lift`, `unlift`, `apply_recipe`, `unapply`, `name_block` (`sandbox/blocks.py`), `matvec_dot1`–`matvec_dot6` and mvt's `_reuse` recipes, blocks in the editor; with MVT1's part 1 (D164, D165) and the `<name>_l2` rename of a container named after a C symbol |
 | CTRL2 | #63, snax-gvsoc #46, snax-forge-experiments `ry/ctrl2` | A register goes where its writer and reader are (D168): the settings live in the csr, which holds a busy group's writes until the run ends, and the control unit reads them live with no copy (an elementwise ctrl 66 → 34 flops, each fold group 64 fewer, every cycle count unchanged on SNAX-GVSoC and vsim); BUSY_COUNTER (was COUNTER) in `<tag>_peripherals`, in no reported figure; `CtrlRegistersSpec`; CSYN1 Part A's 70 forge points resynthesized: relu at W = 1 from 1.40 / 2.14 to 1.04 / 1.39 of the best HLS case's energy / area, 33 verdicts turned toward forge (`results/compare/ctrl2_before_after.md`, X65) |
@@ -72,7 +72,7 @@ Done, each in its PRs and git history:
 | CSYN1 | snax-forge-experiments #7, #9, #10; snax_cluster #692, #693, #695; #68 | Part A: forge's untiered rows (E7) and DaCe's dot, axpy and rowsum with SRAM macros, at n2048 against the HLS tools, every window exact (`results/compare/`, one page per kernel). Part B: a snax-forge design to a synthesized whole cluster in three commands (`pixi run cluster rtl|syn|gls <point>`, X66–X69), on dot 3 at W = 16: the RTL with RAM1's macros and the netlist both D123 PASS in 828 cycles, 1 314 306 µm² at +1.442 ns on 10 ns. The cluster's area in groups against HWCOST (X72): the five parts are 62.8 % of it and HWCOST lands within 11 % on each, +0.04 % on their sum, once the crossbar's read-only and write-only inputs are priced (X70, X71; it was +74 %); the accelerator inside the cluster within 0.04 % of its point synthesized alone. Plan in the project's `claude/csyn1-partb-plan-2026-11-11.md` |
 | CORE1 | #70, snax-gvsoc #49, snax-forge-experiments #11 | One Snitch core drives both the DMA and the accelerator, snax-forge's base cluster (D170, D131 amended; open item 80 closed); SNAX-GVSoC's hand-written cluster tests on one core and CSR `0x7c5` modelled as snitch.sv's register; the tests on SNAX-GVSoC runs check what the program computes exactly and its timing within 10 % (D171, D98 amended); the quiet build `FORGE_QUIET` (`forge_quiet.elf`, no prints, the DMA waited in series, one obs mark per section on CSR `0x7c5` with `obs_marks.json` as its legend; D135 amended), run for every snax-gvsoc fixture in `make regress`; D123's full set on vsim with no FAIL (13 PERFECT, 10 NEAR; open items 95 and 129); `dot3_w16` through the cluster flow on one core: 810 cycles on the RTL and the netlist (two cores: 828), 1 261 630 µm², 4.0 % below two cores (the second core, its L0 I-cache, one crossbar input, one CSR translator), HWCOST's five parts −0.1 %, the quiet build on the netlist exit 0; plan in the project's `claude/core1-plan-2026-11-12.md` |
 
-To do, in two tracks (D141), each task in its own PR:
+To do, in two tracks, each task in its own PR:
 
 - **Track A, the code** (snax-forge, snax-gvsoc where a task changes the model):
   1. **CORE1** (done, above).
@@ -82,7 +82,7 @@ To do, in two tracks (D141), each task in its own PR:
   5. **L2V1**: each container the DMA moves drawn in the DFG views as its L2 copy with a DMA edge into L1, and a DMA row in the estimate from the memory plan, $\sum_c (\lceil B_c / 64 \rceil + t_0)$ for a 512-bit DMA and a fixed cost $t_0$ per transfer read from a SNAX-GVSoC run, added to the total (amends D155), checked against the run's DMA tasks. The graph-level copy node stays open item 99.
   6. **XBAR1**: an interconnect marker per running accelerator, $u = \sum_s \mathrm{ch}_s / n_{\mathrm{banks}}$ over its streamers' channels, green at $u \le 0.5$, orange up to 1, red above, the thresholds platform fields (D85), a design note (C§14) in the estimate, `design.md` and the editor (vecmul: W = 4 green, 8 orange, 16 red).
   7. **tier A**, in two halves: fork, join, broadcast, hold and fragments (applied by output name, `augment_init`) with bicg and gesummv; then mvt's other forms after MVT1 (open item 109) and atax (open item 113). It lifts `gen.chain` (a group is a chain). MINI first, SMALL only where a case needs it (open item 54).
-- **Track B, the server** (snax-forge-experiments, Nangate 45 nm only, D159):
+- **Track B, the server** (snax-forge-experiments, Nangate 45 nm only):
   1. **RAM1** (done, above).
   2. **STRM1** (done, above).
   3. E7's untiered points and DaCe's dot (done, in CSYN1 above).
@@ -92,7 +92,7 @@ To do, in two tracks (D141), each task in its own PR:
 
 ## Next Up
 
-The ISPASS 2027 plan (PAP3; D100, PAPER §6): M13's two tracks above, run at once, track B starting now so the server never waits; HSYN1 finishes in snax-forge-experiments on both technologies. The week of 10 Nov: CTRL2, HWCOST, CSYN1 (with forge's untiered rows for E7) and PORT1 done; next PACK1a, then MVT1's variants 3 and 4 and tier A on track A, and PWR1 on track B. Then, as each lands:
+The ISPASS 2027 plan (PAP3, PAPER §6): M13's two tracks above, run at once, track B starting now so the server never waits; HSYN1 finishes in snax-forge-experiments on both technologies. The week of 10 Nov: CTRL2, HWCOST, CSYN1 (with forge's untiered rows for E7) and PORT1 done; next PACK1a, then MVT1's variants 3 and 4 and tier A on track A, and PWR1 on track B. Then, as each lands:
 
 | Step | Waits for | Gives |
 |---|---|---|
@@ -110,7 +110,7 @@ Questions not decided yet. Numbers are never reused; a closed item is removed, a
 
 1. BRM dataflow notation: `affine` and `stream` (D70), frozen in M6.
 2. What automated search reads and how a sweep is configured (DSE1, M8).
-4. Stream as a proposer for DNN-shaped workloads, and bank conflicts from the memory passes (D86) in an estimate of our own, on top of the ideal one (D155). Parked (D23).
+4. Stream as a proposer for DNN-shaped workloads, and bank conflicts from the memory passes (D86) in an estimate of our own, on top of the ideal one (D155). Parked.
 18. The L1 address map is fixed and word-interleaved, so the design point states no banks; a registered map kind if snax_cluster's differs.
 27. Generating a BRM from Chisel, SystemVerilog or HLS sources. Far future.
 28. Implementations whose `source` is SystemVerilog or HLS: only `chisel` until one is needed.
