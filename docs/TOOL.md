@@ -40,9 +40,15 @@ pixi install && pixi run check
 `pixi run flow RECIPE --platform PLATFORM` takes a recipe through every stage: the recipe's steps on the kernel's graph, the design checks, the task list, the generated files and program, SNAX-GVSoC (built the first time), the program's own check, the profile and the reports.
 
 ```mermaid
-flowchart LR
-  R[recipe] --> S[sandbox] --> D[design] --> L[lower] --> G[gen]
-  G --> B[build and sw] --> V[gvsoc run] --> C[check] --> P[convert and report]
+flowchart TD
+  R[recipe] --> S["sandbox: the recipe's steps, each checked against the reference"]
+  S --> D["design: the design checks, the platform and the memory plan"]
+  D --> L["lower: the task list"]
+  L --> G["gen: the hjson files, accelerator.json, main.c, data.h"]
+  G --> B["build and sw: SNAX-GVSoC when needed, the program"]
+  B --> V["gvsoc: the run"]
+  V --> C["check: the program's exit, data and counters"]
+  C --> P["convert and report: profile.json, trace.jsonl, report/"]
 ```
 
 | Flag | What it does |

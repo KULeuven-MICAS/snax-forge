@@ -7,7 +7,7 @@ SNAX-FORGE explores how domain-specific accelerators perform in a SNAX compute c
 - snax-forge never runs RTL: it writes the bundle snax_cluster builds from.
 
 ```mermaid
-flowchart LR
+flowchart TD
   K[kernel] --> I[import] --> S["sandbox (recipe)"] --> D["design (platform)"] --> L[lower] --> G[gen]
   G -- program --> V["SNAX-GVSoC: run, profile, reports"]
   G -- bundle --> C["snax_cluster: RTL, snax-forge-check"]
