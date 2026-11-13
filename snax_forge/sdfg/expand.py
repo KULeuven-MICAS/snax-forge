@@ -1,40 +1,18 @@
 """Library nodes into maps, in dot's shape, before the importer.
 
-``expand(sdfg)`` rewrites a simplified SDFG in place (and returns it), with
-no simplify after it. The importer takes maps, tasklets and the ``Reduce``
-library node; this pass brings DaCe's ``MatMul`` and ``Transpose``
-into that form, the shape ``np.sum(A * B)`` already has: a multiply map
-into a transient, then a ``Reduce`` (sum, identity 0) over the contracted
-axis, innermost. It is one fixed form and decides nothing else (principle
-4): loop interchange, fusing a scale, or adding into a fold's init are the
-sandbox's and the recipe's.
+``expand(sdfg)`` rewrites a simplified SDFG in place (and returns it), with no simplify after
+it. It brings DaCe's ``MatMul`` and ``Transpose`` into the shape ``np.sum(A * B)`` has: a
+multiply map into a transient, then a ``Reduce`` (sum, identity 0) over the contracted axis,
+innermost. It is one fixed form and decides nothing else.
 
-**MatMul** ``c = a @ b``, with ``a`` of rank >= 2 and ``b`` of rank 1, or
-both of one rank >= 2 with the same batch dimensions:
-
-    mat-vec:  prod[i, k]    = a[i, k] * b[k]       c[i]    = sum_k prod[i, k]
-    mat-mat:  prod[i, j, k] = a[i, k] * b[k, j]    c[i, j] = sum_k prod[i, j, k]
-    batched:  the batch dimensions outermost on a, b, prod and c
-
-The multiply map runs over ``c``'s indices, outermost first, then the
-contracted index; its tasklet is ``__out = __in1 * __in2`` and writes a new
-transient ``__<c>_prod`` (``<c>`` the output's array name without leading
-underscores; labels ``<c>_mult``, so bicg has ``q_prod``, ``q_mult_map``,
-``q_mult``). The Reduce writes the MatMul's own output memlet. Shapes and
-dtypes are the MatMul's: ``prod`` has ``c``'s dtype.
-
-**Transpose fold.** When a MatMul input is a transient written only by a
-2-D ``Transpose`` and read only by MatMuls, each of those multiply maps
-reads the Transpose's source with the two indices swapped (bicg's ``s =
-A.T @ r``: ``s_prod[j, i] = A[i, j] * r[i]``, j outer). Once nothing reads
-the transient, the Transpose, the transient's access node and its array go.
-A Transpose with any other reader is left as it is, and the importer
-refuses it by name.
-
-**Refused** (``ExpandError``, an ``SdfgImportError``, giving both shapes):
-a MatMul with a rank-1 ``a`` (vec-mat, or vec-vec giving a scalar), ranks
-or dimensions that do not match, an output memlet of another shape, an
-operand that is not read whole-step from an access node, and a MatMul
+A MatMul ``c = a @ b`` (``a`` of rank >= 2 and ``b`` of rank 1, or both of one rank >= 2 with
+the same batch dimensions, outermost) gives ``prod[i, k] = a[i, k] * b[k]`` or ``prod[i, j, k]
+= a[i, k] * b[k, j]``, then ``c = sum_k prod``. The multiply map runs over ``c``'s indices, then
+the contracted one, into a transient ``__<c>_prod`` of ``c``'s dtype, labelled ``<c>_mult``
+(bicg's ``q_prod``, ``q_mult_map``). A MatMul input written only by a 2-D Transpose and read
+only by MatMuls is read through the swapped indices, and the Transpose goes. Refused
+(``ExpandError``, naming both shapes): a rank-1 ``a``, ranks or dimensions that do not match,
+an output memlet of another shape, an operand not read whole from an access node, a MatMul
 inside a map. Other library nodes are left to the importer.
 """
 
