@@ -1,33 +1,16 @@
 """A flow run's cluster, as the converter, the reports and the viewer name it.
 
-``load_cluster(cluster_hjson, design_point)`` reads the generator's files (the cluster
-file, and what its slot refers to: per streamer set its streamer file, ``snax_streamer_sets``,
-and ``accelerator.json``; and ``manifest.json`` beside them, for each set's
-streamer trace path, ``csrs.streamers[].trace``) and the design point, and gives what the events
-need to
-be named and read: the accelerator, the generated entry as one shell (accelerator.json's one
-accelerator's ``name``, or with several the entry's ``tag``), on the core whose
-``snax_acc_cfg`` holds the entry, ``<accelerator_slot>_<name>`` (the design point's
-``name``); its units (``Unit``, one per group: for a group of one unit the
-instance, ``acc``, its group, its SNAX-GVSoC path, ``unit`` with one group and
-``unit_<unit>`` with several; for a linked group, SNAX-GVSoC's one component for its units,
-the group's name, ``group_<group>``; and its group's START, STATUS and BUSY_COUNTER); its movers,
-set by set, every unit's, readers first as its
-set's streamer orders them (``reader<i>``, ``writer<j>`` counted within the set), each named
-by its port as the design point names its streamers (``acc_a``, ``acc_out``), with its set,
-its lanes (the crossbar ports ``acc_a.lane<l>``), FIFO depth, spatial bounds and temporal
-loops (its CSRs); its CSRs (gen/csrs.py's layout: per set its streamer's range with its start,
-busy and counter and its SNAX-GVSoC trace path, ``snax_acc<i>/streamer_<set>``, as the
-manifest names it, ``sets``; the accelerators' R/W CSRs but the STARTs as ``fields``, and the
-first group's START, STATUS and BUSY_COUNTER as start, busy and counter), from 0x3C0; the cores
-(``core<i>``) and the DMA's; the
-L1 (the cluster's base and TCDM size: the iDMA's local area) and its banks, word-interleaved
-(``bank_row``: bank = (a / w) mod B, row = a / (w B) for the offset a, w the bank's bytes, B
-the banks); the DMA's beat (the cluster file's ``dma_data_width``). Nothing is inferred from
-a run.
-
-``Cluster`` round-trips through ``to_dict`` / ``from_dict``. A file that does not read as
-expected is a ``RunError`` (``cluster.<rule>``).
+``load_cluster(cluster_hjson, design_point)`` reads the generator's files (the cluster file, the
+streamer files and ``accelerator.json`` its slot refers to, and ``manifest.json`` for each set's
+streamer trace path; CONTRACTS, "Generated hjson files") and the design point. It gives what the
+events need to be named and read: the ``Accelerator`` on the core whose ``snax_acc_cfg`` holds
+the entry; its ``Unit``s, one per group, each with its SNAX-GVSoC path (``unit``, ``unit_<unit>``
+or ``group_<group>``) and its group's START, STATUS and BUSY_COUNTER; its ``Mover``s, set by set,
+readers first (``reader<i>``, ``writer<j>`` counted within the set), each named by its port
+(``acc_a``) with its lanes, FIFO depth and loops; its CSRs (``Csrs``, gen/csrs.py's layout); the
+cores and the DMA's; the L1 and its word-interleaved banks (``bank_row``); and the DMA's beat.
+Nothing is inferred from a run. ``Cluster`` round-trips through ``to_dict`` / ``from_dict``; a
+file that does not read as expected is a ``RunError`` (``cluster.<rule>``).
 """
 
 from __future__ import annotations

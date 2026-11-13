@@ -1,19 +1,13 @@
-"""A flow run's measurements: SNAX-GVSoC's events converted into the profile and the
-trace the reports and the viewer read.
+"""A flow run's measurements: SNAX-GVSoC's events converted into the profile and the trace the
+reports and the viewer read (CONTRACTS, "Profile and trace").
 
-* events.py: ``run/events.log`` read, line by line, in snax-gvsoc's grammar (its
-  ``docs/EVENTS.md``);
-* cluster.py: the cluster as the run is named: the accelerator, its movers and CSRs, the
-  cores, the DMA, the L1 and its word-interleaved map, from the generator's description files and
-  the design point;
-* regions.py: where each container lives in each memory: L1 from the design point's layouts,
-  L2 from the program's ELF (elf.py, its symbols as run.json records them);
+* events.py: ``run/events.log`` read in snax-gvsoc's grammar (its ``docs/EVENTS.md``);
+* cluster.py: the cluster as the run names it, from the generator's files and the design point;
+* regions.py: where each container lives in each memory (L2 from the ELF, elf.py);
 * profile.py: the profile, the totals of one run, from the components' own counters;
 * trace.py: the trace, one event per line, in the program's window;
-* beats.py: the converter's beat, stall and instruction part and its invariants (convert.py
-  the rest);
-* cores.py: a core's cycles classed barrier > poll > sleep > run, as spans: what the profile
-  counts and the viewer's schedule draws;
+* convert.py and beats.py: the converter and its invariants;
+* cores.py: a core's cycles classed barrier > poll > sleep > run, as spans;
 * sources.py: a trace level and its sources, as SNAX-GVSoC's traces and options;
 * outputs.py: a run directory written and read back.
 """

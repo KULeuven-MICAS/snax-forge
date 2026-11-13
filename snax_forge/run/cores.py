@@ -1,18 +1,15 @@
-"""A core's cycles in the program's window, classed: the one rule the profile counts and
-the viewer's schedule draws.
+"""A core's cycles in the program's window, classed: the rule the profile counts and the
+viewer's schedule draws.
 
     core_spans(events, width) -> [(first, end, class)]
     start_mode(events)        -> the core's state at 0: run or sleep
     merge_spans(spans)        -> [lo, hi) spans, sorted, the ones that touch or overlap merged
 
-``events`` are one core's ``state``, ``poll`` and ``barrier`` events in the form, shifted to
-the window (t = 0 its first cycle) and not cut to it: a ``state`` at ``t`` with its ``mode``
-(``run``, ``sleep``), a ``poll`` or ``barrier`` from ``t`` (its first cycle) to ``last``. A
-cycle of ``[0, width)`` is ``barrier`` (in a barrier's ``[t, last]``), else ``poll`` (in a
-poll's), else ``sleep`` (the core's last ``state`` at or before it is ``sleep``; a state
-before the window gives the class at 0, ``start_mode``), else ``run``. The spans cover ``[0,
-width)`` with no
-gap or overlap, each the longest run of one class, ``end`` exclusive.
+``events`` are one core's ``state``, ``poll`` and ``barrier`` events, shifted to the window but
+not cut to it. A cycle of ``[0, width)`` is ``barrier`` (in a barrier's ``[t, last]``), else
+``poll`` (in a poll's), else ``sleep`` (its last ``state`` at or before it is ``sleep``), else
+``run``. The spans cover ``[0, width)`` with no gap or overlap, each the longest run of one
+class, ``end`` exclusive.
 """
 
 from __future__ import annotations

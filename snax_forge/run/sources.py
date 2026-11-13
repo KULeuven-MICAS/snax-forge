@@ -4,25 +4,14 @@
     sources_for(cluster, level, given)  -> the sources, given or by default
     gvsoc_options(cluster, level, sources, vcd, given=False) -> GvsocOptions
 
-A level is which traces are on (snax-gvsoc ``docs/EVENTS.md``), cumulative: ``off`` the
-``summary`` lines, ``task`` and the ``events`` lines, ``beat`` and the ``beats`` lines,
-``stall`` and the ``stalls`` lines, ``finegrained`` and the cores' ``insn`` lines. The sources
-are trace names (the accelerator's units, ``acc``, its movers, ``dma``, ``core<i>``, ``axi``);
-they say whose beat, stall and instruction lines are written, never the summary's or events'.
-By default, at ``beat`` and ``stall``, the units, the movers and the DMA; at
-``finegrained`` also every core, for its ``insn`` lines only (its crossbar lines are written
-when it is named).
-
-``gvsoc_options`` maps them onto SNAX-GVSoC: the trace names for ``gvsoc/Makefile``'s
-``TRACES`` (one ``--trace`` regex each: ``summary`` and ``events`` whole, then per component,
-a unit's ``beats`` for it (``snax_acc<i>/unit``, ``unit_<unit>`` with several groups), its
-set's streamer's ``beats`` (its ``class`` lines) and ``stalls`` for a mover, at the set's
-trace path (the manifest's, ``snax_acc<i>/streamer_<set>``), the crossbar's
-``beats`` and ``stalls`` for its inputs, the AXI backend's ``beats`` for ``dma``, ``pe<i>/insn``
-for a core), the crossbar's ``trace_inputs`` parameter (the named inputs by name: a mover's
-lanes ``snax_acc<i>.streamer_<set>.<mover>.lane<l>``, ``core<i>``, ``axi``, and ``dma``), and with
-``vcd`` gvrun's ``--vcd`` with one ``--event`` regex per source's components. A level or
-source this run does not have is a RunError (``sources.<rule>``).
+The levels and sources are CONTRACTS, "Profile and trace" (its "Sources and meta" part): the
+sources say whose beat, stall and instruction lines are written. A core named only by default,
+at ``finegrained``, gets its ``insn`` lines but not its crossbar lines. ``gvsoc_options`` maps
+them onto SNAX-GVSoC: one ``--trace`` regex each for gvsoc/Makefile's ``TRACES`` (``summary``
+and ``events`` whole, then per source its component's ``beats``, ``stalls`` or ``pe<i>/insn``),
+the crossbar's ``trace_inputs`` (the named inputs by name, and ``dma``), and with ``vcd`` gvrun's
+``--vcd`` with one ``--event`` regex per source. A level or source this run does not have is a
+``RunError`` (``sources.<rule>``).
 """
 
 from __future__ import annotations

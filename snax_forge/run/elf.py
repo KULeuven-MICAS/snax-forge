@@ -3,20 +3,14 @@
     read_symbols(elf) -> {name: (addr, size)}
     l2_symbols(point, symbols) -> {container: {"addr", "size"}}
 
-The design point's memory plan gives every container its L1 base, and the program follows it;
-in L2 it gives residency and shape only, since ``data.h`` declares each container that lives
-in L2 as a C array under its name (gen/data.py) and the linker places it. So the flow reads
-the arrays' symbols once the program is linked (its ``sw`` stage) into ``run.json``'s
-``elf_symbols``, and ``regions_of`` takes the L2 regions from them.
-
-``read_symbols`` reads the ELF's symbol table with the standard library (32- and 64-bit,
-little-endian; ``.symtab`` and its string table), every named symbol with its value and size.
-``l2_symbols`` keeps the design point's containers in L2: each must have a symbol of its
-L2 bytes, its padded shape (a tail's pads included) in whole DMA beats, as gen/data.py
-declares it (``lower.layout.l2_bytes``; the platform's ``l2.beat_bits``). Other symbols
-(``C_golden``, the runtime's) are not regions. A
-file that is not such an ELF, a container with no symbol, or one of another size is a
-RunError (``elf.<rule>``), which the flow reports as its ``sw`` stage's.
+The memory plan gives each container in L2 its shape only; data.h declares it as a C array and
+the linker places it. So the flow reads the arrays' symbols once the program is linked into
+``run.json``'s ``elf_symbols``, and ``regions_of`` takes the L2 regions from them (CONTRACTS,
+"Profile and trace", its "Regions" part). ``read_symbols`` reads ``.symtab`` with the standard
+library (32- and 64-bit, little-endian). ``l2_symbols`` keeps the design point's containers in L2,
+each with a symbol of its L2 bytes (``lower.layout.l2_bytes``). A file that is not such an ELF,
+a container with no symbol, or one of another size is a ``RunError`` (``elf.<rule>``), which the
+flow reports as its ``sw`` stage's.
 """
 
 from __future__ import annotations

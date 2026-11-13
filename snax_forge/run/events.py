@@ -1,22 +1,14 @@
-"""SNAX-GVSoC's events, read: ``run/events.log`` as snax-gvsoc's ``docs/EVENTS.md``
-writes it, one ``Line`` per line.
+"""SNAX-GVSoC's events, read: ``run/events.log`` as snax-gvsoc's ``docs/EVENTS.md`` writes it.
 
-A line is GVSoC's header, ``<ps>: <cycles>: [<path>] `` with ANSI colour codes around the
-path, then ``<cycle> <kind> <key>=<value> ...``. The path is the component's, then ``/`` and
-the trace's name (``summary``, ``events``, ``beats``, ``stalls``); only the path is kept from
-the header. ``GRAMMAR`` holds, per trace and kind, the fields of each form a line may take; a
-value is an integer (decimal, or hexadecimal with ``0x``), a list of integers joined by ``,``
-(``LISTS``, per trace and kind) or a name (``NAMES``).
-
-A core's ``insn`` line (GVSoC's instruction trace, ``pe<i>/insn``) is GVSoC's own, not this
-grammar: after the header, the function and line, the mode, the PC in hexadecimal without
-``0x``, then the instruction (mnemonic, operands, the registers it writes and reads). It reads
-as kind ``insn`` at the header's cycle, with ``pc`` and ``text``, the instruction with its runs
-of spaces made one.
-
-A line that does not read, a trace, kind or field not in the grammar, or a value of the wrong
-type is a ``RunError`` naming the line (``events.<rule>``). Nothing is renamed or reordered
-here: that is convert.py's.
+Each line becomes a ``Line``. A line is GVSoC's header, ``<ps>: <cycles>: [<path>] `` with ANSI
+colour codes around the path (only the path is kept: the component's, then ``/`` and the trace's
+name), then ``<cycle> <kind> <key>=<value> ...``. ``GRAMMAR`` holds, per trace and kind, the
+fields of each form a line may take; a value is an integer (decimal, or hexadecimal with
+``0x``), a ``,``-joined list (``LISTS``) or a name (``NAMES``). A core's ``insn`` line is
+GVSoC's own instruction trace, not this grammar: after the header the function and line, the
+mode, the PC in hexadecimal without ``0x`` and the instruction; it reads as kind ``insn`` with
+``pc`` and ``text``, runs of spaces made one. A line that does not read is a ``RunError`` naming
+it (``events.<rule>``). Nothing is renamed or reordered here: that is convert.py's.
 """
 
 from __future__ import annotations

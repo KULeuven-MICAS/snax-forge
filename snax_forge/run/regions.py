@@ -1,31 +1,19 @@
-"""A run's regions: where each container lives in each memory, so an address on
-an event can be named.
+"""A run's regions: where each container lives in each memory, so an event's address can be named.
 
     regions_of(point, elf_symbols) -> [Region]
     padding_of(point, region, beat_bytes) -> Padding
 
-A region is a container's layout in one memory: ``container``, ``memory`` (``l1``, ``l2``),
-``base``, ``shape``, ``strides`` (bytes) and the container's ``dtype``. Both memories are known
-before the run, nothing is inferred from it: in L1 the design point's memory plan gives
-the layout; in L2 the plan gives the shape and the program's link the base, the address of the
-container's array in the ELF (``run.json``'s ``elf_symbols``, elf.py), the strides the plan's
-(contiguous, as data.h declares it), its ``size`` the array's bytes: its padded shape in
-whole DMA beats (``lower.layout.l2_bytes``; None in L1). Without ``elf_symbols`` there
-are no L2 regions. ``Region.elems(addr, size)`` gives the flat indexes (row-major over
-``shape``) of the elements whose first byte lies in ``[addr, addr + size)``, and
-``Region.vals(addr, data)`` their values, read from the bytes ``data`` that start at
-``addr`` by the region's dtype. ``region_at`` finds the region an address is in. Regions come
-in the design point's order (its containers, each memory as its plan lists them). The
-report's memory tables and notes read the same regions (``report/design.py``).
+A ``Region`` is a container's layout in one memory (``l1``, ``l2``), as CONTRACTS, "Profile and
+trace" gives it (its "Regions" part); nothing is inferred from the run, and without
+``elf_symbols`` there are no L2 regions. Regions come in the design point's order.
+``Region.elems(addr, size)`` gives the flat row-major indexes of the elements whose first byte is
+in ``[addr, addr + size)``, ``Region.vals(addr, data)`` their values; ``region_at`` finds the
+region an address is in. The report's memory tables read the same regions.
 
-``padding_of`` says what of a region is padding, as the memory checks count it
-(design/check.py): the plan lays a container out over its padded shape (``dfg/pad.py``'s
-``padded_shape``) in rows its layout may pitch wider (``padded_rows``), its block
-(``lower.layout.over``), so the elements of the block outside the declared shape are pads, each at
-its address (``pads``: its row-major index in the padded
-shape and its address); and for a container the DMA moves (it lives in L1 and L2), the bytes
-past the padded block up to a whole DMA beat (``lower.layout.moved_bytes``) are kept free
-(``beat_pad``). ``data_end`` is the padded block's end, ``end`` the extent the checks use.
+``padding_of`` says what of a region is padding, as the memory checks count it: the elements of
+its padded block (``lower.layout.over``) outside the declared shape (``pads``), and, for a
+container the DMA moves, the bytes past the block up to a whole DMA beat (``beat_pad``), kept
+free. ``data_end`` is the block's end, ``end`` the extent the checks use.
 """
 
 from __future__ import annotations

@@ -3,76 +3,17 @@
     convert(lines, cluster, tasks, total_cycles, level, functional_check, regions, filter)
         -> (Profile, Trace)
 
-``lines`` are events.log's (events.py), ``cluster`` the run's (cluster.py), ``tasks`` its task
-list, ``total_cycles`` the program's window (its ``forge cycles:`` line), ``regions`` the
-design point's (regions.py) and ``filter`` the sources whose beat lines the run wrote
-(sources.py). Nothing is recounted: the profile is the ``summary`` lines renamed, the trace
-the ``events`` lines renamed and cut, and above ``task`` the ``beats``, ``stalls`` and
-``insn`` lines too (beats.py); the beat lines only feed the trace. Above ``task`` an
-accelerator of several groups each of one unit (dot 1's ``mul`` and ``sum``) is read unit by
-unit, each beat line under its unit and each streamer line under the task launched with its
-unit's (beats.py's ``pairing``); a group of several linked units is a RunError
-(``convert.level``): its beat lines are not read yet.
-
-**Names.** A line's component path becomes a trace name: ``snax_acc<i>/unit`` the accelerator's
-unit (``acc``), with several groups ``snax_acc<i>/unit_<unit>`` each (``mul``, ``sum``;
-a shell has no trace of its own), ``snax_acc<i>/group_<group>`` a linked group, named after
-the group (``dot``; its tasks are the group's), whose lines are at its boundary: its
-``firings`` and ``count`` the head unit's, ``rate`` the head's firings per result of the last
-unit (snax-gvsoc's docs/EVENTS.md), a streamer set's streamer at its trace path (the
-manifest's ``csrs.streamers[].trace``, ``snax_acc<i>/streamer_<set>``) with its
-``mover`` the set's mover (``reader0`` of ``streamer_acc`` -> ``acc_a``; movers are numbered
-within their set), ``pe<i>`` the core ``core<i>``, ``idma/fe`` and the AXI backend
-(``idma/axi_read``, ``idma/axi_write``) the DMA (``dma``), ``tcdm/snax_xbar`` the crossbar,
-whose inputs become ports (``snax_acc<i>.streamer_<set>.reader0.lane1`` -> ``acc_a.lane1``,
-``core<i>`` and ``axi`` as they are). Any other path is a RunError (``convert.path``).
-
-**The window** (task level) is the program's own: on the accelerator's core, from its
-``mcycle`` read in ``main`` to its ``mcycle`` read in ``forge_check``, each read picked by the
-function span it falls in (from the function's ``func`` line to the core's next one). The
-window's length must be ``total_cycles`` exactly, the ``forge cycles:`` the program printed
-from the same two reads; a read missing or another length is a RunError
-(``convert.window``). Every cycle is shifted by the first read's (``boot``), so t = 0 is that
-read, and events outside ``[0, total_cycles)`` are dropped: the profile, the cores' classes
-and the trace cover one window. The ``mcycle`` lines bound it and are not in the trace;
-``func`` lines stay as function spans. What each core is in at 0 is the trace's ``start``:
-the name of its last ``func`` line at or before the read (None without one) and its state
-there, the one its classes start from (cores.py's ``start_mode``).
-
-**Trace.** A unit's or a mover's ``done`` is written in its last busy cycle, so its t is one
-more (the first idle cycle); an accelerator's ``done`` keeps its firings and its first and
-last firing, shifted, and carries its run's ``cycles``, the classes of its summary ``run``
-line (``index`` the run's start among the unit's starts); a mover's ``done`` carries its
-summary ``mover`` line's (``run`` the start's index among the streamer's starts), its four
-classes by name. A run without its summary line is a RunError (``convert.summary``). Starts are
-matched to the task list's tasks of their component in order
-(accelerator tasks, a mover's streamer tasks), a done to its start. A core's ``csr`` and
-``poll`` get the ``block`` whose CSR it is (``acc``, ``acc_streamer``, else ``-``); a ``poll``
-or ``barrier`` is at its first cycle. A DMA ``issue`` gets its direction from its addresses
-and the cluster's L1, the rule the iDMA's summary counts bytes by (``l2_to_l1``,
-``l1_to_l2``, ``l1_to_l1``, ``l2_to_l2``), and is matched to the task list's DMA tasks in
-issue order, whose direction it must have; its fields are renamed ``from``, ``to``,
-``from_stride``, ``to_stride`` (``src`` is the event's source); a ``done`` gets its copy's
-task. A count or direction that does not match is a RunError (``convert.tasks``).
-
-**Profile.** Per unit, an accelerator's classes are the sums of its ``run`` lines, ``idle`` the rest
-of
-``total_cycles``, ``utilisation`` busy over ``total_cycles``; a mover's likewise from its
-``mover`` lines, its FIFO maximum per lane the highest over its runs; a core's CSR counts are
-its ``csrs`` line; the DMA's and the ports' and banks' their lines. A core's cycles in the
-window are its spans' (cores.py: ``barrier`` > ``poll`` > ``sleep`` > ``run``) counted, from
-its ``state``, ``poll`` and ``barrier`` lines, those before the window included; its waits
-are its polls and barriers in the window, clipped to it. At trace ``off`` there are no
-events: the cores' cycles are None and there is no trace.
-
-**Invariants** (``invariants``), checked on every conversion, a RunError
-(``convert.invariant``) naming each that fails: every start has a done in the window, and
-every DMA issue; a core's classes add up to the window; the accelerator's firings in its
-``done`` events are its summary's; with the run's regions, each container's L2 bytes its
-copies touch (``load_<C>``, ``store_<C>``, every row) are its array's, from the ELF's
-symbol its region's ``size`` (regions.py): its padded shape in whole DMA beats
-(``lower.layout.l2_bytes``), and no copy touches L2 outside it; above ``task``, the beat
-part's (beats.py).
+``lines`` are events.log's (events.py), ``cluster`` the run's (cluster.py), ``regions`` the
+design point's (regions.py), ``filter`` the sources whose beat lines the run wrote (sources.py).
+The result, its names, window and fields, is CONTRACTS, "Profile and trace". Nothing is
+recounted: the profile is the ``summary`` lines renamed (``profile_of``), the trace the
+``events`` lines renamed, matched in order to the task list's tasks and cut to the ``window``,
+and above ``task`` the beat lines too (beats.py). A DMA issue's ``direction`` comes from its
+addresses: ``l2_to_l1``, ``l1_to_l2``, ``l1_to_l1`` or ``l2_to_l2``. ``invariants`` hold on every
+conversion: every start and DMA issue has a done in the window, a core's classes add up to it,
+the accelerator's firings are its summary's, and each container's L2 copies touch its array's
+bytes exactly (``l2_copies``). Each failure is a ``RunError`` (``convert.<rule>``); a linked
+group's beat lines are one (``convert.level``), not read yet.
 """
 
 from __future__ import annotations
