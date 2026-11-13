@@ -1,57 +1,15 @@
-"""The block runtime model: one accelerator as plain data.
+"""The block runtime model: one accelerator as plain data (CONTRACTS, "Block runtime model").
 
-A BRM is a hand-written JSON file. It has a shared part, which every
-implementation of the accelerator has in common, and a map of
-implementations, which differ in how they are built:
-
-    {
-     "name": ...,
-     "interface":       params (design / runtime) and ports
-     "function":        a registered accelerator kind and its params,
-                        and what one lane computes, as code: one
-                        string, or a table of {params, code} by design param
-     "dataflow":        a notation and one nest per port (notation.py)
-     "pattern":         the DFG subgraph it can replace: a family matched by
-                        SNAX-SANDBOX (snax_forge/sandbox/patterns.py)
-     "implementations": {name: {source, supports, timing, binding}}
-    }
-
-Designs that differ only in timing, the param values they support or their
-RTL source are implementations of one BRM. Different ports, rates or data
-order make a different BRM. Only ``source: chisel`` is accepted for now, and ``binding`` may be null
-until it is generated
-(binding.py: the datapath and how the BRM fills it).
-
-Which part serves which component: interface and function give what the
-reference executor runs (function.py); the dataflow gives the streamer values
-(SNAX-LOWER); the pattern serves SNAX-SANDBOX's ``bind``; the chosen
-implementation's timing and binding serve the generators (the accelerator's
-description, accelerator.json, for SNAX-GVSoC and the RTL).
-
-Params have a stage. ``design`` params (lanes, op) are fixed per instance
-and reach the design point and accelerator.json; one with a null default is
-unset unless ``bind`` or a matched code entry gives it (``simd``'s slot ``k``),
-and an instance leaves it out (a slot read from a scalar stays unset). A port may carry ``when``,
-design params at
-which alone it exists (``simd``'s ``b`` at two streams); an instance's
-``ports`` are those present at its params. ``runtime`` params are
-the accelerator's start parameters: exactly ``n`` and every named port rate
-(CONTRACTS.md section 10). A port's streamer width comes from its lanes; it is not written in the
-BRM. Nor is its dtype: ``dtypes`` lists the
-container dtypes it takes, every integer dtype unless the file narrows them,
-and a node's containers decide (dtypes.py).
-
-Value fields (lanes, rate, timing, function params) hold an int or an
-expression over params (snax_forge/expr.py, shared with the SNAX-DFG). Lanes,
-timing and function params may use design params only; a rate is an int or
-the name of a runtime param.
-
-Every field is written by ``to_dict`` (a port's ``dtypes`` only when it is
-not every integer dtype); a missing required part is an error
-that names it, optional fields take their defaults, and unknown keys are
-errors. A BRM is validated when it is made, whether from a file
-or in Python; ``resolve`` builds an instance, checked against the
-generator's blocks in instance.py.
+``Brm`` holds a hand-written JSON file: a shared part (``Interface`` with its ``Param``s and
+``Port``s, ``Function`` with its ``Code``, ``Dataflow``, ``Pattern``) and a map of
+``Implementation``s (source, supports, ``Timing``, binding). Designs that differ only in
+timing, supported values or RTL source are implementations of one BRM; different ports, rates
+or data order make another. A port's ``dtypes`` are a rule (dtypes.py), every integer dtype
+unless the file narrows them, and ``to_dict`` writes them only then; its streamer width comes
+from its lanes. Lanes, timing and function params use design params only; a rate is an int or a
+runtime param's name. A BRM is validated when it is made, from a file or in Python; a missing
+part or an unknown key is a ``BrmError`` naming it. ``Brm.resolve`` builds an instance
+(instance.py).
 """
 
 from __future__ import annotations

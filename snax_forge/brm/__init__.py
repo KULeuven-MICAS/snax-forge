@@ -1,21 +1,11 @@
 """SNAX-BRM: block runtime models, the user's accelerators as plain data (ARCHITECTURE.md 5.3).
 
-A BRM is a hand-written JSON file with a shared part (interface,
-function, dataflow, pattern) and a map of implementations (source, supports,
-timing, binding). ``Brm.resolve`` builds an instance from an implementation
-and design-param values, checked against the generator's blocks; its
-function (function.py, ``function_of``) is a registered accelerator kind the
-reference executor runs. Two dataflow notations: ``affine`` gives
-nests that ``task_nest`` resolves and enumerates for one task, which
-SNAX-LOWER maps onto streamer values (``snax_forge.lower.streams``);
-``stream``, for unit BRMs, leaves the order to the bound memlet
-(``memlet_ordered``). The library of hand-written BRMs
-(library.py, ``load_brm``) holds ``simd`` (one code per ``op``, a ``Code`` table),
-``accumulate``, a reduction named by its pattern and kind, and ``mac``. ``drain`` is
-a third timing number, and port names can appear in code. An
-implementation's ``binding`` (binding.py) has its ``controller`` kind
-registered. A port's ``dtypes`` are a rule (dtypes.py,
-``check_dtypes``): a node's containers give the dtypes.
+The format is CONTRACTS, "Block runtime model". brm.py holds a BRM, its shared part and its
+implementations; ``Brm.resolve`` builds an instance (instance.py), checked against the
+generator's blocks. function.py has the accelerator kinds the reference executor runs
+(``function_of``); notation.py, affine.py and stream.py the dataflow notations; binding.py an
+implementation's binding; dtypes.py a port's dtypes rule (``check_dtypes``); library.py the
+hand-written BRMs (``load_brm``).
 """
 
 from snax_forge.expr import ExprError

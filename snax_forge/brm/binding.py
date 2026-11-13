@@ -1,27 +1,13 @@
-"""An implementation's binding: its datapath and how the BRM fills it.
+"""An implementation's binding: its datapath and how the BRM fills it (CONTRACTS, "Block
+runtime model").
 
-    {"datapath":   "SimdLanes",                 a datapath of the catalogue
-                                                (hw/chisel/blocks.json)
-     "args":       {"lanes": "W", "op": "op"},  its parameters, each an
-                                                expression over design params,
-                                                or a bool (a design-time variant:
-                                                Mac's accumulate)
-     "controller": "counted",                   the nest controller that drives
-                                                it
-     "ports":      {"a": "in", "out": "out"}}   optional: every BRM port -> the
-                                                datapath's port of that role (by
-                                                default the same name)
-
-``controller`` is a registered kind: ``register_controller``.
-``counted`` is the only one: the shell's nest controller counts the firings,
-JOBS outermost and each fold's beats inside. The CSRs are not
-the binding's: they follow from the unit's group (snax_forge/gen/accelerator.py).
-Which datapaths exist is the generators' business (snax_forge/gen/blocks.py
-registers them), so ``datapath`` is only a name here. Every expression is
-checked and stored canonical (snax_forge/expr.py). ``ports`` is written only
-when given, in the BRM's port order; whether its names are the datapath's
-ports is the generator's check. A binding may be null: the implementation is
-not generated yet.
+``check_binding`` checks ``{datapath, args, controller, ports}`` and stores every expression
+canonical (snax_forge/expr.py); a bool arg is a design-time variant (Mac's ``accumulate``). The
+``controller`` is a registered kind (``register_controller``); ``counted``, the only one, counts
+the firings, JOBS outermost and each fold's beats inside. ``datapath`` is only a name here:
+which datapaths exist, and whether ``ports`` names theirs, is the generator's check
+(snax_forge/gen/blocks.py). ``ports`` is written only when given, in the BRM's port order. A
+binding may be null: the implementation is not generated yet. Errors raise ``BindingError``.
 """
 
 from __future__ import annotations

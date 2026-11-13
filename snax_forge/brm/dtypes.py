@@ -1,21 +1,13 @@
 """A BRM port's dtypes as a rule: which container dtypes a node may bind.
 
-A port lists the NumPy integer dtypes it takes (``Port.dtypes``, all eight
-by default); the dtype a node puts on a port is its container's, read through
-the port's memlet (``port_dtypes``), never stored in the graph. A node's
-dtypes pass ``check_dtypes`` when
-
-- each port's dtype is one its ``dtypes`` lists;
-- every output is at least as wide as every input (the op runs at the
-  inputs' result type and is extended into the output);
-- no signed input meets a ``uint64`` input: NumPy's result type of the two
-  is float64, and SnaxUnit refuses it (snax-gvsoc ``snax/snax_unit.hpp``).
-
-``output_dtypes`` lists, per output port, the dtypes it accepts for given
-input dtypes: what a refusal's fix names. ``result_type`` is the type an op
-runs at: NumPy's result type of its inputs (the Chisel blocks' ``opType``);
-``fits`` says whether a constant (a slot's value, ``simd``'s ``k``) is one of a
-dtype's values.
+A port lists the integer dtypes it takes (``Port.dtypes``, all eight by default); a node's
+dtype on a port is its container's, read through the port's memlet (``port_dtypes``), never
+stored. ``check_dtypes`` passes when each port's dtype is one it lists, every output is at least
+as wide as every input (the op runs at the inputs' result type and is extended), and no signed
+input meets a ``uint64`` one (NumPy's result is float64, which snax-gvsoc's SnaxUnit refuses).
+``output_dtypes`` lists the output dtypes given inputs accept, what a refusal's fix names;
+``result_type`` is NumPy's result type of the inputs (the Chisel blocks' ``opType``); ``fits``
+says whether a constant (a slot's value) is one of a dtype's values.
 """
 
 from __future__ import annotations
