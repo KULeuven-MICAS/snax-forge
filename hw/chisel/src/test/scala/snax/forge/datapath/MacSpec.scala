@@ -7,10 +7,10 @@ import org.scalatest.flatspec.AnyFlatSpec
 import snax.forge.{ForgeTester, IntType, LaneBits, Seeds}
 import snax.forge.elementwise.ElementwiseModel
 
-/** `Mac` (D149) in its three forms against a Scala model written from C§17: per lane p = cast_out(cast_op(a) ·
-  * cast_op(b)); accumulating, s ← first ? p : s + p on fire, `out` s; plain, `out` = p + c at outType, combinational,
-  * or with regOut a register taken on `en`. Random beats and enables at three sizes (lanes 2, 4, 8), int64 and int32,
-  * signed and unsigned, a wider outType too; and the fixed cases of snax-gvsoc's vectors.
+/** `Mac` in its three forms against a Scala model written from CONTRACTS, "Accelerator RTL spec": per lane p =
+  * cast_out(cast_op(a) · cast_op(b)); accumulating, s ← first ? p : s + p on fire, `out` s; plain, `out` = p + c at
+  * outType, combinational, or with regOut a register taken on `en`. Random beats and enables at three sizes (lanes 2,
+  * 4, 8), int64 and int32, signed and unsigned, a wider outType too; and the fixed cases of snax-gvsoc's vectors.
   */
 class MacSpec extends AnyFlatSpec with ForgeTester {
 

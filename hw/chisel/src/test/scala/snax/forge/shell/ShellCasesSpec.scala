@@ -7,17 +7,17 @@ import snax.forge.{ForgeTester, Sink, SnaxShellCases, Source}
 import snax.forge.SnaxShellCases._
 import snax.forge.shell.AcceleratorSpec.CsrSpec
 
-/** The shell cross-check (C§17): a group's CSRs in `<tag>_shell_wrapper` (`<tag>_csr`, the group's `<tag>_<group>_ctrl`
-  * and its datapath) driven through snax-gvsoc's `SnaxShell` cases (`SnaxShellCases`, read from
-  * `SNAX_GVSOC_SHELL_CASES`), which snax-gvsoc's `tb.cpp` checks `snax_shell.hpp`'s rule against.
+/** The shell cross-check (CONTRACTS, "Accelerator RTL spec"): a group's CSRs in `<tag>_shell_wrapper` (`<tag>_csr`, the
+  * group's `<tag>_<group>_ctrl` and its datapath) driven through snax-gvsoc's `SnaxShell` cases (`SnaxShellCases`, read
+  * from `SNAX_GVSOC_SHELL_CASES`), which snax-gvsoc's `tb.cpp` checks `snax_shell.hpp`'s rule against.
   *
   * A case's `csrs` line and unit pick the wrapper: `START JOBS` with an SimdLanes unit (L 0, two inputs) is vecadd's
   * (START 0, JOBS 1, STATUS 2, BUSY_COUNTER 3); `START JOBS JOB_BEATS` with a fold (L 1, one input) is vsum's
   * (TreeAccumulate, one lane: START 0, JOBS 1, JOB_BEATS 2, STATUS 3, BUSY_COUNTER 4). Its `job_width` and
-  * `busy_counter_width` lines set the widths of JOBS and JOB_BEATS and of BUSY_COUNTER in the wrapper's description
-  * (D152). `START JOBS` and a unit's scalar CSRs (`K1`, `K1_LO K1_HI`, `K2`, each `NAME:W`) with an SimdLanes unit is
-  * vecadd's turned into axpy's unit (`axpyScalars`): op axpby, its slots read from those CSRs (pin `k1` or `k2`), at
-  * their width's type (64 bits for `_LO`/`_HI`), the CSRs after JOBS; with a fold, vsum's with those CSRs after its
+  * `busy_counter_width` lines set the widths of JOBS and JOB_BEATS and of BUSY_COUNTER in the wrapper's description.
+  * `START JOBS` and a unit's scalar CSRs (`K1`, `K1_LO K1_HI`, `K2`, each `NAME:W`) with an SimdLanes unit is vecadd's
+  * turned into axpy's unit (`axpyScalars`): op axpby, its slots read from those CSRs (pin `k1` or `k2`), at their
+  * width's type (64 bits for `_LO`/`_HI`), the CSRs after JOBS; with a fold, vsum's with those CSRs after its
   * JOB_BEATS, plain registers (`foldScalars`). The `words` lines are snax-gvsoc's message to its group; here the pins
   * follow the CSRs, which `ShellScalarSpec` checks through the datapath.
   *

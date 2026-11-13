@@ -132,7 +132,7 @@ class UnitCasesSpec extends AnyFlatSpec with ForgeTester {
         c.starts.get(i) match {
           case Some(s) =>
             dut.io.start.valid.poke(true.B)
-            if (!busy) { // the csr's wires: a start's JOBS and JOB_BEATS written while idle, held through a run (D168)
+            if (!busy) { // the csr's wires: a start's JOBS and JOB_BEATS written while idle, held through a run
               dut.io.settings.jobs.poke(s.jobs.U)
               dut.io.settings.beats(0).poke(s.jobBeats.U)
             }

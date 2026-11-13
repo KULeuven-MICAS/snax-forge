@@ -7,12 +7,12 @@ import org.scalatest.flatspec.AnyFlatSpec
 import snax.forge.{ForgeTester, IntType, LaneBits, Seeds}
 import snax.forge.elementwise.ElementwiseModel
 
-/** `SerialAccumulate` (D149) against a Scala model written from C§17: on read, acc ← (first ∧ lane = 0) ?
-  * cast_out(x_lane) : acc + cast_out(x_lane), `out` acc. Random beats, lanes and reads at three sizes (2, 4, 8 lanes; 1
-  * too, whose lane pin is 0 bits), int64 and int32 into themselves or int64, signed and unsigned; the partials (-13, 6)
-  * of snax-gvsoc's vectors: -13, then -7; and jobs of a run-time T (1 to 4 beats) of random int64 at 1, 2, 4 and 8
-  * lanes, read lane by lane as its control unit reads them (`first` high on a job's first beat, so high and low at lane
-  * 0, idle cycles between reads), each job's sum against the sum of its elements. Seeded (D163, B2 R5), at 1, 2 and 4
+/** `SerialAccumulate` against a Scala model written from CONTRACTS, "Accelerator RTL spec": on read, acc ← (first ∧
+  * lane = 0) ? cast_out(x_lane) : acc + cast_out(x_lane), `out` acc. Random beats, lanes and reads at three sizes (2,
+  * 4, 8 lanes; 1 too, whose lane pin is 0 bits), int64 and int32 into themselves or int64, signed and unsigned; the
+  * partials (-13, 6) of snax-gvsoc's vectors: -13, then -7; and jobs of a run-time T (1 to 4 beats) of random int64 at
+  * 1, 2, 4 and 8 lanes, read lane by lane as its control unit reads them (`first` high on a job's first beat, so high
+  * and low at lane 0, idle cycles between reads), each job's sum against the sum of its elements. Seeded, at 1, 2 and 4
   * lanes: jobs read lane by lane with random gaps, a random seed each, added on the job's first beat's last lane (the
   * read that fires it), each job's sum against its seed plus its elements.
   */

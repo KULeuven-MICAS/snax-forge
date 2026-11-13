@@ -6,8 +6,8 @@ import org.scalatest.flatspec.AnyFlatSpec
 import snax.forge.{ForgeTester, IntType, LaneBits, Seeds}
 import snax.forge.elementwise.{ElementwiseModel, ElementwiseOp}
 
-/** `SimdLanes`: its types on fixed vectors (D143: each input extended to the op type by its own signedness, the op at
-  * the op type, the result extended or wrapped into the output type; each expected value NumPy's, and
+/** `SimdLanes`: its types on fixed vectors (each input extended to the op type by its own signedness, the op at the op
+  * type, the result extended or wrapped into the output type; each expected value NumPy's, and
   * `ElementwiseModel.numpy`'s too); every op on the edge operands (`ElementwiseModel.edgePairs`: 0, 1, all ones, the
   * sign bit, ...) at int32, uint32, int8 and uint8, where min and max compare by the type's signedness and int8 wraps
   * far more often than int32; then random data against `ElementwiseModel.numpy` at random types, ops and lanes. With

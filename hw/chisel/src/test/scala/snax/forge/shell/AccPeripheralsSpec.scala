@@ -6,7 +6,7 @@ import org.scalatest.flatspec.AnyFlatSpec
 
 import snax.forge.{ForgeTester, LaneBits, Seeds}
 
-/** `<tag>_peripherals` (`AccPeripherals`, D168) against a model of its docstring. Per seed, `Layouts` layouts of 1 to 3
+/** `<tag>_peripherals` (`AccPeripherals`) against a model of its docstring. Per seed, `Layouts` layouts of 1 to 3
   * groups, each BUSY_COUNTER of 1, 2, 3 or 8 bits, driven for `Cycles` cycles as a group's control unit drives it:
   * after a random idle gap an accepted start in a (busy low), then busy from a + 1 to E for a run of 0 to 20 cycles (0
   * the empty run, E = a), then idle again; a start may come in E + 1. Checked every cycle: each BUSY_COUNTER against

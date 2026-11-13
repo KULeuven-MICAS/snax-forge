@@ -9,9 +9,9 @@ import org.scalatest.flatspec.AnyFlatSpec
 import snax.forge.Datapaths.{BoolParam, ConstParam, DtypeParam, DtypesParam, IntParam, OpParam}
 
 /** The datapath catalogue: `Emit --describe` (the registry, `Datapaths`) equals the checked-in `hw/chisel/blocks.json`,
-  * the file the Python side checks `accelerator.json` against (D130). Compared as JSON, key and list order included, so
-  * the file may be laid out by hand. Each datapath's builder also gives an IO with exactly the catalogue's ports and
-  * pins, and no valid, ready or counter (D147).
+  * the file the Python side checks `accelerator.json` against. Compared as JSON, key and list order included, so the
+  * file may be laid out by hand. Each datapath's builder also gives an IO with exactly the catalogue's ports and pins,
+  * and no valid, ready or counter.
   */
 class DatapathsSpec extends AnyFlatSpec {
 

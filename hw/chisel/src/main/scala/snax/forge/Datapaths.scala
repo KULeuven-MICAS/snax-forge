@@ -14,7 +14,7 @@ import snax.forge.datapath.{
 import snax.forge.elementwise.ElementwiseOp
 import snax.forge.shell.AcceleratorSpec
 
-/** The datapath catalogue: name -> signature and builder (D129, D130, D147, D149; C§17's datapath catalogue).
+/** The datapath catalogue: name -> signature and builder (the datapath catalogue of CONTRACTS, "Accelerator RTL spec").
   *
   * The signature is what `hw/chisel/blocks.json` holds and `Emit --describe` prints: the params with their types and
   * limits, the data ports with their directions, the latency L and the span its control unit runs it at, its register
@@ -27,7 +27,7 @@ import snax.forge.shell.AcceleratorSpec
   *   - `inputs.count`: the number of input ports (SimdLanes' `streams`);
   *   - `unit.opType`, `unit.params.<name>`: the unit's `opType` and its `params.<name>`;
   *   - `unit.scalars.<slot>`: whether the unit reads that slot from its CSR (a `bool`: its `scalars` has it);
-  *   - `unit.ports.seed`: whether the unit has a seed port (a `bool`: a fold's start, read once per job, D163);
+  *   - `unit.ports.seed`: whether the unit has a seed port (a `bool`: a fold's start, read once per job);
   *   - `link.depth`, `link.lanes`, `link.dtype`: a buffer's link's depth and its ends' lanes and dtype.
   *
   * A port is `"in"` or `"out"`, or `{"dir": ..., "when": {param: value, ...}}`; a pin is a name, or `{"name": ...,
@@ -35,7 +35,8 @@ import snax.forge.shell.AcceleratorSpec
   * elaboration (`holds`); one without `when` always does. A latency, a span or `flops` is an int or an expression over
   * the params in `snax_forge/expr.py`'s grammar, a bool as 0 or 1 and `width(t)` a dtype param's bits, which the Python
   * side evaluates (`snax_forge/gen/rtl.py`). `flops` is the block's register bits on its params, every flop it
-  * declares: CHAR1's cost model prices a register as its bits (D154); `BlockFlopsSpec` counts them in the emitted SV.
+  * declares: the block cost model (`snax_forge/char`) prices a register as its bits; `BlockFlopsSpec` counts them in
+  * the emitted SV.
   *
   * The Python side (`snax_forge/gen/rtl.py`) checks each unit's timing and ports against it; `Emit --spec` builds from
   * the unit with `build`. A spec checks `describe` equal to `blocks.json`.

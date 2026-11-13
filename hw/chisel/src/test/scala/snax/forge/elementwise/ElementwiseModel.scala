@@ -74,8 +74,8 @@ object ElementwiseModel {
     value & LaneBits.mask(to.width)
   }
 
-  /** NumPy's elementwise op (D143): `a` of `aType` and `b` of `bType` cast to `opType`, the op at `opType`, the result
-    * cast to `outType`. Bit patterns in and out.
+  /** NumPy's elementwise op: `a` of `aType` and `b` of `bType` cast to `opType`, the op at `opType`, the result cast to
+    * `outType`. Bit patterns in and out.
     */
   def numpy(op: Int, a: BigInt, b: BigInt, aType: IntType, bType: IntType, opType: IntType, outType: IntType): BigInt =
     cast(

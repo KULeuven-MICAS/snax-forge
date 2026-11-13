@@ -11,7 +11,7 @@ import snax.forge.shell.RtlFixtures
 /** The estimate's control-unit registers against the emitted RTL: every RTL fixture through `Emit --spec` once, and per
   * `<tag>_<group>_ctrl` module the registers its SystemVerilog declares (firtool's `reg [n:m] name;` lines, a Vec
   * register one per element, as `util/ctrl_regs.py` reads them) equal, by name and bits, to that module's entry of
-  * `ctrl_registers.json` beside the fixtures: `snax_forge/estimate/bits.py`'s `ctrl_registers` (D154) on each fixture's
+  * `ctrl_registers.json` beside the fixtures: `snax_forge/estimate/bits.py`'s `ctrl_registers` on each fixture's
   * `accelerator.json`, which `pixi run python util/ctrl_regs.py --json` writes and `tests/estimate/test_bits.py` checks
   * is current. Two registers firtool names its own way: the registered done pulse `io_done_REG`, the estimate's `done`,
   * and a unit's valid bits, a Vec of one-bit registers `<u>_v_0` … `<u>_v_<L-1>`, summed into the estimate's `<u>_v`.

@@ -6,8 +6,8 @@ import chisel3.util._
 /** One unit of a group's description (`accelerator.json`): its name, its timing (L, II, span), its outer inputs (the
   * streamer's ports it reads), its T when fixed at design time (`params.T`; 1 for a unit without a fold), else None: a
   * JOB_BEATS read live from the csr; `linked`, the positions among its inputs (in port order) that no outer port takes,
-  * each fed by one link (snax_group.cpp's inputs left ""); and `seeded`, its last outer input a fold's seed (D163), one
-  * beat per job.
+  * each fed by one link (snax_group.cpp's inputs left ""); and `seeded`, its last outer input a fold's seed, one beat
+  * per job.
   */
 case class UnitDesc(
   name:    String,
@@ -129,12 +129,12 @@ class LinkEnables(depth: Int) extends Bundle {
   val occupancy = Output(UInt(log2Ceil(depth + 1).W))
 }
 
-/** The control model of a group (D147; C§17's Control): the same rule as SnaxGroupRule (snax-gvsoc's
-  * `snax/snax_group.hpp`), a register only for what a firing changes (the rules at the top of the class), over
-  * datapaths of data and enables only. Not a module: it builds its registers and logic in the module that makes it
+/** The control model of a group (the Control of CONTRACTS, "Accelerator RTL spec"): the same rule as SnaxGroupRule
+  * (snax-gvsoc's `snax/snax_group.hpp`), a register only for what a firing changes (the rules at the top of the class),
+  * over datapaths of data and enables only. Not a module: it builds its registers and logic in the module that makes it
   * (`GroupCtrl`, `<tag>_<group>_ctrl`), which drives `io.config` (a start that runs: `GroupCtrl` refuses a start while
   * busy and ends the empty run itself), `io.settings` (the csr's JOBS and JOB_BEATS, wires held constant through the
-  * run, D168), the outer valids and `io.out.ready`, and reads the rest. Its per-unit signals are named after the unit
+  * run), the outer valids and `io.out.ready`, and reads the rest. Its per-unit signals are named after the unit
   * (`<unit>_fire`, `<unit>_job_beats_counter`, ...).
   *
   * A start of JOBS and each unit's T: the sink gives R = JOBS results, and a unit k before its successor s gives R_k =
@@ -149,14 +149,16 @@ class LinkEnables(depth: Int) extends Bundle {
   * 0); backward, in reverse order, its room (its outer output's ready if it owns it, and every out-edge's take: a wire
   * its consumer's firing, a buffer occupancy < D or that firing), whether it is frozen (its head, or at L 0 a giving
   * firing, has no room), fires and reads. The outer ports' join is per unit: input j's ready is its unit's firing,
-  * which needs every one of that unit's outer valids; a seeded unit's seed (its last outer input, D163) only on its
-  * job's first beat (fire = a.valid ∧ (¬first ∨ seed.valid)), and its ready is that firing (seed.ready = fire ∧ first).
-  * The outer output's valid is its owner's offer, never its ready's. `cls` is the cycle's class, judged at the owner,
-  * as the run line counts it: busy 0, stall_in 1, stall_out 2, flush 3.
+  * which needs every one of that unit's outer valids; a seeded unit's seed (its last outer input) only on its job's
+  * first beat (fire = a.valid ∧ (¬first ∨ seed.valid)), and its ready is that firing (seed.ready = fire ∧ first). The
+  * outer output's valid is its owner's offer, never its ready's. `cls` is the cycle's class, judged at the owner, as
+  * the run line counts it: busy 0, stall_in 1, stall_out 2, flush 3.
   */
 class GroupRule(val desc: GroupDesc, jobWidth: Int = 32) {
+  // NB (D153): a unit counts its results in nested counters, never against n_k; snax-gvsoc's SnaxGroupRule must
+  // count the same.
   // The C++ stays the spec (it counts firings up to n_k); here a register exists only for what a firing changes, and
-  // a unit counts its results in nested counters, never against a product (D153). No copy of a setting (D168): JOBS
+  // a unit counts its results in nested counters, never against a product. No copy of a setting: JOBS
   // and each open T are the csr's CSRs, read live as `io.settings`, which `<tag>_csr` holds constant through the run
   // (it holds a write to them while the group is busy); a fixed T (`params.T`, `UnitDesc.fixedT`) is a constant.
   //   - A unit with T != 1 keeps its beat counter d (`<unit>_job_beats_counter`, its firings mod T): `first` is d = 0,
@@ -176,8 +178,8 @@ class GroupRule(val desc: GroupDesc, jobWidth: Int = 32) {
   //       g = JOBS ∧ ¬(v(i) for some i < L − 1) (L ≥ 1: g already counts the result given, the pipeline below the head
   //       is empty; the test is ¬left)
   //   - The II gap: a register only at II > 1 (at II 1 it never leaves 0).
-  // Kept: those counters, the pipeline, the lane, the buffers' occupancy and slots. Every counter is job_width bits
-  // (D152), a digit of a fixed T ⌈log₂ T⌉; LOWER refuses JOBS or a JOB_BEATS above 2^job_width − 1, so d and g stay at
+  // Kept: those counters, the pipeline, the lane, the buffers' occupancy and slots. Every counter is job_width bits,
+  // a digit of a fixed T ⌈log₂ T⌉; LOWER refuses JOBS or a JOB_BEATS above 2^job_width − 1, so d and g stay at
   // most 2^job_width − 2 and d + 1, g + 1 fit.
   private val n     = desc.units.size
   private val descs = desc.units

@@ -5,12 +5,12 @@ import chisel3.util.MixedVec
 
 import snax.forge.ctrl.{GroupCtrl, GroupCtrlIO, GroupDesc, Link, UnitDesc}
 
-/** `<tag>_ctrl`: the groups' control units (`GroupCtrl`, `<tag>_<group>_ctrl`), one per group of `accelerator.json`
-  * (D146, D147), each generated from its group's description (`AccCtrl.desc`). Per group from `<tag>_csr` its start, a
-  * bare strobe, and its settings, JOBS and each JOB_BEATS as wires read live through the run (D168); its busy and done
-  * pulse back (`<tag>_csr` keeps STATUS, its `<tag>_peripherals` BUSY_COUNTER, D152), its pins; the valids and readies
-  * of its units' outer ports (the wrapper splits each Decoupled port: data to `<tag>_datapath`, handshake here), in the
-  * streamer's order; each unit's and buffer's enables to `<tag>_datapath`.
+/** `<tag>_ctrl`: the groups' control units (`GroupCtrl`, `<tag>_<group>_ctrl`), one per group of `accelerator.json`,
+  * each generated from its group's description (`AccCtrl.desc`). Per group from `<tag>_csr` its start, a bare strobe,
+  * and its settings, JOBS and each JOB_BEATS as wires read live through the run; its busy and done pulse back
+  * (`<tag>_csr` keeps STATUS, its `<tag>_peripherals` BUSY_COUNTER), its pins; the valids and readies of its units'
+  * outer ports (the wrapper splits each Decoupled port: data to `<tag>_datapath`, handshake here), in the streamer's
+  * order; each unit's and buffer's enables to `<tag>_datapath`.
   */
 class AccCtrl(spec: AcceleratorSpec) extends Module {
   override def desiredName: String = s"${spec.tag}_ctrl"
@@ -29,9 +29,9 @@ class AccCtrl(spec: AcceleratorSpec) extends Module {
 
 object AccCtrl {
 
-  /** A group's description (C§17): per unit, in the file's order, its L, II and span, its outer inputs, its T when
-    * fixed (`params.T`, or 1 without a JOB_BEATS) and its inputs no outer port takes; per link its ends by unit index,
-    * the `to` port's position among its unit's inputs (in port order) and its depth.
+  /** A group's description (CONTRACTS, "Accelerator RTL spec"): per unit, in the file's order, its L, II and span, its
+    * outer inputs, its T when fixed (`params.T`, or 1 without a JOB_BEATS) and its inputs no outer port takes; per link
+    * its ends by unit index, the `to` port's position among its unit's inputs (in port order) and its depth.
     */
   def desc(spec: AcceleratorSpec, g: AcceleratorSpec.GroupSpec): GroupDesc = {
     def at(unit: String) = g.units.indexWhere(_.name == unit)
@@ -47,7 +47,7 @@ object AccCtrl {
           outer.size,
           u.fixedT,
           u.inPorts.indices.filterNot(j => outer.contains(u.inPorts(j))),
-          outer.lastOption.contains("seed") // a fold's seed, its last outer input (D163)
+          outer.lastOption.contains("seed") // a fold's seed, its last outer input
         )
       },
       g.links.map { l =>

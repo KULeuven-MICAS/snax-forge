@@ -4,11 +4,12 @@ import chisel3._
 
 import snax.forge.IntType
 
-/** The lane accumulator (C§17's catalogue entry `LaneAccumulate`, the `lane_accumulate` BRM): each lane keeps its own
-  * running sum, Mac's accumulating form without the product. Data and enables only.
+/** The lane accumulator (the catalogue entry `LaneAccumulate` of CONTRACTS, "Accelerator RTL spec", the
+  * `lane_accumulate` BRM): each lane keeps its own running sum, Mac's accumulating form without the product. Data and
+  * enables only.
   *
-  * Per lane x = cast_out(a), `a` extended to `outType` by its own signedness (D143); on `fire`, s ← `first` ? x : s + x
-  * at `outType`, wrapping; `out` is s. Latency 1, pins `fire` and `first`: its control unit pushes `out` in the cycle
+  * Per lane x = cast_out(a), `a` extended to `outType` by its own signedness; on `fire`, s ← `first` ? x : s + x at
+  * `outType`, wrapping; `out` is s. Latency 1, pins `fire` and `first`: its control unit pushes `out` in the cycle
   * after a job's last beat fires (one sum per lane every T beats, T the job's JOB_BEATS), and may fire the next job's
   * first beat in that cycle, since s changes only at the cycle's end. rowsum 2 runs it with W rows on the W lanes, a
   * column a beat.

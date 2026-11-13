@@ -7,11 +7,11 @@ import org.scalatest.flatspec.AnyFlatSpec
 import snax.forge.{ForgeTester, IntType, LaneBits, Seeds}
 import snax.forge.elementwise.ElementwiseModel
 
-/** `LaneAccumulate` against a Scala model written from its documented behaviour (C§17): per lane x = cast_out(a), s ←
-  * first ? x : s + x on fire, wrapping at outType, held otherwise; `out` is s. rowsum 2's worked example, then seeded
-  * random jobs at 1, 4 and 8 lanes, int32 and int64 in (an int64 sum from int32 too): each job T beats, T random, its
-  * fires spread over random gaps (the control unit's stalls), every cycle's `out` the model's and each job's sums its
-  * beats' after its last fire.
+/** `LaneAccumulate` against a Scala model written from its documented behaviour (CONTRACTS, "Accelerator RTL spec"):
+  * per lane x = cast_out(a), s ← first ? x : s + x on fire, wrapping at outType, held otherwise; `out` is s. rowsum 2's
+  * worked example, then seeded random jobs at 1, 4 and 8 lanes, int32 and int64 in (an int64 sum from int32 too): each
+  * job T beats, T random, its fires spread over random gaps (the control unit's stalls), every cycle's `out` the
+  * model's and each job's sums its beats' after its last fire.
   */
 class LaneAccumulateSpec extends AnyFlatSpec with ForgeTester {
 

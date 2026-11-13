@@ -14,8 +14,8 @@ class PortMuxHarness(tag: String, set: SetSpec) extends Module {
   io <> mux.io
 }
 
-/** `<tag>_<set>_port_mux` (`PortMux`) against a model of the data-side mux as D169 and C§17 state it (`Model`), never
-  * read off the Chisel.
+/** `<tag>_<set>_port_mux` (`PortMux`) against a model of the data-side mux as CONTRACTS, "Accelerator RTL spec" states
+  * it (`Model`), never read off the Chisel.
   *
   * Per seed, `Shapes` random shared sets: 2 or 3 groups (PORT_MUX_SEL 1 or 2 bits), 1 to 3 reader and 1 to 3 writer
   * movers of 1 to 4 channels, each group a user on a mover with probability 0.6 (so some movers serve one group or

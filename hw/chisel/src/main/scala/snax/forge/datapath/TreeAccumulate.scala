@@ -4,19 +4,19 @@ import chisel3._
 
 import snax.forge.IntType
 
-/** The datapath of a fold (D133): the `accumulate` BRM's sum, latency 1, pins `fire` and `first`.
+/** The datapath of a fold: the `accumulate` BRM's sum, latency 1, pins `fire` and `first`.
   *
   * Data and enables only: no valid, ready or counter. Each input beat is `lanes` elements of `inType`; each is cast to
-  * `outType` (NumPy's fold: sign-extended from a signed `inType`, zero-extended from an unsigned one, D143) and a
+  * `outType` (NumPy's fold: sign-extended from a signed `inType`, zero-extended from an unsigned one) and a
   * combinational tree of `lanes` → 1 adders sums them, wrapping at `outType`. On `fire` the register `acc` takes the
   * beat's sum when `first` (a job's first beat) and adds it otherwise; `out` is `acc`. Its group's control unit
   * (`ctrl.GroupCtrl`, L 1) pushes `out` in the cycle after a job's last beat fires, and may fire the next job's first
   * beat in that same cycle, since `acc` changes only at the cycle's end: no drain cycle.
   *
-  * Seeded (`seed`, D163, B2 R5), it has one more input, `seed`, one element of `outType` read once per job: a job's
-  * first beat starts from it, acc ← seed + tree(in), so the job's sum is the seed's plus its beats'. The control unit
-  * holds the first beat until the seed is valid and takes the seed with that firing (`ctrl.GroupRule`). Unseeded it is
-  * the block it was, the same RTL.
+  * Seeded (`seed`), it has one more input, `seed`, one element of `outType` read once per job: a job's first beat
+  * starts from it, acc ← seed + tree(in), so the job's sum is the seed's plus its beats'. The control unit holds the
+  * first beat until the seed is valid and takes the seed with that firing (`ctrl.GroupRule`). Unseeded it is the block
+  * it was, the same RTL.
   *
   * @param inType
   *   the input's type, NumPy's name ("int32", "uint8"), from the unit's input port's dtype

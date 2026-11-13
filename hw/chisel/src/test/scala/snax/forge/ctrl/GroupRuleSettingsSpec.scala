@@ -6,9 +6,8 @@ import org.scalatest.flatspec.AnyFlatSpec
 
 import snax.forge.{ForgeTester, Rand, Seeds}
 
-/** `GroupCtrl` reading JOBS and each JOB_BEATS live from the csr's wires (D168), against `GroupModel`, cycle by cycle:
-  * busy, the done pulse (in E, and in a for an empty run), the done pin, each unit's fire and give, out.valid and the
-  * class.
+/** `GroupCtrl` reading JOBS and each JOB_BEATS live from the csr's wires, against `GroupModel`, cycle by cycle: busy,
+  * the done pulse (in E, and in a for an empty run), the done pin, each unit's fire and give, out.valid and the class.
   *
   *   - Random settings: chains of 1 to 3 units, half in a shuffled order, L 0-2, each T fixed or from a JOB_BEATS,
   *     links of depth 0-2, at job_width 3, 8 or 32; back-to-back starts whose JOBS and open Ts are drawn from {0, 1, 2,

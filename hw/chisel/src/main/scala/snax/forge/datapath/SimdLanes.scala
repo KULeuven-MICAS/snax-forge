@@ -21,7 +21,7 @@ import snax.forge.elementwise.{ElementwiseAlu, ElementwiseOp}
   * width (`k1Csr`, `k2Csr`: the unit's K1 or K2 CSR); `k1` is one of the two, `k2` may be neither. The name ends in
   * `_axpby` and, per slot, `_k1<v>` (`_k1m3`) or `_k1r`, then `_k2<v>` or `_k2r`.
   *
-  * ==Types (D143)==
+  * ==Types==
   *
   * Each lane runs NumPy's arithmetic: `a` and `b` are lanes of their own types, each extended to `opType` (the
   * operands' result type, chosen by Python) by its own signedness, the op runs at `opType` (min and max comparing by

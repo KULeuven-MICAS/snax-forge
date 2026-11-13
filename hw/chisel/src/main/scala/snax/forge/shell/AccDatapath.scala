@@ -8,7 +8,7 @@ import chisel3.util.MixedVec
 import snax.forge.Datapaths
 
 /** One catalogue datapath (`Datapaths`) as its own module, named after its unit or link: `<tag>_<unit>`, `<tag>_<link>`
-  * (C§18's module tree). Its IO is the datapath's: the catalogue's live ports and pins.
+  * (the module tree of CONTRACTS, "Bundle"). Its IO is the datapath's: the catalogue's live ports and pins.
   */
 class Block(name: String, d: Datapaths.Datapath, p: Map[String, ujson.Value]) extends Module {
   override def desiredName: String = name
@@ -18,19 +18,19 @@ class Block(name: String, d: Datapaths.Datapath, p: Map[String, ujson.Value]) ex
   io <> built
 }
 
-/** `<tag>_datapath`: every unit's datapath (D147), a catalogue datapath built from the unit's ports by its fill rule,
-  * in a module `<tag>_<unit>`, and every buffer's `LinkBuffer` (a link of depth >= 1), in a module `<tag>_<link>`,
-  * group by group (its units, then its buffers). Data and enables only. A link is plain wiring: a wire from its
-  * producer's output to its consumer's input; a buffer between them, loaded from the producer and read by the consumer.
-  * Outside, per unit its outer ports' data, by BRM port, and the pins its catalogue entry has live (`fire`, `first`,
-  * `read`, `lane`, `en`); per buffer its pins (`load`, `wslot`, `rslot`), group by group.
+/** `<tag>_datapath`: every unit's datapath, a catalogue datapath built from the unit's ports by its fill rule, in a
+  * module `<tag>_<unit>`, and every buffer's `LinkBuffer` (a link of depth >= 1), in a module `<tag>_<link>`, group by
+  * group (its units, then its buffers). Data and enables only. A link is plain wiring: a wire from its producer's
+  * output to its consumer's input; a buffer between them, loaded from the producer and read by the consumer. Outside,
+  * per unit its outer ports' data, by BRM port, and the pins its catalogue entry has live (`fire`, `first`, `read`,
+  * `lane`, `en`); per buffer its pins (`load`, `wslot`, `rslot`), group by group.
   */
 class AccDatapath(spec: AcceleratorSpec) extends Module {
   override def desiredName: String = s"${spec.tag}_datapath"
 
-  // Each block made group by group, its units then its buffers (C§18's module tree), the instances named as when the
-  // units and the buffers were made in two passes (`blocks_<k>_4`, `bufs_<i>_4`), so the SV of a design whose two
-  // orders agree stays as it was; `blocks` in unit order, `bufs` in link order
+  // Each block made group by group, its units then its buffers (the module tree of CONTRACTS, "Bundle"), the
+  // instances named as when the units and the buffers were made in two passes (`blocks_<k>_4`, `bufs_<i>_4`), so the
+  // SV of a design whose two orders agree stays as it was; `blocks` in unit order, `bufs` in link order
   private val made: Map[String, (Datapaths.Datapath, Map[String, ujson.Value], Block)] = {
     var (k, i) = (0, 0)
     spec.groups.flatMap { g =>

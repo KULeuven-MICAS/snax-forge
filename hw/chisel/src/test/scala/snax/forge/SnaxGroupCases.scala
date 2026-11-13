@@ -3,15 +3,16 @@ package snax.forge
 import java.nio.file.Path
 
 /** snax-gvsoc's group cases (`tests/snax/group/cases/`, the format of that folder's README), the shared half of the
-  * group cross-check between snax-gvsoc and Chisel: written from C§17's Control by that folder's `gen.py`, checked
-  * against `SnaxGroupRule` by its `tb.cpp`, and driven through `ctrl.GroupCtrl` here, cycle for cycle. Read from the
-  * folder `SNAX_GVSOC_GROUP_CASES` names (e.g. `gvsoc/snax-gvsoc/tests/snax/group/cases`); without it a spec cancels.
+  * group cross-check between snax-gvsoc and Chisel: written from the Control of CONTRACTS, "Accelerator RTL spec" by
+  * that folder's `gen.py`, checked against `SnaxGroupRule` by its `tb.cpp`, and driven through `ctrl.GroupCtrl` here,
+  * cycle for cycle. Read from the folder `SNAX_GVSOC_GROUP_CASES` names (e.g.
+  * `gvsoc/snax-gvsoc/tests/snax/group/cases`); without it a spec cancels.
   */
 object SnaxGroupCases {
 
   val Env = "SNAX_GVSOC_GROUP_CASES"
 
-  /** A unit line; `seed`, its last outer input a fold's seed, one beat per job (`seed 1`, D163). */
+  /** A unit line; `seed`, its last outer input a fold's seed, one beat per job (`seed 1`). */
   case class UnitLine(
     name:     String,
     datapath: String,

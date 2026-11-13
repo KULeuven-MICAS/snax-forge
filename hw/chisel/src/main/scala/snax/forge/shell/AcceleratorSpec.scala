@@ -2,23 +2,22 @@ package snax.forge.shell
 
 import java.nio.file.{Files, Path}
 
-/** `accelerator.json` as `Emit --spec` reads it (C§17, D145, D157): the one description of a design point's
-  * accelerators, written by snax-forge (`snax_forge/gen/accelerator.py`) and checked by it against the datapath
-  * catalogue (`hw/chisel/blocks.json`, D130). The file nests accelerators ⊃ groups ⊃ units; the shell is one for the
-  * whole design, so the reader flattens it once: the groups in CSR order across the accelerators, the outer inputs and
+/** `accelerator.json` as `Emit --spec` reads it (CONTRACTS, "Accelerator RTL spec"): the one description of a design
+  * point's accelerators, written by snax-forge (`snax_forge/gen/accelerator.py`) and checked by it against the datapath
+  * catalogue (`hw/chisel/blocks.json`). The file nests accelerators ⊃ groups ⊃ units; the shell is one for the whole
+  * design, so the reader flattens it once: the groups in CSR order across the accelerators, the outer inputs and
   * outputs set after set. Nothing is checked again here beyond what construction needs: the offsets as stored,
   * contiguous in CSR order from the shell's first CSR.
   *
-  * A set whose groups share its movers (`share_ports`, D169) has `movers` and `port_mux`: its outer ports at the
-  * wrapper are its movers, readers then writers, each `num_channel * 64` bits, in place of its groups' inputs and
-  * outputs, which reach the movers through `<tag>_<set>_port_mux` (`PortMux`); its PORT_MUX_SEL is its last CSR.
+  * A set whose groups share its movers (`share_ports`) has `movers` and `port_mux`: its outer ports at the wrapper are
+  * its movers, readers then writers, each `num_channel * 64` bits, in place of its groups' inputs and outputs, which
+  * reach the movers through `<tag>_<set>_port_mux` (`PortMux`); its PORT_MUX_SEL is its last CSR.
   */
 object AcceleratorSpec {
 
-  /** A CSR: its offset from the shell's first CSR and its width, 1 to 32 bits (D152: START 1, JOBS and JOB_BEATS
-    * job_width, a scalar its dtype's bits, 32 a word at 64, STATUS 2, BUSY_COUNTER busy_counter_width); a read gives
-    * its bits, the upper ones 0. `pin`: a scalar's datapath pin (`k1`), which the CSR drives (two at 64 bits, low word
-    * first).
+  /** A CSR: its offset from the shell's first CSR and its width, 1 to 32 bits (START 1, JOBS and JOB_BEATS job_width, a
+    * scalar its dtype's bits, 32 a word at 64, STATUS 2, BUSY_COUNTER busy_counter_width); a read gives its bits, the
+    * upper ones 0. `pin`: a scalar's datapath pin (`k1`), which the CSR drives (two at 64 bits, low word first).
     */
   case class CsrSpec(name: String, access: String, offset: Int, width: Int, pin: Option[String] = None) {
     require(1 <= width && width <= 32, s"CSR $name: width $width, must be 1 to 32")
@@ -78,7 +77,7 @@ object AcceleratorSpec {
   /** A port of a group on a shared mover: the group, the port `(unit, port)`, its channels (at most the mover's). */
   case class MuxUser(group: String, port: (String, String), numChannel: Int)
 
-  /** A mover of a shared set (D169): `reader<k>` or `writer<k>`, its channels, whether it has `configurable_channel`
+  /** A mover of a shared set: `reader<k>` or `writer<k>`, its channels, whether it has `configurable_channel`
     * (`masked`), its users, at most one per group.
     */
   case class MoverSpec(name: String, role: String, numChannel: Int, masked: Boolean, users: Seq[MuxUser]) {
@@ -90,8 +89,8 @@ object AcceleratorSpec {
   /** A shared set's port mux: its groups in PORT_MUX_SEL's order and PORT_MUX_SEL, the set's last CSR. */
   case class PortMuxSpec(groups: Seq[String], csr: CsrSpec)
 
-  /** A streamer set, one of the file's accelerators (D157): its name, its outer ports, its groups by name, and, shared,
-    * its movers and port mux.
+  /** A streamer set, one of the file's accelerators: its name, its outer ports, its groups by name, and, shared, its
+    * movers and port mux.
     */
   case class SetSpec(
     name:    String,
@@ -203,7 +202,7 @@ case class AcceleratorSpec(
     ws.head
   }
 
-  /** job_width (D152): the width of JOBS and every JOB_BEATS, one for all, and of the control units' counters. */
+  /** job_width: the width of JOBS and every JOB_BEATS, one for all, and of the control units' counters. */
   lazy val jobWidth: Int = width("JOBS", "JOB_BEATS")
 
   /** busy_counter_width: every BUSY_COUNTER's width. */

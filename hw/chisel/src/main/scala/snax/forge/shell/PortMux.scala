@@ -51,10 +51,10 @@ class PortMuxPorts(val set: SetSpec, val selWidth: Int) extends Record {
   def uint(name:  String): UInt = elements(name).asInstanceOf[UInt]
 }
 
-/** `<tag>_<set>_port_mux`: the data-side mux of a streamer set whose groups share its movers (D169, C§17), between the
-  * movers' ports at the wrapper and the groups' ports; pure wires, no register. snax-gvsoc's `SnaxPortMuxRule`
-  * (`snax/snax_port_mux.hpp`), combinational and with no fatal case: what the model refuses (a beat of a group not
-  * selected) the hardware never shows its group.
+/** `<tag>_<set>_port_mux`: the data-side mux of a streamer set whose groups share its movers (CONTRACTS, "Accelerator
+  * RTL spec"), between the movers' ports at the wrapper and the groups' ports; pure wires, no register. snax-gvsoc's
+  * `SnaxPortMuxRule` (`snax/snax_port_mux.hpp`), combinational and with no fatal case: what the model refuses (a beat
+  * of a group not selected) the hardware never shows its group.
   *
   * `sel_i`, PORT_MUX_SEL, is the selected group's index in `port_mux.groups`; a user is selected when its group is. Per
   * reader mover: each user's data is the mover's low `num_channel * 64` bits, whatever the select; its valid is the

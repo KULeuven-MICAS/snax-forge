@@ -10,13 +10,13 @@ import snax.forge.{ForgeTester, RunLines, SnaxGroupCases}
   * (`SnaxGroupCases`: dot 2-6 at T 2 and 4, J 1 and 2, dot 5 and 6 at W 1, backpressure, an input gap, JOBS 0, and the
   * fold's seed: two folds unseeded, the first or both seeded, a late seed on one fold and on a SerialAccumulate; their
   * data is checked by `tb.cpp`, and dot5_w1_j2's through the wrapper by ShellEndToEndSpec), cycle for cycle: per cycle
-  * the outer valids and the output's ready poked; each input's ready (its unit's firing, C§17's per-unit join; a seed's
-  * that firing on its job's first beat, the unit's firings counted mod its T), each unit's fire and give, each buffer's
-  * occupancy after the cycle and busy compared; at the run's end its line from `cls` per busy cycle and the head's
-  * firings. Each case runs twice (the rule does not tell the two apart, the control unit's counters do, D153): with
-  * every unit's T fixed (`params.T`), JOBS on its wire; and with every unit of T != 1 open, its T a JOB_BEATS read live
-  * from its wire, so dot 2's and dot 3's mul counts against or borrows from a sum whose T is the csr's (D168). Without
-  * `SNAX_GVSOC_GROUP_CASES` the spec cancels.
+  * the outer valids and the output's ready poked; each input's ready (its unit's firing, the per-unit join of
+  * CONTRACTS, "Accelerator RTL spec"; a seed's that firing on its job's first beat, the unit's firings counted mod its
+  * T), each unit's fire and give, each buffer's occupancy after the cycle and busy compared; at the run's end its line
+  * from `cls` per busy cycle and the head's firings. Each case runs twice (the rule does not tell the two apart, the
+  * control unit's counters do): with every unit's T fixed (`params.T`), JOBS on its wire; and with every unit of T != 1
+  * open, its T a JOB_BEATS read live from its wire, so dot 2's and dot 3's mul counts against or borrows from a sum
+  * whose T is the csr's. Without `SNAX_GVSOC_GROUP_CASES` the spec cancels.
   */
 class GroupCasesSpec extends AnyFlatSpec with ForgeTester {
 
