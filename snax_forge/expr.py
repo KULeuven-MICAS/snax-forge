@@ -216,8 +216,11 @@ def evaluate(v: Value, env: Mapping[str, Any]) -> Any:
 
 def canonical(v: Value) -> Value:
     """The stored form of ``v``: an int if it has no names, else ``ast.unparse``'s text."""
-    if type(v) is int:
-        return v
+    return v if type(v) is int else _canonical(v)
+
+
+@functools.lru_cache(maxsize=16384)
+def _canonical(v: str) -> Value:
     if not _names_of(v):
         return evaluate(v, {})
     return ast.unparse(_parsed(v))
@@ -352,6 +355,12 @@ def statements(code: Any, what: str) -> list[tuple[str, Value]]:
     """
     if not isinstance(code, str):
         raise ExprError(f"{what}: must be a string, got {code!r}")
+    return list(_statements(code, what))
+
+
+@functools.lru_cache(maxsize=4096)
+def _statements(code: str, what: str) -> tuple[tuple[str, Value], ...]:
+    """``statements``' pairs, one tuple per code string (an error is raised again each time)."""
     try:
         tree = ast.parse(code)
     except SyntaxError as e:
@@ -369,7 +378,7 @@ def statements(code: Any, what: str) -> list[tuple[str, Value]]:
         out.append((st.targets[0].id, canonical(rhs)))
     if not out:
         raise ExprError(f"{what}: no statement")
-    return out
+    return tuple(out)
 
 
 def canonical_code(code: Any, what: str) -> str:
