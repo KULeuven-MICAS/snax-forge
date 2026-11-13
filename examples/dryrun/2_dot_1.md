@@ -8,7 +8,7 @@ The designer's questions: what does it cost to pass the products through L1 betw
 
 ## 1. Start the editor on the kernel
 
-Everything runs in snax-forge's image (`docs/RUN.md` section 1). From the folder that holds `snax-forge`:
+Everything runs in snax-forge's image (`docs/TOOL.md` section 1). From the folder that holds `snax-forge`:
 
     podman run --rm -it --network host -v "$PWD":"$PWD" -w "$PWD" ghcr.io/kuleuven-micas/snax-forge:main
     cd snax-forge && pixi install

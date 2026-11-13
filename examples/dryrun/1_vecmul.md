@@ -8,7 +8,7 @@ The path: open the kernel in the editor, transform and bind it step by step, sav
 
 ## 1. Start the editor on the kernel
 
-Everything runs in snax-forge's image (`docs/RUN.md` section 1). From the folder that holds `snax-forge`:
+Everything runs in snax-forge's image (`docs/TOOL.md` section 1). From the folder that holds `snax-forge`:
 
     podman run --rm -it --network host -v "$PWD":"$PWD" -w "$PWD" ghcr.io/kuleuven-micas/snax-forge:main
     cd snax-forge && pixi install

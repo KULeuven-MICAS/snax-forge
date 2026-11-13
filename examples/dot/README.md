@@ -4,7 +4,7 @@ dot is `out = Σ A[i] · B[i]` over N elements (`kernels/` `dot`). Six recipes b
 
 ## 1. Run one
 
-In snax-forge's image (`docs/RUN.md` section 1):
+In snax-forge's image (`docs/TOOL.md` section 1):
 
 ```bash
 pixi run flow recipes/dot/dot_4.json --platform platforms/snax_forge.json
@@ -42,4 +42,4 @@ What each builds:
 
 ## 3. What this does not show
 
-The counts are SNAX-GVSoC's; snax_cluster's RTL runs the same ELF from the bundle (`pixi run forge`, `docs/RUN.md` section 8). Bank and port statistics per group and the beat-level trace of a linked group are parked to SYN1 (`docs/STATUS.md` open item 96): `--trace beat` is refused for dot 2 to dot 6 (`convert.level`).
+The counts are SNAX-GVSoC's; snax_cluster's RTL runs the same ELF from the bundle (`pixi run forge`, `docs/TOOL.md` section 6). Bank and port statistics per group and the beat-level trace of a linked group are parked to SYN1 (`docs/STATUS.md` open item 96): `--trace beat` is refused for dot 2 to dot 6 (`convert.level`).

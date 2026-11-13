@@ -191,8 +191,8 @@ def forge(recipe: Path, platform: Path, sets: list[tuple[str, tuple[str, str, An
     lines += [f"  pixi run make -C target/snitch_cluster {goal}" for goal in VLT]
     lines.append(
         "Questa: rtl-gen and vsim_preparation in snax_cluster's development image, then "
-        "snax-forge-sim and snax-forge-run with SIM=vsim and the same B and E: docs/RUN.md "
-        "section 8."
+        "snax-forge-sim and snax-forge-run with SIM=vsim and the same B and E: docs/TOOL.md "
+        "section 6."
     )
     print("\n".join(lines))
     return 0

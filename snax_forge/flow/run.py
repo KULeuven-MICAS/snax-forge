@@ -358,7 +358,7 @@ def check_toolchain(which: Callable[[str], str | None] = shutil.which) -> None:
     missing = [t for t in TOOLCHAIN if which(t) is None]
     if missing:
         raise FlowError(f"sw: no {' or '.join(missing)} on PATH: the program builds in "
-                        f"snax-forge's image, {IMAGE} (docs/RUN.md §1)")  # fmt: skip
+                        f"snax-forge's image, {IMAGE} (docs/TOOL.md section 1)")  # fmt: skip
 
 
 def first_error(stdout: str, stderr: str) -> str | None:

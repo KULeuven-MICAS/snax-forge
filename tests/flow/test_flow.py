@@ -408,7 +408,7 @@ def test_no_toolchain_stops_before_sw(tmp_path, monkeypatch):
     with pytest.raises(FlowError) as e:
         flow(tmp_path)
     assert str(e.value) == ("sw: no ld.lld on PATH: the program builds in snax-forge's image, "
-                            "ghcr.io/kuleuven-micas/snax-forge:main (docs/RUN.md §1)")  # fmt: skip
+                            "ghcr.io/kuleuven-micas/snax-forge:main (docs/TOOL.md section 1)")  # fmt: skip
     assert "sw" not in [goal for goal, _ in fake.calls]
     with pytest.raises(FlowError, match=r"^sw: no clang or ld\.lld on PATH"):
         check_toolchain(lambda t: None)
