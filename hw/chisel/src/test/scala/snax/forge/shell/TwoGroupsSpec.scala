@@ -5,7 +5,7 @@ import org.scalatest.flatspec.AnyFlatSpec
 
 import snax.forge.{ForgeTester, LaneBits, Sink, Source}
 
-/** Several groups in one accelerator (D146, D148): dot 1 encapsulated, the generated `accelerator.json` of
+/** Several groups in one accelerator: dot 1 encapsulated, the generated `accelerator.json` of
   * `recipes/dot/dot_1_enc.json` (the fixture dot_1_enc, snax-gvsoc's `forge/dot_1_enc/`), one accelerator `dot` in one
   * streamer set: group vmul (SimdLanes, mul, 4 lanes of int64; START 0, JOBS 1, STATUS 2, BUSY_COUNTER 3) and group
   * vsum (TreeAccumulate, 4 lanes of int64 into one; START 4, JOBS 5, JOB_BEATS 6, STATUS 7, BUSY_COUNTER 8). Each group

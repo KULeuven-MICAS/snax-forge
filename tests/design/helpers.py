@@ -2,7 +2,7 @@
 
 The platform is the checked-in ``platforms/small16.json`` (``snax_forge.json``
 for a platform read from snax_cluster's hjson, the snax-gvsoc submodule's
-cluster files, which CI's python, chisel and gvsoc jobs fetch, D134); the graphs are the SNAX-DFG
+cluster files, which CI's python, chisel and gvsoc jobs fetch); the graphs are the SNAX-DFG
 fixtures of tests/dfg/fixtures (vecadd bound to ``simd`` with
 W = 4, split, as imported), and vecadd bound with W = 8 through the
 checked-in recipe. ``design`` pairs them in memory, with optional edits to
@@ -45,7 +45,7 @@ def bound_w8() -> Graph:
     return bound_vecadd(8)
 
 
-# matadd at W = 4, M = 8, N = 16: the row map tagged temporal, the column map split (D73)
+# matadd at W = 4, M = 8, N = 16: the row map tagged temporal, the column map split
 MATADD_RECIPE = json.loads((recipe_path("matadd")).read_text())
 
 
@@ -59,9 +59,10 @@ def bound_matadd() -> Graph:
 
 @cache
 def bound_rowsum(name: str = "rowsum", **sizes: int) -> Graph:
-    """rowsum bound by ``recipes/<folder>/<name>.json`` (``rowsum``: adder tree, W = 4, M = 8, N = 64;
+    """rowsum bound by ``recipes/<folder>/<name>.json`` (``rowsum``: adder tree, W = 4, M = 8, N =
+    64;
     ``rowsum_serial``: accumulator, W = 1, M = 4, N = 16), ``sizes`` overriding its params:
-    a restart every T = N / W beats (open item 81)."""
+    a restart every T = N / W beats."""
     from snax_forge.dfg.import_sdfg import import_kernel
 
     recipe = Recipe.load(recipe_path(name)).with_params(sizes)

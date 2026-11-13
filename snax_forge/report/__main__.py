@@ -4,7 +4,7 @@
 
 DIR is a flow folder (``out/flow/<name>``) or its ``run/`` directory; the
 reports go to ``DIR/report/`` unless ``--out`` says otherwise (files.py);
-``design.md``'s cost estimate is on ``--tech`` (default nangate45, C§20).
+``design.md``'s cost estimate is on ``--tech`` (default nangate45).
 Exit 0 when both were written, 1 when DIR cannot be read, 2 on bad
 arguments. pixi: ``report``.
 """

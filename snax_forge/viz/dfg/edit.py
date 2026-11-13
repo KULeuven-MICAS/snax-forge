@@ -1,16 +1,13 @@
-"""Command line of the DFG viewer in edit mode (D55, server.py).
+"""Command line of the DFG viewer in edit mode (server.py).
 
     python -m snax_forge.viz.dfg.edit [--kernel K --set NAME=VALUE ... | --recipe R |
                                        --session DIR] [--platform P] [--tech T] [--port 8767]
                                        [--verbose]
 
-Serves the editor on 127.0.0.1 until Ctrl-C with one session (sandbox/session.py): a new one
-on kernel K (``--set`` gives its params, each symbol the param of its name and each one needing
-a value: ``vecmul: give N, e.g. --set N=2048``; no W unless given), one replaying
-recipe R (a path, or a name in a folder of ``recipes/``, ``find_recipe``), or the session in DIR (``out/sessions/<name>/``) resumed. Without a start option the
-page shows its start dialog. Sessions go to ``out/sessions/``, saved recipes to ``recipes/custom/``
-and their steps to ``out/sandbox/``. The cost estimate is on ``--tech`` until the page's
-technology dropdown picks another (default nangate45, C§20). pixi: ``edit-dfg``.
+Serves the editor on 127.0.0.1 until Ctrl-C with one session (sandbox/session.py): a new one on
+kernel K, one replaying recipe R (a path or a name, ``find_recipe``), or the session in DIR
+resumed; without one the page shows its start dialog. The cost is on ``--tech`` (default
+nangate45). The session's files are in CONTRACTS, "Recipe". pixi: ``edit-dfg``.
 
 Exit codes: 0 stopped with Ctrl-C, 2 a start option that fails (its message) or a port taken.
 """

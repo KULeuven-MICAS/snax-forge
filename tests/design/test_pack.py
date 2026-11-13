@@ -1,4 +1,4 @@
-"""Packing narrow elements into words (D142): the streamers' dtype, num_slc and num_ch, and
+"""Packing narrow elements into words: the streamers' dtype, num_slc and num_ch, and
 the checks connect.pack and connect.num_ch, on small hand-built graphs."""
 
 from __future__ import annotations
@@ -125,7 +125,7 @@ def test_s0_not_a_multiple_of_num_slc_is_one_problem_per_port():
     assert [p.where for p in got] == ["node add.a", "node add.b", "node add.out"]
     assert got[0].message == (
         "the fastest spatial bound S_0 = 2 is not a multiple of num_slc (int16, num_slc = 4 slices "
-        "per word): a beat's fastest lanes must fill whole words (D142)"
+        "per word): a beat's fastest lanes must fill whole words"
     )
     assert got[0].fix == (
         "make the fastest spatial bound a multiple of 4 (the split factor in the recipe)"
@@ -167,7 +167,7 @@ def test_num_ch_other_than_the_wire_default_is_refused():
     assert got[0].message == (
         "num_ch = 4 for 4 lanes of int32 (num_slc = 2): rho = num_ch * num_slc / W = 2. Only the "
         "wire default W / num_slc = 2 is placed for now: rho != 1 needs the FIFO slicer, which "
-        "the flow does not place yet (D142). With rho <= 1, num_ch may be 1, 2 (the wire "
+        "the flow does not place yet. With rho <= 1, num_ch may be 1, 2 (the wire "
         "default); a value with rho > 1 never helps a unit firing once per cycle"
     )
     assert got[0].fix == ("remove num_ch, or --set platform.streamers.acc_out.num_ch=2")

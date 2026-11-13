@@ -165,7 +165,7 @@ def test_a_folded_line(runs):
     a = fold["from"] - 1
     assert fold == {"kind": "fold", "from": a + 1, "to": a + 6, "hidden": 6,
                     "step": {"0": 8}, "span": {"0": [8, 55]}}  # fmt: skip
-    # out is one word the DMA moves: seven more to a whole 64-byte beat, kept free (D144)
+    # out is one word the DMA moves: seven more to a whole 64-byte beat, kept free
     assert [x for x in texts(view, "l1") if "out" in x] == ["row 2: out[0..0] out[pad]x7 _x24"]
 
 
@@ -423,7 +423,7 @@ def test_a_read_back_long_after_its_grant_is_in_that_cycle_only(runs):
 
 
 # =============================================================================
-# 5. Packing and padding (D142), from design points
+# 5. Packing and padding, from design points
 # =============================================================================
 
 

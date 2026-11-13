@@ -1,4 +1,4 @@
-"""Design and run reports (D99) on flow runs (C§7, run/): every number equals its source.
+"""Design and run reports on flow runs (run/): every number equals its source.
 
 1. the design report against the design point and the cluster (run/cluster.py)
 2. the run report against the profile and the trace, at task and at off
@@ -306,12 +306,13 @@ def test_the_command_line(flows, tmp_path, capsys):
 
 
 # =============================================================================
-# 5. Packing and padding (D142, D144), from design points
+# 5. Packing and padding, from design points
 # =============================================================================
 
 
 def designed_report(tmp_path, recipe, sets=()):
-    """The design report of ``recipes/<folder>/<recipe>.json`` (``--set`` each of ``sets``) designed on
+    """The design report of ``recipes/<folder>/<recipe>.json`` (``--set`` each of ``sets``) designed
+    on
     snax_forge (no run)."""
     from snax_forge.gen import generate
     from snax_forge.report.design import build_design
@@ -352,13 +353,13 @@ def test_design_md_lists_the_design_notes(tmp_path, w):
 
 @pytest.mark.parametrize("w", [8, 16])
 def test_the_bank_bound_notes_in_design_md_and_run_md(tmp_path, w):
-    """vecmul at N = 2048 (D155): at W = 16 design.md's Estimate has the group's bank-bound note
+    """vecmul at N = 2048: at W = 16 design.md's Estimate has the group's bank-bound note
     and run.md puts it beside the task's expected BUSY_COUNTER; at W = 8 neither has one."""
     r = designed_report(tmp_path, "vecmul", ["N=2048", f"W={w}"])
     note = ("acc: the streams move 6144 words over 32 banks, at least 192 cycles of L1 time "
             "against the ideal 128")  # fmt: skip
     assert r.estimate.bank_notes == ([note] if w == 16 else [])
-    cycles = 2048 // w  # bound, so no unmapped part (D155)
+    cycles = 2048 // w  # bound, so no unmapped part
     assert f"Accelerator cycles: {cycles}. Total: {cycles}. L1 footprint:" in render_design(r)
     assert (f"- {note}." in render_design(r)) == (w == 16)
     point = DesignPoint.load(next(tmp_path.rglob("design_point.json")))
@@ -369,7 +370,7 @@ def test_the_bank_bound_notes_in_design_md_and_run_md(tmp_path, w):
 
 
 def test_design_md_counts_unmapped_work_as_cycles():
-    """D155's line: the unmapped part with its assumption when there is unmapped work, left out
+    """The unmapped line: the unmapped part with its assumption when there is unmapped work, left out
     when there is none."""
     from snax_forge.report.design import EstimateTable, cycles_line
 
@@ -400,7 +401,7 @@ def test_the_extents_include_the_padding(tmp_path):
 
 
 # =============================================================================
-# Several groups (D148): dot_1_enc's recorded run
+# Several groups: dot_1_enc's recorded run
 # =============================================================================
 
 
@@ -430,7 +431,7 @@ def test_the_run_report_names_each_tasks_group(dot1):
         and "| vsum_a | vmul | 0 | mult_vsum_a (idle) | dot |" in text
     )
     assert "| Unit | Group | Firings |" in text
-    # the other group's movers, started only for the shared start, tagged idle (C§7)
+    # the other group's movers, started only for the shared start, tagged idle
     idle = sorted(t.name for t in r.run.tasks if t.idle)
     assert idle == ["mult_vsum_a", "mult_vsum_out", "sum_vmul_a", "sum_vmul_b", "sum_vmul_out"]
     # each group's movers in a collapsible under Accelerators
@@ -442,7 +443,7 @@ def test_the_run_report_names_each_tasks_group(dot1):
 
 
 def test_the_port_table_leaves_out_the_idle_tasks(tmp_path):
-    """C§7: dot 1 at stall (fixtures/dot_1): the Data movement port table has no lane of the five
+    """Dot 1 at stall (fixtures/dot_1): the Data movement port table has no lane of the five
     idle streamer tasks, and one line under it says they are left out."""
     from tests.run.helpers import RECORDED
     from tests.viz.helpers import recorded_run
@@ -456,7 +457,7 @@ def test_the_port_table_leaves_out_the_idle_tasks(tmp_path):
 
 
 def test_the_bank_notes_compare_the_streamers_of_one_group(dot1):
-    """C§14: dot 1's mul_a and mul_b keep their note (A and B a whole number of bank rows
+    """Dot 1's mul_a and mul_b keep their note (A and B a whole number of bank rows
     apart); nothing pairs a mul streamer with a sum one (the groups run one after the other):
     no note on mul_a and sum_out, none on tmp0 against itself through mul_out and sum_a."""
     notes = reports_of(dot1).design.notes
@@ -516,8 +517,8 @@ def test_one_group_has_no_group_column(flows):
 
 
 def test_design_md_costs_each_group_beside_its_cycles(dot1):
-    """dot 1's two groups on nangate45 (C§20): each its area and energy beside its cycles, the
-    cost table a row per unit and per control unit (its comb area equal to its flops', D154), the
+    """dot 1's two groups on nangate45: each its area and energy beside its cycles, the
+    cost table a row per unit and per control unit (its comb area equal to its flops'), the
     L1 accesses' table, the accelerator's totals their sums, every unit held by the table; the
     report round-trips."""
     from snax_forge.report.design import DesignReport
@@ -529,7 +530,7 @@ def test_design_md_costs_each_group_beside_its_cycles(dot1):
         ("vmul", "vmul", "SimdLanes"), ("vmul", "ctrl", "group control unit"),
         ("vsum", "vsum", "TreeAccumulate"), ("vsum", "ctrl", "group control unit")]  # fmt: skip
     assert all(c.found for c in e.cost if c.block != "ctrl")
-    # D167: the groups are the datapath and control parts; the total adds the streamers, the
+    # The groups are the datapath and control parts; the total adds the streamers, the
     # crossbar and the banks, and the accelerators' L1 rows are the crossbar's and banks' energy
     parts = {p.part: p for p in e.parts}
     assert list(parts) == ["datapath", "control", "streamers", "crossbar", "memory"]
@@ -579,7 +580,7 @@ def test_design_md_costs_each_group_beside_its_cycles(dot1):
 
 def test_design_md_on_no_technology(dot1):
     """The report's technology (``--tech``): None, no cost. (nangate15's case dropped: the
-    technology is no longer offered, D167.)"""
+    technology is no longer offered.)"""
     from snax_forge.report.files import reports_of as of
 
     plain = of(dot1, tech=None).design
@@ -601,7 +602,7 @@ def test_design_md_names_what_the_table_does_not_hold(tmp_path):
 
 
 def test_the_estimate_beside_the_counters(dot1, dot4):
-    """design.md's Estimate section (D155) per group, and run.md's expected BUSY_COUNTER beside each
+    """design.md's Estimate section per group, and run.md's expected BUSY_COUNTER beside each
     measured one: equal on the recorded runs, the cycles plus the streamers' fill."""
     r = reports_of(dot1)
     e = r.design.estimate
@@ -619,7 +620,7 @@ def test_the_estimate_beside_the_counters(dot1, dot4):
 
 
 # =============================================================================
-# The accelerators, one streamer set each (D157): dot_1 and dot_1_enc
+# The accelerators, one streamer set each: dot_1 and dot_1_enc
 # =============================================================================
 
 

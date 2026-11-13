@@ -5,21 +5,22 @@ import chisel3.util.log2Ceil
 
 import snax.forge.IntType
 
-/** The one-lane sum (C§17's catalogue entry `SerialAccumulate`): data and enables only, span = `lanes`.
+/** The one-lane sum (the catalogue entry `SerialAccumulate` of CONTRACTS, "Accelerator RTL spec"): data and enables
+  * only, span = `lanes`.
   *
   * It reads its input beat in place, one lane a cycle: on `read`, acc ← (`first` ∧ `lane` = 0) ? cast_out(x_lane) : acc
-  * + cast_out(x_lane), each lane cast to `outType` by `inType`'s signedness (D143); `out` is acc. It is written as acc
-  * ← ((`first` ∧ `lane` = 0) ? 0 : acc) + x, the adder's acc input cleared on a restart (0 + x = x), so the lane `x` is
+  * + cast_out(x_lane), each lane cast to `outType` by `inType`'s signedness; `out` is acc. It is written as acc ←
+  * ((`first` ∧ `lane` = 0) ? 0 : acc) + x, the adder's acc input cleared on a restart (0 + x = x), so the lane `x` is
   * selected once and feeds the adder only. Written as a choice between x and acc + x, firtool folds a constant `first`
   * and, at 2 lanes (a 1-bit `lane`), leaves `acc + (lane ? in_1 : in_0)` under `if (lane)`: a 1-bit-select mux inside
-  * an adder under a branch on the same bit, valid RTL on which Design Compiler crashes (DC7 in snax-forge-experiments'
+  * an adder under a branch on the same bit, valid RTL on which Design Compiler crashes (snax-forge-experiments'
   * PITFALLS). Its control unit reads lane k in cycle k and takes the beat on the last lane, so `out` holds the beat's
   * sum from the cycle after (latency 1 after the last lane). SNAX-GVSoC's `SnaxSerialAccumulate`
   * (`snax/snax_datapath.hpp`) is the same block.
   *
-  * Seeded (`seed`, D163, B2 R5), it has one more input, `seed`, one element of `outType` read once per job, added on
-  * the job's first beat's last lane, the read that fires it (`read` ∧ `first` ∧ `lane` = lanes − 1), when its control
-  * unit takes the seed: the job's sum is the seed's plus its lanes'. Unseeded it is the block it was, the same RTL.
+  * Seeded (`seed`), it has one more input, `seed`, one element of `outType` read once per job, added on the job's first
+  * beat's last lane, the read that fires it (`read` ∧ `first` ∧ `lane` = lanes − 1), when its control unit takes the
+  * seed: the job's sum is the seed's plus its lanes'. Unseeded it is the block it was, the same RTL.
   *
   * @param inType
   *   the input's lane type, NumPy's name

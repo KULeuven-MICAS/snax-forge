@@ -8,41 +8,13 @@
                               [--set platform.PATH=VALUE ...] [--set memory.PATH=VALUE ...]
                               [--memory M] [--name NAME] [--out DIR] [--seed S] [--trace ...]
 
-Runs the recipe on its kernel's import (or ``--graph``), pairs the result
-with the platform, lowers the design point to its task list, generates its
-description files, headers, data (the kernel's ``make_inputs``, the reference
-executor's goldens) and ``main.c``, builds SNAX-GVSoC when needed and the
-program, runs it on ``snax_hjson`` and takes the program's own check: its
-exit code and what it printed (run.py, D136). ``--set W=8`` sets a recipe param,
-``--set platform.l1.n_banks=32`` a platform field and
-``--set memory.B.l1.base=576`` pins a base, as the sandbox and design
-commands take them. Everything goes to ``out/flow/<name>/``. The default
-name is the recipe's with every ``--set`` appended: recipe params, then
-platform and memory paths without their prefix, each in the order given
-(``vecadd_W8``, ``vecadd_l1.n_banks32``, ``vecadd_B.l1.base576``), then the
-trace level when it is not ``off``. ``--trace off`` (the default) gives the
-profile from the components' counters, ``--trace task`` the trace of every
-start, done, CSR access, wait and DMA copy too (D137, ``run/``), ``beat`` every
-grant, DMA beat, firing and push, ``stall`` every refused request and queue
-count, ``finegrained`` every instruction; ``--trace stall:acc,acc_a`` names the
-sources of those lines (C§7 names: ``acc``, the movers, ``dma``, ``core<i>``,
-``axi``; ``run/sources.py``). ``--vcd`` also writes gtkwave's VCD of them,
-``run/all.vcd`` and ``run/view.gtkw``. What it prints is also in ``flow.log``,
-with the design checks that ran.
-
-The second form starts from a bound graph instead (D108): a file ending in
-``.snaxdfg`` is the last step of a sandbox run, or a graph edited by hand,
-and goes straight to the design step; any other file is a recipe. Nothing
-else changes: the same checks, lowering, run and check, in
-``out/flow/<name>/``, where the default name is the design step's for the
-graph (its sandbox folder, else the file's stem) with every ``--set``
-appended. The kernel is the graph's ``name`` unless ``--kernel`` names it.
-There is no recipe, so a recipe param (``--set W=8``) and ``--graph`` are
-refused, as ``--kernel`` is with a recipe.
-
-Exit 0 when the program's check passed, 1 when a stage fails (its problems
-named, a make failure with its log) or the check failed, 2 on bad arguments.
-pixi: ``flow``.
+Runs run.py's ``run_flow`` on a recipe, or ``run_bound`` on a file ending in ``.snaxdfg``, into
+``out/flow/<name>/``. ``--set`` takes recipe params, platform fields and memory pins as the sandbox
+and design commands do. ``--trace`` picks the level (``off``, ``task``, ``beat``, ``stall``,
+``finegrained``) and, after a colon, the sources (``run/sources.py``); ``--vcd`` adds gtkwave's
+VCD. With a graph, the kernel is its ``name`` unless ``--kernel`` names it, and a recipe param or
+``--graph`` is refused, as ``--kernel`` is with a recipe. Exit 0 when the program's check passed,
+1 when a stage or the check failed, 2 on bad arguments. pixi: ``flow``.
 """
 
 from __future__ import annotations

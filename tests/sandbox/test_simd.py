@@ -1,4 +1,4 @@
-"""simd's code table through bind: one BRM for two-stream and one-stream SIMDs (C§10).
+"""simd's code table through bind: one BRM for two-stream and one-stream SIMDs.
 
 Accepted when relu (``B = max(A, 0)``, ``tests/dfg/fixtures/relu.snaxdfg``) split by 4 binds to
 simd at op max, one stream, k = 0, the recipe's reference check passing, and gives the worked

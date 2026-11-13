@@ -3,9 +3,9 @@ package snax.forge.ctrl
 import chisel3._
 import chisel3.util._
 
-/** A group's settings as `<tag>_csr` keeps them, wires to its control unit (D168): JOBS, then each of its `open` units'
-  * JOB_BEATS in unit order, each `bits` wide (the CSRs' job_width, D152); constant through a run, since the csr holds
-  * their writes while the group is busy.
+/** A group's settings as `<tag>_csr` keeps them, wires to its control unit: JOBS, then each of its `open` units'
+  * JOB_BEATS in unit order, each `bits` wide (the CSRs' job_width); constant through a run, since the csr holds their
+  * writes while the group is busy.
   */
 class GroupSettings(val open: Int, bits: Int = 32) extends Bundle {
   val jobs  = UInt(bits.W)
@@ -28,14 +28,14 @@ class GroupCtrlIO(desc: GroupDesc, jobWidth: Int = 32) extends Bundle {
   val cls      = Output(UInt(2.W))
 }
 
-/** One group's control unit (D146, D147; C§17's Control), `<tag>_<group>_ctrl`, generated from the group's description
-  * (`GroupDesc`): its start and its busy and done around its control model, `GroupRule` (snax-gvsoc's SnaxGroupRule).
-  * STATUS and BUSY_COUNTER are the interface's, `<tag>_csr`'s, from `busy` and `pulse` (D152).
+/** One group's control unit (the Control of CONTRACTS, "Accelerator RTL spec"), `<tag>_<group>_ctrl`, generated from
+  * the group's description (`GroupDesc`): its start and its busy and done around its control model, `GroupRule`
+  * (snax-gvsoc's SnaxGroupRule). STATUS and BUSY_COUNTER are the interface's, `<tag>_csr`'s, from `busy` and `pulse`.
   *
   *   - `start` is START written with bit 0 set, a bare strobe from `<tag>_csr`. It is ready when the group is idle (the
   *     csr holds a START while busy, the CSR request not ready, until E + 1); it is accepted in the cycle it fires, a.
   *   - `settings`: JOBS and each JOB_BEATS in unit order, the csr's CSRs as wires, read live through the run with no
-  *     copy (D168): the csr holds their writes while the group is busy, so they stay constant from a to E. A unit with
+  *     copy: the csr holds their writes while the group is busy, so they stay constant from a to E. A unit with
   *     `params.T` has that fixed T.
   *   - JOBS 0 or any JOB_BEATS 0 is the empty run, tested on the wires in a: it ends in a (E = a) without starting the
   *     model, so busy never rises.
@@ -55,7 +55,7 @@ class GroupCtrlIO(desc: GroupDesc, jobWidth: Int = 32) extends Bundle {
   * @param tag
   *   the platform's accelerator slot, in the module's name
   * @param jobWidth
-  *   the bits of JOBS and each JOB_BEATS (accelerator.json's, D152)
+  *   the bits of JOBS and each JOB_BEATS (accelerator.json's)
   */
 class GroupCtrl(val desc: GroupDesc, tag: String, jobWidth: Int = 32) extends Module {
 

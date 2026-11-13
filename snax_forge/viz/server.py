@@ -1,59 +1,15 @@
-"""Local HTTP server of the visualiser (D55).
+"""The run viewer's local HTTP server: static/ and a JSON API over the runs given.
 
-What it does
-------------
-Serves the static viewer (static/: index.html, plain JS modules, CSS) and
-a small JSON API over the runs given on the command line. It is for a
-human on the same machine: it binds to 127.0.0.1, uses only the standard
-library (``http.server.ThreadingHTTPServer``) and needs no internet, since
-the viewer loads no external file.
+Stdlib only (``ThreadingHTTPServer``), bound to 127.0.0.1, needing no internet.
+``make_server(dirs, port)`` serves ``/api/runs``, ``/api/run/<name>`` and its ``memory``
+(``?marks=``, ``/<mem>/rows``, ``/cycle``), ``journey``, ``conflicts``, ``schedule``
+(``/detail``), ``cluster`` and ``step`` routes, and ``POST /api/reload``. Every answer is an
+api.py function's; this module only parses paths and queries. The DFG viewer reuses ``Handler``.
 
-Routes (every answer is JSON except the static files):
-
-    GET  /api/runs                          name, trace level, total cycles per run
-    GET  /api/run/<name>                    run.json, the profile, the cluster,
-                                            the trace's level and window
-    GET  /api/run/<name>/memory[?marks=M]    per memory its geometry, regions and
-                                            folded lines, the marks the run has
-                                            and why it lacks the others; with
-                                            marks, folded by mark M per word
-                                            (index.py's registry: conflicts,
-                                            arrival, use, wait)
-    GET  /api/run/<name>/memory/<mem>/rows?from=A&to=B[&marks=M]
-                                            rows A <= r < B in full, at most 256
-    GET  /api/run/<name>/memory/cycle?t=T   the cycle overlay of cycle T: its accesses
-                                            and the reads whose data comes back in it
-    GET  /api/run/<name>/journey?region=R&index=I
-                                            every hop of element R[I] (I a flat
-                                            index, or indices separated by commas)
-    GET  /api/run/<name>/conflicts?from=A&to=B
-                                            the L1 conflicts with A <= t < B,
-                                            placed on the layout
-    GET  /api/run/<name>/schedule[?open=A,B&cycle=C]
-                                            the lanes and the segments of the
-                                            window, folds starting at A, B or
-                                            holding C opened (schedule.py)
-    GET  /api/run/<name>/schedule/detail?from=A&to=B
-                                            the beat and stall lines of A <= t < B
-                                            per lane
-    GET  /api/run/<name>/cluster?t=T        the data side of the cluster at T
-                                            (cluster.py)
-    GET  /api/run/<name>/step?t=T&dir=D&by=B
-                                            the next (D 1) or previous (D -1)
-                                            cycle with an event (B event) or a
-                                            task boundary (B boundary)
-    POST /api/reload                        read every run directory again
-
-Every POST, on this viewer and the DFG viewer, needs ``Content-Type: application/json``
-(D55): another type is a 415, so a page of another origin cannot post a form to it. Its body,
-when it has one, is a JSON object; another body is a 400.
-
-All the work is in api.py; this module only parses paths and queries and
-turns results and errors into responses: 404 for an unknown run, memory or
-file, 400 for a bad query (a mark the run lacks included, with the reason), 500 with the message when a reload fails (the old runs stay
-loaded). A movement or schedule route answers a run below the level it needs
-(beat, or stall for the conflicts; task for the schedule, beat for its
-detail) with ``available`` false and the reason.
+Every POST needs ``Content-Type: application/json`` (415 otherwise, so a page of another origin
+cannot post a form) and a JSON object body (400 otherwise). Errors: 404 for an unknown run,
+memory or file, 400 for a bad query, 500 with the message when a reload fails (the old runs
+stay). A route below the trace level it needs answers ``available`` false with the reason.
 """
 
 from __future__ import annotations

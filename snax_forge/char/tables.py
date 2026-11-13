@@ -1,47 +1,15 @@
-"""HWCOST's tables: the streamers, the TCDM crossbar and the L1 banks (C§20).
+"""The cost tables: the streamers, the TCDM crossbar and the L1 banks.
 
-    load_costs(tech) -> Costs | None                   snax_forge/char/<tech>/, None without one
-    streamer_cost(costs, depth, loops, channels) -> Cost   one reader (a writer priced as a reader)
-    xbar_cost(costs, inputs, banks, read_only, write_only, form) -> Cost
-                                                       the sparse interconnect, 64-bit ports
+    load_costs(tech) -> Costs | None                       snax_forge/char/<tech>/, None without
+    streamer_cost(costs, depth, loops, channels) -> Cost   one reader (a writer priced as one)
+    xbar_cost(costs, inputs, banks, read_only, write_only, form) -> Cost    the crossbar
     bank(costs, depth, width) -> Bank | None               one SRAM bank, a lookup
     Grid.at(field, **q) -> (value, extrapolated axes)      the rule both interpolated tables use
 
-``<tech>/`` holds four files copied as they are from snax-forge-experiments, named with their
-commit and sha256 in ``<tech>/SOURCE`` (``pixi run import-costs``, ``util/import_costs.py``):
-
-    streamer.csv    depth, loops, channels -> area_um2, e_beat_pj (one reader, X52)
-    xbar.csv        inputs, banks -> area_um2, e_access_pj (e_access_pj measured where
-                    inputs <= banks only, X52)
-    ram_table.csv   depth, width -> area_um2, e_rd_pj, e_wr_pj (CACTI 7, X47, X48)
-    xbar_kinds.json the crossbar's read-only and write-only inputs (X70, X71): the factor
-                    form's f_ro and f_wo, the crosspoint form's c_rw, c_ro, c_wo, d, e, g
-
-**The rule** (snax-forge-experiments' ``report/strm_table.py``, X53 and X54; worked steps in its
-``docs/cost_tables.md``): linear along one axis at a time between the two grid values around the
-query, a grid value matched exactly; each axis in the raw value except the crossbar's energy,
-which is linear in 1/inputs (it goes as a + b/inputs). The crossbar's energy where inputs > banks
-is each bank count's value at inputs = banks. Two or three axes are done one after the other.
-
-**Outside the grid** snax-forge extrapolates where X53 refuses: along an axis whose query lies
-below its first or above its last grid value, the same formula through the two nearest grid
-values, in the axis's own scale; the result is clamped at zero, the axes named in ``Cost``'s
-``extrapolated``, and a warning logged (the estimate's design note ``cost.extrapolated``, C§14).
-
-**The crossbar's input kinds** (X71). xbar.csv prices every input as a read-write port; a
-streamer's reader only reads (its write and data are constants) and a writer only writes (its
-response data is never read), and synthesis removes what the constants make dead. With n
-inputs, n_ro of them read-only, n_wo write-only and n_rw = n − n_ro − n_wo read-write, b banks:
-
-    factor (the default)   A = A_xbar(n, b) (1 − f_ro n_ro / n − f_wo n_wo / n), A_xbar the table's
-    crosspoint (an option) A = b (c_rw n_rw + c_ro n_ro + c_wo n_wo) + d n + e b + g
-
-The factor form keeps the table as the source (exact at its points, read-write inputs priced as
-before); the crosspoint form needs no table, its area extrapolated outside the grid it was fitted
-on (``XbarKinds.inputs`` and ``banks``). The energy per access is the table's in both.
-
-**The banks** are a lookup, never interpolated (D160, X48): a depth or width off the table's grid
-(depth 32–4096 in steps of 32, width 8–256 in steps of 8) gives None.
+The four files of ``<tech>/`` are copied from snax-forge-experiments by ``pixi run
+import-costs``, their commit and sha256 in ``<tech>/SOURCE``. The tables, the interpolation and
+extrapolation rule, the crossbar's two forms (``XBAR_FORMS``, factor the default) and the banks'
+lookup are in CONTRACTS, "Cost model"; char/README.md walks through them.
 """
 
 from __future__ import annotations
@@ -59,11 +27,13 @@ from pathlib import Path
 HERE = Path(__file__).parent
 LOG = logging.getLogger(__name__)
 FILES = ("ram_table.csv", "streamer.csv", "xbar.csv", "xbar_kinds.json")
-XBAR_FORMS = ("factor", "crosspoint")  # X71: the default first
+# The crossbar's input-kind forms (CONTRACTS, "Cost model"), the default first
+XBAR_FORMS = ("factor", "crosspoint")
 READER_AXES = ("depth", "loops", "channels")
 XBAR_AXES = ("inputs", "banks")
 SCALES: dict[str, Callable[[float], float]] = {"lin": lambda x: x, "inv": lambda x: 1.0 / x}
-XBAR_SCALES = {"e_access_pj": {"inputs": "inv"}}  # X54
+# The crossbar's energy interpolated in 1/inputs (CONTRACTS, "Cost model")
+XBAR_SCALES = {"e_access_pj": {"inputs": "inv"}}
 
 
 @dataclass(frozen=True)
@@ -77,7 +47,7 @@ class Grid:
 
     def at(self, name: str, **q: float) -> tuple[float, tuple[str, ...]]:
         """``name`` at ``q`` (one value per axis) and the axes it was extrapolated along
-        (module doc); a ``KeyError`` when a corner the query needs has no value."""
+        (CONTRACTS, "Cost model"); a ``KeyError`` when a corner the query needs has no value."""
         if set(q) != set(self.axes):
             raise ValueError(f"query {q}: give exactly {list(self.axes)}")
         spans, outside = [], []
@@ -106,7 +76,7 @@ class Grid:
                 weight *= w
             v = self.fields[name].get(key)
             if v is None:
-                raise KeyError(f"{name} has no value at {dict(zip(self.axes, key))}")
+                raise KeyError(f"{name} has no value at {dict(zip(self.axes, key, strict=True))}")
             total += weight * v
         return (max(total, 0.0), tuple(outside)) if outside else (total, ())
 
@@ -134,8 +104,8 @@ class Bank:
 
 @dataclass(frozen=True)
 class XbarKinds:
-    """``xbar_kinds.json``'s two forms (module doc): the factor form's ``f_ro`` and ``f_wo``, the
-    crosspoint form's coefficients (µm²) and the grid they were fitted on."""
+    """``xbar_kinds.json``'s two forms (CONTRACTS, "Cost model"): the factor form's ``f_ro`` and
+    ``f_wo``, the crosspoint form's coefficients (µm²) and the grid they were fitted on."""
 
     f_ro: float
     f_wo: float
@@ -191,7 +161,7 @@ def _complete_xbar(g: Grid) -> Grid:
 
 
 def read_kinds(path: Path) -> XbarKinds:
-    """``xbar_kinds.json`` (report/xbar_kinds.py in snax-forge-experiments, X71)."""
+    """``xbar_kinds.json``, which snax-forge-experiments' report/xbar_kinds.py writes."""
     d = json.loads(path.read_text())
     f, c = d["factor"], d["crosspoint"]
     return XbarKinds(f["f_ro"], f["f_wo"], c["c_rw"], c["c_ro"], c["c_wo"], c["d"], c["e"], c["g"],
@@ -232,7 +202,7 @@ def _warn(what: str, q: Mapping[str, float], axes: tuple[str, ...]) -> None:
 
 
 def streamer_cost(costs: Costs, depth: int, loops: int, channels: int) -> Cost:
-    """One reader's (or writer's, X52) area and energy per beat."""
+    """One reader's (or writer's, priced as a reader) area and energy per beat."""
     q = {"depth": depth, "loops": loops, "channels": channels}
     area, out_a = costs.streamer.at("area_um2", **q)
     e, out_e = costs.streamer.at("e_beat_pj", **q)
@@ -244,7 +214,7 @@ def streamer_cost(costs: Costs, depth: int, loops: int, channels: int) -> Cost:
 def xbar_cost(costs: Costs, inputs: int, banks: int, read_only: int = 0, write_only: int = 0,
               form: str = "factor") -> Cost:  # fmt: skip
     """The crossbar's area and energy per access, ``read_only`` and ``write_only`` of its
-    ``inputs`` priced as such in ``form`` (module doc); with none, the table's area."""
+    ``inputs`` priced as such in ``form`` (CONTRACTS, "Cost model"); with none, the table's area."""
     if form not in XBAR_FORMS:
         raise ValueError(f"crossbar form {form!r}: one of {', '.join(XBAR_FORMS)}")
     if read_only < 0 or write_only < 0 or read_only + write_only > inputs:

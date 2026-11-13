@@ -1,90 +1,19 @@
-"""Reference executor (D79): run a ``.snaxdfg`` in NumPy.
+"""Reference executor: run a ``.snaxdfg`` (CONTRACTS, "SNAX-DFG") in NumPy.
 
-It gives the golden output of a graph at any step of the flow: as imported,
-split, or with accelerated nodes, so SNAX-SANDBOX can check every transform
-against it, and the goldens of a run's ``data.h`` come from it (gen/data.py).
-
-    execute(graph, inputs) -> {container: array}
-    against_reference(spec, inputs, run) -> {output: (run's, the reference's)}
-
-**Inputs and symbols.** ``inputs`` holds one array per non-transient
-container, of its dtype; for a container with attr ``sdfg.scalar`` (a
-kernel's scalar argument, shape ``[1]``) a 0-d input (``np.int64(3)``) or a
-1-element one. A symbol the graph binds keeps its value; one that
-is null is read off the input shapes (``A`` of shape ``["N"]`` gives ``N =
-len(A)``), and the two must agree. Containers start as copies of the
-inputs; transients start as zeros. Only integer containers are run (D28).
-
-**Order.** The body runs in order, each node to completion before the next.
-How a node runs is registered per kind (``register_executor``, principle
-6):
-
-``map``
-    no loop in Python: its variable becomes an index array on an axis of
-    its own (the nest ``i_t`` over 16, ``i_s`` over 4 is a 16 x 4 grid), and
-    its body runs once over the whole grid. Map iterations are independent
-    (SDFG's meaning of a map), so this is exact. A range must not depend on
-    an enclosing variable.
-``tasklet``
-    gather every input at its subset's index array, evaluate ``code`` on
-    the gathered arrays (``expr.evaluate``), write each output back at its
-    index array, cast to the container's dtype (integer overflow wraps as in
-    C). All reads come before all writes. Two iterations writing one
-    element is an error (a write conflict), unless the output memlet has a
-    ``reduce`` (D102): then the elements it writes are set to its identity and
-    every iteration's value is folded in with the op's ufunc (``ufunc.at``,
-    which wraps as C does), so dot's sum map leaves ``sum(tmp0)`` in
-    ``out[0]`` whatever ``out`` held before; a seeded fold (``reduce.seed``)
-    starts each element from its seed's element instead, read with the inputs
-    (matvec_acc's ``q[m]`` from ``q[m]`` itself: ``q + sum(A * p)``).
-``accelerated``
-    one firing at a time, through the BRM's function, its registered
-    kind's ``fn(k, ins, state, params)`` (``brm.function_of``, given the node's
-    containers' dtypes: a fold's lanes are cast to its output's before its tree, D143). An
-    input connector that is no BRM port is a slot read from a scalar (axpy's ``k1:
-    alpha[0]``, a CSR): the instance is resolved with the slot at that element's value, a
-    baked slot's value being in the node's params. The
-    ``temporal`` maps directly around the node are
-    its firing loop, outermost first, as the BRM nest orders them;
-    the node's ``code`` must be the BRM's ``function.code`` at its params (D82), and its
-    ``replaced`` subtree is history, never run;
-    ``k`` counts firings, ``state`` lives for one task, ``n`` is the number
-    of firings. Maps further out (a tile, an untagged map) start a new task
-    per iteration. Each port's beat is gathered from its memlet (the lanes,
-    row-major), and each output beat is written back the same way. A port
-    with a named rate (``T``, dot's accumulator) moves one beat every T
-    firings, T from ``named_rates``: an input is read at firings 0, T,
-    2T, ..., an output written at T-1, 2T-1, ... where its memlet points in
-    the firing that completes it.
-``link``
-    nothing: its writer and its reader still name the transient it replaced,
-    so the link runs as that container. A fused nest (``fuse_map``) is a map
-    of two tasklets, the first writing a local container the second reads
-    at the same index, so it runs as two tasklets over one grid.
-
-**A tail** (D144, dfg/pad.py). Under a map ``split`` split
-with a tail (``loop.split`` has ``valid``: n), a lane is the kernel's only
-when ``W * v_t + v_s`` is below n. A tasklet there reads and writes its
-valid lanes only; an accelerated node reads a pad lane as the container's
-``pad_value`` and never writes one. A pad lane's index may run past the
-container's end, but only within its padding (``padded_shape``).
-
-**Checks on the way.** Every index is inside its container, a pad lane's
-inside its padding (NumPy would wrap a negative one silently); an
-accelerated node's connectors are its
-BRM's ports, each beat has the port's lanes and the containers' dtypes pass
-the BRM's rule (``brm.check_dtypes``); a spatial map around an accelerated node is
-an error, since its lanes are in the memlet.
-
-**Named rates** (``named_rates``). A rate that names a start
-parameter gets its value from the graph: the product of the counts of the
-innermost firing loops the port's memlet does not depend on, the loops its
-beat folds over. dot's sum port ``out[0:1]`` depends on no loop, so T is
-every firing (N / W). A memlet that skips a loop outside one it uses would
-move a beat per firing yet land on one element, and is an error. The
-sandbox's ``bind`` and SNAX-LOWER use the same function, so the order check,
-the reference and the task list agree on T.
-Everything raises ``ExecutionError`` naming the node.
+``execute(graph, inputs)`` gives a graph's outputs at any step of the flow, as imported, split
+or bound, so SNAX-SANDBOX checks every transform against it and data.h's goldens come from it;
+``against_reference`` sets a run beside a kernel's reference. ``inputs`` holds one array per
+non-transient container (0-d or 1-element for an ``sdfg.scalar``); a null symbol is read off the
+input shapes. Only integer containers are run. Each kind's executor is registered
+(``register_executor``): a map runs its body once over an index grid, an axis per variable; a
+tasklet gathers, evaluates and writes back, all reads before all writes, a fold through
+``ufunc.at``; an accelerated node runs firing by firing through its BRM's function
+(``brm.function_of``), the temporal maps around it its firing loop and every map further out a
+task per iteration; a link runs as the container it replaced. Pad lanes (dfg/pad.py) are read as
+``pad_value`` and never written. ``named_rates`` gives a named rate's value, the product of the
+innermost firing loops its port's memlet does not depend on (dot's T = N / W); bind and
+SNAX-LOWER use it too. An index outside its container, two iterations writing one element
+without a fold, or a spatial map around an accelerated node raise ``ExecutionError``.
 """
 
 from __future__ import annotations
@@ -164,7 +93,7 @@ def execute(graph: Graph, inputs: Mapping[str, np.ndarray]) -> dict[str, np.ndar
     for name, c in graph.containers.items():
         dtype = np.dtype(c.dtype)
         if dtype.kind not in "iu":
-            raise ExecutionError(f"container {name!r}: {c.dtype} is not an integer type (D28)")
+            raise ExecutionError(f"container {name!r}: {c.dtype} is not an integer type")
         shape = tuple(_int(s, symbols, f"container {name!r}.shape") for s in c.shape)
         if c.transient:
             data[name] = np.zeros(shape, dtype)
@@ -300,28 +229,47 @@ def _tasklet_lanes(ctx: Context, env: Mapping[str, Any]) -> Any:
     return None if mask is None else np.broadcast_to(mask, ctx.shape())
 
 
+@dataclass(frozen=True)
+class _BeatPlan:
+    """What a memlet's beats share, worked out once per accelerated node: per dimension its
+    parts and, along a range, each tailed loop's lanes per step (W); the padded shape."""
+
+    dims: tuple[tuple[Value, tuple[Value, ...], dict[str, int]], ...]
+    padded: tuple[int, ...] | None
+
+
+def _beat_plan(m: Memlet, ctx: Context, what: str, tails: Mapping[str, int]) -> _BeatPlan:
+    dims = []
+    for dim in m.subset:
+        parts = parse_dim(dim, what)
+        steps: dict[str, int] = {}
+        if tails and len(parts) == 3:
+            _, co = expr.linear(parts[0], list(tails))
+            steps = {v: co[v] // parts[2] for v in tails if co[v]}
+        dims.append((dim, parts, steps))
+    return _BeatPlan(tuple(dims), padded_shape(ctx.graph, m.data) if tails else None)
+
+
 def _beat_indices(
-    m: Memlet, env: Mapping[str, int], ctx: Context, what: str,
-    tails: Mapping[str, int] | None = None,
+    m: Memlet, env: Mapping[str, int], ctx: Context, what: str, plan: _BeatPlan,
+    tails: Mapping[str, int],
 ) -> tuple[tuple[Any, ...], Any]:  # fmt: skip
     """An accelerated node's subset for one firing: an open mesh over its ranges, and which of
     its elements are valid lanes. ``tails`` maps each tailed firing loop's variable to its
     valid count: along a range whose start that loop moves by W per step, lane j is valid
     when ``W * v_t + j`` is below the count; a pad lane is checked against the padding."""
     axes, valid = [], []
-    padded = padded_shape(ctx.graph, m.data) if tails else None
-    for d, (dim, size) in enumerate(zip(m.subset, ctx.data[m.data].shape, strict=True)):
-        parts = parse_dim(dim, what)
+    padded = plan.padded
+    for d, ((dim, parts, steps), size) in enumerate(
+        zip(plan.dims, ctx.data[m.data].shape, strict=True)
+    ):
         if len(parts) == 1:
             ax = np.array([_int(parts[0], env, what)])
         else:
             ax = np.arange(_int(parts[0], env, what), _int(parts[1], env, what), parts[2])
         ok = np.ones(len(ax), bool)
-        if tails and len(parts) == 3:
-            _, co = expr.linear(parts[0], list(tails))
-            for v, n in tails.items():
-                if co[v]:
-                    ok &= (co[v] // parts[2]) * env[v] + np.arange(len(ax)) < n
+        for v, w in steps.items():
+            ok &= w * env[v] + np.arange(len(ax)) < tails[v]
         _check_bounds(ax[ok], size, m, dim, what)
         if padded is not None:
             _check_bounds(ax[~ok], padded[d], m, dim, f"{what} (a pad lane)")
@@ -395,7 +343,7 @@ def _run_tasklet(node: Node, ctx: Context) -> None:
         if np.unique(flat).size != np.size(flat):
             raise ExecutionError(
                 f"{what}.outputs.{c}: several iterations write one element of {m.data!r} "
-                "(a write conflict; a reduction says so with a reduce on the memlet, D102)"
+                "(a write conflict; a reduction says so with a reduce on the memlet)"
             )
         arr[full] = value
 
@@ -513,6 +461,12 @@ def _run_accelerated(node: Node, ctx: Context) -> None:
     written = {m.data: np.zeros(ctx.data[m.data].shape, bool) for m in node.outputs.values()}
     tails = {lp.var: valid_count(ctx.graph, lp.node) for lp in inner if tailed_split(lp.node)}
     pads = {m.data: pad_value(ctx.graph, m.data) for m in node.inputs.values()} if tails else {}
+    in_what = {name: f"{what}.inputs.{name}" for name in node.inputs}
+    out_what = {name: f"{what}.outputs.{name}" for name in node.outputs}
+    plans = {  # the beats' shared work, once for the node
+        **{("in", n): _beat_plan(m, ctx, in_what[n], tails) for n, m in node.inputs.items()},
+        **{("out", n): _beat_plan(m, ctx, out_what[n], tails) for n, m in node.outputs.items()},
+    }
     for point in itertools.product(*(loop.values for loop in outer)):
         state: dict[str, Any] = {}
         env0 = dict(ctx.symbols) | {lp.var: int(v) for lp, v in zip(outer, point, strict=True)}
@@ -521,7 +475,7 @@ def _run_accelerated(node: Node, ctx: Context) -> None:
             ins = {}
             for name in cfg.due(k, rate, "in"):
                 p, m = cfg.port(name), node.inputs[name]
-                idx, ok = _beat_indices(m, env, ctx, f"{what}.inputs.{name}", tails)
+                idx, ok = _beat_indices(m, env, ctx, in_what[name], plans["in", name], tails)
                 beat = np.array(ctx.data[m.data][idx])
                 beat[~ok] = pads.get(m.data, 0)  # a pad lane reads the pad
                 ins[name] = _lanes(beat, p, what)
@@ -531,7 +485,8 @@ def _run_accelerated(node: Node, ctx: Context) -> None:
                 raise ExecutionError(f"{what}: firing {k} gave {sorted(outs)}")
             for p in map(cfg.port, due):
                 m = node.outputs[p.name]
-                idx, ok = _beat_indices(m, env, ctx, f"{what}.outputs.{p.name}", tails)
+                plan = plans["out", p.name]
+                idx, ok = _beat_indices(m, env, ctx, out_what[p.name], plan, tails)
                 arr = ctx.data[m.data]
                 beat_out = _lanes(np.asarray(outs[p.name]), p, what).reshape(ok.shape)
                 at = tuple(i[ok] for i in np.broadcast_arrays(*idx))  # the valid lanes only
@@ -554,5 +509,5 @@ def _lanes(x: np.ndarray, port: Any, what: str) -> np.ndarray:
 register_executor("map", _run_map)
 register_executor("tasklet", _run_tasklet)
 register_executor("accelerated", _run_accelerated)
-# A link (D148) runs as the transient it replaced: its writer and reader still name it
+# A link runs as the transient it replaced: its writer and reader still name it
 register_executor("link", lambda node, ctx: None)

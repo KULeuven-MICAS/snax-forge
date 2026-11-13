@@ -73,7 +73,7 @@ class BlockFlopsSpec extends AnyFlatSpec {
       val in = dtype(r)
       ujson.Obj("inType" -> in, "outType" -> dtype(r, IntType(in).width), "lanes" -> lanes, "seed" -> r.chance(0.5))
     }
-    val lane        = { // LaneAccumulate (B2 R4): its output at least as wide as its input
+    val lane        = { // LaneAccumulate: its output at least as wide as its input
       val in = dtype(r)
       ujson.Obj("inType" -> in, "outType" -> dtype(r, IntType(in).width), "lanes" -> lanes)
     }

@@ -7,7 +7,7 @@ import chisel3._
 /** The wrapper's ports but the clock and reset, named as `snax_acc_wrapper.sv.tpl` connects `<tag>_shell_wrapper` with
   * `snax_disable_csr_manager`: the CSR request and response after `snax_csr_mux_demux`, then per input port k
   * `stream2acc_<k>_{data_i,valid_i,ready_o}` and per output port `acc2stream_<k>_{data_o,valid_o,ready_i}`; then per
-  * group `<group>_busy_o` and `<group>_done_o` (D146), which snax_cluster leaves unconnected (open item 92).
+  * group `<group>_busy_o` and `<group>_done_o`, which snax_cluster leaves unconnected.
   *
   * @param readers
   *   the input ports' data widths, in order
@@ -45,21 +45,22 @@ class ShellPorts(val readers: Seq[Int], val writers: Seq[Int], val groups: Seq[S
   def uint(name:  String): UInt = elements(name).asInstanceOf[UInt]
 }
 
-/** `<tag>_shell_wrapper`: one generated accelerator as snax_cluster instantiates it (C§17), from `accelerator.json`.
+/** `<tag>_shell_wrapper`: one generated accelerator as snax_cluster instantiates it (CONTRACTS, "Accelerator RTL
+  * spec"), from `accelerator.json`.
   *
-  * Three modules inside (D147): `<tag>_csr` (`AccCsr`, the CSR manager over the file's CSRs), `<tag>_ctrl` (`AccCtrl`,
-  * a control unit per group) and `<tag>_datapath` (`AccDatapath`, the units' datapaths and the links' buffers). Only
-  * the outer ports reach the wrapper (a link stays inside the datapath): each, `stream2acc_<k>` for the k-th entry of
-  * the file's `inputs` and `acc2stream_<k>` for its `outputs`, is split, its data to its unit's datapath, its valid and
+  * Three modules inside: `<tag>_csr` (`AccCsr`, the CSR manager over the file's CSRs), `<tag>_ctrl` (`AccCtrl`, a
+  * control unit per group) and `<tag>_datapath` (`AccDatapath`, the units' datapaths and the links' buffers). Only the
+  * outer ports reach the wrapper (a link stays inside the datapath): each, `stream2acc_<k>` for the k-th entry of the
+  * file's `inputs` and `acc2stream_<k>` for its `outputs`, is split, its data to its unit's datapath, its valid and
   * ready to its group's control unit. The control unit's enables go to the datapaths' pins (`en`, a plain Mac's output
   * register, is the unit's firing) and the buffers'; a scalar's pin (`k1`) takes its CSRs from `<tag>_csr` (K1, or
   * K1_HI over K1_LO at 64 bits), so the datapath sees what the program last wrote. A port's data is its lanes side by
-  * side, lane i at bits `[w(i+1)-1 : wi]` for the port's w-bit dtype (num_slc = 64 / w lanes a word, D142), at least
-  * one 64-bit word (a fold's one-lane output); the streamer's packing, checked on snax_cluster's RTL (D123).
+  * side, lane i at bits `[w(i+1)-1 : wi]` for the port's w-bit dtype (num_slc = 64 / w lanes a word), at least one
+  * 64-bit word (a fold's one-lane output); the streamer's packing, checked on snax_cluster's RTL.
   *
-  * A set whose groups share its movers (D169) shows its movers at the wrapper in place of its groups' ports, readers
-  * then writers in the file's order, each `num_channel * 64` bits (the streamer template's ports for the set's hjson),
-  * and holds `<tag>_<set>_port_mux` (`PortMux`) between them and the groups' ports, its select PORT_MUX_SEL from
+  * A set whose groups share its movers shows its movers at the wrapper in place of its groups' ports, readers then
+  * writers in the file's order, each `num_channel * 64` bits (the streamer template's ports for the set's hjson), and
+  * holds `<tag>_<set>_port_mux` (`PortMux`) between them and the groups' ports, its select PORT_MUX_SEL from
   * `<tag>_csr`; the groups and their control units are as in an unshared set.
   *
   * Clock `clk_i`, reset `rst_ni` active low and asynchronous, as snax_cluster's (`RequireAsyncReset` in ReqRspManager).

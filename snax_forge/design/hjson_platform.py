@@ -1,55 +1,20 @@
-"""A platform read from snax_cluster's cluster file (D131).
+"""A platform read from snax_cluster's cluster file (CONTRACTS, "Platform").
 
-    platform_from_hjson(path, name, root=None) -> Platform
+``platform_from_hjson`` reads the hjson (``{"$ref": "#/<key>"}`` the file's top-level ``<key>``):
 
-snax_cluster describes a cluster in an hjson file (``cfg/<cluster>.hjson``;
-snax-forge's base cluster is ``platforms/snax_forge_cluster.hjson``);
-``{"$ref": "#/<key>"}`` stands for the file's top-level ``<key>``. The
-reader takes from it:
+    l1.n_banks, l1.width_bits    cluster.tcdm.banks, cluster.data_width
+    l1.rows                      cluster.tcdm.size (KiB) * 8192 / (banks * width)
+    l1.base_addr, l1.wide_bits   cluster.cluster_base_addr, cluster.dma_data_width
+    l2.base_addr, l2.size_bytes  dram.address, dram.length
+    l2.beat_bits, l2.width_bits  cluster.dma_data_width, cluster.data_width
+    streamers.default.fifo_depth the one accelerator's streamer template, its movers agreeing
+    hjson                        the file's ``/``-separated path from ``root``
+    accelerator_slot             ``ACCELERATOR_SLOT`` (``snax_forge``), never the source's name
 
-    l1         n_banks       cluster.tcdm.banks
-               width_bits    cluster.data_width
-               rows          cluster.tcdm.size (KiB) * 8192 / (banks * width)
-               base_addr     cluster.cluster_base_addr
-               wide_bits     cluster.dma_data_width
-    l2         base_addr     dram.address
-               size_bytes    dram.length
-               beat_bits     cluster.dma_data_width
-               width_bits    cluster.data_width
-    streamers  default.fifo_depth
-                             the one accelerator's streamer template
-                             (``snax_acc_cfg`` over every core of every hive,
-                             ``snax_streamer_cfg``): every mover's
-                             ``fifo_depth``, which must agree; its
-                             ``temporal_dim`` is not read, each streamer's
-                             comes from the graph (D84)
-    hjson                    the file's path from ``root`` (snax-forge's
-                             root by default), ``/``-separated: the
-                             platform's source, which the GVSoC generator
-                             writes the design's cluster file from
-    accelerator_slot         ``ACCELERATOR_SLOT`` (``snax_forge``), the
-                             generated accelerator's name, never the
-                             source's ``snax_acc_name``, so a generated
-                             design takes no name of snax_cluster's own
-                            ; the source must still have one
-                             accelerator, its name an identifier
-
-A word's elements are not the platform's: each container's dtype decides
-them (D142). ``spatial_bounds`` and ``num_channel`` are not stored: the
-shell derives them from the accelerator's ports and their containers (D84,
-D142): the GVSoC generator lowers the streamer per design point (D134).
-
-The rest of a platform (``wait_mode``) is small16's. The cores,
-the I-cache, the interconnect and the CSR counts are not read; they are the
-generator's (gen/gvsoc.py). The core count is read on its own
-(``core_count``) by the design check that keeps the layouts out of
-snRuntime's top of L1 (``memory.runtime``, check.py).
-
-Everything wrong is a ``DesignError``, each problem coded ``hjson.<what>``:
-``hjson.parse`` (the file), ``hjson.path`` (a file outside ``root``), ``hjson.ref`` (a ``$ref``), ``hjson.key`` (a key
-missing or of the wrong type, by its path), ``hjson.value`` (a value no
-platform can take), ``hjson.accelerators`` (not exactly one accelerator),
-``hjson.movers`` (movers that disagree).
+The rest (``wait_mode``) is small16's; the cores, I-cache, interconnect and CSR counts are the
+generator's. ``core_count`` reads the core count alone, for ``memory.runtime`` (check.py).
+Problems are ``DesignError``s coded ``hjson.parse``, ``hjson.path``, ``hjson.ref``,
+``hjson.key``, ``hjson.value``, ``hjson.accelerators`` (not one) and ``hjson.movers``.
 """
 
 from __future__ import annotations
@@ -189,8 +154,8 @@ def _mover_value(template: Mapping[str, Any], key: str, at: str) -> int:
         raise _fail(
             "hjson.movers", f"{at}.{key}",
             f"the movers differ ({listed}); a platform holds one value for every streamer",
-            "a frozen streamer file given as input is open item 78; the GVSoC generator lowers "
-            "the streamer per design point (D134)",
+            "a frozen streamer file given as input is not supported yet; the GVSoC generator lowers "
+            "the streamer per design point",
         )  # fmt: skip
     return flat.pop()
 

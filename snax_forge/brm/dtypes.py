@@ -1,21 +1,13 @@
-"""A BRM port's dtypes as a rule (D143): which container dtypes a node may bind.
+"""A BRM port's dtypes as a rule: which container dtypes a node may bind.
 
-A port lists the NumPy integer dtypes it takes (``Port.dtypes``, all eight
-by default); the dtype a node puts on a port is its container's, read through
-the port's memlet (``port_dtypes``), never stored in the graph. A node's
-dtypes pass ``check_dtypes`` when
-
-- each port's dtype is one its ``dtypes`` lists;
-- every output is at least as wide as every input (the op runs at the
-  inputs' result type and is extended into the output);
-- no signed input meets a ``uint64`` input: NumPy's result type of the two
-  is float64, and SnaxUnit refuses it (snax-gvsoc ``snax/snax_unit.hpp``).
-
-``output_dtypes`` lists, per output port, the dtypes it accepts for given
-input dtypes: what a refusal's fix names. ``result_type`` is the type an op
-runs at: NumPy's result type of its inputs (the Chisel blocks' ``opType``);
-``fits`` says whether a constant (a slot's value, ``simd``'s ``k``) is one of a
-dtype's values.
+A port lists the integer dtypes it takes (``Port.dtypes``, all eight by default); a node's
+dtype on a port is its container's, read through the port's memlet (``port_dtypes``), never
+stored. ``check_dtypes`` passes when each port's dtype is one it lists, every output is at least
+as wide as every input (the op runs at the inputs' result type and is extended), and no signed
+input meets a ``uint64`` one (NumPy's result is float64, which snax-gvsoc's SnaxUnit refuses).
+``output_dtypes`` lists the output dtypes given inputs accept, what a refusal's fix names;
+``result_type`` is NumPy's result type of the inputs (the Chisel blocks' ``opType``); ``fits``
+says whether a constant (a slot's value) is one of a dtype's values.
 """
 
 from __future__ import annotations
@@ -36,6 +28,8 @@ def bits(dtype: str) -> int:
     return np.dtype(dtype).itemsize * 8
 
 
+# NB (D143): ops run at NumPy's result type of their inputs; the Chisel datapaths and
+# SNAX-GVSoC's classes must compute the same.
 def result_type(dtypes: Iterable[str]) -> str:
     """NumPy's result type of integer ``dtypes``, the type an op on them runs at;
     ValueError when it is not an integer (a signed dtype with uint64)."""
@@ -81,7 +75,7 @@ def check_dtypes(brm: Any, dtypes: Mapping[str, str]) -> list[str]:
             if bits(do) < bits(di):
                 out.append(
                     f"output {o} is {do}, narrower than input {i} ({di}): an output is at "
-                    "least as wide as every input (D143)"
+                    "least as wide as every input"
                 )
     pair = _signed_with_uint64(ints)
     if pair is not None:

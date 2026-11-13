@@ -185,7 +185,7 @@ def test_the_label_of_more_dimensions():
 
 
 def test_a_shared_instance_is_one_bindings_entry_and_its_nodes_highlight_together():
-    """mvt_1 (D165): both halves on vmul, vsum and vadd; ``shared`` names each unit's twin, and
+    """mvt_1: both halves on vmul, vsum and vadd; ``shared`` names each unit's twin, and
     Bindings has one entry per instance with both nodes and every split it takes."""
     from snax_forge.sandbox.recipe import Recipe, find_recipe
     from snax_forge.viz.dfg.api import bindings_section
@@ -203,7 +203,7 @@ def test_a_shared_instance_is_one_bindings_entry_and_its_nodes_highlight_togethe
 
 
 def test_a_shared_container_carries_its_marker():
-    """share_ports (D169): dot 1's tmp0 is drawn with the tag share_ports · tmp0 beside its
+    """share_ports: dot 1's tmp0 is drawn with the tag share_ports · tmp0 beside its
     badge, as a link's or a FIFO's text marks theirs; an unshared container has none."""
     from tests.helpers import steps
 

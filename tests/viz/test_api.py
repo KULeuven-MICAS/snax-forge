@@ -1,6 +1,6 @@
-"""Tests for the visualiser's API functions on flow runs (C§7, run/).
+"""Tests for the visualiser's API functions on flow runs (run/).
 
-The report itself is HTML and is checked by eye (D55); what is tested here
+The report itself is HTML and is checked by eye; what is tested here
 is what the viewer is given:
 
   1. a run loads as read_run and load_cluster give it, from its folder or its run/

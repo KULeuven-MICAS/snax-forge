@@ -5,7 +5,7 @@ import chisel3.util._
 
 import snax.forge.IntType
 
-/** A beat of `words` 64-bit words in, `outLanes` lanes of `laneType` out per pop: the FIFO slicer (D142).
+/** A beat of `words` 64-bit words in, `outLanes` lanes of `laneType` out per pop: the FIFO slicer.
   *
   * Built and parked: the flow places only the wire slice (a port of W lanes takes W / num_slc whole words), and this
   * block is not in `Datapaths`' catalogue. It is here for a block whose lanes are fewer than a beat's elements.

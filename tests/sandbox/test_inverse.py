@@ -1,4 +1,4 @@
-"""Going back (D82): unbind and join_map undo bind and split_map, from the file alone.
+"""Going back: unbind and join_map undo bind and split_map, from the file alone.
 
 A bound graph says what each accelerator computes (the node's ``code``) and
 what it replaced (``replaced``), and a split map what it was split from
@@ -119,7 +119,7 @@ def test_join_rejected():
 
 
 # =============================================================================
-# The linking transforms (D150): each undone by its inverse, the graph as it started
+# The linking transforms: each undone by its inverse, the graph as it started
 # =============================================================================
 
 

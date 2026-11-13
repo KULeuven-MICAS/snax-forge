@@ -1,5 +1,5 @@
-"""The loop1 walk-through (D98, D171): every claim examples/loop1/README.md makes, checked on the
-runs it describes, on SNAX-GVSoC (marker ``gvsoc``, D134: in the image, skipped where
+"""The loop1 walk-through: every claim examples/loop1/README.md makes, checked on the
+runs it describes, on SNAX-GVSoC (marker ``gvsoc``: in the image, skipped where
 out/snax-gvsoc/install is missing): what does not depend on timing exactly, each cycle number it
 states within 10 % (``near``; beyond it, investigate before updating the page).
 
@@ -132,7 +132,7 @@ def test_the_accelerator_fires_every_cycle_after_its_streamers_head_start(runs):
     start, done = t["add_acc"]
     assert near(start - movers, 10) and near(movers, 183) and near(start, 193)
     assert near(done - start, 129)
-    # the counter: sound (D171), and below the estimate's by the head start
+    # the counter: sound, and below the estimate's by the head start
     counter = rv["off"].outputs.profile.functional_check["tasks"]["add_acc"]["counter"]
     assert 128 <= counter < 131 and near(counter, 131)  # its beats, below the estimate's
     assert "reads 128 against the estimate's 131" in " ".join(text().split())
@@ -172,7 +172,7 @@ def test_the_schedule_folds_the_setup_the_gap_and_the_end(runs):
     assert len(fs) == 3 and all(
         near(f["from"], a) and near(f["to"], b) for f, (a, b) in zip(fs, stated, strict=True)
     ) and fs[0]["from"] == 0  # fmt: skip
-    assert set(fs[0]["cores"]) == {"core0"}  # one core (D170)
+    assert set(fs[0]["cores"]) == {"core0"}  # one core
     first = fs[0]["cores"]["core0"]
     assert first["funcs"] == ["main", "forge_core_0"] and first["csr_writes"] == 0
     assert d.outputs.profile.cores["core0"].csr_writes == 18
@@ -224,7 +224,7 @@ def test_the_prediction_holds(runs):
     assert all(near(tw[c][1] - tw[c][0], n) for c, n in (("load_A", 77), ("load_B", 128),
                                                           ("store_C", 71)))  # fmt: skip
     assert d.dmas["dma"].busy == w.dmas["dma"].busy and near(w.dmas["dma"].busy, 213)
-    # shown: the counters, sound (D171) and stated; W=8's 3 starved cycles; the windows
+    # shown: the counters, sound and stated; W=8's 3 starved cycles; the windows
     counter = {k: p.functional_check["tasks"]["add_acc"]["counter"] for k, p in
                ((DEFAULT, d), (WIDE, w))}  # fmt: skip
     assert near(counter[DEFAULT], 128) and near(counter[WIDE], 67)

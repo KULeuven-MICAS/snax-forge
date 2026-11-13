@@ -1,100 +1,18 @@
-"""A design point -> the one description of its accelerators, ``accelerator.json`` (D145, C§17).
+"""A design point -> the one description of its accelerators, ``accelerator.json``.
 
-    describe(point, point_path) -> Description
+``describe`` builds the ``Description`` (accelerators, groups, units, links, movers and the
+port mux, and every CSR's offset and width) that CONTRACTS, "Accelerator RTL spec" defines.
+snax-forge writes it once (gvsoc.py; rtl.py writes the same bytes), and SNAX-GVSoC
+(snax-gvsoc ``snax/snax_cfg.py``) and Emit (``hw/chisel/``) read it. The accelerators come in
+the order the graph first uses them (design/streamers.py's ``accelerators``), each with its
+groups in the graph's order: a unit alone, named after its instance, or the units ``link``
+joins, named by its ``group``. Group and accelerator names are unique over the design: they name
+the control units and the streamer sets. ``Accelerator.define`` names a CSR as the header does.
 
-snax-forge writes it once (gvsoc.py, at the root of every gen-gvsoc folder and
-bundle; gen-rtl the same bytes, rtl.py) and SNAX-GVSoC (snax-gvsoc
-``snax/snax_cfg.py``) and Emit (``hw/chisel/``) read it. Plain JSON, concrete
-values only, nested as the graph is (D148), in this key order:
-
-    design_point  the design point by its path from the root (gvsoc.py)
-    tag           the generated entry's name, ``<accelerator_slot>_<name>``
-                  (D131, D157), ``<name>`` the design's name (the design
-                  point's, the recipe's or Save's ``name``, never a flow's
-                  ``--set`` suffix, design/point.py's ``design_of``): an
-                  identifier, else ``gen.tag``
-    accelerators  in CSR order, each one streamer set of the entry (D157):
-      name        the header's <ACC> and the set's name: ``encapsulate``'s
-                  accelerator, else its one group's name (a one-unit group's
-                  is its instance)
-      inputs      its outer ports, "<unit>.<port>", in its streamer's reader
-      outputs     and writer order (the BRM's port order)
-      groups      in CSR order; each name, csrs, units, links
-      movers      only when its groups share its movers (D169, design/streamers.py's
-                  ``shared_movers``): per mover in the streamer's order (readers,
-                  then writers) its ``name`` (``reader<k>``, ``writer<k>``),
-                  ``role`` (``read``, ``write``), ``num_channel``, ``masked`` (it
-                  has ``configurable_channel``: a user narrower than it) and
-                  ``users``, each ``{group, port, num_channel}``, the port one of
-                  ``inputs`` or ``outputs``; every outer port on one mover
-      port_mux    with ``movers``: ``groups`` (the groups in PORT_MUX_SEL's
-                  order, the accelerator's) and ``csr``, PORT_MUX_SEL (R/W, the
-                  accelerator's last CSR, its width the bits a group's index
-                  takes)
-
-A unit: ``name`` (the instance), ``brm``, ``datapath`` (the binding's),
-``ports`` (per BRM port in its order: ``port``, ``dir``, ``dtype``, ``lanes``,
-the datapath's adapter's, blocks.py), ``opType`` (a SIMD or Mac
-unit only), ``params`` (the adapter's, and ``T`` for a fold whose rate is a
-constant once the recipe's design params are in: it depends on no kernel
-symbol), ``scalars`` (each slot read from a container, a kernel's scalar
-argument the program writes, in slot order, at its dtype, opType: axpy's
-``{"k1": "int32"}``; written only when there is one), ``timing``
-(``latency``, ``ii``, ``span``) and ``csrs`` (its R/W CSRs: ``JOB_BEATS``
-for a fold without ``params.T``, then one per scalar named after its slot,
-``K1``, or two at 64 bits, ``K1_LO`` and ``K1_HI``, low word first, each
-with ``pin`` its slot, the datapath's pin). A link is ``name``,
-``from`` (``"<unit>.<port>"`` of an ``out`` port), ``to`` (of an ``in``) and
-``depth`` (0 a wire, >= 1 a buffer of that many beats).
-
-**The CSRs** (D146), offsets from the shell's first CSR, contiguous over the
-accelerators in order and per group in order: ``START`` and ``JOBS`` (R/W),
-each unit's R/W CSRs, ``STATUS`` and ``BUSY_COUNTER`` (R/O). A CSR is ``name``,
-``access`` (``rw``, ``ro``), ``offset``, ``width`` and ``pin`` (a scalar's
-datapath pin). The widths (D152): START 1 (a strobe, it reads 0),
-JOBS and every JOB_BEATS the platform's ``acc_csr.job_width``, a scalar's
-its dtype's bits (32 for each word of a 64-bit one), STATUS 2,
-BUSY_COUNTER its ``busy_counter_width``. ``from_dict`` checks the offsets contiguous
-from 0 in that order and never recomputes them, and every width 1 to 32,
-START's 1, STATUS's 2, JOBS and every JOB_BEATS one width and every BUSY_COUNTER
-one width, over the whole design. ``Accelerator.define`` names a CSR as the
-header does: ``<ACC>_<RW|RO>_[<GROUP>_][<UNIT>_]<NAME>``, the group part
-dropped when the accelerator has one group, the unit part when the group has
-one unit; PORT_MUX_SEL, no group's, is ``<ACC>_RW_PORT_MUX_SEL``;
-``Description.define`` asks the accelerator that holds the group.
-
-**The accelerators and groups** (D148): the graph's accelerators in the
-order it first uses them (design/streamers.py's ``accelerators``), each its
-groups in the graph's order (``groups``): a unit alone, named after its
-instance, or the units ``link`` joined, named by its ``group``, in the
-graph's order, with their links (each named after its container, from the
-writer's port to the reader's, its depth). An accelerator's ``inputs`` and
-``outputs`` are its ports on no link, group by group, unit by unit in port
-order. Group names are unique over the design (they name the control units,
-``<tag>_<group>_ctrl``) and so are the accelerators' (the streamer sets).
-
-**Refused**, each a ``GenError``: ``gen.tag`` (a tag that is not an identifier, or
-a platform without an ``accelerator_slot``), ``gen.binding`` (lower/c.py's
-``accelerators``), ``gen.datapath`` (a datapath not registered),
-``gen.controller`` (a controller other than ``counted``, the only one generated),
-what the datapath's adapter refuses (blocks.py), ``gen.drain`` (an
-implementation whose drain is not 0: the nest controller has none) and
-``gen.timing`` (a latency or span other than the datapath's, or an II other than 1).
-
-**A reader's checks** (``from_dict`` and every construction), each a
-``GenError``: ``gen.link`` (a link not from an ``out`` port to an ``in`` port
-of the group's units with the same dtype and lanes, or a depth below 0),
-``gen.link_port`` (a port on more than one link), ``gen.outer`` (``inputs``
-or ``outputs`` not exactly an accelerator's unlinked ports, group by group, unit by
-unit in port order) and ``gen.group`` (a group whose units the links do not
-connect), besides the offsets and widths (a ValueError); then SNAX-GVSoC's
-limits (snax-gvsoc's SnaxGroup), ``gen.chain`` (a group that is not a chain
-in unit order: each unit's output linked to the next unit's input, only the
-last unit's output outer; lifted in tier A, fork and join) and ``gen.span``
-(a unit of span > 1 with an outer input; lifted in B2), and ``gen.share`` (a shared
-accelerator's movers or port mux not as above: a user not one of its outer ports or of
-another group, an outer port on no mover or on two, a narrower user on a mover not masked,
-``port_mux.groups`` not its groups).
+``from_dict`` and every construction check what a reader needs (links, outer ports, groups,
+offsets and widths, SNAX-GVSoC's chain and span limits, shared movers) and never recompute the
+offsets. What ``describe`` or a reader refuses is a ``GenError`` (``gen.<rule>``), an offset
+or width a ``ValueError``.
 """
 
 from __future__ import annotations
@@ -128,13 +46,13 @@ ACCELERATOR_JSON = "accelerator.json"
 ACCESS = ("rw", "ro")
 # The tag's form: it names modules, files and the cluster file's entry
 IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
-# The CSRs whose width C§17 fixes: START a strobe (bit 0), STATUS {done, busy}
+# The CSRs whose width the RTL spec fixes: START a strobe (bit 0), STATUS {done, busy}
 FIXED_WIDTH = {"START": 1, "STATUS": 2}
 
 
 @dataclass(frozen=True)
 class Csr:
-    """One CSR; see the module doc."""
+    """One CSR (CONTRACTS, "Accelerator RTL spec")."""
 
     name: str
     access: str
@@ -157,7 +75,7 @@ class Csr:
 
 @dataclass(frozen=True)
 class Unit:
-    """One unit of a group; see the module doc."""
+    """One unit of a group (CONTRACTS, "Accelerator RTL spec")."""
 
     name: str
     brm: str
@@ -265,7 +183,7 @@ class MoverUser:
 
 @dataclass(frozen=True)
 class Mover:
-    """A mover of a shared accelerator (D169); see the module doc."""
+    """A mover of a shared accelerator (CONTRACTS, "Accelerator RTL spec")."""
 
     name: str
     role: str
@@ -285,7 +203,7 @@ class Mover:
 
 @dataclass(frozen=True)
 class PortMux:
-    """A shared accelerator's data-side mux (D169): its groups in PORT_MUX_SEL's order and
+    """A shared accelerator's data-side mux: its groups in PORT_MUX_SEL's order and
     PORT_MUX_SEL."""
 
     groups: list[str]
@@ -301,8 +219,8 @@ class PortMux:
 
 @dataclass(frozen=True)
 class Accelerator:
-    """One accelerator of the design: one streamer set (D157), its groups sharing its streamer
-    and, encapsulated, its start (D148), and with ``share_ports`` its movers too (D169)."""
+    """One accelerator of the design: one streamer set, its groups sharing its streamer
+    and, encapsulated, its start, and with ``share_ports`` its movers too."""
 
     name: str
     inputs: list[str]
@@ -335,7 +253,7 @@ class Accelerator:
 
     @property
     def rw(self) -> int:
-        """Its R/W CSRs: Σ_g (2 + Σ_u (f_u + k_u)) (C§17), the set's ``snax_num_rw_csr``."""
+        """Its R/W CSRs: Σ_g (2 + Σ_u (f_u + k_u)), the set's ``snax_num_rw_csr``."""
         return sum(c.access == "rw" for _, _, c in self.csrs())
 
     @property
@@ -348,7 +266,7 @@ class Accelerator:
         return [u for g in self.groups for u in g.units]
 
     def define(self, group: Group | None, unit: Unit | None, csr: Csr) -> str:
-        """A CSR's name in the header and the program; see the module doc."""
+        """A CSR's name in the header and the program (CONTRACTS, "Accelerator RTL spec")."""
         parts = [self.name.upper(), csr.access.upper()]
         if group is not None and len(self.groups) > 1:
             parts.append(group.name.upper())
@@ -363,7 +281,7 @@ class Accelerator:
 
 @dataclass(frozen=True)
 class Description(JsonFile):
-    """``accelerator.json``; see the module doc."""
+    """``accelerator.json`` (CONTRACTS, "Accelerator RTL spec")."""
 
     design_point: str
     tag: str
@@ -424,7 +342,7 @@ class Description(JsonFile):
 
     @property
     def inputs(self) -> list[str]:
-        """Every outer input port, set after set: the wrapper's ``stream2acc_<k>`` order (C§17)."""
+        """Every outer input port, set after set: the wrapper's ``stream2acc_<k>`` order."""
         return [p for a in self.accelerators for p in a.inputs]
 
     @property
@@ -531,7 +449,7 @@ def _check_shared(acc: Accelerator) -> None:
     """``gen.share``: a shared accelerator's movers and port mux (module doc)."""
     what = f"accelerator {acc.name}"
     if acc.port_mux is None or not acc.movers:
-        raise GenError("gen.share", f"{what}: movers and port_mux come together (D169)")
+        raise GenError("gen.share", f"{what}: movers and port_mux come together")
     names = [g.name for g in acc.groups]
     if sorted(acc.port_mux.groups) != sorted(names):
         raise GenError("gen.share", f"{what}: port_mux.groups {acc.port_mux.groups}, not its "
@@ -579,7 +497,7 @@ def _check_chain(acc: Accelerator, g: Group, ports: dict[str, Port]) -> None:
         if u.span > 1 and outer_in:
             raise GenError("gen.span", f"accelerator {acc.name}: unit {u.name} (span {u.span}) "
                            f"reads {outer_in} from the streamer: a unit with span > 1 reads from a "
-                           "link until B2")  # fmt: skip
+                           "link")  # fmt: skip
 
 
 def _root(parent: dict[str, str], u: str) -> str:
@@ -591,7 +509,7 @@ def _root(parent: dict[str, str], u: str) -> str:
 
 def fixed_fold(graph: Graph, node: Node, inst: Instance) -> int | None:
     """A fold's T when it is a constant once the design params are in: the firing loops one
-    output beat folds over (named_rates', D102) have ranges over no kernel symbol. None for a
+    output beat folds over (named_rates') have ranges over no kernel symbol. None for a
     unit without a fold or one whose T depends on a symbol (a JOB_BEATS CSR then)."""
     rate = fold_rate(inst)
     if rate is None:
@@ -621,7 +539,7 @@ def units(point: DesignPoint) -> dict[str, dict[str, Instance]]:
 
 def tag(point: DesignPoint) -> str:
     """The generated entry's name, ``<accelerator_slot>_<name>``, the design's name the design
-    point holds (D131, D157); ``gen.tag`` when it is not an identifier (it names modules, files
+    point holds; ``gen.tag`` when it is not an identifier (it names modules, files
     and the cluster file's entry)."""
     slot = point.platform.accelerator_slot
     if slot is None:
@@ -680,7 +598,8 @@ def describe(point: DesignPoint, point_path: str) -> Description:
 
 
 def _unit(point: DesignPoint, name: str, inst: Instance, offsets: Iterator[int]) -> Unit:
-    """Instance ``name``'s unit, checked (module doc), its R/W CSRs numbered from ``offsets``."""
+    """Instance ``name``'s unit, checked (its refusals: CONTRACTS, "Accelerator RTL spec"), its
+    R/W CSRs numbered from ``offsets``."""
     what = f"{inst.brm.name}.{inst.implementation}"
     datapath = inst.impl.binding["datapath"]
     if datapath not in DATAPATHS:
@@ -693,7 +612,7 @@ def _unit(point: DesignPoint, name: str, inst: Instance, offsets: Iterator[int])
     fill = dp.fill(inst, port_dtypes(point.graph, instance_nodes(point.graph)[name]))
     if inst.drain != 0:
         raise GenError("gen.drain", f"{what}: drain {inst.drain}; the nest controller has none, "
-                       "so a bound implementation's drain is 0 (D133)")  # fmt: skip
+                       "so a bound implementation's drain is 0")  # fmt: skip
     latency, span = dp.timing(fill)
     if (inst.latency, inst.initiation_interval, inst.span) != (latency, 1, span):
         raise GenError(

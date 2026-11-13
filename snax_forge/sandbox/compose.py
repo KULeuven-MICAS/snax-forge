@@ -1,77 +1,19 @@
-"""The transforms that compose units into one accelerator (D148, D150), each with its inverse.
+"""The transforms that compose units into one accelerator, each with its inverse.
 
-The mapping is spelled step by step, one recipe per variant: a
-reduction split into lane partials and a final sum, two nests fused into one,
-a transient between two bound units made a link. Registered as any transform
-(transforms.py); ``ints`` and the sites as there: ``split_reduce``'s an
-untagged map around one folding tasklet, ``join_reduce``'s and
-``unfuse_map``'s a map that records what made it, ``fuse_map``'s a map that
-fuses with its next sibling (filling ``second``) or its previous one (filling
-``first``; ``fuse_choices`` both, the editor's drop-down), ``link``'s a transient
-between two bound units (filling ``group`` with an end's, else the graph's
-name), ``unlink``'s a link node or its container.
+``split_reduce`` and ``join_reduce`` split a fold into lane partials and a final sum;
+``fuse_map`` and ``unfuse_map`` fuse two nests into one, the transient between them a local
+value; ``link`` and ``unlink`` make a transient between two bound units a link node, merging
+their groups into a chain. CONTRACTS, "Recipe" defines each. They register as any transform
+(transforms.py), with their sites: ``split_reduce``'s an untagged map around one folding
+tasklet, ``join_reduce``'s and ``unfuse_map``'s a map that records what made it,
+``fuse_map``'s a map that fuses with its next or previous sibling, ``link``'s a transient
+between two bound units (``group`` an end's, else the graph's name), ``unlink``'s a link node
+or its container.
 
-``split_reduce(map, factor)`` and ``join_reduce(map)``
-    an untagged map ``v`` over ``b:e`` whose one tasklet folds (``reduce``)
-    into an element that does not move with ``v`` is split as ``split_map``
-    splits it: ``<map>`` temporal around a spatial ``<map>_s``; its tasklet
-    now writes one partial per lane, into a new transient
-    ``<output>_partial`` indexed by the output's dimensions that move with an
-    enclosing map, then the spatial variable (dot's ``out_partial[n_2_s]``,
-    matvec's ``q_partial[m_t, n_2_s]``), folding as before. A final sum follows
-    the temporal map: tasklet ``<tasklet>_final`` in a spatial map
-    ``<map>_final`` over ``0:factor``, a dimension of its own, ``<dim>_f``
-    (dot's ``n_f_s``, dfg/loops.py), folding the partials into the output
-    as the tasklet did. The temporal map records both
-    (``loop.split_reduce``); ``join_reduce`` takes them back and joins the
-    map (``join_map``). A length that is not a multiple of the factor is
-    refused: the partials' padding is not placed yet (D144). A seeded fold
-    (seed.py's ``fuse_seed``) keeps its seed on the final sum only, which
-    takes the fold's record too; the partials start from the identity and are
-    named after the transient the seed took (matvec_acc's ``tmp1_partial``),
-    as split before the seed.
-``fuse_map(first, second)`` and ``unfuse_map(map)``
-    two adjacent nests, ``second`` right after ``first``, with the same
-    ranges level by level down to one tasklet each, and the same tags, an
-    untagged map taking the other side's tag (``tag_map`` on it first, so
-    tagging then fusing and fusing then tagging give one graph; temporal
-    against spatial is refused), joined by a transient the first writes and
-    the second reads at the same index,
-    become one nest of two tasklets: the first's ids, variables, dimensions
-    and pieces (the second's renamed onto them), the second's other nodes after the fused
-    one at their level (matvec's final sum inside the row map). The
-    transient becomes a local value: ``loop.local`` (the fused map's id) on
-    the container, so it gets no L1 space; nothing else may name it. The
-    fused map records both nests (``loop.fused``), and ``unfuse_map`` gives
-    them back when nothing changed since (unbind first). ``bind`` takes the
-    fused nest's spatial map (patterns.py's ``fused_view``) and the local
-    value with it: the container leaves the graph for the accelerated node's
-    ``locals``, and ``unbind`` puts it back where it was.
-    Different ranges at a level are refused naming the fix where one side is
-    split and the other not (``FuseRangeError``, its ``fix`` the split_map
-    that makes them agree: "mult_map_1 runs 0:512, sum_map_1 runs 0:128 and
-    its child 0:4: split_map mult_map_1 4 first"); ``fuse_near`` gives the
-    pairs that fix alone makes fuse (the viewer's near partners). ``tag_map``
-    and ``untag_map`` on a map of a fused nest whose record still holds
-    (``unfuse_map`` takes it) tag or untag that level on both nests and fuse
-    them again (``retag``), so the record follows the tag.
-``link(container, depth, group)`` and ``unlink(container)``
-    a transient with one writer and one reader, both bound (``link.unbound``
-    otherwise; ``link.container`` for another container), becomes a link
-    node of that depth before the reader, in the body the two share, once
-    the writer's beats equal the reader's in the same order (each port's
-    memlet over its firing loops, at the recipe's symbols, one beat per T
-    firings for a named rate: ``link.order``). The two units' groups merge:
-    ``group`` is written on every unit of both; a unit whose group has
-    another name, a name another instance has, or units in two
-    accelerators is ``link.group``. The container stays, so the reference
-    executor runs the link as it (dfg/execute.py); the design step gives it
-    no L1 space and no streamer. ``unlink`` removes the node and takes the
-    group off every unit left alone; two groups of several units left under
-    one name is ``unlink.group``. The merged group must be a chain in the
-    graph's order (each unit's output linked to the next unit's input),
-    SNAX-GVSoC's limit until tier A (fork and join): ``link.chain``, gen.chain's
-    check made early.
+For the editor and the viewer: ``fuse_choices`` and ``fuse_pairs`` list what ``fuse_map``
+takes, ``fuse_near`` what it takes after one split (``FuseRangeError``'s ``fix``), ``retag``
+tags a level of a fused nest on both sides, and ``fuse_link``, ``beats``, ``range_text`` and
+``link_text`` describe what a fuse or a link matches.
 """
 
 from __future__ import annotations
@@ -144,7 +86,7 @@ def _split_reduce_site(g: Graph, map: str) -> dict[str, Any]:
     folds = [(c, m) for c, m in t.outputs.items() if m.reduce is not None]
     if len(t.outputs) != 1 or len(folds) != 1 or node.attrs["var"] in folds[0][1].names:
         raise SandboxError(f"{what}: its tasklet must fold its one output into an element that "
-                           f"does not move with {node.attrs['var']!r} (a reduction, D102)")  # fmt: skip
+                           f"does not move with {node.attrs['var']!r} (a reduction)")  # fmt: skip
     return {"map": map}
 
 
@@ -155,7 +97,7 @@ def split_reduce(g: Graph, map: str, factor: int) -> Graph:
     node = body[i]
     if type(factor) is int and factor > 0 and _bound(g, _length(node), what) % factor:
         raise SandboxError(f"{what}: the length is not a multiple of {factor}; the partials' "
-                           "padding is not placed yet (D144)")  # fmt: skip
+                           "padding is not placed yet")  # fmt: skip
     g = split_map(g, map, factor)
     body, i, outer = _locate(g, map)
     node = body[i]
@@ -225,7 +167,7 @@ def join_reduce(g: Graph, map: str) -> Graph:
     if ft is None or ft.kind != "tasklet":
         raise SandboxError(f"{what}: the final sum {final.id!r} is bound (unbind it first)")
     users = [n.id for n, _ in g.walk() if any(m.data == rec["partial"] for m in
-             (*n.inputs.values(), *n.outputs.values()))] + [n.id for n, _ in g.walk()
+             n.memlets())] + [n.id for n, _ in g.walk()
              if n.kind == "link" and n.attrs["container"] == rec["partial"]]  # fmt: skip
     if sorted(users) != sorted([inner[0].id, ft.id]):
         raise SandboxError(f"{what}: {rec['partial']} is named by {users} (unlink first)")
@@ -271,7 +213,7 @@ def _range_refusal(g: Graph, f: Node, s: Node, what: str) -> SandboxError:
 
 
 def _fuse(g: Graph, first: Node, second: Node, what: str) -> tuple[Node, str, list[list[str]]]:
-    """``first`` and ``second`` fused (module doc), the local container and the tags an
+    """``first`` and ``second`` fused (CONTRACTS, "Recipe"), the local container and the tags an
     untagged side takes first (``[map, kind]`` each; the fused node is then the first's
     untagged at those levels: fuse_map tags and fuses again); SandboxError."""
     rename: dict[str, str] = {}
@@ -312,7 +254,7 @@ def _fuse(g: Graph, first: Node, second: Node, what: str) -> tuple[Node, str, li
     if not g.containers[local].transient or writes[0].reduce is not None:
         raise SandboxError(f"{what}: {local} is not a transient written plainly")
     users = {n.id for n, _ in g.walk()
-             for m in (*n.inputs.values(), *n.outputs.values()) if m.data == local}  # fmt: skip
+             for m in n.memlets() if m.data == local}  # fmt: skip
     others = users - {t1.id, t2.id}
     if others:
         raise SandboxError(f"{what}: {local} is named by {sorted(others)} too; a local value is "

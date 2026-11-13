@@ -1,47 +1,15 @@
-"""The SNAX-DFG: a workload graph as plain data, one ``.snaxdfg`` JSON file (D71).
+"""The SNAX-DFG: a workload graph as plain data, one ``.snaxdfg`` JSON file.
 
-A graph borrows SDFG's concepts, not its format:
-
-    {
-     "name":       the kernel
-     "symbols":    {name: int or null}      null as imported, set by a recipe
-     "containers": {name: {shape, dtype, transient, attrs}}
-     "body":       [node, ...]              in execution order
-    }
-
-A node is ``id``, ``kind``, ``inputs``, ``outputs``, ``attrs`` and, for a
-kind that has one, ``body`` (kinds.py). ``inputs`` and ``outputs`` map a
-connector name to a memlet ``{"data": container, "subset": [dim, ...]}``,
-one dimension per container dimension (subset.py), and on a tasklet's
-output an optional ``"reduce": {"op", "identity"}`` (or ``{"op", "seed"}``)
-that folds the writes of every iteration into the element instead of
-overwriting it (reduce.py).
-The graph is a tree: scopes hold ordered bodies, memlets sit on the
-connectors of the nodes that use the data, and there are no map entry/exit
-nodes, access nodes or outer memlets, which are derived.
-
-**Names.** Every name in an expression is bound by exactly one thing: a
-symbol, or the variable of an enclosing map. Container shapes use symbols
-only. Node ids are unique in the graph and are identifiers, since derived
-task names are built from them (D75). Symbols, containers and variables
-never share a name.
-
-**Stored form.** Every field is written, except a memlet's ``reduce`` when it
-is null, so a graph with no reduction reads as before; missing keys take defaults
-(``inputs``, ``outputs``, ``attrs`` and a scope's ``body`` empty,
-``transient`` false) and unknown keys are errors (D26). ``body`` is
-written exactly for kinds that have one. Expressions are kept canonical
-(``expr.canonical``, subset.py), so a transform's output and a hand-written
-file diff cleanly. A graph is validated when it is made, from a file or in
-Python.
-
-**Accelerators** (D148). The nodes of one instance agree on its BRM,
-implementation and params, and carry the same ``accelerator`` or none; an
-accelerator's name is no instance's (``encapsulate``, sandbox/transforms.py).
-
-**Not checked here.** An accelerated node's connectors and params against
-its BRM: that is ``bind``'s job and the reference executor's,
-which load the BRM.
+``Graph`` (with ``Container``, ``Node`` and ``Memlet``) reads and writes the format of
+CONTRACTS, "SNAX-DFG": symbols, containers and an ordered body of nodes, a tree with no map
+entry/exit nodes, access nodes or outer memlets, which are derived. A graph is validated when
+it is made, from a file or in Python: every name is bound once (a symbol or an enclosing map's
+variable), node ids are unique identifiers, the memlet rules every kind shares hold (kinds.py
+checks the rest), and the nodes of one instance agree on its BRM, implementation, params and
+``accelerator``, an accelerator's name being no instance's. Expressions are kept canonical
+(``expr.canonical``, subset.py), so a transform's output and a hand-written file diff cleanly.
+An accelerated node's connectors and params against its BRM are not checked here: ``bind`` and
+the reference executor load the BRM.
 """
 
 from __future__ import annotations
@@ -69,7 +37,7 @@ def _keys(d: Any, required: tuple[str, ...], optional: tuple[str, ...], what: st
 
 
 def _namespaced(key: Any) -> bool:
-    """``ns.name``: an attr no kind owns, passed through untouched (D19)."""
+    """``ns.name``: an attr no kind owns, passed through untouched."""
     if not isinstance(key, str) or key.count(".") < 1:
         return False
     return all(p.isidentifier() for p in key.split("."))
@@ -112,7 +80,7 @@ def baked_values(d: Any) -> dict[str, tuple[int, str]]:
 
 @dataclass
 class Container:
-    """A data container: logical shape and element type. Its layout is the memory plan's (D87)."""
+    """A data container: logical shape and element type. Its layout is the memory plan's."""
 
     shape: list[Value]
     dtype: str
@@ -150,7 +118,7 @@ class Memlet:
 
     data: str
     subset: list[Value]
-    reduce: Reduction | None = None  # how the writes of every iteration combine (D102)
+    reduce: Reduction | None = None  # how the writes of every iteration combine
 
     def __post_init__(self) -> None:
         if not isinstance(self.subset, (list, tuple)) or not self.subset:
@@ -207,7 +175,7 @@ def _memlets(d: Any, what: str) -> dict[str, Memlet]:
 
 @dataclass
 class Node:
-    """One element of the graph: the core schema of D19 plus a scope's body."""
+    """One element of the graph: the core schema plus a scope's body."""
 
     id: str
     kind: str
@@ -215,6 +183,10 @@ class Node:
     outputs: dict[str, Memlet] = field(default_factory=dict)
     attrs: dict[str, Any] = field(default_factory=dict)
     body: list[Node] | None = None
+
+    def memlets(self) -> list[Memlet]:
+        """Its input memlets, then its output memlets."""
+        return [*self.inputs.values(), *self.outputs.values()]
 
     def to_dict(self) -> dict[str, Any]:
         d = {
@@ -348,7 +320,7 @@ def _validate(g: Graph) -> None:
     _check_body(g.body, scope, ids, instances)
     clash = sorted({key[-1] for key in instances.values()} & set(instances))
     if clash:
-        raise DfgError(f"{g.name}: accelerator {clash[0]!r} is also an instance's name (D148)")
+        raise DfgError(f"{g.name}: accelerator {clash[0]!r} is also an instance's name")
 
 
 def _check_container(symbols: Iterable[str], name: str, c: Container) -> None:
@@ -436,7 +408,7 @@ def _check_memlets(node: Node, scope: Scope, what: str) -> None:
             if m.reduce is not None and (side == "inputs" or not kind_of(node.kind, what).reduce):
                 raise DfgError(
                     f"{w}: a reduce folds writes, so it sits on an output of a kind that takes one "
-                    f"(a tasklet), not on the {side} of a {node.kind!r} (D102)"
+                    f"(a tasklet), not on the {side} of a {node.kind!r}"
                 )
             _check_subset(m.data, m.subset, scope, w)
             seed = m.reduce.seed if m.reduce is not None else None
@@ -461,7 +433,7 @@ def _check_subset(data: str, subset: list[Any], scope: Scope, w: str) -> None:
 
 
 def _check_replaced(node: Node, scope: Scope, what: str) -> None:
-    """The subtree an accelerated node replaced: a valid node in the node's own scope (D82),
+    """The subtree an accelerated node replaced: a valid node in the node's own scope,
     with the local values ``bind`` took out of the graph (``locals``) in it.
 
     It is history, not part of the graph: its ids may repeat live ones (the

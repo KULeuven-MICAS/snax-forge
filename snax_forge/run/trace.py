@@ -1,10 +1,7 @@
-"""The trace of a flow run (C§7, D137).
+"""The trace of a flow run (CONTRACTS, "Profile and trace").
 
-SNAX-GVSoC's ``events`` lines (``beats``, ``stalls`` and the cores' ``insn`` above ``task``),
-renamed into C§7 and cut to the program's window: t = 0 is the program's ``mcycle`` read in
-main on the accelerator's core, and events outside ``[0, total_cycles)`` (up to its read in
-``forge_check``) are dropped. Every event is a flat dict of ``t``, ``k``, ``src`` and the
-kind's own fields, by the lowest level that has it:
+SNAX-GVSoC's event lines renamed and cut to the program's window. Each event is a flat dict of
+``t``, ``k``, ``src`` and the kind's own fields, by the lowest level that has it:
 
     task         start    task  (t = the cycle the start is taken; busy from t + 1)
     task         done     task, cycles (the run's classes), then firings, first, last for an
@@ -29,16 +26,10 @@ kind's own fields, by the lowest level that has it:
     stall        fifo     task, lane, count  (src = the mover; t = the first cycle it holds)
     finegrained  insn     pc, func, text  (src = the core)
 
-``LEVELS`` are cumulative, each the one before plus its kinds. ``KINDS`` holds each kind's
-fields, required and optional; ``Trace.from_dict`` refuses an event with an unknown kind or
-field. The events are kept as the dicts they are written as, in time order (by ``t``, then as
-SNAX-GVSoC wrote them). ``trace_meta.json`` is the rest: the ``level``, ``total_cycles``, the
-``boot`` shift (the first ``mcycle`` read in SNAX-GVSoC's cycles), the ``sources`` in the
-cluster's order, the ``filter``, the sources the beat, stall and instruction lines were
-written for (empty at ``task``), and ``start``, per core in the cluster's order what is in
-force at t = 0: ``func``, the name of its last ``func`` line at or before 0 (None without
-one), and ``mode``, its state (cores.py's ``start_mode``). No ``func`` event is written at 0:
-a ``func`` event's t is the function's first instruction.
+``LEVELS`` are cumulative; ``KINDS`` holds each kind's fields, required and optional, and
+``Trace.from_dict`` refuses an unknown kind or field. Events are kept as written, in time order
+(by ``t``, then as SNAX-GVSoC wrote them). ``trace_meta.json`` is the rest; no ``func`` event
+is written at 0, since a ``func`` event's t is the function's first instruction.
 """
 
 from __future__ import annotations
@@ -88,7 +79,7 @@ def check_event(e: dict[str, Any]) -> None:
     own = set(e) - set(HEAD)
     if not fits(own, KINDS[k]):
         raise RunError("trace.field", f"a {k} event's fields are {sorted(own)}, not one of "
-                       f"{[sorted(req) for req, _ in KINDS[k]]} (C§7): {e}")  # fmt: skip
+                       f"{[sorted(req) for req, _ in KINDS[k]]}: {e}")  # fmt: skip
 
 
 @dataclass

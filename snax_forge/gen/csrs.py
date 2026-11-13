@@ -1,19 +1,12 @@
-"""The entry's CSR numbers (D157, C§16): per streamer set, its streamer's, from its template,
-then its accelerator's own, from the description (accelerator.py's defines), packed from 960,
-as snax-gvsoc's SnaxAccelerator and snax_cluster's ``snax_csr_range_demux`` number them.
+"""The entry's CSR numbers: per streamer set, its streamer's, then its accelerator's own.
 
-    movers(template) -> [mover]           readers first, named as the headers name them
-    mover_csr_count(spatial_bounds, temporal_dim, enabled=0) -> int
-    streamer_csrs(template) -> int        snax_streamer.nb_csrs
-    channels(template) -> int             snax_cfg.streamer_channels
-    csr_layout(templates, desc) -> CsrLayout
-
-With s_k and c_k set k's streamer and own CSRs, b_0 = 960 and b_{k+1} = b_k + s_k + c_k:
-streamer k at [b_k, b_k + s_k), its own at [b_k + s_k, b_{k+1}); a CSR at offset o from the
-shell's first (accelerator.json's, contiguous over the sets) of set k is b_k + s_k + o - o_k,
-o_k the own CSRs of the sets before it. ``gen.csrs`` when b_K - 1 is past ``SNAX_ACC_CSR_LAST``.
-The generator writes them into the headers and the manifest; ``run/`` reads them back to name
-the CSR writes of a run (``run/cluster.py``, ``run/beats.py``).
+``csr_layout`` packs them from 960, as snax-gvsoc's SnaxAccelerator and snax_cluster's
+``snax_csr_range_demux`` number them (CONTRACTS, "Generated hjson files", the CSRs), and refuses
+a last CSR past ``SNAX_ACC_CSR_LAST`` (``gen.csrs``). ``movers`` lists a template's movers,
+readers first, as the headers name them; ``streamer_csrs`` and ``channels`` are snax-gvsoc's
+``snax_streamer.nb_csrs`` and ``snax_cfg.streamer_channels``. The generator writes the numbers
+into the headers and the manifest; run/cluster.py and run/beats.py read them back to name a
+run's CSR writes.
 """
 
 from __future__ import annotations
@@ -33,6 +26,8 @@ from .blocks import GenError
 # reserves 0x5FE (CSR_SNAX_READ_TASK_READY_QUEUE) and 0x5FF
 # (CSR_SNAX_WRITE_TASK_DONE_QUEUE), which hw/snax_util/src/snax_intf_translator.sv
 # routes to the cluster's top-level CSR port, not to the accelerator
+# NB (D120, D157): the SNAX CSRs start at 0x3C0; per set its streamer's CSRs, then its
+# accelerator's. snax_cluster's csr_range_table and SNAX-GVSoC's csr_layout use this order.
 SNAX_CSR_FIRST = 0x3C0
 SNAX_ACC_CSR_LAST = 0x5FD
 # The trace paths: the compute core's accelerator, named snax_acc<core> by
@@ -93,7 +88,7 @@ def movers(template: dict[str, Any]) -> list[dict[str, Any]]:
 
 def enabled_csrs(num_channel: int, configurable: bool) -> int:
     """A mover's ENABLED_CHANNEL CSRs: ceil(num_channel / 32) with ``configurable_channel``
-    (D169, ReaderWriterParam.csrNum), else none."""
+    (ReaderWriterParam.csrNum), else none."""
     return (num_channel + 31) // 32 if configurable else 0
 
 

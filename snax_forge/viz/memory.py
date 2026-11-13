@@ -1,70 +1,17 @@
-"""The memory layout of a run, for the memory tab (D57).
+"""A run's memory layout for the memory tab: where each region lies, as folded rows of words.
 
-What this is
-------------
-Where each region of a run lies in its memory, as rows of words, folded so
-that the answer grows with the regions and not with the depth of the memory.
-Everything is computed here; the viewer only draws.
+``layout_of`` places the run's regions (run/regions.py): L1 as bank columns by rows, through the
+cluster's word-interleaved map; L2 as flat rows of one DMA beat. A cell is one word, a list of
+``[region, flat]`` pairs, one per element whose first byte is in it (``flat`` its row-major
+index in the region's shape). Padding is apart: a tail's pad element p (row-major in the
+``padded_shape``) is ``[region, -2 - p]``, a word of beat padding ``[region, -1]``.
 
-Geometry
---------
-L1 is ``Cluster.banks`` columns by rows of one word per bank, a word placed
-through the cluster's word-interleaved map (``Cluster.bank_row``), so the tab
-shows what the banks hold; a group is a superbank, one DMA beat of banks. L2
-is flat, drawn as rows of one DMA beat (``Cluster.dma_beat_bytes``) of bank
-words (D142), from the design point's L2 (its base and size, the cluster
-file's ``dram``). The regions are the run's (``run.regions.regions_of``: L1
-from the memory plan, L2 from the ELF's symbols). A cell is one word; it
-holds a list of ``[region, flat]`` pairs, one per element whose first byte is
-in the word (several, for a narrow dtype the layouts pack; each port's
-packing labelled), where ``region`` indexes
-that memory's region list and ``flat`` is the element's row-major index in
-its region's shape. An empty cell is ``[]``.
-
-Padding (D144) is shown apart, as the memory checks count it (``run.padding_of``): a tail's
-pad, element p (row-major) of the region's ``padded_shape`` outside its ``shape``, is the pair
-``[region, -2 - p]`` at its address; a word of a DMA-moved container's beat padding, past its
-padded block up to a whole DMA beat, holds ``[region, -1]``. A region's ``end`` is the extent
-the checks use, beat padding included; ``data_end`` is its padded block's end.
-
-Folding
--------
-Two neighbouring rows are *alike* when every column holds the same regions
-in the same order in both, and each region's flat index moves by one step
-that is the same in every column (so A[0..31] and A[32..63] are alike, with
-A's step 32). A run of rows is a maximal stretch in which each row is alike
-to the next with the same steps. A run of occupied rows is sent as its first
-row, one fold line for the rows between (if any) and its last row; a run of
-empty rows is one line, however long. Lines:
-
-    {"kind": "row", "row": r, "addr": [...], "cells": [...]}
-    {"kind": "fold", "from": a, "to": b, "hidden": b - a + 1,
-     "step": {region: step}, "span": {region: [first flat, last flat]}}
-    {"kind": "empty", "from": a, "to": b}
-
-``from`` and ``to`` are inclusive. A fold's rows, or an empty run's, are
-served on request (``rows``), at most ``MAX_ROWS`` per request, so a large
-memory is never sent whole. Only occupied rows are visited: the cost is the
-number of elements plus the occupied rows, not the size of the memory.
-
-Marks
------
-A view may carry one value per word, a mark of the run index (index.py,
-``{(mem, addr): value}``), placed here on the rows. A mark is of one of two
-kinds:
-
-* counts (``conflicts``): rows are alike only when their marks are equal
-  column by column, so a row with conflicts stays visible unless its
-  neighbours had the same ones; a fold line gives the sum of the marks it
-  hides (``marked``);
-* times (a cycle per word, or None: ``arrival``, ``use``, ``wait``): rows are
-  alike only when every word's time moves by one step, the same in every
-  column and along the whole run, and the words without a time are the same;
-  a fold line gives that step (``mark_step``) and the smallest and largest
-  time it hides (``mark_span``).
-
-Row lines then carry ``marks``, and the summary the range of all marks
-(``mark_range``), for a colour scale.
+``fold`` sends a run of alike rows (the same regions per column, each flat index moving by one
+common step) as its first row, a ``fold`` line and its last row, and a run of empty rows as one
+``empty`` line; ``rows`` serves hidden rows on request, at most ``MAX_ROWS`` at a time. The work
+grows with the elements and the occupied rows, never with the memory's size. A mark of the run
+index (index.py) adds a value per word: a count (``conflicts``) folds only on equal values, a
+time (``arrival``, ``use``, ``wait``) only when every word's time moves by one common step.
 """
 
 from __future__ import annotations

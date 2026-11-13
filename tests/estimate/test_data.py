@@ -1,4 +1,4 @@
-"""The estimate's data side and its work not mapped (D155, C§19), and the round trip."""
+"""The estimate's data side and its work not mapped, and the round trip."""
 
 from __future__ import annotations
 
@@ -55,11 +55,11 @@ def _totals(*graphs):
 
 
 def test_unmapped_work_counts_as_cycles():
-    """D155: an iteration no unit runs counts UNMAPPED_CYCLES_PER_ITERATION (1) cycle over every
+    """An iteration no unit runs counts UNMAPPED_CYCLES_PER_ITERATION (1) cycle over every
     map, spatial ones included, since a tag alone runs nothing; not_mapped skips the spatial
     maps as before. vecmul at N = 2048: 2048 as imported, after the split, and after both tags
     (not mapped 2048, 2048, 256), 256 after the bind, all the accelerator's. dot at N = 512 at
-    C§19's steps: not mapped 1024, 640, 257 as before, totals 1024, 1024 and 1028 (the split
+    the steps: not mapped 1024, 640, 257 as before, totals 1024, 1024 and 1028 (the split
     moves nothing; split_reduce adds the final sum's 4 lanes)."""
     from snax_forge.estimate import UNMAPPED_CYCLES_PER_ITERATION
     from snax_forge.sandbox import bind
@@ -75,7 +75,7 @@ def test_unmapped_work_counts_as_cycles():
     a = split_map(dot, "mult_map", 4)
     b = split_reduce(a, "sum_map", 4)
     got = _totals(dot, a, b)
-    assert [t[1] for t in got] == [1024, 640, 257]  # C§19's not_mapped, unchanged
+    assert [t[1] for t in got] == [1024, 640, 257]  # the not_mapped, unchanged
     assert [t[3] for t in got] == [1024, 1024, 1028]
     d = estimate(b).to_dict()
     assert (d["unmapped_iterations"], d["unmapped_cycles"], d["total_cycles"]) == (1028, 1028, 1028)
@@ -112,7 +112,7 @@ def test_the_estimate_round_trips(name):
 
 @pytest.mark.slow
 def test_the_bank_bound_of_vecmul():
-    """vecmul at N = 2048 (D155): three ports of W words a beat over 32 banks. At W = 16, 6144
+    """vecmul at N = 2048: three ports of W words a beat over 32 banks. At W = 16, 6144
     words take at least 192 cycles of L1 time against the ideal 128, a bound on the streams, not
     on the BUSY_COUNTER (the run's is 194), a note; at
     W = 8 the same 192 is below the ideal 256, no note. Without a platform, no bound."""
@@ -134,7 +134,7 @@ def test_the_bank_bound_of_dot_1_per_group():
     assert [(g.name, g.cycles, g.bank_bound) for g in (mul, total)] == [
         ("vmul", 256, 192), ("vsum", 257, 65)]  # fmt: skip
     assert mul.bank_bound_note is None and total.bank_bound_note is None
-    # at W = 16 the mul's streams, its own only (D155, C§14), need L1 time over its 128 cycles
+    # at W = 16 the mul's streams, its own only, need L1 time over its 128 cycles
     mul, total = estimated("dot_1", N=2048, W=16).groups
     assert mul.bank_bound_note == ("vmul: the streams move 6144 words over 32 banks, at least 192 "
                                    "cycles of L1 time against the ideal 128")  # fmt: skip

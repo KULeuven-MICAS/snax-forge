@@ -1,5 +1,5 @@
 """One L2 size per container (``lower.layout.l2_bytes``): data.h's array, the ELF's symbol
-(run/elf.py) and the DMA's copies (run/convert.py) agree, a tail's padded rows included (D144).
+(run/elf.py) and the DMA's copies (run/convert.py) agree, a tail's padded rows included.
 
 rowsum_3x7 splits A's rows of 7 by W = 4, so they are padded to 8: A, M x 7 int64, takes
 M x 8 words in whole 64-byte beats. At M = 3 that is 192 bytes, as the 168 unpadded ones in

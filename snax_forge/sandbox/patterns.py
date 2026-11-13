@@ -1,59 +1,19 @@
 """Pattern matchers: what a BRM's ``pattern`` part means in a graph.
 
-A BRM's pattern names a ``family`` and gives ``attrs``. The family is
-a matcher registered here; the attrs are its parameters. ``bind`` asks the
-matcher whether a tasklet is an instance of the pattern, and if so which
-tasklet connector feeds which BRM port:
+A BRM's pattern names a ``family``, a matcher registered here (``register_pattern``), and gives
+``attrs``, its parameters. ``bind`` asks it (``match``) whether a tasklet is an instance of the
+pattern and which connector feeds which port, ``matcher(tasklet, attrs, brm, dtypes, scalars)
+-> {connector: port}``, or it raises ``SandboxError`` saying why not. ``scalars`` are the
+scalar operands, which map to no port.
 
-    matcher(tasklet, attrs, brm, dtypes, scalars) -> {connector: port}
-
-``dtypes`` gives each connector's container dtype (the graph's, D143), ``scalars``
-the input connectors that are scalar operands (``bind``'s).
-
-or raises ``SandboxError`` saying why not. A family's matcher is code in the
-sandbox, registered like any other extension (principle 6).
-
-``simd`` (the first family, no attrs): the tasklet's code is one statement
-with one output, in the expression grammar, over its input connectors, each
-array input read once, and int literals (``out = in1 + in2``, ``out = max(in1, 0)``); every
-input connector is read. The array inputs map onto the BRM's input ports in the order
-they first appear, the output onto its one output port; the scalar operands
-(``scalars``, ``bind``'s) map to no port. A fused nest of two plain tasklets
-(``fuse_map``, its second no fold) is matched as the one tasklet ``fused_view``
-composes. What it computes, and so how many inputs it takes and on which ports,
-is ``bind``'s code match: the BRM's code entry whose present input ports take the
-array inputs, in some assignment, and whose code is the tasklet's up to its slots and
-commuting operands (``simd``'s ``op``, ``streams``, ``k``, ``k1`` and ``k2``,
-brm.py's ``Code``).
-
-``reduce`` (D102): the tasklet copies its one input into its one output
-(``out = in1``), and the output memlet folds (``reduce``) with the op
-``attrs.op`` names, from that op's identity for the output container's
-dtype. That is
-what the importer makes of DaCe's ``Reduce``, and what a BRM of family ``reduce``
-(``accumulate``) does: this matcher is the one place where the SNAX-DFG's
-``reduce`` and the BRM's pattern meet, so the BRM names no IR's term.
-
-``lane_fold`` (D149, ``mac``): a fused nest (``fuse_map``), the spatial map
-``bind`` is given with its two tasklets: the first a ``simd`` fold with
-``attrs.op`` over two inputs, writing a local value the second reads at the
-same index; the second a ``reduce`` copy of it with ``attrs.fold``, its
-output indexed by the spatial variable (one partial per lane, from
-``split_reduce``). The connectors are the nest's own (``fused_view``): the
-first tasklet's inputs onto the BRM's inputs in fold order, the second's
-output onto its output. A tasklet is refused with "fuse_map first", a fold
-into one element with "split_reduce first" (D150).
-
-``lane_fold`` without ``attrs.op`` (``lane_accumulate``, no front op): the node
-bound is a spatial map whose body is one tasklet copying its one input into its
-one output (``out = in1``), the output folding (``reduce``) with ``attrs.fold``
-and indexed by the spatial variable, so each lane folds its own element (rowsum
-2's ``y[4 * m_1_t + m_2_s]``). The maps around it are temporal (``bind``'s site), and
-those the input names and the output does not are the ones it folds over. Refused,
-naming what is missing: the tasklet bound instead of its map, a front op (a fused
-nest, or a tasklet that is not a copy: "bind mac"), an output not indexed by the
-lane, and a fold over the bound map itself (the reduced loop spatial: "a fold
-across the lanes binds accumulate").
+- ``simd``: one statement over the input connectors, each array input read once; the array
+  inputs map onto the input ports in the order they first appear. What it computes is
+  ``bind``'s code match (CONTRACTS, "Block runtime model").
+- ``reduce``: a copy (``out = in1``) whose output folds with ``attrs.op``, as the importer
+  makes DaCe's ``Reduce``; the one place the SNAX-DFG's ``reduce`` and a BRM meet.
+- ``lane_fold`` (``mac``): a fused nest (``fused_view``), a ``simd`` front op then a ``reduce``
+  copy with ``attrs.fold``, one partial per lane. Without ``attrs.op`` (``lane_accumulate``):
+  a spatial map of one folding copy, each lane folding its own element over the temporal maps.
 """
 
 from __future__ import annotations
@@ -288,9 +248,9 @@ def _lane_fold(
     if node.kind == "tasklet":
         if any(m.reduce is not None for m in node.outputs.values()):
             raise SandboxError(f"{what}: a {brm.name} folds one partial per lane, this tasklet "
-                               "folds into the output: split_reduce first (D150)")  # fmt: skip
+                               "folds into the output: split_reduce first")  # fmt: skip
         raise SandboxError(f"{what}: a {brm.name} binds a multiply and the fold of its products "
-                           "as one nest: fuse_map first (D150)")  # fmt: skip
+                           "as one nest: fuse_map first")  # fmt: skip
     found = fused_view(node)
     if found is None:
         raise SandboxError(f"{what}: not a fused nest of a multiply and its fold (fuse_map first)")
@@ -315,7 +275,7 @@ def _lane_fold(
                            f"from {fold}'s identity {identity}")  # fmt: skip
     if node.attrs["var"] not in second.outputs[cout].names:
         raise SandboxError(f"{what}: {second.id} folds every lane into one element; a "
-                           f"{brm.name} keeps one partial per lane: split_reduce first (D150)")  # fmt: skip
+                           f"{brm.name} keeps one partial per lane: split_reduce first")  # fmt: skip
     out = next(p for c, p in ports.items() if c in first.outputs)
     return {c: p for c, p in ports.items() if c in first.inputs} | {cout: out}
 

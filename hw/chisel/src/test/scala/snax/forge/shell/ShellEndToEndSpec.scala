@@ -8,9 +8,10 @@ import snax.forge.{ForgeTester, IntType, LaneBits, Seeds, Sink, SnaxGroupCases, 
 /** Each fixture end to end through its `<tag>_shell_wrapper`: per task its CSR values written by name (JOBS, and
   * JOB_BEATS for a fold) and START written 1, as `main.c` does; the inputs fed by an always-ready streamer (each port's
   * data.h array, lane i of beat t element `t * lanes + i` modulo the array's size, in two's complement at the port's
-  * dtype width, D142); STATUS polled until bit 0 reads 0; then BUSY_COUNTER read, and STATUS again: done (2). The
-  * outputs must equal the goldens (NumPy's, `vectors.json`) and the counter the fixture's value, worked from the nest
-  * controller's rule or, for a linked group, C§17's Cycles (`vectors.json`'s `working`).
+  * dtype width); STATUS polled until bit 0 reads 0; then BUSY_COUNTER read, and STATUS again: done (2). The outputs
+  * must equal the goldens (NumPy's, `vectors.json`) and the counter the fixture's value, worked from the nest
+  * controller's rule or, for a linked group, the Cycles of CONTRACTS, "Accelerator RTL spec" (`vectors.json`'s
+  * `working`).
   *
   * Then each linked variant (dot 2–6, matvec 4–6) at N 8 and 16, W 4, on random int64 data of one seed per N (the
   * cycles do not depend on the data, which ShellRandomSpec varies): dot J = 1, matvec J = 2 rows (q_i = Σ_j A_ij · p_j,
@@ -22,12 +23,12 @@ import snax.forge.{ForgeTester, IntType, LaneBits, Seeds, Sink, SnaxGroupCases, 
   * (SerialAccumulate at lanes 1) on its group case `dot5_w1_j2`'s own data: J = 2 jobs of T = 4 beats, the results the
   * case's sums (NumPy's) and the counter its busy cycles.
   *
-  * And dot_1_shared (D169): its two groups on one set's movers through `<tag>_dot_port_mux`, `main.c`'s CSR writes in
-  * its order (vmul's JOBS, PORT_MUX_SEL 0, vmul's START, vsum's JOBS and JOB_BEATS while vmul runs, vmul's STATUS
-  * polled and its BUSY_COUNTER read, PORT_MUX_SEL 1, vsum's START, its STATUS polled and BUSY_COUNTER read), an
-  * always-ready streamer per mover and task: task 1's readers vmul's a and b (random int64, one seed), task 2's reader
-  * 0 the products task 1's writer gave and reader 1 idle. The products NumPy's (wrapping), the sum on the writer's low
-  * word with the other three 0, each counter its unshared twin's (`vecmul`'s and `vsum_tree`'s `vectors.json`, the same
+  * And dot_1_shared: its two groups on one set's movers through `<tag>_dot_port_mux`, `main.c`'s CSR writes in its
+  * order (vmul's JOBS, PORT_MUX_SEL 0, vmul's START, vsum's JOBS and JOB_BEATS while vmul runs, vmul's STATUS polled
+  * and its BUSY_COUNTER read, PORT_MUX_SEL 1, vsum's START, its STATUS polled and BUSY_COUNTER read), an always-ready
+  * streamer per mover and task: task 1's readers vmul's a and b (random int64, one seed), task 2's reader 0 the
+  * products task 1's writer gave and reader 1 idle. The products NumPy's (wrapping), the sum on the writer's low word
+  * with the other three 0, each counter its unshared twin's (`vecmul`'s and `vsum_tree`'s `vectors.json`, the same
   * shapes).
   */
 class ShellEndToEndSpec extends AnyFlatSpec with ForgeTester {

@@ -6,12 +6,12 @@ import org.scalatest.flatspec.AnyFlatSpec
 import snax.forge.{ForgeTester, IntType, LaneBits, Seeds}
 import snax.forge.shell.AcceleratorSpec.{CsrSpec, GroupSpec, PortSpec, UnitSpec}
 
-/** A unit's scalar CSRs through `<tag>_shell_wrapper` (C§17): axpy's one SimdLanes unit at axpby with k1 from its CSR,
-  * as `accelerator.json` gives it (`scalars` `{"k1": <opType>}`), at int32 (K1 at offset 2, 32 bits; STATUS 3,
-  * BUSY_COUNTER 4) and int64 (K1_LO 2 and K1_HI 3, 32 bits each, low word first; STATUS 4, BUSY_COUNTER 5). Per seed:
-  * K1 written and read back, then runs of random a and b with a random k1 each, written as `main.c` does (K1, or K1_LO
-  * then K1_HI) before START, the outputs NumPy's `k1 * a + b` at the op type, so the datapath's pin takes what the
-  * program last wrote; with k2 from its CSR too (`K2` after `K1`), `k1 * a + k2 * b`.
+/** A unit's scalar CSRs through `<tag>_shell_wrapper` (CONTRACTS, "Accelerator RTL spec"): axpy's one SimdLanes unit at
+  * axpby with k1 from its CSR, as `accelerator.json` gives it (`scalars` `{"k1": <opType>}`), at int32 (K1 at offset 2,
+  * 32 bits; STATUS 3, BUSY_COUNTER 4) and int64 (K1_LO 2 and K1_HI 3, 32 bits each, low word first; STATUS 4,
+  * BUSY_COUNTER 5). Per seed: K1 written and read back, then runs of random a and b with a random k1 each, written as
+  * `main.c` does (K1, or K1_LO then K1_HI) before START, the outputs NumPy's `k1 * a + b` at the op type, so the
+  * datapath's pin takes what the program last wrote; with k2 from its CSR too (`K2` after `K1`), `k1 * a + k2 * b`.
   */
 class ShellScalarSpec extends AnyFlatSpec with ForgeTester {
 

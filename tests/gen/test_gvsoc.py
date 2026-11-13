@@ -1,5 +1,5 @@
-"""The generator (D134): vecadd on snax_forge as its description files (the cluster, one
-streamer per set, accelerator.json; D157), vecmul, vsum, and every refusal."""
+"""The generator: vecadd on snax_forge as its description files (the cluster, one
+streamer per set, accelerator.json), vecmul, vsum, and every refusal."""
 
 from __future__ import annotations
 
@@ -57,8 +57,8 @@ TEMPLATE_W4 = {
         "spatial_bounds": [[4]], "temporal_dim": [1], "num_channel": [4], "fifo_depth": [8],
     },
 }  # fmt: skip
-# vecadd's accelerator at W = 4 (C§17's example): one group of one SimdLanes unit,
-# each port int64 (D143)
+# vecadd's accelerator at W = 4: one group of one SimdLanes unit,
+# each port int64
 GROUP_CSRS = [
     {"name": "START", "access": "rw", "offset": 0, "width": 1},
     {"name": "JOBS", "access": "rw", "offset": 1, "width": 32},
@@ -130,7 +130,7 @@ def test_vecadd_w4_files_and_manifest(w4):
         "obs_marks.json", "manifest.json",
     ]  # fmt: skip
     assert m.program == "main.c"
-    marks = json.loads((out / "obs_marks.json").read_text())  # the quiet build's (D135)
+    marks = json.loads((out / "obs_marks.json").read_text())  # the quiet build's
     assert [x["kind"] for x in marks] == ["dma_in", "dma_in", "streamer_config", "acc_config",
                                           "run", "dma_out", "check"]  # fmt: skip
     assert sorted(str(f.relative_to(out)) for f in out.rglob("*") if f.is_file()) == sorted(m.files)
@@ -167,7 +167,7 @@ def test_the_streamer_file_is_the_hjsons_template(w4):
 
 
 def test_the_accelerator_file_is_vecadds_description(w4):
-    """Plain JSON, no header comment: its design_point names the source (C§17)."""
+    """Plain JSON, no header comment: its design_point names the source."""
     out, _ = w4
     text = (out / "accelerator.json").read_text()
     assert json.loads(text) == ADD_W4
@@ -246,7 +246,8 @@ def test_streamer_csrs_are_snax_streamers(w4):
 
 def test_every_generated_file_starts_with_the_one_header(w4):
     """hjson, headers, data.h and main.c: the generator, the design point, the command;
-    accelerator.json and obs_marks.json are plain JSON; a set's streamer header is snax_cluster's text, its
+    accelerator.json and obs_marks.json are plain JSON; a set's streamer header is snax_cluster's
+    text, its
     timestamp line naming the design point (headers.py)."""
     out, m = w4
     head = generated_header("design/vecadd/design_point.json", "")
@@ -368,7 +369,7 @@ def test_two_out_folders_give_byte_identical_files(tmp_path, monkeypatch):
     for f in ma.files[:-1]:
         if f not in ("accelerator.json", "obs_marks.json") and not f.startswith(
             "include/streamer_"
-        ):  # C§17, headers.py
+        ):  # headers.py
             head = generated_header("design/vecadd/design_point.json", "")
             assert (a / f).read_text().startswith(head), f
 
@@ -673,7 +674,7 @@ def _edited(monkeypatch, binding=None, timing=None):
     ids=["null binding", "datapath", "controller", "drain", "latency", "ii"],
 )  # fmt: skip
 def test_what_describe_refuses(tmp_path, monkeypatch, binding, timing, code):
-    """A null binding, an unregistered datapath, a controller other than counted (D129: one
+    """A null binding, an unregistered datapath, a controller other than counted (one
     registered later is not generated), a drain (the nest controller has none), a latency
     other than the datapath's, an II other than 1."""
     monkeypatch.setitem(CONTROLLERS, "other", "a test's")
@@ -721,7 +722,7 @@ def test_the_accelerators_counter_may_land_on_0x5fd_not_past():
 
 def _two_sets(k: int) -> Description:
     """Two vecadd-shaped accelerators a and b, b's unit with ``k`` R/W CSRs of its own, the
-    offsets running on from a's (D157)."""
+    offsets running on from a's."""
     from dataclasses import replace as dc_replace
 
     from snax_forge.gen import Csr
@@ -736,7 +737,7 @@ def _two_sets(k: int) -> Description:
 
 
 def test_the_whole_entrys_layout_packs_the_sets_from_960():
-    """b_0 = 960, b_{k+1} = b_k + s_k + c_k (C§16): set a's streamer 960-977 and own 978-981,
+    """b_0 = 960, b_{k+1} = b_k + s_k + c_k: set a's streamer 960-977 and own 978-981,
     set b's streamer 982-999 and own from 1000; gen.csrs when the last set's last CSR passes
     0x5FD, the whole design counted."""
     templates = {"a": TEMPLATE_W4, "b": TEMPLATE_W4}
@@ -756,7 +757,7 @@ def test_the_whole_entrys_layout_packs_the_sets_from_960():
 
 
 # =============================================================================
-# Narrow designs (D142): the streamer in words, each port's type
+# Narrow designs: the streamer in words, each port's type
 # =============================================================================
 
 

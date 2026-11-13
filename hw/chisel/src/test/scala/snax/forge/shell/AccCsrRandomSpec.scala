@@ -11,20 +11,20 @@ import snax.forge.shell.AcceleratorSpec.{CsrSpec, GroupSpec, LinkSpec, PortMuxSp
   * (`Model`).
   *
   * Per seed, `Layouts` CSR layouts of 1..3 groups, each a fold (with JOB_BEATS) or not, the offsets in CSR order, at a
-  * random job_width (1, 5, 8, 16 or 32) and busy_counter_width (1, 2, 3, 8 or 32; D152), each driven for `Cycles`
-  * cycles: a core that offers a request after a random gap and holds it until taken (reads, writes and starts of a
-  * random group, in range, just past the last CSR and anywhere in 32 bits), `rsp.ready` and each group's `starts` ready
-  * stalled at random, each group's busy random and its done pulse now and then. A write to a busy group's read-write
-  * CSRs (START with bit 0 set or clear, JOBS, JOB_BEATS, a scalar) is held until the group is idle, then taken (D168);
-  * another group's write and every read go through. Checked every cycle: `req.ready`, `rsp.valid`, `rsp.bits` while
-  * valid (START 0, a register its written value's low bits, STATUS the sticky done and busy, BUSY_COUNTER through the
-  * read mux from `<tag>_peripherals`, whose rule `AccPeripheralsSpec` checks: the model keeps it only to know what a
-  * read gives), each group's `starts.valid` and its `settings`, JOBS and each JOB_BEATS in unit order (a group of 0, 1
-  * or 2 folds: none, or a JOB_BEATS per fold). Each unit may hold a scalar after its JOB_BEATS (`K1` of 8, 16 or 32
-  * bits, or `K1_LO` and `K1_HI` at 64, each with the pin `k1`): `scalars` must give each one's register every cycle.
-  * The second layout of a seed, and each other at even odds, is a shared set's (D169), with PORT_MUX_SEL after the last
-  * group's CSRs at the bits a group's index takes (at least 1): read back as written, reset 0, a write taken at once
-  * even while every group is busy (it is no group's), and `portMuxSel` its register every cycle.
+  * random job_width (1, 5, 8, 16 or 32) and busy_counter_width (1, 2, 3, 8 or 32), each driven for `Cycles` cycles: a
+  * core that offers a request after a random gap and holds it until taken (reads, writes and starts of a random group,
+  * in range, just past the last CSR and anywhere in 32 bits), `rsp.ready` and each group's `starts` ready stalled at
+  * random, each group's busy random and its done pulse now and then. A write to a busy group's read-write CSRs (START
+  * with bit 0 set or clear, JOBS, JOB_BEATS, a scalar) is held until the group is idle, then taken; another group's
+  * write and every read go through. Checked every cycle: `req.ready`, `rsp.valid`, `rsp.bits` while valid (START 0, a
+  * register its written value's low bits, STATUS the sticky done and busy, BUSY_COUNTER through the read mux from
+  * `<tag>_peripherals`, whose rule `AccPeripheralsSpec` checks: the model keeps it only to know what a read gives),
+  * each group's `starts.valid` and its `settings`, JOBS and each JOB_BEATS in unit order (a group of 0, 1 or 2 folds:
+  * none, or a JOB_BEATS per fold). Each unit may hold a scalar after its JOB_BEATS (`K1` of 8, 16 or 32 bits, or
+  * `K1_LO` and `K1_HI` at 64, each with the pin `k1`): `scalars` must give each one's register every cycle. The second
+  * layout of a seed, and each other at even odds, is a shared set's, with PORT_MUX_SEL after the last group's CSRs at
+  * the bits a group's index takes (at least 1): read back as written, reset 0, a write taken at once even while every
+  * group is busy (it is no group's), and `portMuxSel` its register every cycle.
   */
 class AccCsrRandomSpec extends AnyFlatSpec with ForgeTester {
 

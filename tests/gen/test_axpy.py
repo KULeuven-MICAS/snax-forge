@@ -1,4 +1,4 @@
-"""axpy's K1 through design, LOWER, the generator and the program (C§9, C§17).
+"""axpy's K1 through design, LOWER, the generator and the program.
 
 axpy bound with its slot k1 read from ``alpha`` (a kernel's scalar argument): the design gives
 alpha no streamer and no L1 layout, only the core's memory (L2 on snax_forge); the accelerator

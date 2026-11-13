@@ -1,4 +1,4 @@
-"""A tail's padding in memory and in the task list (D144): the layouts over the padded shape,
+"""A tail's padding in memory and in the task list: the layouts over the padded shape,
 the DMA's whole beats, the firing count and the rate; main.c's self-check over valid
 elements."""
 

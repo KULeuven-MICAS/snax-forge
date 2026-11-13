@@ -1,4 +1,4 @@
-"""The design checks (D85): one case per problem code, each naming its fix."""
+"""The design checks: one case per problem code, each naming its fix."""
 
 from __future__ import annotations
 
@@ -257,7 +257,7 @@ def _dtypes(**by):
 
 
 def test_a_node_whose_containers_break_the_dtype_rule():
-    """A hand-edited graph: an int32 output under int64 inputs (D143)."""
+    """A hand-edited graph: an int32 output under int64 inputs."""
     (p,) = problems(design(edit_graph=_dtypes(C="int32")))
     assert (p.code, p.where) == ("connect.dtype", "node add")
     assert p.message.startswith("output out is int32, narrower than input a (int64)")
@@ -292,7 +292,7 @@ def _on_snax_forge(graph: Graph) -> Design:
 
 
 def test_several_accelerators_share_the_one_slot():
-    """D157: dot's two groups unencapsulated, and two chained vecadds, are two accelerators, two
+    """Dot's two groups unencapsulated, and two chained vecadds, are two accelerators, two
     streamer sets of the one entry on snax_forge's slot: no design check refuses them
     (gen.instances retired), on snax_forge as on small16."""
     dot = Graph.load(FIXTURES / "dot_accelerated.snaxdfg")
@@ -314,10 +314,10 @@ def _vecmul(w: int) -> Graph:
 
 @pytest.mark.slow
 def test_more_crossbar_inputs_than_the_platform_takes_are_refused():
-    """connect.xbar_inputs (D85): vecmul at W = 32 has 96 streamer channels, with snax_forge's
-    one core (D170) and AXI 98 crossbar inputs, over a platform taking 64; W = 16 has 50 and
+    """connect.xbar_inputs: vecmul at W = 32 has 96 streamer channels, with snax_forge's
+    one core and AXI 98 crossbar inputs, over a platform taking 64; W = 16 has 50 and
     passes;
-    the platforms take 128 (snax-gvsoc's crossbar, PORT1), which lets W = 32 through (with the
+    the platforms take 128 (snax-gvsoc's crossbar), which lets W = 32 through (with the
     note design.xbar_inputs, tests/design/test_share_ports.py)."""
     from snax_forge.design.check import xbar_inputs
 
@@ -327,7 +327,7 @@ def test_more_crossbar_inputs_than_the_platform_takes_are_refused():
     assert (p.where, p.message) == ("acc", (
         "98 TCDM crossbar inputs, the platform takes at most 64 (96 streamer channels, 2 for "
         "the core and AXI; l1.max_xbar_inputs, the limit SNAX-GVSoC's crossbar asserts)"))  # fmt: skip
-    assert p.fix == "fewer lanes, or share_ports on a container between two accelerators (D169)"
+    assert p.fix == "fewer lanes, or share_ports on a container between two accelerators"
     half = _on_snax_forge(_vecmul(16))
     assert problems(half) == [] and xbar_inputs(half) == (48, 2)
     assert problems(_on_snax_forge(_vecmul(32))) == []
@@ -401,7 +401,7 @@ def test_a_pin_must_name_a_container_and_one_of_its_memories():
     assert p.code == "memory.pin" and "does not live in 'l2'" in p.message
     (p,) = problems(with_memory([("C.l2.base", 0)]))
     assert (p.code, p.where) == ("memory.pin", "memory.C.l2.base")
-    assert "the program's link places C's l2 array, not the plan (D86)" in p.message
+    assert "the program's link places C's l2 array, not the plan" in p.message
 
 
 def test_an_unknown_pass_is_named():
@@ -460,7 +460,7 @@ def test_a_moved_layout_must_start_on_a_beat():
 
 
 def test_a_moved_container_is_padded_to_whole_beats():
-    """N = 60: 480 bytes, moved as 8 beats; the next container starts after the padding (D105)."""
+    """N = 60: 480 bytes, moved as 8 beats; the next container starts after the padding."""
 
     def n60(g):
         g["symbols"]["N"] = 60
@@ -516,7 +516,7 @@ def test_a_pin_below_a_nonzero_base_gets_the_pin_at_the_memorys_first_byte():
 
 
 def test_an_l2_layout_must_fit_the_l2():
-    """An L2 layout has base 0, the link placing its array (D86): only its size is checked."""
+    """An L2 layout has base 0, the link placing its array: only its size is checked."""
     got = problems(with_memory([], edit_platform=lambda d: d["l2"].update(size_bytes=256)))
     assert [(p.code, p.where) for p in got] == [("memory.fit", f"{c} in l2") for c in "ABC"]
     assert got[0].message == "spans bytes [0, 512); L2 is 256 B"
@@ -524,7 +524,7 @@ def test_an_l2_layout_must_fit_the_l2():
 
 
 def test_layouts_stay_below_snruntimes_top_of_l1():
-    """snax_forge's hjson has 1 core (D170): snRuntime keeps 1 KiB of stack and 256 B at the top
+    """snax_forge's hjson has 1 core: snRuntime keeps 1 KiB of stack and 256 B at the top
     of L1 (start.S), so C's L1 layout (512 bytes, moved) may end there but not one beat past."""
     l1_end = 268435456 + 131072
     top = 1 * RUNTIME_STACK + RUNTIME_MARGIN
@@ -592,7 +592,7 @@ def test_memory_waits_for_connect():
 
 
 def test_each_firing_loop_gives_a_streamer_loop():
-    """temporal_dims comes from the graph (D84): two firing loops, two streamer loops, with no
+    """temporal_dims comes from the graph: two firing loops, two streamer loops, with no
     platform change."""
     d = design(edit_graph=two_loops)
     assert problems(d) == []
@@ -612,7 +612,7 @@ def test_a_tile_map_is_not_lowered_yet():
 
 
 # =============================================================================
-# The note char.missing (C§14, C§20)
+# The note char.missing
 # =============================================================================
 
 
@@ -652,7 +652,7 @@ def test_a_buffer_link_is_noted_with_its_depth(monkeypatch):
 
 
 # =============================================================================
-# The note cost.extrapolated (C§14, C§20, D167)
+# The note cost.extrapolated
 # =============================================================================
 
 

@@ -1,95 +1,20 @@
-"""SDFG importer (D71): a simplified DaCe SDFG -> a ``.snaxdfg`` graph.
+"""SDFG importer: a simplified DaCe SDFG -> a ``.snaxdfg`` graph (CONTRACTS, "SNAX-DFG").
 
-The importer derives and decides nothing (principle 4). It reads the
-expanded SDFG that ``pixi run sdfg <kernel>`` writes: the simplified one
-after ``sdfg/expand.py`` (``import_kernel`` builds and expands it
-in-process from the kernel's ``SPEC``; ``import_sdfg`` takes any SDFG as
-given) and maps it onto the format of D71:
+``import_kernel`` builds a kernel's SDFG from its ``SPEC`` and expands it (sdfg/expand.py);
+``import_sdfg`` takes any SDFG as given. Neither derives nor decides anything: arrays become
+containers (a non-transient Scalar one of shape [1] with ``sdfg.scalar``), the one state the
+body, each MapEntry/MapExit pair one map per parameter (outermost first), a Tasklet a tasklet,
+and a Reduce library node one map per input dimension around ``out = in1`` with a ``reduce``.
+The only folds done here: a Reduce's scalar copied into an array, or its view copied whole into
+a non-transient array, becomes a direct write. A constant cast to the tasklet's output dtype
+(``dace.int32(0)``) becomes the constant.
 
-    SDFG                              .snaxdfg
-    ------------------------------    ---------------------------------------
-    free symbols                      symbols, each null
-    arrays                            containers: shape, dtype, transient
-    a non-transient Scalar            a container of shape [1], attr
-                                      ``sdfg.scalar``, read as ``alpha[0]``
-    one state                         the graph's body, in topological order
-    MapEntry / MapExit pair           one map node (var, range) per parameter,
-                                      nested outermost first in DaCe's order;
-                                      the innermost's body the map's scope, in
-                                      topological order
-    Tasklet                           tasklet node: code, connector memlets
-    edges into / out of a tasklet     memlets on its connectors
-    Reduce library node               nested maps, one per input dimension,
-                                      around a tasklet ``out = in1`` whose
-                                      output memlet has a ``reduce`` (D102)
-    access nodes, map connectors,     not stored: derived
-    outer memlets on a map
-
-What DaCe's simplify already did is kept as it is: for vecadd it folded the
-transient-plus-copy of ``C[:] = A + B`` into a direct write into ``C``, so
-there is nothing left to fold. A copy between containers that simplify left
-is an error here.
-
-**Reductions**. DaCe writes ``np.sum(A * B)`` as a map into a
-transient, a ``Reduce`` library node, and, for a result stored with
-``out[0] = ...``, a scalar transient copied into ``out`` by a tasklet
-``__out = __inp``; simplify leaves that copy. The importer folds it, as
-simplify folded vecadd's (with the view below, the only folds it does
-itself): the Reduce writes straight into the copy's target, and the scalar
-and the copy are gone. It
-is folded only when the scalar has that one writer and that one copy as its
-only reader; any other use of a Reduce's scalar is an error. A view is
-folded the same way: ``B[:] = np.sum(A, axis=1)`` reduces into a transient
-view that is copied, access node to access node, into ``B``; when that copy
-is the view's only use and moves the whole view into a non-transient array
-of its shape, the Reduce writes ``B`` and the view and the copy are gone.
-Any other view, or a view used any other way, is an error. The Reduce
-then becomes a map per input dimension (``sum_map``, ``prod_map``,
-``min_map``, ``max_map`` after its reduction type), variables by depth as
-for any map, around a tasklet (``sum``, ...) with code ``out = in1``. The
-input memlet takes one element per iteration; the output memlet drops the
-reduced dimensions and carries ``reduce``, the SNAX-DFG's own name for
-what DaCe calls write-conflict resolution: the op (``add``, ``mul``, ``min``,
-``max``) and the Reduce's identity (the op's for the dtype when DaCe gives
-none). dot becomes ``mult_map`` then ``sum_map``, with ``tmp0`` between
-them.
-
-**Names** (D75). Containers keep the kernel's names (``A``, ``B``,
-``C``); a transient loses its underscores (``__tmp0`` -> ``tmp0``). Maps and
-tasklets take their DaCe label without underscores, lower case
-(``_Add__map`` -> ``add_map``, ``_Add_`` -> ``add``), with ``_1``, ``_2``
-added on a clash. A map variable is named after its dimension (loops.py's
-``import_names``): over ``0:X``, X one symbol, ``lower(X)`` (rowsum's ``m`` and ``n``,
-``A[m, n]``), with ``loop.dim`` its base and ``loop.piece`` 1; any other range, or a name
-already taken (a container, a symbol, an enclosing map's base: the second map over N in one
-nest), keeps the importer's name by depth (``i``, ``j``, ``k``, ``l``). A tasklet connector
-loses its underscores (``__in1`` -> ``in1``), and the tasklet's code is rewritten to match,
-always skipping a name already taken.
-
-**Constant casts.** DaCe writes a constant in an int32 tasklet as a cast
-(relu: ``max(__in1, dace.int32(0))``). A call ``dace.<integer type>(<int
-constant>)`` becomes the constant when the type is the dtype of the
-tasklet's output and the constant fits in it, before the grammar check.
-Any other cast (of a value, to another type, to a float type, or of a
-constant that does not fit) is an error naming open item 37.
-
-**Supported** is what vecadd needs, plus nothing that would need a
-decision: one state; arrays with the default strides and no offset;
-non-transient scalars (the ``sdfg.scalar`` attr); maps over one or more
-parameters with independent ranges and a positive constant step, as nested
-maps; Python tasklets whose code is one ``output = expression`` per output
-in the expression grammar (``+ - * //``, ``max``, ``min``), after constant
-casts are folded; plain memlets; the ``Reduce`` library node at the top
-level, over unit-step ranges, its scalar copy or its view folded.
-Everything else raises ``SdfgImportError`` naming the construct and, where
-one exists, the open item or task that adds it: several states (open item
-36), other library nodes (MatMul and Transpose are expanded before import,
-``sdfg/expand.py``; a Transpose it leaves is refused here), a ``wcr`` memlet
-DaCe wrote itself (a fold into the element's contents), a map range that
-depends on another parameter of the same map, transient scalars and views
-other than a Reduce's folded ones, nested SDFGs, other casts and code
-outside the grammar (open item 37). The kernel tiers' front-end work
-extends this list.
+Names: containers keep the kernel's (a transient's without underscores); maps, tasklets and
+connectors take their DaCe name lower case without underscores (``clean``, ``fresh_all``),
+``_1`` added on a clash; a map variable is named after its dimension (loops.py's
+``import_names``), else by depth (``i``, ``j``, ...). Anything else (several states, other
+library nodes, nested SDFGs, a ``wcr`` memlet, dependent map ranges, other casts or views, code
+outside the grammar) raises ``SdfgImportError`` naming the construct.
 """
 
 from __future__ import annotations
@@ -157,7 +82,7 @@ def _value(v: Any, rename: dict[str, str], what: str) -> Value:
     try:
         expr.check(text, what)
     except ExprError as e:
-        raise SdfgImportError(f"{e} (outside the expression grammar, open item 37)") from None
+        raise SdfgImportError(f"{e} (outside the expression grammar)") from None
     return expr.substitute(text, rename)
 
 
@@ -212,9 +137,10 @@ class _Importer:
         states = list(self.sdfg.states())
         if len(states) != 1:
             labels = [s.label for s in states]
+            # control flow is open item 36
             raise SdfgImportError(
                 f"{self.name}: {len(states)} states {labels}; only one is imported "
-                "(control flow is open item 36)"
+                "(no control flow yet)"
             )
         (self.state,) = states
         symbols = sorted(str(s) for s in self.sdfg.free_symbols)
@@ -242,7 +168,7 @@ class _Importer:
             if scalar and d.transient:
                 raise SdfgImportError(
                     f"{what}: a transient Scalar is not imported (only a Reduce's result copied "
-                    "into a container is folded, D102)"
+                    "into a container is folded)"
                 )
             if type(d) is not dace.data.Array and not scalar:
                 raise SdfgImportError(
@@ -273,7 +199,7 @@ class _Importer:
                 continue
             if isinstance(n, dn.LibraryNode):
                 raise SdfgImportError(
-                    f"{what}: library node {type(n).__name__} is not imported (only Reduce, D102)"
+                    f"{what}: library node {type(n).__name__} is not imported (only Reduce)"
                 )
             if isinstance(n, dn.NestedSDFG):
                 raise SdfgImportError(f"{what}: nested SDFGs are not imported")
@@ -345,7 +271,7 @@ class _Importer:
             if not ok:
                 raise SdfgImportError(
                     f"{what}: its result {tmp.data!r} is used other than by one copy into a "
-                    "container; only that copy is folded (D102)"
+                    "container; only that copy is folded"
                 )
             self.reduce_out[red] = st.out_edges(copy)[0].data
             self.skip.add(copy)
@@ -450,7 +376,7 @@ class _Importer:
         if identity is None:
             identity = REDUCE_OPS[op].identity(dtype)
         elif int(identity) != identity:
-            raise SdfgImportError(f"{what}: identity {identity!r} is not an integer (D28)")
+            raise SdfgImportError(f"{what}: identity {identity!r} is not an integer")
         tasklet = Node(
             fresh(base, self.ids),
             "tasklet",
@@ -611,7 +537,7 @@ def _fold_casts(code: str, dtypes: set[str], what: str) -> str:
     """Tasklet code with each ``dace.<int type>(<int constant>)`` replaced by the constant.
 
     Only a cast to the type of the tasklet's output (``dtypes``, one type)
-    of a constant that fits in it; any other cast is an error (open item 37).
+    of a constant that fits in it; any other cast is an error.
     """
     try:
         tree = ast.parse(code)
@@ -642,7 +568,7 @@ def _fold_casts(code: str, dtypes: set[str], what: str) -> str:
                 return ast.Constant(value)
             raise SdfgImportError(
                 f"{what}: cast {ast.unparse(node)!r} is not imported, {why} (only a constant "
-                "cast to the output's type is; open item 37)"
+                "cast to the output's type is)"
             )
 
     return ast.unparse(Fold().visit(tree))
@@ -653,9 +579,7 @@ def _rename_code(code: str, conns: dict[str, str], what: str) -> str:
     try:
         return expr.rename_code(code, conns)
     except ExprError as e:
-        raise SdfgImportError(
-            f"{what}: {e} (outside the expression grammar, open item 37)"
-        ) from None
+        raise SdfgImportError(f"{what}: {e} (outside the expression grammar)") from None
 
 
 # =============================================================================

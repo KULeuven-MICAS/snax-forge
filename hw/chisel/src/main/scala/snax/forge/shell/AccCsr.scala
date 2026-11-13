@@ -17,8 +17,8 @@ class CsrRsp extends Bundle {
   val data = UInt(32.W)
 }
 
-/** `<tag>_csr`: the generated accelerator's own CSR manager (D130) over `accelerator.json`'s CSRs (C§17), the
-  * accelerator's interface (D152), snax_cluster's `ReqRspManager` protocol as it is
+/** `<tag>_csr`: the generated accelerator's own CSR manager over `accelerator.json`'s CSRs (CONTRACTS, "Accelerator RTL
+  * spec"), the accelerator's interface, snax_cluster's `ReqRspManager` protocol as it is
   * (`hw/chisel/src/main/scala/snax/reqRspManager/ReqRspManager.scala` at 05615e4), for 32-bit accesses without strobes.
   * Each CSR has its width (`AcceleratorSpec.CsrSpec`); a read gives its bits, the upper ones 0.
   *
@@ -27,24 +27,24 @@ class CsrRsp extends Bundle {
   *     does nothing.
   *   - Every other read-write CSR is a register of its width (JOBS and JOB_BEATS: job_width, a unit's scalar its
   *     dtype's bits), which takes a write's low bits when the request fires. Per group, JOBS and each JOB_BEATS in unit
-  *     order leave as wires (`settings(g)`) to its control unit, which reads them through the run with no copy (D168),
-  *     as a scalar's CSRs (those with a `pin`, after its unit's JOB_BEATS) drive `scalars`, one element per CSR in CSR
+  *     order leave as wires (`settings(g)`) to its control unit, which reads them through the run with no copy, as a
+  *     scalar's CSRs (those with a `pin`, after its unit's JOB_BEATS) drive `scalars`, one element per CSR in CSR
   *     order, to the datapath: the wrapper joins a 64-bit one's two (low word first) onto its pin.
   *   - While a group is busy, a write to any of its read-write CSRs (START with bit 0 set or clear, JOBS, each
   *     JOB_BEATS, each scalar) is held, `req.ready` low, until E + 1, E the cycle its run ends, so its settings stay
-  *     constant through the run (D168); a write to another group's CSRs and every read go through.
+  *     constant through the run; a write to another group's CSRs and every read go through.
   *   - Per group, from its control unit's `busy` and `done` (the done pulse, high in the run's last cycle E):
   *     - STATUS {done, busy}: done is sticky, set by the done pulse, so it reads 1 from E + 1, and cleared by an
   *       accepted start, so it reads 0 from a + 1; a set wins over a clear in the same cycle (the empty run: STATUS
   *       reads 2 from a + 1).
-  *     - BUSY_COUNTER, kept by the submodule `<tag>_peripherals` (`AccPeripherals`, D168) from the accepted start and
-  *       busy, read here: at c the busy cycles after a and before c, saturating at 2^w - 1 for its width w.
+  *     - BUSY_COUNTER, kept by the submodule `<tag>_peripherals` (`AccPeripherals`) from the accepted start and busy,
+  *       read here: at c the busy cycles after a and before c, saturating at 2^w - 1 for its width w.
   *   - A read is answered in the cycle it fires, from the registers or the read-only CSRs in that cycle; when `rsp` is
   *     not ready the answer is kept (the widest CSR's bits) and `req.ready` stays low until it leaves.
-  *   - A set whose groups share its movers (D169) has PORT_MUX_SEL after its last group's CSRs: a register of its
-  *     width, reset 0, read back as written, which a write sets at once (it belongs to no group, so no write to it is
-  *     held: the program writes it only after the set's previous task), leaving as a wire (`portMuxSel`, one element
-  *     per shared set in set order) to the set's `<tag>_<set>_port_mux`.
+  *   - A set whose groups share its movers has PORT_MUX_SEL after its last group's CSRs: a register of its width, reset
+  *     0, read back as written, which a write sets at once (it belongs to no group, so no write to it is held: the
+  *     program writes it only after the set's previous task), leaving as a wire (`portMuxSel`, one element per shared
+  *     set in set order) to the set's `<tag>_<set>_port_mux`.
   *   - Writes get no response. A read past the last CSR answers 0 and a write to a read-only CSR or past the last is
   *     dropped (ReqRspManager asserts on both).
   */
@@ -89,6 +89,7 @@ class AccCsr(spec: AcceleratorSpec) extends Module {
     c.offset -> reg
   }
 
+  // NB (D168): a write to a busy group's CSRs is held until the group is idle; SNAX-GVSoC models the hold.
   // Per group: its settings out, a request that is its start and the start's handshake, a write held while it is
   // busy (its read-write CSRs are contiguous, START first)
   private val held     = groups.zipWithIndex.map { case (g, i) =>
@@ -115,7 +116,7 @@ class AccCsr(spec: AcceleratorSpec) extends Module {
     }
     Cat(done, io.busy(i))
   })
-  // BUSY_COUNTER, in the submodule `<tag>_peripherals` (D168)
+  // BUSY_COUNTER, in the submodule `<tag>_peripherals`
   private val peripherals = Module(AccPeripherals(spec))
   peripherals.io.start := VecInit(accepted)
   peripherals.io.busy  := io.busy

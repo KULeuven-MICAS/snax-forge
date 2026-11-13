@@ -1,4 +1,4 @@
-"""Where a task list waits (D64): ``placed_waits`` on vecadd's and vsum's design points.
+"""Where a task list waits: ``placed_waits`` on vecadd's and vsum's design points.
 
 Each test writes a task list and reads its placed waits back in the shape of
 helpers.shape: configures, waits and starts in program order.

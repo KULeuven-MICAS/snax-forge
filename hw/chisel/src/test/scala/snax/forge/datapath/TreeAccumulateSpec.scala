@@ -7,13 +7,13 @@ import org.scalatest.flatspec.AnyFlatSpec
 import snax.forge.{ForgeTester, IntType, LaneBits, Seeds}
 import snax.forge.elementwise.ElementwiseModel
 
-/** `TreeAccumulate`: its types on fixed vectors (D143: each lane cast to the output type, sign-extended from a signed
-  * input, before the tree, the tree and the register wrapping at the output type; each sum NumPy's
+/** `TreeAccumulate`: its types on fixed vectors (each lane cast to the output type, sign-extended from a signed input,
+  * before the tree, the tree and the register wrapping at the output type; each sum NumPy's
   * `x.astype(out).sum(dtype=out)`, taken once through the tree, one beat of all the values, and once through the
   * register, one value per beat), then random beats with `fire` and `first` driven at random against the model: `acc`
-  * takes the beat's sum on a fire with `first`, adds it on a fire without, and holds otherwise. Seeded (D163, B2 R5),
-  * at W = 1, 2 and 4: a random seed each cycle, and a fire with `first` takes seed + the beat's sum; matvec_acc's
-  * worked example at W = 2, rows (1, 2, 3, 4) · p = (1, 2, 0, 1) from q = 1: 6, then 10.
+  * takes the beat's sum on a fire with `first`, adds it on a fire without, and holds otherwise. Seeded, at W = 1, 2 and
+  * 4: a random seed each cycle, and a fire with `first` takes seed + the beat's sum; matvec_acc's worked example at W =
+  * 2, rows (1, 2, 3, 4) · p = (1, 2, 0, 1) from q = 1: 6, then 10.
   */
 class TreeAccumulateSpec extends AnyFlatSpec with ForgeTester {
 

@@ -1,5 +1,5 @@
 """run/cluster.py: the cluster as a run is named, from the description files (the slot's sets
-form, D157) and the design point."""
+form) and the design point."""
 
 import json
 
@@ -47,7 +47,8 @@ def test_csrs_as_the_generated_header_has_them(cluster):
     START 0x3d2, JOBS 0x3d3, STATUS 0x3d4 (busy, bit 0), BUSY_COUNTER 0x3d5."""
     a = cluster.accelerator
     c = a.csrs
-    assert (c.streamer_first, c.streamer_start, c.streamer_busy, c.streamer_last) == (
+    (s,) = c.sets
+    assert (s.first, s.start, s.busy, s.last) == (
         0x3C0,
         0x3CF,
         0x3D0,
@@ -76,7 +77,7 @@ def test_csrs_agree_with_the_generator(k):
     g = csr_layout(templates, acc)
     n = g.accelerator
     ((r,),) = (g.streamers,)
-    assert (c.streamer_first, c.streamer_last) == (r.first, r.last)
+    assert (c.sets[0].first, c.sets[0].last) == (r.first, r.last)
     assert (c.start, c.busy, c.counter) == (n["ACC_RW_START"], n["ACC_RO_STATUS"],
                                             n["ACC_RO_BUSY_COUNTER"])  # fmt: skip
     assert c.fields == {k: v for k, v in n.items() if "_RW_" in k and k != "ACC_RW_START"}
@@ -100,11 +101,6 @@ def test_the_word_interleaved_map_and_the_dma_beat(cluster):
     assert c.bank_row(0x100005F8) == (31, 5)
 
 
-def test_round_trip(cluster):
-    c = cluster
-    assert Cluster.from_dict(json.loads(json.dumps(c.to_dict()))) == c
-
-
 @pytest.mark.parametrize(
     ("edit", "code"),
     [
@@ -125,7 +121,7 @@ def test_a_cluster_that_does_not_fit_is_refused(edit, code):
 
 
 def test_each_set_has_its_trace_path(cluster):
-    """The manifest's trace path, its crossbar inputs' prefix from it (D157)."""
+    """The manifest's trace path, its crossbar inputs' prefix from it."""
     (s,) = cluster.accelerator.csrs.sets
     assert (s.name, s.trace, s.xbar) == ("acc", "snax_acc0/streamer_acc", "snax_acc0.streamer_acc")
     assert cluster.accelerator.set_at("/chip/soc/cluster_0/snax_acc0/streamer_acc") == s
@@ -172,7 +168,7 @@ def test_the_old_one_streamer_slot_is_refused(tmp_path):
 def test_two_sets_read_set_by_set(tmp_path):
     """dot_serial as the generator writes it: two streamer sets of the one entry, each its movers
     counted from reader0 and writer0 within the set, its streamer range (mul 960-977, sum
-    982-994, C§16), each mover's CSRs from its own set's first (beats.py's mover_csrs)."""
+    982-994), each mover's CSRs from its own set's first (beats.py's mover_csrs)."""
     from snax_forge.gen import generate
     from snax_forge.run.beats import mover_csrs
     from tests.gen.helpers import bound_recipe
@@ -200,7 +196,4 @@ def test_two_sets_read_set_by_set(tmp_path):
     # each set's streamer at its own path, its movers by their names within it
     assert [s.trace for s in a.csrs.sets] == ["snax_acc0/streamer_mul", "snax_acc0/streamer_sum"]
     assert [a.mover("reader0", x).name for x in ("mul", "sum")] == ["mul_a", "sum_a"]
-    with pytest.raises(RunError) as e:
-        a.csrs.streamer_first  # noqa: B018 (two sets: name the set)
-    assert e.value.code == "cluster.sets"
     assert Cluster.from_dict(json.loads(json.dumps(c.to_dict()))) == c

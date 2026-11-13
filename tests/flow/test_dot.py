@@ -1,16 +1,17 @@
-"""dot 1 end to end (D148, D157, D158): ``recipes/dot/dot_1.json``, a multiplier into tmp0 in L1,
+"""dot 1 end to end: ``recipes/dot/dot_1.json``, a multiplier into tmp0 in L1,
 then an adder tree over it, two accelerators ``vmul`` and ``vsum``, run in series; and
 ``recipes/dot/dot_1_enc.json``, the two as the groups of one accelerator ``dot``.
 
 Up to the generator on the host: dot 1's task list waits once between the accelerators (the
-serial sync on vmul's task) and has no idle mover. On SNAX-GVSoC (marker ``gvsoc``, D134: in the
+serial sync on vmul's task) and has no idle mover. On SNAX-GVSoC (marker ``gvsoc``: in the
 image), at trace levels off and task: the run checks itself (every output, both counters), each
 unit's counter is its task's (busy + its stalls, at least its beats), and dot_1_enc's reports
-name each task's group, its idle movers' too. No cycle count is compared: the window moves with the code's layout (open
+name each task's group, its idle movers' too. No cycle count is compared: the window moves with the
+code's layout (open
 item 65).
 
 dot's walk-through (examples/dot, tests/flow/test_dot_example.py) runs dot 1–6 and checks
-their counters against C§17.
+their counters against the control rule.
 """
 
 from __future__ import annotations
@@ -40,7 +41,7 @@ def test_the_task_list_waits_once_between_the_accelerators(tmp_path):
     assert accel == ["mult_vmul", "sum_vsum"]
     assert tl.configured()["sum_vsum_a"].after == ["mult_vmul_out"]
     waits = [w.component for w in placed_waits(tl, p)]
-    assert waits == ["dma", "dma", "vmul", "vsum_out", "dma"]  # vmul: the serial sync (D158)
+    assert waits == ["dma", "dma", "vmul", "vsum_out", "dma"]  # vmul: the serial sync
 
 
 @pytest.fixture(scope="module")
@@ -98,7 +99,7 @@ def test_the_reports_name_each_tasks_group(enc_flow):
 @pytest.mark.gvsoc
 @needs_gvsoc
 def test_dot_1_reads_the_muls_pads_through_a_tail(tmp_path):
-    """The dot 1 dry run at N = 2048, W_mul = W_sum = 10 (D144, DRY1-2): the mul writes tmp0's
+    """The dot 1 dry run at N = 2048, W_mul = W_sum = 10 : the mul writes tmp0's
     two pad words from A's and B's pads, 0 × 0 = 0, add's identity, so the sum folds them and
     the run's own check finds every output right."""
     import json
@@ -113,7 +114,7 @@ def test_dot_1_reads_the_muls_pads_through_a_tail(tmp_path):
 
 @pytest.fixture(scope="module")
 def beat_flows(tmp_path_factory):
-    """dot 1 at N = 2048, W = 8 untraced and at --trace beat (the DRY1-2 dry run's 8/8)."""
+    """dot 1 at N = 2048, W = 8 untraced and at --trace beat (the dry run's 8/8)."""
     base = tmp_path_factory.mktemp("dot_1_2048")
     sets = {"N": 2048, "W": 8}
     return {lv: run_flow(DOT1, SNAX_FORGE, recipe_sets=sets, out=base / lv, trace_level=lv)
@@ -123,11 +124,11 @@ def beat_flows(tmp_path_factory):
 @pytest.mark.gvsoc
 @needs_gvsoc
 def test_dot_1_converts_at_beat_level(beat_flows):
-    """Two groups of one unit each at beat level (DRY1-2 R2, open item 96), dot 1's two
+    """Two groups of one unit each at beat level, dot 1's two
     accelerators: each unit's 256 fires under its own task, tmp0's words written by vmul_out
     and read by vsum_a, and the counters and the window those of the untraced run, the counters
-    sound (D171; recorded in CORE1 R1 on one core: vmul 256, vsum 259, vmul's START 10 cycles
-    after its streamer's start, a head start the counter does not see, D155)."""
+    sound (recorded on one core: vmul 256, vsum 259, vmul's START 10 cycles
+    after its streamer's start, a head start the counter does not see)."""
     off, beat = beat_flows["off"], beat_flows["beat"]
     assert off.passed and beat.passed, summary(beat)
     trace = read_run(beat.out / "run").trace

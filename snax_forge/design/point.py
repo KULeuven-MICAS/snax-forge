@@ -1,27 +1,11 @@
-"""The design point: one bound graph on one platform, with its memory plan (D87).
+"""The design point: one bound graph on one platform, with its memory plan.
 
-What SNAX-LOWER reads to make the task list (lower/derive.py) and the
-generator the cluster file (gen/gvsoc.py). The design step writes it once every check
-has passed; it is not edited by hand.
-
-    {
-     "name":       "vecadd",  the design's name (``design_of``): the recipe's
-     "graph_from": "out/sandbox/vecadd/2_bind.snaxdfg",
-     "graph":      {...},     the bound graph as it was read: instances, code,
-                              replaced, loop.split (D71, D82)
-     "platform":   {...},     the platform working copy: values, base, changes
-     "streamers":  {...},     the resolved shell, <instance>_<port> -> instance,
-                              port, write, n_ports, spatial_bounds,
-                              temporal_dims, dtype, num_slc, num_ch and
-                              options
-     "memory":     {...}      the memory plan: passes, changes (pins), layouts
-    }
-
-There is no recipe in it: the graph holds every instance, and the sandbox
-folder the graph came from keeps the recipe that made it. Loading a design
-point runs every check again on what it holds, and also requires its
-``streamers`` to be the ones the platform's shell gives for its graph, so
-an edited or stale file is caught rather than lowered.
+``DesignPoint`` is what SNAX-LOWER reads to make the task list (lower/derive.py) and the
+generator the cluster file (gen/gvsoc.py); its fields are CONTRACTS, "Memory plan and design
+point". The design step writes it once every check has passed; it is not edited by hand.
+``design_of`` gives the design's name. Loading runs every check again and requires
+``streamers`` to be the platform's shell for the graph, so an edited or stale file is caught
+rather than lowered.
 """
 
 from __future__ import annotations
@@ -53,7 +37,7 @@ def design_name(graph: Path) -> str:
 
 def design_of(graph: Path) -> str:
     """The design's name, which the design point holds and the generated entry is named after
-    (``<accelerator_slot>_<name>``, D131): the ``name`` of the recipe the sandbox (or Save)
+    (``<accelerator_slot>_<name>``): the ``name`` of the recipe the sandbox (or Save)
     kept beside a step's graph, ``recipe.json``, which no ``--set`` changes
     (``out/flow/vecmul_W32/sandbox/2_bind.snaxdfg`` -> ``vecmul``); else ``design_name``."""
     recipe = Path(graph).parent / "recipe.json"

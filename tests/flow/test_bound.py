@@ -1,4 +1,4 @@
-"""The flow from a bound graph (D108): the path without its sandbox stage, SNAX-GVSoC
+"""The flow from a bound graph: the path without its sandbox stage, SNAX-GVSoC
 stubbed (helpers.stub).
 
 1. the last step of a recipe flow runs as the recipe did
@@ -93,7 +93,7 @@ def test_the_summary_and_the_log_name_the_graph(tmp_path, monkeypatch):
     head, sandbox, *_ = summary(f).splitlines()
     assert head.startswith("flow vecadd_accelerated (graph ")
     assert "vecadd_accelerated.snaxdfg; kernel vecadd; N=64) on snax_forge -> " in head
-    assert sandbox == "  sandbox   skipped: the bound graph is the input (D108)"
+    assert sandbox == "  sandbox   skipped: the bound graph is the input"
     log = (tmp_path / "f" / "flow.log").read_text()
     assert log.startswith(summary(f)) and "  graph     graph.load, graph.symbols" in log
     assert "\n  design    " in log.partition("stage times")[2]
@@ -106,7 +106,7 @@ def test_the_summary_and_the_log_name_the_graph(tmp_path, monkeypatch):
 
 
 def test_a_graph_that_is_not_bound_stops_at_the_design_step(tmp_path, monkeypatch):
-    """The plain import: its symbol and its tasklet named at once (D85), nothing lowered or run."""
+    """The plain import: its symbol and its tasklet named at once, nothing lowered or run."""
     fake = stub(monkeypatch, tmp_path)
     with pytest.raises(DesignError) as e:
         run_bound(PLAIN, SNAX_FORGE, out=tmp_path / "f")

@@ -1,4 +1,4 @@
-"""gen-rtl (D130, C§17): accelerator.json, gen-gvsoc's bytes, checked against the datapath
+"""gen-rtl: accelerator.json, gen-gvsoc's bytes, checked against the datapath
 catalogue for hw/chisel's ``Emit --spec``, and the fixtures hw/chisel's specs read.
 
 Each refusal of the catalogue's checks has a test; accelerator.py's refusals, which rtl.py runs
@@ -88,7 +88,7 @@ def vecadd(tmp_path):
 
 
 def test_gen_rtl_writes_gen_gvsocs_accelerator_json(vecadd):
-    """The same bytes as gen-gvsoc's (D145), and they meet the schema."""
+    """The same bytes as gen-gvsoc's, and they meet the schema."""
     from snax_forge.gen import generate
 
     path, root = vecadd
@@ -262,7 +262,7 @@ def test_gen_rtl_writes_a_fixture(vecadd, capsys):
 @requires_submodule
 def test_a_linked_fixtures_counter_is_the_group_rules():
     """A linked group's counter is snax-gvsoc's group rule stepped with an always-ready streamer:
-    at T 4 dot's J 1 row of C§17's table and matvec's J 2 (2 × 16, W 4), which C§17's Cycles
+    at T 4 dot's J 1 row of the table and matvec's J 2 (2 × 16, W 4), which the Cycles
     state too; dot 4 at J 16 and T 128 is C4 = JT + 2; with a buffer of depth 2 for its wire,
     which no formula states, a cycle more: JT + 3."""
     got = {d: json.loads((RTL_FIXTURES / d / "vectors.json").read_text())["tasks"][0]["counter"]
@@ -280,7 +280,7 @@ def test_a_linked_fixtures_counter_is_the_group_rules():
 
 @requires_submodule
 def test_a_three_unit_chain_gets_its_counter():
-    """A shape C§17's table never had: mul (elementwise, L 0) -> a buffer of depth 1 -> acc (a
+    """A shape the table never had: mul (elementwise, L 0) -> a buffer of depth 1 -> acc (a
     fold, L 1, T 4 from JOB_BEATS) -> a wire -> sum (a fold, L 1, fixed T 2), J 1. mul fires in
     busy cycles 1-8, acc a cycle after each (2-9) and gives on its 4th and 8th (5, 9, pushed in
     6 and 10), sum fires on each push and gives on its 2nd, pushed in 11: E - s = 11."""
@@ -385,7 +385,7 @@ def _behind_mac(unit: Unit) -> Description:
 
 def test_a_serial_accumulate_unit_spans_its_lanes():
     """Behind a link (dot 5): span 4 is the catalogue's; span 1 is gen.timing. Fed by the
-    streamer it is gen.span, SNAX-GVSoC's limit until B2."""
+    streamer it is gen.span, SNAX-GVSoC's limit."""
     unit = Unit("sum", "accumulate", "SerialAccumulate",
                 {"a": Port("in", "in", "int64", 4), "out": Port("out", "out", "int64", 1)},
                 {"T": 1}, 1, 1, [], None, 4)  # fmt: skip
@@ -419,7 +419,7 @@ def test_a_mac_unit_the_catalogue_refuses(unit, code):
 
 
 # =============================================================================
-# flops: the register bits of a unit's and a link's datapath (D154)
+# flops: the register bits of a unit's and a link's datapath
 # =============================================================================
 
 
@@ -501,7 +501,7 @@ def test_axpys_unit_fills_k1_from_its_csr_and_k1_is_a_live_pin(tmp_path):
 @pytest.mark.parametrize(("recipe", "datapath"), [("matvec_seed", "TreeAccumulate"),
                                                   ("matvec_seed_serial", "SerialAccumulate")])  # fmt: skip
 def test_a_seeded_fold_fills_seed_and_its_seed_port_is_live(tmp_path, recipe, datapath):
-    """matvec_seed's sum (B2 R5, D163): the catalogue's fill rule unit.ports.seed gives seed true,
+    """matvec_seed's sum: the catalogue's fill rule unit.ports.seed gives seed true,
     and the datapath's port seed is live on it, so the unit passes check_unit; the mul's simd
     and an unseeded fold keep their params."""
     acc = accelerator_spec(tmp_path / designed(tmp_path, recipe, recipe), tmp_path)

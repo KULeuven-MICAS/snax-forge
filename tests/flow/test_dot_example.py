@@ -1,9 +1,9 @@
 """The dot walk-through: every number and name examples/dot/README.md states, checked.
 
-Its table (section 2) is checked twice. On the host: each BUSY_COUNTER is C§17's cycles at the
-README's point (N = 512, W = 4: J 1, T 128) plus the fill it states, and the C§17 column is
-the formula's. On SNAX-GVSoC (marker ``gvsoc``, D134: in the image): dot 1–6 run at N = 64
-(T 16), each checks itself (``forge data: 0 errors``), each group's BUSY_COUNTER is C§17's cycles
+Its table (section 2) is checked twice. On the host: each BUSY_COUNTER is the cycles at the
+README's point (N = 512, W = 4: J 1, T 128) plus the fill it states, and the control rule's column is
+the formula's. On SNAX-GVSoC (marker ``gvsoc``: in the image): dot 1–6 run at N = 64
+(T 16), each checks itself (``forge data: 0 errors``), each group's BUSY_COUNTER is the cycles
 plus the same fill, the second reader's one crossbar stall is the fill's, and each row's
 groups, units and link are its run's ``accelerator.json``.
 """
@@ -34,7 +34,8 @@ ROW = re.compile(
 
 
 def c17(name: str, n: int, w: int = W, j: int = 1) -> tuple[int, ...]:
-    """C§17's cycles of each group at N = n: dot 1's two by the nest controller's rule (mul JT, sum JT + 1), the
+    """the cycles of each group at N = n: dot 1's two by the nest controller's rule (mul JT, sum JT
+    + 1), the
     linked groups' by their formula."""
     t = n // w
     return {

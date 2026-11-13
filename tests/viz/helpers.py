@@ -49,7 +49,7 @@ def served(srv):
 
 
 # =============================================================================
-# Hand-written events (C§7) on the run tests' cluster, for the index and the views
+# Hand-written events on the run tests' cluster, for the index and the views
 # =============================================================================
 
 L1 = 0x10000000  # the cluster's L1 base (tests/run/helpers.CLUSTER)
@@ -97,7 +97,7 @@ def tasks(*runs: str, name: str = "vecadd"):
 
 
 class Events:
-    """Builds C§7 events with the converter's lookups done from the cluster and the regions:
+    """Builds trace events with the converter's lookups done from the cluster and the regions:
     ``bank`` and ``row``, ``region``, ``elems`` and ``vals`` (each word's value its element's)."""
 
     def __init__(self, cl=None, regs=None):
@@ -250,7 +250,7 @@ def recorded_run(out: Path, level: str = "stall", fixture: Path | None = None) -
         *sorted(p.name for p in recorded.glob("*_streamer_*.hjson")),
         "accelerator.json",
         "manifest.json",
-    ]  # the cluster file, a streamer file per set (D157), the manifest (the sets' trace paths)
+    ]  # the cluster file, a streamer file per set, the manifest (the sets' trace paths)
     for name in described:
         shutil.copy(recorded / name, out / "gen" / name)
     shutil.copy(recorded / "design_point.json", out / "design" / "design_point.json")

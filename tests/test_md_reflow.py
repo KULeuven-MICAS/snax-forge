@@ -1,4 +1,4 @@
-"""util/md_reflow.py (D117): prose joined to one line per paragraph, every other block as it is."""
+"""util/md_reflow.py: prose joined to one line per paragraph, every other block as it is."""
 
 import importlib.util
 import subprocess

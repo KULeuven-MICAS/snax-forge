@@ -3,7 +3,7 @@
 Each BRM resolves to the function the reference executor runs (its kind in
 brm/function.py, its params resolved), and its ``code`` computes what that
 kind computes, lane by lane; accumulate's Chisel implementation declares the
-Accumulator's drain, 0 (D133).
+Accumulator's drain, 0.
 """
 
 from __future__ import annotations
@@ -215,7 +215,7 @@ def test_only_its_ops():
 
 @pytest.mark.parametrize("name", ["simd", "accumulate"])
 def test_unit_brms_are_in_the_stream_notation(name):
-    """Unit blocks (D70): every port's nest is empty, the bound memlet gives the order, so a,
+    """Unit blocks: every port's nest is empty, the bound memlet gives the order, so a,
     b and out take the same element as the memlets do; each loads and resolves."""
     brm = load_brm(name)
     assert brm.dataflow.notation == "stream" and memlet_ordered(brm)

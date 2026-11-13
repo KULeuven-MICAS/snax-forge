@@ -1,4 +1,4 @@
-"""The design point (D87): made from a checked design, round trip, checked on load."""
+"""The design point: made from a checked design, round trip, checked on load."""
 
 from __future__ import annotations
 

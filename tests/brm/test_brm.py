@@ -35,7 +35,7 @@ def test_sparse_file_takes_defaults_and_writes_them():
     assert "dtypes" not in d["interface"]["ports"][0]  # every integer dtype, not written
     assert b.interface.ports[0].dtypes == list(INT_DTYPES)
     assert d["pattern"] == {"family": "reduce", "attrs": {}}
-    assert d["function"]["code"] is None  # a reduction cannot say it per lane yet (D82)
+    assert d["function"]["code"] is None  # a reduction cannot say it per lane yet
     impl = d["implementations"]["chisel_adder_tree"]
     assert impl["supports"] == {} and impl["binding"] is None
     assert Brm.from_dict(d) == b
@@ -88,7 +88,7 @@ def test_no_implementation_is_rejected():
         Brm.from_dict(d)
 
 
-# The binding of a simd BRM (D129): the datapath, its args, the nest controller
+# The binding of a simd BRM: the datapath, its args, the nest controller
 BINDING = {
     "datapath": "SimdLanes",
     "args": {"lanes": "W", "op": "op"},
@@ -225,7 +225,7 @@ CASES = [
 
 
 def _stream(nests: dict) -> dict:
-    """The stream notation (D70): every port's nest empty but the ones given."""
+    """The stream notation: every port's nest empty but the ones given."""
     return {"notation": "stream", "ports": {"a": {}, "b": {}, "out": {}} | nests}
 
 

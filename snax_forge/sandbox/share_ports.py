@@ -1,25 +1,13 @@
-"""Shared movers (D169, PORT1): two accelerators that hand data over through L1 on one streamer.
+"""Shared movers: two accelerators that hand data over through L1 on one streamer.
 
-``share_ports(container, accelerator)`` and ``unshare_ports(container)``
-    ``container`` is written by one group's units and read by another's, both bound, through
-    L1 (no link on it). ``share_ports`` puts both groups on one accelerator, as ``encapsulate``
-    does (D148): every node of each carries ``accelerator``; then marks the container
-    ``hw.share_ports``, so the accelerator's groups share its streamer's movers (D169,
-    design/streamers.py's ``shared_movers``): the crossbar sees the movers' channels, not every
-    port's. A group already in an accelerator keeps it, and the other joins it: ``accelerator``
-    must then be its name. The site fills ``accelerator`` with that name, else the next free one
-    after ``<writer's group>_<reader's group>`` (dot 1's ``vmul_vsum``). The marker records the
-    units that got ``accelerator`` here (``{"accelerator", "added"}``), which ``unshare_ports``
-    takes off again with the marker: ``share_ports`` then ``unshare_ports`` is the graph
-    before. No memlet changes, so the reference check is unchanged. Refused (``share.site``),
-    naming what it found: no container of that name, a container on a link (a link already puts
-    both units in one group), one already shared, writers or readers that are not bound or not
-    one group each, one group writing and reading it (nothing to share), a writer's group that
-    does not run before the reader's, the two in different accelerators, and an
-    ``accelerator`` that is no name, another instance's or group's, or another accelerator's
-    than the one a group is in.
-
-Their sites take a container's name; ``unshare_ports``'s a marked one.
+``share_ports(container, accelerator)`` and ``unshare_ports(container)``, as CONTRACTS,
+"Recipe" defines them. ``share_ports`` puts the container's writer's and reader's groups on one
+accelerator, as ``encapsulate`` does, and marks the container ``hw.share_ports``, so the
+accelerator's groups share its streamer's movers (design/streamers.py's ``shared_movers``): the
+crossbar sees the movers' channels, not every port's. The marker records the units that got
+``accelerator`` here, which ``unshare_ports`` takes off again with it. No memlet changes, so
+the reference check is unchanged. A refusal is a ``ShareSiteError`` (``share.site``). The sites
+take a container's name, ``unshare_ports``'s a marked one.
 """
 
 from __future__ import annotations

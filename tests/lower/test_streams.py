@@ -1,4 +1,4 @@
-"""A BRM port's nest through a layout onto streamer values (D70)."""
+"""A BRM port's nest through a layout onto streamer values."""
 
 from __future__ import annotations
 
@@ -174,7 +174,7 @@ def test_errors(case, kw, msg):
 
 
 def test_a_layout_of_narrow_elements():
-    """int32 elements 4 bytes apart (D142): the base on a word, the strides whole elements;
+    """int32 elements 4 bytes apart: the base on a word, the strides whole elements;
     the DMA still moves whole beats, 16 int32 or 64 int8 elements per 64-byte beat."""
     lay = Layout.contiguous(0, (3, 6), 4)
     assert lay.strides == (24, 4) and lay.extent(4) == (0, 72)

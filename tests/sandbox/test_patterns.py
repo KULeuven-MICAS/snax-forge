@@ -1,4 +1,4 @@
-"""The lane-fold pattern (D149, D150): ``mac`` binds a fused nest of a multiply and the fold of
+"""The lane-fold pattern: ``mac`` binds a fused nest of a multiply and the fold of
 its products, one partial per lane; a lone tasklet is refused with the fix named."""
 
 from __future__ import annotations

@@ -134,14 +134,14 @@ def test_int32_relu_casts_dace_writes():
     ],
 )
 def test_cast_rule(code, message):
-    """Only a constant cast to the output's type that fits is folded; the rest name open item 37."""
+    """Only a constant cast to the output's type that fits is folded; the rest are refused."""
     sdfg = _relu_int32()
     _tasklet(sdfg).code = dace.properties.CodeBlock(code)
     if message is None:
         g = import_sdfg(sdfg, "relu")
         assert g.node("numpy_maximum").attrs["code"] == "out = max(in1, -1)"
         return
-    with pytest.raises(SdfgImportError, match=f"{message} .*open item 37"):
+    with pytest.raises(SdfgImportError, match=message):
         import_sdfg(sdfg, "relu")
 
 

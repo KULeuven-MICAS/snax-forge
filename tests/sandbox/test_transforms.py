@@ -165,7 +165,7 @@ def test_bind_rejected(make, params, message):
 
 
 def test_bind_takes_the_first_code_entry_that_is_the_tasklets():
-    """simd's code table (C§10): a multiply binds at op mul, an add at op add, each node
+    """simd's code table: a multiply binds at op mul, an add at op add, each node
     carrying the matched entry's code; a bind param that agrees is taken as given."""
     mul = bind(_edit(lambda d: tasklet(d)["attrs"].update(code="out = in1 * in2")), **BIND)
     add = bind(graph("vecadd_split"), **(BIND | {"params": {"op": "add"}}))
@@ -175,7 +175,7 @@ def test_bind_takes_the_first_code_entry_that_is_the_tasklets():
 
 
 def test_bind_takes_the_containers_dtypes():
-    """Every port takes every integer dtype; int32 in and out binds (D143)."""
+    """Every port takes every integer dtype; int32 in and out binds."""
     g = _edit(lambda d: [c.update(dtype="int32") for c in d["containers"].values()])
     assert bind(g, **BIND).containers["C"].dtype == "int32"
 
@@ -189,8 +189,8 @@ def test_bind_refuses_vmul_into_a_narrower_output_naming_the_accepted_ones():
         bind(_edit(vmul_int32_out), **(BIND | {"brm": "simd"}))
     assert str(e.value).endswith(
         "output out is int32, narrower than input a (int64): an output is at least as wide as "
-        "every input (D143); output out is int32, narrower than input b (int64): an output is "
-        "at least as wide as every input (D143); accepted output dtypes for these inputs: "
+        "every input; output out is int32, narrower than input b (int64): an output is "
+        "at least as wide as every input; accepted output dtypes for these inputs: "
         "out: int64, uint64"
     )
 

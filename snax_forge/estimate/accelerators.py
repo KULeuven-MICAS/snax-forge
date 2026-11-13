@@ -1,17 +1,12 @@
-"""The accelerators of the ideal estimate (C§19, D157): one streamer set each, what it holds.
+"""The accelerators of the ideal estimate (CONTRACTS, "Estimate"): one streamer set each.
 
     accelerators(graph, platform=None) -> list[AcceleratorEstimate]
 
-Per accelerator, in CSR order (design/streamers.py's ``accelerators``, the generator's order):
-its ``name``, its ``groups``, its CSRs (``csrs``: its first and last, its streamer's then its
-own, packed from 960 as gen/csrs.py's ``csr_layout`` numbers them, C§16) and its streamer
-(``streamer``: ``movers``, its outer ports; ``channels``, their num_ch added up;
-``temporal_dims``, each mover's in the streamer's order, readers first; ``csrs``, the
-streamer's own, gen/csrs.py's ``streamer_csrs``). A group's own CSRs are START, JOBS, STATUS, BUSY_COUNTER and per fold
-of a T the design params do not fix a JOB_BEATS (gen/accelerator.py's ``_unit``). The
-streamer's CSRs depend on the platform (its streamer entries' spatial bounds, D142): without
-one, ``csrs`` is null in both places. Its cost, per port's streamer (``cost.streamers``) and its
-words through the crossbar and the banks (``cost.l1``), is the estimate's (cost.py, C§20, D167).
+Per accelerator, in CSR order (design/streamers.py's ``accelerators``): its name, its groups,
+its own CSRs (per group START, JOBS, STATUS, BUSY_COUNTER and a JOB_BEATS per fold whose T the
+design params do not fix, as gen/accelerator.py's ``_unit``), its CSR range (gen/csrs.py's
+``csr_layout``) and its streamer (``StreamerEstimate``). Without a platform, which gives the
+streamers' spatial bounds, both ``csrs`` are null. Its cost is the estimate's (cost.py).
 """
 
 from __future__ import annotations

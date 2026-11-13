@@ -1,5 +1,5 @@
 """The generated C headers: per streamer set its streamer's (byte for byte snax_cluster's
-StreamerSwHeaderGen's, D157), per accelerator its own CSRs', and the runtime's view of the
+StreamerSwHeaderGen's), per accelerator its own CSRs', and the runtime's view of the
 cluster."""
 
 from __future__ import annotations
@@ -106,8 +106,7 @@ def _serial_movers(tmp_path) -> dict[str, list[dict]]:
 @pytest.mark.parametrize(("ours", "first", "theirs"), [("mul", 960, "vmul"), ("sum", 982, "vsum")])
 def test_a_sets_header_is_snax_clusters_byte_for_byte(tmp_path, ours, first, theirs):
     """snax_cluster ry/slot1's StreamerSwHeaderGen with the same --csr-base, --macro-prefix and
-    --header-name writes the same bytes, its timestamp line aside (snax-forge-sw compares them,
-    C§18)."""
+    --header-name writes the same bytes, its timestamp line aside (snax-forge-sw compares them)."""
     by_set = _serial_movers(tmp_path)
     text, _ = streamer_header(
         by_set[ours], first, f"{theirs.upper()}_", "out/design/x/design_point.json"
@@ -121,7 +120,7 @@ def test_a_sets_header_is_snax_clusters_byte_for_byte(tmp_path, ours, first, the
 
 
 def test_dot_serials_headers_are_c16s_table(tmp_path):
-    """dot_serial, two sets (D157, C§16's table): mul's streamer 960-977 and own CSRs 978-981, sum's
+    """dot_serial, two sets: mul's streamer 960-977 and own CSRs 978-981, sum's
     982-994 and 995-999; each set's header its own prefix, each accelerator's its own names."""
     from .helpers import designed
 
@@ -188,7 +187,7 @@ def test_more_dimensions_follow_streamer_scalas_loops():
 
 
 def test_two_groups_name_their_group():
-    """dot_1_enc (groups vmul and vsum of accelerator dot, C§17's table) from CSR 978: the group
+    """dot_1_enc (groups vmul and vsum of accelerator dot) from CSR 978: the group
     part kept, the unit part dropped (one unit per group)."""
     desc = dot()
     text = accelerator_header(

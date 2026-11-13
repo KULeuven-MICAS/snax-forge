@@ -1,32 +1,14 @@
-"""SNAX-ESTIMATE: the ideal, engine-alone estimate of a bound graph (D155, C§19).
+"""SNAX-ESTIMATE: the ideal, engine-alone estimate of a bound graph (CONTRACTS, "Estimate").
 
     estimate(graph, platform=None, tech="nangate45") -> Estimate
 
-What a mapping buys before any run: per group the exact cycles of snax-gvsoc's group rule on
-ideal streams, split into bottleneck, ramp and stall, and the register bits of its datapaths
-and of its control unit, CHAR1's cost model's counts (cycles.py, bits.py, D154); on a
-technology (``tech``, snax_forge/char/; None skips it) the cost, per unit, buffer link, control
-unit, group and accelerator its area and energy, and on a platform HWCOST's: per port its
-streamer, the crossbar and the L1 banks, per accelerator its words through the crossbar and the
-banks (``l1``), and the design's cost in five parts (``parts``: datapath, control, streamers,
-crossbar, memory), cost.py, C§20, D154, D167; per accelerator its streamer set, its groups, CSRs
-and streamer (``accelerators``, accelerators.py, D157); and the data side, per
-container its placement, bytes and L1 traffic, per outer port its streamer's loops, beats and
-channels, per tailed split its lane use (data.py). No bank conflicts, no streamer fill, no DMA,
-no core control. A group's expected BUSY_COUNTER, its cycles plus the streamers' fill (C§17), is a
-guide, not a check: a run's BUSY_COUNTER counts from the group's START until busy drops, so it holds
-bank conflicts and is shortened by the streamers' head start (D155). Beside the ideal cycles, on
-a platform, each group's ``bank_bound``: ceil(words its streams move / l1.n_banks), the fewest
-cycles of L1 time its streams take, a bound on the streams and not on the BUSY_COUNTER, a note where
-it exceeds the cycles (dot 1 at W_mul = 16: mul's 192 against 128). Work no unit runs is a
-not-mapped count of iterations (spatial maps
-skipped, C§19's ``not_mapped``) and, over every map, spatial ones included, since a tag alone
-runs nothing (``unmapped_iterations``), at ``UNMAPPED_CYCLES_PER_ITERATION`` (1) cycle each,
-``unmapped_cycles``: an assumption (a core
-takes several), held in this one constant so a measured value can replace it (D155); the
-``total_cycles`` are the accelerator's plus the unmapped ones. A group's BUSY_COUNTER never holds
-them. The viewers and
-``design.md`` read it (report/design.py).
+What a mapping buys before any run, on ideal streams (no bank conflicts, no streamer fill, no
+DMA, no core control): per group its cycles, their split and its register bits (cycles.py,
+bits.py), per accelerator its streamer set and CSRs (accelerators.py), the data side (data.py)
+and, on a technology, the cost (cost.py; ``tech=None`` leaves it out). The work no unit runs is
+``unmapped_iterations`` at ``UNMAPPED_CYCLES_PER_ITERATION`` cycles each, an assumption held in
+this one constant so a measured value can replace it; ``total_cycles`` adds it to the
+accelerator's. The viewers and ``design.md`` read it (report/design.py).
 """
 
 from __future__ import annotations
@@ -68,14 +50,15 @@ if TYPE_CHECKING:
     from snax_forge.dfg import Graph
 
 
-# The cycles an iteration no unit runs is counted at (D155): an assumption, not a measurement (a
+# The cycles an iteration no unit runs is counted at: an assumption, not a measurement (a
 # core takes several cycles per iteration); one constant, so a measured value can replace it.
+# NB (D155): an assumption, not a measurement: a core takes several cycles per iteration.
 UNMAPPED_CYCLES_PER_ITERATION = 1
 
 
 @dataclass
 class Estimate(JsonFile):
-    """C§19's artefact; see the module doc."""
+    """The artefact (CONTRACTS, "Estimate")."""
 
     groups: list[GroupEstimate]
     not_mapped: int
@@ -85,10 +68,10 @@ class Estimate(JsonFile):
     splits: dict[str, SplitData] = field(default_factory=dict)
     tech: str | None = None
     char_source: dict[str, str] | None = None
-    unmapped_iterations: int = 0  # not_mapped over every map, spatial ones included (D155)
+    unmapped_iterations: int = 0  # not_mapped over every map, spatial ones included
     l1_words: dict[str, int] = field(default_factory=dict)  # per accelerator, its L1 words
     accelerators: list[AcceleratorEstimate] = field(default_factory=list)  # in CSR order
-    # HWCOST's counts on a platform (D167): per port's streamer, the crossbar's inputs (its
+    # The cost model's counts on a platform: per port's streamer, the crossbar's inputs (its
     # channels and the cores' and AXI's ports), the banks (count, depth, width)
     streamer_counts: list[StreamerCounts] = field(default_factory=list)
     xbar_inputs: tuple[int, int] | None = None
@@ -108,7 +91,7 @@ class Estimate(JsonFile):
 
     @property
     def costs(self) -> Costs | None:
-        """HWCOST's tables of the technology (snax_forge/char/<tech>/), None without them or a
+        """The cost tables of the technology (snax_forge/char/<tech>/), None without them or a
         platform's counts."""
         if self.tech is None or self.bank_shape is None:
             return None
@@ -127,8 +110,8 @@ class Estimate(JsonFile):
     @cached_property
     def xbar(self) -> XbarCost | None:
         """The crossbar priced at its inputs (check.py's ``crossbar_inputs``), its readers' and
-        writers' channels as read-only and write-only inputs, in the factor form (X71); None
-        when not costed."""
+        writers' channels as read-only and write-only inputs, in the factor form
+        (CONTRACTS, "Cost model"); None when not costed."""
         return self.xbar_in("factor")
 
     def xbar_in(self, form: str) -> XbarCost | None:
@@ -235,18 +218,18 @@ class Estimate(JsonFile):
 
     @property
     def accelerator_cycles(self) -> int:
-        """The groups' cycles added up: they run one after another through L1 (D105)."""
+        """The groups' cycles added up: they run one after another through L1."""
         return sum(g.cycles for g in self.groups)
 
     @property
     def unmapped_cycles(self) -> int:
         """The work no unit runs, as cycles: ``unmapped_iterations`` (over every map, a tag alone
-        runs nothing) at ``UNMAPPED_CYCLES_PER_ITERATION`` (D155, an assumption)."""
+        runs nothing) at ``UNMAPPED_CYCLES_PER_ITERATION`` (an assumption)."""
         return self.unmapped_iterations * UNMAPPED_CYCLES_PER_ITERATION
 
     @property
     def total_cycles(self) -> int:
-        """The accelerator's cycles plus the unmapped ones (D155)."""
+        """The accelerator's cycles plus the unmapped ones."""
         return self.accelerator_cycles + self.unmapped_cycles
 
     @property
@@ -327,11 +310,11 @@ def estimate(graph: Graph, platform: Platform | None = None,
     for n, _, port in outer_ports(graph):
         words[unit_group[n.attrs["instance"]].name] += port.beats * port.num_ch
         acc = l1_words.setdefault(accelerator_of(n), 0)
-        if data[port.container].placement == "l1":  # a link's is not in L1 (D154)
+        if data[port.container].placement == "l1":  # a link's is not in L1
             l1_words[accelerator_of(n)] = acc + port.beats * port.num_ch
     for g in found:
         g.words_per_cycle = words[g.name] / g.cycles if g.cycles else 0.0
-        if platform is not None:  # the fewest cycles L1's banks allow (D155)
+        if platform is not None:  # the fewest cycles L1's banks allow
             g.n_banks = platform.l1.n_banks
             g.bank_bound = -(-words[g.name] // g.n_banks)
     for k, port in ports(graph).items():
@@ -349,9 +332,9 @@ def estimate(graph: Graph, platform: Platform | None = None,
 
 def _hw_counts(graph: Graph, platform: Platform, data: dict[str, ContainerData]
                ) -> tuple[list[StreamerCounts], tuple[int, int] | None, tuple[int, int, int]]:  # fmt: skip
-    """HWCOST's counts (D167): per streamer of the shell its FIFO depth, loops, channels and the
+    """The cost model's counts: per streamer of the shell its FIFO depth, loops, channels and the
     words and beats it moves in L1 over every node of its instance (a shared instance runs once
-    per node, D165); the crossbar's inputs (check.py's ``crossbar_inputs``, the one count PORT1
+    per node); the crossbar's inputs (check.py's ``crossbar_inputs``, the one count the port sharing
     changes); the banks' count and shape from the platform's L1."""
     from snax_forge.design.check import crossbar_inputs
 
@@ -360,7 +343,7 @@ def _hw_counts(graph: Graph, platform: Platform, data: dict[str, ContainerData]
     unit_acc = {u: a for a, units in graph_accelerators(graph).items() for u in units}
     moved: dict[tuple[str, str], list[int]] = {}
     for n, name, port in outer_ports(graph):
-        if data[port.container].placement != "l1":  # a link's is not in L1 (D154)
+        if data[port.container].placement != "l1":  # a link's is not in L1
             continue
         w = moved.setdefault((n.attrs["instance"], name), [0, 0])
         w[0] += port.beats * port.num_ch
@@ -370,7 +353,7 @@ def _hw_counts(graph: Graph, platform: Platform, data: dict[str, ContainerData]
     counts = []
     for s in shell.values():
         got = moved.get((s.instance, s.port), (0, 0))
-        if s.name in shared:  # on a shared mover (D169): its depth, loops and channels
+        if s.name in shared:  # on a shared mover: its depth, loops and channels
             m, first = shared[s.name]
             counts.append(StreamerCounts(s.name, unit_acc[s.instance], s.write, m.fifo_depth,
                                          m.temporal_dims, s.num_ch, *got, m.name, m.num_ch,

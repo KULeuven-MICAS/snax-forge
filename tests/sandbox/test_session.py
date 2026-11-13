@@ -1,4 +1,4 @@
-"""The editor's session (D55, C§12, sandbox/session.py), without HTTP: built step by step it ends
+"""The editor's session (sandbox/session.py), without HTTP: built step by step it ends
 in the hand-written recipes' graphs; the start from a kernel's symbols, the cursor, the params (a
 new one per split), Save, the sites with the bind list and its default instance, the marks, the
 diff and the estimate. Every kernel is imported (DaCe, once per kernel), hence
@@ -10,7 +10,9 @@ from dataclasses import replace
 
 import pytest
 
+from snax_forge.char import DEFAULT_TECH
 from snax_forge.design import Design, DesignPoint, Platform, run_checks
+from snax_forge.estimate import estimate
 from snax_forge.lower import task_list
 from snax_forge.sandbox import Recipe, SandboxError, apply_recipe, session
 from snax_forge.sandbox import __main__ as sandbox_cli
@@ -90,7 +92,7 @@ def test_a_taken_name_gets_a_suffix(roots):
 
 
 def test_a_number_given_for_a_factor_becomes_a_param(roots, tmp_path):
-    """C§12: every factor the editor writes names a param. vecmul's split given 8 stores W with
+    """Every factor the editor writes names a param. vecmul's split given 8 stores W with
     W = 8 in the params, so after the bind its Bindings entry has W editable and W = 4 replays
     to 512 cycles; a second split gets W_2; a link's depth given as a number becomes D; the
     saved recipe sweeps with --set W=…; a recipe opened from a file keeps its numbers."""
@@ -102,7 +104,7 @@ def test_a_number_given_for_a_factor_becomes_a_param(roots, tmp_path):
     assert s.recipe.steps[0].params["factor"] == "W" and s.recipe.params == {"N": 2048, "W": 8}
     ok(s.apply("tag_map", {"map": "mult_map", "kind": "temporal"}))
     ok(s.apply("tag_map", {"map": "mult_map_inner", "kind": "spatial"}))
-    got = bind_default(s, "mult")  # the editor's W, this unit's alone: W_acc_1 (D156)
+    got = bind_default(s, "mult")  # the editor's W, this unit's alone: W_acc_1
     assert got["renamed"] == {"W": "W_acc_1"} and s.recipe.params == {"N": 2048, "W_acc_1": 8}
     assert s.recipe.steps[0].params["factor"] == "W_acc_1"
     (unit,) = bindings_section(s.graphs[4], s.recipe, editable=True)["entries"]
@@ -140,7 +142,8 @@ def test_a_kernel_session_needs_every_symbol_and_no_w(roots):
 
 def test_vecmul_from_its_kernel_with_a_new_param_is_the_recipes_graph(roots):
     """vecmul at N = 2048 alone, ``split`` by a new param W = 8, the tags, ``bind`` at the form's
-    defaults: ``recipes/elementwise/vecmul.json``'s last graph at N = 2048, W = 8 up to the split's names;
+    defaults: ``recipes/elementwise/vecmul.json``'s last graph at N = 2048, W = 8 up to the split's
+    names;
     the default instance ``acc_1`` gives the task ``mult_acc_1`` and the streamers ``acc_1_a``,
     ``acc_1_b`` and ``acc_1_out``, and W becomes ``W_acc_1``."""
     s = Session.from_kernel("vecmul", {"N": 2048}, roots=roots)
@@ -270,7 +273,7 @@ def test_save_refuses_unbound_work(roots):
 
 
 def test_save_takes_two_accelerators(roots):
-    """D157: dot 1, no encapsulate, is two accelerators, two streamer sets of the one entry: Save
+    """Dot 1, no encapsulate, is two accelerators, two streamer sets of the one entry: Save
     takes it as it is (gen.instances retired)."""
     s = opened("dot_1", roots)
     assert "encapsulate" not in [x.transform for x in s.recipe.steps]
@@ -278,7 +281,7 @@ def test_save_takes_two_accelerators(roots):
 
 
 def test_save_writes_into_custom_and_a_name_in_any_folder_is_taken(roots):
-    """C§12: Save writes ``<recipes>/custom/<name>.json``, making the folder; a name a recipe has
+    """Save writes ``<recipes>/custom/<name>.json``, making the folder; a name a recipe has
     in any folder is ``save.name`` and nothing is written."""
     s = opened("vecadd", roots)
     assert not (roots.recipes / "custom").exists()
@@ -294,7 +297,7 @@ def test_save_writes_into_custom_and_a_name_in_any_folder_is_taken(roots):
 
 def test_save_lists_too_many_crossbar_inputs_and_saves_anyway(roots):
     """vecmul at N = 2048, W = 64 from the editor: Save names connect.xbar_inputs (194 inputs
-    over 128) as a design problem and saves when forced (C§12)."""
+    over 128) as a design problem and saves when forced."""
     s = Session.from_kernel("vecmul", {"N": 2048}, roots=roots)
     split_and_tag(s, "mult_map", "W", {"W": 64})
     bind_default(s, "mult")
@@ -388,17 +391,29 @@ def test_the_diff_of_a_split_and_of_a_link(roots):
     assert two.estimate(two.n).containers["tmp0"].placement == "link"
 
 
+SESSION_CHECKED = ("vecadd", "vecadd_undo")  # the recipes the sweep also opens as a session
+
+
 @pytest.mark.parametrize("name", RECIPES)
 def test_the_estimate_of_every_step_of_every_recipe(name, roots):
-    r = recipe(name)
-    if name == "vecadd_undo":  # starts from vecadd's bound graph, as README.md runs it
-        s = Session(name, r, recipe_graphs("vecadd")[1][-1], session.PLATFORM, roots)
+    """Every step's estimate on the editor's platform and technology, from recipe_graphs'
+    graphs: a session replays the same steps (apply_recipe's) and would build them again. On
+    SESSION_CHECKED a session too: its graphs are those, its estimate of a step is theirs,
+    cached; vecadd_undo starts from vecadd's bound graph, as README.md runs it."""
+    r, graphs = recipe_graphs(name)
+    platform = Platform.load(REPO / session.PLATFORM)
+    assert len(graphs) == len(r.steps) + 1
+    estimates = [estimate(g, platform, DEFAULT_TECH) for g in graphs]
+    if name not in SESSION_CHECKED:
+        return
+    if name == "vecadd_undo":
+        s = Session(name, recipe(name), recipe_graphs("vecadd")[1][-1], session.PLATFORM, roots)
     else:
         s = opened(name, roots)
-    for k in range(s.n + 1):
-        s.estimate(k)
+    assert [g.to_json() for g in s.graphs] == [g.to_json() for g in graphs]
+    assert s.platform == platform
+    assert [s.estimate(k) for k in range(s.n + 1)] == estimates
     assert s.estimate(0) is s.estimate(0)
-    assert s.platform == Platform.load(REPO / session.PLATFORM)
 
 
 # =============================================================================
@@ -473,7 +488,7 @@ def test_the_encapsulate_and_link_forms(roots):
 
 
 # =============================================================================
-# D156: names, the checks on every step, a param change up to the cursor
+# Names, the checks on every step, a param change up to the cursor
 # =============================================================================
 
 
@@ -500,7 +515,7 @@ def dot1_by_hand(roots: Roots, w_mul: int = 8, w_sum: int = 8) -> tuple[Session,
 
 
 def test_dot_1_by_hand_names_its_units_params_and_loops(roots):
-    """D156 and D73: the binds' instances ``acc_1`` and ``acc_2`` by their order, each split's
+    """The binds' instances ``acc_1`` and ``acc_2`` by their order, each split's
     factor named ``W`` and renamed ``W_<instance>`` at its bind, the second split's variables
     named as the first's, ``n_1_t`` and ``n_2_s``: the two maps over N are siblings, each its own
     dimension ``n``."""
@@ -534,9 +549,9 @@ def test_a_bind_keeps_a_shared_or_a_recipes_own_param(roots):
 
 
 def test_every_step_lists_saves_design_checks(roots):
-    """D156: dot 1 at W = 8 and 8 has no problem and no note before encapsulate (two
-    accelerators, D157) or after it; at W = 10 and 10 none either (D144), at 8 and 10
-    connect.pad, naming open item 106. Save takes step 8."""
+    """Dot 1 at W = 8 and 8 has no problem and no note before encapsulate (two
+    accelerators) or after it; at W = 10 and 10 none either, at 8 and 10
+    connect.pad. Save takes step 8."""
     s, out = dot1_by_hand(roots)
     eight = s.checks(8)
     assert eight == {"problems": [], "notes": []}
@@ -549,11 +564,11 @@ def test_every_step_lists_saves_design_checks(roots):
     bad = dot1_by_hand(Roots(roots.sessions / "c", roots.recipes, roots.sandbox), 8, 10)[0]
     (p,) = bad.checks(9)["problems"]
     assert (p["code"], p["where"]) == ("connect.pad", "container tmp0")
-    assert "open item 106" in p["message"] and p["fix"]
+    assert "never written" in p["message"] and p["fix"]
 
 
 def test_while_building_unbound_is_a_note_and_notes_show_beside_problems(roots):
-    """D156: before the bind graph.unbound is a note ("before Save: bind it …"), not a problem,
+    """Before the bind graph.unbound is a note ("before Save: bind it …"), not a problem,
     and Save still refuses it; vecadd_i32's int32 adder, not in nangate45's table, keeps its
     char.missing note beside a problem (W = 128: too many crossbar inputs), with the
     design.xbar_inputs and cost.extrapolated notes of a design past HWCOST's tables."""
@@ -570,8 +585,8 @@ def test_while_building_unbound_is_a_note_and_notes_show_beside_problems(roots):
     bind_default(i32, "add")
     c = i32.checks(4)
     assert [p["code"] for p in c["problems"]] == ["connect.xbar_inputs"]
-    # beside it, its 194 crossbar inputs above 64 (D85) and, off HWCOST's tables' grid, its three
-    # streamers of 64 channels and its crossbar, noted as extrapolated (D167)
+    # beside it, its 194 crossbar inputs above 64 and, off HWCOST's tables' grid, its three
+    # streamers of 64 channels and its crossbar, noted as extrapolated
     assert [(n["code"], n["before_save"]) for n in c["notes"]] == [
         ("design.xbar_inputs", False), ("char.missing", False),
         *[("cost.extrapolated", False)] * 4]  # fmt: skip
@@ -579,7 +594,7 @@ def test_while_building_unbound_is_a_note_and_notes_show_beside_problems(roots):
 
 
 def test_a_param_change_replays_up_to_the_cursor(roots):
-    """D156: dot 1 at step 9, a link as step 10, back to 9, W_acc_2 = 4: accepted, step 10 a
+    """Dot 1 at step 9, a link as step 10, back to 9, W_acc_2 = 4: accepted, step 10 a
     redo step; moving onto it replays it, and the link refuses (its writer's beats are not its
     reader's), the cursor staying at 9."""
     s, _ = dot1_by_hand(roots)
@@ -598,7 +613,7 @@ def test_a_param_change_replays_up_to_the_cursor(roots):
 
 
 def test_save_keeps_only_the_params_its_steps_use(roots):
-    """D156: dot 1 saved at step 9 after a link was tried at step 10 and stepped back from keeps
+    """Dot 1 saved at step 9 after a link was tried at step 10 and stepped back from keeps
     N, W_acc_1 and W_acc_2, not the link's D; a recipe opened from a file keeps its own params
     (dot_1's N and W) whatever its saved steps use."""
     s, _ = dot1_by_hand(roots)
@@ -621,7 +636,7 @@ def test_save_keeps_only_the_params_its_steps_use(roots):
 
 
 def test_sites_over_a_selection_on_dot_1(roots):
-    """D72: dot 1 by hand at step 8: the two group outlines (acc_1, acc_2) offer encapsulate with
+    """Dot 1 by hand at step 8: the two group outlines (acc_1, acc_2) offer encapsulate with
     both units ticked, one unit's box (mult) only that unit; split over two items is refused,
     "takes one selection"; at step 9 the accelerator's outline (dot) offers unencapsulate; at the
     import mult_map and sum_map together offer fuse_map, first and second in the order
@@ -656,7 +671,7 @@ def test_sites_over_a_selection_on_dot_1(roots):
 def test_the_editor_steps_through_fuse_seed(roots):
     """edit-dfg on matvec_acc: after the sum's tag and split, a map of the sum's nest offers
     fuse_seed with the elementwise nest's drop-down, as do the two maps selected; applied, the
-    step checks, and unfuse_seed takes it back (B2 R5)."""
+    step checks, and unfuse_seed takes it back."""
     s = Session.from_kernel("matvec_acc", {"M": 8, "N": 512}, roots=roots)
     ok(s.apply("tag_map", {"map": "sum_map", "kind": "temporal"}))
     ok(s.apply("split_map", {"map": "sum_map_1", "factor": 4}))
@@ -677,7 +692,7 @@ def test_the_editor_steps_through_fuse_seed(roots):
 
 
 # =============================================================================
-# The highlight and the editor agree (B2 R5): every partner shown is offered
+# The highlight and the editor agree: every partner shown is offered
 # =============================================================================
 
 

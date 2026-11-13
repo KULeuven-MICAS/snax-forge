@@ -5,12 +5,12 @@ imported, split, accelerated); the recipe is the checked-in
 ``recipes/elementwise/vecadd.json``. ``restricted_brm`` is ``simd`` with W
 limited to 4 and 8, for the "a W the BRM does not allow" case.
 
-For the sites (D72): ``recipe_graphs(name)``, every recipe's graphs from its
+For the sites: ``recipe_graphs(name)``, every recipe's graphs from its
 input to its last step (``vecadd_undo`` from vecadd's last, as README.md runs
 it), ``SELECTED``, the param each transform's site fills from the selection,
 and ``default_calls``, a transform's params with the user's ones at defaults.
 
-``split`` and ``split_map`` name a split differently (D73): ``tagged_names`` gives the map from
+``split`` and ``split_map`` name a split differently: ``tagged_names`` gives the map from
 the first's names to the second's on the same graph, and ``renamed`` a graph's text under it.
 """
 

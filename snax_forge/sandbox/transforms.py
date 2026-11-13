@@ -1,138 +1,19 @@
-"""Sandbox transforms (D72, D73): each takes a graph and returns a new one.
+"""Sandbox transforms: each takes a graph and returns a new one.
 
-A transform is registered with ``register_transform(name, fn, ints=...,
-site=...)``; ``fn(graph, **params) -> graph`` never changes its input.
-``ints`` names the params that are ints, which a recipe may give as
-expressions over its own params (recipe.py). The result is a new ``Graph``,
-validated as any graph is; the reference check after the step is run.py's.
+``register_transform(name, fn, ints=..., site=...)`` registers one: ``fn(graph, **params)``
+never changes its input and returns a new ``Graph``, validated as any graph is (the reference
+check after the step is run.py's). ``ints`` names the int params, which a recipe may give as
+expressions over its own params.
 
-**Sites** (D72). ``site(graph, selected)`` is the graph-shape test of where a
-transform applies, for a node id, a container name, a group's or an accelerator's name
-(``site_of`` takes the editor's selection, one item or several: a transform that takes
-several, ``encapsulate`` and ``fuse_map``, registers a ``multi`` site over the list, any
-other refuses several with ``takes one selection``): it returns the params
-the selection fills (the selection itself and what follows from it) or
-raises the error the transform raises there, since the transform calls it
-first, so each check lives in one place. A site decides from the graph
-alone; the checks on the user's params (a factor, a kind, a BRM, a depth, a
-name) stay in the transform.
+A site (``site(graph, selected)``; ``site_of`` takes the editor's selection) is the graph-shape
+test of where a transform applies: it returns the params the selection fills, or raises the
+error the transform raises there, since the transform calls it first. A site decides from the
+graph alone; the checks on the user's params (a factor, a kind, a BRM) stay in the transform.
 
-``split(map, factor)`` and ``split_map(map, factor)``
-    ``split`` splits a map ``v`` over ``b:e`` (step 1, no ``loop.kind``) into
-    an outer map over ``0:(e - b) // factor``, keeping the map's id
-    and attrs and recording the split (``loop.split``, with the record it
-    had before as ``prior`` when it was split before), around an inner map
-    ``<id>_inner`` over ``0:factor``, both untagged (D73). The variables follow
-    dfg/loops.py's rule: the map keeps its piece k of its dimension, the inner
-    map is piece k + 1, the pieces below move down one, and every variable of
-    the dimension is named again (``n`` -> ``n_1``, ``n_2``; ``n_2`` split ->
-    ``n_1``, ``n_2``, ``n_3``); every use of ``v`` in the body becomes
-    ``b + factor * v_1 + v_2`` on the two pieces. A length n that is not a
-    multiple of the factor (D144) runs the outer piece over ceil(n / factor) and
-    records n in ``loop.split`` (``valid``): only the lanes with
-    ``factor * v_1 + v_2`` below n are the kernel's, the rest pad lanes
-    (dfg/pad.py), which the reference executor neither reads nor writes and
-    the containers hold in memory as padding. ``split_map`` is ``split``,
-    then ``tag_map`` ``temporal`` on the outer map and ``spatial`` on the
-    inner, in one step: ``n_1_t``, ``n_2_s`` and the inner id ``<id>_s``
-    (``SPLIT_TAGGED``), which the recipes bind and compose.py's
-    ``split_reduce`` uses too.
-``tag_map(map, kind)`` and ``untag_map(map)``
-    ``tag_map`` tags an untagged map ``temporal``, ``tile`` or ``spatial`` as
-    it is, without splitting it (matadd's row map), its variable taking the
-    tag's suffix (``m_t``, ``m_tile``, ``m_s``); a tagged map is an
-    error. ``untag_map`` removes the tag, whatever set it, but not from a map
-    a bound unit is inside (unbind first).
-``bind(node, brm, implementation, instance, params={})``
-    replaces a tasklet and the spatial map around it (the map's only
-    child), or a fused nest's spatial map and its two tasklets
-    (compose.py's ``fuse_map``; the first's inputs, the second's output,
-    patterns.py's ``fused_view``), or a spatial map whose one tasklet
-    folds, given by the map (``lane_fold`` without a front op,
-    ``lane_accumulate``), by an accelerated node with the
-    (first) tasklet's id, bound to an
-    instance of a library BRM. The BRM's pattern matcher (patterns.py) says
-    which connector feeds which port. Every map around the spatial map
-    must be ``temporal``: they are the firing loops (an untagged one is
-    tagged with ``tag_map``; a ``tile`` one is not lowered yet, LOW3b). The
-    lanes design param is read off the
-    spatial bound, the other design params come from ``params`` or
-    the BRM's defaults, and ``Brm.resolve`` checks them all. Each
-    memlet becomes the port's lanes as a range over the spatial variable,
-    the container dtype must be the port's, and, for a BRM in the
-    ``affine`` notation, the memlets together with the temporal maps around
-    must give the elements in the order of the port's nest (D70); in
-    the ``stream`` notation the memlet is the order. The tasklet's code, on
-    the BRM's port names, must be the BRM's ``function.code``: a code table (brm.py's ``Code``,
-    ``simd``'s one entry per ``op`` and ``streams``, then ``axpby``'s two) is tried in order,
-    and the first entry whose present input ports (``Port.when`` at its params) take the
-    tasklet's array inputs, in some assignment (port order first, then every other), and
-    whose code equals the tasklet's on them up to its slots and to ``+``, ``*``, ``min`` and
-    ``max`` commuting (``expr.unify``: a slot takes an int sub-expression with no names or a
-    scalar operand, the same wherever it appears) is taken; its params and int slot values
-    are set on the instance. A **scalar operand** is an input whose memlet names no variable
-    of the maps around it, on a kernel's scalar argument (``sdfg.scalar``, axpy's
-    ``alpha[0]``): it maps to no port, only to a slot, which the instance leaves unset (a CSR)
-    and the accelerated node keeps as an input connector named after the slot (``k1:
-    alpha[0]``); such an input on another container is refused, naming it, and an input on a
-    scalar whose subset uses a map variable is an array input. Refused, each naming what it
-    found: a ``params`` value that contradicts the entry's params or a slot's value (or gives
-    a slot read from a scalar), a slot value that does not fit the op type (NumPy's result type
-    of the input ports' dtypes, the literal weak, NEP 50) or a scalar that the op type does not
-    hold, and no matching entry, listing every entry's code with its params. A fused nest of
-    two plain tasklets (``fuse_map``, the second no fold) binds as one, the second's code with
-    the first's expression in place of the local value (axpy's ``out = y + alpha * x``,
-    patterns.py's ``fused_view``). The
-    accelerated node carries that code and the replaced subtree (D82), and, for a fused nest, the nest's local value
-    (``loop.local``), which only its two tasklets named: it leaves the graph's containers for
-    the node's ``locals`` (dfg/kinds.py), and ``unbind`` puts it back at its index. A folding
-    output (``reduce``) whose memlet does not use the spatial variable (dot's
-    ``out[0]``) folds every lane into one: its port must have one lane, its
-    index becomes the range of that lane (``out[0:1]``, no ``reduce`` on
-    the accelerated node), and its order is checked over the temporal maps
-    it uses, one beat per T firings, T from ``named_rates`` (D102).
-``unbind(node)`` and ``join_map(map)``
-    the inverses: the subtree an accelerated node replaced, and the
-    map a split pair was split from (``loop.split``, its ``prior`` record back),
-    whatever their tags, its inner piece gone and the pieces below it moved
-    up one (one piece left is the base again), so a graph at any step can go
-    back to the imported one; an index split wrote is put back as it was, any
-    other written back as ``k + c * v``. An inner piece split since is refused
-    (join it first), as is a child of another dimension (interchange_map it
-    back first).
-``interchange_map(map, with)``
-    two maps ``X`` and ``Y`` of one perfect nest (one inside the other, every
-    map from the outer down to the inner one's parent holding exactly one
-    map and nothing else) trade places in it, each keeping its id, variable,
-    range and attrs (its tag among them); the maps between them and the
-    inner one's body stay where they are, each its dimension's piece and name
-    (dfg/loops.py). Adjacent or not, either may be the
-    innermost map. The pair again, in either order, undoes it. rowsum's lane
-    accumulator puts the spatial row map inside the column map this way
-    (``{"map": "sum_map_s", "with": "sum_map_1"}``). ``with`` is a Python
-    keyword, so the function is ``interchange(g, map, partner)`` under a
-    registration that names its params (``TransformSpec.params``). Refused,
-    naming the map: not in one nest or not a perfect one; after the swap a
-    range naming the variable of a map then inside it (a range names only the
-    variables of the maps around it); the pair inside an accelerated node or
-    a bound unit under the inner one (unbind first); a fused nest's outer map
-    in the chain (``loop.fused``: unfuse_map first); a fold under them whose op
-    is not order-free (dfg/reduce.py's ``order_free``; every registered op is,
-    D28) over two or more of the chain's maps, one of them moved (the order of
-    its writes would change). The site takes a map with at least one partner
-    (``partners``: every map above and below it, each with its refusal).
-``encapsulate(accelerator, units)`` and ``unencapsulate(accelerator)``
-    put the groups of the instances ``units`` into one accelerator of that
-    name (D148): every accelerated node of each carries ``accelerator``. A
-    group is one instance, named after it, unless ``link`` merged several
-    (compose.py). The
-    groups keep the graph's order, which ``units`` must give (the CSRs and
-    the tasks follow it, C§17); a unit already in an accelerator, a name an
-    instance or an accelerator has, or a unit the graph lacks is an error.
-    ``unencapsulate`` takes the attr off again: each group its own
-    accelerator (refused while ``share_ports`` marks a container of it). Their sites take a unit (a node id or an instance) and
-    fill ``units`` with its instance, or ``accelerator`` with its
-    accelerator (``unencapsulate``'s also takes an accelerator's name).
+Here: ``split``, ``split_map``, ``tag_map``, ``untag_map``, ``bind``, ``unbind``, ``join_map``,
+``interchange_map``, ``encapsulate`` and ``unencapsulate``, as CONTRACTS, "Recipe" defines them
+(bind's code match: "Block runtime model"). ``interchange`` is ``interchange_map`` with the
+partner as a plain argument, since ``with`` is a Python keyword.
 """
 
 from __future__ import annotations
@@ -177,7 +58,7 @@ class TransformSpec:
     fn: Transform
     ints: tuple[str, ...] = ()
     site: Site | None = None
-    multi: MultiSite | None = None  # its site over a selection of several items (D72)
+    multi: MultiSite | None = None  # its site over a selection of several items
     # the inputs the step fixes, {container: array} from (graph, **params): its reference check
     # runs the graph before it and after it on them (run.py's checked_step; bake_scalar's value)
     fixes: Callable[..., dict[str, Any]] | None = None
@@ -206,7 +87,7 @@ def register_transform(
     fixes: Callable[..., dict[str, Any]] | None = None,
     params: tuple[str, ...] | None = None,
 ) -> None:
-    """Make ``{"transform": name}`` usable in a recipe (principle 6), with its site (D72),
+    """Make ``{"transform": name}`` usable in a recipe (principle 6), with its site,
     for a transform that takes several items its site over a selection (``multi``), and for
     one that fixes an input (``bake_scalar``) the inputs it fixes (``fixes``), and for one whose
     params a Python signature cannot name (a keyword) its params (``params``)."""
@@ -216,7 +97,7 @@ def register_transform(
 
 
 def site_of(name: str, g: Graph, selected: str | list[str]) -> dict[str, Any]:
-    """Transform ``name``'s site on a selection, one item or several (D72): one item goes to its
+    """Transform ``name``'s site on a selection, one item or several: one item goes to its
     ``site`` as before (or its ``multi`` when it has one, which must agree); several to its
     ``multi``, and a transform without one refuses them (``site.one``, "takes one
     selection")."""
@@ -274,7 +155,7 @@ def _map_dims(body: list[Node], fn: Callable[[Any], Any], splits: bool = False) 
     """``fn`` on every memlet subset dimension and map range under ``body`` (an accelerated
     node's ``replaced`` subtree included); with ``splits``, on each split's range too."""
     for n in body:
-        for m in (*n.inputs.values(), *n.outputs.values()):
+        for m in n.memlets():
             m.map_dims(fn)
         if n.kind == "map":
             n.attrs["range"] = fn(n.attrs["range"])
@@ -336,7 +217,7 @@ def _split_site(g: Graph, map: str, what: str) -> dict[str, Any]:
 
 
 # The suffix of a split's inner map id: ``split``'s neutral one and ``split_map``'s (and
-# ``split_reduce``'s), which tags in the same step (D73). The variables follow loops.py's rule.
+# ``split_reduce``'s), which tags in the same step. The variables follow loops.py's rule.
 SPLIT_NEUTRAL = "_inner"
 SPLIT_TAGGED = "_s"
 
@@ -581,9 +462,9 @@ def _bind_check(g: Graph, site: _Site, brm: str, implementation: str,
     """The check: the BRM's ports match the tasklet's, their dtypes are accepted, it computes
     what the tasklet computes, and its lanes are the spatial bound (the design params: the
     lanes param from that bound, the rest given or default)."""
-    from snax_forge.brm import BrmError, fits, result_type
+    from snax_forge.brm import BrmError
 
-    tasklet, smap = site.tasklet, site.smap
+    tasklet = site.tasklet
     try:
         b = load_brm(brm)
     except BrmError as e:
@@ -591,26 +472,66 @@ def _bind_check(g: Graph, site: _Site, brm: str, implementation: str,
     conn_dtypes = {
         c: g.containers[m.data].dtype for c, m in (tasklet.inputs | tasklet.outputs).items()
     }
+    given = dict(params or {})
+    seeds = _bind_seeds(site, b, brm, given, what)
+    scalars = _scalar_inputs(g, site, what)
+    ports = match(site.pattern, b, conn_dtypes, frozenset(scalars))
+    _check_port_dtypes(b, ports, conn_dtypes, what)
+    if seeds:
+        given[SEED] = 1  # the seed's port, on the seed's element (_bind_rewrite)
+    names = _scalar_names(b, scalars)
+    entry, ports, slots = _bind_entry(b, brm, tasklet, ports, names, given, what)
+    _check_port_dtypes(b, ports, conn_dtypes, what)  # the entry's assignment of the inputs
+    computes = _computes(tasklet, ports, names)
+    from_scalar = _bind_slots(b, brm, entry, tasklet, ports, slots, names, conn_dtypes, given,
+                              computes, what)  # fmt: skip
+    var_s, end, memlets, folds = _bind_lanes(g, site, b, ports, given, what)
+    try:
+        inst = b.resolve(implementation, given, from_scalar)
+    except BrmError as e:
+        raise SandboxError(f"{what}: {e}") from None
+    if inst.code != entry.code:  # a slot given that the matched entry leaves unset
+        extra = [k for k in b.all_slots() if k in inst.params and k not in slots]
+        raise SandboxError(
+            f"{what}: {', '.join(f'{k} = {inst.params[k]!r}' for k in extra)} given, but the "
+            f"tasklet computes {computes!r}, {brm!r}'s {entry.code!r}, which leaves "
+            f"{' and '.join(extra)} unset"
+        )
+    lane_port = next(ports[c] for c in memlets if c not in folds)
+    if inst.lanes(lane_port) != end:
+        raise SandboxError(f"{what}: the BRM has {inst.lanes(lane_port)} lanes, the map {end}")
+    for c in folds:
+        if inst.lanes(ports[c]) != 1:
+            raise SandboxError(
+                f"{what}: {c} folds every lane into one, port {ports[c]!r} has "
+                f"{inst.lanes(ports[c])} lanes"
+            )
+    return _Bound(b, ports, inst, var_s, end, memlets, folds, entry.code, from_scalar)
+
+
+def _bind_seeds(site: _Site, b: Any, brm: str, given: Mapping[str, Any],
+                what: str) -> dict[str, Memlet]:  # fmt: skip
+    """The fold's seeds, checked against the BRM's seed port and a given ``seed``."""
     seeds = _seeds(site)
-    given_seed = (params or {}).get(SEED)
+    given_seed = given.get(SEED)
     if seeds and not any(p.name == SEED for p in b.interface.ports):
         (s,) = seeds.values()
         raise SandboxError(f"{what}: the fold is seeded from {s.data}; {brm!r} has no seed port "
-                           "(TreeAccumulate and SerialAccumulate take one, D163): unfuse_seed "
+                           "(TreeAccumulate and SerialAccumulate take one): unfuse_seed "
                            "first")  # fmt: skip
     if given_seed is not None and given_seed != int(bool(seeds)):
         raise SandboxError(f"{what}: seed = {given_seed!r} given, but the fold is "
                            f"{'seeded' if seeds else 'not seeded'} (fuse_seed sets it)")  # fmt: skip
-    scalars = _scalar_inputs(g, site, what)
-    ports = match(site.pattern, b, conn_dtypes, frozenset(scalars))
-    _check_port_dtypes(b, ports, conn_dtypes, what)
+    return seeds
+
+
+def _bind_entry(b: Any, brm: str, tasklet: Node, ports: dict[str, str], names: dict[str, str],
+                given: dict[str, Any], what: str) -> tuple[Any, dict[str, str], dict[str, Any]]:  # fmt: skip
+    """The BRM's code entry that computes what the tasklet computes, its ports and slots; its
+    params go into ``given``, refused where a given one differs."""
     entries = b.function.entries()
     if not entries:
         raise SandboxError(f"{what}: brm {brm!r} does not say what it computes (function.code)")
-    given = dict(params or {})
-    if seeds:
-        given[SEED] = 1  # the seed's port, on the seed's element (_bind_rewrite)
-    names = _scalar_names(b, scalars)
     entry, ports, slots = _entry(b, entries, ports, tasklet, names, given)
     if entry is None:
         computes = _computes(tasklet, ports, names)
@@ -623,7 +544,6 @@ def _bind_check(g: Graph, site: _Site, brm: str, implementation: str,
             f"{what}: the tasklet computes {computes!r} on the BRM's ports, {brm!r} computes "
             f"{listed}"
         )
-    _check_port_dtypes(b, ports, conn_dtypes, what)  # the entry's assignment of the inputs
     computes = _computes(tasklet, ports, names)
     for k, v in entry.params.items():
         if k in given and given[k] != v:
@@ -632,6 +552,16 @@ def _bind_check(g: Graph, site: _Site, brm: str, implementation: str,
                 f"{brm!r}'s code at {k} = {v!r}"
             )
         given[k] = v
+    return entry, ports, slots
+
+
+def _bind_slots(b: Any, brm: str, entry: Any, tasklet: Node, ports: dict[str, str],
+                slots: dict[str, Any], names: dict[str, str], conn_dtypes: dict[str, Any],
+                given: dict[str, Any], computes: str, what: str) -> dict[str, Memlet]:  # fmt: skip
+    """The entry's slots: a literal goes into ``given`` (it must fit the op type), a scalar
+    operand is read from its container; the latter returned by slot."""
+    from snax_forge.brm import fits, result_type
+
     op_type = None
     if slots:
         try:
@@ -667,7 +597,14 @@ def _bind_check(g: Graph, site: _Site, brm: str, implementation: str,
                 "the input ports' dtypes; the literal is weak, NEP 50)"
             )
         given[k] = v
+    return from_scalar
 
+
+def _bind_lanes(g: Graph, site: _Site, b: Any, ports: dict[str, str], given: dict[str, Any],
+                what: str) -> tuple[str, int, dict[str, Memlet], set[str]]:  # fmt: skip
+    """The spatial map's variable and bound, the bound memlets and the folding outputs; the
+    lanes param set to the bound in ``given``."""
+    tasklet, smap = site.tasklet, site.smap
     begin, end, step = parse_dim(smap.attrs["range"], what)
     if begin != 0 or step != 1:
         raise SandboxError(
@@ -695,27 +632,7 @@ def _bind_check(g: Graph, site: _Site, brm: str, implementation: str,
                 f"{what}: {lanes_v} = {given[lanes_v]} given, the spatial bound is {end}"
             )
         given[lanes_v] = end
-    try:
-        inst = b.resolve(implementation, given, from_scalar)
-    except BrmError as e:
-        raise SandboxError(f"{what}: {e}") from None
-    if inst.code != entry.code:  # a slot given that the matched entry leaves unset
-        extra = [k for k in b.all_slots() if k in inst.params and k not in slots]
-        raise SandboxError(
-            f"{what}: {', '.join(f'{k} = {inst.params[k]!r}' for k in extra)} given, but the "
-            f"tasklet computes {computes!r}, {brm!r}'s {entry.code!r}, which leaves "
-            f"{' and '.join(extra)} unset"
-        )
-    lane_port = next(ports[c] for c in memlets if c not in folds)
-    if inst.lanes(lane_port) != end:
-        raise SandboxError(f"{what}: the BRM has {inst.lanes(lane_port)} lanes, the map {end}")
-    for c in folds:
-        if inst.lanes(ports[c]) != 1:
-            raise SandboxError(
-                f"{what}: {c} folds every lane into one, port {ports[c]!r} has "
-                f"{inst.lanes(ports[c])} lanes"
-            )
-    return _Bound(b, ports, inst, var_s, end, memlets, folds, entry.code, from_scalar)
+    return var_s, end, memlets, folds
 
 
 def _seeds(site: _Site) -> dict[str, Any]:
@@ -860,7 +777,7 @@ def _bind_rewrite(g: Graph, site: _Site, bound: _Bound, brm: str, implementation
             out[port] = Memlet(m.data, _lanes_dims(m, bound.var_s, bound.end, f"{what}.{side}.{c}"))
             if nest is not None:
                 _check_order(g, m, temporal, smap, nest.indices(), f"{what} port {port!r}")
-    for c, seed in _seeds(site).items():  # the seed's element, one lane as its fold's output
+    for seed in _seeds(site).values():  # the seed's element, one lane as its fold's output
         sm = Memlet(seed.data, list(seed.subset))
         new_in[SEED] = Memlet(seed.data, [*sm.subset[:-1], _one_lane(sm.subset[-1],
                                                                       f"{what}.seed")])  # fmt: skip
@@ -1151,7 +1068,8 @@ def _nest(g: Graph, x_id: str, y_id: str, what: str) -> tuple[tuple[Node, ...], 
 
 
 def _interchange_check(g: Graph, x_id: str, y_id: str, what: str) -> list[Node]:
-    """The two maps free to trade places (module doc): the chain from the outer to the inner."""
+    """The two maps free to trade places (CONTRACTS, "Recipe"): the chain from the outer to the
+    inner."""
     around, chain = _nest(g, x_id, y_id, what)
     top, bottom = chain[0], chain[-1]
     for o in around:
@@ -1230,7 +1148,7 @@ def _nodes_under(body: list[Node]) -> Iterator[Node]:
 
 
 def interchange(g: Graph, map: str, partner: str) -> Graph:
-    """``map`` and ``partner`` trade places in their perfect nest (module doc); its own
+    """``map`` and ``partner`` trade places in their perfect nest (CONTRACTS, "Recipe"); its own
     inverse, the pair in either order."""
     _interchange_site(g, map)  # the site's refusal first, as every transform's
     g = _copy(g)
@@ -1291,7 +1209,7 @@ def _encapsulate_site(g: Graph, selected: str) -> dict[str, Any]:
 
 def selected_units(g: Graph, selected: list[str]) -> list[str]:
     """The instances a selection stands for, in the graph's order: a unit's node id or instance
-    itself, a group's name its units, an accelerator's name its groups' units (D148); an item
+    itself, a group's name its units, an accelerator's name its groups' units; an item
     that names none of these is a SandboxError."""
     nodes = _accelerated(g)
     order = list(dict.fromkeys(n.attrs["instance"] for n in nodes))
@@ -1340,7 +1258,7 @@ def encapsulate(g: Graph, accelerator: str, units: list[str]) -> Graph:
     graph_order = [u for u in order if u in units]
     if graph_order != units:
         raise SandboxError(f"{what}: units {units} in another order than the graph runs them, "
-                           f"{graph_order}; the groups keep the graph's order (C§17)")  # fmt: skip
+                           f"{graph_order}; the groups keep the graph's order")  # fmt: skip
     for n in nodes:
         if n.attrs["instance"] in units:
             n.attrs["accelerator"] = accelerator
@@ -1362,7 +1280,7 @@ def _unencapsulate_site(g: Graph, selected: str) -> dict[str, Any]:
 
 def unencapsulate(g: Graph, accelerator: str) -> Graph:
     """The inverse of encapsulate: each group of ``accelerator`` its own accelerator again; one
-    whose groups share its movers (``share_ports``, D169) is refused (unshare_ports first)."""
+    whose groups share its movers (``share_ports``) is refused (unshare_ports first)."""
     if _unencapsulate_site(g, accelerator)["accelerator"] != accelerator:  # a unit's name
         raise SandboxError(f"unencapsulate {accelerator!r}: no accelerator of that name")
     shared = [c for c, cont in g.containers.items()

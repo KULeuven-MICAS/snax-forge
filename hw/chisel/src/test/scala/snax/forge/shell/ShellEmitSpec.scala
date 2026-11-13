@@ -12,22 +12,23 @@ import snax.forge.{Emit, SvHeader}
   *
   * The ports: `<tag>_shell_wrapper` has exactly the ports `snax_acc_wrapper.sv.tpl` connects with
   * `snax_disable_csr_manager` (snax_cluster `hw/templates/`, at 05615e4), for the fixture's streamer hjson, and per
-  * group `<group>_busy_o` and `<group>_done_o` (D146), which the template leaves unconnected. The template's ports,
-  * read off its `snax_disable_csr_manager` branch: `clk_i`, `rst_ni`; per writer mover k (`data_writer_params`)
+  * group `<group>_busy_o` and `<group>_done_o`, which the template leaves unconnected. The template's ports, read off
+  * its `snax_disable_csr_manager` branch: `clk_i`, `rst_ni`; per writer mover k (`data_writer_params`)
   * `acc2stream_<k>_data_o` of `num_channel[k] * tcdm_data_width` bits, `_valid_o`, `_ready_i`; per reader mover k
   * `stream2acc_<k>_data_i`, `_valid_i`, `_ready_o`; then `csr_req_addr_i`, `csr_req_data_i` (`RegAddrWidth`,
   * `RegDataWidth`: 32), `csr_req_write_i`, `csr_req_valid_i`, `csr_req_ready_o`, `csr_rsp_data_o` (32),
   * `csr_rsp_valid_o`, `csr_rsp_ready_i`. `tcdm_data_width` is the cluster's `data_width`, 64 on snax_forge. No fixture
   * has reader-writer movers. The wrapper's ports are read from the emitted SystemVerilog's module header (`SvHeader`).
   *
-  * The hierarchy is `bundle.json`'s `modules` (C§18; snax-forge's `snax_forge/gen/bundle.py`, `module_tree`, which
-  * writes it from `accelerator.json` without elaborating): `<tag>_shell_wrapper` holds `<tag>_csr`, `<tag>_ctrl` and
-  * `<tag>_datapath`; `<tag>_csr` its `<tag>_peripherals`; `<tag>_ctrl` a `<tag>_<group>_ctrl` per group;
-  * `<tag>_datapath` a `<tag>_<unit>` per unit, then a `<tag>_<link>` per buffer, group by group; each `<tag>_<unit>`
-  * its one catalogue datapath. Read off each module's instances in the SystemVerilog (firtool's ` <module> <instance>
-  * (` lines); dot 1's (two groups), dot 4's (a wire) and dot 6's (a buffer) among them. A set whose groups share its
-  * movers (D169) shows its movers at the wrapper (its hjson's `num_channel` are the movers') and adds
-  * `<tag>_<set>_port_mux`, which holds no module, after `<tag>_datapath`: dot_1_shared's and mvt_1_dot2_shared's.
+  * The hierarchy is `bundle.json`'s `modules` (CONTRACTS, "Bundle"; snax-forge's `snax_forge/gen/bundle.py`,
+  * `module_tree`, which writes it from `accelerator.json` without elaborating): `<tag>_shell_wrapper` holds
+  * `<tag>_csr`, `<tag>_ctrl` and `<tag>_datapath`; `<tag>_csr` its `<tag>_peripherals`; `<tag>_ctrl` a
+  * `<tag>_<group>_ctrl` per group; `<tag>_datapath` a `<tag>_<unit>` per unit, then a `<tag>_<link>` per buffer, group
+  * by group; each `<tag>_<unit>` its one catalogue datapath. Read off each module's instances in the SystemVerilog
+  * (firtool's ` <module> <instance> (` lines); dot 1's (two groups), dot 4's (a wire) and dot 6's (a buffer) among
+  * them. A set whose groups share its movers shows its movers at the wrapper (its hjson's `num_channel` are the
+  * movers') and adds `<tag>_<set>_port_mux`, which holds no module, after `<tag>_datapath`: dot_1_shared's and
+  * mvt_1_dot2_shared's.
   *
   * `emitted.json` lists a file for every module the wrapper reaches, each file exists, and `sv/` holds those only.
   */

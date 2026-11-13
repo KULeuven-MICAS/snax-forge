@@ -6,9 +6,10 @@ import org.scalatest.flatspec.AnyFlatSpec
 
 import snax.forge.{ForgeTester, IntType, LaneBits, Seeds}
 
-/** `LinkBuffer` (D149) against a Scala model written from C§17: on load slot wslot takes the beat, `out` is slot rslot,
-  * so a beat written in one cycle reads from the next. Random beats and loads driven as a ring of the occupancy the
-  * control unit keeps, at depth 1 (slots 0 bits wide), 2 and 4, int64 and int32, signed and unsigned.
+/** `LinkBuffer` against a Scala model written from CONTRACTS, "Accelerator RTL spec": on load slot wslot takes the
+  * beat, `out` is slot rslot, so a beat written in one cycle reads from the next. Random beats and loads driven as a
+  * ring of the occupancy the control unit keeps, at depth 1 (slots 0 bits wide), 2 and 4, int64 and int32, signed and
+  * unsigned.
   */
 class LinkBufferSpec extends AnyFlatSpec with ForgeTester {
 

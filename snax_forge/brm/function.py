@@ -1,52 +1,17 @@
-"""A BRM's ``function``, run firing by firing: the accelerator kinds (D19, D68).
+"""A BRM's ``function``, run firing by firing: the accelerator kinds.
 
-A BRM's ``function`` names a kind registered here and gives the kind's
-params as expressions over its design params; ``function_of(instance,
-dtypes)`` builds the kind with them resolved and the node's port dtypes
-(``dtypes``, port -> dtype, from its containers: ``brm.port_dtypes``; None
-when built without a graph), which every kind's factory takes as a keyword. The reference executor (dfg/execute.py)
-runs an accelerated node through it, so the kind says what a firing computes
-and when each port moves a beat; timing (L, II, drain) is the
-implementation's, not the kind's.
-
-Ports (``AccelPort``): name, direction, lanes per beat and a rate: a port
-moves one beat every ``rate`` firings, an int or the name of a runtime param
-(e.g. ``"T"``). An input of rate r is taken at firings 0, r, 2r, ...; an
-output of rate r is given at firings r-1, 2r-1, ... (C§10).
-
-    fn(k, ins, state, params) -> outs
-
-``k`` is the firing index in the task; ``ins`` maps every input due at ``k``
-to its beat (a NumPy array, first axis = lanes); ``state`` lives for one
-task (a reduction's partial sum); ``params`` are the task's runtime params.
-``outs`` holds exactly the outputs due at ``k``.
-
-Kinds: ``simd`` (every port rate 1, N inputs folded into one output,
-lane by lane, at the inputs' dtype: the executor casts the result into the
-output's when it writes it, D143; one input with the constant ``k``,
-``op(a, k)``, k cast to a's dtype; op ``axpby``, two inputs, ``k1 * a + k2 * b``
-at their result type, ``+ b`` with k2 unset) and ``reduce`` (input ``a`` at rate 1,
-output ``out`` at rate ``"T"``, the lanes folded too when ``lanes_out`` is 1;
-each input lane cast to the output's dtype first, so its tree and its
-accumulator run at that dtype, as ``np.add.reduce(a, dtype=out)`` and
-SnaxUnit do; with ``seed`` 1 an input ``seed`` at rate ``"T"`` that a job's first
-firing folds into, the fold's seed), ``mac`` (inputs ``a`` and ``b`` at rate 1, output
-``out`` at rate ``"T"``, every lane its own: the product at the inputs' result
-type, cast to the output's dtype and folded per lane over T beats), and
-``lane_accumulate`` (input ``a`` at rate 1, output ``out`` at rate ``"T"``, every
-lane its own: ``a`` cast to the output's dtype and folded per lane over T beats),
-each with ``op`` a registered op by name (``mac``'s and ``lane_accumulate``'s the
-fold's) (``add``, ``sub``, ``mul``, ``min``, ``max``, ``and``,
-``or``, ``xor``). New ones with ``register_kind`` and ``register_op``.
-
-A function param that names a design param the instance leaves unset (``simd``'s
-``k`` at two streams) is not passed. A slot read from a scalar (a CSR: ``k`` at one stream,
-``axpby``'s ``k1`` and ``k2``) is unset in the instance and listed in its ``read``
-(instance.py, which refuses a slot the code needs with neither): the kind builds without
-it, and the reference executor resolves the instance with the value read from the node's
-slot connector (a firing without a value is refused, a guard nothing reaches). ``function_of`` refuses, as a BrmError, a kind that is not registered, params
-the kind rejects, and a kind whose ports (name, direction, lanes, rate, in
-order) are not the BRM's.
+``function_of(instance, dtypes)`` builds the kind a BRM's function names (``register_kind``)
+with its params resolved and the node's port dtypes, as an ``AccelFunction``: its ports
+(``AccelPort``: name, direction, lanes, rate) and ``fn(k, ins, state, params) -> outs``, firing
+``k``'s outputs from the inputs due at it, ``state`` living for one task. The reference executor
+runs an accelerated node through it; timing is the implementation's, not the kind's. Kinds:
+``simd`` (every rate 1; the inputs folded lane by lane at their dtype, or ``op(a, k)``, or
+``axpby``), ``reduce`` (``a`` at rate 1, cast to the output's dtype and folded over T beats,
+the lanes too when ``lanes_out`` is 1; at ``seed`` 1 a ``seed`` input at rate T), ``mac`` (``a *
+b`` folded per lane over T beats) and ``lane_accumulate`` (``a`` folded per lane over T beats),
+each with an op registered by name (``register_op``). A slot read from a scalar is unset in the
+instance; the executor resolves it from the node's slot connector. ``function_of`` raises
+``BrmError`` for an unregistered kind, params it rejects, or ports that are not the BRM's.
 """
 
 from __future__ import annotations
@@ -141,7 +106,8 @@ class AccelFunction:
         return rates
 
     def due(self, k: int, rates: Mapping[str, int], direction: str) -> list[str]:
-        """The ports of ``direction`` that move a beat at firing ``k`` (module doc)."""
+        """The ports of ``direction`` that move a beat at firing ``k`` (CONTRACTS, "Block runtime
+        model")."""
         if direction == "in":
             return [p.name for p in self.inputs if k % rates[p.name] == 0]
         return [p.name for p in self.outputs if (k + 1) % rates[p.name] == 0]

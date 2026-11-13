@@ -1,4 +1,4 @@
-"""The per-technology tables (snax_forge/char/, C§20): every entry against the catalogue
+"""The per-technology tables (snax_forge/char/): every entry against the catalogue
 (``hw/chisel/blocks.json``), and the lookup rules on small tables."""
 
 from __future__ import annotations
@@ -23,7 +23,8 @@ I64 = {"inType": "int64", "outType": "int64"}
 
 @pytest.mark.parametrize("tech", TECHS)
 def test_every_entry_is_a_catalogue_datapath_with_complete_params(tech):
-    """Each entry's datapath is the catalogue's (through ``DATAPATH_RENAMES``), its params with each point's lanes (and
+    """Each entry's datapath is the catalogue's (through ``DATAPATH_RENAMES``), its params with each
+    point's lanes (and
     depth) a valid and complete param set there, its rule known, its points unique."""
     cat, t = catalogue(), load(tech)
     assert t.tech == tech and t.source["snax_forge"] and t.source["snax_forge_experiments"]
@@ -126,7 +127,7 @@ def test_outside_the_measured_range_is_none():
 
 @pytest.mark.parametrize("tech", TECHS)
 def test_the_real_tables_on_chars_named_cases(tech):
-    """The cases C§20 names: TreeAccumulate at lanes 64 and SerialAccumulate at lanes 1 are
+    """The cases the cost model names: TreeAccumulate at lanes 64 and SerialAccumulate at lanes 1 are
     outside, int32 has no entry; a Mac at W = 4 is copied, a SerialAccumulate at 12
     interpolated, a LinkBuffer of depth 3 interpolated."""
     t = load(tech)

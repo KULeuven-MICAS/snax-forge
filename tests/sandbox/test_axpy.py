@@ -1,4 +1,4 @@
-"""Scalar operands on slots, and axpy (``y += alpha * x``) as one simd unit (C§10, C§12).
+"""Scalar operands on slots, and axpy (``y += alpha * x``) as one simd unit.
 
 A scalar operand is a tasklet input on a kernel's scalar argument (``sdfg.scalar``) whose
 subset names no map variable (axpy's ``alpha[0]``): it maps to no port; ``bind`` matches it

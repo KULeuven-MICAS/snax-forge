@@ -1,22 +1,11 @@
 """Shared helpers for the SNAX-DFG tests.
 
-The fixtures are vecadd at three steps of the flow, kept in the form
-``Graph.to_json`` writes:
-
-    vecadd.snaxdfg              as imported: one map over 0:N, a tasklet (the importer's target)
-    vecadd_split.snaxdfg        after split_map with W = 4, N bound to 64
-    vecadd_accelerated.snaxdfg  after bind to simd, instance acc
-
-and dot as imported: a multiply map into ``tmp0``, then a sum map
-whose output memlet folds into ``out[0]`` with ``reduce`` add (``dot.snaxdfg``),
-and dot after ``recipes/dot/dot_1.json``'s binds: the multiply map bound to
-simd, the sum map to accumulate, W = 4 (``dot_accelerated.snaxdfg``),
-vecmul as imported (vecadd with ``*``: ``mult_map`` and ``mult``,
-``vecmul.snaxdfg``), and vsum as imported (dot's sum map on its own: ``sum_map`` and ``sum`` folding ``A`` into ``out[0]``,
-``vsum.snaxdfg``).
-
-Graphs in the error tests are the plain fixture as a dict, changed by one
-edit (``edited``), the way a person or an LLM edits the file.
+The fixtures (``fixture``) are graphs in the form ``Graph.to_json`` writes, among them vecadd as
+imported, after ``split_map`` (W = 4, N = 64) and after ``bind`` to simd
+(``vecadd_accelerated.snaxdfg``); dot as imported (a multiply map into ``tmp0``, then a sum map
+folding into ``out[0]``) and after ``recipes/dot/dot_1.json``'s binds; vecmul and vsum as
+imported. Graphs in the error tests are a fixture as a dict changed by one edit (``edited``),
+the way a person or an LLM edits the file.
 """
 
 from __future__ import annotations

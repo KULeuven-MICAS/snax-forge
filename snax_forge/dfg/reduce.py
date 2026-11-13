@@ -1,39 +1,18 @@
-"""Reductions on a memlet (D102): how many writes to one element combine.
+"""Reductions on a memlet: how the writes to one element combine.
 
-A tasklet output whose memlet has a ``reduce`` does not overwrite its element:
-every iteration of the maps around it folds its value in with the op. The
-element is set to ``identity`` when the node starts, so the node leaves the
-fold of exactly its own writes, whatever the element held before. That is
-what a DaCe ``Reduce`` means, and what an accumulator does in hardware
-(it starts from zero and writes the sum). DaCe calls it write-conflict
-resolution (``wcr``); MLIR a reduction iterator with a combiner and an
-initial fill. The SNAX-DFG names it after neither, so any importer writes
-the same field:
+A tasklet output whose memlet has a ``reduce`` (``Reduction``) folds the value of every
+iteration of the maps around it into its element, starting from ``identity``, so the node
+leaves the fold of exactly its own writes: what a DaCe ``Reduce`` and a hardware accumulator
+do. Its stored form, and the ``seed`` (``Seed``) that may take the identity's place, are in
+CONTRACTS, "SNAX-DFG"; a plain ``identity: null`` (DaCe's plain ``wcr``) is refused.
+``map_seed`` rewrites the seed's subset with the memlet's, so every transform moves both.
 
-    {"data": "out", "subset": [0], "reduce": {"op": "add", "identity": 0}}
-
-The op is a name registered here (``register_reduction``, principle 6) with the
-NumPy ufunc that folds it and the identity it has for a dtype. Every
-registered op is associative and commutative on the integers it runs on
-(D28), so the order the writes land in never changes the result: a map
-with a ``reduce`` memlet can be split, tiled or run in parallel as any other.
-A float op, whose result depends on the order, needs the order its BRM
-defines and is not registered here. ``ReduceOp.order_free`` says so for each
-op (True for all four): a transform that changes the order a fold's writes
-land in (``interchange_map``) reads it, so an op registered with
-``order_free=False`` is refused there.
-
-**The seed** (M13 B2 R5). In place of ``identity`` a reduce may hold
-``seed``, an element of a container the fold starts from instead, read once
-per element before the first write (``fuse_seed`` in sandbox/seed.py makes
-it, the fold of matvec_acc's ``q += A p`` as ``x' = x (+) fold_j(a_j)``):
-
-    {"data": "q", "subset": ["m"], "reduce": {"op": "add", "seed": {"data": "q", "subset": ["m"]}}}
-
-``identity`` and ``seed`` are mutually exclusive, one of them is given. The
-seed's subset moves with the memlet's: every transform rewriting a subset
-rewrites it too (``Reduction.map_seed``). A plain ``identity: null`` (fold
-into what the element already holds, DaCe's plain ``wcr``) is not accepted.
+An op is registered by name (``register_reduction``) with the NumPy ufunc that folds it and its
+identity for a dtype. The registered ops (``add``, ``mul``, ``min``, ``max``) are associative and
+commutative on integers, so a map with a ``reduce`` memlet may be split, tiled or run in
+parallel. ``ReduceOp.order_free`` says so per op: a transform that changes the order of a fold's
+writes (``interchange_map``) refuses an op registered with ``order_free=False``. A float op is
+not registered: its result depends on the order.
 """
 
 from __future__ import annotations
@@ -51,7 +30,7 @@ from .subset import canonical_dim
 @dataclass(frozen=True)
 class ReduceOp:
     """A registered op: the ufunc that folds it, its identity for an integer dtype, and whether
-    its result is the same in any order (associative and commutative, D28)."""
+    its result is the same in any order (associative and commutative)."""
 
     ufunc: np.ufunc
     identity: Callable[[np.dtype], int]

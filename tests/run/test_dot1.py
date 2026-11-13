@@ -1,11 +1,11 @@
-"""run/ on a recorded run of an accelerator of two groups (D148): dot 1 at trace levels task
+"""run/ on a recorded run of an accelerator of two groups: dot 1 at trace levels task
 and stall (fixtures/dot_1/README.md), converted without GVSoC.
 
 The cluster has the accelerator dot with its units mul and sum, each with its group, its
 SNAX-GVSoC path (``unit_vmul``, ``unit_vsum``), its group's CSRs and its movers; the converter
 names each unit's lines after it, gives each a profile, matches each group's task and the
 movers' tasks (the other group's idle) in order. Above task each beat line goes to its unit
-and each streamer line to the task launched with its unit's (DRY1-2 R2, open item 96).
+and each streamer line to the task launched with its unit's.
 """
 
 import json
@@ -27,7 +27,7 @@ def test_the_cluster_has_a_unit_per_group(recorded):
     cluster, *_ = recorded
     a = cluster.accelerator
     assert a.name == "dot" and a.streamer == "dot_streamer"
-    first = a.csrs.streamer_last + 1
+    first = a.csrs.sets[0].last + 1
     assert a.units == [Unit("vmul", "vmul", "unit_vmul", first, first + 2, first + 3),
                        Unit("vsum", "vsum", "unit_vsum", first + 4, first + 7, first + 8)]  # fmt: skip
     assert [(m.name, m.gvsoc) for m in a.movers] == [
@@ -114,11 +114,11 @@ def test_both_groups_convert_at_the_beat_levels(stalled, recorded):
 
 
 def test_beat_levels_are_refused_for_a_linked_group():
-    """A group of several linked units (dot 4) stays refused above task (open item 96)."""
+    """A group of several linked units (dot 4) stays refused above task."""
     cluster, tasks, check, lines, regions, _ = load_recorded("dot_4")
     with pytest.raises(RunError) as e:
         convert(lines, cluster, tasks, check["total_cycles"], "beat", None, regions, [])
-    assert e.value.code == "convert.level" and "open item 96" in str(e.value)
+    assert e.value.code == "convert.level" and "not read yet" in str(e.value)
     assert "several linked units" in str(e.value)
 
 
@@ -130,7 +130,7 @@ def test_the_cluster_round_trips(recorded):
 
 
 # =============================================================================
-# dot_1: two accelerators, two streamer sets (D157)
+# dot_1: two accelerators, two streamer sets
 # =============================================================================
 
 
@@ -140,7 +140,7 @@ def two_sets():
 
 
 def test_dot_1_has_a_streamer_per_set(two_sets):
-    """vmul: streamer 960-977, its CSRs 978-981; vsum: 982-994, 995-999 (C§16's table)."""
+    """vmul: streamer 960-977, its CSRs 978-981; vsum: 982-994, 995-999."""
     cluster, *_ = two_sets
     a = cluster.accelerator
     assert (a.name, a.accelerators()) == (
@@ -162,7 +162,7 @@ def test_dot_1_has_a_streamer_per_set(two_sets):
 
 def test_dot_1_converts_set_by_set(two_sets):
     """Each unit's task starts its own set's movers only (no idle task), each streamer's lines
-    named at its own path; one wait between the accelerators (D158)."""
+    named at its own path; one wait between the accelerators."""
     cluster, tasks, check, lines, regions, _ = two_sets
     profile, trace = convert(lines, cluster, tasks, check["total_cycles"], "task",
                              check["functional_check"], regions)  # fmt: skip

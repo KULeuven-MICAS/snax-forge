@@ -1,4 +1,4 @@
-"""gen/rtl.py's cached classpath (C§17): one file per environment, and an entry that is gone or
+"""gen/rtl.py's cached classpath: one file per environment, and an entry that is gone or
 cannot be checked (another environment's ``/root/...``) leads to a new sbt export. sbt is mocked;
 hw/chisel is a temporary folder."""
 

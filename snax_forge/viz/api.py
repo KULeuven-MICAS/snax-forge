@@ -1,59 +1,15 @@
-"""What the viewer asks for, as plain Python functions.
+"""What the run viewer asks for, as plain Python functions; server.py turns them into JSON.
 
-What this is
-------------
-The server (server.py) is a thin HTTP layer; everything it answers comes
-from the functions here, so the tests call them directly and the server
-only turns their results into JSON. Nothing here draws anything: the
-viewer (static/) formats the numbers, and HTML is checked by eye (D55).
+``load_run`` reads a flow folder (``out/flow/<name>/`` or its ``run/``) into a ``RunView``: the
+run (run/outputs.py), its cluster (run/cluster.py), its regions (run/regions.py) and its events
+indexed once with the folder's task list (index.py's ``RunIndex``). ``RunSet`` holds the runs,
+read at start-up or on Reload; nothing watches the files. A run is named after its folder,
+``-2``, ``-3``, ... on a clash. What it reads is in CONTRACTS, "Profile and trace".
 
-Loading
--------
-A run is a flow's (D136, D137): its folder ``out/flow/<name>/`` or the
-``run/`` directory in it. ``run/`` is read with ``run.outputs.read_run``
-(run.json, the profile and, above trace ``off``, the trace, C§7), and the
-cluster with ``run.cluster.load_cluster`` from the description files and the
-design point ``run.json`` names, so the views use run/'s dataclasses and
-never parse the files themselves. The design point gives the regions
-(``run.regions.regions_of``, L2 from run.json's ``elf_symbols``) and the
-events are grouped once by their ids and lookups (index.py, ``RunIndex``),
-with the flow folder's task list (``tasks.json``) pairing each accelerator
-task with its streamer tasks.
-Everything is read once, at start-up or on an explicit reload (``RunSet``);
-nothing watches the files.
-
-A run is named after its flow folder. Two folders with the same name get
-``-2``, ``-3``, ... in the order given, so names stay stable across reloads.
-
-Events
-------
-The trace events are the index's (``RunIndex.events``), sorted by cycle; a route answers
-from the index's queries (schedule.py's ``window`` for a range of cycles).
-
-Memory
-------
-The memory tab's rows are computed in memory.py from the run's regions and
-its cluster, once per memory on first use, and folded so the answer grows
-with the regions; folded rows are fetched on request, at most
-``memory.MAX_ROWS`` at a time. A mark (index.py's registry) is computed once
-per run on first use; the view lists the marks the run has and why it lacks
-the others. The cycle overlay of the tab asks for one cycle: its accesses
-and, from the index's ``returns``, every read whose data comes back in it,
-however many cycles after its request.
-
-Movement
---------
-The movement answers (journey, residency, patterns, conflicts) are
-movement.py's queries on the index; one a run's level cannot give is
-``available`` false with the reason.
-
-Schedule and cluster
---------------------
-The schedule (lanes, folded segments, detail rows) is schedule.py's queries
-on the index, the cluster view at a cycle and the stepping between cycles
-cluster.py's (D57); a run below the level an answer needs gets ``available``
-false with the reason. The viewer draws these answers and computes nothing
-of its own.
+Each route is one function: ``memory_view``, ``memory_rows`` and ``memory_cycle`` (memory.py,
+each memory and mark computed once), ``journey_view`` and ``conflicts_view`` (movement.py),
+``schedule_view`` and ``schedule_detail`` (schedule.py), ``cluster_view`` and ``step_view``
+(cluster.py). An answer the run's trace level cannot give is ``available`` false with the reason.
 """
 
 from __future__ import annotations

@@ -1,73 +1,17 @@
-"""The platform: the SNAX cluster around the accelerators (D84).
+"""The platform: the SNAX cluster around the accelerators.
 
-A platform file describes everything of the cluster that is not the
-accelerator itself: L1, L2, how the program waits, and the streamer shell. It
-never names a recipe, and a recipe never names it; the design step pairs a
-bound graph with a platform.
+A platform file describes everything of the cluster that is not the accelerator itself: the L1,
+the L2, the accelerators' CSR widths, how the program waits, and the streamer shell. It never
+names a recipe, and a recipe never names it; the design step pairs a bound graph with a
+platform. The file and its fields are CONTRACTS, "Platform": ``Platform`` holds it, with
+``L1Config``, ``L2Config``, ``AccCsrConfig`` and ``StreamerOptions``, each checking its own
+values. Loading collects every problem (``DesignError``) instead of stopping at the first.
 
-    {
-     "name":     "small16",
-     "base":     null,              the platform this one was made from
-     "changes":  {},                what differs from ``base``, path -> value
-     "hjson":    null,              the source cluster file, a path from
-                                    snax-forge's root (``design from-hjson``)
-     "accelerator_slot": null,      the generated accelerator's name
-     "acc_csr":  {...},             AccCsrConfig: its CSRs' widths
-     "l1":       {...},             L1Config
-     "l2":       {...} or null,     L2Config; no L2, no DMA
-     "wait_mode": "poll",           how the program waits for a task
-     "streamers": {
-      "default": {"fifo_depth": 2},
-      "acc_out": {"fifo_depth": 4}
-     }
-    }
-
-``L1Config`` and ``L2Config`` hold only what the design step, SNAX-LOWER and
-the generator read (CONTRACTS.md section 13); each checks its own values.
-
-**The streamer shell.** SNAX's streamers are a shell shaped to what an
-accelerator needs, so the platform does not list them: one streamer is made
-for every port of every accelerated node, named ``<instance>_<port>`` (D75).
-Its direction and lanes come from the BRM port (``write``, ``n_ports`` and,
-unless an entry gives them, ``spatial_bounds``), its temporal loops from the
-graph (``temporal_dims``, the firing loops of its port's memlet);
-``default`` gives the rest (``fifo_depth``), and an entry named after the
-streamer overrides any of it for that one streamer only. An entry may also
-give ``num_ch``, the number of TCDM channels the streamer uses (never in
-``default``); without it, the wire default, the lanes over num_slc, the
-slices (elements) per word of the port's container (D142, ``connect.num_ch``).
-
-**The word.** A bank word is ``width_bits`` wide; how many elements it holds
-is each container's dtype's business, not the platform's. Resolving
-the shell against a graph is streamers.py; an entry that matches no port is a
-check (``connect.streamer_key``), not a load error, because only the graph
-knows the ports.
-
-**The source hjson.** A platform read from snax_cluster's cluster file
-(hjson_platform.py) keeps the file it came from (``hjson``, a copy in
-``platforms/``) and the generated accelerator's name (``accelerator_slot``,
-``snax_forge``): the GVSoC generator writes the design's cluster file from
-that source, its only slot renamed to it and set (snax_forge/gen). Both are
-null for a platform not read from one (small16). ``--set
-accelerator_slot=NAME`` changes it as any field.
-
-**The accelerator's CSRs** (``acc_csr``, D152): ``job_width`` (default 32)
-is the bits of JOBS and every JOB_BEATS, and of the control units' counters
-(no copies, D168); ``busy_counter_width`` those of BUSY_COUNTER, null to follow
-``job_width``. Each is 1 to 32; the generator writes them as the CSRs'
-widths in ``accelerator.json`` (gen/accelerator.py, C§17).
-
-**Changes and working copies.** ``with_changes`` applies ``--set`` paths
-(``l1.n_banks``, ``streamers.acc_a.fifo_depth``) and returns a working
-copy: complete values, ``base`` the platform it all started from, and
-``changes`` every path set since, in order. Continuing from a working copy
-adds to its changes, so ``changes`` is always the difference from ``base``.
-``saved_as`` renames a working copy for ``design save``.
-
-Every field is written; missing keys take their defaults (``l2`` missing is
-no L2); unknown keys and values of the wrong type are errors. Loading
-collects every problem it finds (``DesignError``) instead of stopping at the
-first.
+``Platform.with_changes`` applies ``--set`` paths and returns a working copy, ``base`` the
+platform it all started from and ``changes`` every path set since, so ``changes`` is always the
+difference from ``base``; ``saved_as`` renames a working copy for ``design save``. Resolving
+the shell against a graph is streamers.py; an entry that matches no port is a check
+(``connect.streamer_key``), not a load error, since only the graph knows the ports.
 """
 
 from __future__ import annotations
@@ -98,7 +42,7 @@ INT_OR_NULL = {"acc_csr": ("busy_counter_width",)}
 
 @dataclass(frozen=True)
 class L1Config(Config):
-    """The L1: single-port banks of one word each, word-interleaved (CONTRACTS.md 13)."""
+    """The L1: single-port banks of one word each, word-interleaved (CONTRACTS, "Platform")."""
 
     n_banks: int = 32
     width_bits: int = 64  # bits per bank word
@@ -106,8 +50,9 @@ class L1Config(Config):
     base_addr: int = 0  # byte address of the first L1 word
     wide_bits: int = 512  # widest port, the DMA's: one superbank of 8 banks in SNAX
     # the TCDM crossbar's most inputs: snax-gvsoc's snax_tcdm_xbar.cpp asserts nb_inputs in
-    # (0, 128] (D85, the check connect.xbar_inputs); above warn_xbar_inputs a note
+    # (0, 128] (the check connect.xbar_inputs); above warn_xbar_inputs a note
     # (design.xbar_inputs): the cost extrapolated beyond the tables and beyond SNAX's own crossbar
+    # NB (D85): SNAX-GVSoC's crossbar takes at most 128 inputs; raise both together.
     max_xbar_inputs: int = 128
     warn_xbar_inputs: int = 64
 
@@ -134,7 +79,7 @@ class L1Config(Config):
 
 @dataclass(frozen=True)
 class L2Config(Config):
-    """The L2: flat, moved by the DMA in beats (CONTRACTS.md 13)."""
+    """The L2: flat, moved by the DMA in beats (CONTRACTS, "Platform")."""
 
     size_bytes: int = 1 << 20
     base_addr: int = 0  # byte address of the first L2 word
@@ -157,7 +102,7 @@ class L2Config(Config):
 
 @dataclass(frozen=True)
 class AccCsrConfig(Config):
-    """The widths of the generated accelerator's CSRs (CONTRACTS.md 13, D152)."""
+    """The widths of the generated accelerator's CSRs (CONTRACTS, "Platform")."""
 
     job_width: int = 32  # JOBS and every JOB_BEATS, and the control units' counters
     busy_counter_width: int | None = None  # BUSY_COUNTER; None follows job_width

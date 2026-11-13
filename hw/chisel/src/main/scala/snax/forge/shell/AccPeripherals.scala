@@ -3,11 +3,11 @@ package snax.forge.shell
 import chisel3._
 import chisel3.util.MixedVec
 
-/** `<tag>_peripherals`: what only the core reads and the run never needs (D168), inside `<tag>_csr`, always present.
-  * Per group its BUSY_COUNTER (`<group>_busy_counter`, the CSR's width w, busy_counter_width): cleared by the accepted
-  * start, + 1 per busy cycle, held after the run and saturating at 2^w - 1 (BlockGemm's performance counter), so after
-  * a run started in a and ended in E it is E - a. `<tag>_csr` reads it through its read mux; the reported csr leaves
-  * this module out.
+/** `<tag>_peripherals`: what only the core reads and the run never needs, inside `<tag>_csr`, always present. Per group
+  * its BUSY_COUNTER (`<group>_busy_counter`, the CSR's width w, busy_counter_width): cleared by the accepted start, + 1
+  * per busy cycle, held after the run and saturating at 2^w - 1 (BlockGemm's performance counter), so after a run
+  * started in a and ended in E it is E - a. `<tag>_csr` reads it through its read mux; the reported csr leaves this
+  * module out.
   *
   * @param tag
   *   the platform's accelerator slot, in the module's name

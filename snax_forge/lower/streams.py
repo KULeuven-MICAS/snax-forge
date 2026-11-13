@@ -1,39 +1,17 @@
-"""A BRM port's nest, through a layout, onto a streamer's values (D70).
+"""A BRM port's nest, through a layout, onto a streamer's values.
 
-The nest (``snax_forge.brm.affine``) says in which order the accelerator
-takes an operand's elements, in logical indices; the layout (layout.py) says
-where each element lives. Both are affine, so their composition is too, and
-it is exactly what a streamer runs (CONTRACTS.md section 9), in words
-(D142): a streamer channel moves one bank word, which holds num_slc slices
-(elements) of the port's dtype (the streamer's ``num_slc``):
+The nest (``snax_forge.brm.affine``) gives the order in which the accelerator takes an
+operand's elements; the layout (layout.py) gives where each element lives. Both are affine, so
+their composition is too: ``streamer_values`` turns it into the ``values`` of a streamer task
+(CONTRACTS, "Task list"), temporal loops innermost first and spatial loops fastest first. Only
+the loops the nest uses are given; the adapter pads the rest. ``in_words`` turns element
+strides into bank-word strides.
 
-    base              layout.base + sum_d offset[d] * layout.strides[d]
-    loop byte stride  sum_d loop.strides[d] * layout.strides[d]: the loop's
-                      element stride times the itemsize, the layout's
-                      strides being in bytes
-    temporal loops    the nest's temporal loops, innermost first
-    spatial loops     the nest's spatial loops, fastest first; their bounds
-                      must be the streamer's design-time spatial bounds (in
-                      elements). The fastest one runs S_0 / num_slc channels,
-                      each a word on: its byte stride is num_slc times the
-                      element's, 8 bytes for a packed port (whose fastest
-                      element stride is 1, ``connect.pack``); the others as
-                      above
-
-At num_slc = 1 (int64) the fastest stride is the element's: nothing changes.
-
-The result is the ``values`` of a streamer task in the task list (D64), in
-the streamer type's own terms; only the loops the nest uses are given and
-the adapter pads the rest. Nothing is decided here (principle 4): the layout
-is SNAX-DSE's, the nest the BRM's.
-
-The streamer is the design point's (design/streamers.py: its ``write``, its
-spatial bounds and its ``temporal_dims``), the L1 the platform's.
-Everything that does not fit is an error, never adjusted: a reader serves an
-output port or a writer an input port, the spatial bounds differ from the
-streamer's, there are more temporal loops than the streamer has, the
-layout's shape differs from the nest's, or the layout does not fit the L1
-(layout.py).
+Nothing is decided here: the layout is SNAX-DSE's, the nest the BRM's, the streamer the design
+point's (design/streamers.py) and the L1 the platform's. What does not fit is a ``StreamError``,
+never adjusted: a reader on an output port or a writer on an input port, spatial bounds that
+differ from the streamer's, more temporal loops than it has, a layout whose shape differs from
+the nest's, or a layout outside the L1.
 """
 
 from __future__ import annotations

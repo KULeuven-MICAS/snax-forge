@@ -1,5 +1,5 @@
-"""The estimate's cycles (D155, C§19): C§17's closed cycles of dot's and matvec's variants, and
-every ``forge counter`` of open item 95 as a group's cycles plus the streamers' fill. Every
+"""The estimate's cycles: the closed cycles of dot's and matvec's variants, and
+every recorded ``forge counter`` as a group's cycles plus the streamers' fill. Every
 recipe is imported (DaCe), hence slow."""
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ from .helpers import estimated
 
 pytestmark = pytest.mark.slow
 
-# C§17's table: per shape and W, the cycles of variants 2 to 6
+# the table: per shape and W, the cycles of variants 2 to 6
 TABLE = {
     ("dot", 4): [130, 129, 130, 133, 134],
     ("dot", 8): [66, 65, 66, 73, 74],

@@ -1,28 +1,15 @@
-"""A BRM instance: one BRM built one way (D68).
+"""A BRM instance: one implementation and a value for every design param.
 
-An instance is an implementation and a value for every design param. It is
-what a design point holds, what SNAX-LOWER and the generator read, and what
-the reference executor runs (its function, function.py):
-
-    inst = brm.resolve("chisel_tiled_spatial", {"W": 4})
-
-Resolving checks the values: an unknown implementation or param, a runtime
-param given here (runtime params are the task's, CONTRACTS.md section 10), a
-value of the wrong type, outside the param's ``values`` or outside the
-implementation's ``supports`` are errors. A design param with neither a value
-nor a default is unset: the instance leaves it out of its ``params``, and a
-lanes or timing field that names it is an error; a function param or binding
-arg that names it is not evaluated (the reader that needs it reads it only
-where it applies). A slot read from a container (a kernel's scalar argument, written by the
-program as a CSR) is unset and listed in ``read`` (``resolve``'s argument): it must be a
-slot of the BRM's code. One code entry must fit the instance (brm.py's ``Function``: its
-params, every slot its code names set or read, every other slot neither), so a one-stream
-``simd`` without ``k``, neither baked nor read, is refused here; ``code`` is that entry's.
-The instance's ``ports`` are the BRM's ports present at its
-params (``Port.when``), in order: every reader after ``resolve`` takes them. It then checks a bound implementation against the
-generator's datapaths (``gen.DATAPATHS``): its ``datapath`` must be registered
-and the datapath's adapter must take the instance, so an instance that exists
-can be generated.
+``resolve`` (``Brm.resolve``) builds an ``Instance``: what a design point holds, what SNAX-LOWER
+and the generator read and what the reference executor runs. It refuses an unknown
+implementation or param, a runtime param, and a value of the wrong type or outside the param's
+``values`` or the implementation's ``supports``. A design param with neither a value nor a
+default is unset: left out of ``params``, an error in a lanes or timing field, not evaluated in
+a function param or binding arg. A slot read from a container (a CSR) is unset and listed in
+``read``. One code entry must fit (every slot its code names set or read, every other neither),
+and ``code`` is that entry's; ``ports`` are the BRM's ports present at the params. A bound
+implementation's datapath must be registered (``gen.DATAPATHS``) and its adapter take the
+instance, so an instance that exists can be generated.
 """
 
 from __future__ import annotations

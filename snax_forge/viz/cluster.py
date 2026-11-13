@@ -1,42 +1,15 @@
-"""The cluster view at one cycle (D57), data side only, and stepping between cycles. Queries on
-the run's index (index.py) that read no file; the viewer only draws their answers.
+"""The cluster view at one cycle, data side only, and stepping between cycles.
 
-    cluster_at(index, t)       -> one dict per block at cycle t, and the cycle's events
-    step(index, t, dir, by)    -> the next or previous cycle with an event or a task boundary
+Queries on the run's index (index.py); the viewer only draws them.
 
-**Blocks** at ``t`` (the cores and the controller are the schedule's core lanes):
+    cluster_at(index, t)     per block at cycle t (``dma``, ``movers``, ``acc``, ``streamers``,
+                             ``banks``, ``interconnect``), and the cycle's ``events``
+    step(index, t, dir, by)  the next (dir 1) or previous (-1) cycle with an event (by
+                             ``event``) or a task boundary (``boundary``); ``t`` when none
 
-- ``dma``: the copies open at ``t`` (issue to done, both included: ``RunIndex.span``) with their task,
-  direction and bytes; from ``beat`` on, its L1 beat at ``t`` (``i`` of the copy's ``n``
-  beats of that op) and its AXI bursts at ``t``, each with its region, elements and values,
-  and its reads whose data comes back at ``t`` (``back``: L1 beats and L2 bursts);
-- ``movers``, per lane (crossbar port): whether its mover's task is open; from ``beat`` its
-  mover's class at ``t`` (the class run holding it), its grant at ``t`` and the read data
-  coming back at ``t`` (the index's ``returns``); from ``stall`` its stall at ``t`` and its
-  FIFO count (the last ``fifo`` line at or before ``t``, 0 before the first);
-- ``acc``: the unit whose task is open at ``t`` (the first unit when none is), its ``name``,
-  ``group`` and ``accelerator`` (its streamer set's), whether its task is open, from ``beat``
-  its class at ``t``, its firing at ``t`` with its operands' values and its push with the
-  result; ``accelerator`` the entry's name and ``units`` every unit so (one per group, D148:
-  ``vmul`` and ``vsum`` in dot 1);
-- ``streamers``, one per streamer set inside the accelerator (D157), in set order: its
-  ``name`` (the set's, its accelerator's), ``groups``, its CSRs (``first``, ``last``), its
-  ``movers``, and whether it is ``busy`` at ``t`` (a task of one of its movers open) with
-  that ``task``;
-- ``banks``, every bank, grouped by superbank (a DMA beat's banks): the access at ``t``
-  (port, op, row, region, elements and their values, the word: a grant's, or a DMA beat's
-  word on it), the read
-  data going back at ``t``; from ``stall`` the requesters refused at ``t``, the one it
-  served first;
-- ``interconnect``: whether anything crossed it at ``t``; from ``stall`` its conflicts at
-  ``t`` (a bank with a refused request: the one served and the ones refused).
-
-A field the run's level cannot give is absent, and ``needs`` names the level each needs.
-``events`` is every line at ``t`` (``insn`` at ``finegrained``), in trace order.
-
-**Stepping**: ``by`` ``event`` steps through the index's event cycles, ``boundary`` its
-boundary cycles (index.py); ``dir`` 1 or -1. At the window's ends, or with no such cycle
-past ``t``, the answer is ``t``.
+A field the run's trace level cannot give is absent and ``needs`` names its level: open tasks
+from ``task``; classes, grants, firings and returning reads from ``beat``; stalls, FIFO counts
+and conflicts from ``stall``. ``acc`` and ``streamers`` are in CONTRACTS, "Profile and trace".
 """
 
 from __future__ import annotations

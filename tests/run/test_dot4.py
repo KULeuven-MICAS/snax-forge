@@ -1,8 +1,8 @@
-"""run/ on an accelerator of one linked group (D148): dot 4, whose units mac and sum are one
+"""run/ on an accelerator of one linked group: dot 4, whose units mac and sum are one
 SNAX-GVSoC component, ``snax_acc0/group_dot``, under one control model (snax-gvsoc's
 SnaxGroup). The recorded run (fixtures/dot_4/README.md: dot 4 at N = 512, W = 4) converts
 without GVSoC: the converter names the group's lines after the group, matches the start to the
-group's task and gives the done its run's classes; beat levels are refused (open item 96).
+group's task and gives the done its run's classes; beat levels are refused.
 """
 
 import pytest
@@ -24,7 +24,7 @@ def recorded():
 
 def test_the_recorded_run_converts_the_group_as_one_unit(recorded):
     """The group is one accelerator, dot, with its run's classes: 128 firings a cycle apart
-    from the first (no gap), BUSY_COUNTER 133 = C§17's C4 (JT + 2 = 130) + the streamers' fill 3,
+    from the first (no gap), BUSY_COUNTER 133 = the C4 (JT + 2 = 130) + the streamers' fill 3,
     every busy cycle in one class; its task and its movers' each start once."""
     cluster, tasks, check, lines, regions, _ = recorded
     assert cluster.accelerator.units == [Unit("dot", "dot", "group_dot", *_csrs(cluster))]
@@ -52,5 +52,5 @@ def test_the_recorded_run_refuses_beat_levels(recorded):
 
 
 def _csrs(cluster):
-    first = cluster.accelerator.csrs.streamer_last + 1
+    first = cluster.accelerator.csrs.sets[0].last + 1
     return first, first + 3, first + 4

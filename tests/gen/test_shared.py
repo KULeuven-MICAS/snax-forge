@@ -1,5 +1,5 @@
-"""A shared design (D169, PORT1) beyond gen-gvsoc: gen-rtl and the bundle take it, the shell
-wrapper holding its data-side mux (``<tag>_<set>_port_mux``, C§18's modules), and the run reads
+"""A shared design beyond gen-gvsoc: gen-rtl and the bundle take it, the shell
+wrapper holding its data-side mux (``<tag>_<set>_port_mux``), and the run reads
 its cluster as one mover per shared mover."""
 
 from __future__ import annotations
@@ -65,7 +65,7 @@ def test_the_run_reads_one_mover_per_shared_mover(shared, tmp_path):
         ("dot_writer0", "writer0", 4, ("vmul_out", "vsum_out"), 1),
     ]  # fmt: skip
     assert [m.name for m in c.accelerator.movers_of("vsum")] == ["dot_reader0", "dot_writer0"]
-    # a beat between vsum and writer0 holds vsum.out's one word, vmul's its four (D169)
+    # a beat between vsum and writer0 holds vsum.out's one word, vmul's its four
     acc = c.accelerator
     assert [acc.lanes_of(movers[2], u) for u in ("vmul", "vsum")] == [4, 1]
     assert acc.port_of(movers[0], "vsum") == "vsum_a"
@@ -95,4 +95,4 @@ def test_design_md_says_the_set_shares_its_movers(shared, tmp_path):
     assert [(x.name, x.instance, x.num_ch, x.container) for x in r.streamers] == [
         ("dot_reader0", None, 4, None), ("dot_reader1", None, 4, None),
         ("dot_writer0", None, 4, None)]  # fmt: skip
-    assert "dot shares its movers among its groups (share_ports, D169)" in render_design(r)
+    assert "dot shares its movers among its groups (share_ports)" in render_design(r)

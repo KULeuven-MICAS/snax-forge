@@ -1,4 +1,4 @@
-"""HWCOST's tables from snax-forge-experiments into ``snax_forge/char/<tech>/`` (C§20).
+"""HWCOST's tables from snax-forge-experiments into ``snax_forge/char/<tech>/``.
 
     pixi run import-costs [--experiments DIR] [--tech nangate45]
 

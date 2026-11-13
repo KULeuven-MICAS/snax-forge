@@ -1,53 +1,14 @@
-"""The ideal cycles of a bound graph's groups, and the work no unit runs (D155, C§19).
+"""The ideal cycles of a bound graph's groups, and the work no unit runs (CONTRACTS, "Estimate").
 
-    group_rule() -> module                    snax-gvsoc's snax/snax_group_rule.py (GroupRule)
-    group_cycles(units, links, owner, jobs, ts) -> int | None
-    groups(graph) -> list[GroupEstimate]
-    group_blocks(graph) -> list[(GroupEstimate, units, buffer links)]   the blocks to cost
-    datapath_blocks(graph) -> dict[str, Block]                          the same, no cycles
-    not_mapped(graph) -> int
-
-**The rule.** A group's cycles are snax-gvsoc's group rule stepped with every outer input
-valid and the outer output ready: the BUSY_COUNTER of C§17 on ideal streams. Plus the streamers'
-fill they are the expected BUSY_COUNTER, a guide and not a check (D155): a run's BUSY_COUNTER counts from
-its group's START until busy drops, so it holds bank conflicts and is shortened by the
-streamers' head start. ``group_cycles`` is that stepping, the one place it
-is done: gen/rtl.py's ``group_counter`` calls it for a fixture's counter. The rule is loaded by
-path from the submodule (``gvsoc/snax-gvsoc``, D134), once; without it, ``estimate.submodule``
-names the fix.
-
-**A group** (D146, D148): its units, the accelerated nodes of one ``group`` (``link``'s), else
-of one instance, in the graph's order, and its links, from the link nodes. Per unit its L, II
-and span are its BRM implementation's timing at its params; its firings n and named rates are
-SNAX-LOWER's (lower/derive.py's ``unit_firings``), and JOBS and each unit's T are what the
-program writes (lower/c.py's ``job_writes``): T a fold's named rate, else 1. A unit alone runs
-one task per node; a linked unit has one node. Then:
-
-    cycles       the rule's
-    bottleneck   max over the units of n · max(II, span)
-    ramp         the cycles to start and finish the pipeline: Σ over the units of
-                 L + span − 1, plus 1 per buffer link (depth >= 1), 0 per wire
-    stall        cycles − bottleneck − ramp
-    fill         the streamers' fill: 3, or 2 for a group whose units have one outer
-                 input between them (C§17); ``counter``, cycles + fill, is the expected
-                 BUSY_COUNTER, a guide
-    bank_bound   on a platform, ceil(the words its streams move / l1.n_banks): the fewest
-                 cycles of L1 time its streams take, a bound on the streams, not on the
-                 BUSY_COUNTER (D155); its note compares only this group's streamers
-    bits         per unit and per link (by its container) the register bits of its datapath,
-                 the catalogue's ``flops`` on its params (gen/rtl.py's ``unit_flops`` and
-                 ``link_flops``, D154): a wire none; a unit whose implementation the generator
-                 does not fill (no binding, a datapath not registered) has none listed
-    ctrl_bits    the register bits of its control unit firtool keeps (bits.py), its T fixed or
-                 from the start as accelerator.py decides it, at the platform's
-                 ``acc_csr.job_width``
-    cost         on a technology, CHAR1's model (cost.py, C§20): per unit and buffer link its
-                 area, energy and how its table entry was found, its control unit's, the totals;
-                 set by ``estimate`` once the accelerator's cycles are known
-
-**Not mapped**: the iterations of the nests no unit runs, counted once per innermost map that
-holds tasklets (a fused nest's two count once), over every map around it but the spatial ones,
-itself included; a tasklet outside every map counts 1. Never added to cycles.
+``groups(graph)`` gives a ``GroupEstimate`` per group (the units of one ``group``, else of one
+instance, and its links) with the fields CONTRACTS lists; ``cost`` is set later by
+``estimate``. ``group_cycles`` steps snax-gvsoc's group rule with every outer input valid and the
+outer output ready, the one place this is done (gen/rtl.py's ``group_counter`` calls it);
+``group_rule`` loads ``snax/snax_group_rule.py`` from the submodule once, and without it
+``estimate.submodule`` names the fix. A unit's L, II and span are its implementation's timing
+at its params, its firings and named rates SNAX-LOWER's (``unit_firings``), JOBS and each T what
+the program writes (``job_writes``). ``group_blocks`` and ``datapath_blocks`` give the blocks to
+cost, with and without the cycles; ``not_mapped`` counts the iterations no unit runs.
 """
 
 from __future__ import annotations
@@ -71,7 +32,7 @@ from .bits import ctrl_bits
 from .cost import Block, GroupCost
 
 SUBMODULE = repo_root() / "gvsoc" / "snax-gvsoc"
-# The streamers' fill a run adds to a group's cycles (C§17): 3, or 2 with one outer input
+# The streamers' fill a run adds to a group's cycles: 3, or 2 with one outer input
 FILL, FILL_ONE_INPUT = 3, 2
 
 
@@ -111,9 +72,9 @@ def group_cycles(units: list[dict[str, Any]], links: list[dict[str, Any]], owner
 
 @dataclass
 class GroupEstimate:
-    """One group: its units and links, its cycles and register bits (module doc) and, from
-    data.py, the channels of its outer ports and the words they move per cycle; on a platform
-    its ``bank_bound``, the fewest cycles L1's banks allow those words (D155)."""
+    """One group: its units and links, its cycles and register bits (CONTRACTS, "Estimate") and,
+    from data.py, the channels of its outer ports and the words they move per cycle; on a platform
+    its ``bank_bound``, the fewest cycles L1's banks allow those words."""
 
     name: str
     units: list[str]
@@ -133,8 +94,8 @@ class GroupEstimate:
 
     @property
     def counter(self) -> int:
-        """The expected BUSY_COUNTER: the cycles plus the streamers' fill, a guide and not a check
-        (D155): a run's counts from START until busy drops, with bank conflicts and the
+        """The expected BUSY_COUNTER: the cycles plus the streamers' fill, a guide and not a check:
+        a run's counts from START until busy drops, with bank conflicts and the
         streamers' head start, so it may be above or below this."""
         return self.cycles + self.fill
 
@@ -142,7 +103,7 @@ class GroupEstimate:
     def bank_bound_note(self) -> str | None:
         """One line when the group's streams need more cycles of L1 time than its ideal cycles
         (``bank_bound`` > ``cycles``), else None (design.md, run.md, the page): a bound on the
-        streams, not on the BUSY_COUNTER (D155)."""
+        streams, not on the BUSY_COUNTER."""
         if self.bank_bound is None or self.bank_bound <= self.cycles:
             return None
         words = round(self.words_per_cycle * self.cycles)
@@ -175,11 +136,11 @@ def _datapath_blocks(graph: Graph, insts: dict[str, Any], members: list[str],
                      ends: list[tuple[Node, str, str]], firings: dict[str, int],
                      gives: dict[str, int],
                      ) -> tuple[dict[str, Block], dict[str, Block], dict[str, int]]:  # fmt: skip
-    """Per unit and per buffer link (by container) the datapath to cost, its params as the
-    generator fills them and its fires (cost.py: a unit's ``firings`` times its span, a
-    buffer's its producer's ``gives``, a load per output), and per unit and link its register bits
-    (module doc): a wire 0 and no block; a unit the generator does not fill a block with no
-    params and no bits. The generator is imported here: gen/rtl.py imports this package."""
+    """Per unit and per buffer link (by container) the datapath to cost, its params as the generator
+    fills them and its fires (cost.py: a unit's ``firings`` times its span, a buffer's its
+    producer's ``gives``, a load per output), and per unit and link its register bits (CONTRACTS,
+    "Estimate"): a wire 0 and no block; a unit the generator does not fill a block with no params
+    and no bits. The generator is imported here: gen/rtl.py imports this package."""
     from snax_forge.brm import port_dtypes
     from snax_forge.gen.accelerator import Unit
     from snax_forge.gen.blocks import DATAPATHS, GenError
@@ -243,7 +204,7 @@ def datapath_blocks(graph: Graph) -> dict[str, Block]:
 
 
 def groups(graph: Graph, job_width: int = 32) -> list[GroupEstimate]:
-    """Every group of a bound graph, in the graph's order (module doc); ``job_width`` the
+    """Every group of a bound graph, in the graph's order (CONTRACTS, "Estimate"); ``job_width`` the
     platform's ``acc_csr.job_width``."""
     return [g for g, _, _ in group_blocks(graph, job_width)]
 
@@ -262,7 +223,7 @@ def group_blocks(graph: Graph, job_width: int = 32,
     out = []
     runs = group_runs(graph)
     for name, members in graph_groups(graph).items():
-        ends = group_links(graph, members)  # one per pair of ports (D165)
+        ends = group_links(graph, members)  # one per pair of ports
         fed = {to for _, _, to in ends}
         taken = {frm for _, frm, _ in ends}
         rule_units = [{"name": u, "L": insts[u].latency, "ii": insts[u].initiation_interval,
@@ -274,7 +235,7 @@ def group_blocks(graph: Graph, job_width: int = 32,
                        "depth": k.attrs["depth"]} for k, frm, to in ends]  # fmt: skip
         (owner,) = {u for u in members for p in insts[u].ports
                     if p.direction == "out" and f"{u}.{p.name}" not in taken}  # fmt: skip
-        tasks = (  # a linked group once per run (several when nests share it, D165)
+        tasks = (  # a linked group once per run (several when nests share it)
             runs[name] if len(members) > 1 else [{members[0]: n} for n in nodes[members[0]]]
         )
         cycles = bottleneck = 0
@@ -294,7 +255,7 @@ def group_blocks(graph: Graph, job_width: int = 32,
                 firings[u] += values[u]["n"]
                 t = ts[members.index(u)]
                 gives[u] += values[u]["n"] // t if t else 0  # T = 0: the empty run
-            # per run (a group several nests share runs once per nest, D165): its slowest unit
+            # per run (a group several nests share runs once per nest): its slowest unit
             bottleneck += max(values[u]["n"] * max(insts[u].initiation_interval, insts[u].span)
                               for u in task)  # fmt: skip
         ramp = sum(insts[u].latency + insts[u].span - 1 for u in members)
@@ -314,7 +275,7 @@ def group_blocks(graph: Graph, job_width: int = 32,
 def not_mapped(graph: Graph, spatial: bool = False) -> int:
     """The iterations no unit runs (module doc), over every map around them but the spatial
     ones; with ``spatial``, over every map, spatial ones included: the unmapped work as
-    iterations, since a tag alone runs nothing (lanes only exist once a unit runs them, D155)."""
+    iterations, since a tag alone runs nothing (lanes only exist once a unit runs them)."""
     symbols = graph.bound_symbols
     total = 0
     for n, outer in graph.walk():

@@ -1,4 +1,4 @@
-"""The DFG viewer and editor (D55, VIEW2): ``.snaxdfg`` graphs in the browser.
+"""The DFG viewer and editor: ``.snaxdfg`` graphs in the browser.
 
 The visualiser's server in two modes: view mode, ``python -m snax_forge.viz.dfg
 FILE|DIR ...`` (pixi ``view-dfg``), the files as a read-only history of steps, with Reload;

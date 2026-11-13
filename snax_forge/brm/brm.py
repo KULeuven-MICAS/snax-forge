@@ -1,56 +1,15 @@
-"""The block runtime model (D68): one accelerator as plain data.
+"""The block runtime model: one accelerator as plain data (CONTRACTS, "Block runtime model").
 
-A BRM is a hand-written JSON file. It has a shared part, which every
-implementation of the accelerator has in common, and a map of
-implementations, which differ in how they are built:
-
-    {
-     "name": ...,
-     "interface":       params (design / runtime) and ports
-     "function":        a registered accelerator kind and its params,
-                        and what one lane computes, as code (D82): one
-                        string, or a table of {params, code} by design param
-     "dataflow":        a notation and one nest per port (notation.py)
-     "pattern":         the DFG subgraph it can replace: a family matched by
-                        SNAX-SANDBOX (snax_forge/sandbox/patterns.py)
-     "implementations": {name: {source, supports, timing, binding}}
-    }
-
-Designs that differ only in timing, the param values they support or their
-RTL source are implementations of one BRM. Different ports, rates or data
-order make a different BRM. Only ``source: chisel`` is accepted for now
-(open item 28), and ``binding`` may be null until it is generated
-(binding.py, D129: the datapath and how the BRM fills it).
-
-Which part serves which component: interface and function give what the
-reference executor runs (function.py); the dataflow gives the streamer values
-(SNAX-LOWER); the pattern serves SNAX-SANDBOX's ``bind``; the chosen
-implementation's timing and binding serve the generators (the accelerator's
-description, accelerator.json, for SNAX-GVSoC and the RTL).
-
-Params have a stage. ``design`` params (lanes, op) are fixed per instance
-and reach the design point and accelerator.json; one with a null default is
-unset unless ``bind`` or a matched code entry gives it (``simd``'s slot ``k``),
-and an instance leaves it out (a slot read from a scalar stays unset). A port may carry ``when``, design params at
-which alone it exists (``simd``'s ``b`` at two streams); an instance's
-``ports`` are those present at its params. ``runtime`` params are
-the accelerator's start parameters: exactly ``n`` and every named port rate
-(CONTRACTS.md section 10). A port's streamer width comes from its lanes
-(D12); it is not written in the BRM. Nor is its dtype: ``dtypes`` lists the
-container dtypes it takes, every integer dtype unless the file narrows them,
-and a node's containers decide (dtypes.py, D143).
-
-Value fields (lanes, rate, timing, function params) hold an int or an
-expression over params (snax_forge/expr.py, shared with the SNAX-DFG). Lanes,
-timing and function params may use design params only; a rate is an int or
-the name of a runtime param.
-
-Every field is written by ``to_dict`` (a port's ``dtypes`` only when it is
-not every integer dtype); a missing required part is an error
-that names it, optional fields take their defaults, and unknown keys are
-errors (D26). A BRM is validated when it is made, whether from a file
-or in Python; ``resolve`` builds an instance, checked against the
-generator's blocks in instance.py.
+``Brm`` holds a hand-written JSON file: a shared part (``Interface`` with its ``Param``s and
+``Port``s, ``Function`` with its ``Code``, ``Dataflow``, ``Pattern``) and a map of
+``Implementation``s (source, supports, ``Timing``, binding). Designs that differ only in
+timing, supported values or RTL source are implementations of one BRM; different ports, rates
+or data order make another. A port's ``dtypes`` are a rule (dtypes.py), every integer dtype
+unless the file narrows them, and ``to_dict`` writes them only then; its streamer width comes
+from its lanes. Lanes, timing and function params use design params only; a rate is an int or a
+runtime param's name. A BRM is validated when it is made, from a file or in Python; a missing
+part or an unknown key is a ``BrmError`` naming it. ``Brm.resolve`` builds an instance
+(instance.py).
 """
 
 from __future__ import annotations
@@ -74,7 +33,7 @@ if TYPE_CHECKING:
 STAGES = ("design", "runtime")
 TYPES = {"int": int, "str": str}
 DIRECTIONS = ("in", "out")
-SOURCES = ("chisel",)  # SystemVerilog and HLS: open item 28
+SOURCES = ("chisel",)  # SystemVerilog and HLS: not yet
 TIMING_IN_FUNCTION = ("latency", "ii")  # come from the implementation's timing
 
 
@@ -316,11 +275,11 @@ class Timing:
     and ``span``.
 
     L: cycles from a firing to its push. II: the least number of cycles
-    between two firings. ``drain`` (D103): the cycles, starting with the
+    between two firings. ``drain``: the cycles, starting with the
     cycle an output is pushed, in which no input is taken (1 for a block
     whose ``in.ready`` is low while its result waits; the generator takes 0
-    only, as the nest controller has none, D133). Optional, default 0;
-    always written here. ``span`` (C§17): the cycles the unit reads one input
+    only, as the nest controller has none). Optional, default 0;
+    always written here. ``span``: the cycles the unit reads one input
     beat in place, taking it in the last, so its throughput is one beat per
     max(II, span) (``SerialAccumulate``'s lanes). Optional, default 1; always
     written here.
@@ -550,19 +509,19 @@ def _port_name(name: Any, what: str) -> None:
     """A port name: used in ``function.code`` and in the streamer name ``<instance>_<port>``.
 
     So not a Python keyword (``out = in`` does not parse) and no leading
-    underscore (``acc__in``). The convention (C§10) is ``a``, ``b``, ... for
+    underscore (``acc__in``). The convention is ``a``, ``b``, ... for
     inputs and ``out`` for the output.
     """
     _ident(name, what)
     if keyword.iskeyword(name):
         raise BrmError(
             f"{what}: {name!r} is a Python keyword and cannot appear in code; "
-            "name the port 'a', 'b', ... or 'out' (C§10)"
+            "name the port 'a', 'b', ... or 'out'"
         )
     if name.startswith("_"):
         raise BrmError(
             f"{what}: {name!r} starts with an underscore, which the streamer name "
-            "<instance>_<port> would double; name the port 'a', 'b', ... or 'out' (C§10)"
+            "<instance>_<port> would double; name the port 'a', 'b', ... or 'out'"
         )
 
 

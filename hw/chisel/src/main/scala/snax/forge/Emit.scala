@@ -65,13 +65,13 @@ object Emit {
   private case class Target(label: String, note: String, gen: () => RawModule)
 
   /** Everything the emitter knows how to build on its own, apart from `--spec` and `--block`: each catalogue datapath
-    * (`Datapaths.all`, D147) at its `example` params, and the parked stream blocks.
+    * (`Datapaths.all`) at its `example` params, and the parked stream blocks.
     */
   private val catalogue: Seq[Target] =
     Datapaths.all.map { d =>
       Target(d.name, s"datapath: ${ujson.write(ujson.Obj.from(d.example))}", () => d.make(d.example))
     } ++ Seq(
-      // Built and parked (D142): not in the datapath catalogue, emitted on their own.
+      // Built and parked: not in the datapath catalogue, emitted on their own.
       Target(
         "FifoSlicer",
         "parked: 2 words of int8 in, 4 lanes out per pop (r = 4)",
@@ -184,10 +184,11 @@ object Emit {
     */
   case class Emitted(top: String, modules: Seq[String], files: Seq[Path])
 
-  /** `--spec <accelerator.json> [--out DIR]`: the accelerator of `accelerator.json` (C§17), `<tag>_shell_wrapper` and
-    * what it holds, one SystemVerilog file per module in `DIR/sv/` (default `DIR` the folder of the file), and
-    * `DIR/emitted.json`: `rtl` (the file it was built from), `top`, `modules` and `files` (paths from `DIR`). The files
-    * a previous `emitted.json` lists are removed first, so `sv/` holds this spec's files only.
+  /** `--spec <accelerator.json> [--out DIR]`: the accelerator of `accelerator.json` (CONTRACTS, "Accelerator RTL
+    * spec"), `<tag>_shell_wrapper` and what it holds, one SystemVerilog file per module in `DIR/sv/` (default `DIR` the
+    * folder of the file), and `DIR/emitted.json`: `rtl` (the file it was built from), `top`, `modules` and `files`
+    * (paths from `DIR`). The files a previous `emitted.json` lists are removed first, so `sv/` holds this spec's files
+    * only.
     */
   def emitSpec(specPath: Path, dir: Path): Emitted = {
     val spec = AcceleratorSpec.load(specPath)

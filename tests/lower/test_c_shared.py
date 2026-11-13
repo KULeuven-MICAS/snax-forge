@@ -1,4 +1,4 @@
-"""The program of a shared set (D169, PORT1): each shared mover written once per task (its
+"""The program of a shared set: each shared mover written once per task (its
 group's port, else idle), the narrow user's mask, PORT_MUX_SEL after the wait and before
 STREAMER_START, and ``c.port_mux``."""
 

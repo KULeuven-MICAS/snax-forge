@@ -1,4 +1,4 @@
-"""split_reduce, fuse_map and link (D148, D150): dot's variants spelled step by step, each step
+"""split_reduce, fuse_map and link: dot's variants spelled step by step, each step
 checked by the reference executor, and every refusal with its fix."""
 
 from __future__ import annotations
@@ -159,7 +159,7 @@ def test_a_links_ends_give_the_same_beats():
 
 
 def test_bind_names_the_fix():
-    """D150: the multiply of a fusable pair is 'fuse_map first', a fold into one element
+    """The multiply of a fusable pair is 'fuse_map first', a fold into one element
     'split_reduce first'."""
     g = split_reduce(split_map(dot(), "mult_map", 4), "sum_map", 4)
     with pytest.raises(SandboxError, match="fuse_map first"):
@@ -278,7 +278,7 @@ def test_link_refuses_a_join_until_tier_a():
 
 
 # =============================================================================
-# fuse_map with an untagged side, and its range refusal's fix (B2 R5 B0)
+# fuse_map with an untagged side, and its range refusal's fix
 # =============================================================================
 
 

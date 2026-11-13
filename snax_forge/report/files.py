@@ -1,7 +1,7 @@
 """Where the reports read from and write to.
 
 A folder is a flow folder (``out/flow/<name>/``), or the ``run/`` directory
-in one: ``run/`` holds the run (C§7, run/), ``design/`` the design point,
+in one: ``run/`` holds the run (run/), ``design/`` the design point,
 ``gen/`` the description files, ``sandbox/recipe.json`` the recipe (a flow from a
 bound graph has none) and ``tasks.json`` the task list. Both reports go to
 ``<folder>/report/``, next to ``run/`` and never inside it, since a run

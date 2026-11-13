@@ -1,19 +1,13 @@
 """SNAX-DFG command line.
 
-    python -m snax_forge.dfg import KERNEL [KERNEL ...] [--out DIR]
-    python -m snax_forge.dfg check FILE [FILE ...] --kernel KERNEL [--n N]
+    python -m snax_forge.dfg import KERNEL [KERNEL ...] [--out DIR]          (import-dfg)
+    python -m snax_forge.dfg check FILE [FILE ...] --kernel KERNEL [--n N]   (check-dfg)
 
-``import`` writes ``DIR/<kernel>.snaxdfg`` (default ``out/dfg``): it builds
-each kernel's simplified SDFG in-process, as ``pixi run sdfg <kernel>``
-does. Exit 0 when everything was written, 1 when a construct is not
-supported (the error names it), 2 on bad arguments. pixi: ``import-dfg``.
-
-``check`` runs each file in the reference executor (execute.py) on the
-kernel's ``make_inputs`` and compares its output containers (the kernel's
-``inout``) with the kernel's own reference. ``--n`` is the size given to
-``make_inputs``; without it, the size a file binds (its one bound symbol),
-else ``make_inputs``' default. Exit 0 when every file matches, 1 otherwise.
-pixi: ``check-dfg``.
+``import`` builds each kernel's simplified SDFG in-process and writes ``DIR/<kernel>.snaxdfg``
+(default ``out/dfg``); exit 1 when a construct is not supported, 2 on bad arguments. ``check``
+runs each file in the reference executor on the kernel's ``make_inputs`` (at ``--n``, else the
+size the file binds, else the default) and compares its outputs with the kernel's reference;
+exit 1 on a mismatch.
 """
 
 from __future__ import annotations

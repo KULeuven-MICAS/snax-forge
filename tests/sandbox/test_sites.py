@@ -1,9 +1,11 @@
-"""The sites (D72): where each transform applies, tested against the transforms themselves.
+"""The sites: where each transform applies, tested against the transforms themselves.
 
 Every recipe's steps are accepted by their transform's site on the graph before the step, with
 the params the site fills equal to the step's (a suggested name aside, ``FREE_NAMES``);
-wherever a site refuses, the transform refuses with the same error; and ``split_map`` is ``split`` then two ``tag_map`` steps, file for file
-once ``split``'s neutral names are mapped to ``split_map``'s (D73). Every recipe is imported (DaCe), hence slow.
+wherever a site refuses, the transform refuses with the same error; and ``split_map`` is ``split``
+then two ``tag_map`` steps, file for file
+once ``split``'s neutral names are mapped to ``split_map``'s. Every recipe is imported (DaCe), hence
+slow.
 """
 
 from __future__ import annotations
@@ -40,7 +42,7 @@ FIXTURES = [
 # Params a site fills with a suggested name only (link's group: the ends' group, else the next
 # free one); the editor's form lets the user type another, which the transform accepts when
 # it is free, so a saved recipe may hold any such name (Ryan's ry_mvt_1: "mvt2" for "mvt_1");
-# share_ports' accelerator likewise (dot_1_shared's "dot" for "vmul_vsum", D169).
+# share_ports' accelerator likewise (dot_1_shared's "dot" for "vmul_vsum").
 FREE_NAMES = {("link", "group"), ("share_ports", "accelerator")}
 
 

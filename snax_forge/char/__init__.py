@@ -1,42 +1,16 @@
-"""SNAX-CHAR: the per-technology table of CHAR1's cost model (D154, C§20).
+"""SNAX-CHAR: the per-technology table of the block cost model.
 
     load(tech) -> Table                                          snax_forge/char/<tech>.json
     lookup(table, datapath, params, lanes, depth=None) -> Lookup | None
     TECHS                                                        the technologies offered
-    CTRL_COMB_PER_FLOP                                           a control unit's comb : flops (D154)
+    CTRL_COMB_PER_FLOP                                           a control unit's comb : flops
 
-``<tech>.json`` is a byte copy of snax-forge-experiments' ``results/char/<tech>/char.json``
-(its X37), which names its own source commits: per catalogue datapath (``hw/chisel/blocks.json``)
-entries of ``params`` (the catalogue's but ``lanes`` and ``depth``), a ``lanes_rule`` and the
-measured ``points`` (``lanes``, LinkBuffer's ``depth``, ``comb_um2`` and ``e_comb_pj``: a fire's
-comb energy), and the technology's ``flop`` (``area_um2``, ``e_load_fj``, ``e_hold_fj``) and
-``ctrl.counter_factor``. ``tests/char/`` checks it against the catalogue.
-
-``DATAPATH_RENAMES`` maps a catalogue datapath to the name the table still has it under
-(``SimdLanes`` was ``ElementwiseLanes`` when CHAR measured it); it lasts until CHAR's next
-export uses the new name, and the lookup goes through it.
-
-**The lookup** of a block, its params as the generator fills them (``lanes`` and ``depth`` in
-them are ignored) and its lanes (and depth): the entry whose params equal them, then
-
-    measured      a point at these lanes (and depth), as is
-    copy          the rule ``copy``: lanes × the lanes-1 point (LinkBuffer: at the same depth)
-    interpolate   the rule ``interpolate``: linear between the two measured lanes around it;
-                  a LinkBuffer's depth, when no point has it, is linear between the two
-                  measured depths around it (at lanes 1, then copied), and found so
-
-A param the fill leaves None (an unset slot, SimdLanes' ``k`` at two streams) is not compared,
-and one the table's export predates takes the value its points were measured at
-(``TABLE_DEFAULTS``: SimdLanes' ``streams`` 2, and no slot from a CSR, ``kCsr``, ``k1Csr``
-and ``k2Csr`` false; TreeAccumulate's and SerialAccumulate's ``seed`` false, B2 R5's seed port
-measured nowhere yet), on the entry's side and, when the caller does
-not give it, on the caller's, until the next export writes it.
-None for anything else: no entry with these params (a dtype other than int64, another op, a
-SimdLanes at one stream, whose ``inTypes`` and ``k`` no two-input point has, axpby, a slot from
-its CSR),
-lanes or depth outside the measured range (TreeAccumulate at lanes 64, SerialAccumulate at
-lanes 1, a LinkBuffer deeper than 16). None is never a refusal: the estimate counts the block as
-0 and lists it (C§19), and the design note ``char.missing`` names it (C§14).
+The table, its lookup (``measured``, ``copy``, ``interpolate``) and what None means are in
+CONTRACTS, "Cost model". ``DATAPATH_RENAMES`` maps a catalogue datapath to the name the table has
+it under (``SimdLanes`` as ``ElementwiseLanes``). ``TABLE_DEFAULTS`` gives a param the table's
+export lacks the value its points were measured at (SimdLanes' ``streams`` 2 and no slot from a
+CSR, the accumulators' ``seed`` false), on the entry's side and on the caller's when it does not
+give it. A param the fill leaves None is not compared.
 """
 
 from __future__ import annotations
@@ -52,18 +26,18 @@ from typing import Any
 from snax_forge.common import CodedError
 
 HERE = Path(__file__).parent
-# The technologies offered (D167): nangate45 only. nangate15's table stays in the repository
-# as data (SYN1, CHAR1) but is no longer offered, as it has no memories (D159).
+# The technologies offered: nangate45 only. nangate15's table stays in the repository
+# as data but is no longer offered, as it has no memories.
 TECHS = ("nangate45",)
 RETIRED = ("nangate15",)
 DEFAULT_TECH = "nangate45"
 FOUND = ("measured", "copy", "interpolate")
-# A control unit's comb area is CTRL_COMB_PER_FLOP × its flops' area, a rough early estimate (D154;
-# its comb energy taken as negligible); not in the table, a byte copy of snax-forge-experiments'
-# char.json. The L1 side is HWCOST's tables (tables.py, D167).
+# A control unit's comb area is CTRL_COMB_PER_FLOP × its flops' area, a rough early estimate (its
+# comb energy taken as negligible); not in the table, a byte copy of snax-forge-experiments'
+# char.json. The L1 side is tables.py's tables.
 CTRL_COMB_PER_FLOP = 1.0
 _IGNORED = ("lanes", "depth")
-# catalogue name -> the table's, until CHAR's next export uses the new name (module doc)
+# catalogue name -> the name the table has it under, until the table is exported again (module doc)
 DATAPATH_RENAMES = {"SimdLanes": "ElementwiseLanes"}
 # per catalogue datapath, a param the table's export predates, at the value its points were
 # measured at: SimdLanes' streams, every point a two-input one (module doc)
@@ -80,7 +54,7 @@ class CharError(CodedError):
 
 @dataclass(frozen=True)
 class Table:
-    """One technology's table (module doc); energies in pJ, areas in µm²."""
+    """One technology's table (CONTRACTS, "Cost model"); energies in pJ, areas in µm²."""
 
     tech: str
     clock_ns: float
@@ -106,7 +80,7 @@ def load(tech: str) -> Table:
     """The table of ``tech`` (``snax_forge/char/<tech>.json``)."""
     path = HERE / f"{tech}.json"
     if tech not in TECHS or not path.is_file():
-        why = " (kept as data, no longer offered: D167)" if tech in RETIRED else ""
+        why = " (kept as data, no longer offered)" if tech in RETIRED else ""
         raise CharError("char.tech",
                         f"no table for technology {tech!r}{why}: one of {list(TECHS)}")  # fmt: skip
     d = json.loads(path.read_text())
@@ -141,7 +115,7 @@ def _at_depth(points: list[dict[str, Any]], lanes: int, depth: int | None) -> Lo
 
 def lookup(table: Table, datapath: str, params: Mapping[str, Any], lanes: int,
            depth: int | None = None) -> Lookup | None:  # fmt: skip
-    """A block's comb area and energy per fire on ``table`` (module doc), or None."""
+    """A block's comb area and energy per fire on ``table`` (CONTRACTS, "Cost model"), or None."""
     defaults = TABLE_DEFAULTS.get(datapath, {})
     want = defaults | {k: v for k, v in params.items() if k not in _IGNORED and v is not None}
     entries = table.blocks.get(DATAPATH_RENAMES.get(datapath, datapath), [])

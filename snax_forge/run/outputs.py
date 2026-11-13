@@ -1,21 +1,11 @@
-"""A flow run's directory, written and read back (C§7): what the reports and the viewer open.
+"""A flow run's directory, written and read back: what the reports and the viewer open.
 
-    run.json          what ran (flow/run.py writes it: the design point, the description files, the
-                      ELF and its L2 containers' symbols, ``elf_symbols``, container ->
-                      ``addr``, ``size``; the target, the snax-gvsoc commit, the trace level,
-                      its sources, whether a VCD was written)
-    profile.json      the profile (profile.py)
-    trace.jsonl       the trace's events, one JSON object per line (trace.py), at a level
-                      above off
-    trace_meta.json   the rest of the trace (its level, total cycles, boot shift, sources,
-                      filter, what each core is in at 0)
-    events.log        SNAX-GVSoC's events (events.py), the converter's input; a passing flow
-                      leaves it as ``events.log.gz`` (``gzip_events``), which ``read_events``
-                      reads as well
-
-``write_run`` writes the last three (``run.json`` is the flow's) and removes a trace an
-earlier run left when there is none now, so the folder matches ``run.json``; ``read_run``
-reads all four back.
+The directory is CONTRACTS, "Profile and trace": ``run.json`` (what ran, written by
+flow/run.py), ``profile.json`` (profile.py), above trace ``off`` ``trace.jsonl`` and
+``trace_meta.json`` (trace.py), and ``events.log``, SNAX-GVSoC's events (events.py), which a
+passing flow leaves as ``events.log.gz`` (``gzip_events``) and ``read_events`` reads either way.
+``write_run`` writes the profile and trace and removes a trace an earlier run left when there is
+none now, so the folder matches ``run.json``; ``read_run`` reads all four back.
 """
 
 from __future__ import annotations

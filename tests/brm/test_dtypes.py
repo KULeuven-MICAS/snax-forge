@@ -1,4 +1,4 @@
-"""A BRM port's dtypes as a rule (D143): each refusal, and the accepted outputs."""
+"""A BRM port's dtypes as a rule: each refusal, and the accepted outputs."""
 
 from __future__ import annotations
 
@@ -40,7 +40,7 @@ REFUSED = [
         "narrower output",
         {"a": "int64", "b": "int32", "out": "int32"},
         [("output out is int32, narrower than input a (int64): an output is at least as wide as "
-          "every input (D143)")],
+          "every input")],
     ),
     (
         "signed with uint64",

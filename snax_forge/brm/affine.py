@@ -1,45 +1,15 @@
-"""The affine dataflow notation (D70): the first version of open item 1.
+"""The affine dataflow notation: one nest per port, in logical indices (CONTRACTS, "Block
+runtime model").
 
-One nest per port says in which order the accelerator consumes or produces
-its operand's elements, in logical indices. It describes only the
-accelerator; where the elements live is the layout's business (SNAX-LOWER,
-``snax_forge.lower.streams``).
-
-    {
-     "shape":  ["n*W"],                 the operand's extent per dimension
-     "offset": [0],                     index of the first element (default 0s)
-     "loops": [                         outermost first
-       {"bound": "n", "strides": ["W"], "spatial": false},
-       {"bound": "W", "strides": [1],   "spatial": true}
-     ]
-    }
-
-Loop l runs a counter i_l over [0, bound_l) and moves index dimension d by
-``strides_l[d]`` per step, so the element of one step is
-
-    index[d] = offset[d] + sum_l i_l * strides_l[d]
-
-which is affine by construction and maps one to one onto the streamer's
-registers once a layout gives each dimension a byte stride. The temporal
-loops come first: one step of them is one beat, the last temporal loop
-innermost. The spatial loops come last and enumerate the lanes of a beat,
-the last one fastest (lane dimension 0, as the streamer's spatial dimension
-0, CONTRACTS.md section 3).
-
-Every value is an int or an expression over the BRM's params
-(snax_forge/expr.py).
-Checked when the BRM is made: the keys, one stride per dimension, at least
-one spatial loop and only at the end, and spatial bounds that use design
-params only (lanes are design time, as the streamer's spatial bounds).
-Temporal bounds, strides, shape and offset may use runtime params.
-Checked by ``Brm.resolve``: the spatial bounds are ints >= 1 whose product
-is the port's lanes. Checked by ``task_nest`` once the task's start
-parameters are known: ``n`` is a multiple of the port's rate, the temporal
-bounds give n / rate beats (D68), and every index lies inside the shape.
-
-A stride may be 0 (the same element again; on a reader's innermost
-temporal loop the streamer repeats the beat) or negative. Whether the
-ports agree on element positions is the BRM author's responsibility.
+A nest says in which order the accelerator takes or gives its operand's elements; where they
+live is the layout's (``snax_forge.lower.streams``). ``check`` and ``normalize`` take a nest
+when the BRM is made (the keys, one stride per dimension, spatial loops only at the end and
+over design params only); ``check_instance`` checks at ``Brm.resolve`` that the spatial bounds
+are ints whose product is the port's lanes; ``resolve_nest`` and ``task_nest`` give one task's
+``Nest`` once its start parameters are known, checking that ``n`` is a multiple of the port's
+rate, the temporal bounds give n / rate beats and every index lies in the shape. Temporal
+bounds, strides, shape and offset may use runtime params; a stride may be 0 or negative.
+Whether the ports agree on element positions is the BRM author's responsibility.
 """
 
 from __future__ import annotations

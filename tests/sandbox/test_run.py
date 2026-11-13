@@ -3,7 +3,7 @@
 Accepted when the vecadd recipe gives vecadd_accelerated.snaxdfg (a temporal
 loop of N / W, a spatial loop of W, bound to simd), W = 4 and
 W = 8 both pass the reference check, a bound that is not a multiple of W
-splits with a tail (open item 31, D144), and a W the BRM does not allow is
+splits with a tail, and a W the BRM does not allow is
 rejected (tests/sandbox/test_transforms.py).
 """
 

@@ -83,7 +83,7 @@ def test_2d_spatial_lane_order():
 
 
 def test_reuse_on_the_innermost_temporal_loop():
-    """Stride 0: the same beat three times in a row (a reader repeats it, D70)."""
+    """Stride 0: the same beat three times in a row (a reader repeats it)."""
     nest = {
         "shape": [8],
         "loops": [

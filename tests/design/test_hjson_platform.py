@@ -1,4 +1,4 @@
-"""A platform read from snax_cluster's cluster file (D131), and its source."""
+"""A platform read from snax_cluster's cluster file, and its source."""
 
 from __future__ import annotations
 
@@ -74,7 +74,7 @@ def test_what_is_read_and_what_is_small16s(tmp_path):
         32, 64, 512, 0x1000_0000, 512
     )  # fmt: skip
     assert (l2.base_addr, l2.size_bytes, l2.beat_bits, l2.width_bits) == (2**31, 2**31, 512, 64)
-    assert p.default.fifo_depth == 8  # temporal_dim is the graph's (D84), not read
+    assert p.default.fifo_depth == 8  # temporal_dim is the graph's, not read
     assert p.wait_mode == platform_dict()["wait_mode"]
     assert (p.base, p.changes, p.entries) == (None, {}, {})
 
@@ -94,7 +94,7 @@ def test_movers_that_differ_name_open_item_78(tmp_path):
     assert e.value.codes == ["hjson.movers"]
     msg = str(e.value)
     assert "snax_acc_cfg[0].snax_streamer_cfg.fifo_depth" in msg
-    assert "data_reader_params [8, 8], data_writer_params [4]" in msg and "open item 78" in msg
+    assert "data_reader_params [8, 8], data_writer_params [4]" in msg and "not supported yet" in msg
 
 
 @pytest.mark.parametrize(

@@ -2,24 +2,16 @@
 
     python -m snax_forge.flow.forge_set quick|full|mvt [--sim vsim|vlt] [-j N]    (pixi forge-set)
 
-Runs ``pixi run forge`` (flow/forge.py) on each design of the set, ``-j`` at a time (default
-the CPU count), each in its own folders (``out/flow/<name>/``, ``out/bundle/<name>/``,
-``out/forge/<name>/``), each forge's terminal output in ``out/forge-set/<set>/<design>.txt``. A
-design (``Design``) is a recipe and the ``--set`` values forge runs it with, none for the
-recipe's defaults (rowsum_2 at its defaults, then with ``memory.passes.layout=padded_rows``,
-rows 64 and 65 words apart; the mvt set, its own, runs mvt_1 and mvt_1_dot2 at W = 4 and 8,
-mvt_2 at W = 4 only, as at W = 8 its two dot groups need 85 TCDM crossbar inputs of the
-platform's 64); its name is forge's folder name for them (flow/run.py's ``default_name``:
-``rowsum_2_passes.layoutpadded_rows``). Emit is made ready once first (``rtl.warm_emit``: its
-classpath and firtool), so the bundles do not all start sbt or extract firtool at once. Then it
-writes ``out/forge-set/<set>.md``: per design its bundle folder and
-the lines its RTL run must print (``forge_expected.txt``, from its SNAX-GVSoC run); the one
-line that checks them all from snax_cluster's ``target/snitch_cluster`` (``make
-snax-forge-check BUNDLES=... SIM=... SNAX_CLUSTER_IMAGE=<image>``, the image named in
-``IMAGE_HINT``); and per design the commands forge printed, for running one by hand.
+``forge_set`` runs ``pixi run forge`` (flow/forge.py) on each ``Design`` of the set in ``SETS``
+(a recipe and its ``--set`` values, named as forge's folder), ``-j`` at a time (default the CPU
+count), each forge's terminal output in ``out/forge-set/<set>/<design>.txt``. Emit is made ready
+once first (``rtl.warm_emit``), so the bundles do not all start sbt or extract firtool at once.
+Then it writes ``out/forge-set/<set>.md``: per design its bundle folder and expected lines
+(``forge_expected.txt``), the one ``make snax-forge-check`` line that checks them all from
+snax_cluster's ``target/snitch_cluster`` (``check_line``), and forge's commands per design.
 
-A forge that fails (a SNAX-GVSoC run that fails its own check among them) stops the set: exit
-1, each failed design and its output named, no ``<set>.md``. Exit 2 on bad arguments.
+A failed forge stops the set: exit 1, each failed design and its output named, no ``<set>.md``.
+Exit 2 on bad arguments.
 """
 
 from __future__ import annotations
@@ -69,7 +61,7 @@ def designs(*recipes: str | Design) -> list[Design]:
     return [r if isinstance(r, Design) else Design(r) for r in recipes]
 
 
-PADDED = "memory.passes.layout=padded_rows"  # each row a word longer (D86)
+PADDED = "memory.passes.layout=padded_rows"  # each row a word longer
 QUICK = designs("vecadd_i32", "vsum_tree_i8", "dot_1", "dot_1_enc", "dot_4", "axpy")
 SETS = {
     "quick": QUICK,

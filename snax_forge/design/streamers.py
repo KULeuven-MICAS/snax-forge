@@ -1,56 +1,20 @@
-"""The streamer shell against a bound graph (D84).
+"""The streamer shell against a bound graph.
 
-For every accelerated node's instance, in the order the graph first uses
-them, and every port of its BRM in port order, one streamer:
+``resolve`` builds one ``Streamer`` per outer port of every accelerated instance, in the order
+the graph first uses them and the BRM's port order, as CONTRACTS, "Platform" (the streamer
+shell) and "Memory plan and design point" (the design point's ``streamers``) define them; a
+port on a link has none. ``instances``, ``groups`` and ``accelerators`` read the instances off
+the graph and put them into groups and accelerators; ``links``, ``linked_ports``, ``unplaced``
+and ``slot_containers`` read the links, the containers with no L1 space and those read only
+through a slot connector. Nothing here checks the pairing: check.py runs first and reports
+every problem, so ``resolve`` raises on the first thing that does not fit.
 
-    name            <instance>_<port> (D75)
-    write           the port's direction is "out"
-    spatial_bounds  the platform entry's, else, fastest first, the port nest's
-                    spatial loops (``affine``, what snax_forge/lower/streams.py
-                    requires) or the bound memlet's ranges (``stream``, as
-                    SNAX-LOWER's ``memlet_values`` reads them)
-    n_ports         their product: the port's lanes W
-    dtype           the dtype of the container behind the port, through its
-                    memlet (``brm.port_dtypes``); every node of the instance
-                    puts the same one on it (``connect.dtype``)
-    num_slc         slices (elements) of that dtype per bank word, width_bits
-                    over its bits (D142)
-    num_ch          the TCDM channels the port uses (the streamer hjson's
-                    ``num_channel``): the entry's ``num_ch``, else the wire
-                    default W / num_slc (D142; ``connect.pack`` checks that
-                    num_slc divides the fastest spatial bound,
-                    ``connect.num_ch`` an entry's value)
-    temporal_dims   from the graph: the firing loops the port's memlet runs
-                    over (``port_loops``, as SNAX-LOWER takes them), at least
-                    1; with several nodes on one instance, the most
-    fifo_depth      the platform's ``default`` with the streamer's entry on top
-
-A port on a link (``link``, D148) has no streamer: streamers sit on the
-outer ports only (D112). ``instances`` reads the instances off the graph and
-resolves them against the BRM library, ``groups`` puts them into groups (an
-instance's ``group``, ``link``'s, else its own), ``accelerators`` into
-accelerators (D148: an instance's ``accelerator``, ``encapsulate``'s, else its
-group's own); ``links``, ``linked_ports`` and ``unplaced`` read the links
-and the containers that get no L1 space (a link's, a fused nest's local
-value), ``slot_containers`` those read only through a slot connector (a
-CSR's value, in the core's memory); ``resolve`` builds the shell. Neither checks the pairing:
-that is check.py, which runs first and reports every problem, so
-``resolve`` raises on the first thing that does not fit.
-
-**Shared movers** (D169). A container marked ``hw.share_ports`` (``share_ports``,
-sandbox/share_ports.py) has its writer's and its reader's groups on one accelerator, whose
-groups then share its streamer's movers: ``shared_accelerators`` names those accelerators,
-``shared_movers`` maps their ports. Per role (read, write), each group's ports on a streamer,
-unit by unit in port order, sorted by channels, widest first (a stable sort); the k-th of every
-group goes on mover k (``reader<k>``, ``writer<k>``, snax-gvsoc's names), which takes the
-widest channels and its spatial bounds (in words), the most temporal loops and the deepest
-FIFO of its users. A narrower user enables its first channels (snax_cluster's
-``configurable_channel``, the mover ``masked``). A user whose spatial bounds (in words) are not
-the mover's on every dimension but the slowest, and at most the mover's there, does not fit in
-its first channels: ``ShareError`` (``share.shape``). The pool's channels, with
-:math:`w_{s,r,k}` group s's k-th widest port of role r (0 if none):
-``C = Σ_r Σ_k max_s w_{s,r,k}``; ``set_channels`` gives each accelerator's, the one count
-check.py's ``crossbar_inputs`` sums.
+Shared movers (a container marked ``hw.share_ports``, sandbox/share_ports.py):
+``shared_movers`` puts, per role, each group's k-th widest port (a stable sort, unit by unit in
+port order) on mover k, which takes its users' widest channels and spatial bounds, most
+temporal loops and deepest FIFO; a user that does not fit is ``share.shape``. ``set_channels``
+gives each accelerator's channels, the sum over roles and k of the widest k-th port over its
+groups, the count check.py's ``crossbar_inputs`` sums.
 """
 
 from __future__ import annotations
@@ -171,7 +135,7 @@ def link_ends(graph: Graph, link: Node) -> tuple[str, str]:
     a, ends = link.attrs, []
     for inst, side in ((a["from"], "outputs"), (a["to"], "inputs")):
         # the instance's node whose memlet names the container: one of several when nodes share
-        # the instance (D165), each with its own link (mvt's tmp0_prod and tmp2_prod)
+        # the instance, each with its own link (mvt's tmp0_prod and tmp2_prod)
         (port,) = {p for n in accelerated(graph) if n.attrs["instance"] == inst
                    for p, m in getattr(n, side).items() if m.data == a["container"]}  # fmt: skip
         ends.append(f"{inst}.{port}")
@@ -180,7 +144,7 @@ def link_ends(graph: Graph, link: Node) -> tuple[str, str]:
 
 def group_links(graph: Graph, members: list[str]) -> list[tuple[Node, str, str]]:
     """A group's links as ``(link node, from, to)``, one per pair of ports: a group several nests
-    share (D165) has a link node per nest on the same ports (mvt's tmp0_prod and tmp2_prod), one
+    share has a link node per nest on the same ports (mvt's tmp0_prod and tmp2_prod), one
     piece of hardware; the first in the body's order stands for them."""
     out, depth = [], {}
     for k in links(graph):
@@ -199,7 +163,7 @@ def group_links(graph: Graph, members: list[str]) -> list[tuple[Node, str, str]]
 def group_runs(graph: Graph) -> dict[str, list[dict[str, Node]]]:
     """Each linked group's runs, in the body's order: per run its units' nodes (instance ->
     node), the nodes its links join (a writer of a link's container and its reader). A group
-    whose units each have one node is one run; a group several nests share (D165: mvt's half 2,
+    whose units each have one node is one run; a group several nests share (mvt's half 2,
     ``tmp2_mult -> tmp2_prod -> sum_1`` on half 1's ``vmul`` and ``vsum``) runs once per set of
     nodes its links join. A run missing one of the group's units, or holding two nodes of one,
     is a ``ValueError``."""
@@ -316,6 +280,8 @@ class SharedMover:
         return next((u for u in self.users if u.streamer == streamer), None)
 
 
+# NB (D142): a bank word packs 64 / b elements little-endian, as NumPy lays them out; the
+# streamer RTL and SNAX-GVSoC read them in the same order.
 def word_bounds(s: Streamer) -> tuple[int, ...]:
     """A streamer's spatial bounds in words, fastest first: the fastest over num_slc (gen.lanes
     refuses a fastest bound that is not whole words)."""
@@ -374,7 +340,7 @@ def shared_movers(graph: Graph, found: dict[str, Streamer]) -> dict[str, list[Sh
                 widest = max((s for _, s in users), key=lambda s: s.num_ch)
                 bounds = word_bounds(widest)
                 name = f"{'writer' if role == 'write' else 'reader'}{k}"
-                for g, s in users:
+                for _, s in users:
                     b = word_bounds(s)
                     if len(b) != len(bounds) or b[:-1] != bounds[:-1] or b[-1] > bounds[-1]:
                         raise ShareError(
@@ -446,7 +412,7 @@ class LoopError(ValueError):
 
 
 def firing_loops(graph: Graph, node: Node) -> list[Loop]:
-    """The temporal maps around ``node``, outermost first: its firing loop (D70, D79).
+    """The temporal maps around ``node``, outermost first: its firing loop.
 
     Every map around an accelerated node must be ``temporal`` for now: a tile
     or untagged map would start a new task per iteration, which SNAX-LOWER
@@ -469,7 +435,7 @@ def firing_loops(graph: Graph, node: Node) -> list[Loop]:
 
 def port_loops(inst: Instance, port: str, memlet: Memlet, loops: list[Loop]) -> list[Loop]:
     """The firing loops a port's streamer runs over: all of them at rate 1; for a named
-    rate, which moves one beat per T firings, the loops its memlet uses (D102)."""
+    rate, which moves one beat per T firings, the loops its memlet uses."""
     if inst.brm.port(port).rate == 1:
         return loops
     return [lp for lp in loops if lp.var in memlet.names]

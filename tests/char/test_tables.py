@@ -1,4 +1,4 @@
-"""HWCOST's tables (snax_forge/char/tables.py, C§20): the files against SOURCE, the rule
+"""HWCOST's tables (snax_forge/char/tables.py): the files against SOURCE, the rule
 against snax-forge-experiments' worked examples (its ``docs/cost_tables.md``), extrapolation
 outside the grid, the bank lookup, and the crossbar's read-only and write-only inputs (X71)."""
 
@@ -39,7 +39,7 @@ def test_files_match_source():
 
 
 def test_no_tables_for_nangate15():
-    """nangate15 has no memories and no streamer or crossbar tables (D159)."""
+    """nangate15 has no memories and no streamer or crossbar tables."""
     assert load_costs("nangate15") is None
 
 
@@ -84,7 +84,7 @@ def test_the_tcdm_bank(costs):
 
 
 def test_a_bank_off_the_grid_is_none(costs):
-    """The bank table is never interpolated (D160): a depth not a multiple of 32 gives None."""
+    """The bank table is never interpolated: a depth not a multiple of 32 gives None."""
     assert bank(costs, 500, 64) is None
     assert bank(costs, 8192, 64) is None
 

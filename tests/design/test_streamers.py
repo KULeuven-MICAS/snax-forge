@@ -1,4 +1,4 @@
-"""The streamer shell against a bound graph (D84)."""
+"""The streamer shell against a bound graph."""
 
 from __future__ import annotations
 
@@ -81,7 +81,7 @@ def test_temporal_dims_come_from_the_graph():
 
 
 def test_a_streamer_takes_its_containers_dtype():
-    """int32 containers: two elements per word, the wire default W / num_slc channels (D142)."""
+    """int32 containers: two elements per word, the wire default W / num_slc channels."""
     d = Graph.load(BOUND).to_dict()
     for c in d["containers"].values():
         c["dtype"] = "int32"

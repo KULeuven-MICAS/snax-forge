@@ -9,7 +9,7 @@ marker, and the graph fixtures read as dicts or bound by their recipes.
     imported(kernel, dtypes)  a kernel's import (DaCe), once per kernel and dtypes
     steps(name, **params)   every graph of the recipe ``name`` at ``params``, the import first
     dot1_split(w_mul, w_sum, n)  ``recipes/dot/dot_1.json`` with a factor param per split, ``W_mul``
-                            and ``W_sum`` (the dot 1 dry run's, DRY1-2)
+                            and ``W_sum`` (the dot 1 dry run's)
 """
 
 from __future__ import annotations

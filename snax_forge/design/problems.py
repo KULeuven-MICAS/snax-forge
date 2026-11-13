@@ -1,6 +1,6 @@
-"""What the design checks report (D85): one ``Problem`` per thing that does not fit.
+"""What the design checks report: one ``Problem`` per thing that does not fit.
 
-A problem has a ``code`` (``<stage>.<check>``, CONTRACTS.md section 14),
+A problem has a ``code`` (``<stage>.<check>``, CONTRACTS, "Design checks"),
 ``where`` (the platform field, graph node or streamer it is about), a
 ``message`` saying why it fails and, where there is one, a ``fix``: the
 ``--set`` or recipe change that removes it. ``DesignError`` carries every

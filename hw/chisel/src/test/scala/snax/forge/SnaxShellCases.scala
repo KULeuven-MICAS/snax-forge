@@ -2,8 +2,8 @@ package snax.forge
 
 import java.nio.file.Path
 
-/** snax-gvsoc's `SnaxShell` cases, the hand-worked half of the shell cross-check between snax-gvsoc and Chisel (open
-  * item 84), as `SnaxUnitCases` is the unit's.
+/** snax-gvsoc's `SnaxShell` cases, the hand-worked half of the shell cross-check between snax-gvsoc and Chisel, as
+  * `SnaxUnitCases` is the unit's.
   *
   * The case files (`tests/snax/shell/cases/`, one `.txt` each, in that folder's `tb.cpp` format: header lines, then
   * `cycles` and one line per cycle; the folder's README) are worked by hand from `SnaxShell`'s rule
@@ -31,7 +31,7 @@ object SnaxShellCases {
   case class Cycle(valids: Seq[Boolean], ready: Boolean, access: Access, result: Option[BigInt], status: Int)
 
   /** A case: the group's read-write CSRs (`csrs`: START, JOBS, the units'; STATUS and BUSY_COUNTER follow), its unit
-    * and the widths (`job_width` for JOBS and JOB_BEATS, `busy_counter_width` for BUSY_COUNTER; 32 by default, D152); a
+    * and the widths (`job_width` for JOBS and JOB_BEATS, `busy_counter_width` for BUSY_COUNTER; 32 by default); a
     * unit's scalar CSR (any other name, `K1`, `K1_LO`, `K1_HI`) has its own width (`NAME:W`, `scalarWidths`, else
     * job_width); `words`, the words each started run sends the unit (JOBS, the JOB_BEATS or 1, the scalars), which
     * snax-gvsoc's tb checks.

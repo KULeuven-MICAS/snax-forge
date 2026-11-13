@@ -46,7 +46,7 @@ class KernelSpec:
             raise ValueError(f"{self.name}: no descriptor for {sorted(missing)}")
 
     def with_dtypes(self, dtypes: dict[str, str], what: str = "dtypes") -> KernelSpec:
-        """The spec with some containers' integer dtype replaced (a recipe's ``dtypes``, D113):
+        """The spec with some containers' integer dtype replaced (a recipe's ``dtypes``):
         their descriptors, so DaCe builds the SDFG at those types; ``make_inputs`` is cast
         by its caller (``dfg.reference.kernel_inputs``). A name that is not a descriptor raises
         ValueError naming it."""
@@ -74,7 +74,8 @@ class KernelSpec:
             arr = args.get(name)
             if arr is None or not hasattr(desc, "shape"):
                 continue
-            for sym, dim in zip(desc.shape, np.shape(arr)):
+            # a scalar's descriptor has shape (1,), its argument ()
+            for sym, dim in zip(desc.shape, np.shape(arr), strict=False):
                 if isinstance(sym, dace.symbolic.symbol):
                     out[str(sym)] = int(dim)
         return out

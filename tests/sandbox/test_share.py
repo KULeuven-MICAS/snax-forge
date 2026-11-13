@@ -1,5 +1,6 @@
-"""One instance shared by several nodes (D165): mvt's variant 1, both halves on one vmul, vsum
-and vadd (recipes/mvt/mvt_1.json, at its M = N = 40), the sessions at M = 8, N = 16. bind's form offers the instances a node
+"""One instance shared by several nodes: mvt's variant 1, both halves on one vmul, vsum
+and vadd (recipes/mvt/mvt_1.json, at its M = N = 40), the sessions at M = 8, N = 16. bind's form
+offers the instances a node
 can join (session.py's ``share_choices``), and a joining split's editor-named W takes the
 instance's param."""
 

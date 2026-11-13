@@ -1,69 +1,19 @@
-"""The converter's beat, stall and instruction part (C§7, D137): SNAX-GVSoC's ``beats``,
-``stalls`` and ``insn`` lines renamed, shifted and cut to the window, with what no view should
-look up, and the invariants they must hold.
+"""The converter's beat, stall and instruction part.
 
     beat_events(named, ctx) -> [(t, n, event)]
     beat_invariants(trace, profile, ctx) -> [what fails]
     class_invariants(events, class_events, srcs) -> [what fails]
 
-``named`` are events.log's lines with their C§7 source (convert.py); ``ctx`` (``Context``) is
-the rest of the run: the cluster, the design point's regions, the window, the filter, and
-what the task level made of the events (each component's tasks, the DMA's copies, the cores'
-functions).
-
-**Names.** A crossbar line's ``in`` becomes its port (the summary's ``input`` lines name each
-index; ``acc_a.lane0``, ``core0``, ``axi``), a stall's ``by`` too (-1, the DMA's superbank,
-is ``dma``); a streamer line's ``mover`` its mover (``reader0`` -> ``acc_a``); a ``fire``'s
-``b``, ``value`` and ``vals`` are dicts keyed by reader mover (the unit's inputs in port
-order are the streamer's readers in order, each beat its mover's ``num_channel`` words: what
-SnaxUnit moves per beat, D142, several narrow elements to a word); a ``push``'s ``value`` is
-its writer's ``num_channel`` words (one for a fold). ``vals`` are the elements in those words,
-read by each region's dtype.
-Lines of a source the filter does not name are dropped (the streamer writes every mover's).
-
-**Lookups.** Every cycle and ``back`` is shifted by the boot and lines outside the window are
-dropped. ``task`` is the task whose start and done bracket the line's ``t`` on its component
-(a port's mover, the accelerator), a copy's for the DMA, null for a core's or AXI's access.
-``mem`` is ``l1`` for the crossbar's lines and ``l2`` for a burst, ``addr`` absolute (the
-crossbar's TCDM offset plus the L1's base; ``by_addr`` likewise). ``region`` is the
-run's container the address is in (regions.py; null if none), ``elems`` the flat indexes of
-its elements in the word (a DMA beat's words together, a burst's bytes), ``vals`` their values
-by the region's dtype; a fire's and a push's come from the grants of their beats (its reader's
-``b``, the writer's ``b = n``), null for a mover not in the trace. An ``insn``'s ``func`` is the
-function its core was in at ``t`` (its last ``func`` line at or before it, boot included),
-``text`` the instruction as GVSoC writes it. A ``class`` line (the accelerator's, or a mover's:
-SNAX-GVSoC's own class of the cycle, never derived here) keeps its ``mode``; a run's class
-runs (``class_runs``) go from each line to the next one of its task, the last to the end of
-the cycles its ``done``'s ``cycles`` add up over (from its start + 1).
-
-**Invariants**, each checked where the trace has its lines (its level and filter), each
-failure named:
-
-- the grants per SNAX port in the window are its summary's; per bank, the SNAX grants plus
-  the DMA's words are its reads and writes;
-- (convert.py, from ``task`` on: each container's L2 bytes its copies touch are its array's)
-- per copy, the ``dma`` lines into L1 are its written beats and those out of L1 its read
-  beats, counted as the iDMA counts them (``dma_beat_bytes``), and over all copies those are
-  the summary's ``r_beats`` and ``w_beats``;
-- per accelerator run, the ``fire`` lines are its done's firings (and their sum the
-  summary's), the ``push`` lines firings over its rate, the writer's grants pushes times its
-  lanes;
-- every ``b`` a fire names was granted on every lane of its mover with the fire's words;
-  every push's words are its writer grants' (``b = n``);
-- every L1 line's ``bank`` and ``row`` are its address's (``Cluster.bank_row``);
-- per run of the accelerator and of each mover, its class runs start at its first counted
-  cycle (its start + 1), each changes the class, the last ends where its ``done``'s
-  ``cycles`` add up to, and per class their lengths add up to that class's count; no
-  ``class`` line of a component lies outside its runs;
-- each mover's grant addresses in a task, lane by lane in time order, are the nest its CSR
-  writes gave that task: the pointer, a spatial stride per lane, the temporal bounds and
-  strides (``agu_nest``, as the streamer's AGU walks it; with a repeat, loop 0 once);
-- at ``stall``: the stalls per SNAX port and those lost to the DMA are its summary's; per
-  bank, the cycles with two or more requesters (SNAX grants and stalls, and the DMA when it
-  took the bank) its conflicts; each lane's ``fifo`` counts are the words visible (a read's
-  ``back`` plus one, a push's ``t`` plus one) minus those popped (its last fire, the
-  writer's grant) in every cycle, at most the depth, 0 at the end, their highest the
-  summary's ``qmax``.
+SNAX-GVSoC's ``beats``, ``stalls`` and ``insn`` lines, renamed, shifted and cut to the window,
+with what the converter adds (CONTRACTS, "Profile and trace"). ``named`` are events.log's lines
+with their trace source (convert.py); ``ctx`` (``Context``) is the rest of the run: the cluster,
+the regions, the window, the filter and what the task level made of the events. A unit's lines
+are paired with its streamer's tasks by ``pairing``; a run's class runs (``class_runs``) go from
+each ``class`` line to the next of its task. The invariants, each checked where the trace has
+its lines: grants, bank accesses, DMA beats (as the iDMA counts them), firings, pushes and, at
+``stall``, stalls, conflicts and ``qmax`` match the summary; every fired ``b`` was granted on
+every lane; each L1 line's ``bank`` and ``row`` are its address's; class runs tile each run; and
+each mover's grant addresses are the nest its CSR writes gave the task (``agu_nest``).
 """
 
 from __future__ import annotations
@@ -192,7 +142,7 @@ def agu_nest(ptr: int, spatial_bounds: Sequence[int], spatial_strides: Sequence[
 
 def mover_csrs(cluster: Cluster) -> dict[str, int]:
     """Each mover's first CSR number (its pointer's low word), in its set's streamer layout
-    (each set's from its own first CSR, D157)."""
+    (each set's from its own first CSR)."""
     acc = cluster.accelerator
     out, csr = {}, {s.name: s.first for s in acc.csrs.sets}
     for m in acc.movers:
@@ -215,7 +165,7 @@ def mover_values(cluster: Cluster, mover: Mover, regs: dict[int, int]
 
 def mover_nest(cluster: Cluster, mover: Mover, regs: dict[int, int]) -> list[list[int]]:
     """Each lane's addresses (TCDM offsets) from the streamer's CSR values (``agu_nest``); a
-    masked mover's lane its ENABLED_CHANNEL leaves off has none (it sends no request, D169)."""
+    masked mover's lane its ENABLED_CHANNEL leaves off has none (it sends no request)."""
     ptr, sp, tb, ts = mover_values(cluster, mover, regs)
     out = agu_nest(ptr, mover.spatial_bounds, sp, tb, ts, mover.lanes, cluster.l1_size - 1,
                    not mover.write)  # fmt: skip
@@ -253,7 +203,7 @@ def nests(ctx: Context) -> dict[tuple[str, int], list[list[int]]]:
 
 
 def shared_pick(tasks: Sequence[Configure]) -> Configure:
-    """Of one start's configures of a shared mover's users (D169), the one its program writes:
+    """Of one start's configures of a shared mover's users, the one its program writes:
     its group's own (a temporal bound not 0), else the first idle one (lower/c.py)."""
     own = [c for c in tasks if any(c.values["temporal_bounds"])]
     return own[0] if own else tasks[0]
@@ -272,9 +222,9 @@ def mover_tasks(tasks: TaskList, mover: Mover) -> list[str]:
 
 
 def pairing(tasks: TaskList, cluster: Cluster) -> dict[str, dict[str, str]]:
-    """Per accelerator task, the streamer task of each mover of its streamer set (D157), from the
+    """Per accelerator task, the streamer task of each mover of its streamer set, from the
     start step that launches them together: a unit's task with a task on every mover of its set,
-    with several groups in one encapsulated set (D148) the other groups' idle (every bound 0),
+    with several groups in one encapsulated set the other groups' idle (every bound 0),
     which SNAX-GVSoC starts and ends at once. An accelerator task launched without a streamer
     task for a mover of its set, with two for one, or with a streamer task on no mover of its
     set, is a RunError (``index.tasks``) naming the tasks: never guessed."""
@@ -293,7 +243,7 @@ def pairing(tasks: TaskList, cluster: Cluster) -> dict[str, dict[str, str]]:
         what = f"{tasks.name}: start {s.tasks}"
         unit = next(c.component for c in launched if c.task_name == mine[0])
         movers = [m.name for m in acc.movers if m.set == set_of[unit]]
-        # a port's streamer -> its mover: a shared mover's users' too (D169)
+        # a port's streamer -> its mover: a shared mover's users' too
         on = {
             u: m.name for m in acc.movers if m.set == set_of[unit] for u in (m.users or (m.name,))
         }
@@ -369,7 +319,7 @@ class _Beats:
         self.spans = brackets(ctx.task_events)
         self.dma_copies = copies(ctx.task_events)
         self.mover_of_port = {p: m for m in self.acc.movers for p in m.ports}
-        # per unit its readers and writers (a group's own, D148), each beat its num_ch words
+        # per unit its readers and writers (a group's own), each beat its num_ch words
         self.readers = {u: [m for m in self.acc.movers_of(u) if not m.write]
                         for u in self.acc.unit_names}  # fmt: skip
         self.writers = {u: [m for m in self.acc.movers_of(u) if m.write]
@@ -850,7 +800,7 @@ def _stall_invariants(trace: Trace, profile: Profile, ctx: Context, of: dict[str
                            "in its summary")  # fmt: skip
 
     for m in traced:
-        # its units: a shared mover's every user's (D169), each with its own tasks' words
+        # its units: a shared mover's every user's, each with its own tasks' words
         units = ([u for u in acc.unit_names if m in acc.movers_of(u)] if m.users
                  else [acc.unit_of_mover(m.name)])  # fmt: skip
         if not units or any(u is None or u not in ctx.filter for u in units):

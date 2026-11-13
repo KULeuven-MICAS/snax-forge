@@ -1,4 +1,4 @@
-"""Blocks in the DFG view (REUSE1, api.py's ``fold``): a block not expanded drawn as one box
+"""Blocks in the DFG view (api.py's ``fold``): a block not expanded drawn as one box
 whose ports are the containers it reads and writes from outside, an expanded one as its nodes;
 the blocks sharing units expand together. mvt at M = 8, N = 16, built from matvec_dot3 on each
 half (matvec ⊃ dot), and from dot_3 on each half's rows with half 2 shared on half 1's units."""

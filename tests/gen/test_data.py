@@ -92,7 +92,7 @@ def test_literals():
 
 
 def test_an_inplace_output_starts_at_its_input(tmp_path, monkeypatch):
-    """An output make_inputs gives (an in-place update, axpy's y, open item 47) starts at that
+    """An output make_inputs gives (an in-place update, axpy's y) starts at that
     value, not zeroed, and is not const; its golden is the reference executor's."""
     p = load(tmp_path, "vecadd")
     spec = kernel_spec("vecadd", "test")
@@ -135,7 +135,7 @@ def test_refused_a_float_dtype():
 
 
 # =============================================================================
-# Narrow containers (D142): packed in data.h
+# Narrow containers: packed in data.h
 # =============================================================================
 
 
@@ -188,7 +188,7 @@ def test_e2_int8_packs_eight_per_word_padded_to_a_beat():
 
 
 def test_vecadd_n7_writes_its_pad_and_a_whole_beat(tmp_path):
-    """N = 7 at W = 4 (D144): each array 7 elements, a pad element of 0, one 64-byte beat."""
+    """N = 7 at W = 4: each array 7 elements, a pad element of 0, one 64-byte beat."""
     from snax_forge.dfg.import_sdfg import import_kernel
     from snax_forge.sandbox import Recipe, apply_recipe
 
