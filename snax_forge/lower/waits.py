@@ -1,42 +1,16 @@
 """Where a task list waits.
 
-``placed_waits(tasks, point)`` walks the steps in order and places the waits
-correctness needs, for the backend (``c.py``):
+``placed_waits(tasks, point)`` walks the steps in order and places the waits correctness needs,
+as CONTRACTS, "Task list" gives them (its "Waits" part), for the backend (c.py): none at a
+configure, those its tasks need before a start, one on the task's component at a sync. Each
+``PlacedWait`` holds its step, component, mode (its task's ``wait_mode``) and what it covers;
+waits are ordered by when the task they end on was started.
 
-    configure  no wait
-    start      the waits its tasks need, before their starts
-    sync       one wait on the task's component, always placed
-    read       no wait
-
-The waits a start needs: one for every ``after`` task not yet waited for,
-and one for every listed component whose latest task has not been waited
-for. There is at most one wait per component, and a wait that another of
-these waits covers is left out; waits are ordered by when the task they end
-on was started, and each uses that task's ``wait_mode``. A wait is on a
-component, so it ends on the component's latest task and covers every
-earlier one on it.
-
-A wait on a writer streamer also covers the unit it serves (a linked
-group's: the group) and its reader streamers, for the tasks the same start launched: their data
-flows
-into the writer, so the writer finishes last (``upstream``, from the design
-point's streamers: their ``instance`` and ``write``). A wait on an accelerator's
-task (a unit, or a linked group) also covers its writer streamers, and so their
-readers, for the tasks the same start launched: the C backend polls the group's
-STATUS, then its set's STREAMER_BUSY, which is clear only once every mover of
-the set is done (lower/c.py). So the serial sync on the previous
-accelerator's task leaves out the data wait on its writer (dot_serial: one wait
-between mul and sum, the sync).
-
-An idle mover's task (every temporal bound 0: another group's mover in an
-accelerator of several) never needs a wait: it never starts and moves
-nothing.
-
-Nothing here decides anything (principle 4): where configures, starts and
-syncs go, and every dependency, are the task list's; only the waits
-correctness requires are placed. Each wait comes with the step it belongs to
-(the start it comes before, or the sync it is), its component and mode, and
-what it covers. The values are checked apart (``check_values``, tasks.py).
+A wait on a writer streamer covers its unit and readers of the same start (``upstream``). A wait
+on an accelerator task (a unit or a linked group) covers its writer streamers, and so their
+readers, since the program polls the group's STATUS, then its set's STREAMER_BUSY: so the serial
+sync on the previous accelerator leaves out the data wait on its writer. An idle mover's task
+(``idle``) needs no wait. Nothing is decided here; the values are checked apart (tasks.py).
 """
 
 from __future__ import annotations

@@ -1,88 +1,18 @@
 """Design point -> task list.
 
-The task list (tasks.py, CONTRACTS.md section 9) is derived from a design
-point and decides nothing. The accelerated nodes run in the graph's
-execution order, one group of tasks each (a single tile: every map around a
-node is one of its temporal firing loops, ``firing_loops``); a linked group's
-units (one node each) are one group of tasks at its first node, its
-ports on a link with no streamer and no load or store. For each group:
+``task_list`` derives the task list (tasks.py) from a design point and decides nothing; what it
+derives, loads, streamer and idle-mover tasks, accelerator tasks, serial syncs, starts, stores
+and the final syncs, is CONTRACTS, "Task list" (its "Derived" part). Each accelerated node is
+one tile: every map around it is a temporal firing loop (``unit_firings``). Every configure and
+sync uses the platform's ``wait_mode``; a load moves the whole layout as contiguous beats.
 
-    loads        for each input in port order whose container has an L2 and an
-                 L1 layout and is not in L1 yet: configure ``load_<C>`` (DMA,
-                 L2 -> L1, the whole layout as contiguous beats; its L2 side
-                 the container's data.h array, ``symbol`` C), start it
-    streamers    configure ``<node>_<instance>_<port>`` for every port, in the
-                 BRM's port order, with values from the memlet through the
-                 container's L1 layout (below)
-    idle movers  only in an encapsulated accelerator (several groups on one
-                 streamer set): configure ``<node>_<streamer>``
-                 for every port of the set's other groups' units too, every
-                 temporal bound 0, so they never start: the set's streamer
-                 starts all its movers with one CSR; the task list holds them
-                 in the set's order, unit by unit (a shared set's too: the
-                 program writes each mover once, lower/c.py). Their temporal strides
-                 are a bank word, not 0: a reader whose first loop has stride
-                 0 runs that loop once whatever its bound and hands each beat
-                 out bound times (snax_cluster's Reader.scala), so it would
-                 start and read. An accelerator's tasks hold its own set's
-                 movers only: another accelerator's streamer is another set,
-                 started by its own CSR
-    accelerator  configure ``<node>_<instance>`` with ``n``, the firing count, its
-                 named rates and each slot it reads from a container (a CSR the
-                 program writes, ``{"k1": {"from": "alpha"}}``, axpy's); a linked
-                 group's ``<node>_<group>`` with each unit's, by unit
-    serial sync  when the accelerator is not the previous group's:
-                 ``sync`` on the previous accelerator's task, after this
-                 group's configures and before its start, unless an ``after``
-                 of this start already holds that task (``serial_syncs``)
-    start        the streamer tasks, then the accelerator task, together
-    stores       for each output whose container has an L2 layout and is written
-                 for the last time here: configure ``store_<C>`` (L1 -> L2)
-                 after the writer's task, start it
-
-and at the end one ``sync`` per non-transient container the graph writes,
-on the task that leaves it in its last memory (its store, or its writer
-without an L2). ``after`` holds the data dependences only: a reader waits
-for the task that last put its container in L1 (a load or a writer), a
-writer for the tasks that read or wrote its container since; the waits a
-busy component needs are placed later (waits.py). Every configure uses the platform's
-``wait_mode``; so does every sync.
-
-**In place**. A writer whose container a reader of the same start reads
-cannot wait for that reader: they start together. It needs no wait when the reader is a
-port of its own unit and both visit the same addresses in the same order, beat by beat
-(``addresses``): every element is read before the unit writes its result back (axpy's
-``y``, every beat; a fold's seed and its write, once per job). Any other reader in the
-same start is refused by name, naming both ports.
-
-**Accelerators run in series**: the groups of one accelerator (an
-encapsulated set) follow each other through their data dependences, as
-before; between two accelerators the next one's start waits for the previous
-accelerator's task, so its streamers and CSRs are set up while the previous
-one runs and it starts when that one is done. dot 1: ``sum_vsum``'s
-configures, ``sync mult_vmul``, then the start of ``sum_vsum``'s tasks;
-dot_1_enc (one accelerator, ``dot``) has no serial sync. Overlap of
-independent accelerators is not done yet.
-
-**Streamer values from a memlet**. With the firing loops ``v_k``
-(begin ``b_k``, ``count_k`` iterations, step ``s_k``) and the container's L1
-layout (``base``, byte ``strides``), each subset dimension ``d`` is an index
-or a range whose begin is affine in the ``v_k`` (``expr.linear``):
-
-    base              layout.base + sum_d (c_d + sum_k a_dk * b_k) * strides[d]
-    temporal loop k   bound count_k, stride sum_d a_dk * s_k * strides[d]
-                      (innermost first, as the streamer takes them)
-    spatial loop      one per range dimension: bound its length, stride its
-                      step * strides[d] (fastest, the last range, first)
-
-The spatial bounds must be the streamer's. For a BRM in the ``affine``
-notation the addresses the values visit, beat by beat, must be the ones the
-BRM's nest gives through the same layout (streams.py): the memlet and the
-accelerator agree on the order of the elements. In the ``stream`` notation
-the memlet is the order, so there is nothing to compare. The memlet's loop structure is the one
-written (one streamer
-loop per firing loop), so two temporal maps give two streamer loops even
-where the nest has one.
+``memlet_values`` gives a streamer task's values from a memlet and the container's L1 layout:
+base ``layout.base + sum_d (c_d + sum_k a_dk * b_k) * strides[d]`` for firing loops ``v_k``
+(begin ``b_k``, step ``s_k``); one temporal loop per firing loop, innermost first, stride
+``sum_d a_dk * s_k * strides[d]``; one spatial loop per range dimension, the last range first.
+The spatial bounds must be the streamer's, and for an ``affine`` BRM the addresses visited beat
+by beat (``addresses``) must be the nest's through the same layout (streams.py). Accelerators
+run in series (``serial_syncs``); a ``LowerError`` names what does not fit.
 """
 
 from __future__ import annotations

@@ -1,54 +1,15 @@
 """The task list: SNAX-LOWER's ordered list of tasks.
 
-A task list says which component runs which task with which values, where
-each task is configured and started, and what it depends on. The C backend
-(c.py) turns it into the program; waits.py places its waits.
+``TaskList`` holds the steps (``Configure``, ``Start``, ``Sync``; ``step_from_dict``) of
+CONTRACTS, "Task list": which component runs which task with which values, where each is
+configured and started, and what it depends on. c.py turns it into the program; waits.py places
+its waits. A ``TaskList`` checks the structural rules when made, without a cluster.
 
-    {"name": ..., "steps": [step, ...]}
-
-Steps, each with an ``op``:
-
-    configure  task_name, type, component, after, wait_mode, values
-               declares a task and writes its component's configuration
-               registers at this point in the program
-    start      tasks: launches the listed tasks together, after the waits
-               they need
-    sync       task, mode: waits here for that task's component
-    read       reg: a csr_read of "block.register"
-
-``type`` is the component's type (``streamer``, ``accel``, ``dma``) and
-decides how ``values`` are read (CONTRACTS.md section 9).
-``after`` names earlier tasks whose results this task needs, including a
-buffer it overwrites; ``wait_mode`` (``poll`` / ``signal``) is how the
-program waits for this task when the lowering inserts a wait for it.
-
-The structural rules are checked here, without a cluster: task names are
-unique; ``after``, ``start`` and ``sync`` refer to tasks configured earlier;
-a component has at most one configured task that has not started yet (its
-registers are buffered), so one start never launches two tasks on one
-component; a task starts once, after its ``after`` tasks have started; every
-configured task is started.
-
-What needs the design point is ``check_values(tasks, point)``: the
-component exists and has the task's type (the DMA when the platform has an
-L2, every streamer of the shell, every accelerated instance on its own, every
-linked group); the values
-have exactly the type's keys (a streamer's ``base``, ``temporal_bounds``,
-``temporal_strides``, ``spatial_strides``; a DMA's ``direction``, ``src`` and
-``dst``, its L1 side ``base``, ``bounds`` and ``strides``, its L2 side
-``symbol`` (a container in L2: its data.h array), ``bounds`` and ``strides``; an accelerator's
-runtime params, ``n`` and its named rates, and each slot it reads from a
-container, ``{"from": <container>}``, a kernel's scalar argument in a memory
-(a CSR the program writes); a linked group's, each unit's by unit, in the
-group's order); an accelerator task's CSR writes fit them (JOBS and every JOB_BEATS the program
-writes, c.py's ``job_writes``, at most
-2^job_width - 1, the platform's ``acc_csr.job_width``, and its head firings,
-JOBS times every T of the group, below 2^32, SNAX-GVSoC's limit); a streamer's loops fit it (as
-many temporal strides as bounds, no more than its ``temporal_dims``, one
-spatial stride per spatial bound, every bound >= 1, or every one 0: an idle
-mover, which never starts); a DMA's direction is
-``l2_to_l1`` or ``l1_to_l2`` and its sides have one stride per bound, every
-bound >= 1.
+``check_values(tasks, point)`` checks it against a design point (``components`` lists what can
+run a task: the DMA when the platform has an L2, every streamer, every accelerated instance on
+its own, every linked group), and also that an accelerator task's CSR writes fit: JOBS and every
+JOB_BEATS (c.py's ``job_writes``) at most 2^``acc_csr.job_width`` - 1, and its head firings, JOBS
+times every T of the group, below 2^32, SNAX-GVSoC's limit. A ``TaskListError`` names what fails.
 """
 
 from __future__ import annotations

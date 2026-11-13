@@ -1,25 +1,14 @@
 """Buffer layout: where an operand's elements live in a memory.
 
-A layout is affine, like the nests it serves:
+A ``Layout`` is affine, like the nests it serves: ``addr(index) = base + sum_d index[d] *
+strides[d]``, ``base`` a byte address, ``shape`` the extent per dimension and ``strides`` in
+bytes. One form covers storage order and padding. It is the memory plan's form (CONTRACTS,
+"Memory plan and design point"; design/memory.py makes them); SNAX-LOWER only reads it.
 
-    addr(index) = base + sum_d index[d] * strides[d]
-
-``base`` is the byte address of index (0, ..., 0), ``shape`` the operand's
-extent per dimension, ``strides`` the bytes per step of each dimension. One
-form covers storage order (row- or column-major) and padding. Choosing it is
-SNAX-DSE's decision (section 5.4); SNAX-LOWER only reads it.
-
-This is the form of the design point's memory plan:
-snax_forge/design/memory.py makes one per container and memory, and
-SNAX-LOWER reads them. ``check`` holds the L1 rules streams.py needs; the
-design checks judge a whole plan, in L1 and L2. A layout places each element
-at its dtype's itemsize, so a word holds several narrow ones. A
-container a tail pads (dfg/pad.py) keeps its logical shape, its strides
-row-major over the padded shape; ``over`` gives its padded block, what the
-DMA moves and what memory it takes, a row's padding included when the rows are pitched
-(``padded_rows``). ``l2_bytes`` is a container's array in L2,
-that block in whole DMA beats: data.h declares it so, the ELF check expects
-it and the DMA's copies touch it.
+``Layout.check`` holds the L1 rules streams.py needs; the design checks judge a whole plan.
+``over`` gives a padded container's block, what the DMA moves and what memory it takes;
+``l2_bytes`` is that block in whole DMA beats, as data.h declares it, the ELF check expects it
+and the DMA's copies touch it. ``moved_bytes`` and ``dma_side`` give a DMA task's sides.
 """
 
 from __future__ import annotations
