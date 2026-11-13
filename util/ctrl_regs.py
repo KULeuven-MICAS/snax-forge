@@ -4,17 +4,13 @@
     pixi run python util/ctrl_regs.py --json
 
 For each fixture under ``hw/chisel/src/test/resources/rtl/`` (all, or those named), its
-``accelerator.json`` (snax-gvsoc's ``forge/<design>/``, or its own) is elaborated through ``Emit --spec`` (one call for all) into ``DIR/<fixture>/`` (default ``out/ctrl_regs``); then every module of the
-emitted SV whose name ends in ``_ctrl`` is read for firtool's ``reg`` declarations, each a
-register of its width (an unpacked array counts each element). Printed, and written to FILE:
-per module one line per register with its name and width, the module's registers and bits;
-per fixture its totals; and a summary table. ``--no-emit`` reads what ``DIR`` holds already.
-
-``--json`` elaborates nothing: it writes ``ctrl_registers.json`` beside the fixtures, every
-fixture's control units as ``snax_forge/estimate/bits.py`` counts them from its
-``accelerator.json`` (``accelerator_registers``), the file hw/chisel's ``CtrlRegistersSpec``
-compares with the emitted ones and ``tests/estimate/test_bits.py`` checks is current; write it
-again after a change to ``ctrl_registers`` or to a fixture.
+``accelerator.json`` is elaborated through ``Emit --spec`` (one call for all) into
+``DIR/<fixture>/`` (default ``out/ctrl_regs``), and every ``_ctrl`` module's firtool ``reg``
+declarations are counted; printed and written to FILE per module, per fixture and as a
+summary table. ``--no-emit`` reads what ``DIR`` holds. ``--json`` writes
+``ctrl_registers.json`` beside the fixtures from the estimate's ``accelerator_registers``, which
+hw/chisel's ``CtrlRegistersSpec`` and ``tests/estimate/test_bits.py`` check; write it again
+after a change to ``ctrl_registers`` or to a fixture.
 """
 
 from __future__ import annotations

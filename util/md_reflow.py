@@ -3,23 +3,12 @@
     python util/md_reflow.py [FILE ...]           reflow the files in place
     python util/md_reflow.py --check [FILE ...]   list the hard-wrapped paragraphs; exit 1 if any
 
-Without files, snax-forge's own: ``git ls-files '*.md' ':!gvsoc/'`` (``pixi run lint`` runs the
-check on them).
-
-**Joined**, with one space, each continuation line's indent dropped and nothing else: the lines of
-a paragraph, of a list item or a footnote (its marker and indent kept) and of a paragraph inside
-one, and of a blockquote's paragraphs (the ``>`` kept once, on the first line).
-
-**Never touched**: fenced code blocks (``` and ~~~, any info string), indented code blocks
-outside lists, tables (rows starting with ``|``), headings (ATX, and setext: no line of a
-paragraph an underline follows is joined), thematic breaks, display maths (``$$`` lines and
-blocks), HTML comments and blocks (``<!-- snippet: ... -->`` stays on its own line, right before
-its fence), link reference definitions, front matter, and the break after a line ending in two
-spaces or a backslash. A line indented by four or more past its container is never joined onto a
-paragraph, so a code block written without its blank line stays as it was.
-
-The whitespace-separated words of a file are the same before and after, but for the ``>`` a
-blockquote's joined lines drop (``words``): ``reflow_text`` asserts it.
+Without files, snax-forge's own (``own_files``: ``git ls-files '*.md' ':!gvsoc/'``). The lines
+of a paragraph, a list item, a footnote or a blockquote paragraph are joined with one space,
+markers kept. Never touched: code blocks, tables, headings, thematic breaks, display maths,
+HTML comments and blocks, link reference definitions, front matter, a hard break, and a line
+indented four or more past its container. The words of a file are the same before and after,
+but for the ``>`` a joined blockquote drops (``words``): ``reflow_text`` asserts it.
 """
 
 from __future__ import annotations

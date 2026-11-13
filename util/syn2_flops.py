@@ -2,17 +2,13 @@
 
     pixi run python util/syn2_flops.py [--experiments DIR] [--out FILE]
 
-Read once from snax-forge-experiments (default ``../snax-forge-experiments``, a clean
-checkout): ``results/forge/nangate45/synth_dc.csv`` (each point's recipe, W and the snax-forge
-commit SYN2 built it from) and ``synth_dc_modules.csv`` (each hierarchical cell's area), DC's
-48 points of SYN2. A module's flops are its ``seq_um2`` / 5.32, nangate45's one flop (DFFR_X1,
-5.32 µm²), which must be a whole number for ctrl and every block. Per point: ``point``,
-``recipe``, ``W``, ``ctrl`` (``ctrl/ctrl``, the group's ``<tag>_<group>_ctrl``) and
-``instances``, per datapath instance of ``dp`` (a unit's ``blocks_<k>_*``, a buffer's
-``bufs_<k>_*``) by its name, the wrapper's module ``snax_forge_<name>`` without the tag:
-``kind`` (``unit`` or ``link``), ``module`` (the block, its ``/m`` cell) and ``flops``. The file
-records the experiments commit and the snax-forge commit; ``tests/estimate/test_bits.py``
-compares it with the estimate's ``bits`` and ``ctrl_bits``.
+Read once from a clean snax-forge-experiments checkout (default ``../snax-forge-experiments``):
+DC's 48 points in ``results/forge/nangate45/synth_dc.csv`` and each hierarchical cell's area in
+``synth_dc_modules.csv``. A module's flops are its ``seq_um2`` / 5.32 (nangate45's DFFR_X1),
+which must be whole for ctrl and every block. Per point: ``point``, ``recipe``, ``W``, ``ctrl``
+and per datapath instance (a unit's ``blocks_<k>_*``, a buffer's ``bufs_<k>_*``) its ``kind``,
+``module`` and ``flops``. The file records both repositories' commits;
+``tests/estimate/test_bits.py`` compares it with the estimate's ``bits`` and ``ctrl_bits``.
 """
 
 from __future__ import annotations
