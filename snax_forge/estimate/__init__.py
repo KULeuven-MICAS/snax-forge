@@ -58,7 +58,7 @@ UNMAPPED_CYCLES_PER_ITERATION = 1
 
 @dataclass
 class Estimate(JsonFile):
-    """the artefact; see the module doc."""
+    """The artefact (CONTRACTS, "Estimate")."""
 
     groups: list[GroupEstimate]
     not_mapped: int
@@ -71,7 +71,7 @@ class Estimate(JsonFile):
     unmapped_iterations: int = 0  # not_mapped over every map, spatial ones included
     l1_words: dict[str, int] = field(default_factory=dict)  # per accelerator, its L1 words
     accelerators: list[AcceleratorEstimate] = field(default_factory=list)  # in CSR order
-    # HWCOST's counts on a platform: per port's streamer, the crossbar's inputs (its
+    # The cost model's counts on a platform: per port's streamer, the crossbar's inputs (its
     # channels and the cores' and AXI's ports), the banks (count, depth, width)
     streamer_counts: list[StreamerCounts] = field(default_factory=list)
     xbar_inputs: tuple[int, int] | None = None
@@ -91,7 +91,7 @@ class Estimate(JsonFile):
 
     @property
     def costs(self) -> Costs | None:
-        """HWCOST's tables of the technology (snax_forge/char/<tech>/), None without them or a
+        """The cost tables of the technology (snax_forge/char/<tech>/), None without them or a
         platform's counts."""
         if self.tech is None or self.bank_shape is None:
             return None
@@ -110,8 +110,8 @@ class Estimate(JsonFile):
     @cached_property
     def xbar(self) -> XbarCost | None:
         """The crossbar priced at its inputs (check.py's ``crossbar_inputs``), its readers' and
-        writers' channels as read-only and write-only inputs, in the factor form (X71); None
-        when not costed."""
+        writers' channels as read-only and write-only inputs, in the factor form
+        (CONTRACTS, "Cost model"); None when not costed."""
         return self.xbar_in("factor")
 
     def xbar_in(self, form: str) -> XbarCost | None:
@@ -332,7 +332,7 @@ def estimate(graph: Graph, platform: Platform | None = None,
 
 def _hw_counts(graph: Graph, platform: Platform, data: dict[str, ContainerData]
                ) -> tuple[list[StreamerCounts], tuple[int, int] | None, tuple[int, int, int]]:  # fmt: skip
-    """HWCOST's counts: per streamer of the shell its FIFO depth, loops, channels and the
+    """The cost model's counts: per streamer of the shell its FIFO depth, loops, channels and the
     words and beats it moves in L1 over every node of its instance (a shared instance runs once
     per node); the crossbar's inputs (check.py's ``crossbar_inputs``, the one count the port sharing
     changes); the banks' count and shape from the platform's L1."""

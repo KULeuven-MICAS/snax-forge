@@ -1,4 +1,4 @@
-"""SNAX-BRM: block runtime models, the user's accelerators as plain data (ARCHITECTURE.md 5.3).
+"""SNAX-BRM: block runtime models, the user's accelerators as plain data (ARCHITECTURE, "SNAX-BRM").
 
 The format is CONTRACTS, "Block runtime model". brm.py holds a BRM, its shared part and its
 implementations; ``Brm.resolve`` builds an instance (instance.py), checked against the

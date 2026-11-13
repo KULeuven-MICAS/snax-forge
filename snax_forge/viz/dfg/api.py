@@ -624,7 +624,7 @@ def compare_view(a: Entry, b: Entry, platform: Any = None, tech: str = DEFAULT_T
     """Two steps compared (``a`` on the left, ``b`` on the right, ``labels`` their headings,
     else their names): the session's diff of their graphs (sandbox/session.py's
     ``graph_diff``), per Details key in either the fields that differ (every field of an item
-    in one only), and the two ``columns`` (module doc)."""
+    in one only), and the two ``columns`` (CONTRACTS, "Recipe")."""
     from snax_forge.sandbox.session import graph_diff
 
     if a.graph is None or b.graph is None:
@@ -702,8 +702,8 @@ def _row(label: str, a: Any, b: Any, under: str | None = None) -> dict[str, Any]
 
 
 def detail_rows(x: dict[str, Any] | None, y: dict[str, Any] | None) -> list[dict[str, Any]]:
-    """One item's Details in two columns (module doc): a row per field, its ``cost`` a row per
-    text under ``cost``; "–" on a side without the field or the item."""
+    """One item's Details in two columns (CONTRACTS, "Recipe"): a row per field, its ``cost``
+    a row per text under ``cost``; "–" on a side without the field or the item."""
     x, y = x or {}, y or {}
     rows = []
     for f in dict.fromkeys([*x, *y]):
@@ -719,7 +719,7 @@ def detail_rows(x: dict[str, Any] | None, y: dict[str, Any] | None) -> list[dict
 
 
 def estimate_rows(sa: dict[str, Any] | None, sb: dict[str, Any] | None) -> list[dict[str, Any]]:
-    """The Estimate panel in two columns (module doc), from each side's summary (None: no
+    """The Estimate panel in two columns (CONTRACTS, "Recipe"), from each side's summary (None: no
     estimate): under ``accelerator`` its cycles, the unmapped cycles and the total (the
     one unmapped count, ``not_mapped`` staying in the estimate); under ``group <name>``,
     every group of either side, its cycles, expected BUSY_COUNTER (a guide), channels, area and
@@ -799,8 +799,8 @@ def estimate_summary(est: Any, graph: Graph | None = None) -> dict[str, Any]:
     check), the L1
     footprint against the L1 (its share as a CSS width), the words read and written, and the
     lane use of each tailed split; per group its ``bank_bound`` and, where it exceeds the
-    cycles, its ``bank_note`` (R2 shows them); with a technology per group its area and
-    energy and the accelerator's ``cost`` (module doc)."""
+    cycles, its ``bank_note`` (the page shows them); with a technology per group its area and
+    energy and the accelerator's ``cost`` (CONTRACTS, "Recipe")."""
     groups = []
     for g in est.groups:
         terms = f"{g.bottleneck} + {g.ramp}" + (f" + {g.stall}" if g.stall else "")
@@ -858,7 +858,7 @@ def estimate_summary(est: Any, graph: Graph | None = None) -> dict[str, Any]:
 
 
 def streamers_summary(est: Any) -> dict[str, Any]:
-    """The Estimate panel's ``streamers`` (module doc): one streamer set per accelerator."""
+    """The Estimate panel's ``streamers``: one streamer set per accelerator."""
     n = est.streamers
     text = f"{n} streamer set{'' if n == 1 else 's'}"
     if est.csrs is not None:
@@ -870,8 +870,8 @@ def streamers_summary(est: Any) -> dict[str, Any]:
 
 
 def cost_summary(est: Any, g: Graph | None = None) -> dict[str, Any] | None:
-    """The Estimate panel's ``cost`` (module doc): None with no technology or no group; with
-    ``tables``, the cost table per accelerator (``cost_tables``)."""
+    """The Estimate panel's ``cost`` (CONTRACTS, "Recipe"): None with no technology or no
+    group; with ``tables``, the cost table per accelerator (``cost_tables``)."""
     if est.tech is None or not est.groups:
         return None
     l1 = "; ".join(f"{a}: {x.words} words, {_nj(x.energy_nj)}" for a, x in est.l1.items())
@@ -1024,7 +1024,7 @@ def _nj(x: float) -> str:
 
 
 def cost_details(c: Any, bits: int, tech: str) -> dict[str, str]:
-    """A unit's or buffer link's Details ``cost`` (module doc), from its ``BlockCost``."""
+    """A unit's or buffer link's Details ``cost`` (CONTRACTS, "Recipe"), from its ``BlockCost``."""
     return {
         "found": f"{c.found} on {tech}" if c.found else f"not characterized on {tech}",
         "area": f"{_um2(c.total_um2)} (comb {sig3(c.comb_um2)}, flops {sig3(c.flops_um2)})",
@@ -1068,7 +1068,7 @@ def _operation(n: Node, code: str, ins: Sequence[str]) -> str:
     op = fold_op(n)
     if op is not None and _rhs(code) in ins:
         return f"fold {FOLD.get(op, op)}"
-    if n.kind == "tasklet":  # a scalar read as CSR by name: csr(alpha) (module doc)
+    if n.kind == "tasklet":  # a scalar read as CSR by name: csr(alpha)
         csr = {r["name"] for r in n.attrs.get(BAKED, []) if r["value"] == "csr"} & set(ins)
         if csr:
             return re.sub(r"\b(" + "|".join(map(re.escape, sorted(csr))) + r")\b", r"csr(\1)",
@@ -1104,7 +1104,8 @@ def compact_text(g: Graph, n: Node, param: str | None = None) -> str:
 
 
 def badge(placed: Any) -> str | None:
-    """A container's badge from its estimate (module doc)."""
+    """A container's badge from its estimate: ``L1 · <size>``, ``wire`` or ``FIFO <depth>`` for a
+    link, else its placement."""
     if placed is None:
         return None
     if placed.placement == "l1":
@@ -1126,7 +1127,8 @@ def size_text(n: int) -> str:
 
 
 def accelerators(g: Graph) -> list[dict[str, Any]]:
-    """Accelerator ⊃ groups ⊃ units (module doc)."""
+    """Accelerator ⊃ groups ⊃ units: each group with its units' nodes, its links and the
+    top-level nodes that hold them."""
     out: dict[str, dict[str, dict[str, Any]]] = {}
     where: dict[str, dict[str, Any]] = {}  # instance -> its group's entry
     found_links: list[tuple[Node, str]] = []
@@ -1315,7 +1317,7 @@ def memlet_text(m: Memlet) -> str:
 
 
 def seed_memlet(n: Node) -> Memlet | None:
-    """The element a node's fold starts from (module doc, "The seed"): a seeded tasklet's
+    """The element a node's fold starts from (CONTRACTS, "SNAX-DFG"): a seeded tasklet's
     reduce's seed, or a bound unit's ``seed`` port; None for any other node."""
     if n.kind == "accelerated":
         return n.inputs.get(SEED)
@@ -1336,7 +1338,7 @@ def _iterations(g: Graph, rng: str) -> int | None:
 
 def csr_connectors(g: Graph, n: Node) -> set[str]:
     """The input connectors ``n`` reads a kernel's scalar argument through at run time, from a
-    CSR (module doc): a tasklet's that ``bake_scalar`` named after its container (value
+    CSR: a tasklet's that ``bake_scalar`` named after its container (value
     ``csr``), a unit's slots (inputs that are no BRM port)."""
     if n.kind == "tasklet":
         return {r["name"] for r in n.attrs.get(BAKED, [])
@@ -1374,9 +1376,9 @@ def _node(g: Graph, n: Node) -> dict[str, Any]:
         merged = n.attrs.get("view.merged") or []
         if len(merged) > 1:  # a block's firing loop, one per nest it spans (fold)
             d["text"] = d["text"].replace(n.id, " + ".join(merged), 1)
-    if folds(n):  # drawn as an upside-down trapezoid (module doc, "Folds")
+    if folds(n):  # drawn as an upside-down trapezoid (CONTRACTS, "Recipe")
         d["fold"] = True
-    if n.kind == "link":  # its container's edges meet it here (module doc)
+    if n.kind == "link":  # its container's edges meet it here
         c = n.attrs["container"]
         d["inputs"], d["outputs"] = (
             [{"connector": "in", "data": c}],
@@ -1403,7 +1405,7 @@ PARTNER_TRANSFORMS = ("fuse_map", "fuse_seed", "interchange_map")
 
 
 def partners(g: Graph, boxes: dict[str, dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
-    """Each map's partners (module doc, "Partners"): map id -> ``{"map", "transform"}`` per map
+    """Each map's partners (module doc): map id -> ``{"map", "transform"}`` per map
     it fuses, seeds or interchanges with, by the transforms' own sites, and for a fuse the
     ``marker`` on the transient between the two nests, ``{"box", "container", "text"}``."""
     from snax_forge.sandbox.compose import fuse_link, fuse_near, fuse_pairs, link_text
@@ -1447,7 +1449,7 @@ def partners(g: Graph, boxes: dict[str, dict[str, Any]]) -> dict[str, list[dict[
 
 
 def folds(n: Node) -> bool:
-    """Whether ``n``'s output folds (module doc, "Folds"): a tasklet's output memlet has a
+    """Whether ``n``'s output folds (CONTRACTS, "Recipe"): a tasklet's output memlet has a
     ``reduce`` (an identity or a seed), a bound unit's replaced nest holds such a tasklet."""
     if n.kind == "tasklet":
         return any(m.reduce is not None for m in n.outputs.values())
@@ -1497,9 +1499,8 @@ def _uses(n: Node) -> list[tuple[str, Node, str, Memlet]]:
 
 
 def packing(g: Graph, n: Node, port: str, data: str) -> str | None:
-    """``int32 · num_slc 2 · num_ch 2`` for an accelerated node's port (module doc); None for any
-    other
-    node, or an instance the BRM library does not resolve."""
+    """``int32 · num_slc 2 · num_ch 2`` for an accelerated node's port; None for any other node,
+    or an instance the BRM library does not resolve."""
     if n.kind != "accelerated":
         return None
     try:
@@ -1615,8 +1616,8 @@ def block_text(rec: dict[str, Any]) -> str:
 
 
 def fold(g: Graph, expanded: Sequence[str] = ()) -> tuple[list[Node], list[dict[str, Any]]]:
-    """The top-level nodes as drawn, a block not ``expanded`` as one node (module doc,
-    "Blocks"), and the blocks' list."""
+    """The top-level nodes as drawn, a block not ``expanded`` as one node (module doc),
+    and the blocks' list."""
     recs = block_records(g)
     tops = list(g.body)
     held = [_held(t) for t in tops]
@@ -1741,7 +1742,7 @@ def _projected(g: Graph, m: Memlet, outer: set[str]) -> Memlet:
 
 
 def _block_node(g: Graph, rec: dict[str, Any], tops: list[Node]) -> Node:
-    """A collapsed block as one node (module doc, "Blocks"): an input per container read from
+    """A collapsed block as one node (CONTRACTS, "Recipe"): an input per container read from
     outside it (``in:A``), an output per container written to outside it (``out:x``), each
     memlet as one firing takes it (``_projected``); its transients (written and read only
     inside it) left out; a read ``mark_transpose`` marked keeps its mark. Its firing loops,
@@ -1937,7 +1938,7 @@ def _layout(g: Graph, tops: list[Node] | None = None) -> dict[str, Any]:
             elif m.data in writers:  # written earlier inside this node: straight from the writer
                 edges.extend(_edge(w, port, m.data, text, "read", packing(g, n, c, m.data))
                              for w in writers[m.data])  # fmt: skip
-            elif c in csr_connectors(g, n):  # read at run time from a CSR: no edge (module doc)
+            elif c in csr_connectors(g, n):  # read at run time from a CSR: no edge
                 continue
             else:
                 label = f"{text} · broadcast" if m.data in scalars and not m.names else None

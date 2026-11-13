@@ -78,7 +78,8 @@ class Block:
 
 @dataclass
 class BlockCost:
-    """One unit's or buffer link's cost (module doc); areas µm², energies pJ, ``task_nj`` nJ."""
+    """One unit's or buffer link's cost (CONTRACTS, "Cost model"); areas µm², energies pJ,
+    ``task_nj`` nJ."""
 
     datapath: str | None
     fires: int
@@ -216,8 +217,8 @@ class StreamerCost:
 
 
 def streamer_cost(costs: Costs, c: StreamerCounts) -> StreamerCost:
-    """A streamer's area and energy per run on ``costs`` (module doc); on a shared mover its area
-    at the mover's channels, on its first user only, its energy at the port's."""
+    """A streamer's area and energy per run on ``costs`` (CONTRACTS, "Cost model"); on a shared
+    mover its area at the mover's channels, on its first user only, its energy at the port's."""
     got = _streamer(costs, c.depth, c.loops, c.channels)
     area = got.area_um2
     extrapolated = got.extrapolated
@@ -232,7 +233,7 @@ def streamer_cost(costs: Costs, c: StreamerCounts) -> StreamerCost:
 class XbarCost:
     """The TCDM crossbar priced: its ``inputs`` and ``banks``, the ``accesses`` it serves in one
     run, its area (µm²), its energy per access (pJ) and per run (nJ), how many of its inputs
-    only read or only write, and the ``form`` its area was priced in (X71)."""
+    only read or only write, and the ``form`` its area was priced in (CONTRACTS, "Cost model")."""
 
     inputs: int
     banks: int
@@ -253,9 +254,9 @@ class XbarCost:
 
 
 def xbar_kinds(counts: list[StreamerCounts]) -> tuple[int, int]:
-    """The crossbar inputs the streamers take that only read and only write (module doc): a
-    reader's channels and a writer's, a shared mover's counted once at its own channels on its
-    first user, as check.py's ``crossbar_inputs`` counts them."""
+    """The crossbar inputs the streamers take that only read and only write (CONTRACTS, "Cost
+    model"): a reader's channels and a writer's, a shared mover's counted once at its own channels
+    on its first user, as check.py's ``crossbar_inputs`` counts them."""
     ro = wo = 0
     for c in counts:
         if c.mover is not None and not c.area:
@@ -270,9 +271,9 @@ def xbar_kinds(counts: list[StreamerCounts]) -> tuple[int, int]:
 
 def xbar_cost(costs: Costs, inputs: int, banks: int, accesses: int, read_only: int = 0,
               write_only: int = 0, form: str = "factor") -> XbarCost:  # fmt: skip
-    """The crossbar's area and energy per run on ``costs`` (module doc): its area at its
-    inputs, ``read_only`` and ``write_only`` of them priced as such in ``form``, its accesses
-    at one price per bank count, a full crossbar's (inputs = banks)."""
+    """The crossbar's area and energy per run on ``costs`` (CONTRACTS, "Cost model"): its area at
+    its inputs, ``read_only`` and ``write_only`` of them priced as such in ``form``, its accesses at
+    one price per bank count, a full crossbar's (inputs = banks)."""
     area = _xbar(costs, inputs, banks, read_only, write_only, form)
     price = _xbar(costs, banks, banks)
     out = tuple(dict.fromkeys(area.extrapolated + price.extrapolated))
@@ -309,8 +310,8 @@ class MemoryCost:
 
 def memory_cost(costs: Costs, n: int, depth: int, width: int, reads: int,
                 writes: int) -> MemoryCost:  # fmt: skip
-    """The banks' area and energy per run on ``costs`` (module doc); a bank the table lacks is
-    costed 0 and marked."""
+    """The banks' area and energy per run on ``costs`` (CONTRACTS, "Cost model"); a bank the table
+    lacks is costed 0 and marked."""
     b = bank(costs, depth, width)
     if b is None:
         return MemoryCost(n, depth, width, reads, writes, 0.0, 0.0, 0.0, False)
@@ -377,7 +378,7 @@ def shares(parts: Mapping[str, Part]) -> dict[str, tuple[float | None, float | N
 
 
 def block_cost(table: Table, block: Block, bits: int, c_acc: int) -> BlockCost:
-    """One block's cost on ``table`` (module doc)."""
+    """One block's cost on ``table`` (CONTRACTS, "Cost model")."""
     p = block.params
     got = None
     if block.datapath is not None:
@@ -393,7 +394,7 @@ def block_cost(table: Table, block: Block, bits: int, c_acc: int) -> BlockCost:
 def group_cost(table: Table, units: Mapping[str, Block], links: Mapping[str, Block],
                bits: Mapping[str, int], ctrl_bits: int | None, c_acc: int) -> GroupCost:  # fmt: skip
     """A group's cost on ``table``: ``units`` by name and buffer ``links`` by container, their
-    ``bits`` the estimate's, ``ctrl_bits`` its control unit's (module doc)."""
+    ``bits`` the estimate's, ``ctrl_bits`` its control unit's (CONTRACTS, "Cost model")."""
     n = ctrl_bits or 0
     return GroupCost({k: block_cost(table, b, bits.get(k, 0), c_acc) for k, b in units.items()},
                      {k: block_cost(table, b, bits.get(k, 0), c_acc) for k, b in links.items()},

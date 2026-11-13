@@ -52,7 +52,7 @@ FIXED_WIDTH = {"START": 1, "STATUS": 2}
 
 @dataclass(frozen=True)
 class Csr:
-    """One CSR; see the module doc."""
+    """One CSR (CONTRACTS, "Accelerator RTL spec")."""
 
     name: str
     access: str
@@ -75,7 +75,7 @@ class Csr:
 
 @dataclass(frozen=True)
 class Unit:
-    """One unit of a group; see the module doc."""
+    """One unit of a group (CONTRACTS, "Accelerator RTL spec")."""
 
     name: str
     brm: str
@@ -183,7 +183,7 @@ class MoverUser:
 
 @dataclass(frozen=True)
 class Mover:
-    """A mover of a shared accelerator; see the module doc."""
+    """A mover of a shared accelerator (CONTRACTS, "Accelerator RTL spec")."""
 
     name: str
     role: str
@@ -266,7 +266,7 @@ class Accelerator:
         return [u for g in self.groups for u in g.units]
 
     def define(self, group: Group | None, unit: Unit | None, csr: Csr) -> str:
-        """A CSR's name in the header and the program; see the module doc."""
+        """A CSR's name in the header and the program (CONTRACTS, "Accelerator RTL spec")."""
         parts = [self.name.upper(), csr.access.upper()]
         if group is not None and len(self.groups) > 1:
             parts.append(group.name.upper())
@@ -281,7 +281,7 @@ class Accelerator:
 
 @dataclass(frozen=True)
 class Description(JsonFile):
-    """``accelerator.json``; see the module doc."""
+    """``accelerator.json`` (CONTRACTS, "Accelerator RTL spec")."""
 
     design_point: str
     tag: str
@@ -598,7 +598,8 @@ def describe(point: DesignPoint, point_path: str) -> Description:
 
 
 def _unit(point: DesignPoint, name: str, inst: Instance, offsets: Iterator[int]) -> Unit:
-    """Instance ``name``'s unit, checked (module doc), its R/W CSRs numbered from ``offsets``."""
+    """Instance ``name``'s unit, checked (its refusals: CONTRACTS, "Accelerator RTL spec"), its
+    R/W CSRs numbered from ``offsets``."""
     what = f"{inst.brm.name}.{inst.implementation}"
     datapath = inst.impl.binding["datapath"]
     if datapath not in DATAPATHS:

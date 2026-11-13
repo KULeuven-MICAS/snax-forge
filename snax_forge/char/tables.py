@@ -1,4 +1,4 @@
-"""HWCOST's tables: the streamers, the TCDM crossbar and the L1 banks.
+"""The cost tables: the streamers, the TCDM crossbar and the L1 banks.
 
     load_costs(tech) -> Costs | None                       snax_forge/char/<tech>/, None without
     streamer_cost(costs, depth, loops, channels) -> Cost   one reader (a writer priced as one)
@@ -27,11 +27,13 @@ from pathlib import Path
 HERE = Path(__file__).parent
 LOG = logging.getLogger(__name__)
 FILES = ("ram_table.csv", "streamer.csv", "xbar.csv", "xbar_kinds.json")
-XBAR_FORMS = ("factor", "crosspoint")  # X71: the default first
+# The crossbar's input-kind forms (CONTRACTS, "Cost model"), the default first
+XBAR_FORMS = ("factor", "crosspoint")
 READER_AXES = ("depth", "loops", "channels")
 XBAR_AXES = ("inputs", "banks")
 SCALES: dict[str, Callable[[float], float]] = {"lin": lambda x: x, "inv": lambda x: 1.0 / x}
-XBAR_SCALES = {"e_access_pj": {"inputs": "inv"}}  # X54
+# The crossbar's energy interpolated in 1/inputs (CONTRACTS, "Cost model")
+XBAR_SCALES = {"e_access_pj": {"inputs": "inv"}}
 
 
 @dataclass(frozen=True)
@@ -45,7 +47,7 @@ class Grid:
 
     def at(self, name: str, **q: float) -> tuple[float, tuple[str, ...]]:
         """``name`` at ``q`` (one value per axis) and the axes it was extrapolated along
-        (module doc); a ``KeyError`` when a corner the query needs has no value."""
+        (CONTRACTS, "Cost model"); a ``KeyError`` when a corner the query needs has no value."""
         if set(q) != set(self.axes):
             raise ValueError(f"query {q}: give exactly {list(self.axes)}")
         spans, outside = [], []
@@ -102,8 +104,8 @@ class Bank:
 
 @dataclass(frozen=True)
 class XbarKinds:
-    """``xbar_kinds.json``'s two forms (module doc): the factor form's ``f_ro`` and ``f_wo``, the
-    crosspoint form's coefficients (µm²) and the grid they were fitted on."""
+    """``xbar_kinds.json``'s two forms (CONTRACTS, "Cost model"): the factor form's ``f_ro`` and
+    ``f_wo``, the crosspoint form's coefficients (µm²) and the grid they were fitted on."""
 
     f_ro: float
     f_wo: float
@@ -159,7 +161,7 @@ def _complete_xbar(g: Grid) -> Grid:
 
 
 def read_kinds(path: Path) -> XbarKinds:
-    """``xbar_kinds.json`` (report/xbar_kinds.py in snax-forge-experiments, X71)."""
+    """``xbar_kinds.json``, which snax-forge-experiments' report/xbar_kinds.py writes."""
     d = json.loads(path.read_text())
     f, c = d["factor"], d["crosspoint"]
     return XbarKinds(f["f_ro"], f["f_wo"], c["c_rw"], c["c_ro"], c["c_wo"], c["d"], c["e"], c["g"],
@@ -200,7 +202,7 @@ def _warn(what: str, q: Mapping[str, float], axes: tuple[str, ...]) -> None:
 
 
 def streamer_cost(costs: Costs, depth: int, loops: int, channels: int) -> Cost:
-    """One reader's (or writer's, X52) area and energy per beat."""
+    """One reader's (or writer's, priced as a reader) area and energy per beat."""
     q = {"depth": depth, "loops": loops, "channels": channels}
     area, out_a = costs.streamer.at("area_um2", **q)
     e, out_e = costs.streamer.at("e_beat_pj", **q)
@@ -212,7 +214,7 @@ def streamer_cost(costs: Costs, depth: int, loops: int, channels: int) -> Cost:
 def xbar_cost(costs: Costs, inputs: int, banks: int, read_only: int = 0, write_only: int = 0,
               form: str = "factor") -> Cost:  # fmt: skip
     """The crossbar's area and energy per access, ``read_only`` and ``write_only`` of its
-    ``inputs`` priced as such in ``form`` (module doc); with none, the table's area."""
+    ``inputs`` priced as such in ``form`` (CONTRACTS, "Cost model"); with none, the table's area."""
     if form not in XBAR_FORMS:
         raise ValueError(f"crossbar form {form!r}: one of {', '.join(XBAR_FORMS)}")
     if read_only < 0 or write_only < 0 or read_only + write_only > inputs:

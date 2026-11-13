@@ -134,7 +134,7 @@ def step_from_dict(d: Mapping[str, Any]) -> Step:
 
 @dataclass
 class TaskList(JsonFile):
-    """An ordered list of steps (module doc); checked when it is made."""
+    """An ordered list of steps (CONTRACTS, "Task list"); checked when it is made."""
 
     name: str
     steps: list[Step] = field(default_factory=list)
@@ -143,7 +143,8 @@ class TaskList(JsonFile):
         self.check()
 
     def check(self) -> None:
-        """The structural rules of the module doc; raises TaskListError."""
+        """The structural rules of CONTRACTS, "Task list" (its "Checks" part); raises
+        TaskListError."""
         configured: dict[str, Configure] = {}
         started: set[str] = set()
         pending: dict[str, str] = {}  # component -> configured, not yet started task

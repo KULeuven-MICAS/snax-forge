@@ -38,7 +38,7 @@ EXPECTED = "forge_expected.txt"
 
 @dataclass(frozen=True)
 class Bundle(Config, JsonFile):
-    """``bundle.json``; see the module doc."""
+    """``bundle.json`` (CONTRACTS, "Bundle")."""
 
     design_point: str
     tag: str
@@ -50,7 +50,8 @@ class Bundle(Config, JsonFile):
 
 
 def module_tree(acc: Description) -> dict[str, list[str]]:
-    """The wrapper's modules and the submodules each holds; see the module doc."""
+    """The wrapper's modules and the submodules each holds: ``bundle.json``'s ``modules``
+    (CONTRACTS, "Bundle")."""
     t = acc.tag
     return {
         f"{t}_csr": [f"{t}_peripherals"],
@@ -109,7 +110,7 @@ def write_bundle(design_point: str | Path, out_dir: str | Path,
 
 
 def counter_fills(design_point: str | Path, tasks: str | Path) -> dict[str, int]:
-    """Each accelerator task's group's streamer fill by task name (the module doc): the
+    """Each accelerator task's group's streamer fill by task name (CONTRACTS, "Bundle"): the
     estimate's ``fill`` of the group the task (``tasks.json``'s accel configure) runs."""
     from snax_forge.design import DesignPoint
     from snax_forge.estimate import estimate

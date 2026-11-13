@@ -2,12 +2,13 @@
 
 A block is a region that equals a smaller kernel's import, its ``pattern`` P (dot in each row of
 a mat-vec, a mat-vec in each half of mvt). ``match(g, kernel, heads)`` and ``matches(g, kernel)``
-find a region R under a one-to-one renaming of maps, variables, containers and symbols: P's
-nests are chains of R in P's order, each under outer maps of its own (its firing loops, any
-range, tag or split); below them equal level by level (P's ranges under the symbol renaming,
-untagged and unsplit), with equal code and folds; memlets equal once the dimensions only the
-outer variables index are left out; P's transients R's transients; a container may correspond
-permuted (half 2 of mvt reads ``A`` through π = (1, 0)); and R untouched since import.
+find a region R under a one-to-one renaming (R7) of maps, variables, containers and symbols:
+P's nests are chains of R in P's order (R1), each under outer maps of its own (R2: its firing
+loops, any range, tag or split); below them equal level by level (R3: P's ranges under the
+symbol renaming, untagged and unsplit), with equal code and folds (R4); memlets equal once the
+dimensions only the outer variables index are left out (R5); P's transients R's transients
+(R6); a container may correspond permuted (R8: half 2 of mvt reads ``A`` through π = (1, 0));
+and R untouched since import (R9).
 
 ``lift``, ``unlift``, ``name_block``, ``apply_recipe`` and ``unapply`` are the transforms of
 CONTRACTS, "Recipe". ``apply_recipe`` runs the sub-recipe's steps on the region one by one, each

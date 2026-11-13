@@ -46,7 +46,7 @@ def all_sources(cluster: Cluster) -> list[str]:
 
 
 def sources_for(cluster: Cluster, level: str, given: list[str] | None) -> list[str]:
-    """The sources of a run (module doc), in the cluster's order."""
+    """The sources of a run (CONTRACTS, "Profile and trace"), in the cluster's order."""
     if not at_least(level, "beat"):
         return []
     known = all_sources(cluster)

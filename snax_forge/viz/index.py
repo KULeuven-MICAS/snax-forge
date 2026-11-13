@@ -202,7 +202,8 @@ class RunIndex:
         return idx
 
     def _schedule(self, outputs: RunOutputs) -> None:
-        """The schedule's and the cluster view's keys (module doc)."""
+        """The schedule's and the cluster view's keys: tasks per owner, class runs, FIFO counts,
+        DMA beats, CSR events, core spans and functions, and the event and boundary cycles."""
         acc = self.cluster.accelerator
         owners = {*acc.unit_names, *(m.name for m in acc.movers)}
         classes: dict[str, list[Event]] = defaultdict(list)
@@ -282,7 +283,7 @@ class Mark:
     name: str
     level: str  # the lowest trace level that has its events
     fn: Callable[[RunIndex], Marks]
-    kind: str  # count or time (module doc)
+    kind: str  # count or time: how the memory tab folds it (memory.py)
 
 
 MARKS: dict[str, Mark] = {}

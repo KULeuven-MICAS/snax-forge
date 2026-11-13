@@ -123,7 +123,8 @@ def buffer_params(depth: int, lanes: int, dtype: str, sig: Mapping[str, Any]) ->
 
 def live(entries: Any, params: Mapping[str, Any]) -> dict[str, Any]:
     """The catalogue's ``ports`` (name -> dir) or ``pins`` (a list) whose ``when`` holds on
-    ``params``: ports as name -> ``in`` / ``out``, pins as name -> None (module doc)."""
+    ``params`` (CONTRACTS, "Accelerator RTL spec"): ports as name -> ``in`` / ``out``, pins as
+    name -> None."""
     items = entries.items() if isinstance(entries, Mapping) else ((p, p) for p in entries)
     out = {}
     for key, e in items:
@@ -371,7 +372,7 @@ def vectors(design_point: str | Path, root: str | Path | None = None) -> dict:
 def write_fixture(design_point: str | Path, out_dir: str | Path,
                   root: str | Path | None = None) -> list[str]:  # fmt: skip
     """A fixture of hw/chisel's specs in ``out_dir``: ``vectors.json`` for a design of one
-    accelerator task, nothing for several (the module doc); the files written."""
+    accelerator task, nothing for several; the files written."""
     out = Path(out_dir)
     _, point, _ = load_point(design_point, ROOT if root is None else Path(root))
     if len(task_list(point).accel_steps()) != 1:
@@ -429,7 +430,7 @@ def _newest_source() -> float:
 def emit_classpath(refresh: bool = False) -> str:
     """hw/chisel's runtime classpath, from this environment's ``classpath_file()`` unless
     ``refresh``, the file is missing, a source is newer than it or an entry is gone (``_there``);
-    else compiled and exported by sbt and written there (the module doc). sbt's output is shown
+    else compiled and exported by sbt and written there. sbt's output is shown
     only when it fails."""
     cached = classpath_file()
     if not refresh and cached.is_file() and cached.stat().st_mtime >= _newest_source():

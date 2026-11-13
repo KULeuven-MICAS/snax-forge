@@ -34,10 +34,10 @@ DEFAULT_TECH = "nangate45"
 FOUND = ("measured", "copy", "interpolate")
 # A control unit's comb area is CTRL_COMB_PER_FLOP × its flops' area, a rough early estimate (its
 # comb energy taken as negligible); not in the table, a byte copy of snax-forge-experiments'
-# char.json. The L1 side is HWCOST's tables (tables.py).
+# char.json. The L1 side is tables.py's tables.
 CTRL_COMB_PER_FLOP = 1.0
 _IGNORED = ("lanes", "depth")
-# catalogue name -> the table's, until CHAR's next export uses the new name (module doc)
+# catalogue name -> the name the table has it under, until the table is exported again (module doc)
 DATAPATH_RENAMES = {"SimdLanes": "ElementwiseLanes"}
 # per catalogue datapath, a param the table's export predates, at the value its points were
 # measured at: SimdLanes' streams, every point a two-input one (module doc)
@@ -54,7 +54,7 @@ class CharError(CodedError):
 
 @dataclass(frozen=True)
 class Table:
-    """One technology's table (module doc); energies in pJ, areas in µm²."""
+    """One technology's table (CONTRACTS, "Cost model"); energies in pJ, areas in µm²."""
 
     tech: str
     clock_ns: float
@@ -115,7 +115,7 @@ def _at_depth(points: list[dict[str, Any]], lanes: int, depth: int | None) -> Lo
 
 def lookup(table: Table, datapath: str, params: Mapping[str, Any], lanes: int,
            depth: int | None = None) -> Lookup | None:  # fmt: skip
-    """A block's comb area and energy per fire on ``table`` (module doc), or None."""
+    """A block's comb area and energy per fire on ``table`` (CONTRACTS, "Cost model"), or None."""
     defaults = TABLE_DEFAULTS.get(datapath, {})
     want = defaults | {k: v for k, v in params.items() if k not in _IGNORED and v is not None}
     entries = table.blocks.get(DATAPATH_RENAMES.get(datapath, datapath), [])

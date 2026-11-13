@@ -1068,7 +1068,8 @@ def _nest(g: Graph, x_id: str, y_id: str, what: str) -> tuple[tuple[Node, ...], 
 
 
 def _interchange_check(g: Graph, x_id: str, y_id: str, what: str) -> list[Node]:
-    """The two maps free to trade places (module doc): the chain from the outer to the inner."""
+    """The two maps free to trade places (CONTRACTS, "Recipe"): the chain from the outer to the
+    inner."""
     around, chain = _nest(g, x_id, y_id, what)
     top, bottom = chain[0], chain[-1]
     for o in around:
@@ -1147,7 +1148,7 @@ def _nodes_under(body: list[Node]) -> Iterator[Node]:
 
 
 def interchange(g: Graph, map: str, partner: str) -> Graph:
-    """``map`` and ``partner`` trade places in their perfect nest (module doc); its own
+    """``map`` and ``partner`` trade places in their perfect nest (CONTRACTS, "Recipe"); its own
     inverse, the pair in either order."""
     _interchange_site(g, map)  # the site's refusal first, as every transform's
     g = _copy(g)

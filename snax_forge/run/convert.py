@@ -72,7 +72,7 @@ def source_of(line: Line, cluster: Cluster) -> str:
 
 
 def port_of(name: str, cluster: Cluster) -> str:
-    """A crossbar input's trace port name (module doc)."""
+    """A crossbar input's trace port name (CONTRACTS, "Profile and trace")."""
     acc = cluster.accelerator
     for s in acc.csrs.sets:
         m = re.fullmatch(rf"{re.escape(s.xbar)}\.(\w+)\.lane(\d+)", name)
@@ -109,7 +109,7 @@ def _read_in(funcs: list[Line], reads: list[Line], name: str, after: int, core: 
 
 def window(lines: Sequence[tuple[str, Line]], cluster: Cluster, total_cycles: int) -> int:
     """The cycle of the program's first ``mcycle`` read, the window's start; its length checked
-    against ``total_cycles`` (module doc)."""
+    against ``total_cycles`` (CONTRACTS, "Profile and trace")."""
     core = core_name(cluster.accelerator.core)
     mine = _core_lines(lines, core)
     funcs = [x for x in mine if x.kind == "func"]
@@ -149,7 +149,7 @@ def _need(names: list[str], k: int, what: str) -> str:
 def run_classes(lines: Sequence[tuple[str, Line]], cluster: Cluster
                 ) -> dict[tuple[str, int], dict[str, int]]:  # fmt: skip
     """Per (accelerator or mover, its run index among its starts), its summary line's classes
-    by name (module doc)."""
+    by name (CONTRACTS, "Profile and trace")."""
     acc = cluster.accelerator
     out = {}
     for s, x in lines:
@@ -267,7 +267,7 @@ def _states(mine: list[Line], boot: int) -> list[dict[str, Any]]:
 
 
 def core_start(lines: Sequence[tuple[str, Line]], core: str, boot: int) -> dict[str, Any]:
-    """What a core is in at t = 0: its function and its state (module doc)."""
+    """What a core is in at t = 0: its function and its state (CONTRACTS, "Profile and trace")."""
     mine = _core_lines(lines, core)
     funcs = [x for x in mine if x.kind == "func" and x.cycle <= boot]
     return {"func": funcs[-1].fields["name"] if funcs else None,
@@ -277,7 +277,7 @@ def core_start(lines: Sequence[tuple[str, Line]], core: str, boot: int) -> dict[
 def core_cycles(lines: Sequence[tuple[str, Line]], core: str, boot: int, width: int
                 ) -> tuple[dict[str, int], list[tuple[int, int, str, Line]]]:  # fmt: skip
     """A core's classes in the window, and its waits clipped to it: first, last, kind and
-    line (module doc)."""
+    line (CONTRACTS, "Profile and trace")."""
     mine = _core_lines(lines, core)
     events: list[dict[str, Any]] = _states(mine, boot)
     waits = []

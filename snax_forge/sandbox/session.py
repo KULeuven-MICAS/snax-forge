@@ -359,7 +359,7 @@ class Session:
                     "checks": self._checks_of(self.cursor)}  # fmt: skip
 
     def save(self, name: str, force: bool = False) -> dict[str, Any]:
-        """Steps 1..cursor as a recipe of its own (module doc)."""
+        """Steps 1..cursor as a recipe of its own (CONTRACTS, "Recipe")."""
         with self._lock:
             if not isinstance(name, str) or not name.isidentifier():
                 return _refused("save.name", f"{name!r} is not a name (an identifier)")
@@ -431,7 +431,7 @@ class Session:
             return self._estimate(k, tech)
 
     def checks(self, k: int) -> dict[str, list[dict[str, Any]]]:
-        """Save's design checks on step ``k`` (module doc)."""
+        """Save's design checks on step ``k`` (CONTRACTS, "Recipe")."""
         with self._lock:
             return self._checks_of(k)
 
@@ -498,8 +498,10 @@ class Session:
 
 def graph_diff(old: Graph | None, new: Graph, placed_old: Any = None,
                placed_new: Any = None) -> dict[str, Any]:  # fmt: skip
-    """``new`` against ``old`` (module doc's ``diff``), placements from the two estimates'
-    containers when given; empty without ``old``. The view mode's compare uses it too."""
+    """``new`` against ``old``: the node ids and the container names added, removed and changed,
+    a container also changed when its placement or depth differs, placements from the two
+    estimates' containers when given; empty without ``old``. The view mode's compare uses it
+    too."""
     out: dict[str, Any] = {"nodes": {"added": [], "removed": [], "changed": []},
                            "containers": {"added": [], "removed": [], "changed": []}}  # fmt: skip
     if old is None:
@@ -582,7 +584,7 @@ def _shown(p: Path) -> str:
 
 def bind_list(g: Graph, selected: str, order: int = 1) -> list[dict[str, Any]]:
     """Every (BRM, implementation) of the library tried as ``bind`` on ``selected``, the
-    instance the ``order``-th bind's default (module doc)."""
+    instance the ``order``-th bind's default (CONTRACTS, "Recipe")."""
     from snax_forge.brm import BrmError, library_names, load_brm
 
     site = _bind_site(g, selected, f"bind {selected!r}")

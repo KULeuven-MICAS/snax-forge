@@ -127,7 +127,7 @@ def accelerator_components(point: DesignPoint) -> dict[str, str]:
 # NB (D158): accelerators run in series: the next one is configured while the current one runs
 # and started after a sync on it.
 def serial_syncs(tasks: TaskList, point: DesignPoint) -> TaskList:
-    """``tasks`` with the serial syncs (module doc): before each start of an accelerator
+    """``tasks`` with the serial syncs (CONTRACTS, "Task list"): before each start of an accelerator
     task whose accelerator is not the previous accelerator task's, a ``sync`` on that previous
     task, in its ``wait_mode``, unless an ``after`` of the start's tasks holds it, or a sync on it
     comes after its start already. The configures stay where they are, before the sync."""
@@ -268,7 +268,7 @@ class _Derivation:
 
     def idle(self, node: str, s: Any) -> Configure:
         """Node ``node``'s task on another group's mover ``s``: every bound 0, so it never
-        starts and moves nothing; every temporal stride a word (module doc)."""
+        starts and moves nothing; every temporal stride a word (CONTRACTS, "Task list")."""
         word = self.pf.l1.width_bits // 8
         values = {"base": 0, "temporal_bounds": [0] * s.temporal_dims,
                   "temporal_strides": [word] * s.temporal_dims,
@@ -354,8 +354,8 @@ class _Derivation:
     def in_place(what: str, c: str, node: str, writes: np.ndarray, reader: str,
                  reader_node: str, reads: np.ndarray) -> None:  # fmt: skip
         """A writer of ``c`` whose reader ``reader`` starts with it: allowed only as an
-        in-place update, its own unit reading the same addresses in the same order (the
-        module doc, "In place")."""
+        in-place update, its own unit reading the same addresses in the same order
+        (CONTRACTS, "Task list", its "Derived" part)."""
         if reader_node != node:
             raise LowerError(
                 f"{what}: writes {c}, which {reader} (node {reader_node}) reads in the same "

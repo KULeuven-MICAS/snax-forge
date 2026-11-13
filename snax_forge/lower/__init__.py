@@ -1,4 +1,4 @@
-"""SNAX-LOWER: design point -> task list -> program (ARCHITECTURE.md 5.5).
+"""SNAX-LOWER: design point -> task list -> program (ARCHITECTURE, "SNAX-LOWER").
 
 An ordered task list (tasks.py) says which component runs which task
 with which values; ``check_values`` checks it against the design point, and

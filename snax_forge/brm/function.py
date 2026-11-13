@@ -106,7 +106,8 @@ class AccelFunction:
         return rates
 
     def due(self, k: int, rates: Mapping[str, int], direction: str) -> list[str]:
-        """The ports of ``direction`` that move a beat at firing ``k`` (module doc)."""
+        """The ports of ``direction`` that move a beat at firing ``k`` (CONTRACTS, "Block runtime
+        model")."""
         if direction == "in":
             return [p.name for p in self.inputs if k % rates[p.name] == 0]
         return [p.name for p in self.outputs if (k + 1) % rates[p.name] == 0]

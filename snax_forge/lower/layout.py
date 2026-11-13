@@ -131,8 +131,8 @@ def l2_bytes(point: DesignPoint, c: str) -> int:
 def dma_side(lay: Layout, elem_bytes: int, beat: int) -> dict[str, int | list[int]]:
     """One side of a DMA task moving a whole layout: ``base``, ``bounds``, ``strides``.
 
-    A contiguous layout starting on a wide beat is one loop of beats (open
-    item 38). A size that is not whole beats is padded: the last beat
+    A contiguous layout starting on a wide beat is one loop of beats; the DMA
+    does no strided or 2-D copy. A size that is not whole beats is padded: the last beat
     also moves the bytes after the layout, up to the beat's end, which the
     memory plan keeps free in both memories. Anything else raises
     LayoutError, which the design check ``memory.align`` reports first.

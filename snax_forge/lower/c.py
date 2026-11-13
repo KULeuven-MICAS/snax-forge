@@ -80,7 +80,7 @@ def job_writes(units: Mapping[str, Instance], values: Mapping[str, Any],
     """An accelerator task's CSR writes, ``(unit, CSR, value)`` in order: a unit's task
     (``units`` one, ``values`` its n and rates) as ``job_values``; a linked group's (``values``
     by unit, the group's units in order) JOBS = n_u / ∏ T_v over its first unit u and the
-    group's folds v, then each fold's JOB_BEATS but those in ``fixed`` (module doc)."""
+    group's folds v, then each fold's JOB_BEATS but those in ``fixed`` (CONTRACTS, "Task list")."""
     if "n" in values:
         ((unit, inst),) = units.items()
         return [(unit, k, v) for k, v in job_values(inst, values, unit in fixed).items()]

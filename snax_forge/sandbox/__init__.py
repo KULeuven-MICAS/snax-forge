@@ -1,4 +1,5 @@
-"""SNAX-SANDBOX: decisions made by hand on a SNAX-DFG (ARCHITECTURE.md 5.4).
+"""SNAX-SANDBOX: decisions made by hand on a SNAX-DFG (ARCHITECTURE, "SNAX-SANDBOX and the
+design step").
 
 A recipe (recipe.py) is an ordered list of registered transforms with their params, applied
 to an imported graph (CONTRACTS, "Recipe"). Each transform has its inverse and a site, the

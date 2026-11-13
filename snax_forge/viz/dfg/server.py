@@ -127,7 +127,8 @@ class EditState:
         return out
 
     def open(self, body: dict[str, Any]) -> Any:
-        """Start or open the session ``body`` asks for (module doc)."""
+        """Start or open the session ``body`` asks for: ``kernel`` (with ``params``), ``recipe`` or
+        ``session``, on ``platform`` if given."""
         from snax_forge.sandbox.session import Session
 
         platform = body.get("platform") or self.platform
@@ -160,7 +161,7 @@ class EditState:
 
 
 def session_summary(s: Any) -> dict[str, Any]:
-    """GET /api/session: the session as the page shows it (module doc)."""
+    """GET /api/session: the session as the page shows it."""
     from snax_forge.sandbox.session import RECIPE_JSON, _shown, drop_question
 
     r = s.recipe

@@ -72,8 +72,8 @@ def group_cycles(units: list[dict[str, Any]], links: list[dict[str, Any]], owner
 
 @dataclass
 class GroupEstimate:
-    """One group: its units and links, its cycles and register bits (module doc) and, from
-    data.py, the channels of its outer ports and the words they move per cycle; on a platform
+    """One group: its units and links, its cycles and register bits (CONTRACTS, "Estimate") and,
+    from data.py, the channels of its outer ports and the words they move per cycle; on a platform
     its ``bank_bound``, the fewest cycles L1's banks allow those words."""
 
     name: str
@@ -136,11 +136,11 @@ def _datapath_blocks(graph: Graph, insts: dict[str, Any], members: list[str],
                      ends: list[tuple[Node, str, str]], firings: dict[str, int],
                      gives: dict[str, int],
                      ) -> tuple[dict[str, Block], dict[str, Block], dict[str, int]]:  # fmt: skip
-    """Per unit and per buffer link (by container) the datapath to cost, its params as the
-    generator fills them and its fires (cost.py: a unit's ``firings`` times its span, a
-    buffer's its producer's ``gives``, a load per output), and per unit and link its register bits
-    (module doc): a wire 0 and no block; a unit the generator does not fill a block with no
-    params and no bits. The generator is imported here: gen/rtl.py imports this package."""
+    """Per unit and per buffer link (by container) the datapath to cost, its params as the generator
+    fills them and its fires (cost.py: a unit's ``firings`` times its span, a buffer's its
+    producer's ``gives``, a load per output), and per unit and link its register bits (CONTRACTS,
+    "Estimate"): a wire 0 and no block; a unit the generator does not fill a block with no params
+    and no bits. The generator is imported here: gen/rtl.py imports this package."""
     from snax_forge.brm import port_dtypes
     from snax_forge.gen.accelerator import Unit
     from snax_forge.gen.blocks import DATAPATHS, GenError
@@ -204,7 +204,7 @@ def datapath_blocks(graph: Graph) -> dict[str, Block]:
 
 
 def groups(graph: Graph, job_width: int = 32) -> list[GroupEstimate]:
-    """Every group of a bound graph, in the graph's order (module doc); ``job_width`` the
+    """Every group of a bound graph, in the graph's order (CONTRACTS, "Estimate"); ``job_width`` the
     platform's ``acc_csr.job_width``."""
     return [g for g, _, _ in group_blocks(graph, job_width)]
 

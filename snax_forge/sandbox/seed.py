@@ -145,9 +145,10 @@ def seed_seconds(g: Graph, first: str, what: str | None = None) -> list[str]:
 
 
 def _site(g: Graph, map: str) -> dict[str, Any]:
-    """fuse_seed's site: a map of a fold's nest the checks of the module doc pass, ``second``
-    the elementwise nest's outermost map; or a map of such a nest, ``first`` the outermost map
-    of the fold's nest that reads into it; refused as ``map`` taken as ``first`` is."""
+    """fuse_seed's site: a map of a fold's nest that passes fuse_seed's checks (CONTRACTS,
+    "Recipe"), ``second`` the elementwise nest's outermost map; or a map of such a nest,
+    ``first`` the outermost map of the fold's nest that reads into it; refused as ``map`` taken
+    as ``first`` is."""
     try:
         return {"first": map, "second": seed_seconds(g, map)[0]}
     except SandboxError as e:

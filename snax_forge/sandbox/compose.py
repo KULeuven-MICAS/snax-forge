@@ -213,7 +213,7 @@ def _range_refusal(g: Graph, f: Node, s: Node, what: str) -> SandboxError:
 
 
 def _fuse(g: Graph, first: Node, second: Node, what: str) -> tuple[Node, str, list[list[str]]]:
-    """``first`` and ``second`` fused (module doc), the local container and the tags an
+    """``first`` and ``second`` fused (CONTRACTS, "Recipe"), the local container and the tags an
     untagged side takes first (``[map, kind]`` each; the fused node is then the first's
     untagged at those levels: fuse_map tags and fuses again); SandboxError."""
     rename: dict[str, str] = {}

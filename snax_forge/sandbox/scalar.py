@@ -109,7 +109,8 @@ def bake_scalar(g: Graph, container: str, value: int | str) -> Graph:
 
 
 def _as_csr(g: Graph, container: str, what: str) -> Graph:
-    """``bake_scalar`` at ``csr``: each reading connector renamed to the container (module doc)."""
+    """``bake_scalar`` at ``csr``: each reading connector renamed to the container
+    (CONTRACTS, "Recipe")."""
     g = _copy(g)
     names = list(g.containers)
     record = {"container": g.containers[container].to_dict(), "index": names.index(container),

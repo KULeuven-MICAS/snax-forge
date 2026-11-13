@@ -35,7 +35,7 @@ class Region:
     shape: tuple[int, ...]
     strides: tuple[int, ...]
     dtype: str
-    size: int | None = None  # an L2 region's array bytes (module doc)
+    size: int | None = None  # an L2 region's array bytes (CONTRACTS, "Profile and trace")
 
     @property
     def layout(self) -> Layout:

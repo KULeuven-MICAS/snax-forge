@@ -95,7 +95,7 @@ class AccTask:
 
 @dataclass(frozen=True)
 class Manifest(JsonFile):
-    """What ``generate`` wrote; see the module doc."""
+    """``manifest.json``: what ``generate`` wrote (CONTRACTS, "Generated hjson files")."""
 
     design: str
     design_point: str
@@ -142,7 +142,7 @@ def node_dtypes(point: DesignPoint, name: str) -> dict[str, str]:
 def streamer_template(point: DesignPoint, found: Mapping[str, Instance],
                       acc: str | None = None) -> dict[str, Any]:  # fmt: skip
     """The streamer template of the accelerator's units ``found`` (``acc`` its name), in the
-    hjson's keys; see the module doc. A shared accelerator's are its movers'."""
+    hjson's keys (CONTRACTS, "Generated hjson files"). A shared accelerator's are its movers'."""
     groups: dict[str, list[dict[str, Any]]] = {"data_reader_params": [], "data_writer_params": []}
     for name, inst in found.items():
         _movers(point, name, inst, groups)

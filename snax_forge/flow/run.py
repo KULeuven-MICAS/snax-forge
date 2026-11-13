@@ -534,7 +534,7 @@ def _clear(out: Path) -> None:
 
 def _clear_sandbox(out: Path, graph_path: Path) -> None:
     """Remove what an earlier flow's sandbox stage left in ``out`` (its recipe and step
-    graphs), unless ``graph_path`` is one of them (module doc)."""
+    graphs), unless ``graph_path`` is one of them."""
     folder = out / "sandbox"
     if not folder.is_dir() or folder.resolve() == graph_path.resolve().parent:
         return
