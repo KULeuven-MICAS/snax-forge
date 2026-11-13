@@ -300,28 +300,47 @@ def _tasklet_lanes(ctx: Context, env: Mapping[str, Any]) -> Any:
     return None if mask is None else np.broadcast_to(mask, ctx.shape())
 
 
+@dataclass(frozen=True)
+class _BeatPlan:
+    """What a memlet's beats share, worked out once per accelerated node: per dimension its
+    parts and, along a range, each tailed loop's lanes per step (W); the padded shape."""
+
+    dims: tuple[tuple[Value, tuple[Value, ...], dict[str, int]], ...]
+    padded: tuple[int, ...] | None
+
+
+def _beat_plan(m: Memlet, ctx: Context, what: str, tails: Mapping[str, int]) -> _BeatPlan:
+    dims = []
+    for dim in m.subset:
+        parts = parse_dim(dim, what)
+        steps: dict[str, int] = {}
+        if tails and len(parts) == 3:
+            _, co = expr.linear(parts[0], list(tails))
+            steps = {v: co[v] // parts[2] for v in tails if co[v]}
+        dims.append((dim, parts, steps))
+    return _BeatPlan(tuple(dims), padded_shape(ctx.graph, m.data) if tails else None)
+
+
 def _beat_indices(
-    m: Memlet, env: Mapping[str, int], ctx: Context, what: str,
-    tails: Mapping[str, int] | None = None,
+    m: Memlet, env: Mapping[str, int], ctx: Context, what: str, plan: _BeatPlan,
+    tails: Mapping[str, int],
 ) -> tuple[tuple[Any, ...], Any]:  # fmt: skip
     """An accelerated node's subset for one firing: an open mesh over its ranges, and which of
     its elements are valid lanes. ``tails`` maps each tailed firing loop's variable to its
     valid count: along a range whose start that loop moves by W per step, lane j is valid
     when ``W * v_t + j`` is below the count; a pad lane is checked against the padding."""
     axes, valid = [], []
-    padded = padded_shape(ctx.graph, m.data) if tails else None
-    for d, (dim, size) in enumerate(zip(m.subset, ctx.data[m.data].shape, strict=True)):
-        parts = parse_dim(dim, what)
+    padded = plan.padded
+    for d, ((dim, parts, steps), size) in enumerate(
+        zip(plan.dims, ctx.data[m.data].shape, strict=True)
+    ):
         if len(parts) == 1:
             ax = np.array([_int(parts[0], env, what)])
         else:
             ax = np.arange(_int(parts[0], env, what), _int(parts[1], env, what), parts[2])
         ok = np.ones(len(ax), bool)
-        if tails and len(parts) == 3:
-            _, co = expr.linear(parts[0], list(tails))
-            for v, n in tails.items():
-                if co[v]:
-                    ok &= (co[v] // parts[2]) * env[v] + np.arange(len(ax)) < n
+        for v, w in steps.items():
+            ok &= w * env[v] + np.arange(len(ax)) < tails[v]
         _check_bounds(ax[ok], size, m, dim, what)
         if padded is not None:
             _check_bounds(ax[~ok], padded[d], m, dim, f"{what} (a pad lane)")
@@ -513,6 +532,12 @@ def _run_accelerated(node: Node, ctx: Context) -> None:
     written = {m.data: np.zeros(ctx.data[m.data].shape, bool) for m in node.outputs.values()}
     tails = {lp.var: valid_count(ctx.graph, lp.node) for lp in inner if tailed_split(lp.node)}
     pads = {m.data: pad_value(ctx.graph, m.data) for m in node.inputs.values()} if tails else {}
+    in_what = {name: f"{what}.inputs.{name}" for name in node.inputs}
+    out_what = {name: f"{what}.outputs.{name}" for name in node.outputs}
+    plans = {  # the beats' shared work, once for the node
+        **{("in", n): _beat_plan(m, ctx, in_what[n], tails) for n, m in node.inputs.items()},
+        **{("out", n): _beat_plan(m, ctx, out_what[n], tails) for n, m in node.outputs.items()},
+    }
     for point in itertools.product(*(loop.values for loop in outer)):
         state: dict[str, Any] = {}
         env0 = dict(ctx.symbols) | {lp.var: int(v) for lp, v in zip(outer, point, strict=True)}
@@ -521,7 +546,7 @@ def _run_accelerated(node: Node, ctx: Context) -> None:
             ins = {}
             for name in cfg.due(k, rate, "in"):
                 p, m = cfg.port(name), node.inputs[name]
-                idx, ok = _beat_indices(m, env, ctx, f"{what}.inputs.{name}", tails)
+                idx, ok = _beat_indices(m, env, ctx, in_what[name], plans["in", name], tails)
                 beat = np.array(ctx.data[m.data][idx])
                 beat[~ok] = pads.get(m.data, 0)  # a pad lane reads the pad
                 ins[name] = _lanes(beat, p, what)
@@ -531,7 +556,8 @@ def _run_accelerated(node: Node, ctx: Context) -> None:
                 raise ExecutionError(f"{what}: firing {k} gave {sorted(outs)}")
             for p in map(cfg.port, due):
                 m = node.outputs[p.name]
-                idx, ok = _beat_indices(m, env, ctx, f"{what}.outputs.{p.name}", tails)
+                plan = plans["out", p.name]
+                idx, ok = _beat_indices(m, env, ctx, out_what[p.name], plan, tails)
                 arr = ctx.data[m.data]
                 beat_out = _lanes(np.asarray(outs[p.name]), p, what).reshape(ok.shape)
                 at = tuple(i[ok] for i in np.broadcast_arrays(*idx))  # the valid lanes only

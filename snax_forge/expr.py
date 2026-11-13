@@ -130,11 +130,17 @@ def check(v: Any, what: str) -> None:
         raise ExprError(f"{what}: {e}") from None
 
 
+@functools.lru_cache(maxsize=8192)
+def _names_of(expr: str) -> frozenset[str]:
+    """``_names`` of ``expr``'s shared tree, once per string: the executor asks per beat."""
+    return frozenset(_names(_parsed(expr)))
+
+
 def names(v: Value) -> set[str]:
     """The names ``v`` refers to (none for an int)."""
     if type(v) is int:
         return set()
-    return _names(_parsed(v))
+    return set(_names_of(v))
 
 
 def ordered_names(v: Value) -> list[str]:
@@ -240,10 +246,9 @@ def canonical(v: Value) -> Value:
     """The stored form of ``v``: an int if it has no names, else ``ast.unparse``'s text."""
     if type(v) is int:
         return v
-    tree = _parsed(v)
-    if not _names(tree):
+    if not _names_of(v):
         return evaluate(v, {})
-    return ast.unparse(tree)
+    return ast.unparse(_parsed(v))
 
 
 def substitute(v: Value, values: Mapping[str, Value]) -> Value:
