@@ -10,7 +10,9 @@ from dataclasses import replace
 
 import pytest
 
+from snax_forge.char import DEFAULT_TECH
 from snax_forge.design import Design, DesignPoint, Platform, run_checks
+from snax_forge.estimate import estimate
 from snax_forge.lower import task_list
 from snax_forge.sandbox import Recipe, SandboxError, apply_recipe, session
 from snax_forge.sandbox import __main__ as sandbox_cli
@@ -389,17 +391,29 @@ def test_the_diff_of_a_split_and_of_a_link(roots):
     assert two.estimate(two.n).containers["tmp0"].placement == "link"
 
 
+SESSION_CHECKED = ("vecadd", "vecadd_undo")  # the recipes the sweep also opens as a session
+
+
 @pytest.mark.parametrize("name", RECIPES)
 def test_the_estimate_of_every_step_of_every_recipe(name, roots):
-    r = recipe(name)
-    if name == "vecadd_undo":  # starts from vecadd's bound graph, as README.md runs it
-        s = Session(name, r, recipe_graphs("vecadd")[1][-1], session.PLATFORM, roots)
+    """Every step's estimate on the editor's platform and technology, from recipe_graphs'
+    graphs: a session replays the same steps (apply_recipe's) and would build them again. On
+    SESSION_CHECKED a session too: its graphs are those, its estimate of a step is theirs,
+    cached; vecadd_undo starts from vecadd's bound graph, as README.md runs it."""
+    r, graphs = recipe_graphs(name)
+    platform = Platform.load(REPO / session.PLATFORM)
+    assert len(graphs) == len(r.steps) + 1
+    estimates = [estimate(g, platform, DEFAULT_TECH) for g in graphs]
+    if name not in SESSION_CHECKED:
+        return
+    if name == "vecadd_undo":
+        s = Session(name, recipe(name), recipe_graphs("vecadd")[1][-1], session.PLATFORM, roots)
     else:
         s = opened(name, roots)
-    for k in range(s.n + 1):
-        s.estimate(k)
+    assert [g.to_json() for g in s.graphs] == [g.to_json() for g in graphs]
+    assert s.platform == platform
+    assert [s.estimate(k) for k in range(s.n + 1)] == estimates
     assert s.estimate(0) is s.estimate(0)
-    assert s.platform == Platform.load(REPO / session.PLATFORM)
 
 
 # =============================================================================
