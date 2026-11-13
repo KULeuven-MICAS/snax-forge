@@ -239,13 +239,14 @@ i.key.idle-key { background: none; border: 1px dashed color-mix(in srgb, var(--i
 /* L1: banks by superbank, one arrow pair under each bank */
 .cl-l1-head { display: flex; align-items: baseline; gap: 0.5rem; margin-bottom: 0.3rem; }
 .cl-l1-head small { color: var(--muted); }
-.cl-banks { display: grid; column-gap: 3px; }
-.cl-banks + .cl-banks { margin-top: 0.5rem; }
-.cl-sb-head { font-size: 0.78em; color: var(--muted); border-bottom: 1px solid var(--rule); margin-bottom: 0.25rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cl-banks { display: flex; gap: var(--space-2); }
+.cl-sb { display: grid; flex: 1 1 0; column-gap: 3px; min-width: 0; }
+.cl-sb-head { grid-column: 1 / -1; font-size: 0.78em; color: var(--muted); border-bottom: 1px solid var(--rule); margin-bottom: 0.25rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cl-sb-head small { margin-left: 0.4rem; }
 .sb-first { margin-left: 0.6rem; }
 .cl-bank { display: flex; flex-direction: column; align-items: center; min-width: 0; overflow: hidden; padding: 0.15rem 0 0.2rem; border: 1px solid var(--rule); border-radius: 3px; background: var(--panel); font-size: 0.78em; line-height: 1.25; transition: background-color 0.12s, border-color 0.12s, box-shadow 0.12s; }
 .cl-bank b { font-weight: 600; color: var(--muted); }
+.cl-bank .who, .cl-bank .acc, .cl-bank .back { font-size: 0.9em; letter-spacing: -0.03em; }
 .cl-bank .who { min-height: 1.25em; font-weight: 600; color: var(--req); white-space: nowrap; }
 .cl-bank .acc { min-height: 1.25em; color: var(--muted); white-space: nowrap; }
 .cl-bank .back { min-height: 1.25em; font-weight: 600; color: var(--busy); white-space: nowrap; }
@@ -287,12 +288,12 @@ i.key.idle-key { background: none; border: 1px dashed color-mix(in srgb, var(--i
 .cl-arrow.right i::after { left: 100%; top: 50%; transform: translateY(-50%); border-right: 0; border-left: 7px solid currentColor; }
 
 /* interconnect: status in the middle, description in the top-right corner */
-.cl-xbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name desc" "status desc"; gap: 0.2rem 1rem; min-height: 4.8rem; padding: 0.45rem 0.7rem; border: 2px solid var(--idle); border-radius: 4px; background: var(--panel); transition: background-color 0.12s, border-color 0.12s; }
+.cl-xbar { display: grid; grid-template-columns: minmax(0, 1fr) fit-content(60%); grid-template-areas: "name desc" "status desc"; gap: 0.2rem 1rem; min-height: 4.8rem; padding: 0.45rem 0.7rem; border: 2px solid var(--idle); border-radius: 4px; background: var(--panel); transition: background-color 0.12s, border-color 0.12s; }
 .cl-xbar.ok { border-color: var(--busy); background: var(--busy-bg); }
 .cl-xbar.bad { border-color: var(--mem); background: var(--hot-bg); }
 .cl-xbar-name { grid-area: name; }
 .cl-xbar-name small { margin-left: 0.4rem; color: var(--muted); }
-.cl-xbar-desc { grid-area: desc; display: grid; grid-template-columns: max-content max-content; gap: 0 0.6rem; margin: 0; font-size: 0.78em; color: var(--muted); align-self: start; }
+.cl-xbar-desc { grid-area: desc; display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0 0.6rem; margin: 0; font-size: 0.78em; color: var(--muted); align-self: start; }
 .cl-xbar-desc dd { margin: 0; color: var(--ink); }
 .cl-xbar-status { grid-area: status; justify-self: center; align-self: center; font-size: 0.88em; }
 .cl-conflicts { margin: 0; padding: 0; list-style: none; }
@@ -318,6 +319,9 @@ i.key.idle-key { background: none; border: 1px dashed color-mix(in srgb, var(--i
 .cl-line { min-height: 1.3em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cl-line.req { color: var(--req); font-weight: 600; }
 .cl-line.resp { color: var(--busy); font-weight: 600; }
+.cl-line.wrap { white-space: normal; overflow-wrap: anywhere; }
+.cl-line.multi { white-space: pre-line; overflow-wrap: anywhere; }
+.cl-mux { color: var(--req); }
 .cl-sub { color: var(--muted); font-size: 0.8em; }
 
 /* port chips: teal = request accepted, red = stalled, green underline = read data back */
@@ -336,6 +340,17 @@ i.key.idle-key { background: none; border: 1px dashed color-mix(in srgb, var(--i
 .cl-lanes .fill { display: block; background: var(--fifo); transition: height 0.12s; }
 .cl-lanes .count { text-align: center; font-size: 0.75em; color: var(--muted); line-height: 1.1; }
 .cl-lanes .slots.untraced .slot { border-style: dashed; }
+/* past 8 lanes a lane is a thin column: no number on its chip, a tick every 8 lanes */
+.cl-lanes.thin { gap: var(--space-1) 1px; }
+.cl-lanes.thin .cl-port { height: var(--space-2); border-radius: 1px; }
+.cl-lanes.thin .slots { gap: 1px; }
+.cl-lanes.thin .cl-pair.v { gap: 1px; }
+.cl-lanes.thin .cl-pair .cl-arrow.v { width: 3px; }
+.cl-lanes.thin .cl-arrow.on.v i { width: 1px; }
+.cl-lanes.thin .cl-arrow.on i::after { border-width: 2px; }
+.cl-lanes.thin .cl-arrow.up i::after { border-bottom-width: 3px; }
+.cl-lanes.thin .cl-arrow.down i::after { border-top-width: 3px; }
+.cl-lanes .tick { padding-left: 1px; border-left: 1px solid var(--rule); color: var(--muted); font-size: 0.7em; line-height: 1; }
 
 .cluster.task-only .cl-banks, .cluster.task-only .cl-lanes { opacity: 0.45; }
 

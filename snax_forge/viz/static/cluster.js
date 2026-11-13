@@ -10,13 +10,16 @@
 //                 going back; red when it refused a requester
 //   arrow pairs   one per bank, between the banks and the interconnect
 //   interconnect  grey without traffic, green with traffic, red with its
-//                 conflicts (the port served, the ports refused)
+//                 conflicts (per pair of movers, the one served, the ones
+//                 refused, and their banks)
 //   arrow pairs   one per mover lane (its crossbar port) and one for the DMA
-//   requesters    the movers (one column per lane: port, FIFO slots, count),
-//                 the DMA with L2 beside it (its own pair of lanes)
+//   requesters    the movers (one column per lane: port, FIFO slots, count;
+//                 thin columns past THIN_FROM lanes; a shared mover names the
+//                 user its port mux serves), the DMA with L2 under it (its own
+//                 pair of lanes)
 //   arrows        reader → accelerator on a fire, accelerator → writer on a
 //                 push
-//   accelerator   its class, task, firing and push; inside it one streamer
+//   accelerator   its class, and each unit's task, firing and push; inside it one streamer
 //                 box per streamer set: the set's CSRs and movers,
 //                 striped busy while a task of its movers is open
 //
@@ -35,11 +38,16 @@ import { CLASS_GROUP, accelUnits, h, int, unitFacts } from "./dom.js";
 import { DIRECTION_TEXT, elemsText, eventText } from "./events.js";
 
 const MAX_SLOTS = 8; // deeper FIFOs are drawn as a bar
-const LANE = 1.45; // rem, a lane's column at its narrowest
+const LANE = 1.1; // rem, a lane's column at its narrowest
 const LANE_MAX = 2; // and at its widest
+const THIN_FROM = 9; // lanes: from here a lane is a thin column, its number every TICK lanes
+const THIN = 0.5; // rem, a thin lane's column
+const TICK = 8;
 const BOX_PAD = 1.35; // rem, a box's padding and borders
-const MIN_MOVER = 7.5; // rem
+const MIN_MOVER = 6.5; // rem
+const DMA_MIN = 11; // rem
 const FRAME_MIN = 44; // rem, style.css .cl-frame
+const MAX_CONFLICTS = 4; // conflict lines shown; the rest are counted
 
 const views = new WeakMap(); // detail -> view, kept until Reload
 
@@ -95,6 +103,17 @@ function setText(el, text, kind = null) {
 
 const lines = (xs) => xs.filter(Boolean).join("\n");
 
+/** Sorted numbers as ranges: 0–3, 8, 10–11. */
+function ranges(xs) {
+  const out = [];
+  for (const x of [...xs].sort((p, q) => p - q)) {
+    const last = out[out.length - 1];
+    if (last && x === last[1] + 1) last[1] = x;
+    else out.push([x, x]);
+  }
+  return out.map(([p, q]) => (p === q ? String(p) : `${p}–${q}`)).join(", ");
+}
+
 /** A bank's access as its tooltip says it. */
 function accessText(a) {
   const what = elemsText(a);
@@ -106,9 +125,14 @@ function accessText(a) {
 function build(detail, first) {
   const acc = detail.cluster.accelerator;
   const movers = acc.movers;
-  // Each crossbar port's short label in a bank (a0 for acc_a.lane0), from the cluster.
+  // Each crossbar port's short label in a bank, from the cluster: its port and lane (a0 for
+  // acc_a.lane0), or for a shared mover (r0 after SNAX-GVSoC's reader0) or one of thin lanes
+  // its mover only, the lane in the bank's tooltip.
   const short = { dma: "dma" };
-  for (const m of movers) for (let l = 0; l < m.lanes; l++) short[`${m.name}.lane${l}`] = `${m.port}${l}`;
+  const thin = (m) => m.lanes >= THIN_FROM;
+  const label = (m) => (m.users ? `${m.gvsoc[0]}${m.gvsoc.replace(/\D/g, "")}` : m.port);
+  for (const m of movers) for (let l = 0; l < m.lanes; l++) short[`${m.name}.lane${l}`] = m.users || thin(m) ? label(m) : `${label(m)}${l}`;
+  const owner = (port) => port.replace(/\.lane\d+$/, "");
 
   // L1: every bank of the answer, grouped by its superbank.
   const bankCells = [];
@@ -118,32 +142,29 @@ function build(detail, first) {
     if (!groups.has(b.superbank)) groups.set(b.superbank, []);
     groups.get(b.superbank).push(b.bank);
   }
-  const heads = [];
-  const cells = [];
-  const pairs = [];
-  let column = 0;
+  // one grid per superbank, each as wide as its banks, so every bank is as wide as the others
+  const sbs = [];
   for (const [sb, banks] of groups) {
-    const sep = column ? " sb-first" : "";
-    heads.push(h("div", { class: `cl-sb-head${sep}`, style: { gridColumn: `span ${banks.length}` } },
-      `superbank ${sb}`, h("small", {}, `banks ${banks[0]}–${banks[banks.length - 1]}`)));
-    banks.forEach((b, i) => {
+    const cells = [];
+    const pairs = [];
+    for (const b of banks) {
       const who = h("span", { class: "who" });
       const acc = h("small", { class: "acc" });
       const back = h("small", { class: "back" });
-      const cell = h("div", { class: `cl-bank${i === 0 ? sep : ""}` }, h("b", {}, String(b)), who, acc, back);
+      const cell = h("div", { class: "cl-bank" }, h("b", {}, String(b)), who, acc, back);
       const p = pair("v");
-      if (i === 0 && sep) p.el.classList.add("sb-first");
       bankCells[b] = { cell, who, acc, back };
       bankPairs[b] = p;
       cells.push(cell);
       pairs.push(p.el);
-    });
-    column += banks.length;
+    }
+    sbs.push(h("div", { class: "cl-sb", style: { flexGrow: String(banks.length), gridTemplateColumns: `repeat(${banks.length}, minmax(0, 1fr))` } },
+      h("div", { class: "cl-sb-head" }, `superbank ${sb}`, h("small", {}, `banks ${banks[0]}–${banks[banks.length - 1]}`)), cells, pairs));
   }
   const c = detail.cluster;
   const l1Box = h("div", { class: "cl-l1" },
     h("div", { class: "cl-l1-head" }, h("b", {}, "L1"), h("small", {}, `${int(c.banks)} banks of ${c.bank_bytes} B, ${int(c.l1_size / 1024)} KiB`)),
-    h("div", { class: "cl-banks", style: { gridTemplateColumns: `repeat(${column}, minmax(0, 1fr))` } }, heads, cells, pairs));
+    h("div", { class: "cl-banks" }, sbs));
 
   const status = h("div", { class: "cl-xbar-status" });
   const xbarBox = h("div", { class: "cl-xbar" },
@@ -153,13 +174,13 @@ function build(detail, first) {
       h("dt", {}, "memory side"), h("dd", {}, `${int(c.banks)} banks`)),
     status);
 
-  // Requesters in one grid: the movers as the streamer orders them, then the DMA and L2.
-  const cols = [...movers.map((m) => ({ kind: "mover", m })), { kind: "dma" }, { kind: "l2arrow" }, { kind: "l2" }];
-  const narrowest = (x) => (x.kind === "mover"
-    ? Math.max(MIN_MOVER, x.m.lanes * LANE + Math.max(x.m.lanes - 1, 0) * 0.25 + BOX_PAD)
-    : { dma: 12, l2arrow: 2.6, l2: 7 }[x.kind]);
-  const track = (x) => (x.kind === "mover" ? `minmax(${narrowest(x).toFixed(2)}rem, ${Math.max(1, x.m.lanes / 4)}fr)`
-    : { dma: "minmax(12rem, 1.3fr)", l2arrow: "2.6rem", l2: "minmax(7rem, 0.7fr)" }[x.kind]);
+  // Requesters in one grid: the movers as the streamer orders them, then the DMA with L2
+  // under it.
+  const lanesWidth = (m) => (thin(m) ? m.lanes * THIN + (m.lanes - 1) * 0.0625 : m.lanes * LANE + Math.max(m.lanes - 1, 0) * 0.25);
+  const cols = [...movers.map((m) => ({ kind: "mover", m })), { kind: "dma" }];
+  const narrowest = (x) => (x.kind === "mover" ? Math.max(MIN_MOVER, lanesWidth(x.m) + BOX_PAD) : DMA_MIN);
+  const track = (x) => (x.kind === "mover" ? `minmax(${narrowest(x).toFixed(2)}rem, ${Math.max(1, Math.min(x.m.lanes, 16) / 4)}fr)`
+    : `minmax(${DMA_MIN}rem, 1.3fr)`);
   const frameMin = Math.max(FRAME_MIN, cols.reduce((a, x) => a + narrowest(x), 0) + 0.6 * (cols.length - 1));
   const place = (el, col, row, span = 1) => { el.style.gridColumn = `${col} / span ${span}`; el.style.gridRow = String(row); return el; };
   const items = [];
@@ -168,24 +189,30 @@ function build(detail, first) {
   movers.forEach((m, i) => {
     const col = i + 1;
     const b = block(m.name, m.write ? "writer" : "reader");
-    const task = h("div", { class: "cl-line" });
+    const task = h("div", { class: "cl-line wrap" });
+    const mux = m.users ? h("div", { class: "cl-line wrap cl-mux" }) : null;
     const lanes = [];
     const ups = [];
     for (let l = 0; l < m.lanes; l++) {
       const port = `${m.name}.lane${l}`;
       const slots = m.fifo_depth <= MAX_SLOTS ? Array.from({ length: m.fifo_depth }, () => h("i", { class: "slot" })) : [];
       const fill = m.fifo_depth > MAX_SLOTS ? h("i", { class: "fill" }) : null;
-      const x = { port, chip: h("span", { class: "cl-port" }, `ch ${l}`), slotsEl: h("div", { class: `slots${fill ? " bar" : ""}` }, slots, fill), slots, fill, count: h("small", { class: "count" }), up: pair("v"), depth: m.fifo_depth };
+      const x = { port, chip: h("span", { class: "cl-port" }, thin(m) ? "" : String(l)), slotsEl: h("div", { class: `slots${fill ? " bar" : ""}` }, slots, fill), slots, fill, count: h("small", { class: "count" }), up: pair("v"), depth: m.fifo_depth };
       lanes.push(x);
       ups.push(x.up.el);
       parts.lanes[port] = x;
     }
-    const grid = (cells) => h("div", { class: "cl-lanes", style: { gridTemplateColumns: `repeat(${Math.max(m.lanes, 1)}, minmax(${LANE}rem, ${LANE_MAX}rem))` } }, cells);
-    b.body.append(task, grid([lanes.map((x) => x.chip), lanes.map((x) => x.slotsEl), lanes.map((x) => x.count)]),
-      h("small", { class: "cl-sub" }, `num_ch ${m.lanes} (num_channel), FIFO depth ${m.fifo_depth}`));
+    const column = thin(m) ? `minmax(${THIN}rem, 1fr)` : `minmax(${LANE}rem, ${LANE_MAX}rem)`;
+    const grid = (cells) => h("div", { class: `cl-lanes${thin(m) ? " thin" : ""}`, style: { gridTemplateColumns: `repeat(${Math.max(m.lanes, 1)}, ${column})` } }, cells);
+    // a thin mover's lane numbers, one every TICK lanes, over the lanes they start
+    const ticks = thin(m) ? Array.from({ length: Math.ceil(m.lanes / TICK) }, (_, k) =>
+      h("small", { class: "tick", style: { gridColumn: `${k * TICK + 1} / span ${Math.min(TICK, m.lanes - k * TICK)}` } }, String(k * TICK))) : [];
+    b.body.append(...[task, mux].filter(Boolean), grid([ticks, lanes.map((x) => x.chip), lanes.map((x) => x.slotsEl), thin(m) ? [] : lanes.map((x) => x.count)]),
+      h("small", { class: "cl-sub", title: "num_ch is the streamer's num_channel" },
+        `num_ch ${m.lanes}, FIFO depth ${m.fifo_depth}${m.users ? `; shared by ${m.users.join(", ")}` : ""}`));
     const down = arrow("v");
     items.push(place(grid(ups), col, 1), place(b.el, col, 2), place(down, col, 3));
-    parts.movers[m.name] = { b, task, down, write: m.write };
+    parts.movers[m.name] = { b, task, mux, down, write: m.write };
   });
 
   const dcol = movers.length + 1;
@@ -194,18 +221,18 @@ function build(detail, first) {
   dma.body.append(dmaLines.copies, dmaLines.beat, dmaLines.burst, dmaLines.back);
   const dmaUp = pair("v");
   items.push(place(dmaUp.el, dcol, 1), place(dma.el, dcol, 2));
-  const l2 = block("L2", "beside the cluster");
+  const l2 = block("L2", "outside the cluster");
   const l2Lines = { req: h("div", { class: "cl-line" }), back: h("div", { class: "cl-line" }) };
   l2.body.append(l2Lines.req, l2Lines.back);
   l2.el.classList.add("plain");
   l2.el.dataset.group = "none";
-  const l2Pair = pair("h");
-  items.push(place(l2Pair.el, dcol + 1, 2), place(l2.el, dcol + 2, 2));
+  const l2Pair = pair("v");
+  items.push(place(l2Pair.el, dcol, 3), place(l2.el, dcol, 4));
 
   // One line per unit of accelerator.json, with its group
   const facts = accelUnits(acc.description).map((x) => h("div", { class: "cl-line muted" }, unitFacts(x)));
   const unit = block(acc.name, "accelerator");
-  const unitLines = { task: h("div", { class: "cl-line" }), fire: h("div", { class: "cl-line" }), push: h("div", { class: "cl-line" }) };
+  const unitLines = { task: h("div", { class: "cl-line wrap" }), fire: h("div", { class: "cl-line multi" }), push: h("div", { class: "cl-line multi" }) };
   // one streamer box per streamer set, inside the accelerator
   const sets = (acc.csrs?.sets ?? []).map((x) => {
     const b = block(`streamer ${x.name}`, `CSRs ${x.first}–${x.counter}`);
@@ -238,6 +265,7 @@ function build(detail, first) {
     let msg = "";
     if (!on) msg = "Select a cycle in the schedule, or step with the arrow keys.";
     else if (a.level === "off") msg = "This run was traced at level off: only the cluster's structure is shown.";
+    else if (needs.length && a.linked) msg = `Traced at ${a.level}: this accelerator has a group of several linked units, whose beat lines are not read yet, so a run of it stops at --trace task; the banks, the interconnect, the lanes and the firings stay empty.`;
     else if (needs.length) msg = `Traced at ${a.level}: ${needs.join(", ")} need${needs.length === 1 ? "s" : ""} --trace ${[...new Set(Object.values(a.needs))].join(" or ")}.`;
     if (on && a.filtered) msg += `${msg ? " " : ""}The beat lines cover ${a.filtered.sources.join(", ")} only.`;
     setText(note, msg);
@@ -253,7 +281,7 @@ function build(detail, first) {
       cell.classList.toggle("bad", stalled.length > 0);
       setText(who, access.map((x) => short[x.port] ?? x.port).join(" "));
       setText(what, access.map((x) => `${x.op === "w" ? "W" : "R"} r${x.row}`).join(" "));
-      setText(back, backs.length ? `↓ ${backs.map((e) => short[e.src] ?? e.src).join(" ")}` : "");
+      setText(back, backs.length ? `↓${backs.map((e) => short[e.src] ?? e.src).join(" ")}` : "");
       cell.title = lines([`bank ${bk.bank}`, ...access.map(accessText),
         ...backs.map((e) => `read data back to ${e.src} (asked in cycle ${e.t})`),
         stalled.length ? `served ${stalled[0].served}, refused ${stalled.slice(1).map((s) => s.port).join(", ")}` : null]);
@@ -266,9 +294,23 @@ function build(detail, first) {
     xbarBox.classList.remove("idle", "ok", "bad");
     if (x.conflicts?.length) {
       xbarBox.classList.add("bad");
-      status.replaceChildren(h("ul", { class: "cl-conflicts" }, x.conflicts.map((k) =>
-        h("li", {}, h("b", {}, `bank ${k.bank}:`), ` ${k.served} served, `, h("span", { class: "stalled" }, `${k.refused.join(", ")} refused`)))));
+      // one line per pair of movers (the one served, the ones refused), with their banks
+      const byPair = new Map();
+      for (const k of x.conflicts) {
+        const refused = [...new Set(k.refused.map(owner))];
+        const key = `${owner(k.served)}|${refused.join(",")}`;
+        if (!byPair.has(key)) byPair.set(key, { served: owner(k.served), refused, banks: [] });
+        byPair.get(key).banks.push(k.bank);
+      }
+      const rows = [...byPair.values()];
+      const more = rows.length - MAX_CONFLICTS;
+      status.replaceChildren(h("ul", { class: "cl-conflicts" }, rows.slice(0, more > 0 ? MAX_CONFLICTS - 1 : rows.length).map((k) =>
+        h("li", {}, h("b", {}, `${k.banks.length === 1 ? "bank" : `${k.banks.length} banks`} ${ranges(k.banks)}:`), ` ${k.served} served, `,
+          h("span", { class: "stalled" }, `${k.refused.join(", ")} refused`))),
+        more > 0 ? h("li", { class: "muted" }, `and ${more + 1} more pairs (each bank's tooltip and the lines below)`) : null));
+      status.title = lines(x.conflicts.map((k) => `bank ${k.bank}: ${k.served} served, ${k.refused.join(", ")} refused`));
     } else {
+      status.title = "";
       xbarBox.classList.add(x.traffic ? "ok" : "idle");
       status.replaceChildren(h("span", { class: "muted" }, !on ? "" : !("traffic" in x) ? `no beat lines at ${a.level}` : x.traffic ? "" : "no traffic"));
     }
@@ -278,6 +320,7 @@ function build(detail, first) {
       const lane0 = on ? a.movers[`${m.name}.lane0`] : null;
       setClass(p.b, lane0?.class ?? null);
       setText(p.task, lane0?.task ? `task ${lane0.task}` : on ? "no task" : "");
+      if (p.mux) setText(p.mux, !on ? "" : lane0?.user ? `mux: serves ${lane0.user}` : lane0?.task ? "mux: none of its users (an idle task)" : "mux: idle");
       let bad = false;
       for (let l = 0; l < m.lanes; l++) {
         const q = parts.lanes[`${m.name}.lane${l}`];
@@ -301,8 +344,11 @@ function build(detail, first) {
         q.slotsEl.title = n === null ? `${q.port}: FIFO counts need --trace stall` : `${q.port}: ${n} of ${q.depth}`;
       }
       p.b.el.classList.toggle("bad", bad);
-      // the unit whose mover it is (several groups: each unit its own)
-      const mine = on ? (a.acc.units ?? [a.acc]).find((u) => !m.instance || u.name === m.instance) ?? a.acc : {};
+      // the unit whose mover it is (several groups: each unit its own; a shared mover: the
+      // unit of the user its mux serves)
+      const units = on ? a.acc.units ?? [a.acc] : [];
+      const unitOf = m.users ? m.user_units[m.users.indexOf(lane0?.user)] : m.instance;
+      const mine = on ? units.find((u) => (unitOf ? u.name === unitOf : !m.instance)) ?? {} : {};
       const fire = on && mine.fire && (m.write || m.name in (mine.fire.b ?? {})) ? mine.fire : null;
       const push = on ? mine.push : null;
       if (p.write) setArrow(p.down, push ? "up" : null, false, push ? `${mine.name} pushes result ${push.n} into ${m.name}` : "");
@@ -322,8 +368,8 @@ function build(detail, first) {
     dma.el.title = lines([...beats.map(eventText), ...bursts.map(eventText), ...backs.map((e) => `read data back (asked in cycle ${e.t}): ${eventText(e)}`)]);
     setArrow(dmaUp.req, beats.length ? "up" : null, false, lines(beats.map(eventText)));
     setArrow(dmaUp.resp, l1back.length ? "down" : null, false, lines(l1back.map((e) => `L1 read data back: ${eventText(e)}`)));
-    setArrow(l2Pair.req, bursts.length ? "right" : null, false, lines(bursts.map(eventText)));
-    setArrow(l2Pair.resp, l2back.length ? "left" : null, false, lines(l2back.map((e) => `L2 read data back: ${eventText(e)}`)));
+    setArrow(l2Pair.req, bursts.length ? "down" : null, false, lines(bursts.map(eventText)));
+    setArrow(l2Pair.resp, l2back.length ? "up" : null, false, lines(l2back.map((e) => `L2 read data back: ${eventText(e)}`)));
     setText(l2Lines.req, bursts.map((b) => `${b.op === "w" ? "write" : "read"} ${b.size} B${b.region ? ` of ${b.region}` : ""}`).join("; "), "req");
     setText(l2Lines.back, l2back.length ? "read data back" : "", "resp");
 
@@ -333,12 +379,16 @@ function build(detail, first) {
       setText(x.task, st?.task ? `busy: ${st.task}` : on ? "quiet" : "");
     }
 
+    // every unit with an open task, its name first when the accelerator has several
     const un = on ? a.acc : {};
+    const all = on ? a.acc.units ?? [a.acc] : [];
+    const named = (u, text) => (all.length > 1 ? `${u.name}: ${text}` : text);
     setClass(unit, un.class ?? null);
-    setText(unitLines.task, un.task ? `${(a.acc.units ?? []).length > 1 ? `${un.name}: ` : ""}task ${un.task}` : on ? "no task" : "");
+    const open = all.filter((u) => u.task);
+    setText(unitLines.task, open.map((u) => named(u, `task ${u.task}`)).join("; ") || (on ? "no task" : ""));
     const vals = (v) => Object.entries(v ?? {}).map(([k, xs]) => `${k} ${(xs ?? []).join(", ")}`).join("; ");
-    setText(unitLines.fire, un.fire ? `fire ${un.fire.n}: ${vals(un.fire.vals)}` : "", "resp");
-    setText(unitLines.push, un.push ? `push ${un.push.n}: ${(un.push.vals ?? []).join(", ")}` : "", "resp");
+    setText(unitLines.fire, all.filter((u) => u.fire).map((u) => named(u, `fire ${u.fire.n}: ${vals(u.fire.vals)}`)).join("\n"), "resp");
+    setText(unitLines.push, all.filter((u) => u.push).map((u) => named(u, `push ${u.push.n}: ${(u.push.vals ?? []).join(", ")}`)).join("\n"), "resp");
   }
 
   update(null);
