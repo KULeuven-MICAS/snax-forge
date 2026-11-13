@@ -99,7 +99,12 @@ def test_imported_names():
 # =============================================================================
 
 
-@pytest.mark.parametrize(("kernel", "sizes"), SIZES)
+# A kernel's cases compile into one DaCe build folder (out/.dacecache/<kernel>_simp): one xdist
+# group per kernel, so two workers never build it at once (--dist loadgroup)
+COMPILED = [pytest.param(k, s, marks=pytest.mark.xdist_group(f"dace-{k}")) for k, s in SIZES]
+
+
+@pytest.mark.parametrize(("kernel", "sizes"), COMPILED)
 def test_expanded_compiles_and_matches_numpy(kernel, sizes):
     assert verify(load(kernel), _expanded(kernel), **sizes)
 
