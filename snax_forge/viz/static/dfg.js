@@ -1,11 +1,11 @@
-// DFG viewer (D55, VIEW2): one step of a recipe at a time, two with Compare.
+// DFG viewer: one step of a recipe at a time, two with Compare.
 //
 // The server works out everything shown (viz/dfg/api.py): the rows top to
 // bottom in execution order, each top-level node's tree with its compact text,
 // one edge per memlet, the Details of every item and the Estimate's figures.
 // Here the boxes are plain HTML laid out by CSS and the edges one SVG layer
 // per panel, measured from the placed boxes and redrawn when a panel changes
-// size; nothing is computed but where to draw (D57). Text is never in the SVG
+// size; nothing is computed but where to draw. Text is never in the SVG
 // but a group's name. The old step stays on screen until the new one's view
 // arrives; then its boxes glide from where they were (glide), unless the
 // browser asks for reduced motion.
@@ -23,7 +23,7 @@ import * as edit from "./edit.js";
 
 const $ = (id) => document.getElementById(id);
 
-// Every POST is JSON: the server refuses another Content-Type (415, D55)
+// Every POST is JSON: the server refuses another Content-Type (415)
 const POST_JSON = { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" };
 
 async function getJSON(url, opts) {
@@ -42,7 +42,7 @@ function status(msg, err = false) {
 
 const state = { mode: "view", steps: [], k: 0, cmp: null, sel: null, sels: [], t: null, session: null, platform: null, tech: null, techs: [], expanded: new Set() };
 
-// The selection (D72): ``sels`` every selected item in the order selected (shift-click adds or
+// The selection: ``sels`` every selected item in the order selected (shift-click adds or
 // removes one), ``sel`` the last, which Details, the Bindings and the hash's ``t`` follow; the
 // hash's ``sel`` holds them all, comma-separated.
 const selText = () => (state.sels.length ? state.sels.join(",") : null);
@@ -113,7 +113,7 @@ async function compare(j, k) {
 function techOptions() {
   $("tech").replaceChildren(...state.techs.map((t) => h("option", { value: t }, t)));
   $("tech").value = state.tech || "";
-  // one technology is no choice (D167: nangate45 only): the dropdown hides, the heading names it
+  // one technology is no choice (nangate45 only): the dropdown hides, the heading names it
   $("tech").closest("label").hidden = state.techs.length < 2;
 }
 
@@ -228,8 +228,12 @@ function panel(v, k, pick) {
   el._view = v;
   el._draw = () => {
     if (el.classList.contains("settling")) return; // the boxes are gliding: drawn once they settle
-    drawEdges(canvas, svg, v.edges, k);
-    drawOutlines(canvas, svg, v);
+    // the outlines' margins can move boxes without resizing the canvas (a column shorter than
+    // its neighbour), so the edges are drawn again until the margins hold
+    for (let pass = 0; pass < 3; pass++) {
+      drawEdges(canvas, svg, v.edges, k);
+      if (!drawOutlines(canvas, svg, v)) break;
+    }
     outline();
   };
   new ResizeObserver(() => requestAnimationFrame(el._draw)).observe(canvas);
@@ -265,6 +269,7 @@ function drawEdges(canvas, svg, edges, k) {
     defs.append(m);
   }
   const out = [];
+  const xs = spread(canvas, edges);
   for (const e of edges) {
     const a = anchor(canvas, e.from);
     const b = anchor(canvas, e.to);
@@ -273,8 +278,7 @@ function drawEdges(canvas, svg, edges, k) {
     const rb = b.getBoundingClientRect();
     // From the bottom of one end to the top of the other, a connector inside a node included
     // (the boxes it passes are drawn over it)
-    const x1 = ra.left + ra.width / 2 - c.left;
-    const x2 = rb.left + rb.width / 2 - c.left;
+    const [x1, x2] = xs.get(e).map((x) => x - c.left);
     const y1 = ra.bottom - c.top;
     const y2 = rb.top - c.top;
     const bend = Math.max(18, Math.abs(y2 - y1) * 0.45);
@@ -309,6 +313,39 @@ function drawEdges(canvas, svg, edges, k) {
     }
   }
   svg.replaceChildren(defs, ...out);
+}
+
+/** Each edge's start and end x on the page. An end is its anchor's middle, but where several
+edges leave a container's box (or enter one) they leave from points spread over the middle half
+of its edge, ordered by where their other ends are, so they part at the box, not at one point;
+a connector is one point. */
+function spread(canvas, edges) {
+  const mid = (key) => {
+    const a = anchor(canvas, key);
+    if (!a) return null;
+    const r = a.getBoundingClientRect();
+    return { x: r.left + r.width / 2, w: r.width, box: Boolean(a.dataset.box) };
+  };
+  const at = new Map(edges.map((e) => [e, [mid(e.from), mid(e.to)]]));
+  const xs = new Map([...at].map(([e, [a, b]]) => [e, [a?.x, b?.x]]));
+  for (const side of [0, 1]) {
+    const by = new Map(); // a box's key -> its edges on this side
+    for (const e of edges) {
+      const end = at.get(e)[side];
+      if (!end || !end.box || !at.get(e)[1 - side]) continue;
+      const key = side ? e.to : e.from;
+      if (!by.has(key)) by.set(key, []);
+      by.get(key).push(e);
+    }
+    for (const list of by.values()) {
+      if (list.length < 2) continue;
+      list.sort((p, q) => at.get(p)[1 - side].x - at.get(q)[1 - side].x);
+      const { x, w } = at.get(list[0])[side];
+      const step = Math.min(16, (w / 2) / (list.length - 1));
+      list.forEach((e, i) => { xs.get(e)[side] = x + (i - (list.length - 1) / 2) * step; });
+    }
+  }
+  return xs;
 }
 
 /** The x of an edge's curve (drawEdges's cubic) at height ``y``, by bisection: its y only
@@ -366,7 +403,7 @@ function orderRows(panel) {
   }
 }
 
-// -- outlines: groups and accelerators (D148), open blocks (REUSE1) ------------------------------
+// -- outlines: groups and accelerators, open blocks ------------------------------
 // One pass for the three kinds, from the inside out: an outline holds the outlines whose boxes
 // it holds (a group inside its accelerator, both inside an open block around the same boxes),
 // each GAP px outside the ones it holds and its name in a band of its own (a group's on top at
@@ -473,16 +510,21 @@ function drawOutlines(canvas, svg, v) {
     room.set(last, { ...(room.get(last) || { up: 0, down: 0 }), down: Math.max(down, (room.get(last) || { down: 0 }).down) });
   }
   svg.append(...out);
-  // the room each row needs: a margin, set only when it changes (the panel's ResizeObserver
-  // redraws once with it)
+  // the room each row needs: a margin, which only grows while the panel shows this view (an
+  // outline over two columns names the higher of its first rows, so a margin that also shrank
+  // would swap them on every draw); true when one grew, so the panel draws again
+  let changed = false;
+  const grow = (row, side, px) => {
+    if (px > (parseFloat(row.style[side]) || 0)) { row.style[side] = `${px}px`; changed = true; }
+  };
   for (const row of canvas.querySelectorAll(".c-row")) {
-    const want = room.get(row) || { up: 0, down: 0 };
+    const want = room.get(row);
+    if (!want) continue;
     const gap = parseFloat(getComputedStyle(row.parentElement).rowGap) || 0; // what the rows keep already
-    const mt = `${Math.max(0, Math.ceil(want.up - gap + 22))}px`; // a pill's height clear of it
-    const mb = `${Math.max(0, Math.ceil(want.down - gap + 22))}px`;
-    if (row.style.marginTop !== mt) row.style.marginTop = mt;
-    if (row.style.marginBottom !== mb) row.style.marginBottom = mb;
+    grow(row, "marginTop", Math.max(0, Math.ceil(want.up - gap + 22))); // a pill's height clear of it
+    grow(row, "marginBottom", Math.max(0, Math.ceil(want.down - gap + 22)));
   }
+  return changed;
 }
 
 /** Block ``name`` opened or closed (its view's ``blocks``): opening opens the blocks holding
@@ -592,7 +634,7 @@ function outline() {
       if (el._marker) el.setAttribute("marker-end", `url(#${el._marker}-sel)`);
     }
   }
-  // a selected unit's instance shared by other nodes (api.py's ``shared``, D165): those too
+  // a selected unit's instance shared by other nodes (api.py's ``shared``): those too
   for (const panelEl of document.querySelectorAll("#graphs .c-panel")) {
     const shared = (panelEl._view && panelEl._view.shared) || {};
     for (const name of state.sels) {
@@ -728,7 +770,7 @@ function costRows(cost) {
   return [h("dt", {}, "cost"), h("dd", {}, h("dl", { class: "facts c-cost" }, inner))];
 }
 
-// -- the Containers (the left column, C§12) ----------------------------------------------
+// -- the Containers (the left column) ----------------------------------------------
 
 /** Every container that a symbol's shape uses, highlighted in the Containers and the graph
 (focus or hover on the symbol in the Symbols). */
@@ -784,7 +826,7 @@ async function containers() {
   ].filter(Boolean));
 }
 
-// -- the Bindings (the left column, C§12): each param with what it configures -----------------
+// -- the Bindings (the left column): each param with what it configures -----------------
 
 /** Every entry naming param ``name`` highlighted (hover or focus on one of its inputs). */
 function hlParam(name, on) {
@@ -820,7 +862,7 @@ async function bindings() {
     h("button", { type: "button", class: "dfg-cont-name", onclick: () => select(e.id) }, e.label),
     e.params.map((p) => [" · ", paramEl(p)]),
     e.note ? h("small", { class: "muted" }, ` · ${e.note}`) : null);
-  // the tree (D156): accelerator ▸ group ▸ entries, each level a drop-down, open by default;
+  // the tree: accelerator ▸ group ▸ entries, each level a drop-down, open by default;
   // a unit alone, a split not bound yet at the top
   const branch = (n) => (n.kind === "entry" ? entry(b.entries[n.index])
     : h("details", { class: `dfg-bind-${n.kind}`, open: true },
@@ -838,7 +880,7 @@ function hoverGroup(name, on) {
   for (const el of document.querySelectorAll(`#graphs [data-group="${CSS.escape(name)}"]`)) el.classList.toggle("hover", on);
 }
 
-// short labels, so the table fits the right panel at 1280 px (R3): the datapath under the block
+// short labels, so the table fits the right panel at 1280 px: the datapath under the block
 // in one cell, the numbers right-aligned; the units in each heading's title
 const COST_COLUMNS = [["block", "block · datapath", "the unit, buffer link, control unit, streamer or the words through the crossbar and banks, its datapath under it"],
   ["area_text", "µm²", "area, µm² (3 significant figures)"],
@@ -864,7 +906,7 @@ function costTable(t) {
     h("tbody", {}, t.rows.map((r) => tr(r, null)), tr(t.total, "total"))));
 }
 
-/** One bar of the cost by part (D167), the whole to scale with a segment per part costed, as the
+/** One bar of the cost by part, the whole to scale with a segment per part costed, as the
 memory tab's scale bar draws a memory (``key`` "area" or "energy"; the shares are api.py's). */
 function partBar(parts, key, label) {
   let left = 0;
@@ -947,10 +989,10 @@ async function estimate() {
   h("b", {}, g.name), " ",
   h("span", { class: "mono" }, g.formula),
   // each figure with its unit on one line (``56 000 µm²`` never breaks); the API's text as is
-  h("small", { title: "the expected BUSY_COUNTER, cycles + fill: a guide, not a check (D155)" }, " ",
+  h("small", { title: "the expected BUSY_COUNTER, cycles + fill: a guide, not a check" }, " ",
     [`expected BUSY_COUNTER ${g.counter}`, `channels ${g.channels}`, ...(g.area_text ? [g.area_text, g.energy_text] : [])]
       .map((x, i) => [i ? " · " : "", h("span", { class: "nb" }, x)])),
-  g.bank_note ? h("p", { class: "c-bank-note", title: "L1's single-port banks serve one word each per cycle: a bound on the streams' L1 time, not on the BUSY_COUNTER (D155)" }, `bank bound: ${g.bank_note}`) : null));
+  g.bank_note ? h("p", { class: "c-bank-note", title: "L1's single-port banks serve one word each per cycle: a bound on the streams' L1 time, not on the BUSY_COUNTER" }, `bank bound: ${g.bank_note}`): null));
   const c = s.cost;
   const cost = c ? [
     h("p", { class: "c-est-head" }, h("b", {}, c.heading), ": ", h("b", { class: "nb" }, c.area_text), " · ", h("b", { class: "nb" }, c.energy_text), " per run"),
@@ -961,7 +1003,7 @@ async function estimate() {
     c.not_costed && c.not_costed.length ? h("p", { class: "c-est-line" }, "not costed: ", c.not_costed.join("; ")) : null,
     c.extrapolated && c.extrapolated.length ? h("p", { class: "c-est-line" }, "outside the tables' grid, extrapolated: ", c.extrapolated.join(", ")) : null,
   ].filter(Boolean) : [];
-  // edit mode: Save's design checks on this step (D156): the problems first, then the notes,
+  // edit mode: Save's design checks on this step: the problems first, then the notes,
   // a "before Save" one tagged so (its message's own prefix dropped); the log's counts link here
   const check = (kind, p) => h("li", { class: `c-check ${kind}${p.before_save ? " before-save" : ""}` },
     h("div", { class: "c-check-head" },
@@ -985,7 +1027,7 @@ async function estimate() {
     l1.size ? h("div", { class: "c-bar-track" }, h("i", { style: { width: l1.share_css } })) : null,
     h("p", { class: "c-est-line" }, `reads ${s.reads} · writes ${s.writes} words`),
     s.splits.length ? h("p", { class: "c-est-line" }, "lanes ", s.splits.map((x) => `${x.map} ${x.text}`).join("; ")) : null,
-    s.streamers ? h("p", { id: "est-streamers", class: "c-est-line", title: "one streamer set per accelerator (D157); each port's streamer is costed in the tables below (D167)" },
+    s.streamers ? h("p", { id: "est-streamers", class: "c-est-line", title: "one streamer set per accelerator; each port's streamer is costed in the tables below" },
       s.streamers.text, s.streamers.accelerators.length > 1 ? ": " + s.streamers.accelerators.map((a) => `${a.name}${a.csrs_text ? " " + a.csrs_text : ""}`).join(", ") : "") : null,
     ...checks,
     ...cost,

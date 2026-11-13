@@ -1,11 +1,11 @@
-// Edit mode of the DFG page (D55, VIEW2): a session (sandbox/session.py) behind the edit
+// Edit mode of the DFG page: a session (sandbox/session.py) behind the edit
 // routes of viz/dfg/server.py.
 //
 // The start dialog opens or starts a session; the top bar holds its name, the history, undo and
 // redo, Export and Save (the params are in the left column, with what they configure); the left sidebar lists the transforms
 // whose site accepts the selection, each with the form the API gives (its fields, types,
 // defaults and choices), and Apply; the log at the bottom has a line per action, written by
-// the server, and the working recipe. Nothing is computed here (D57): every value, choice
+// the server, and the working recipe. Nothing is computed here: every value, choice
 // and message comes from the API, and after a change the page asks for the session again.
 
 import { dragHandle, h, keep, stored } from "./dom.js";
@@ -35,7 +35,7 @@ export function log(line, error = false) {
   list.scrollTop = list.scrollHeight;
 }
 
-/** A log line with its design checks' counts (``1 problem``, ``2 notes``, D156) as links to
+/** A log line with its design checks' counts (``1 problem``, ``2 notes``) as links to
  * the list under the Estimate. */
 function linked(line) {
   const parts = [];
@@ -273,7 +273,7 @@ function field(f) {
     return h("span", { class: "dfg-choice-why" }, select,
       h("details", {}, h("summary", {}, `why not (${no.length})`), no.map((c) => h("p", { class: "muted" }, `${c.label}: ${c.message}`))));
   }
-  if (f.name === "instance" && f.share && f.share.length) { // bind: a new instance, or one already bound to share (D165)
+  if (f.name === "instance" && f.share && f.share.length) { // bind: a new instance, or one already bound to share
     const input = h("input", { ...attrs, value: f.value === null || f.value === undefined ? "" : String(f.value) });
     const pick = h("select", { class: "dfg-share", title: "share an instance already bound: one accelerator, run once per node" },
       h("option", { value: "" }, "new instance"),
@@ -306,7 +306,7 @@ const FUNCTIONS = new Set(["max", "min"]);
 
 /** A sweepable int field (a split's factor, a link's depth): its default a param name of its
 own (``W``, ``D``), and beside it a value input per name it uses that the session does not have
-yet (its ``new_value``, 4 or 1), which the apply sends as ``new_params`` (C§12); a number typed
+yet (its ``new_value``, 4 or 1), which the apply sends as ``new_params``; a number typed
 instead becomes a param server-side. The values typed stay while the field changes. */
 function sweepable(input, start = 4) {
   const extra = h("span", { class: "dfg-new-params" });
@@ -430,7 +430,7 @@ export async function sidebar() {
   const v = await ctx.view(st.k);
   const kindsOf = (id) => ["node", "block", "container", "group", "accelerator", "edge"].filter((kind) => v.details && v.details[`${kind}:${id}`]);
   const kinds = kindsOf(sels[0]);
-  // the selection's sites (D72): one route for one item or several, in the order selected
+  // the selection's sites: one route for one item or several, in the order selected
   const r = await get(`/api/step/${st.k}/site?${sels.map((x) => `sel=${enc(x)}`).join("&")}`);
   const answers = r.ok ? r.body : {};
   const ok = Object.entries(answers).filter(([, a]) => a.ok);

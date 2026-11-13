@@ -8,7 +8,7 @@ export const CLASS_GROUP = {
   stall_xbar: "mem", stall_l1: "mem",
   stall_fifo: "flow", stall_in: "flow", stall_out: "flow", stall_mem: "flow", flush: "flow",
   command: "command", wait: "wait",
-  run: "busy", poll: "wait", barrier: "command", sleep: "idle", // a core's (D137)
+  run: "busy", poll: "wait", barrier: "command", sleep: "idle", // a core's
 };
 
 /** Create an element: h("td", {class: "num"}, "12"). Children may be nested arrays or null. */
@@ -80,7 +80,7 @@ export function unitsOf(file, name) {
   return accelUnits(file).filter((x) => (linked ? x.group === name : x.unit.name === name));
 }
 
-/** An accelerator ▸ group label, as the editor's Bindings nest them (D156); the group alone
+/** An accelerator ▸ group label, as the editor's Bindings nest them; the group alone
  * when it is its own accelerator. */
 export function accelGroup(accelerator, group) {
   return accelerator && accelerator !== group ? `${accelerator} ▸ ${group}` : group;

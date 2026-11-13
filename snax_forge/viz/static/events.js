@@ -1,4 +1,4 @@
-// Text of the trace's events and of a journey's hops (C§7, D57): how the
+// Text of the trace's events and of a journey's hops: how the
 // cluster view's event list, the schedule's tooltips and the memory tab's
 // drawer put one event in words. Formatting only: every field is the
 // server's, nothing is looked up or counted here.
@@ -19,7 +19,7 @@ export function elemsText(e) {
   return `${e.region}[${which}]${vals}`;
 }
 
-/** One line of text for a trace event (C§7), without its cycle. */
+/** One line of text for a trace event, without its cycle. */
 export function eventText(e) {
   const of = e.task ? ` (${e.task})` : "";
   const what = elemsText(e);

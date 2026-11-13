@@ -5,6 +5,8 @@
    run; the DMA's open copy, its beat and its read data back from L1 and L2; only that
    cycle's lines; what a level lacks
 2. stepping: it skips empty cycles, goes both ways, stops at the window's ends
+3. recorded runs: an accelerator of two groups (dot 1), a shared mover's port mux (dot 1
+   shared), a linked group at task (dot 4)
 """
 
 import pytest
@@ -121,6 +123,7 @@ def test_below_a_level_its_fields_are_absent_and_named():
     at = cv.cluster_at(run().index("task", total=30), 10)
     assert "grant" not in at["movers"]["acc_a.lane0"] and at["needs"]["grant"] == "beat"
     assert at["movers"]["acc_a.lane0"]["task"] == "add_acc_a"
+    assert at["filtered"] is None and at["linked"] is False  # no beat lines to cover
 
 
 # =============================================================================
@@ -247,3 +250,42 @@ def test_the_schedule_groups_lanes_accelerator_then_group(dot1_sets, dot1_stall)
         ("vmul", "vmul", "vmul"), ("vsum", "vsum", "vsum_a"), ("vsum", "vsum", "vsum_out"),
         ("vsum", "vsum", "vsum")]  # fmt: skip
     assert [x[:2] for x in order(dot1_stall)] == [("dot", "vmul")] * 4 + [("dot", "vsum")] * 3
+
+
+def _recorded(tmp_path_factory, fixture, level):
+    from snax_forge.viz import api
+    from tests.run.helpers import RECORDED
+
+    from .helpers import recorded_run
+
+    name = f"{fixture}_{level}"
+    out = recorded_run(tmp_path_factory.mktemp(fixture) / name, level, RECORDED / fixture)
+    return api.load_run(out, name)
+
+
+def test_a_shared_movers_mux_serves_the_user_of_the_firing_unit(tmp_path_factory):
+    """dot_1_shared: reader0 serves vmul_a at a vmul firing and vsum_a at a vsum firing; reader1,
+    vmul's only, serves no one in the idle task it runs with vsum; an unshared run has no user."""
+    idx = _recorded(tmp_path_factory, "dot_1_shared", "stall").index
+    for unit, users in (
+        ("vmul", ("vmul_a", "vmul_b", "vmul_out")),
+        ("vsum", ("vsum_a", None, "vsum_out")),
+    ):
+        t = next(e["t"] for e in idx.events if e["k"] == "fire" and e["src"] == unit)
+        at = cv.cluster_at(idx, t)
+        got = tuple(
+            at["movers"][f"dot_{m}.lane0"]["user"] for m in ("reader0", "reader1", "writer0")
+        )
+        assert got == users
+        assert at["movers"]["dot_reader0.lane3"]["user"] == users[0]
+        assert "dot_reader0" in at["acc"]["fire"]["b"]
+    assert "user" not in cv.cluster_at(run().index("stall", total=30), 10)["movers"]["acc_a.lane0"]
+
+
+def test_a_linked_group_at_task_says_its_beat_lines_are_refused(tmp_path_factory):
+    """dot_4 (mac → sum linked): at task the answer is ``linked``, with no ``filtered``."""
+    idx = _recorded(tmp_path_factory, "dot_4", "task").index
+    t = next(e["t"] for e in idx.events if e["k"] == "start" and e["src"] == "dot")
+    at = cv.cluster_at(idx, t + 1)
+    assert at["linked"] is True and at["filtered"] is None and at["needs"]["grant"] == "beat"
+    assert at["acc"]["task"] == "mult_dot"

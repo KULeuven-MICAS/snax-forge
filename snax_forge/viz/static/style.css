@@ -1,6 +1,6 @@
-/* SNAX-FORGE viewer (VIS1-VIS3). System fonts only: the page loads nothing
+/* SNAX-FORGE viewer. System fonts only: the page loads nothing
    from the internet. One set of colours for every view, so a colour means the
-   same in the report, the schedule and the cluster view (D57): a memory
+   same in the report, the schedule and the cluster view: a memory
    request teal (dashed where it is an arrow); busy, read data coming back and
    a firing green; idle grey; memory stalls (stall_xbar, stall_l1, a stalled
    port, a contested bank) red; flow stalls violet; FIFO contents lilac;
@@ -23,7 +23,7 @@
   --req: #13838c;
   --req-bg: #ddf0f1;
   --gap: 1.25rem;
-  --wide-edge: 1.5in; /* the page's margin on a wide screen (VIEW1) */
+  --wide-edge: 1.5in; /* the page's margin on a wide screen */
   color-scheme: light dark;
 }
 @media (prefers-color-scheme: dark) {
@@ -55,7 +55,7 @@ body {
   font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   font-variant-numeric: tabular-nums;
 }
-/* Every view takes the page width less --wide-edge on each side (VIEW1); on a
+/* Every view takes the page width less --wide-edge on each side; on a
    screen too narrow for that, the old 1180 px column, or the page less the
    side gap. Running text keeps a readable line length (p.note). */
 header, main { max-width: max(1180px - 2 * var(--gap), 100vw - 2 * var(--wide-edge)); margin: 0 auto; }
@@ -86,7 +86,7 @@ p.note { max-width: 110ch; }
 .scroll { overflow-x: auto; max-width: 100%; }
 /* the cluster view scrolls sideways in its own box, never the page (#18) */
 .cluster, .cluster .scroll { min-width: 0; max-width: 100%; }
-/* an accelerator's movers per group (C§7): a collapsible in the report */
+/* an accelerator's movers per group: a collapsible in the report */
 details.group-movers { margin: 0.6rem 0 0; border: 1px solid var(--rule); border-radius: 4px; background: var(--panel); }
 details.group-movers > summary { cursor: pointer; padding: 0.3rem 0.6rem; font-weight: 600; }
 details.group-movers[open] > summary { border-bottom: 1px solid var(--rule); }
@@ -108,7 +108,7 @@ i.key { display: inline-block; width: 0.75em; height: 0.75em; border-radius: 2px
 
 /* where the cycles go: name | bar | counts */
 .rows { display: grid; gap: 0.55rem; }
-/* the bar takes the width the counts leave (VIEW1): the counts column stops at 34rem */
+/* the bar takes the width the counts leave: the counts column stops at 34rem */
 .row { display: grid; grid-template-columns: 9rem minmax(12rem, 1fr) minmax(16rem, 34rem); gap: 0.4rem 1rem; align-items: center; }
 .who b { display: block; }
 .who .kind { margin: 0; }
@@ -155,12 +155,12 @@ pre { background: var(--panel); border: 1px solid var(--rule); padding: 0.7rem; 
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 
-/* -- view tabs (VIS2) ------------------------------------------------------------ */
+/* -- view tabs ------------------------------------------------------------ */
 .tabs { display: flex; gap: 0.3rem; margin-top: 0.9rem; }
 .tabs button { border-radius: 4px 4px 0 0; border-bottom: none; padding: 0.3rem 0.9rem; color: var(--muted); }
 .tabs button[aria-selected="true"] { font-weight: 600; background: var(--ink); color: var(--bg); border-color: var(--ink); }
 
-/* -- schedule (VIS2) --------------------------------------------------------------- */
+/* -- schedule --------------------------------------------------------------- */
 :root { --fifo: #b99be8; }
 @media (prefers-color-scheme: dark) { :root { --fifo: #6d58a8; } }
 .g-fifo { background: var(--fifo); }
@@ -200,7 +200,7 @@ svg.sched { display: block; flex: none; cursor: crosshair; }
 .s-req.burst { fill-opacity: 0.6; }
 .s-busy.push { fill-opacity: 0.6; }
 .bar { fill: none; stroke: var(--ink); stroke-width: 1; stroke-opacity: 0.55; }
-.bar.idle { stroke-dasharray: 3 2; stroke-opacity: 0.35; } /* a task started only for the shared start (D148) */
+.bar.idle { stroke-dasharray: 3 2; stroke-opacity: 0.35; } /* a task started only for the shared start */
 .fn { fill: var(--muted); }
 .fn.fn-1 { fill-opacity: 0.45; }
 .csr-tick { fill: var(--command); }
@@ -219,7 +219,7 @@ i.key.idle-key { background: none; border: 1px dashed color-mix(in srgb, var(--i
 .cursor { fill: var(--command); fill-opacity: 0.18; stroke: var(--command); stroke-width: 1; pointer-events: none; }
 
 .cycle-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-bottom: 0.3rem; }
-/* play / pause and its interval (VIEW1, player.js) */
+/* play / pause and its interval (player.js) */
 .player { display: inline-flex; align-items: center; gap: 0.3rem; margin-left: 0.4rem; }
 .player .play { min-width: 5.8rem; }
 .player .play[aria-pressed="true"] { background: var(--command); border-color: var(--command); color: #fff; }
@@ -239,13 +239,14 @@ i.key.idle-key { background: none; border: 1px dashed color-mix(in srgb, var(--i
 /* L1: banks by superbank, one arrow pair under each bank */
 .cl-l1-head { display: flex; align-items: baseline; gap: 0.5rem; margin-bottom: 0.3rem; }
 .cl-l1-head small { color: var(--muted); }
-.cl-banks { display: grid; column-gap: 3px; }
-.cl-banks + .cl-banks { margin-top: 0.5rem; }
-.cl-sb-head { font-size: 0.78em; color: var(--muted); border-bottom: 1px solid var(--rule); margin-bottom: 0.25rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cl-banks { display: flex; gap: var(--space-2); }
+.cl-sb { display: grid; flex: 1 1 0; column-gap: 3px; min-width: 0; }
+.cl-sb-head { grid-column: 1 / -1; font-size: 0.78em; color: var(--muted); border-bottom: 1px solid var(--rule); margin-bottom: 0.25rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cl-sb-head small { margin-left: 0.4rem; }
 .sb-first { margin-left: 0.6rem; }
 .cl-bank { display: flex; flex-direction: column; align-items: center; min-width: 0; overflow: hidden; padding: 0.15rem 0 0.2rem; border: 1px solid var(--rule); border-radius: 3px; background: var(--panel); font-size: 0.78em; line-height: 1.25; transition: background-color 0.12s, border-color 0.12s, box-shadow 0.12s; }
 .cl-bank b { font-weight: 600; color: var(--muted); }
+.cl-bank .who, .cl-bank .acc, .cl-bank .back { font-size: 0.9em; letter-spacing: -0.03em; }
 .cl-bank .who { min-height: 1.25em; font-weight: 600; color: var(--req); white-space: nowrap; }
 .cl-bank .acc { min-height: 1.25em; color: var(--muted); white-space: nowrap; }
 .cl-bank .back { min-height: 1.25em; font-weight: 600; color: var(--busy); white-space: nowrap; }
@@ -287,12 +288,12 @@ i.key.idle-key { background: none; border: 1px dashed color-mix(in srgb, var(--i
 .cl-arrow.right i::after { left: 100%; top: 50%; transform: translateY(-50%); border-right: 0; border-left: 7px solid currentColor; }
 
 /* interconnect: status in the middle, description in the top-right corner */
-.cl-xbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name desc" "status desc"; gap: 0.2rem 1rem; min-height: 4.8rem; padding: 0.45rem 0.7rem; border: 2px solid var(--idle); border-radius: 4px; background: var(--panel); transition: background-color 0.12s, border-color 0.12s; }
+.cl-xbar { display: grid; grid-template-columns: minmax(0, 1fr) fit-content(60%); grid-template-areas: "name desc" "status desc"; gap: 0.2rem 1rem; min-height: 4.8rem; padding: 0.45rem 0.7rem; border: 2px solid var(--idle); border-radius: 4px; background: var(--panel); transition: background-color 0.12s, border-color 0.12s; }
 .cl-xbar.ok { border-color: var(--busy); background: var(--busy-bg); }
 .cl-xbar.bad { border-color: var(--mem); background: var(--hot-bg); }
 .cl-xbar-name { grid-area: name; }
 .cl-xbar-name small { margin-left: 0.4rem; color: var(--muted); }
-.cl-xbar-desc { grid-area: desc; display: grid; grid-template-columns: max-content max-content; gap: 0 0.6rem; margin: 0; font-size: 0.78em; color: var(--muted); align-self: start; }
+.cl-xbar-desc { grid-area: desc; display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0 0.6rem; margin: 0; font-size: 0.78em; color: var(--muted); align-self: start; }
 .cl-xbar-desc dd { margin: 0; color: var(--ink); }
 .cl-xbar-status { grid-area: status; justify-self: center; align-self: center; font-size: 0.88em; }
 .cl-conflicts { margin: 0; padding: 0; list-style: none; }
@@ -318,6 +319,9 @@ i.key.idle-key { background: none; border: 1px dashed color-mix(in srgb, var(--i
 .cl-line { min-height: 1.3em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cl-line.req { color: var(--req); font-weight: 600; }
 .cl-line.resp { color: var(--busy); font-weight: 600; }
+.cl-line.wrap { white-space: normal; overflow-wrap: anywhere; }
+.cl-line.multi { white-space: pre-line; overflow-wrap: anywhere; }
+.cl-mux { color: var(--req); }
 .cl-sub { color: var(--muted); font-size: 0.8em; }
 
 /* port chips: teal = request accepted, red = stalled, green underline = read data back */
@@ -336,10 +340,21 @@ i.key.idle-key { background: none; border: 1px dashed color-mix(in srgb, var(--i
 .cl-lanes .fill { display: block; background: var(--fifo); transition: height 0.12s; }
 .cl-lanes .count { text-align: center; font-size: 0.75em; color: var(--muted); line-height: 1.1; }
 .cl-lanes .slots.untraced .slot { border-style: dashed; }
+/* past 8 lanes a lane is a thin column: no number on its chip, a tick every 8 lanes */
+.cl-lanes.thin { gap: var(--space-1) 1px; }
+.cl-lanes.thin .cl-port { height: var(--space-2); border-radius: 1px; }
+.cl-lanes.thin .slots { gap: 1px; }
+.cl-lanes.thin .cl-pair.v { gap: 1px; }
+.cl-lanes.thin .cl-pair .cl-arrow.v { width: 3px; }
+.cl-lanes.thin .cl-arrow.on.v i { width: 1px; }
+.cl-lanes.thin .cl-arrow.on i::after { border-width: 2px; }
+.cl-lanes.thin .cl-arrow.up i::after { border-bottom-width: 3px; }
+.cl-lanes.thin .cl-arrow.down i::after { border-top-width: 3px; }
+.cl-lanes .tick { padding-left: 1px; border-left: 1px solid var(--rule); color: var(--muted); font-size: 0.7em; line-height: 1; }
 
 .cluster.task-only .cl-banks, .cluster.task-only .cl-lanes { opacity: 0.45; }
 
-/* -- DFG viewer (VIS5, D55; compact drawing VIEW2) ------------------------------------
+/* -- DFG viewer ------------------------------------
    Loop kinds get colours of their own: green, red and violet already mean busy,
    memory stall and flow stall in the run views. A unit and a link take the busy
    colours, a container its own (--data); the selection is --hl. */
@@ -353,6 +368,16 @@ i.key.idle-key { background: none; border: 1px dashed color-mix(in srgb, var(--i
   --data: #1f7a8c;
   --side: 300px; /* the right panel, dragged on its edge (dfg.js) */
   --left: 260px; /* the left panel, the same */
+  /* the drawing's spacing, one scale of 4 px steps: --space-N is N × 4 px (dfg.js's GAP is
+     --space-2, the room an outline keeps around what it holds) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-14: 56px;
+  --space-16: 64px;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -424,7 +449,7 @@ table.c-cols tr.differs td, table.c-cols tr.differs th { background: var(--req-b
 .c-bank-note { margin: 0.15rem 0 0; padding-left: 0.5rem; border-left: 2px solid var(--wait); font-size: 0.92em; }
 .c-est-line { margin: 0.35rem 0 0.15rem; }
 .nb { white-space: nowrap; } /* a figure and its unit on one line (the Estimate's group lines) */
-/* the design checks under the Estimate (D156): problems first, then notes */
+/* the design checks under the Estimate: problems first, then notes */
 .c-checks { margin-top: 0.5rem; border-top: 1px solid var(--rule); padding-top: 0.3rem; }
 .c-check-list { list-style: none; margin: 0.2rem 0; padding: 0; }
 .c-check { margin: 0.25rem 0; padding: 0.25rem 0.4rem; border-left: 3px solid var(--rule); overflow-wrap: anywhere; }
@@ -452,16 +477,16 @@ table.c-cost-table tr.differs td, table.c-cost-table tr.differs th { background:
 .c-bar-track i { display: block; height: 100%; background: var(--data); }
 
 /* a panel: one step's drawing, on the page's background, no frame; its title plain text */
-.c-panel { padding: 0 0.6rem; min-width: 14rem; border-bottom: none; }
-.c-panel-head { margin-bottom: 0.2rem; font-size: 0.9em; }
+.c-panel { padding: 0 var(--space-2); min-width: 14rem; border-bottom: none; }
+.c-panel-head { margin-bottom: var(--space-1); font-size: 0.9em; }
 .load-error { color: var(--mem); font-weight: 600; white-space: pre-wrap; overflow-wrap: anywhere; }
 .c-scroll { overflow: visible; }
-.c-canvas { position: relative; width: max-content; min-width: 100%; padding: 3.8rem 2rem 1.2rem; }
-.c-rows { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: 2.2rem; }
-.c-row { display: flex; gap: 1rem; justify-content: center; align-items: flex-start; }
+.c-canvas { position: relative; width: max-content; min-width: 100%; padding: var(--space-16) var(--space-8) var(--space-6); }
+.c-rows { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: var(--space-8); }
+.c-row { display: flex; gap: var(--space-4); justify-content: center; align-items: flex-start; }
 /* independent chains side by side, each a column of its own rows (api.py's _layout) */
-.c-cols { display: flex; gap: 3.5rem; justify-content: center; align-items: flex-start; }
-.c-col { display: flex; flex-direction: column; align-items: center; gap: 2.2rem; }
+.c-cols { display: flex; gap: var(--space-14); justify-content: center; align-items: flex-start; }
+.c-col { display: flex; flex-direction: column; align-items: center; gap: var(--space-8); }
 svg.dfg-edges { position: absolute; top: 0; left: 0; z-index: 0; pointer-events: none; overflow: visible; transition: opacity 0.15s; }
 .c-panel.settling svg.dfg-edges { opacity: 0; } /* while the boxes glide (dfg.js) */
 
@@ -471,8 +496,8 @@ svg.dfg-edges { position: absolute; top: 0; left: 0; z-index: 0; pointer-events:
 .c-map.loop-temporal { --loop: var(--loop-temporal); }
 .c-map.loop-spatial { --loop: var(--loop-spatial); }
 .c-bar { padding: 0.1rem 0.6rem; background: color-mix(in srgb, var(--loop) 22%, var(--panel)); color: var(--ink); font-size: 0.8em; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; white-space: nowrap; border-radius: 0 3px 3px 0; }
-.c-body { display: flex; flex-direction: column; align-items: center; gap: 1.6rem; padding: 1.4rem 0.6rem 0.6rem 1rem; }
-.c-node > .c-body { padding: 0.6rem; }
+.c-body { display: flex; flex-direction: column; align-items: center; gap: var(--space-6); padding: var(--space-6) var(--space-2) var(--space-2) var(--space-4); }
+.c-node > .c-body { padding: var(--space-2); }
 
 /* tasklets, units and links: small boxes with their text */
 .c-node { position: relative; display: flex; flex-direction: column; align-items: stretch; min-width: 7rem; border: 1.5px solid var(--ink); border-radius: 4px; background: var(--panel); cursor: pointer; }
@@ -526,9 +551,9 @@ svg.dfg-edges .acc-box rect { stroke: var(--rule); stroke-width: 1.5; }
 svg.dfg-edges .group-box text, svg.dfg-edges .acc-box text { font-size: 0.85rem; fill: var(--muted); pointer-events: visiblePainted; cursor: pointer; }
 svg.dfg-edges .hover rect { stroke: var(--busy); stroke-width: 2.5; stroke-dasharray: none; }
 svg.dfg-edges .sel rect { stroke: var(--hl); stroke-width: 2; }
-svg.dfg-edges .group-box rect.outline-hit, svg.dfg-edges .acc-box rect.outline-hit { stroke: transparent; stroke-width: 10; stroke-dasharray: none; } /* the band a click on an outline hits (D72) */
+svg.dfg-edges .group-box rect.outline-hit, svg.dfg-edges .acc-box rect.outline-hit { stroke: transparent; stroke-width: 10; stroke-dasharray: none; } /* the band a click on an outline hits */
 
-/* blocks (REUSE1): a collapsed one a box with a doubled edge, an open one a dotted outline */
+/* blocks: a collapsed one a box with a doubled edge, an open one a dotted outline */
 .c-node.c-block { border: 3px double var(--ink); border-radius: 8px; padding: 0.25rem 0.2rem; background: color-mix(in srgb, var(--busy) 8%, var(--panel)); }
 .c-node.c-block > .c-text { font-weight: 600; }
 svg.dfg-edges .block-box rect { fill: none; stroke: var(--ink); stroke-width: 1.2; stroke-dasharray: 1 4; stroke-linecap: round; pointer-events: stroke; cursor: pointer; }
@@ -592,7 +617,7 @@ svg.dfg-edges .block-box text { font-size: 0.85rem; font-weight: 600; fill: var(
 .dfg-binding + .dfg-binding { border-top: 1px solid color-mix(in srgb, var(--rule) 60%, transparent); }
 .dfg-binding.sel { box-shadow: inset 2px 0 0 var(--hl); }
 .dfg-binding.split .dfg-cont-name { font-style: italic; }
-/* the Bindings tree (D156): accelerator ▸ group ▸ entries */
+/* the Bindings tree: accelerator ▸ group ▸ entries */
 .dfg-bindings details > summary { cursor: pointer; padding: 0.15rem 0.2rem; font-size: 0.95em; }
 .dfg-bindings details > summary .kind { color: var(--muted); font-size: 0.85em; }
 .dfg-bind-kids { margin-left: 0.7rem; padding-left: 0.4rem; border-left: 1px solid var(--rule); }
@@ -616,7 +641,7 @@ svg.dfg-edges .block-box text { font-size: 0.85rem; font-weight: 600; fill: var(
 .dfg-new-param { color: var(--muted); font-size: 0.92em; }
 .dfg-new-param input { width: 4rem; }
 .dfg-field:has(.dfg-choices) { grid-template-columns: 1fr; }
-/* bind's instance: the name, then a choice to share an instance already bound (D165) */
+/* bind's instance: the name, then a choice to share an instance already bound */
 .dfg-share-field { display: flex; flex-direction: column; gap: 0.25rem; min-width: 0; }
 .dfg-choices { display: flex; flex-direction: column; gap: 0.15rem; }
 .dfg-choice { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 0.35rem; align-items: baseline; }
@@ -668,7 +693,7 @@ i.key.c-pill { background: color-mix(in srgb, var(--data) 18%, var(--panel)); bo
 i.key.c-pill.transient { background: var(--panel); box-shadow: none; border: 1.5px dashed var(--data); }
 i.key.c-pill.scalar { border: none; border-radius: 0; background: color-mix(in srgb, var(--data) 40%, var(--panel)); clip-path: polygon(30% 0, 70% 0, 100% 50%, 70% 100%, 30% 100%, 0 50%); }
 
-/* -- memory tab (VIS4a) -------------------------------------------------------
+/* -- memory tab -------------------------------------------------------
    Region colours are a meaning of this tab only: a region keeps its colour in
    every memory. Soft fills with ink text, so a cell's index stays readable; the
    status colours above (request, busy, stalls) are kept for later overlays. */
@@ -707,7 +732,7 @@ table.mem-regions td:first-child { white-space: nowrap; font-weight: 600; }
 .mem-row-label small { color: var(--muted); font-weight: 400; font-size: 0.85em; }
 .mem-cell { min-height: 2.1rem; display: flex; align-items: center; justify-content: center; border-radius: 3px; background: var(--region, var(--panel)); box-shadow: inset 0 0 0 1px var(--region-edge); font-weight: 600; white-space: nowrap; overflow: hidden; }
 .mem-cell.empty { background: transparent; box-shadow: inset 0 0 0 1px var(--rule); }
-/* padding (D144): a tail's pads and a DMA beat's padding, hatched over the region's colour */
+/* padding: a tail's pads and a DMA beat's padding, hatched over the region's colour */
 .mem-cell.pad { background-image: repeating-linear-gradient(135deg, transparent 0 3px, var(--bg) 3px 5px); opacity: 0.75; font-style: italic; }
 .mem-cell.multi { background: repeating-linear-gradient(135deg, var(--region) 0 6px, var(--panel) 6px 8px); }
 .mem-line { padding: 0.25rem 0.4rem; border-radius: 3px; color: var(--muted); }
@@ -718,7 +743,7 @@ table.mem-regions td:first-child { white-space: nowrap; font-weight: 600; }
 .mem-fold:hover { background: var(--panel); }
 .mem-line.fold.open .mem-fold { color: var(--muted); border-style: solid; }
 
-/* -- memory tab: modes, cycle overlay, picked element (VIS4b) --------------
+/* -- memory tab: modes, cycle overlay, picked element --------------
    The overlay uses the run views' meanings as outlines, so the region colours
    stay visible: request teal, read data back green, held back red. The picked
    element is outlined in ink. Time marks use one warm scale, only in this tab. */
@@ -772,7 +797,7 @@ button.cyc { padding: 0 0.35rem; font-size: 0.9em; }
 button.cyc.link { border: none; color: var(--command); background: none; padding: 0; }
 .mem-drawer .fire { margin: 0.3rem 0 0.5rem; }
 
-/* -- tracer rows in the schedule (VIS4b) ------------------------------------- */
+/* -- tracer rows in the schedule ------------------------------------- */
 .sched-labels .lab.tracer { background: var(--req-bg); }
 .sched-labels .lab.tracer .lab-link { border: none; background: none; padding: 0; font: inherit; font-weight: 600; color: var(--ink); text-decoration: underline dotted; cursor: pointer; }
 .sched-labels .lab.tracer .lab-x { margin-left: auto; border: none; background: none; padding: 0 0.2rem; color: var(--muted); font-size: 1.1em; line-height: 1; cursor: pointer; }
@@ -780,7 +805,7 @@ button.cyc.link { border: none; color: var(--command); background: none; padding
 path.fire-mark { stroke: var(--panel); stroke-width: 1; }
 button.trace-toggle[aria-pressed="true"] { background: var(--req-bg); border-color: var(--req); color: var(--ink); }
 
-/* The cost by part (D167): two bars to scale, area and energy, a segment per part; these
+/* The cost by part: two bars to scale, area and energy, a segment per part; these
    colours mean the part on the Estimate panel only, as a region's colour does on the memory tab */
 :root { --part-datapath: #2f8a55; --part-control: #7a5bc2; --part-streamers: #13838c; --part-crossbar: #a87400; --part-memory: #8a96a3; }
 @media (prefers-color-scheme: dark) { :root { --part-datapath: #45b07a; --part-control: #9c83e0; --part-streamers: #3fb3bb; --part-crossbar: #e0a83a; --part-memory: #6b7682; } }

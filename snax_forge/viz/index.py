@@ -122,8 +122,10 @@ class RunIndex:
 
     @property
     def filtered(self) -> dict[str, Any] | None:
-        """None when the beat lines cover the accelerator, its movers and the DMA; else the
-        sources they cover."""
+        """None when the beat lines cover the accelerator, its movers and the DMA, or when the
+        run has none (below ``beat``); else the sources they cover."""
+        if not self.on("beat"):
+            return None
         a = self.cluster.accelerator
         whole = {*a.unit_names, *(m.name for m in a.movers), DMA}
         return None if whole <= set(self.filter) else {"sources": list(self.filter)}

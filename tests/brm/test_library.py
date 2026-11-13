@@ -84,6 +84,22 @@ def test_unknown_name():
         load_brm("gemm")
 
 
+def test_a_brm_is_read_once_per_file_version(tmp_path, monkeypatch):
+    import os
+
+    from snax_forge.brm import library
+
+    path = tmp_path / "simd.json"
+    path.write_text((LIBRARY / "simd.json").read_text())
+    monkeypatch.setattr(library, "LIBRARY", tmp_path)
+    first = load_brm("simd")
+    assert load_brm("simd") is first
+    st = path.stat()
+    os.utime(path, ns=(st.st_atime_ns, st.st_mtime_ns + 1))  # the file changed: read again
+    again = load_brm("simd")
+    assert again is not first and again == first
+
+
 # =============================================================================
 # simd against the simd kind: a code table by op and streams, the slot k
 # =============================================================================
