@@ -1,31 +1,16 @@
-"""A loop bound that is not a multiple of the spatial bound.
+"""Padding: a loop bound that is not a multiple of its split factor.
 
-``split`` (or ``split_map``) of a map over ``n`` iterations by a factor W that does not
-divide n runs its outer map ceil(n / W) times and records the valid count
-in ``loop.split`` (``"valid": n``): only the lanes whose combined index
-``W * v_t + v_s`` is below n are the kernel's. The rest are pad lanes. The
-container is padded in memory, in the data itself, never by the hardware:
-
-    padded_shape(graph, c)   each dimension of ``c`` a tailed split's loop
-                             indexes rounded up to a multiple of the split's
-                             factor W; the others as they are. A pad lane's
-                             index may run into the padding, never past it
-    pad_value(graph, c)      what a pad element holds: the identity of the
-                             fold that reads ``c`` (dfg/reduce.py, at its
-                             dtype: 0 for add, the dtype's minimum for max,
-                             its maximum for min), else 0. Readers that need
-                             different pads raise DfgError naming them
-    code_on_pads(graph, node, pads)
-                             a unit's code (on its port names) evaluated on
-                             ``pads``, its inputs' pad contents by port, with the
-                             reference executor's operators at each container's
-                             dtype, cast to its output's: what a unit writes into
-                             its output's pad lanes; None when it cannot
-                             say (no code, several outputs)
-
-The reference executor reads a pad lane as ``pad_value`` and never writes
-one (execute.py); the memory plan lays a container out over its padded
-shape, and data.h fills the pads.
+Splitting a map over n iterations by a W that does not divide n (``split``, ``split_map``) runs
+the outer map ceil(n / W) times and records ``valid: n`` in ``loop.split`` (CONTRACTS,
+"SNAX-DFG"): a lane whose ``W * v_t + v_s`` is n or more is a pad lane. The container is padded
+in memory, in the data, never by the hardware. ``padded_shape`` rounds each dimension a tailed
+split's loop indexes up to a multiple of W; ``pad_value`` is what a pad element holds, the
+identity of the fold that reads the container (``fold_op``) at its dtype, else 0 (readers that
+need different pads raise ``DfgError``); ``code_on_pads`` is what a unit writes into its
+output's pad lanes, its code on its inputs' pads, None when it cannot say. ``tailed_split``,
+``valid_count`` and ``split_factor`` read a split's record. The reference executor reads a pad
+lane as ``pad_value`` and never writes one; the memory plan lays a container out over its
+padded shape, and data.h fills the pads.
 """
 
 from __future__ import annotations

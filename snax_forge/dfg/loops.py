@@ -1,30 +1,18 @@
 """Loop variables named after their dimension: one rule, applied after every change.
 
-Each map carries two namespaced attrs: ``loop.dim``, its dimension's base name, and
-``loop.piece``, its number among the pieces of that dimension, 1 outer to inner. The pieces of a
-dimension are the maps of one ``loop.dim`` nested in one another (a map and the maps of its
-dimension around it and inside it): dot's two maps over N are siblings, so each is a dimension
-of its own, both ``n``. A variable's name is derived, never set by hand (``var_name``): the
-base, then ``_<piece>`` when the dimension has two or more pieces, then the tag's suffix
-(``_t`` temporal, ``_s`` spatial, ``_tile`` tile, none untagged). So ``n``; split, ``n_1``,
-``n_2``; split again, ``n_1``, ``n_2``, ``n_3``; tagged, ``n_1_t``, ``n_2_t``, ``n_3_s``; an
-unsplit tagged map ``n_t``.
+Each map carries ``loop.dim``, its dimension's base name, and ``loop.piece``, its number among
+that dimension's pieces (the maps of one ``loop.dim`` nested in one another), 1 outer to inner.
+``var_name`` derives the variable: the base, ``_<piece>`` when the dimension has two or more
+pieces, then the tag's suffix (``_t``, ``_s``, ``_tile``): ``n``; split, ``n_1``, ``n_2``;
+tagged, ``n_1_t``, ``n_2_s``.
 
-``rename(g)`` gives every map that carries ``loop.dim`` its derived name, in place, and
-rewrites every memlet subset, map range and split record (``loop.split``'s ``range`` and
-``valid``, its ``prior``) that names the old one, in the map's body, a bound unit's
-``replaced`` subtree included; the renames are simultaneous, so pieces may trade names
-(``n_3`` to ``n_4`` while ``n_2`` becomes ``n_3``). A map without ``loop.dim`` (a graph
-written by hand) keeps its name until a transform gives it the attrs (``ensure``: its
-variable as its base, piece 1). The sandbox's transforms that make, merge or tag pieces
-(sandbox/transforms.py, compose.py) set the pieces and call ``rename``; the importer names
-the imported maps (``import_names``).
-
-**Import** (``import_names``). A map over ``0:X``, X one symbol, gets the base ``lower(X)``:
-rowsum's ``m`` over M and ``n`` over N. It keeps the importer's name (``i``, ``j``, ...)
-when its range is anything else (``0:i``, ``1:N - 1``), or when ``lower(X)`` is a container,
-a symbol, the base of an enclosing map or the variable of a map inside it: the second map over
-N in one nest (mvt's ``A[n, j]``). That name is then its base.
+``rename(g)`` gives every map with ``loop.dim`` its derived name, in place and all at once, and
+rewrites every subset, range and split record that names the old one, ``replaced`` subtrees
+included. A map without ``loop.dim`` (written by hand) keeps its name until a transform calls
+``ensure`` (its variable as base, piece 1). ``import_names`` names imported maps: a map over
+``0:X``, X one symbol, gets ``lower(X)``, unless its range is another or that name is taken (a
+container, a symbol, an enclosing base, a variable inside), when it keeps the importer's name
+(``i``, ``j``, ...).
 """
 
 from __future__ import annotations

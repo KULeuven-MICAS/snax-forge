@@ -1,20 +1,12 @@
 """One dimension of a memlet subset or a map range.
 
-A dimension is written as one JSON value:
-
-    i                  an index: an int or an expression (snax_forge/expr.py)
-    4 * i_t + i_s      an index
-    0:N                a range, begin and end, end exclusive (as in Python)
-    0:N:2              a range with a step
-
-A range's step is a positive int; begin and end are ints or expressions.
-The parts are expressions of their own, so a range never needs brackets:
-``4 * i_t:4 * i_t + 4`` is the four elements from ``4 * i_t`` on. What the
-names mean (symbols, map variables) is checked where the dimension is used,
-not here.
-
-The stored form is canonical: every part as ``expr.canonical`` writes it, an
-index without names as an int, and a step of 1 left out.
+A dimension is one JSON value: an index (``i``, ``4 * i_t + i_s``: an int or an expression,
+snax_forge/expr.py) or a range ``begin:end[:step]``, end exclusive, the step a positive int. The
+parts are expressions of their own, so a range needs no brackets: ``4 * i_t:4 * i_t + 4`` is the
+four elements from ``4 * i_t`` on. What the names mean is checked where the dimension is used.
+``parse_dim`` and ``map_range`` read one, ``format_dim`` and ``canonical_dim`` write it in its
+canonical form: every part as ``expr.canonical`` writes it, an index without names as an int, a
+step of 1 left out.
 """
 
 from __future__ import annotations

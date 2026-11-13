@@ -1,25 +1,14 @@
 """A kernel's inputs and its reference against a run of a graph or an SDFG.
 
-    kernel_spec(kernel, why) -> KernelSpec
-    make_inputs(spec, seed=0, **sizes) -> {container: array}
-    kernel_inputs(spec, graph, seed) -> {container: array}
-    mismatches(spec, inputs, run) -> {output: (elements that differ, elements)}
-    reference_check(spec, graph, seed) -> Goldens
-
-``kernel_inputs`` calls the kernel's ``make_inputs`` at every size the graph binds, each array
-cast to its container's dtype; data.h's inputs and the flow's check use it. A scalar the sandbox
-baked into the graph (``bake_scalar``, its ``sandbox.baked`` records) takes the baked value in
-place of ``make_inputs``' own: the kernel's reference runs at it, and the graph, which has no
-such container, never reads it (``on_graph``), so data.h holds no array for it and its goldens
-are the graph's at the value. ``mismatches`` is
-the one comparison of a run with the kernel's reference (``execute.against_reference``, each
-on its own copy of the inputs): the reference executor's in ``reference_check`` (the flow's
-guard that the goldens are the kernel's) and ``dfg check``'s, and a compiled SDFG's in
-``sdfg.build.verify``.
-
-A kernel name that is not one, or inputs that do not fit the graph, raise KernelError naming
-it; the flow raises each as its FlowError, with the same text. Not imported by
-``snax_forge.dfg`` (the kernels' specs import DaCe).
+``kernel_spec`` loads a kernel's spec and ``make_inputs`` its inputs at given sizes;
+``kernel_inputs`` calls it at every size the graph binds, each array cast to its container's
+dtype (data.h's inputs and the flow's check). A scalar the sandbox baked (``sandbox.baked``)
+takes its baked value: the reference runs at it, and the graph, which has no such container,
+never reads it (``on_graph``). ``mismatches`` is the one comparison of a run with the kernel's
+reference (``execute.against_reference``): ``reference_check``'s (the flow's guard that the
+goldens, ``Goldens``, are the kernel's), ``dfg check``'s and ``sdfg.build.verify``'s. An unknown
+kernel, or inputs that do not fit the graph, raise ``KernelError`` naming it. Not imported by
+``snax_forge.dfg``: the kernels' specs import DaCe.
 """
 
 from __future__ import annotations

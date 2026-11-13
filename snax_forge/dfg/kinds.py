@@ -1,77 +1,15 @@
 """Node kinds of the SNAX-DFG: registered entries, never subclasses.
 
-Every node has the same core fields (graph.py): ``id``, ``kind``, ``inputs``,
-``outputs``, ``attrs`` and, for a kind that has one, ``body``. What a kind
-adds is registered here with ``register_kind``:
+Every node has the core fields of graph.py; what a kind adds is a ``Kind``, registered with
+``register_kind`` and looked up with ``kind_of``: the attrs it owns (``required``, ``defaults``,
+``optional`` ones written only when set), whether it holds a ``body``, whether its outputs may
+carry a ``reduce``, the variables it ``binds`` for its body, ``normalize`` (attrs to their
+stored form) and ``check`` (everything else about one node, given its ``Scope``). Kind-owned
+attrs have no namespace; an unknown one without a namespace is an error, and a namespaced one
+(``loop.*``, ``mem.*``, ``hw.*``, ``user.*``) passes through for its owner to check.
 
-* the attrs it owns: ``required`` names, ``defaults`` for the optional
-  ones with a default, and ``optional`` ones written only when set.
-  Kind-owned attrs have no namespace; every required and defaulted one is
-  written. An attr
-  without a namespace that the kind does not own is an error; a namespaced
-  attr (``loop.kind``, ``mem.*``, ``hw.*``, ``user.*``) is passed through
-  untouched, and whoever knows the namespace checks it;
-* ``body``: whether the node holds an ordered body of nodes (a scope);
-* ``reduce``: whether its output memlets may carry a ``reduce``;
-* ``binds``: the variables the node binds for its body (a map's ``var``);
-* ``normalize(attrs, what)``: the attrs in their stored form (canonical
-  expressions), run before ``check``;
-* ``check(node, scope, what)``: everything else about one node, given the
-  names its scope binds. The memlet rules every kind shares (known
-  container, one dimension per container dimension, bound names) are
-  checked in graph.py before it.
-
-Built-in kinds:
-
-    map          one loop variable over a range, parallel iterations; a body.
-                 ``loop.kind`` (tile, temporal, spatial) says how SNAX-SANDBOX
-                 mapped it; absent as imported. ``loop.split`` on a
-                 split map is the ``var`` and ``range`` it had before split or
-                 split_map, so join_map can undo the split (``prior``: its
-                 record before, when the map was split before).
-                 ``loop.dim`` and ``loop.piece`` name its variable (loops.py). No connectors:
-                 the memlets are its body's, and the outer ones SDFG draws on
-                 a map are derived by propagation.
-    tasklet      ``code``: one assignment per output connector over the input
-                 connectors, in the expression grammar. One element per
-                 connector: its memlets are indices, never ranges. An output
-                 memlet may carry a ``reduce``: the writes of every
-                 iteration fold into the element (a reduction).
-    accelerated  a bound BRM instance (``instance``, ``brm``, ``implementation``,
-                 design ``params``) doing one beat: its connectors are the BRM's
-                 ports, its memlets give each port's lanes as a range. It sits
-                 inside the temporal maps it runs over. ``code`` is what
-                 one lane computes, over its connectors and its int params
-                 (a slot, ``simd``'s ``k``), as the BRM states it;
-                 ``replaced`` is the subtree ``bind`` replaced, in stored form
-                 and checked in this node's scope, so ``unbind`` gives it back
-                 (null for a node written by hand). ``locals`` (written only
-                 when set, by ``bind`` on a fused nest) holds the nest's local
-                 values (``loop.local``) bind took out of the graph, as
-                 ``[{name, index, container}]`` (the container in stored form,
-                 its index in the graph's containers): the ``replaced``
-                 subtree is checked with them in scope, and ``unbind`` puts
-                 them back where they were. ``accelerator`` (written only when set, by
-                 ``encapsulate`` or ``share_ports``) names the
-                 accelerator its group is in; without it the group, named
-                 after the instance, is an accelerator of its own. ``group``
-                 (written only when set, by ``link``) names the group the unit
-                 is in; without it the unit is a group of its own, named
-                 after the instance. A body is
-                 allowed for a nested block; a leaf block has an empty
-                 one. No ``reduce`` on its memlets: the BRM's function does
-                 its own folding.
-
-    link         a transient between two bound units made a link (``link``): ``container`` (the
-    transient it replaced, which the
-                 writer and the reader still name, so the reference executor
-                 runs it as that transient), ``depth`` (0 a wire, >= 1 a
-                 buffer of that many beats), ``from`` and ``to`` (the writer's
-                 and the reader's instances). No connectors, no body; it sits
-                 before the reader in the body they share.
-
-``loop`` (a sequential loop) and ``branch`` come with the kernels that need
-them.
+The built-in kinds, ``map``, ``tasklet``, ``accelerated`` and ``link``, and their attrs are
+CONTRACTS, "SNAX-DFG". ``loop`` and ``branch`` come with the kernels that need them.
 """
 
 from __future__ import annotations
