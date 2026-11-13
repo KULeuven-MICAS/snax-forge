@@ -1,125 +1,21 @@
-"""The editor's session: a kernel or a recipe opened, transforms applied one by one,
-a cursor for undo and redo, and Save writing a recipe.
+"""The editor's session: a kernel or a recipe opened, transforms applied one by one, a cursor
+for undo and redo, and Save writing a recipe (CONTRACTS, "Recipe": the editor's files, session,
+forms and checks).
 
-    Session.from_kernel(kernel, params, symbols=None, dtypes=None, platform=..., name=None)
-    Session.from_recipe(path, platform=...)
-    Session.resume(dir)
+``Session.from_kernel``, ``from_recipe`` and ``resume`` make one. A session holds a working
+recipe, the graphs of steps 0..n in memory (rebuilt from the kernel's import, never stored), a
+cursor k and a platform. ``session.json`` also keeps ``own_params``, the params the session
+started with, which are never renamed. Every step is checked against step 0 on the same seeded
+inputs (run.py's ``checked_step``). ``Roots`` holds the folders; a new session's name takes
+``_2``, ``_3``, ... when taken, and an opened recipe file is never written.
 
-**Starting one.** ``from_kernel`` takes the kernel's symbols only, each the param of its name
-unless ``symbols`` says otherwise, and no other param unless given (no W): a symbol without a
-value is refused with one line naming it (``vecmul: give N, e.g. --set N=2048``). A recipe's
-params come with it.
-
-**The state.** A session is a working recipe (the kernel, its params, symbols and dtypes, and
-every step applied, n of them), the graphs of steps 0..n in memory (step 0 the import with its
-symbols bound), a cursor k in 0..n (the step shown, the one the next transform applies to) and
-a platform. The graphs are replayed up to ``replayed`` (≥ k): after a param change the steps
-past the cursor stay as redo steps, replayed and checked when the cursor reaches them.
-Only the recipe and the cursor go to disk, in ``<sessions>/<name>/``: ``recipe.json``, a recipe
-holding every step (named after the session), and ``session.json``, ``{"cursor": k,
-"platform": path, "own_params": [...]}`` (the params the session started with, the recipe's
-or the kernel's, which are never renamed); ``resume`` replays the recipe, a step past the
-cursor that refuses (and the ones after it) left as redo steps. The graphs are rebuilt
-from the kernel's import, never stored. The seeded inputs (seed 0) and what step 0 computes on
-them are drawn once and every step is checked against them (run.py's ``checked_step``). The
-roots are injectable (``Roots``): sessions default to ``out/sessions/``, recipes to
-``recipes/`` (its folders by category; Save writes ``custom/``), step files to ``out/sandbox/``. A
-new session takes its kernel's or its recipe's
-name, ``_2``, ``_3``, ... when one is taken; an opened recipe file is never written.
-
-**Changing it**, each a dict with ``ok``; a refusal changes nothing and gives its ``code`` and
-``message``:
-
-    apply(transform, params, drop=False,   the transform on step k, then the reference check;
-          new_params=None)                 int params may be expressions over the session's
-                                           params (Recipe.value) and are kept as given;
-                                           ``new_params`` (``{"W_mul": 8}``) adds each name
-                                           not a param yet to the params first, so each split
-                                           can have its own; an int param naming a param the
-                                           session lacks is ``session.param`` (``split: factor
-                                           'W' is not a param; give its value``, with the
-                                           ``param``'s name, for the page to ask). A param
-                                           stays when the step that added it is undone. An
-                                           int param given as a number (a split's factor, a
-                                           link's depth) becomes a param of its own, the next
-                                           free ``W``, ``W_2``, ... or ``D``, ... at that value,
-                                           and the step stores its name (``fresh_param``), so
-                                           it can change after the bind; a recipe opened from
-                                           a file keeps its numbers. A ``bind`` renames a
-                                           factor param the editor named (``W``, ``W_2``, not
-                                           one of ``own_params``) that only this unit's splits
-                                           use to ``W_<instance>`` through every step and the
-                                           params (``rename_split_params``; dot 1's ``W`` to
-                                           ``W_acc_1``), given back as ``renamed``. With
-                                           k < n and no ``drop``: ``session.drop``, the server's
-                                           guard (the page asks ``drop_question`` first). On success
-                                           the
-                                           steps past k go, the new one is step k + 1 and the
-                                           cursor; returns its index, transform, params, the
-                                           milliseconds it took, its ``diff`` and its ``checks``
-    move(k)                                the cursor to any step 0..n (``session.move``); a
-                                           redo step not replayed since a param change is
-                                           replayed and checked on the way, and its refusal
-                                           (with its ``index``) leaves the cursor where it was
-    set_params(values)                     steps 1..k replayed with the new values, the steps
-                                           after k left as redo steps; a step that
-                                           refuses keeps the old params and graphs and is named
-                                           by its ``index``; returns the cursor's ``checks``
-    save(name, force=False)                steps 1..k as ``<recipes>/custom/<name>.json``
-                                           (``SAVED``, made when missing), with the
-                                           params those steps or the symbols use and the
-                                           session's own (``used_params``), and the step
-                                           files with ``recipe.json`` in ``<sandbox>/<name>/``
-                                           (run.py's ``write_steps``), after the design checks on
-                                           step k's graph and the platform: ``save.name`` (not
-                                           an identifier, or a recipe of that name exists in
-                                           any folder of ``<recipes>``),
-                                           ``save.graph`` (a problem of the ``graph`` stage, so
-                                           the graph is not one SNAX-LOWER takes), ``save.design``
-                                           (any other problem, unless ``force``); returns the
-                                           ``pixi run sandbox``, ``flow`` and ``forge`` lines
-                                           as ``commands``, each ``{command, what}``, ``what``
-                                           one line on what it does (``COMMANDS``)
-
-A transform's own refusal keeps its code (``link.*``), a plain SandboxError is ``sandbox``, a
-DfgError ``dfg``, a failed reference check ``sandbox.check``.
-
-**Asking it**, about step k:
-
-    export(k)            the graph as ``<sessions>/<name>/export/<k>_<transform>.snaxdfg``
-    sites(k, selected)   per registered transform its site's answer on the selection, one item
-                         or a list (a node id, a container name, a group's or an accelerator's
-                         name; transforms.py's ``site_of``: a group stands for its units, an
-                         accelerator for its groups, and a transform that takes one item
-                         refuses several, ``site.one``): ``{ok, params}`` or
-                         ``{ok: false, code, message}``. ``bind``'s, when its site accepts, has
-                         the bind list: every (BRM, implementation) of the library tried as
-                         ``bind`` on the step, W read off the spatial bound and the instance
-                         ``acc_N``, N the bind's order in the session (the binds before step k,
-                         plus one), the next N while the graph has it as an instance,
-                         accelerator or group (``default_instance``), each ok (with
-                         the params that bind it) or refused (with the message), with its
-                         timing (latency, II, span) at that W where the implementation
-                         resolves there
-                         Each accepted transform also has its ``form`` (``form``): the fields the
-                         editor shows, their types, defaults and choices
-    marks(k)             the node ids and container names some site accepts
-    diff(k)              step k against step k − 1: nodes added, removed and changed (attrs,
-                         inputs or outputs, the body by its ids), containers added, removed and
-                         changed (attrs, or the estimate's placement); empty at step 0
-    estimate(k, tech)    the ideal estimate (estimate/) on the session's platform, costed
-                         on ``tech`` (default nangate45)
-    checks(k)            Save's design checks on step k and the platform: ``problems``,
-                         each ``{code, where, message, fix}``, and ``notes``: ``graph.unbound``
-                         while building (``before Save: bind it …``) as a note, not a
-                         problem, which Save still refuses, and the design notes (check.py's
-                         ``NOTES``, ``char.missing``) always, also beside problems
-
-``sites``, ``marks``, ``estimate`` and ``checks`` are cached per step (``sites`` per step and
-selection,
-``estimate`` per step and technology) and
-the caches past a changed step dropped. Every public method holds the session's one lock, so
-the server's threads see one change at a time.
+Changing it, each a dict with ``ok`` (a refusal changes nothing and gives its ``code``: the
+transform's own, ``sandbox``, ``dfg`` or ``sandbox.check``): ``apply`` (returns the step, its
+milliseconds, ``diff`` and ``checks``), ``move``, ``set_params`` and ``save`` (returns the
+``pixi run sandbox``, ``flow`` and ``forge`` lines, ``COMMANDS``). Asking it about step k:
+``export``, ``sites``, ``marks``, ``diff`` (against step k - 1), ``estimate`` and ``checks``,
+cached per step (``sites`` per selection, ``estimate`` per technology), the caches past a
+changed step dropped. Every public method holds the session's one lock.
 """
 
 from __future__ import annotations

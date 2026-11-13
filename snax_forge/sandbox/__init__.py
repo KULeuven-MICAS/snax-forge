@@ -1,27 +1,15 @@
 """SNAX-SANDBOX: decisions made by hand on a SNAX-DFG (ARCHITECTURE.md 5.4).
 
-Recipes (recipe.py), an ordered list of registered transforms with their
-params, applied to an imported graph; the transforms ``split``,
-``split_map``, ``tag_map``, ``bind`` and ``encapsulate`` and their inverses
-``join_map``, ``untag_map``, ``unbind`` and ``unencapsulate``, and
-``interchange_map``, its own inverse (transforms.py); ``split_reduce``,
-``fuse_map`` and ``link`` with their inverses ``join_reduce``,
-``unfuse_map`` and ``unlink`` (compose.py);
-``bake_scalar`` and its inverse ``unbake_scalar`` (scalar.py);
-``fuse_seed`` and its inverse ``unfuse_seed`` (seed.py), a fold taking the elementwise nest after it
-as its seed;
-``mark_transpose`` and its inverse ``unmark_transpose`` (transpose.py), an input read across its
-loop order marked; ``share`` and its inverse ``unshare`` (share.py), a group run on another's units;
-``share_ports`` and its inverse ``unshare_ports`` (share_ports.py), two accelerators on one streamer
-whose movers they share;
-each with its site, the graph-shape test of where it applies;
-the pattern matchers ``bind`` uses to recognise a BRM's pattern
-(patterns.py), among them ``reduce``, with which ``bind`` binds a folding
-output as one lane, its named rate from ``named_rates``; and the
-runner (run.py), which binds the recipe's symbols, applies every step,
-checks each step against the reference executor and writes every step's
-graph. The command line is ``python -m snax_forge.sandbox RECIPE`` (pixi
-``sandbox``).
+A recipe (recipe.py) is an ordered list of registered transforms with their params, applied
+to an imported graph (CONTRACTS, "Recipe"). Each transform has its inverse and a site, the
+graph-shape test of where it applies: split, tag, bind, interchange and encapsulate
+(transforms.py); split_reduce, fuse_map and link (compose.py); bake_scalar (scalar.py);
+fuse_seed (seed.py); mark_transpose (transpose.py); share (share.py); share_ports
+(share_ports.py); lift and apply_recipe (blocks.py). ``bind`` recognises a BRM's pattern
+through the matchers of patterns.py. The runner (run.py) binds the recipe's symbols, applies
+every step, checks each against the reference executor and writes every step's graph. The
+command line is ``python -m snax_forge.sandbox RECIPE`` (pixi ``sandbox``); the editor's
+session is session.py.
 """
 
 from .blocks import lift, unlift

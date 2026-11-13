@@ -1,31 +1,16 @@
 """Baking a kernel's scalar argument into the graph, and back.
 
-``bake_scalar(container, value)`` and ``unbake_scalar(container)``
-    ``bake_scalar`` fixes how a kernel's scalar argument (``sdfg.scalar``,
-    axpy's ``alpha``) reaches every tasklet reading it at a subset with no
-    names (``alpha[0]``). With an int ``value`` the tasklet gets it as a
-    literal in place of its connector and loses the connector, and the
-    container leaves the graph: ``mult`` reads ``out = 3 * in2``, so ``bind``
-    bakes ``k1 = 3`` into the hardware. With ``value`` ``"csr"`` the scalar
-    is read at run time: the connector takes the container's name, so the
-    code names it (``out = alpha * in2``), the container stays (data.h holds
-    it, the program writes the CSR from it), and ``bind`` reads ``k1`` from
-    it, as it does from a scalar no step marked. Either way the
-    tasklet then has one streamed input, the same shape for both. Refused: a
-    container that is not a scalar argument, one a node writes, one read at a
-    subset with names, one an accelerated node reads or a bound unit's
-    replaced subtree names (unbind first), one a tasklet reads as CSR already
-    (unbake first), a connector name the tasklet uses already, and an int
-    that does not fit its dtype. Each tasklet rewritten records the bake
-    (``sandbox.baked``: the value, the container's definition and index, the
-    connector, its place and memlet, and the code before and after), and
-    ``unbake_scalar`` undoes it when every such tasklet is live with the code
-    the bake left (otherwise unbind first, or undo what changed since).
+``bake_scalar(container, value)`` and ``unbake_scalar(container)``, as CONTRACTS, "Recipe"
+defines them: an int ``value`` becomes a literal in every tasklet reading the scalar, the
+container gone; ``"csr"`` keeps the container, read at run time. Also refused: a container a
+node writes or one read at a subset with names, one a tasklet reads as CSR already (unbake
+first), a connector name the tasklet uses already. Each rewritten tasklet records the bake in
+``sandbox.baked``; ``unbake_scalar`` undoes it when every such tasklet still has the code the
+bake left.
 
-The step's reference check (run.py's ``checked_step``, through the
-transform's ``fixes``) runs the graph before the step with the container set
-to the value and the graph after it on the same other seeded inputs; the
-value then stays in the inputs for the steps after it.
+The step's reference check (run.py's ``checked_step``, through the transform's ``fixes``) runs
+the graph before the step with the container at the value, and the value stays in the inputs
+for the later steps.
 """
 
 from __future__ import annotations

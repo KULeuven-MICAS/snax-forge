@@ -1,27 +1,16 @@
 """Sharing a group's hardware: a group run on another's units, one accelerator run
 once per nest.
 
-``share(group, with)`` and ``unshare(group)``
-    ``group`` and ``with`` are two groups of the bound graph (a linked group, ``link``'s name,
-    or a unit alone, a group named after its instance), the same shape: as many units, in the
-    graph's order, unit k of each with one BRM, implementation and params, and the same links
-    between them (from unit i's port to unit j's, at one depth; streamers.py's
-    ``group_links``). mvt's variant 1 with dot 2's rows: half 1's ``dot_x1`` (``vmul_x1`` ->
-    ``tmp0_prod`` -> ``vsum_x1``) and half 2's ``dot_x2`` (``vmul_x2`` -> ``tmp2_prod`` ->
-    ``vsum_x2``), each linked on its own, then ``share dot_x2 with dot_x1``. ``share`` renames
-    ``group``'s units to ``with``'s, unit by unit (their nodes' ``instance``, a linked group's
-    ``group``, its links' ``from`` and ``to``), so the graph holds one group whose units have a
-    node per nest: LOWER runs the group once per nest, the generator makes one link per pair of
-    ports, and the estimate counts the area once (streamers.py's ``group_runs`` and
-    ``group_links``). No memlet changes, so the reference check is unchanged. Each renamed node
-    and link keeps what it was in ``sandbox.shared`` (``{"group", "instance"}``, a link's
-    ``{"group", "from", "to"}``), which ``unshare`` (``group`` the shared group's old name)
-    puts back: ``share`` then ``unshare`` is the graph before. Refused, naming what differs: a
-    group the graph lacks, a group with itself, two shapes (units, BRM, implementation, params,
-    links), a group in an accelerator (``unencapsulate`` first), a group shared already.
+``share(group, with)`` and ``unshare(group)``, as CONTRACTS, "Recipe" defines them. Two groups
+of one shape (as many units, unit k of each with one BRM, implementation and params, the same
+links at one depth, streamers.py's ``group_links``): ``share`` renames ``group``'s units, their
+nodes and its links to ``with``'s, so one group has a node per nest. LOWER runs it once per
+nest, the generator makes one link per pair of ports, and the estimate counts the area once
+(streamers.py's ``group_runs``). No memlet changes, so the reference check is unchanged. Each
+renamed node and link keeps what it was in ``sandbox.shared``, which ``unshare`` puts back.
 
-``bind``'s "share with" (session.py's ``share_choices``) does the same for one node as it is
-bound; ``share`` is the step for a group built and linked first.
+``bind``'s "share with" (``share_choices``) does the same for one node as it is bound; ``share``
+is the step for a group built and linked first.
 """
 
 from __future__ import annotations

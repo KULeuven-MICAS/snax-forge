@@ -1,57 +1,18 @@
 """The fold's seed: the reduction x' = x (+) fold_j(a_j) done in the fold itself.
 
-``fuse_seed(first, second)`` and ``unfuse_seed(map)``
-    A fuse, as ``fuse_map`` (compose.py) is: ``first`` is a map of a fold's
-    nest, any map of the chain of single-child maps down to one tasklet whose
-    one output folds (``reduce``), or a map ``split_reduce`` split, which
-    stands for its final sum (the fold that writes the output); ``second`` a
-    map of the elementwise nest that reads the fold's result, any map of its
-    chain down to the reader (its outermost the site's default). The fold
-    writes a transient ``t`` with op (+), and ``t``'s only reader is that
-    nest, computing ``t (+) x`` with the same op and writing ``x`` in place,
-    over ``t``'s whole subset, each element once, ``x`` at ``t``'s index
-    (matvec_acc: the sum's ``tmp1[m]``, then ``augassign_19_4``'s ``q[m] =
-    q[m] + tmp1[m]``): the fold's kept loops (those its output moves with) and
-    the nest's loops run over the same elements, ``m_t`` and ``m`` (0:8)
-    after ``tag_map sum_map temporal``, the fold's other loops free.
-    ``fuse_seed`` removes that nest and ``t``: the fold writes ``x`` at its own
-    subset, and its reduce holds ``"seed": {"data": "x", "subset": [...]}`` in
-    place of ``identity`` (dfg/reduce.py), so the fold starts each element
-    from ``x``'s. That is exact for any associative and commutative op on
-    integers, which every registered op is. Refused, naming what it
-    found: a fold whose transient has another reader (or writer, or a link);
-    a reader computing another op; a reader over a different subset (an
-    element twice or not at all, ``x`` at another index, ``x`` not written in
-    place, the fold not writing every element of ``t``); a target that is not
-    a transient; a float dtype; a fold seeded already; a node between the
-    fold and its reader naming ``x``, or the fold's nest reading it; a bound
-    fold (unbind first); a ``second`` that is not a map of the reader's nest.
-    The subsets are compared at the graph's symbol values (a recipe binds
-    them at step 0). Registered as ``fuse_map`` is: its site a map of a fold's
-    nest, filling ``second``, or a map of the elementwise nest, filling
-    ``first`` (``seed_choices`` every pair, the editor's drop-down); over two
-    maps selected, ``first`` and ``second`` in the order selected.
+``fuse_seed(first, second)`` and ``unfuse_seed(map)``, as CONTRACTS, "Recipe" defines them.
+``first`` is a map of a fold's nest (``fold_of``), or a map ``split_reduce`` split, standing for
+its final sum; ``second`` a map of the elementwise nest that reads the fold's result. The
+fold's kept loops (those its output moves with) and the nest's loops must run over the same
+elements, compared at the graph's symbol values. The fold's reduce then holds ``seed`` in
+place of ``identity`` (dfg/reduce.py), exact for any registered op on integers.
 
-    The fold's tasklet records what went (``sandbox.seeded``: the transient's
-    name, definition, index and identity, and the nest with where it stood: ``after`` null
-    when right after the node holding the fold, whatever that node's id becomes),
-    which ``split_reduce`` moves to the final sum with the seed (the partials
-    keep the identity) and ``join_reduce`` back. ``unfuse_seed`` (``map`` a map
-    of the seeded fold's nest) puts the nest
-    and the transient back, names as at import, and the fold writes ``t`` at
-    its subset again from the identity: ``fuse_seed`` then ``unfuse_seed`` is
-    the graph before. split, split_map, tag_map, untag_map, interchange_map and
-    join_map carry the seed as any subset (``Memlet.map_dims``), so the steps
-    before ``bind`` go in any order.
-
-    ``seed_seconds`` gives the maps ``second`` takes for a ``first`` (the
-    editor's drop-down), ``seed_pairs`` every (first, second) of a graph and
-    ``seed_link`` the transient between them with the loops matched (the
-    viewer's partners, viz/dfg/api.py), all through the site's check.
-
-``bind`` takes a seeded fold only on a BRM with a ``seed`` port
-(``accumulate``: TreeAccumulate and SerialAccumulate), with the design
-param ``seed`` 1 and the port on the seed's element, one beat per job.
+The fold's tasklet records what went (``sandbox.seeded``: the transient, its index and
+identity, and the nest with where it stood), which ``split_reduce`` moves to the final sum and
+``join_reduce`` back; ``unfuse_seed`` puts the nest and the transient back, names as at
+import. The site and the editor: ``seed_choices``, ``seed_seconds``, ``seed_pairs``,
+``seeded_choices``, ``fold_map``, and ``seed_link`` (the viewer's partners). ``bind`` takes a
+seeded fold only on a BRM with a ``seed`` port (``accumulate`` at ``seed`` 1).
 """
 
 from __future__ import annotations

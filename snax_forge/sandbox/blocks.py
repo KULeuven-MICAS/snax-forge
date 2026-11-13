@@ -1,75 +1,20 @@
-"""Blocks: a kernel found inside a bigger graph, and a recipe applied there (open item
-117).
+"""Blocks: a kernel found inside a bigger graph, and a recipe applied there.
 
-A block is a region of the graph that equals a smaller kernel's import (its pattern, ``P``):
-dot inside each row of a mat-vec, a mat-vec inside each half of mvt. Recipes are written on
-their own kernel's ids (dot_3 on dot's ``mult_map``, ``mult``, ``tmp0``); ``apply_recipe`` runs
-one on a region of another graph, so a design is built from recipes of recipes
-(``matvec/matvec_dot3`` applies ``dot/dot_3`` on the rows) and nothing is written twice.
+A block is a region that equals a smaller kernel's import, its ``pattern`` P (dot in each row of
+a mat-vec, a mat-vec in each half of mvt). ``match(g, kernel, heads)`` and ``matches(g, kernel)``
+find a region R under a one-to-one renaming of maps, variables, containers and symbols: P's
+nests are chains of R in P's order, each under outer maps of its own (its firing loops, any
+range, tag or split); below them equal level by level (P's ranges under the symbol renaming,
+untagged and unsplit), with equal code and folds; memlets equal once the dimensions only the
+outer variables index are left out; P's transients R's transients; a container may correspond
+permuted (half 2 of mvt reads ``A`` through π = (1, 0)); and R untouched since import.
 
-**The match** (``match``). A region ``R`` matches the pattern ``P`` of a kernel when, under a
-renaming of maps, variables, containers and symbols:
-
-- R1 P's nests (each a chain of single-child maps down to one tasklet) correspond to chains
-  of R, in P's order, each later one found through the containers the earlier ones write;
-- R2 each chain of R may sit under maps of its own (its outer maps: any range, tag or split),
-  which become that chain's firing loops;
-- R3 below them, R's chain equals P's level by level, P's ranges under the symbol renaming σ
-  (dot's ``0:N`` is mvt's ``0:N`` in half 1, ``0:M`` in half 2), untagged and unsplit;
-- R4 the tasklets' code is equal, and a fold has the same op and start;
-- R5 each memlet of R, without its dimensions indexed by the chain's outer variables only,
-  equals P's under the renaming, P's size-1 dimensions at a constant (``out[0]``) dropped; a
-  container R reads without them is reused across the outer loops;
-- R6 P's transients correspond to transients only R writes and reads, written over what is
-  read (the outer ranges that index them equal on the writer and the reader);
-- R7 the container renaming is one to one;
-- R8 a container may correspond with its dimensions permuted (half 2 of mvt reads ``A[m, n]``
-  under the loops (n, m): matvec_acc's A through π = (1, 0)); the transpose mark gates
-  nothing;
-- R9 the chains of R are untouched since import: nothing in them split, tagged, fused, bound,
-  linked or seeded, and in no block of the same kernel yet.
-
-``match(g, kernel, heads)`` is the match at given chain heads, ``matches(g, kernel)`` every
-non-overlapping one, in the graph's order.
-
-**Blocks** are records on nodes: ``sandbox.block``, the path of blocks a node is in, outer
-first, each ``{"name", "kernel", "heads"}`` (the region's chain heads), with ``recipe`` and
-``params`` once a recipe is applied. ``lift(kernel, at)`` makes a block of every region that
-matches the kernel's pattern (none overlapping; a region lies inside a block or holds it
-whole, in either order: lift dot then matvec, or matvec then dot), named after the kernel (``dot``,
-``dot_1``, ...), or with ``at`` the one region holding that node;
-``unlift(name)`` takes its record away.
-
-**unapply(block)** gives back the graph before ``apply_recipe`` made the block: the recipe keeps
-on the first top-level node it made (``sandbox.applied``) the top-level nodes that held the
-region before, the containers it changed or removed and a digest of what it made; refused when
-a later step changed what it made, or for a block inside another a recipe made. **name_block(
-nodes, name)** makes a block by hand of a region (the nodes and everything under them), with
-no kernel and no recipe: the bottom-up entry, transforms by hand and then the block named. A
-sub-recipe's own blocks (its ``lift`` or ``name_block``) are followed by name onto the blocks
-the steps make in the outer graph, and its ``lift`` without ``at`` lifts the region's one.
-
-**Sites**. ``lift``'s: a node in a region the pattern of a kernel some recipe under
-``recipes/`` is written on matches (``reusable``), ``at`` the node and ``kernel`` the first
-such. ``unlift``'s: a block with no recipe, or a node in it (its innermost block).
-``apply_recipe``'s: the same, ``block`` it and ``recipe`` the first recipe of its kernel
-(``recipes_for``).
-
-**apply_recipe(recipe, region, block, params, name)**: ``recipe`` as ``category/name``
-(``dot/dot_3``), on the region whose chains start at ``region`` (map ids, in P's nest order) or
-on the lifted ``block``; ``params`` the sub-recipe's params (ints: run.py evaluates an
-expression over the outer recipe's params, ``{"W": "W"}``); ``name`` the block's (default the
-kernel's, made unique). The sub-recipe's steps run on the outer graph one by one, each step's
-names (maps, nodes, containers) renamed onto the region's: the match gives the first, and the
-names each step creates are paired by running the same steps on the pattern side by side
-(``mult_map_s`` is ``tmp0_mult_map_1_s``). The names a sub-recipe gives its units, groups and
-accelerators (``mul``, ``sum``) are taken as they are, ``_1``, ``_2``, ... on a clash (the
-second half's ``mul_1``); a group or accelerator named after the sub-recipe's kernel (dot_3's
-group ``dot``) takes the block's name. The sub-recipe's symbols are the region's (σ); each param a
-symbol names is set to that value. Every node of the region after the expansion, and every
-node a sub-step made (a link), gets the block in its path, with the recipe and its params. The
-whole step is one step of the outer recipe, checked against the reference once (run.py); every
-inner step runs through its transform's own checks.
+``lift``, ``unlift``, ``name_block``, ``apply_recipe`` and ``unapply`` are the transforms of
+CONTRACTS, "Recipe". ``apply_recipe`` runs the sub-recipe's steps on the region one by one, each
+step's names renamed onto the region's by running the same steps on the pattern side by side;
+the whole is one step, checked against the reference once. ``unapply`` reads the record
+(``sandbox.applied``) on the first top-level node the recipe made. ``reusable``,
+``lift_choices`` and ``recipes_for`` give the kernels and recipes the sites offer.
 """
 
 from __future__ import annotations

@@ -1,28 +1,14 @@
 """The transpose marker: a tasklet's input read across its loop order, marked as such.
 
-``mark_transpose(node, container)`` and ``unmark_transpose(node, container)``
-    ``node`` is any map of a nest (the chain of single-child maps down to one tasklet) or its
-    tasklet. For each input memlet of that tasklet, ``loop_orders`` gives π: each container
-    dimension's index names exactly one loop dimension (a map's ``loop.dim``, so the
-    pieces of a split dimension and a tag keep it), and π orders the container's dimensions by
-    the depth of the outermost map of their loop dimension. mvt's ``A[m, n]`` under the loops
-    (n, m) gives π = (1, 0), under (m, n) (0, 1). An index naming two loop dimensions or none
-    (a constant, a scalar's ``alpha[0]``) has no π, and its input is no candidate.
-    ``mark_transpose`` takes the inputs whose π is not the identity: with one container among
-    them it marks it (``container`` filled), with several ``container`` names one (the
-    editor's choice), with none it refuses ("tmp0_mult reads A, y1 in loop order"). The mark
-    is the tasklet's attr ``sandbox.transpose``, ``{connector: π}`` for each of that
-    container's connectors; no memlet, map or range changes, so the reference check is
-    unchanged. split, split_map, tag_map, untag_map, interchange_map and join_map leave the
-    tasklet's attrs as they are and keep it; ``bind`` carries it onto the accelerated node,
-    keyed by the connector's port, and ``unbind`` gives back the tasklet that holds it.
-    ``unmark_transpose`` removes a container's mark, the attr with its last: mark then unmark
-    is the graph before. Refused, both: a selection that is no map of a nest nor its tasklet,
-    a bound unit (unbind first); ``mark_transpose`` a container marked already
-    (``unmark_transpose`` first) or not a candidate, ``unmark_transpose`` a tasklet that marks
-    none.
-
-The viewer (viz/dfg/api.py) draws a marked edge with its label (``Aᵀ``).
+``mark_transpose(node, container)`` and ``unmark_transpose(node, container)``, as CONTRACTS,
+"Recipe" defines them. ``node`` is any map of a nest or its tasklet (``nest_tasklet``).
+``loop_orders`` gives each input's π: each container dimension's index names one loop
+dimension (a map's ``loop.dim``), and π orders the container's dimensions by the depth of the
+outermost map of theirs (mvt's ``A[m, n]`` under the loops (n, m): π = (1, 0)). An index naming
+two loop dimensions or none has no π. ``mark_transpose`` takes the inputs whose π is not the
+identity (``transpose_choices``) and marks one container: ``sandbox.transpose``,
+``{connector: π}``. No memlet, map or range changes, so the reference check is unchanged; the
+loop transforms keep the mark, ``bind`` carries it onto the accelerated node keyed by port.
 """
 
 from __future__ import annotations
