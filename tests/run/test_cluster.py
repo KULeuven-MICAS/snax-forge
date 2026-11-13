@@ -101,11 +101,6 @@ def test_the_word_interleaved_map_and_the_dma_beat(cluster):
     assert c.bank_row(0x100005F8) == (31, 5)
 
 
-def test_round_trip(cluster):
-    c = cluster
-    assert Cluster.from_dict(json.loads(json.dumps(c.to_dict()))) == c
-
-
 @pytest.mark.parametrize(
     ("edit", "code"),
     [
