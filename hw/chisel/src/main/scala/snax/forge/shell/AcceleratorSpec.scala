@@ -157,7 +157,7 @@ object AcceleratorSpec {
           )
         }
         val mux    = a.obj.get("port_mux").map(x => PortMuxSpec(x("groups").arr.toSeq.map(_.str), csr(x("csr"))))
-        require(movers.isEmpty == mux.isEmpty, s"set ${a("name").str}: movers and port_mux come together (D169)")
+        require(movers.isEmpty == mux.isEmpty, s"set ${a("name").str}: movers and port_mux come together")
         SetSpec(
           a("name").str,
           a("inputs").arr.toSeq.map(e => end(e.str)),
@@ -198,7 +198,7 @@ case class AcceleratorSpec(
 
   private def width(names: String*): Int = {
     val ws = csrs.filter(c => names.contains(c.name)).map(_.width).distinct
-    require(ws.size == 1, s"${names.mkString(" and ")}: widths $ws, one width for all (D152)")
+    require(ws.size == 1, s"${names.mkString(" and ")}: widths $ws, one width for all")
     ws.head
   }
 
