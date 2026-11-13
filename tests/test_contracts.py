@@ -1,25 +1,26 @@
 """Tests that docs/CONTRACTS.md and the code cannot drift apart (D46).
 
 Every fenced block in the document that names a source is really in that
-source, a checked-in file (C§7's are the flow's ``run/profile.py`` and
-``run/trace.py``; a file of the snax-gvsoc submodule is checked where the
-submodule is checked out, as tests/gen's fixture test), and the document still has its sections, the retired ones
-(C§2–C§6, C§8) included, so their numbers stay. A failure here means one of
-the two moved: fix whichever is wrong.
+source, a checked-in file (a file of the snax-gvsoc submodule is checked where
+the submodule is checked out, as tests/gen's fixture test), and every section
+the repository cites, as ``C§n`` or ``CONTRACTS, "<title>"``, exists. A failure
+here means one of the two moved: fix whichever is wrong.
 
 Sections:
   1. helpers
   2. snippets are verbatim
-  3. the document still has its sections
+  3. the sections and their cites
 """
 
 import re
+import subprocess
 
 import pytest
 
 from tests.helpers import REPO, SUBMODULE_MISSING
 
 DOC = REPO / "docs" / "CONTRACTS.md"
+HERE = "tests/test_contracts.py"  # its own examples are no cites
 # The snax-gvsoc submodule: CI's python, chisel and gvsoc jobs fetch it
 SUBMODULE = "gvsoc/snax-gvsoc/"
 
@@ -71,34 +72,56 @@ def test_snippet_is_verbatim(i):
 
 
 # =============================================================================
-# 3. The document still has its sections
+# 3. The sections and their cites
 # =============================================================================
 
 
-@pytest.mark.parametrize(
-    "heading",
-    [
-        "## 1. Conventions",
-        "## 2. Cluster configuration",
-        "## 3. Streamer register layout",
-        "## 4. Accelerator interface",
-        "## 5. Control program",
-        "## 6. Scenario and memory",
-        "## 7. Profile and trace",
-        "## 8. Rules for a new block kind",
-        "## 9. Task list",
-        "## 10. Block runtime model",
-        "## 11. SNAX-DFG",
-        "## 12. Recipe",
-        "## 13. Platform",
-        "## 14. Design checks",
-        "## 15. Memory plan and design point",
-        "## 16. Generated hjson files",
-        "## 17. Accelerator RTL spec",
-        "## 18. Bundle",
-        "## 19. Estimate",
-        "## 20. Cost model",
-    ],
-)
-def test_section_exists(heading):
-    assert heading in DOC.read_text()
+def sections() -> dict[int, str]:
+    """Number -> title of every ``## n. Title`` heading."""
+    return {int(n): t for n, t in re.findall(r"^## (\d+)\. (.+)$", DOC.read_text(), re.MULTILINE)}
+
+
+def cites() -> list[tuple[str, str]]:
+    """Every (file, cite) in the repository's tracked text files but the document itself."""
+    files = subprocess.run(
+        [
+            "git",
+            "grep",
+            "-lE",
+            r'C§[0-9]|CONTRACTS, "',
+            "--",
+            ".",
+            ":!docs/CONTRACTS.md",
+            ":!" + HERE,
+        ],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout.split()
+    out = []
+    for f in files:
+        text = (REPO / f).read_text()
+        for c in re.findall(r'C§\d+|CONTRACTS, \\?"[^"\\]+\\?"', text):
+            # a title wrapped over comment or docstring lines reads as one
+            out.append((f, re.sub(r"\s*\n\s*(?:#|\*|//)?\s*", " ", c)))
+    return out
+
+
+def test_the_sections_are_numbered_in_order():
+    assert list(sections()) == list(range(1, len(sections()) + 1))
+
+
+def test_every_cited_section_exists():
+    """``C§n`` names a section by number, ``CONTRACTS, "<title>"`` by its title."""
+    numbers, titles = set(sections()), set(sections().values())
+    assert cites(), "no cite found: the search is broken"
+    bad = []
+    for f, c in cites():
+        if c.startswith("C§"):
+            ok = int(c[2:]) in numbers
+        else:
+            ok = c.split(", ", 1)[1].strip('\\"') in titles
+        if not ok:
+            bad.append(f"{f}: {c}")
+    assert not bad, "cites of no section:\n" + "\n".join(bad)

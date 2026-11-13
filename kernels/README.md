@@ -64,7 +64,7 @@ $$B = \max(A, 0)$$
 
 - `np.maximum` becomes `max(in1, 0)`, in the expression grammar; at int32 DaCe writes the 0 as `dace.int32(0)`, a constant cast the importer folds.
 - A compare-and-select unit at II 1; `mlp`, `lenet` and `resnet` use it between layers.
-- It runs: `recipes/elementwise/relu.json` splits the map by W = 4 and binds `simd` at one stream, op max, its slot k = 0 read off the tasklet's literal and baked into the SimdLanes (C§10).
+- It runs: `recipes/elementwise/relu.json` splits the map by W = 4 and binds `simd` at one stream, op max, its slot k = 0 read off the tasklet's literal and baked into the SimdLanes (C§3).
 
 ### rowsum
 

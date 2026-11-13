@@ -290,7 +290,7 @@ The flow wrote the design point's files to `out/flow/dot_1_dry/gen/`: the cluste
   ],
 ```
 
-The 33 TCDM ports are the sets' 24 and 9 channels, one interconnect group each. **The CSRs.** Each set's streamer CSRs come first, then its accelerator's own, packed from 960 (D157, C§16); the manifest numbers them all:
+The 33 TCDM ports are the sets' 24 and 9 channels, one interconnect group each. **The CSRs.** Each set's streamer CSRs come first, then its accelerator's own, packed from 960 (D157, C§9); the manifest numbers them all:
 
 | CSRs | Set | What |
 |---|---|---|

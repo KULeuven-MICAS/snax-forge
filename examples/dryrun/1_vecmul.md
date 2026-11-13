@@ -44,7 +44,7 @@ After the bind the Estimate shows one group, `acc`:
 |---:|---:|---:|---:|---:|---:|---:|
 | 256 | 256 | 0 | 0 | 259 | 55 700 µm² | 23.265 nJ |
 
-Cycles is $N / W$: one beat of W elements per cycle, nothing to fill since the unit has latency 0. The expected BUSY_COUNTER adds the streamers' fill of 3 (D155, C§19). With Compare on, step 0 against step 4 shows the gain as cycles: total 2048 → 256. Below the groups, the cost table on nangate45:
+Cycles is $N / W$: one beat of W elements per cycle, nothing to fill since the unit has latency 0. The expected BUSY_COUNTER adds the streamers' fill of 3 (D155, C§13). With Compare on, step 0 against step 4 shows the gain as cycles: total 2048 → 256. Below the groups, the cost table on nangate45:
 
 | Block | Datapath | Area (µm²) | Energy (nJ) | Share |
 |---|---|---:|---:|---:|
@@ -105,7 +105,7 @@ How to read it:
 - **Area grows with W, energy does not.** SimdLanes is W copies of a one-lane multiplier with no registers (0 flops), so its area is $W \cdot A_1$ and its energy is N multiplies whatever W is. On nangate45 $A_1$ is 6 910 µm² of comb, about 11.3 pJ per 64-bit multiply.
 - **The control unit is the only part that changes with time.** 66 bits held every cycle, $E_{\mathit{ctrl}} = f_{\mathit{ctrl}} \cdot 66 \cdot C \cdot e_{\mathit{hold}}$: 1.024 nJ at W = 1, 0.103 nJ at W = 10. That is the ctrl share column.
 - **W = 10 does not divide N.** The split pads 2048 to 205 beats of 10 lanes (2 pad elements, D144); the Estimate shows a lane use of 99.9 %.
-- **Differences under 1 % are the table, not the design.** The table has SimdLanes measured at W = 1, 8 and 32 and copied in between (C§20), so W = 8 comes out 0.05 % above W = 4.
+- **Differences under 1 % are the table, not the design.** The table has SimdLanes measured at W = 1, 8 and 32 and copied in between (C§14), so W = 8 comes out 0.05 % above W = 4.
 - **Leakage is not in it.** A dynamic-only model makes the slow, small W = 1 look as cheap per run as W = 10, which it is not once leakage over ten times the cycles counts (a known limit).
 
 So on this model vecmul's choice is area against time at equal energy. Whether the cycles hold up in a run is the next section.
@@ -213,7 +213,7 @@ Turn Compare on and pick `vecmul_w4/4_bind` and `vecmul_w8/4_bind`: Details and 
 
 ## 8. What was generated
 
-The flow wrote the design point's files to `out/flow/vecmul_dry/gen/`: the cluster file `snax_forge.hjson` and its streamer file `snax_forge_vecmul_dry_streamer_acc.hjson`, which SNAX-GVSoC reads, the headers, the program `main.c` with its `data.h`, `manifest.json`, and `accelerator.json`, the one description both SNAX-GVSoC and the RTL are built from (D134, C§17). The design is one snax_cluster entry with one streamer set, `acc` (D157). The entry's name is the design's tag, `snax_forge_<design>` with the design named after its recipe, so Save's `vecmul_dry` gives `snax_forge_vecmul_dry` here and in the RTL's module names (a recipe `vecmul` would give `snax_forge_vecmul`):
+The flow wrote the design point's files to `out/flow/vecmul_dry/gen/`: the cluster file `snax_forge.hjson` and its streamer file `snax_forge_vecmul_dry_streamer_acc.hjson`, which SNAX-GVSoC reads, the headers, the program `main.c` with its `data.h`, `manifest.json`, and `accelerator.json`, the one description both SNAX-GVSoC and the RTL are built from (D134, C§10). The design is one snax_cluster entry with one streamer set, `acc` (D157). The entry's name is the design's tag, `snax_forge_<design>` with the design named after its recipe, so Save's `vecmul_dry` gives `snax_forge_vecmul_dry` here and in the RTL's module names (a recipe `vecmul` would give `snax_forge_vecmul`):
 
 ```json
     "snax_acc_name": "snax_forge_vecmul_dry",
@@ -323,7 +323,7 @@ The CSR block's registers and its read mux, from `snax_forge_vecmul_dry_csr.sv`:
         acc_counter <= acc_counter + 32'h1;
 ```
 
-**The CSRs.** The set's streamer CSRs come first, then the accelerator's own, packed from 960 (D157, C§16); the manifest numbers them, and `accelerator.json` lists the group's own with their offsets in the CSR block (D152):
+**The CSRs.** The set's streamer CSRs come first, then the accelerator's own, packed from 960 (D157, C§9); the manifest numbers them, and `accelerator.json` lists the group's own with their offsets in the CSR block (D152):
 
 | CSR | Access | Offset | Number | Bits | What |
 |---|---|---:|---:|---:|---|

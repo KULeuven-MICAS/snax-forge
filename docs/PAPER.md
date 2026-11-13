@@ -204,7 +204,7 @@ The draft's line, then the author's after reading, which wins. A row whose secon
 | Shared crossbar ports across streamer sets | E4 | M13 PORT1 (done; open item 128) |
 | DMA cost on the graph | Level 1's feedback, E4 | M13 L2V1 (open item 99 for the graph-level node) |
 | Interconnect markers | Level 1's feedback, E4 | M13 XBAR1 |
-| The engine-alone number | C3's baseline in E4 | M13 VIEW2, the ideal estimate (D155, C§19) |
+| The engine-alone number | C3's baseline in E4 | M13 VIEW2, the ideal estimate (D155, C§13) |
 | Cost model: blocks, streamers, memory, interconnect | E4, E7, C4's cost check | M13 CHAR1, CHAR1b (done), RAM1, HWCOST (section 7) |
 | A sweep script | E4 | over `pixi run flow --set`; DSE5 (M8) is not needed |
 | Cluster synthesis on the same macros | C4's cost check at cluster level, E11 | RAM1, then 2–3 composites and the homogeneous cluster at 45 nm |

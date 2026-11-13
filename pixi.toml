@@ -152,7 +152,7 @@ forge      = "python -m snax_forge.flow.forge"
 # A set of bundles for the local RTL check: `pixi run forge-set quick|full|mvt [--sim vsim|vlt] [-j N]` runs forge on
 # each recipe of the set and writes out/forge-set/<set>.md, with the one line that checks them all in snax_cluster
 forge-set  = "python -m snax_forge.flow.forge_set"
-# HWCOST's tables (C§20): `pixi run import-costs [--experiments DIR]` copies the streamer, crossbar
+# HWCOST's tables (CONTRACTS, "Cost model"): `pixi run import-costs [--experiments DIR]` copies the streamer, crossbar
 # and bank tables from snax-forge-experiments (its main, or a clean checkout) into snax_forge/char/<tech>/
 import-costs = "python util/import_costs.py"
 # Reports (D99): `pixi run report out/flow/vecadd` writes report/design.md and report/run.md beside run/
