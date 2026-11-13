@@ -1,41 +1,19 @@
-"""SNAX-DESIGN command line.
+"""SNAX-DESIGN command line (pixi ``design``).
 
-    python -m snax_forge.design GRAPH --platform P [--memory M]
-                                      [--set platform.PATH=VALUE ...]
-                                      [--set memory.PATH=VALUE ...]
-                                      [--out DIR]
+    python -m snax_forge.design GRAPH --platform P [--memory M] [--set platform.PATH=VALUE ...]
+                                      [--set memory.PATH=VALUE ...] [--out DIR]
     python -m snax_forge.design check GRAPH --platform P [--memory M] [--set ...]
     python -m snax_forge.design save SRC DST [--force]
     python -m snax_forge.design from-hjson HJSON NAME [--force]
 
-The first form pairs a bound graph (the last ``.snaxdfg`` of a sandbox run)
-with a platform, makes the memory plan, runs every design check and, when
-they pass, writes to ``DIR`` (default ``out/design/<name>/``):
-
-    platform.json       the platform working copy (base, changes)
-    memory.json         the memory working copy (passes, changes, layouts)
-    design_point.json   graph, platform, streamers and memory (point.py)
-
-and prints the streamer shell, the memory plan and any note (a design that
-passes but is worth a second look, check.py: ``note [code] where: message``
-and its fix; it does not change the exit code). The name is the sandbox
-folder of the graph (``out/sandbox/vecadd_w8/2_bind.snaxdfg`` ->
-``vecadd_w8``), else the file's stem. Each run overwrites that folder.
-Passing a working copy (``--platform DIR/platform.json``, ``--memory
-DIR/memory.json``) continues from it: new ``--set`` paths add to its
-``changes``. ``--set memory.C.l1.base=1152`` pins a base,
-``--set memory.passes.placement=NAME`` picks a registered pass.
-
-``check`` runs the checks only and writes nothing. ``save`` keeps a
-platform, usually a working copy, under a new name: DST is a path, or a
-bare name for ``platforms/<DST>.json``; an existing file is kept unless
-``--force``. ``from-hjson`` reads snax_cluster's cluster file into
-``platforms/<NAME>.json`` (hjson_platform.py), checked as any
-platform, an existing file kept unless ``--force``; the file must be under
-snax-forge's root, since the platform names it as its source (``hjson``).
-
-Exit 0 when everything passed, 1 with every problem found (each with its
-fix), 2 on bad arguments. pixi: ``design``.
+The first form pairs a bound graph with a platform, makes the memory plan, runs every design
+check and, when they pass, writes ``platform.json``, ``memory.json`` and ``design_point.json``
+to ``DIR`` (default ``out/design/<name>/``, the graph's sandbox folder, else its stem), then
+prints the shell, the plan and any note. A working copy given as ``--platform`` or ``--memory``
+continues from it. ``check`` writes nothing; ``save`` keeps a platform as DST (a path, or a bare
+name for ``platforms/<DST>.json``); ``from-hjson`` reads a cluster file under snax-forge's root
+(hjson_platform.py). An existing file is kept unless ``--force``. Exit 0 when everything
+passed, 1 with every problem found, 2 on bad arguments.
 """
 
 from __future__ import annotations

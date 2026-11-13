@@ -1,61 +1,18 @@
 """The memory plan: where every container lives.
 
-The plan gives each container a layout per memory it lives in: ``base``
-(byte address of index (0, ..., 0)), ``shape`` and one byte stride per
-dimension (``snax_forge.lower.layout.Layout``). Banks follow from
-addresses under the fixed word-interleaved map and are not
-stated. It is made by three passes, each registered by name so a policy can
-replace any one of them (``register_memory_pass``):
+``plan`` gives each container a layout per memory it lives in (``lower.layout.Layout``), made by
+three passes registered by name (``register_memory_pass``): residency (``default_residency``),
+layout (``contiguous_layout``, ``padded_rows_layout``) and placement
+(``contiguous_placement``), around the pins of the ``MemorySpec``. The plan, the passes, the
+pins and ``memory.json`` are CONTRACTS, "Memory plan and design point". Beyond it: a container
+read only through slot connectors (a CSR's value, which the core writes) lives in L2 when the
+platform has one, else in L1; a layout the DMA moves keeps its last beat to itself.
 
-    residency   which memories a container lives in      default: a
-                container that is not transient in L2 and L1 when the
-                platform has an L2 (the DMA loads and stores it), else in
-                L1; a transient in L1, but a link's container and a
-                fused nest's local value in none;
-                a container read only through slot connectors
-                (a CSR's value, the core writes it) in L2 when
-                the platform has one, else in L1
-    layout      shape and strides per container and      contiguous:
-                memory, base 0                           row-major, each
-                                                         element its
-                                                         dtype's itemsize
-                                                         (a word holds
-                                                         several narrow ones),
-                                                         over the padded
-                                                         shape (a tail's); padded_rows:
-                                                         rows an odd number
-                                                         of words apart
-                                                         (``padded_rows_layout``)
-    placement   L1 base per container                    contiguous: in
-                the graph's container order, from L1's first
-                byte, no gaps; a layout the DMA moves (in L2 and L1) starts
-                on a wide beat and keeps its last beat to itself (a size
-                that is not whole beats is padded), others start on a
-                word
-
-An L2 layout keeps base 0: the program's link places its array (data.h's,
-named after the container), not the plan.
-
-**Pins.** ``--set memory.<container>.l1.base=N`` fixes an L1 base; the
-placement puts everything else around the pinned layouts, never over them.
-``--set memory.passes.<pass>=<name>`` picks another registered pass. Both
-are ``changes`` of the ``MemorySpec``, kept in the working copy
-``out/design/<name>/memory.json`` so a run can continue from it
-(``--memory``), as the platform's are.
-
-**What passes see** (``MemoryContext``): the graph with its symbols bound,
-the platform, each container's shape and element bytes (``elem_bytes``),
-each memory's word and range, and,
-for later policies, every accelerator port's element-index stream
-(``accesses``: the elements in the order the port takes them, beat by beat,
-from its memlet over the temporal maps around it; independent of any
-layout) grouped by the node that runs them together. A policy that avoids
-bank conflicts turns candidate layouts into bank sequences for the ports of
-one group and compares them, without running the model. The
-defaults read only shapes and sizes.
-
-Nothing here judges the plan: the ``memory`` checks (check.py) do, so a
-plan that leaves a memory or overlaps a pin is reported with its fix.
+Passes read a ``MemoryContext``; its ``accesses`` (each accelerator port's element indices in
+the order the port takes them, beat by beat, independent of any layout) are grouped by the node
+that runs them together, for a policy that compares the bank sequences of candidate layouts
+without running the model. The defaults read only shapes and sizes. Nothing here judges the
+plan: the ``memory`` checks (check.py) do, ``pin_problems`` the pins and passes that name nothing.
 """
 
 from __future__ import annotations

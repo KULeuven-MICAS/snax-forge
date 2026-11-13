@@ -1,33 +1,15 @@
 """The design checks: does this platform fit this bound graph?
 
-The design step pairs a bound graph (the last step of a recipe) with a
-platform. Before it writes anything it runs every registered check and
-collects every problem (problems.py), each with a code, what it is about,
-why it fails and the change that fixes it. Checks belong to stages:
+``run_checks`` runs every check registered with ``register_check(code, stage, fn)`` and
+collects every problem (problems.py), each with its code and fix; the codes are CONTRACTS,
+"Design checks". The stages: ``platform`` and ``graph`` run independently, ``connect`` only
+when both passed (its checks read what they established), ``memory`` only when ``connect``
+passed. ``memory.pin`` makes the plan (memory.py) when its pins and passes name what exists,
+unless the ``Design`` already holds one (a design point, judged as stored).
 
-    platform   the platform alone: keys, values, L1 and L2 agreeing, banks
-    graph      the graph alone: symbols bound, everything bound to an
-               accelerator, BRMs and implementations known, instance names
-    connect    the two together: streamer entries, lanes, dtypes, packing,
-               padding, num_ch, the crossbar's inputs, temporal loops
-    memory     the memory plan: pins and passes, then the plan
-               the passes make, its residency, shapes, alignment, fit,
-               snRuntime's top of L1 and overlaps
-
-``platform`` and ``graph`` run independently; ``connect`` runs only when
-both passed, since its checks read what they established, and ``memory``
-only when ``connect`` passed. ``memory.pin`` makes the plan (memory.py)
-when its pins and passes name what exists, unless the Design already holds
-one (a design point, judged as stored). A new check is registered with
-``register_check(code, stage, fn)``; ``fn(design)`` yields Problems.
-
-A note is not a refusal: a design that passes every check but has no reason
-to exist as it is (``design.serial_one_lane``: SerialAccumulate at lanes 1,
-the work of TreeAccumulate at lanes 1), or that the estimate cannot cost in full
-(``char.missing``: a block the technology's table does not hold). ``run_notes`` runs every note
-registered with ``register_note(code, fn)`` once the checks passed (they
-resolved the instances); a note is a Problem, its ``fix`` the change that
-removes it, and ``note_text`` prints it.
+A note is not a refusal: ``run_notes`` runs every note registered with ``register_note(code,
+fn)`` once the checks passed, each a Problem whose ``fix`` removes it, and ``note_text`` prints
+it. ``crossbar_inputs`` counts the TCDM crossbar's inputs.
 """
 
 from __future__ import annotations

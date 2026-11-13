@@ -1,56 +1,20 @@
 """The streamer shell against a bound graph.
 
-For every accelerated node's instance, in the order the graph first uses
-them, and every port of its BRM in port order, one streamer:
+``resolve`` builds one ``Streamer`` per outer port of every accelerated instance, in the order
+the graph first uses them and the BRM's port order, as CONTRACTS, "Platform" (the streamer
+shell) and "Memory plan and design point" (the design point's ``streamers``) define them; a
+port on a link has none. ``instances``, ``groups`` and ``accelerators`` read the instances off
+the graph and put them into groups and accelerators; ``links``, ``linked_ports``, ``unplaced``
+and ``slot_containers`` read the links, the containers with no L1 space and those read only
+through a slot connector. Nothing here checks the pairing: check.py runs first and reports
+every problem, so ``resolve`` raises on the first thing that does not fit.
 
-    name            <instance>_<port>
-    write           the port's direction is "out"
-    spatial_bounds  the platform entry's, else, fastest first, the port nest's
-                    spatial loops (``affine``, what snax_forge/lower/streams.py
-                    requires) or the bound memlet's ranges (``stream``, as
-                    SNAX-LOWER's ``memlet_values`` reads them)
-    n_ports         their product: the port's lanes W
-    dtype           the dtype of the container behind the port, through its
-                    memlet (``brm.port_dtypes``); every node of the instance
-                    puts the same one on it (``connect.dtype``)
-    num_slc         slices (elements) of that dtype per bank word, width_bits
-                    over its bits
-    num_ch          the TCDM channels the port uses (the streamer hjson's
-                    ``num_channel``): the entry's ``num_ch``, else the wire
-                    default W / num_slc (``connect.pack`` checks that
-                    num_slc divides the fastest spatial bound,
-                    ``connect.num_ch`` an entry's value)
-    temporal_dims   from the graph: the firing loops the port's memlet runs
-                    over (``port_loops``, as SNAX-LOWER takes them), at least
-                    1; with several nodes on one instance, the most
-    fifo_depth      the platform's ``default`` with the streamer's entry on top
-
-A port on a link (``link``) has no streamer: streamers sit on the
-outer ports only. ``instances`` reads the instances off the graph and
-resolves them against the BRM library, ``groups`` puts them into groups (an
-instance's ``group``, ``link``'s, else its own), ``accelerators`` into
-accelerators (an instance's ``accelerator``, ``encapsulate``'s, else its
-group's own); ``links``, ``linked_ports`` and ``unplaced`` read the links
-and the containers that get no L1 space (a link's, a fused nest's local
-value), ``slot_containers`` those read only through a slot connector (a
-CSR's value, in the core's memory); ``resolve`` builds the shell. Neither checks the pairing:
-that is check.py, which runs first and reports every problem, so
-``resolve`` raises on the first thing that does not fit.
-
-**Shared movers**. A container marked ``hw.share_ports`` (``share_ports``,
-sandbox/share_ports.py) has its writer's and its reader's groups on one accelerator, whose
-groups then share its streamer's movers: ``shared_accelerators`` names those accelerators,
-``shared_movers`` maps their ports. Per role (read, write), each group's ports on a streamer,
-unit by unit in port order, sorted by channels, widest first (a stable sort); the k-th of every
-group goes on mover k (``reader<k>``, ``writer<k>``, snax-gvsoc's names), which takes the
-widest channels and its spatial bounds (in words), the most temporal loops and the deepest
-FIFO of its users. A narrower user enables its first channels (snax_cluster's
-``configurable_channel``, the mover ``masked``). A user whose spatial bounds (in words) are not
-the mover's on every dimension but the slowest, and at most the mover's there, does not fit in
-its first channels: ``ShareError`` (``share.shape``). The pool's channels, with
-:math:`w_{s,r,k}` group s's k-th widest port of role r (0 if none):
-``C = Σ_r Σ_k max_s w_{s,r,k}``; ``set_channels`` gives each accelerator's, the one count
-check.py's ``crossbar_inputs`` sums.
+Shared movers (a container marked ``hw.share_ports``, sandbox/share_ports.py):
+``shared_movers`` puts, per role, each group's k-th widest port (a stable sort, unit by unit in
+port order) on mover k, which takes its users' widest channels and spatial bounds, most
+temporal loops and deepest FIFO; a user that does not fit is ``share.shape``. ``set_channels``
+gives each accelerator's channels, the sum over roles and k of the widest k-th port over its
+groups, the count check.py's ``crossbar_inputs`` sums.
 """
 
 from __future__ import annotations
