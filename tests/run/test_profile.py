@@ -1,4 +1,4 @@
-"""run/profile.py: the profile round-trips through its dict (C§7)."""
+"""run/profile.py: the profile round-trips through its dict."""
 
 import json
 

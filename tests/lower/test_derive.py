@@ -1,4 +1,4 @@
-"""Design point -> task list (D64)."""
+"""Design point -> task list."""
 
 from __future__ import annotations
 
@@ -48,7 +48,7 @@ def point(graph="vecadd_accelerated", memory=(), sets=None, edit_graph=None) -> 
 
 
 def test_vecadd_on_snax_forge_gives_its_checked_in_task_list():
-    """Equal to tests/run/fixtures/vecadd/tasks.json, the run fixture's (C§9)."""
+    """Equal to tests/run/fixtures/vecadd/tasks.json, the run fixture's."""
     d = Design(Platform.load(SNAX_FORGE), bound_vecadd(4))
     assert run_checks(d) == []
     got = task_list(DesignPoint.of(d, "vecadd"))
@@ -83,7 +83,7 @@ def test_w8_gives_eight_lanes():
 
 
 def test_two_temporal_maps_give_two_streamer_loops():
-    p = point(edit_graph=two_loops)  # two streamer loops, from the graph (D84)
+    p = point(edit_graph=two_loops)  # two streamer loops, from the graph
     tl = task_list(p)
     assert tl.configured()["add_acc_a"].values == {
         "base": 0, "temporal_bounds": [8, 2], "temporal_strides": [32, 256], "spatial_strides": [8]
@@ -92,7 +92,7 @@ def test_two_temporal_maps_give_two_streamer_loops():
 
 
 def test_matadd_lowers_its_two_firing_loops():
-    """matadd (int32, D142) at W = 4, M = 8, N = 16 on snax_forge (D73): the column beats
+    """matadd (int32) at W = 4, M = 8, N = 16 on snax_forge: the column beats
     innermost (4, 16 bytes apart), the rows outer (8, 64 bytes), 4 lanes as 2 channels a word
     (8 bytes) apart, each base the plan's; n = 32 firings; the streamers' two temporal loops
     are the graph's."""
@@ -122,7 +122,7 @@ def test_matadd_lowers_its_two_firing_loops():
     ],
 )
 def test_rowsum_restarts_every_row(name, reader, writer, n):
-    """rowsum on snax_forge (open item 81): A's reader runs the columns innermost (T = N / W
+    """rowsum on snax_forge: A's reader runs the columns innermost (T = N / W
     beats) and the rows outer, two temporal loops; y's writer has one firing loop, the rows,
     one lane, one word per row; n = M * N / W beats and len = T = 16 (M sums)."""
     d = Design(Platform.load(SNAX_FORGE), bound_rowsum(name))
@@ -149,12 +149,12 @@ def test_a_chain_of_two_nodes_orders_its_tasks_by_the_data():
     c = tl.configured()
     assert c["add2_acc2_a"].after == ["add_acc_out"]  # C comes from the first node, in L1
     assert c["add2_acc2_b"].after == ["load_B"] and c["store_D"].after == ["add2_acc2_out"]
-    # two accelerators in series (D158): acc's task before acc2 starts, then the stores' syncs
+    # two accelerators in series: acc's task before acc2 starts, then the stores' syncs
     assert [s.task for s in tl.steps if s.op == "sync"] == ["add_acc", "store_C", "store_D"]
 
 
 # =============================================================================
-# in place (open item 47): a unit that writes the container it reads
+# in place: a unit that writes the container it reads
 # =============================================================================
 
 
@@ -175,7 +175,7 @@ def in_place(gd: dict, out_subset: str | None = None, tasklet_subset: str | None
 
 def test_an_in_place_update_does_not_wait_on_its_own_read():
     """B = A + B: the writer starts with B's reader, so it cannot wait for it; the same
-    subset over the same firing loops needs no wait (open item 47)."""
+    subset over the same firing loops needs no wait."""
     p = point(edit_graph=in_place)
     tl = task_list(p)
     check_values(tl, p)
@@ -202,7 +202,7 @@ def test_a_write_into_its_read_container_elsewhere_is_refused():
 
 
 # =============================================================================
-# dot: a multiplier chained into an accumulator through L1 (D105)
+# dot: a multiplier chained into an accumulator through L1
 # =============================================================================
 
 
@@ -226,8 +226,8 @@ def test_dot_gives_its_task_list():
 
 
 def test_dot_runs_its_accelerators_in_series():
-    """mul and sum unencapsulated are two accelerators, two streamer sets (D157): no idle mover
-    (each task holds its own set's movers only), and D158's sync on mul's task after sum's
+    """mul and sum unencapsulated are two accelerators, two streamer sets: no idle mover
+    (each task holds its own set's movers only), and the serial sync on mul's task after sum's
     configures, right before sum's start, the one wait between them: a wait on mul's task
     covers its writer too, so no data wait on mul_out follows (waits.py)."""
     p = point("dot_accelerated")
@@ -247,7 +247,7 @@ def test_dot_runs_its_accelerators_in_series():
 
 
 def test_the_serial_sync_is_left_out_when_after_holds_the_previous_task():
-    """D158: the sync is left out when an ``after`` of the next accelerator's start already holds
+    """The sync is left out when an ``after`` of the next accelerator's start already holds
     the previous accelerator's task, and the pass adds none twice."""
     from snax_forge.lower.derive import serial_syncs
 
@@ -264,7 +264,7 @@ def test_the_serial_sync_is_left_out_when_after_holds_the_previous_task():
 
 
 # =============================================================================
-# dot_1_enc: dot 1's two groups in one accelerator (D148), a task each
+# dot_1_enc: dot 1's two groups in one accelerator, a task each
 # =============================================================================
 
 
@@ -282,7 +282,7 @@ IDLE = {"base": 0, "temporal_bounds": [0], "temporal_strides": [8], "spatial_str
 
 def test_dot_1_configures_every_mover_per_task_the_other_groups_idle():
     """Each group's task configures all five movers in the shell's order and starts them with
-    its unit; the other group's are idle, every bound 0 (C§12)."""
+    its unit; the other group's are idle, every bound 0."""
     tl = task_list(dot1())
     c = tl.configured()
     starts = [s.tasks for s in tl.steps if s.op == "start" and len(s.tasks) > 1]
@@ -295,7 +295,7 @@ def test_dot_1_configures_every_mover_per_task_the_other_groups_idle():
     assert c["sum_vsum_a"].after == ["mult_vmul_out"]  # tmp0 from mul, through L1
     assert c["sum_vsum_a"].values["base"] == c["mult_vmul_out"].values["base"]
     assert (c["mult_vmul"].values, c["sum_vsum"].values) == ({"n": 16}, {"n": 16, "T": 16})
-    # one accelerator, dot: its groups follow through their data, no serial sync (D158)
+    # one accelerator, dot: its groups follow through their data, no serial sync
     assert [s.task for s in tl.steps if s.op == "sync"] == ["store_out"]
 
 
@@ -312,7 +312,7 @@ def test_dot_1_waits_for_mul_s_writer_before_sum_and_never_on_an_idle_mover():
 
 def test_dot_1_is_two_accelerators_in_series():
     """recipes/dot/dot_1.json (no encapsulate): vmul and vsum, two streamer sets; no idle mover, the
-    serial sync on vmul's task before vsum starts, the one wait between them (D158)."""
+    serial sync on vmul's task before vsum starts, the one wait between them."""
     from tests.gen.helpers import bound_dot1
 
     d = Design(Platform.load(SNAX_FORGE), bound_dot1())
@@ -343,7 +343,7 @@ def test_a_memlet_the_nest_disagrees_with_is_refused(monkeypatch):
 
 
 def test_a_stream_brm_takes_the_memlets_order():
-    """The library's simd (stream, D70): the memlet is the order, so C back to front
+    """The library's simd (stream): the memlet is the order, so C back to front
     lowers, its streamer starting at element 60 and stepping back a beat at a time."""
     out = task_list(point(edit_graph=_backwards)).configured()["add_acc_out"].values
     assert out["temporal_bounds"] == [16] and out["temporal_strides"] == [-32]
@@ -455,7 +455,7 @@ def test_matadd_int32_4x6_in_2x2_tiles_in_words():
 
 
 # =============================================================================
-# The fold's seed (B2 R5): matvec_seed's q, read once per job, written in place
+# The fold's seed: matvec_seed's q, read once per job, written in place
 # =============================================================================
 
 

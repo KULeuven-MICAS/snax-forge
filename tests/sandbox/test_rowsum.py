@@ -1,4 +1,4 @@
-"""rowsum: a reduction with a restart every T < n beats (open item 81).
+"""rowsum: a reduction with a restart every T < n beats.
 
 rowsum imports as two nested maps (``sum_map`` over the rows m, ``sum_map_1``
 over the columns n) around a tasklet whose output ``y[m]`` reduces by add.
@@ -22,7 +22,7 @@ from tests.design.helpers import bound_rowsum
 
 
 def rates(g, node="sum"):
-    """The bound node's firing loops (var, count) and its named rates (D102)."""
+    """The bound node's firing loops (var, count) and its named rates."""
     n = g.node(node)
     brm = load_brm(n.attrs["brm"])
     loops = [(lp.var, lp.count) for lp in firing_loops(g, n)]

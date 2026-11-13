@@ -1,11 +1,11 @@
-"""Shared movers (D169, PORT1): two accelerators that hand data over through L1 on one streamer.
+"""Shared movers: two accelerators that hand data over through L1 on one streamer.
 
 ``share_ports(container, accelerator)`` and ``unshare_ports(container)``
     ``container`` is written by one group's units and read by another's, both bound, through
     L1 (no link on it). ``share_ports`` puts both groups on one accelerator, as ``encapsulate``
-    does (D148): every node of each carries ``accelerator``; then marks the container
-    ``hw.share_ports``, so the accelerator's groups share its streamer's movers (D169,
-    design/streamers.py's ``shared_movers``): the crossbar sees the movers' channels, not every
+    does: every node of each carries ``accelerator``; then marks the container
+    ``hw.share_ports``, so the accelerator's groups share its streamer's movers
+    (design/streamers.py's ``shared_movers``): the crossbar sees the movers' channels, not every
     port's. A group already in an accelerator keeps it, and the other joins it: ``accelerator``
     must then be its name. The site fills ``accelerator`` with that name, else the next free one
     after ``<writer's group>_<reader's group>`` (dot 1's ``vmul_vsum``). The marker records the

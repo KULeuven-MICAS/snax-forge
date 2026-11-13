@@ -1,4 +1,4 @@
-"""The memory plan (D86): passes, pins, the context later policies read."""
+"""The memory plan: passes, pins, the context later policies read."""
 
 from __future__ import annotations
 
@@ -49,7 +49,7 @@ def test_vecadd_default_is_contiguous_in_l1():
 
 
 def test_a_narrow_container_is_laid_out_by_its_itemsize():
-    """int32 vecadd (D142): 4-byte strides; each moved container 64 x 4 = 256 bytes, four whole
+    """int32 vecadd: 4-byte strides; each moved container 64 x 4 = 256 bytes, four whole
     beats, placed beat after beat."""
 
     def int32(g):

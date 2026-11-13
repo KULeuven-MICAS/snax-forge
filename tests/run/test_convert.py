@@ -1,5 +1,5 @@
 """run/convert.py on snippets and on a synthetic run: names, the window, the trace, the
-profile, the invariants (D137, C§7)."""
+profile, the invariants."""
 
 import pytest
 

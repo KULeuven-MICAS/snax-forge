@@ -1,10 +1,10 @@
-"""A BRM port's nest, through a layout, onto a streamer's values (D70).
+"""A BRM port's nest, through a layout, onto a streamer's values.
 
 The nest (``snax_forge.brm.affine``) says in which order the accelerator
 takes an operand's elements, in logical indices; the layout (layout.py) says
 where each element lives. Both are affine, so their composition is too, and
-it is exactly what a streamer runs (CONTRACTS.md section 9), in words
-(D142): a streamer channel moves one bank word, which holds num_slc slices
+it is exactly what a streamer runs (CONTRACTS.md section 9), in words: a streamer channel moves one
+bank word, which holds num_slc slices
 (elements) of the port's dtype (the streamer's ``num_slc``):
 
     base              layout.base + sum_d offset[d] * layout.strides[d]
@@ -22,7 +22,7 @@ it is exactly what a streamer runs (CONTRACTS.md section 9), in words
 
 At num_slc = 1 (int64) the fastest stride is the element's: nothing changes.
 
-The result is the ``values`` of a streamer task in the task list (D64), in
+The result is the ``values`` of a streamer task in the task list, in
 the streamer type's own terms; only the loops the nest uses are given and
 the adapter pads the rest. Nothing is decided here (principle 4): the layout
 is SNAX-DSE's, the nest the BRM's.

@@ -1,4 +1,4 @@
-"""A recipe's ``dtypes`` (D113, D142): containers at another integer dtype, applied to the
+"""A recipe's ``dtypes``: containers at another integer dtype, applied to the
 kernel's descriptors before DaCe builds the SDFG; the inputs cast to them."""
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ def test_a_narrow_recipe_imports_at_its_dtypes_and_passes_the_reference(name):
 
 
 def test_an_int32_product_is_sign_extended_into_an_int64_output():
-    """vecmul_i32_i64 (D143): the product runs at int32, the op type, and is sign-extended into
+    """vecmul_i32_i64: the product runs at int32, the op type, and is sign-extended into
     C: lane 2 wraps to -2, not 4294967294."""
     recipe = Recipe.load(recipe_path("vecmul_i32_i64"))
     graph = apply_recipe(recipe, import_kernel(recipe.kernel, recipe.dtypes))[-1].graph

@@ -1,4 +1,4 @@
-"""Dataflow notations: how a BRM writes its per-port nests (D70, open item 1).
+"""Dataflow notations: how a BRM writes its per-port nests.
 
 The dataflow part of a BRM names a notation and gives one nest per port:
 

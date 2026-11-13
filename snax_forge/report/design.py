@@ -2,7 +2,7 @@
 
 Everything here comes from the design point, its recipe and the cluster as a
 run names it (run/cluster.py: the generator's description files and the design
-point, D137), its regions as run/regions.py gives them (L2's from the ELF's symbols in
+point), its regions as run/regions.py gives them (L2's from the ELF's symbols in
 run.json); SNAX-GVSoC is not run. A flow from a bound graph has no recipe:
 its header names the graph the design point was made from instead, and takes
 the kernel from the run's functional check.
@@ -10,7 +10,7 @@ the kernel from the run's functional check.
     header       kernel, recipe and its params (or the graph), symbols,
                  platform (base and changes), memory plan passes and pins
     components   the accelerator, its movers, the DMA and the cores
-    accelerators per accelerator, one streamer set each (D157): its groups, its
+    accelerators per accelerator, one streamer set each: its groups, its
                  streamer's movers, channels (num_ch added up) and temporal
                  dims, its CSRs (its streamer's, then its own, first to last)
                  and each group's own CSRs; then per unit its instance, unit,
@@ -19,22 +19,22 @@ the kernel from the run's functional check.
     streamers    one per mover: instance port, direction, the container's
                  dtype, num_slc (its slices, elements, per 64-bit word),
                  num_ch (the channels the port uses, the mover's
-                 num_channel: words per beat, D142), FIFO depth,
+                 num_channel: words per beat), FIFO depth,
                  temporal loops and the container it streams (from the
                  graph's memlets)
     memories     per memory the design point's layouts: base, end (the extent
                  the memory checks use, padding included: run.padding_of),
                  bytes, share, padding (a tail's pad elements and the bytes
-                 to a whole DMA beat, D144), banks (L1) or words of a beat
+                 to a whole DMA beat), banks (L1) or words of a beat
                  (L2), rows or beats
-    estimate     the ideal estimate (D155, C§19): per group its cycles, bottleneck,
+    estimate     the ideal estimate: per group its cycles, bottleneck,
                  ramp, stall and its expected BUSY_COUNTER (the cycles plus the streamers'
                  fill), a guide and not a check, a bank-bound note per group whose
                  bank_bound (its streams' L1 time) exceeds its cycles and, on the
                  estimate's technology, its area and
                  energy; then the accelerator's cycles, the work no unit runs as
-                 cycles (one per iteration, an assumption, D155), their total and the
-                 L1 footprint against the L1; then the cost (C§20, D167): per unit,
+                 cycles (one per iteration, an assumption), their total and the
+                 L1 footprint against the L1; then the cost: per unit,
                  buffer link and control unit how it is costed, per port its
                  streamer, per accelerator its words through the crossbar and the
                  banks, the cost by part (datapath, control, streamers, crossbar,
@@ -47,7 +47,7 @@ the kernel from the run's functional check.
                  facts about addresses: movers of one group whose
                  containers start in the same banks, or lie a whole number of
                  bank rows apart, so that element i of both is in one bank
-                 (two groups run one after the other, C§14);
+                 (two groups run one after the other);
                  and containers the DMA moves as padded beats
 """
 
@@ -103,7 +103,7 @@ class AccelRow(Record):
 
 @dataclass
 class SetRow(Record):
-    """One accelerator, its streamer set (D157): its groups, its streamer's movers, channels and
+    """One accelerator, its streamer set: its groups, its streamer's movers, channels and
     temporal dims, its CSRs first to last and each group's own CSRs, first to last."""
 
     name: str
@@ -114,7 +114,7 @@ class SetRow(Record):
     first: int
     last: int
     group_csrs: dict[str, list[int]] = field(default_factory=dict)  # [first, last] per group
-    shared: bool = False  # its groups share its movers (share_ports, D169)
+    shared: bool = False  # its groups share its movers (share_ports)
 
 
 @dataclass
@@ -177,9 +177,9 @@ class EstimateRow(Record):
 
 @dataclass
 class CostRow(Record):
-    """One unit, buffer link or control unit of the cost (C§20); ``found`` None for a block
+    """One unit, buffer link or control unit of the cost; ``found`` None for a block
     the table does not hold; ``e_fire_pj`` and ``e_hold_pj`` None for a control unit (its comb
-    area equal to its flops', its comb energy negligible: a placeholder, D154), ``e_hold_pj``
+    area equal to its flops', its comb energy negligible: a placeholder), ``e_hold_pj``
     None for a block with no flops."""
 
     group: str
@@ -197,7 +197,7 @@ class CostRow(Record):
 
 @dataclass
 class L1Row(Record):
-    """One accelerator's words in L1 (C§20, D167): through the crossbar and the banks."""
+    """One accelerator's words in L1: through the crossbar and the banks."""
 
     accelerator: str
     words: int
@@ -211,7 +211,7 @@ class L1Row(Record):
 
 @dataclass
 class StreamerCostRow(Record):
-    """One port's streamer priced (C§20, D167); ``extrapolated`` the axes off the grid."""
+    """One port's streamer priced; ``extrapolated`` the axes off the grid."""
 
     accelerator: str
     streamer: str
@@ -228,7 +228,7 @@ class StreamerCostRow(Record):
 
 @dataclass
 class PartRow(Record):
-    """One part of the design's cost (D167) and its share of the totals; None where not
+    """One part of the design's cost and its share of the totals; None where not
     costed."""
 
     part: str
@@ -252,13 +252,13 @@ class EstimateTable(Record):
     missing: list[str] = field(default_factory=list)
     cost: list[CostRow] = field(default_factory=list)
     bank_notes: list[str] = field(default_factory=list)  # a group's bank bound over its cycles
-    unmapped_cycles: int = 0  # unmapped_iterations at UNMAPPED_CYCLES_PER_ITERATION (D155)
+    unmapped_cycles: int = 0  # unmapped_iterations at UNMAPPED_CYCLES_PER_ITERATION
     unmapped_iterations: int = 0  # over every map, spatial ones included
     total_cycles: int = 0  # accelerator_cycles + unmapped_cycles
     l1: list[L1Row] = field(default_factory=list)  # per accelerator, its words in L1
     streamers: int = 1  # the streamer sets, one per accelerator
     csrs: int | None = None  # every CSR of the entry; None without a platform
-    parts: list[PartRow] = field(default_factory=list)  # the cost by part (D167)
+    parts: list[PartRow] = field(default_factory=list)  # the cost by part
     area_design_um2: float | None = None  # the area without the banks
     streamer_cost: list[StreamerCostRow] = field(default_factory=list)
     xbar: dict[str, Any] | None = None  # its inputs, banks, accesses, area and energy
@@ -327,7 +327,7 @@ def _memory_tables(cluster: Cluster, regions: list[Region], point: Any) -> list[
 def _notes(cluster: Cluster, regions: list[Region], point: Any,
            streamers: list[StreamerRow]) -> list[str]:  # fmt: skip
     """Address facts about the movers of the accelerator (module doc), the bank notes over the
-    streamers of one group only: an accelerator's groups run one after the other (D148, C§14)."""
+    streamers of one group only: an accelerator's groups run one after the other."""
     word, banks = cluster.bank_bytes, cluster.banks
     group_of = cluster.accelerator.unit_of_mover
     row_bytes = word * banks
@@ -384,7 +384,7 @@ def _notes(cluster: Cluster, regions: list[Region], point: Any,
 
 
 def file_groups(file: dict[str, Any]) -> list[dict[str, Any]]:
-    """accelerator.json's groups, accelerator by accelerator (C§17, D157)."""
+    """accelerator.json's groups, accelerator by accelerator."""
     return [g for a in file["accelerators"] for g in a["groups"]]
 
 
@@ -482,7 +482,7 @@ def build_design(
                                    u.group))  # fmt: skip
     streamers = []
     for m in a.movers:
-        if m.users:  # a shared mover (D169): its first user's dtype, no one port or container
+        if m.users:  # a shared mover: its first user's dtype, no one port or container
             ref = point.streamers[m.users[0]]
             streamers.append(StreamerRow(m.name, None, m.port, "write" if m.write else "read",
                                          ref.dtype, ref.num_slc, m.lanes, m.fifo_depth,
@@ -507,7 +507,7 @@ def build_design(
 
 
 def estimate_table(point: Any, tech: str | None = DEFAULT_TECH) -> EstimateTable:
-    """The design point's ideal estimate (D155) as the report shows it, costed on ``tech``."""
+    """The design point's ideal estimate as the report shows it, costed on ``tech``."""
     from snax_forge.estimate import estimate
 
     e = estimate(point.graph, point.platform, tech)
@@ -674,7 +674,7 @@ def render_design(r: DesignReport) -> str:
 
 
 def cycles_line(e: EstimateTable) -> str:
-    """The Estimate's cycles (D155): the accelerator's, the unmapped work's at one cycle per
+    """The Estimate's cycles: the accelerator's, the unmapped work's at one cycle per
     iteration (an assumption; left out at 0), the total."""
     from snax_forge.estimate import UNMAPPED_CYCLES_PER_ITERATION as PER
 
@@ -687,7 +687,7 @@ def cycles_line(e: EstimateTable) -> str:
 
 
 def render_sets(rows: list[SetRow]) -> list[str]:
-    """The accelerators, one streamer set each (D157)."""
+    """The accelerators, one streamer set each."""
     out = table(
         ["Accelerator", "Groups", "Movers", "Channels", "Temporal dims", "CSRs", "Groups' CSRs"],
         [[x.name, ", ".join(x.groups), x.movers, x.channels,
@@ -696,12 +696,12 @@ def render_sets(rows: list[SetRow]) -> list[str]:
         {2, 3},
     )  # fmt: skip
     out += ["", ("Each accelerator is one streamer set: its streamer's CSRs first, then its own, "
-                 "packed from 960 (C§16); its movers are its groups' outer ports, readers "
+                 "packed from 960; its movers are its groups' outer ports, readers "
                  "first.")]  # fmt: skip
     shared = [x.name for x in rows if x.shared]
     if shared:
         out += ["", (f"{', '.join(shared)} {'shares' if len(shared) == 1 else 'share'} its movers "
-                     "among its groups (share_ports, D169): per role the k-th widest port of each "
+                     "among its groups (share_ports): per role the k-th widest port of each "
                      "group on mover k, a narrower one on its first channels; a port mux picks the "
                      "group by PORT_MUX_SEL, which the program writes before each start. The mux "
                      "costs nothing here.")]  # fmt: skip
@@ -709,8 +709,8 @@ def render_sets(rows: list[SetRow]) -> list[str]:
 
 
 def render_estimate(e: EstimateTable) -> list[str]:
-    """The estimate section: per group its cycles, then the accelerator's (D155)."""
-    out = [("The ideal estimate (D155): the group rule on ideal streams, with no bank conflicts, "
+    """The estimate section: per group its cycles, then the accelerator's."""
+    out = [("The ideal estimate: the group rule on ideal streams, with no bank conflicts, "
             "streamer fill, DMA or core control. The expected BUSY_COUNTER, the cycles plus the "
             "streamers' fill (3, or 2 for a group with one outer input), is a guide, not a check: "
             "a run's BUSY_COUNTER counts from its group's START until busy drops, so it includes bank "
@@ -726,7 +726,7 @@ def render_estimate(e: EstimateTable) -> list[str]:
     if e.l1_size is not None:
         l1 += f" of {e.l1_size} ({pct(e.l1_footprint / e.l1_size)})"
     out += ["", f"{cycles_line(e)} L1 footprint: {l1}."]
-    if e.bank_notes:  # the bank bound over the ideal cycles (D155), a line per group
+    if e.bank_notes:  # the bank bound over the ideal cycles, a line per group
         out += ["", ("Bank bound: L1's single-port banks serve one word each per cycle, so these "
                      "groups' streams take more cycles of L1 time than the ideal cycles (a bound "
                      "on the streams, not on the BUSY_COUNTER):"), ""]  # fmt: skip
@@ -737,29 +737,29 @@ def render_estimate(e: EstimateTable) -> list[str]:
 
 
 def _shown(x: float | None, unit: str = "") -> str | None:
-    """An area as shown (C§20): 3 significant figures."""
+    """An area as shown: 3 significant figures."""
     v = sig3(x)
     return None if v is None else f"{v}{unit}"
 
 
 def _energy(x: float | None, unit: str = "") -> str | None:
-    """An energy as shown (C§20): 3 decimal places in its unit."""
+    """An energy as shown: 3 decimal places in its unit."""
     v = dec3(x)
     return None if v is None else f"{v}{unit}"
 
 
 def render_cost(e: EstimateTable) -> list[str]:
-    """The cost subsection (C§20, D167): how each block is costed, each port's streamer, each
+    """The cost subsection: how each block is costed, each port's streamer, each
     accelerator's words in L1, then the cost by part with its shares and the totals; an area
     to 3 significant figures, an energy to 3 decimals."""
     src = e.char_source.get("snax_forge_experiments", "")[:7]
     out = [f"### {heading(e.tech)}", "", caveat(), "",
-           (f"CHAR1's model (D154, C§20) on `snax_forge/char/{e.tech}.json` (snax-forge-experiments "
+           (f"The block cost model on `snax_forge/char/{e.tech}.json` (snax-forge-experiments "
             f"{src}), per run of the accelerator: a unit or buffer link pays its comb energy per "
             "fire, from the table as measured, copied (lanes × the lanes-1 point) or "
             "interpolated, its register bits at e_load in the cycles it fires and e_hold in every "
             "other cycle; a control unit its bits × e_hold × the counter factor every cycle, its "
-            "area its flops' and an equal comb area (a rough estimate). HWCOST (D167) on "
+            "area its flops' and an equal comb area (a rough estimate). HWCOST on "
             f"`snax_forge/char/{e.tech}/`: each port's streamer its area and its beats × its "
             "energy per beat at its FIFO depth, loops and channels; the crossbar its area and "
             "every word through it × its energy per access at its inputs and banks; the L1 banks "
@@ -822,8 +822,7 @@ def _share(x: float | None) -> str | None:
 
 
 def streamers_line(streamers: int, csrs: int | None) -> str:
-    """The streamer sets (one per accelerator) and the entry's CSRs, which are not costed
-    (D152)."""
+    """The streamer sets (one per accelerator) and the entry's CSRs, which are not costed."""
     n = f"{streamers} streamer set{'' if streamers == 1 else 's'}"
     c = (
         ""

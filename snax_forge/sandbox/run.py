@@ -1,4 +1,4 @@
-"""Running a recipe (D72): every step applied, written and checked.
+"""Running a recipe: every step applied, written and checked.
 
 ``apply_recipe(recipe, graph)`` binds the recipe's symbols in the input
 graph (step 0, ``input``), then applies the steps in order. After every
@@ -6,7 +6,8 @@ step the reference executor runs the new graph and the input graph on
 the same seeded inputs, and every non-transient container must come out
 equal: a transform that changes what the graph computes stops the recipe at
 that step. A step that fixes an input (``bake_scalar``) is checked against the
-graph before it with that input at the value, which the later steps keep. The inputs are random integers of each container's dtype and
+graph before it with that input at the value, which the later steps keep. The inputs are random
+integers of each container's dtype and
 shape, independent of the kernel; that the input graph computes what the
 kernel does is checked against the kernel's reference (``pixi run
 check-dfg``).

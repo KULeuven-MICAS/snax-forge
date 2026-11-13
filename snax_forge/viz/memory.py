@@ -1,4 +1,4 @@
-"""The memory layout of a run, for the memory tab (D57).
+"""The memory layout of a run, for the memory tab.
 
 What this is
 ------------
@@ -12,7 +12,7 @@ L1 is ``Cluster.banks`` columns by rows of one word per bank, a word placed
 through the cluster's word-interleaved map (``Cluster.bank_row``), so the tab
 shows what the banks hold; a group is a superbank, one DMA beat of banks. L2
 is flat, drawn as rows of one DMA beat (``Cluster.dma_beat_bytes``) of bank
-words (D142), from the design point's L2 (its base and size, the cluster
+words, from the design point's L2 (its base and size, the cluster
 file's ``dram``). The regions are the run's (``run.regions.regions_of``: L1
 from the memory plan, L2 from the ELF's symbols). A cell is one word; it
 holds a list of ``[region, flat]`` pairs, one per element whose first byte is
@@ -21,7 +21,7 @@ packing labelled), where ``region`` indexes
 that memory's region list and ``flat`` is the element's row-major index in
 its region's shape. An empty cell is ``[]``.
 
-Padding (D144) is shown apart, as the memory checks count it (``run.padding_of``): a tail's
+Padding is shown apart, as the memory checks count it (``run.padding_of``): a tail's
 pad, element p (row-major) of the region's ``padded_shape`` outside its ``shape``, is the pair
 ``[region, -2 - p]`` at its address; a word of a DMA-moved container's beat padding, past its
 padded block up to a whole DMA beat, holds ``[region, -1]``. A region's ``end`` is the extent

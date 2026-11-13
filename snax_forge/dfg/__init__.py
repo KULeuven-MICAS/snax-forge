@@ -1,6 +1,6 @@
 """SNAX-DFG: the workload as SNAX-FORGE's own dataflow graph (ARCHITECTURE.md 5.1).
 
-The ``.snaxdfg`` format (D71): a graph holds
+The ``.snaxdfg`` format: a graph holds
 symbols, containers and an ordered body of nodes; a node is ``id``,
 ``kind``, ``inputs``, ``outputs``, ``attrs`` and, for a scope, ``body``.
 Kinds are registered (kinds.py: ``map``, ``tasklet``, ``accelerated``);
@@ -9,14 +9,14 @@ memlet subsets and map ranges use the shared expression grammar
 
 import_sdfg.py maps a simplified DaCe SDFG onto the format
 (``import_sdfg``, ``import_kernel``; it imports DaCe, so it is not loaded
-here). execute.py (D79) runs a graph in NumPy (``execute``), an
+here). execute.py runs a graph in NumPy (``execute``), an
 accelerated node through its BRM's function. The command line is
 ``python -m snax_forge.dfg import | check``.
 
 loops.py names each map's variable after its dimension (``loop.dim``, ``loop.piece`` and its
 tag: ``n``, ``n_1_t``, ``n_2_s``); the importer and the sandbox's transforms rename through it.
 
-reduce.py (D102): a reduction on a tasklet's output memlet
+reduce.py: a reduction on a tasklet's output memlet
 (``Reduction``, ``register_reduction``), so a reduction is a map like any other; the
 importer turns DaCe's ``Reduce`` into one and the executor folds it.
 """

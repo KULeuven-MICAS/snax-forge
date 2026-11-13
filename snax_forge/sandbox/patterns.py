@@ -7,7 +7,7 @@ tasklet connector feeds which BRM port:
 
     matcher(tasklet, attrs, brm, dtypes, scalars) -> {connector: port}
 
-``dtypes`` gives each connector's container dtype (the graph's, D143), ``scalars``
+``dtypes`` gives each connector's container dtype (the graph's), ``scalars``
 the input connectors that are scalar operands (``bind``'s).
 
 or raises ``SandboxError`` saying why not. A family's matcher is code in the
@@ -26,7 +26,7 @@ array inputs, in some assignment, and whose code is the tasklet's up to its slot
 commuting operands (``simd``'s ``op``, ``streams``, ``k``, ``k1`` and ``k2``,
 brm.py's ``Code``).
 
-``reduce`` (D102): the tasklet copies its one input into its one output
+``reduce``: the tasklet copies its one input into its one output
 (``out = in1``), and the output memlet folds (``reduce``) with the op
 ``attrs.op`` names, from that op's identity for the output container's
 dtype. That is
@@ -34,7 +34,7 @@ what the importer makes of DaCe's ``Reduce``, and what a BRM of family ``reduce`
 (``accumulate``) does: this matcher is the one place where the SNAX-DFG's
 ``reduce`` and the BRM's pattern meet, so the BRM names no IR's term.
 
-``lane_fold`` (D149, ``mac``): a fused nest (``fuse_map``), the spatial map
+``lane_fold`` (``mac``): a fused nest (``fuse_map``), the spatial map
 ``bind`` is given with its two tasklets: the first a ``simd`` fold with
 ``attrs.op`` over two inputs, writing a local value the second reads at the
 same index; the second a ``reduce`` copy of it with ``attrs.fold``, its
@@ -42,7 +42,7 @@ output indexed by the spatial variable (one partial per lane, from
 ``split_reduce``). The connectors are the nest's own (``fused_view``): the
 first tasklet's inputs onto the BRM's inputs in fold order, the second's
 output onto its output. A tasklet is refused with "fuse_map first", a fold
-into one element with "split_reduce first" (D150).
+into one element with "split_reduce first".
 
 ``lane_fold`` without ``attrs.op`` (``lane_accumulate``, no front op): the node
 bound is a spatial map whose body is one tasklet copying its one input into its
@@ -288,9 +288,9 @@ def _lane_fold(
     if node.kind == "tasklet":
         if any(m.reduce is not None for m in node.outputs.values()):
             raise SandboxError(f"{what}: a {brm.name} folds one partial per lane, this tasklet "
-                               "folds into the output: split_reduce first (D150)")  # fmt: skip
+                               "folds into the output: split_reduce first")  # fmt: skip
         raise SandboxError(f"{what}: a {brm.name} binds a multiply and the fold of its products "
-                           "as one nest: fuse_map first (D150)")  # fmt: skip
+                           "as one nest: fuse_map first")  # fmt: skip
     found = fused_view(node)
     if found is None:
         raise SandboxError(f"{what}: not a fused nest of a multiply and its fold (fuse_map first)")
@@ -315,7 +315,7 @@ def _lane_fold(
                            f"from {fold}'s identity {identity}")  # fmt: skip
     if node.attrs["var"] not in second.outputs[cout].names:
         raise SandboxError(f"{what}: {second.id} folds every lane into one element; a "
-                           f"{brm.name} keeps one partial per lane: split_reduce first (D150)")  # fmt: skip
+                           f"{brm.name} keeps one partial per lane: split_reduce first")  # fmt: skip
     out = next(p for c, p in ports.items() if c in first.outputs)
     return {c: p for c, p in ports.items() if c in first.inputs} | {cout: out}
 

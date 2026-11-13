@@ -1,11 +1,11 @@
-"""Design point -> task list (D73, D64).
+"""Design point -> task list.
 
 The task list (tasks.py, CONTRACTS.md section 9) is derived from a design
 point and decides nothing. The accelerated nodes run in the graph's
 execution order, one group of tasks each (a single tile: every map around a
 node is one of its temporal firing loops, ``firing_loops``); a linked group's
-units (D148, one node each) are one group of tasks at its first node, its
-ports on a link with no streamer (D112) and no load or store. For each group:
+units (one node each) are one group of tasks at its first node, its
+ports on a link with no streamer and no load or store. For each group:
 
     loads        for each input in port order whose container has an L2 and an
                  L1 layout and is not in L1 yet: configure ``load_<C>`` (DMA,
@@ -15,11 +15,11 @@ ports on a link with no streamer (D112) and no load or store. For each group:
                  BRM's port order, with values from the memlet through the
                  container's L1 layout (below)
     idle movers  only in an encapsulated accelerator (several groups on one
-                 streamer set, D148, D157): configure ``<node>_<streamer>``
+                 streamer set): configure ``<node>_<streamer>``
                  for every port of the set's other groups' units too, every
                  temporal bound 0, so they never start: the set's streamer
                  starts all its movers with one CSR; the task list holds them
-                 in the set's order, unit by unit (a shared set's too, D169: the
+                 in the set's order, unit by unit (a shared set's too: the
                  program writes each mover once, lower/c.py). Their temporal strides
                  are a bank word, not 0: a reader whose first loop has stride
                  0 runs that loop once whatever its bound and hands each beat
@@ -31,7 +31,7 @@ ports on a link with no streamer (D112) and no load or store. For each group:
                  named rates and each slot it reads from a container (a CSR the
                  program writes, ``{"k1": {"from": "alpha"}}``, axpy's); a linked
                  group's ``<node>_<group>`` with each unit's, by unit
-    serial sync  when the accelerator is not the previous group's (D158):
+    serial sync  when the accelerator is not the previous group's:
                  ``sync`` on the previous accelerator's task, after this
                  group's configures and before its start, unless an ``after``
                  of this start already holds that task (``serial_syncs``)
@@ -48,21 +48,21 @@ writer for the tasks that read or wrote its container since; the waits a
 busy component needs are placed later (waits.py). Every configure uses the platform's
 ``wait_mode``; so does every sync.
 
-**In place** (open item 47). A writer whose container a reader of the same start reads
+**In place**. A writer whose container a reader of the same start reads
 cannot wait for that reader: they start together. It needs no wait when the reader is a
 port of its own unit and both visit the same addresses in the same order, beat by beat
 (``addresses``): every element is read before the unit writes its result back (axpy's
 ``y``, every beat; a fold's seed and its write, once per job). Any other reader in the
 same start is refused by name, naming both ports.
 
-**Accelerators run in series** (D158, C§9): the groups of one accelerator (an
+**Accelerators run in series**: the groups of one accelerator (an
 encapsulated set) follow each other through their data dependences, as
 before; between two accelerators the next one's start waits for the previous
 accelerator's task, so its streamers and CSRs are set up while the previous
 one runs and it starts when that one is done. dot 1: ``sum_vsum``'s
 configures, ``sync mult_vmul``, then the start of ``sum_vsum``'s tasks;
 dot_1_enc (one accelerator, ``dot``) has no serial sync. Overlap of
-independent accelerators is open item 109.
+independent accelerators is not done yet.
 
 **Streamer values from a memlet**. With the firing loops ``v_k``
 (begin ``b_k``, ``count_k`` iterations, step ``s_k``) and the container's L1
@@ -79,7 +79,8 @@ The spatial bounds must be the streamer's. For a BRM in the ``affine``
 notation the addresses the values visit, beat by beat, must be the ones the
 BRM's nest gives through the same layout (streams.py): the memlet and the
 accelerator agree on the order of the elements. In the ``stream`` notation
-the memlet is the order (D70), so there is nothing to compare. The memlet's loop structure is the one written (one streamer
+the memlet is the order, so there is nothing to compare. The memlet's loop structure is the one
+written (one streamer
 loop per firing loop), so two temporal maps give two streamer loops even
 where the nest has one.
 """
@@ -184,7 +185,7 @@ def task_list(point: DesignPoint) -> TaskList:
 
 def accelerator_components(point: DesignPoint) -> dict[str, str]:
     """Each component an accelerator task runs on (a unit, or a linked group) -> its
-    accelerator, the streamer set it is in (D157)."""
+    accelerator, the streamer set it is in."""
     group = {u: k for k, units in unit_groups(point.graph).items() for u in units}
     out: dict[str, str] = {}
     for acc, units in accelerators(point.graph).items():
@@ -193,8 +194,10 @@ def accelerator_components(point: DesignPoint) -> dict[str, str]:
     return out
 
 
+# NB (D158): accelerators run in series: the next one is configured while the current one runs
+# and started after a sync on it.
 def serial_syncs(tasks: TaskList, point: DesignPoint) -> TaskList:
-    """``tasks`` with D158's serial syncs (module doc): before each start of an accelerator
+    """``tasks`` with the serial syncs (module doc): before each start of an accelerator
     task whose accelerator is not the previous accelerator task's, a ``sync`` on that previous
     task, in its ``wait_mode``, unless an ``after`` of the start's tasks holds it, or a sync on it
     comes after its start already. The configures stay where they are, before the sync."""
@@ -220,15 +223,15 @@ def serial_syncs(tasks: TaskList, point: DesignPoint) -> TaskList:
 
 
 def unit_firings(g: Graph, node: Node, inst: Instance) -> tuple[dict[str, Any], list[Loop]]:
-    """An accelerated node's accelerator values, its firings n and its named rates (C§9), and
-    its firing loops; the estimate reads the same (D155). Raises LowerError."""
+    """An accelerated node's accelerator values, its firings n and its named rates, and
+    its firing loops; the estimate reads the same. Raises LowerError."""
     what = f"node {node.id}"
     try:
         loops = firing_loops(g, node)
     except ValueError as e:
         raise LowerError(f"{what}: {e}") from None
     memlets = {**node.inputs, **node.outputs}
-    try:  # named rates from the loops a memlet does not use (D102), as REF and bind do
+    try:  # named rates from the loops a memlet does not use, as REF and bind do
         rates = named_rates(
             {p.name: (memlets[p.name], p.rate) for p in inst.ports},
             [(lp.var, lp.count) for lp in loops],
@@ -258,7 +261,7 @@ class _Derivation:
         self.linked = {k: units for k, units in unit_groups(g).items() if len(units) > 1}
         self.runs = {
             m.id: run for runs in group_runs(g).values() for run in runs for m in run.values()
-        }  # a linked group's runs (D165)
+        }  # a linked group's runs
         self.linked_ports = linked_ports(g)
         self.last_write = {m.data: n.id for n in self.nodes for m in n.outputs.values()}
         self.steps: list[Any] = []
@@ -274,7 +277,7 @@ class _Derivation:
                 continue
             members = self.linked.get(group)
             self.run_nodes = None
-            if members is not None:  # one run of the group: the nodes its links join (D165)
+            if members is not None:  # one run of the group: the nodes its links join
                 self.run_nodes = self.runs[n.id]
                 done.update(m.id for m in self.run_nodes.values())
             self.group(n, group, members)
@@ -325,9 +328,7 @@ class _Derivation:
 
     def dma(self, task: str, direction: str, c: str, after: list[str]) -> None:
         elem, padded = np.dtype(self.g.containers[c].dtype).itemsize, padded_shape(self.g, c)
-        l1 = dma_side(
-            over(self.layout(c, "l1"), padded), elem, self.beat
-        )  # a tail's pads too (D144)
+        l1 = dma_side(over(self.layout(c, "l1"), padded), elem, self.beat)  # a tail's pads too
         l2 = {"symbol": c} | {k: v for k, v in dma_side(over(self.layout(c, "l2"), padded), elem,
                                                         self.beat).items() if k != "base"}  # fmt: skip
         src, dst = (l2, l1) if direction == "l2_to_l1" else (l1, l2)
@@ -428,13 +429,13 @@ class _Derivation:
         if reader_node != node:
             raise LowerError(
                 f"{what}: writes {c}, which {reader} (node {reader_node}) reads in the same "
-                "start; an in-place update lowers only within one unit (open item 47)"
+                "start; an in-place update lowers only within one unit"
             )
         if not np.array_equal(writes, reads):
             raise LowerError(
                 f"{what}: writes {c} in place of {reader}'s read, but not the same elements in "
                 "the same order; an in-place update lowers only as the same subset over the "
-                "same firing loops (open item 47)"
+                "same firing loops"
             )
 
     def accelerator(self, n: Any, group: str, members: list[str] | None,

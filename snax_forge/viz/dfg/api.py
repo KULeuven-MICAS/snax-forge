@@ -1,4 +1,4 @@
-"""What the DFG viewer asks for, as plain Python functions (D55).
+"""What the DFG viewer asks for, as plain Python functions.
 
 The server (server.py) only turns these results into JSON; the tests call
 them directly, and the drawing is checked by eye.
@@ -50,7 +50,7 @@ reading one does not link them), and a node linked so to two columns starts a
 new column below them that ``joins`` them (gesummv's sum). mvt and bicg are
 two columns, a graph of one chain is drawn as before. The columns say the
 chains are independent, not that they run at once: the body's order, and the
-accelerators' run in series (D158), stay. Each column draws its own input
+accelerators' run in series, stay. Each column draws its own input
 boxes (mvt's A once in each), but a container ``mark_transpose`` marked
 (``drawn_once``) is one box above the columns that read it, an edge into
 each; a marked edge (``transpose``) is labelled beside it just above the
@@ -59,13 +59,13 @@ reader's top-level map, at the container's font size, ``Aᵀ`` for a matrix
 its Details' memlet ends ``(transpose 1, 0)``. A node's input connectors are
 ordered by where their edges come from (dfg.js's ``orderRows``), so mvt's
 ``tmp0_mult`` takes y1 left of the shared A and the two do not cross. Nodes
-bound to one instance (D165, ``shared_units``) are drawn where they are, the
+bound to one instance (``shared_units``) are drawn where they are, the
 same name in each; selecting one highlights the others.
 
 Each edge is one memlet: from a container box (or a writer's connector) to
 an input connector, or from an output connector to a container box, with its ``id``
 ``<from>-><to>``; it carries no text. Its Details hold the memlet, for a folding write
-with the op (``out[0] (reduce add)``), and at an accelerated node's port its ``packing`` (D142):
+with the op (``out[0] (reduce add)``), and at an accelerated node's port its ``packing``:
 ``int32 · num_slc 2 · num_ch 2``, the container's dtype of b bits, num_slc =
 64 / b slices (elements) per bank word, and num_ch = W / num_slc channels, W
 the instance's lanes for that port (the wire slice, the only value
@@ -78,7 +78,7 @@ nodes are the graph's own tree, each with its compact text, a map's tag and its 
 Positions are the browser's business: the boxes are HTML laid out by CSS,
 and the edges an SVG layer the viewer draws over them (static/dfg.js).
 
-**Blocks** (REUSE1, sandbox/blocks.py; ``fold``). A block not in the view's ``expanded`` is
+**Blocks** (sandbox/blocks.py; ``fold``). A block not in the view's ``expanded`` is
 drawn as one node of kind ``block`` in place of the top-level nodes it holds whole, its text
 ``dot · dot/dot_3 · W = 4`` (``block_text``), an input ``in:A`` per container it reads from
 outside and an output ``out:x`` per container it writes (its transients, written and read only
@@ -88,17 +88,18 @@ one map per level standing for the nests' alike maps (``tmp0_mult_map + sum_map 
 temporal``), when each holds one node and they agree level by level in range and tag; each
 port's edge carries the ``slice`` one firing takes, its memlet with the dimensions the outer
 loops do not index made whole (``A[m_t, 0:N]``, half 2's ``A[0:M, n_t]``, ``tmp0[m_t]``). A
-group none of whose units is drawn has ``drawn`` false, and no outline. An expanded block shows its own blocks the same way, and its nodes once they
+group none of whose units is drawn has ``drawn`` false, and no outline. An expanded block shows its
+own blocks the same way, and its nodes once they
 are expanded too. A block that holds a top-level node only in part (its outer maps hold other
 nodes) is always drawn as its nodes (``foldable`` false). The view's ``blocks`` list every
 block in the graph's order: ``name``, ``kernel``, ``recipe``, ``params``, ``text``, ``parent``,
 ``depth``, ``collapsed`` (drawn as a box), ``hidden`` (inside a collapsed one), ``foldable``,
 ``tops`` (the drawn top-level ids it covers, which the page outlines when it is open) and
-``together`` (the blocks of its depth sharing its units, D165, which open and close with it);
+``together`` (the blocks of its depth sharing its units, which open and close with it);
 Details ``block:<name>`` its kernel, recipe, params, heads, the block it is in, its blocks and
 units.
 
-**Accelerators** (D148). A bound graph nests accelerator ⊃ groups ⊃ units:
+**Accelerators**. A bound graph nests accelerator ⊃ groups ⊃ units:
 ``accelerators`` lists each accelerator in the order the graph first uses
 it, its groups in the graph's order (a unit alone, or the units ``link``
 joined, by their ``group``), each with its units (the instance and its
@@ -109,7 +110,7 @@ so dot 1's ``mul`` and ``sum`` sit in the accelerator ``dot``, and dot 4's
 ``mac``, its link and ``sum`` in one group box; an accelerated node's Details
 name its group and accelerator.
 
-**The compact texts and Details** (VIEW2). Every node, container, group and accelerator also
+**The compact texts and Details**. Every node, container, group and accelerator also
 carries ``text``, what the compact drawing shows, and the view a ``details`` map of everything
 else, keyed ``<kind>:<id>`` (``node:``, ``container:``, ``group:``, ``accelerator:``, ``edge:``;
 a link node and its container share a name, so the page selects by name and shows both), all
@@ -118,13 +119,16 @@ worked out here:
     map          ``<id> · <var> · <iterations> · <kind or untagged>``
                                                        (``mult_map · i · 2048 · untagged``)
     tasklet      ``<id> · <operation>``: the code's right-hand side on its connector names,
-                 ``fold <op>`` for a copy into a ``reduce``        (``mult · in1 * in2``, ``sum · fold +``;
-                 after ``bake_scalar`` ``mult · 3 * in2``, or ``mult · csr(alpha) * in2`` read as CSR)
+                 ``fold <op>`` for a copy into a ``reduce``        (``mult · in1 * in2``, ``sum ·
+                 fold +``;
+                 after ``bake_scalar`` ``mult · 3 * in2``, or ``mult · csr(alpha) * in2`` read as
+                 CSR)
     unit         ``<instance> · <what one lane computes> · W <lanes>``, then each slot
                  and its value, baked or read from a scalar (a CSR), a fold's as a tasklet's
                                                           (``mul · a * b · W 4``,
                                                            ``acc · max(a, k) · W 4 · k 0``,
-                                                           ``acc · k1 * a + b · W 4 · k1 csr(alpha)``)
+                                                           ``acc · k1 * a + b · W 4 · k1
+                                                           csr(alpha)``)
     link         ``<container> · wire`` or ``<container> · FIFO <depth>``
     container    its name with its shape over the kernel's symbols, ``A[M, N]`` (a matrix),
                  ``y[M]`` (a vector), a scalar argument by its name alone, and a ``badge``
@@ -137,7 +141,7 @@ worked out here:
                  after it, or a unit's slot) it has no box, edge or port in the drawing: the
                  operation names it ``csr(alpha)``, as a baked one shows its value, so the
                  node shows only its streamed inputs (Containers still lists it); a
-                 container ``share_ports`` marks (D169) carries a dashed tag ``share_ports · <name>``
+                 container ``share_ports`` marks carries a dashed tag ``share_ports · <name>``
                  beside its badge, as a link's or a FIFO's text marks theirs
     group, accelerator   their name
 
@@ -147,21 +151,21 @@ group and accelerator; a link's container, depth and units; a container's shape,
 bytes, writers and readers; a group's units, links, estimated cycles and its cost; an accelerator's
 groups; an edge's (keyed ``<from>-><to>``, its ``id``) subset, packing and, at a unit's port,
 the firing loops its memlet runs over and its beats (design/streamers.py's ``port_loops``, as the
-estimate counts them, D155) and whether it has a streamer (a linked port has none). The estimate is the
+estimate counts them) and whether it has a streamer (a linked port has none). The estimate is the
 step's on the viewer's platform, or none; a graph it cannot judge keeps its message in
 ``estimate_error`` and has no badges.
 
-**The cost** (C§20) is the estimate's on the technology asked for (``tech``, default nangate45),
+**The cost** is the estimate's on the technology asked for (``tech``, default nangate45),
 worked out here as text, an area to 3 significant figures and an energy to 3 decimals
 (estimate/cost.py's ``sig3`` and ``dec3``):
 a unit's and a buffer link's Details gain ``cost`` after ``timing`` (``found``, its area total,
 comb and flops, its energy per fire, holding per cycle and per task, or "not characterized"), a
 group's its area, energy and control unit; the Estimate panel's ``summary`` per group
-``area_text`` and ``energy_text``, ``streamers`` (the accelerators, one streamer set each, D157:
+``area_text`` and ``energy_text``, ``streamers`` (the accelerators, one streamer set each:
 their count, the entry's CSRs, a ``text`` line and per accelerator its groups, CSRs and
 streamer's movers and channels), and ``cost`` (the heading, the ``caveat``, the design's area
 and energy, its area without the banks, the blocks not characterized, the parts not costed and
-the points extrapolated; ``parts``, the cost by part, D167: per part its ``name``, area and
+the points extrapolated; ``parts``, the cost by part: per part its ``name``, area and
 energy with their texts and each one's ``share`` of the total, the two bars the page draws to
 scale; and ``tables``, the cost as a table per accelerator, ``cost_tables``, with a row per
 port's streamer and its words' row through the crossbar and the banks; None when nothing is
@@ -169,8 +173,8 @@ bound or there is no technology); a block with no flops holds "–".
 
 **A step** (``step_view``) is a graph's view with its ``label``, its ``marks`` (the nodes and
 containers some transform's site accepts), its ``estimate`` (``to_dict``) with its ``summary``
-(the Estimate panel's figures, every sum and share made here, D57), its ``containers_section``
-(the left column's Containers, C§12: each container's shape, sizes, dtype, bytes, placement,
+(the Estimate panel's figures, every sum and share made here), its ``containers_section``
+(the left column's Containers: each container's shape, sizes, dtype, bytes, placement,
 symbols and its one ``line``), its ``symbols_section`` (each kernel symbol, its value and its
 param) and ``bindings_section`` (each param with the unit, split or link it configures; the
 params come from the session's recipe in edit mode, a sandbox folder's ``recipe.json`` in view
@@ -432,7 +436,7 @@ def step_view(e: Entry, label: str, platform: Any = None, marks: dict[str, list[
     out["containers_section"] = containers_section(e.graph, est)
     out["symbols_section"] = symbols_section(e.graph, recipe, editable)
     out["bindings_section"] = bindings_section(e.graph, recipe, editable)
-    if recipe is not None:  # the recipe's param names in the boxes and Details (D156)
+    if recipe is not None:  # the recipe's param names in the boxes and Details
         _name_params(out, e.graph, recipe)
     if marks is None:
         from snax_forge.sandbox.session import marks_of
@@ -468,7 +472,7 @@ def folder_recipe(e: Entry) -> Any:
 
 
 def symbols_section(g: Graph, recipe: Any = None, editable: bool = False) -> list[dict[str, Any]]:
-    """The left column's Symbols (C§12): each graph symbol, its ``value`` (None while unbound),
+    """The left column's Symbols: each graph symbol, its ``value`` (None while unbound),
     the recipe ``param`` its value is (the recipe's symbol bound to a param's name, ``N`` ->
     ``N``; None for a number or an expression), ``editable`` (edit mode and a param: an input,
     ``POST /api/params``) and the ``containers`` whose shape uses it."""
@@ -520,8 +524,8 @@ def _splits(recipe: Any) -> list[tuple[Any, str, list[str], re.Pattern[str], Any
 
 
 def unit_params(g: Graph, recipe: Any) -> dict[str, list[str]]:
-    """Per bound instance, the recipe params of the splits whose inner map it replaced (C§12's
-    Bindings rule: ``bind`` reads W off the spatial map, D73)."""
+    """Per bound instance, the recipe params of the splits whose inner map it replaced (the recipe's
+    Bindings rule: ``bind`` reads W off the spatial map)."""
     splits, out = _splits(recipe), {}
     for n, _ in g.walk():
         if n.kind == "accelerated" and n.attrs["instance"] not in out:
@@ -536,7 +540,7 @@ def unit_params(g: Graph, recipe: Any) -> dict[str, list[str]]:
 
 def map_ranges(g: Graph, recipe: Any) -> dict[str, str]:
     """Per map a split made, its range with the factor's param name and its iterations beside
-    it (``0:N // W_acc_1 = 256``, the inner ``0:W_acc_1 = 8``; D156); a factor given as a
+    it (``0:N // W_acc_1 = 256``, the inner ``0:W_acc_1 = 8``); a factor given as a
     number keeps the range as the graph has it."""
     out: dict[str, str] = {}
     maps = {n.id: n for n, _ in g.walk() if n.kind == "map"}
@@ -559,7 +563,7 @@ def map_ranges(g: Graph, recipe: Any) -> dict[str, str]:
 
 
 def _name_params(view: dict[str, Any], g: Graph, recipe: Any) -> None:
-    """The step view's unit boxes and map Details with the recipe's param names (D156): a
+    """The step view's unit boxes and map Details with the recipe's param names: a
     unit's lanes under its split's param (``acc_1 · in1 * in2 · W_acc_1 8``), a split map's
     ``range`` (``0:N // W_acc_1 = 256``, the graph's ``0:N // 8`` named)."""
     names = unit_params(g, recipe)
@@ -586,8 +590,8 @@ def _name_params(view: dict[str, Any], g: Graph, recipe: Any) -> None:
 
 
 def bindings_section(g: Graph, recipe: Any = None, editable: bool = False) -> dict[str, Any]:
-    """The left column's Bindings (C§12): each param shown with what it configures. The param
-    stays the split's (D68, D73: ``bind`` reads W off the spatial map); a split step on map M
+    """The left column's Bindings: each param shown with what it configures. The param
+    stays the split's (``bind`` reads W off the spatial map); a split step on map M
     configures the unit whose replaced subtree holds the map it made (``M_inner``, ``M_s``,
     ``split_reduce``'s ``M_final``). ``entries``, in the graph's order:
 
@@ -616,7 +620,7 @@ def bindings_section(g: Graph, recipe: Any = None, editable: bool = False) -> di
     entries: list[dict[str, Any]] = []
     used: set[int] = set()
     seen: set[str] = set()
-    nodes_of: dict[str, list[Node]] = {}  # an instance's nodes, several when shared (D165)
+    nodes_of: dict[str, list[Node]] = {}  # an instance's nodes, several when shared
     for n, _ in g.walk():
         if n.kind == "accelerated":
             nodes_of.setdefault(n.attrs["instance"], []).append(n)
@@ -708,7 +712,7 @@ def _lanes_names(n: Node) -> set[str]:
 
 
 def bindings_tree(g: Graph, entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """The Bindings as a tree (D156, C§12), in the entries' order: an encapsulated accelerator
+    """The Bindings as a tree, in the entries' order: an encapsulated accelerator
     ``{kind: accelerator, name, children}`` holds its groups ``{kind: group, name, children}``,
     each its units' and links' entries ``{kind: entry, index}`` (``index`` into ``entries``); a
     linked group not in an accelerator is a group at the top; a unit alone, a split not bound
@@ -780,7 +784,7 @@ def _placed_text(placed: Any) -> str | None:
 
 
 def containers_section(g: Graph, est: Any = None) -> list[dict[str, Any]]:
-    """The left column's Containers (C§12), per container in the graph's order: its ``name``,
+    """The left column's Containers, per container in the graph's order: its ``name``,
     ``shape`` as written (``shape_text``, its dims by " × ", and ``dims``, each dim's ``parts``,
     ``{text, symbol}`` with ``symbol`` the graph symbol a part names or None, so the page puts
     an input on each), ``sizes`` at the graph's symbols (None while one is unbound), ``dtype``,
@@ -869,7 +873,7 @@ def compare_view(a: Entry, b: Entry, platform: Any = None, tech: str = DEFAULT_T
 
 def compare_cost_bars(labels: list[str], sa: dict[str, Any] | None,
                       sb: dict[str, Any] | None) -> dict[str, list[dict[str, Any]]] | None:  # fmt: skip
-    """Compare's cost bars (D167): for ``area`` and for ``energy``, one bar per side (the left
+    """Compare's cost bars: for ``area`` and for ``energy``, one bar per side (the left
     step first), both on one scale, the larger total the whole width, so the shorter bar is the
     cheaper design; each its ``label``, ``total`` and ``total_text`` and its ``segments``, per
     part costed its ``name``, ``label``, ``width`` (0..1 of the scale) and ``text``. None when
@@ -931,12 +935,13 @@ def detail_rows(x: dict[str, Any] | None, y: dict[str, Any] | None) -> list[dict
 
 def estimate_rows(sa: dict[str, Any] | None, sb: dict[str, Any] | None) -> list[dict[str, Any]]:
     """The Estimate panel in two columns (module doc), from each side's summary (None: no
-    estimate): under ``accelerator`` its cycles, the unmapped cycles and the total (D155; the
-    one unmapped count, D156, ``not_mapped`` staying in the estimate); under ``group <name>``,
-    every group of either side, its cycles, expected BUSY_COUNTER (a guide, D155), channels, area and
+    estimate): under ``accelerator`` its cycles, the unmapped cycles and the total (the
+    one unmapped count, ``not_mapped`` staying in the estimate); under ``group <name>``,
+    every group of either side, its cycles, expected BUSY_COUNTER (a guide), channels, area and
     energy, and its bank
-    note where a side has one; under ``memory`` L1, the words read and written, the lanes; under the cost heading the
-    accelerator's area, energy, L1 accesses (D154) and the blocks not characterized. "–" where a
+    note where a side has one; under ``memory`` L1, the words read and written, the lanes; under the
+    cost heading the
+    accelerator's area, energy, L1 accesses and the blocks not characterized. "–" where a
     side has none."""
 
     def both(fn: Any) -> tuple[Any, Any]:
@@ -971,7 +976,7 @@ def estimate_rows(sa: dict[str, Any] | None, sb: dict[str, Any] | None) -> list[
                                       ("channels", "channels"), ("area", "area_text"),
                                       ("energy", "energy_text"))]  # fmt: skip
         notes = both(lambda s: group(s, "bank_note"))
-        if any(notes):  # L1's banks allow fewer cycles than the ideal on a side (D155)
+        if any(notes):  # L1's banks allow fewer cycles than the ideal on a side
             rows.append(_row("bank bound", *notes, under))
     rows += [_row("L1", *both(l1), "memory"),
              _row("reads", *both(lambda s: f"{s['reads']} words"), "memory"),
@@ -1002,14 +1007,14 @@ def estimate_rows(sa: dict[str, Any] | None, sb: dict[str, Any] | None) -> list[
 
 
 def estimate_summary(est: Any, graph: Graph | None = None) -> dict[str, Any]:
-    """The Estimate panel's figures, every sum and share worked out here (D57): the headline,
+    """The Estimate panel's figures, every sum and share worked out here: the headline,
     ``cycles`` (the accelerator's, the unmapped work's at one cycle per iteration with that
-    assumption as its ``title``, and the total, D155),
+    assumption as its ``title``, and the total),
     per group ``cycles = bottleneck + ramp [+ stall]`` and its expected BUSY_COUNTER (a guide, not a
-    check, D155), the L1
+    check), the L1
     footprint against the L1 (its share as a CSS width), the words read and written, and the
     lane use of each tailed split; per group its ``bank_bound`` and, where it exceeds the
-    cycles, its ``bank_note`` (D155; R2 shows them); with a technology per group its area and
+    cycles, its ``bank_note`` (R2 shows them); with a technology per group its area and
     energy and the accelerator's ``cost`` (module doc)."""
     groups = []
     for g in est.groups:
@@ -1037,7 +1042,7 @@ def estimate_summary(est: Any, graph: Graph | None = None) -> dict[str, Any]:
     from snax_forge.estimate import UNMAPPED_CYCLES_PER_ITERATION as PER
 
     assumption = (f"{est.unmapped_iterations} iterations no unit runs, at {PER} cycle each: an "
-                  "assumption (a core takes several), D155")  # fmt: skip
+                  "assumption (a core takes several)")  # fmt: skip
     return {
         "accelerator_cycles": est.accelerator_cycles,
         "not_mapped": est.not_mapped,
@@ -1068,7 +1073,7 @@ def estimate_summary(est: Any, graph: Graph | None = None) -> dict[str, Any]:
 
 
 def streamers_summary(est: Any) -> dict[str, Any]:
-    """The Estimate panel's ``streamers`` (module doc): one streamer set per accelerator, D157."""
+    """The Estimate panel's ``streamers`` (module doc): one streamer set per accelerator."""
     n = est.streamers
     text = f"{n} streamer set{'' if n == 1 else 's'}"
     if est.csrs is not None:
@@ -1098,7 +1103,7 @@ PART_LABELS = {"datapath": "datapath", "control": "control", "streamers": "strea
 
 
 def cost_parts(est: Any) -> list[dict[str, Any]]:
-    """The cost by part (D167), in ``PARTS``' order: each its ``name``, ``label``, ``area`` and
+    """The cost by part, in ``PARTS``' order: each its ``name``, ``label``, ``area`` and
     ``energy`` (None where not costed), their texts and their ``share`` of the totals (0..1)
     with its text; what the page's two bars draw to scale."""
     parts = est.parts or {}
@@ -1116,7 +1121,7 @@ def cost_parts(est: Any) -> list[dict[str, Any]]:
 
 
 def cost_tables(est: Any, g: Graph | None = None) -> list[dict[str, Any]]:
-    """The cost as tables (C§12), one per accelerator of ``g`` (its groups, in order; without
+    """The cost as tables, one per accelerator of ``g`` (its groups, in order; without
     ``g`` one of every group, named ``accelerator``): a row per unit, buffer link and control
     unit, each its ``block`` (the instance, the link's container, ``<group> ctrl``), ``kind``,
     ``datapath`` (``· not characterized`` where the table has no point), area (µm², 3
@@ -1157,13 +1162,13 @@ def cost_tables(est: Any, g: Graph | None = None) -> list[dict[str, Any]]:
             raw.append((f"{gname} ctrl", "ctrl", "control unit", True, c.ctrl_um2, c.ctrl_nj))
         if not raw:
             continue
-        for x in streamers.get(name, []):  # each port's streamer (D167)
+        for x in streamers.get(name, []):  # each port's streamer
             c = x.counts
             loops = f"{c.loops} loop{'' if c.loops == 1 else 's'}"
             dp = f"streamer · FIFO {c.depth}, {loops}, {c.channels} ch"
             raw.append((c.name, "streamer", dp + (" · extrapolated" if x.extrapolated else ""),
                         True, x.area_um2, x.energy_nj))  # fmt: skip
-        if name in l1:  # its words through the crossbar and the banks (D167)
+        if name in l1:  # its words through the crossbar and the banks
             x = l1[name]
             rw = f"{_thousands(x.reads)} reads, {_thousands(x.writes)} writes"
             raw.append((L1_LABEL, "l1", rw, True, None, x.energy_nj))
@@ -1288,7 +1293,7 @@ def _operation(n: Node, code: str, ins: Sequence[str]) -> str:
 
 def compact_text(g: Graph, n: Node, param: str | None = None) -> str:
     """A node's text in the compact drawing (module doc); a unit's lanes under ``param``, the
-    recipe param its split names (``W_acc_1 8``, D156), else ``W``."""
+    recipe param its split names (``W_acc_1 8``), else ``W``."""
     a = n.attrs
     if n.kind == "map":
         its = _iterations(g, a["range"])
@@ -1509,7 +1514,7 @@ def container_text(g: Graph, name: str) -> str:
 
 def _container(g: Graph, name: str, placed: Any = None) -> dict[str, Any]:
     """A container as the drawing shows it: its name and shape, its badge, whether it is
-    transient, and on a ``share_ports`` container (D169) its marker ``share_ports · <name>``."""
+    transient, and on a ``share_ports`` container its marker ``share_ports · <name>``."""
     c = g.containers[name]
     shared = {"share": f"share_ports · {name}"} if SHARE_PORTS in c.attrs else {}
     return {"name": name, "text": container_text(g, name), "badge": badge(placed),
@@ -1599,7 +1604,7 @@ def _node(g: Graph, n: Node) -> dict[str, Any]:
 
 def shared_units(g: Graph) -> dict[str, list[str]]:
     """Each accelerated node whose instance other nodes share (mvt's variant 1: one ``vmul_x1``
-    for both halves, D165) -> those other nodes' ids, in the graph's order; the page highlights
+    for both halves) -> those other nodes' ids, in the graph's order; the page highlights
     them with a selected one. Nodes of an instance alone are left out."""
     by: dict[str, list[str]] = {}
     for n, _ in g.walk():
@@ -1707,7 +1712,8 @@ def _uses(n: Node) -> list[tuple[str, Node, str, Memlet]]:
 
 
 def packing(g: Graph, n: Node, port: str, data: str) -> str | None:
-    """``int32 · num_slc 2 · num_ch 2`` for an accelerated node's port (module doc); None for any other
+    """``int32 · num_slc 2 · num_ch 2`` for an accelerated node's port (module doc); None for any
+    other
     node, or an instance the BRM library does not resolve."""
     if n.kind != "accelerated":
         return None
@@ -1779,7 +1785,7 @@ def transpose_label(data: str, perm: Sequence[int]) -> str:
     return f"{data} · transpose({', '.join(map(str, perm))})"
 
 
-# -- blocks (REUSE1, sandbox/blocks.py): a collapsed block drawn as one box --------------------
+# -- blocks (sandbox/blocks.py): a collapsed block drawn as one box --------------------
 
 LEAVES = ("tasklet", "accelerated", "link")
 
@@ -1895,7 +1901,7 @@ def _ancestors(recs: dict[str, dict[str, Any]], name: str) -> list[str]:
 
 
 def _together(recs: dict[str, dict[str, Any]]) -> dict[str, list[str]]:
-    """Each block -> the blocks of its depth whose units it shares (D165: mvt's halves on one
+    """Each block -> the blocks of its depth whose units it shares (mvt's halves on one
     vmul): they expand and collapse together."""
     out: dict[str, list[str]] = {}
     for a, ra in recs.items():

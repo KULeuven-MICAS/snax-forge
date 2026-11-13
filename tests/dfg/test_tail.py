@@ -1,4 +1,4 @@
-"""The reference executor on a split with a tail (open item 31, D144): the valid lanes only,
+"""The reference executor on a split with a tail: the valid lanes only,
 a pad lane read as the container's pad value; the pad helpers (dfg/pad.py)."""
 
 from __future__ import annotations

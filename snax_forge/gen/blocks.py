@@ -1,4 +1,4 @@
-"""The datapaths the generator fills: a binding's ``datapath`` -> a unit's ports and params (D147).
+"""The datapaths the generator fills: a binding's ``datapath`` -> a unit's ports and params.
 
 An adapter reads an instance (its BRM, implementation and design params,
 snax_forge/brm/instance.py) and its ports' dtypes (the node's containers',
@@ -7,11 +7,11 @@ beyond its name, BRM, timing and CSRs (accelerator.py): per BRM port its
 datapath port, dtype and lanes, ``opType`` for a SIMD unit, and
 ``params``; or it refuses with a ``GenError`` naming what does not fit.
 Adapters are registered by the datapath's name with its latency L and span
-(``register_datapath``, D19), each an int or an ``expr.py`` expression over the
+(``register_datapath``), each an int or an ``expr.py`` expression over the
 params the adapter gives and ``lanes`` (its first input's; a bool as 0 or 1,
 ``timing``); the implementation's timing must be L, II 1, that span and drain
 0 (accelerator.py). Every datapath is driven by the shell's nest
-controller (``counted``, D129): data and enables only.
+controller (``counted``): data and enables only.
 
 **SimdLanes** (L 0): one op over every lane; args lanes and op, and
 optionally streams (2 by default) and k.
@@ -19,11 +19,11 @@ optionally streams (2 by default) and k.
     ports        at two streams, two inputs and one output (SnaxUnit's op
                  table is binary); at one, one input and one output, the op's
                  second operand the constant k; each with args.lanes lanes;
-                 each port's lanes * N whole 64-bit channels (D142), N its
+                 each port's lanes * N whole 64-bit channels, N its
                  dtype's bits (intN or uintN, N in 8, 16, 32, 64); the
                  instance's ports (``Instance.ports``) are the ones counted
     opType       the inputs' NumPy result type (brm/dtypes.py's
-                 ``result_type``, D143), the type the op runs at (at one
+                 ``result_type``), the type the op runs at (at one
                  stream a's dtype); the result is then extended or wrapped
                  into the output's
     params       ``op``: args.op, one of ElementwiseOp's names (add, sub, mul,
@@ -41,7 +41,7 @@ optionally streams (2 by default) and k.
                  slot order, at opType: an R/W CSR the program writes, an
                  input pin of opType's width (gen/accelerator.py)
 
-**TreeAccumulate** (L 1, D133): a fold, one sum every T inputs, the input's
+**TreeAccumulate** (L 1): a fold, one sum every T inputs, the input's
 lanes summed by an adder tree in front of its register.
 
     ports        one input of rate 1 with args.lanes lanes, whole 64-bit
@@ -55,7 +55,7 @@ lanes summed by an adder tree in front of its register.
                  the sum's start in a job's first firing (``fuse_seed``); its
                  presence in ``ports`` says so, no param
 
-**SerialAccumulate** (L 1, span lanes, D149): TreeAccumulate's ports, op and
+**SerialAccumulate** (L 1, span lanes): TreeAccumulate's ports, op and
 args, its lanes added one a cycle (lane k in cycle k) into one sum; params
 none (its op is add).
 
@@ -193,7 +193,8 @@ def _lanes(inst: Instance, want: dict[str, int], what: str) -> None:
 
 def _fill_ports(inst: Instance, dtypes: Mapping[str, str] | None, words: set[str],
                 what: str) -> dict[str, Port]:  # fmt: skip
-    """Every port of the instance in its order: the binding's datapath port (by default the same name), its
+    """Every port of the instance in its order: the binding's datapath port (by default the same
+    name), its
     dtype and its lanes; a port in ``words`` must be whole 64-bit channels (``gen.lanes``),
     the others are one word (a fold's output)."""
     mapping = inst.impl.binding.get("ports") or {}

@@ -1,4 +1,4 @@
-"""Blocks: a kernel found inside a bigger graph, and a recipe applied there (REUSE1, open item
+"""Blocks: a kernel found inside a bigger graph, and a recipe applied there (open item
 117).
 
 A block is a region of the graph that equals a smaller kernel's import (its pattern, ``P``):
@@ -24,7 +24,7 @@ renaming of maps, variables, containers and symbols:
   read (the outer ranges that index them equal on the writer and the reader);
 - R7 the container renaming is one to one;
 - R8 a container may correspond with its dimensions permuted (half 2 of mvt reads ``A[m, n]``
-  under the loops (n, m): matvec_acc's A through π = (1, 0)); the transpose mark (D164) gates
+  under the loops (n, m): matvec_acc's A through π = (1, 0)); the transpose mark gates
   nothing;
 - R9 the chains of R are untouched since import: nothing in them split, tagged, fused, bound,
   linked or seeded, and in no block of the same kernel yet.
@@ -36,7 +36,8 @@ non-overlapping one, in the graph's order.
 first, each ``{"name", "kernel", "heads"}`` (the region's chain heads), with ``recipe`` and
 ``params`` once a recipe is applied. ``lift(kernel, at)`` makes a block of every region that
 matches the kernel's pattern (none overlapping; a region lies inside a block or holds it
-whole, in either order: lift dot then matvec, or matvec then dot), named after the kernel (``dot``, ``dot_1``, ...), or with ``at`` the one region holding that node;
+whole, in either order: lift dot then matvec, or matvec then dot), named after the kernel (``dot``,
+``dot_1``, ...), or with ``at`` the one region holding that node;
 ``unlift(name)`` takes its record away.
 
 **unapply(block)** gives back the graph before ``apply_recipe`` made the block: the recipe keeps
@@ -48,7 +49,7 @@ no kernel and no recipe: the bottom-up entry, transforms by hand and then the bl
 sub-recipe's own blocks (its ``lift`` or ``name_block``) are followed by name onto the blocks
 the steps make in the outer graph, and its ``lift`` without ``at`` lifts the region's one.
 
-**Sites** (D72). ``lift``'s: a node in a region the pattern of a kernel some recipe under
+**Sites**. ``lift``'s: a node in a region the pattern of a kernel some recipe under
 ``recipes/`` is written on matches (``reusable``), ``at`` the node and ``kernel`` the first
 such. ``unlift``'s: a block with no recipe, or a node in it (its innermost block).
 ``apply_recipe``'s: the same, ``block`` it and ``recipe`` the first recipe of its kernel

@@ -1,9 +1,9 @@
-"""The fold's seed: the reduction x' = x (+) fold_j(a_j) done in the fold itself (M13 B2 R5).
+"""The fold's seed: the reduction x' = x (+) fold_j(a_j) done in the fold itself.
 
 ``fuse_seed(first, second)`` and ``unfuse_seed(map)``
     A fuse, as ``fuse_map`` (compose.py) is: ``first`` is a map of a fold's
     nest, any map of the chain of single-child maps down to one tasklet whose
-    one output folds (``reduce``, D102), or a map ``split_reduce`` split, which
+    one output folds (``reduce``), or a map ``split_reduce`` split, which
     stands for its final sum (the fold that writes the output); ``second`` a
     map of the elementwise nest that reads the fold's result, any map of its
     chain down to the reader (its outermost the site's default). The fold
@@ -18,7 +18,7 @@
     subset, and its reduce holds ``"seed": {"data": "x", "subset": [...]}`` in
     place of ``identity`` (dfg/reduce.py), so the fold starts each element
     from ``x``'s. That is exact for any associative and commutative op on
-    integers (D28), which every registered op is. Refused, naming what it
+    integers, which every registered op is. Refused, naming what it
     found: a fold whose transient has another reader (or writer, or a link);
     a reader computing another op; a reader over a different subset (an
     element twice or not at all, ``x`` at another index, ``x`` not written in
@@ -50,7 +50,7 @@
     viewer's partners, viz/dfg/api.py), all through the site's check.
 
 ``bind`` takes a seeded fold only on a BRM with a ``seed`` port
-(``accumulate``: TreeAccumulate and SerialAccumulate, D163), with the design
+(``accumulate``: TreeAccumulate and SerialAccumulate), with the design
 param ``seed`` 1 and the port on the seed's element, one beat per job.
 """
 
@@ -107,8 +107,8 @@ def fold_of(g: Graph, map: str, what: str) -> tuple[Node, tuple[Node, ...]]:
         break
     folds = [m for m in node.outputs.values() if m.reduce is not None]
     if len(node.outputs) != 1 or len(folds) != 1:
-        raise SandboxError(f"{what}: its tasklet {node.id} must fold its one output (a reduce, "
-                           "D102)")  # fmt: skip
+        raise SandboxError(f"{what}: its tasklet {node.id} must fold its one output "
+                           "(a reduce)")  # fmt: skip
     _, _, outer = _locate(g, node.id)
     return node, outer
 
@@ -140,7 +140,7 @@ def _shape(g: Graph, c: str, what: str) -> tuple[int, ...]:
 
 
 def _valid(rows: np.ndarray, shape: tuple[int, ...], outer: tuple[Node, ...]) -> np.ndarray:
-    """The rows inside ``shape``; under a tailed split (D144) the pad lanes' rows past it go."""
+    """The rows inside ``shape``; under a tailed split the pad lanes' rows past it go."""
     inside = np.all((rows >= 0) & (rows < np.array(shape)), axis=1)
     if any(o.kind == "map" and (o.attrs.get("loop.split") or {}).get("valid") for o in outer):
         return rows[inside]
@@ -239,7 +239,7 @@ def _check(g: Graph, map: str, what: str) -> dict[str, Any]:
                            "takes a transient that one elementwise nest adds to x")  # fmt: skip
     if np.issubdtype(np.dtype(g.containers[t].dtype), np.floating):
         raise SandboxError(f"{what}: {t} is {g.containers[t].dtype}, a float op type; seeding "
-                           "reorders the fold, exact on integers only (D28)")  # fmt: skip
+                           "reorders the fold, exact on integers only")  # fmt: skip
     readers, others = [], []
     for n, _ in g.walk():
         if n is fold:
@@ -300,6 +300,8 @@ def _check(g: Graph, map: str, what: str) -> dict[str, Any]:
     return {"fold": fold, "cout": cout, "reader": r, "x": x, "t": t}
 
 
+# NB (D163): the seed is read once per job, on its first firing; TreeAccumulate and
+# SerialAccumulate in RTL and in SNAX-GVSoC take it the same way.
 def fuse_seed(g: Graph, first: str, second: str) -> Graph:
     what = f"fuse_seed {first!r} {second!r}"
     _site(g, first)  # the site's refusal first, as every transform's

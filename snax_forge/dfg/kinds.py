@@ -1,4 +1,4 @@
-"""Node kinds of the SNAX-DFG (D19, D71): registered entries, never subclasses.
+"""Node kinds of the SNAX-DFG: registered entries, never subclasses.
 
 Every node has the same core fields (graph.py): ``id``, ``kind``, ``inputs``,
 ``outputs``, ``attrs`` and, for a kind that has one, ``body``. What a kind
@@ -12,7 +12,7 @@ adds is registered here with ``register_kind``:
   attr (``loop.kind``, ``mem.*``, ``hw.*``, ``user.*``) is passed through
   untouched, and whoever knows the namespace checks it;
 * ``body``: whether the node holds an ordered body of nodes (a scope);
-* ``reduce``: whether its output memlets may carry a ``reduce`` (D102);
+* ``reduce``: whether its output memlets may carry a ``reduce``;
 * ``binds``: the variables the node binds for its body (a map's ``var``);
 * ``normalize(attrs, what)``: the attrs in their stored form (canonical
   expressions), run before ``check``;
@@ -25,7 +25,7 @@ Built-in kinds:
 
     map          one loop variable over a range, parallel iterations; a body.
                  ``loop.kind`` (tile, temporal, spatial) says how SNAX-SANDBOX
-                 mapped it (D73); absent as imported. ``loop.split`` (D82) on a
+                 mapped it; absent as imported. ``loop.split`` on a
                  split map is the ``var`` and ``range`` it had before split or
                  split_map, so join_map can undo the split (``prior``: its
                  record before, when the map was split before).
@@ -51,8 +51,8 @@ Built-in kinds:
                  ``[{name, index, container}]`` (the container in stored form,
                  its index in the graph's containers): the ``replaced``
                  subtree is checked with them in scope, and ``unbind`` puts
-                 them back where they were. ``accelerator`` (D148,
-                 written only when set, by ``encapsulate`` or ``share_ports``) names the
+                 them back where they were. ``accelerator`` (written only when set, by
+                 ``encapsulate`` or ``share_ports``) names the
                  accelerator its group is in; without it the group, named
                  after the instance, is an accelerator of its own. ``group``
                  (written only when set, by ``link``) names the group the unit
@@ -62,8 +62,8 @@ Built-in kinds:
                  one. No ``reduce`` on its memlets: the BRM's function does
                  its own folding.
 
-    link         a transient between two bound units made a link (``link``,
-                 D148): ``container`` (the transient it replaced, which the
+    link         a transient between two bound units made a link (``link``): ``container`` (the
+    transient it replaced, which the
                  writer and the reader still name, so the reference executor
                  runs it as that transient), ``depth`` (0 a wire, >= 1 a
                  buffer of that many beats), ``from`` and ``to`` (the writer's
@@ -71,7 +71,7 @@ Built-in kinds:
                  before the reader in the body they share.
 
 ``loop`` (a sequential loop) and ``branch`` come with the kernels that need
-them (open item 36).
+them.
 """
 
 from __future__ import annotations

@@ -1,4 +1,4 @@
-"""The schedule (D57): the program's window as lanes, its quiet stretches folded, and the beat
+"""The schedule: the program's window as lanes, its quiet stretches folded, and the beat
 and stall lines of an open range. Queries on the run's index (index.py) that read no file;
 the viewer only draws their answers.
 
@@ -9,15 +9,16 @@ the viewer only draws their answers.
     detail(index, start, stop)      -> the beat and stall lines of [start, stop) per lane
 
 **Lanes**, top to bottom: one per core (``core<i>``), the DMA, then accelerator ▸ group, as
-the editor's Bindings nest them (D156): per accelerator, its streamer set (D157), per group its
+the editor's Bindings nest them: per accelerator, its streamer set, per group its
 movers as the streamer orders them, then its unit (a linked group's one component), each
-lane with its ``accelerator`` and ``group``. A core's lane has its spans classed barrier > poll > sleep > run
+lane with its ``accelerator`` and ``group``. A core's lane has its spans classed barrier > poll >
+sleep > run
 (``run/cores.py``, the profile's rule), its function spans and its CSR accesses (``csr`` and
 ``poll`` events); the DMA's one bar per copy, issue to done; a mover's and the accelerator's
 one bar per task, start to done, with the run's class totals (its ``done``'s ``cycles``) and,
 from ``beat`` on, its class runs (index.py); a mover's task with every temporal bound 0, started
 only because the set's movers share one start (another group's in the same encapsulated
-set, D148), is marked ``idle``
+set), is marked ``idle``
 (``RunIndex.idle``). Class names only: colours are the viewer's.
 
 **Segments** cover ``[0, T)``, ``T`` the window, with no gap and no overlap. A cycle is
@@ -33,7 +34,7 @@ opens.
 **Detail** is the beat and stall lines of one range, as the converter wrote them, grouped per
 lane: each crossbar port's grants and stalls, the DMA's beats and bursts, the accelerator's
 fires and pushes (``acc``, and per unit ``units``: with several groups each unit's lane its
-own, D148), each lane's FIFO counts (``<mover>.lane<l>``).
+own), each lane's FIFO counts (``<mover>.lane<l>``).
 
 Below ``task`` (trace ``off``) there is no schedule, below ``beat`` no detail: a
 ``ScheduleUnavailable`` with the reason.

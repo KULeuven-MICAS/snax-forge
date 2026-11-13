@@ -1,4 +1,4 @@
-"""tag_map and untag_map, and bind on its firing loops: matadd, the first 2-D bind (D73).
+"""tag_map and untag_map, and bind on its firing loops: matadd, the first 2-D bind.
 
 matadd imports as two nested maps (``add_map`` over i, ``add_map_1`` over j).
 The row map is tagged temporal as it is, the column map split by W, and

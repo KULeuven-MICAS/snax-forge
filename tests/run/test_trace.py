@@ -1,4 +1,4 @@
-"""run/trace.py: the trace's events checked against their kinds, and its round trip (C§7)."""
+"""run/trace.py: the trace's events checked against their kinds, and its round trip."""
 
 import json
 

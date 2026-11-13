@@ -1,4 +1,4 @@
-"""One dimension of a memlet subset or a map range (D71).
+"""One dimension of a memlet subset or a map range.
 
 A dimension is written as one JSON value:
 

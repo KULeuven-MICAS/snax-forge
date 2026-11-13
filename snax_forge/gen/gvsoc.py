@@ -1,4 +1,4 @@
-"""A design point -> its cluster on SNAX-GVSoC: its description files and headers (D134).
+"""A design point -> its cluster on SNAX-GVSoC: its description files and headers.
 
     generate(design_point, out_dir, root=None) -> Manifest
 
@@ -12,10 +12,10 @@ program and its data, and the manifest:
                              the platform's values written back, the
                              cluster renamed and the accelerator slot set
     <tag>_streamer_<set>.hjson
-                             per streamer set (one per accelerator, D157),
+                             per streamer set (one per accelerator),
                              its streamer template, as the hjson has it
     accelerator.json         the accelerators' one description
-                             (accelerator.py, D145)
+                             (accelerator.py)
     include/                 the C headers (headers.py): per set
                              streamer_<set>_csr_addr_map.h and per
                              accelerator <acc>_csr.h, and the runtime's
@@ -23,7 +23,7 @@ program and its data, and the manifest:
                              snitch_cluster_addrmap.h from the cluster file
     data.h                   the program's data (data.py): inputs,
                              outputs and goldens
-    main.c                   the program (lower/c.py, D135): the
+    main.c                   the program (lower/c.py): the
                              task list on snRuntime, self-checking
     obs_marks.json           the quiet build's sections (-DFORGE_QUIET),
                              each {mark, kind, label}: the value written
@@ -53,9 +53,9 @@ parsed, with the platform's values written back by the reverse of
 
 ``cluster.name`` becomes ``CLUSTER`` (``snax_forge_cluster``), and in
 ``cluster.bender_target`` the entry equal to the source's ``cluster.name``
-becomes it too, so the generated cluster takes no name of snax_cluster's own
-(D130). The slot, the source's one ``snax_acc_cfg`` entry whatever its
-name, is renamed and set, always in the sets form, also for one set (D157),
+becomes it too, so the generated cluster takes no name of snax_cluster's own. The slot, the source's
+one ``snax_acc_cfg`` entry whatever its
+name, is renamed and set, always in the sets form, also for one set,
 its keys in this order:
 
     snax_acc_name               the tag
@@ -86,15 +86,15 @@ it. Everything else is the source's, its key order kept; its comments are
 not (the file is written as JSON, which hjson reads).
 
 **The streamers**, one per set, lowered per design point, as the design
-point's streamers give them (D87): readers the set's input ports, writers its
-output ports, unit by unit (the accelerator's groups in order, D148) in the
+point's streamers give them: readers the set's input ports, writers its
+output ports, unit by unit (the accelerator's groups in order) in the
 BRM's port order, each with ``spatial_bounds`` in words, fastest
 first (``[S_0 / num_slc, S_1, ...]``: the fastest bound over num_slc, the slices
-of the port's container dtype a word holds, D142), ``temporal_dim`` (the
+of the port's container dtype a word holds), ``temporal_dim`` (the
 streamer's ``temporal_dims``), ``num_channel`` (the streamer's ``num_ch``, the
 wire default W / num_slc; snax-gvsoc's streamer requires the bounds' product to
 be it)
-and ``fifo_depth``. A set whose groups share its movers (D169) has its shared movers instead
+and ``fifo_depth``. A set whose groups share its movers has its shared movers instead
 (design/streamers.py's ``shared_movers``), readers then writers, each at its widest user's
 channels and spatial bounds, the most temporal dims and the deepest FIFO, and
 ``configurable_channel`` per mover of a role where one is masked.
@@ -129,7 +129,7 @@ accelerator's one unit, ``snax_acc0/unit``; of its one linked group,
 (the layout, csrs.py: ``streamers``, per set ``{name, first, last, trace}``, its streamer's
 first and last CSR and its trace ``snax_acc0/streamer_<set>``, and ``accelerator``, every
 accelerator CSR's define -> its number) and ``tasks``: per accelerator task of the derived task list
-(snax_forge/lower/derive.py, D64), in order, its name, its ``beats`` (the unit's firings,
+(snax_forge/lower/derive.py), in order, its name, its ``beats`` (the unit's firings,
 the task's ``n``; a linked group's most firing unit's), its ``csrs`` values (its group's
 ``JOBS``, and ``JOB_BEATS`` for a fold without ``params.T``, named with its unit in a linked
 group, ``MAC_JOB_BEATS``: lower/c.py's ``job_writes``) and, with several groups, its
@@ -277,7 +277,7 @@ def node_dtypes(point: DesignPoint, name: str) -> dict[str, str]:
 def streamer_template(point: DesignPoint, found: Mapping[str, Instance],
                       acc: str | None = None) -> dict[str, Any]:  # fmt: skip
     """The streamer template of the accelerator's units ``found`` (``acc`` its name), in the
-    hjson's keys; see the module doc. A shared accelerator's (D169) are its movers'."""
+    hjson's keys; see the module doc. A shared accelerator's are its movers'."""
     groups: dict[str, list[dict[str, Any]]] = {"data_reader_params": [], "data_writer_params": []}
     for name, inst in found.items():
         _movers(point, name, inst, groups)
@@ -304,7 +304,7 @@ def _movers(point: DesignPoint, name: str, inst: Instance,
     dtypes = node_dtypes(point, name)
     for p in inst.ports:
         s = point.streamers.get(streamer_name(name, p.name))
-        if s is None:  # a port on a link: no streamer (D112)
+        if s is None:  # a port on a link: no streamer
             continue
         port_dtype(dtypes[p.name], f"port {p.name}")  # intN or uintN (gen.dtype)
         s0, *rest = s.spatial_bounds
@@ -593,6 +593,8 @@ def _hjson(point_path: str, what: str, value: Any) -> str:
 # =============================================================================
 
 
+# NB (D134): snax-gvsoc checks this output in as fixtures, compared byte for byte; a change to
+# any generated text needs them written again.
 def generate(
     design_point: str | Path, out_dir: str | Path, root: str | Path | None = None, *,
     named_from: str | Path | None = None, kernel: str | None = None, seed: int = 0,
@@ -600,7 +602,7 @@ def generate(
 ) -> Manifest:  # fmt: skip
     """Write the three description files, the headers, data.h, main.c and the manifest to
     ``out_dir``; see the module doc. ``named_from`` is the folder the design point is named
-    from (``root`` by default; the flow's folder for a flow, D136); ``kernel`` and ``seed``
+    from (``root`` by default; the flow's folder for a flow); ``kernel`` and ``seed``
     go to data.h's inputs (data.py's ``arrays``). ``tasks`` (the design point's task list) and
     ``goldens`` (data.h's inputs and the reference executor's outputs) are what the caller has
     made already: the flow, which needs both before."""
@@ -635,7 +637,7 @@ def generate(
         **{f: _hjson(shown, f"Streamer set {a}'s streamer template: " + (
                      "readers its input ports in the BRM's port order, writers its output ports."
                      if acc.port_mux_sel(a) is None else "its movers, which its groups share "
-                     "(D169), readers then writers, as accelerator.json's movers."), templates[a])
+                     ", readers then writers, as accelerator.json's movers."), templates[a])
            for a, f in streamer_files.items()},
         ACCELERATOR_JSON: acc.to_json(),
     }  # fmt: skip

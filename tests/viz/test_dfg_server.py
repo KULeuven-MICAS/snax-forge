@@ -1,4 +1,4 @@
-"""The graph page's server in both modes (D55, viz/dfg/server.py), on servers at port 0: view
+"""The graph page's server in both modes (viz/dfg/server.py), on servers at port 0: view
 mode over a recipe's step files, edit mode over a session (sandbox/session.py) with its roots in
 ``tmp_path``, the JSON-only POSTs on both viewers, and every static file the page imports."""
 
@@ -79,7 +79,7 @@ def test_view_mode_over_dot_2s_steps(tmp_path):
             "tmp0"
         ]
         assert "placement" in c["changed"]["container:tmp0"] and "node:tmp0" in c["changed"]
-        # the cost (C§20): a unit's, a buffer link's and a group's Details, the panel's figures,
+        # the cost: a unit's, a buffer link's and a group's Details, the panel's figures,
         # an area to 3 significant figures, an energy to 3 decimals; ?tech= picks the
         # technology, an unknown one 400
         assert v["details"]["node:sum"]["cost"] == {
@@ -99,7 +99,7 @@ def test_view_mode_over_dot_2s_steps(tmp_path):
         assert (s["cost"]["heading"], s["cost"]["missing"]) == (
             "Cost estimate (first-order) on nangate45", [])  # fmt: skip
         assert "about 30 %" in s["cost"]["caveat"] and v["tech"] == "nangate45"
-        # nangate15 is kept as data but no longer offered (D167): refused as any other
+        # nangate15 is kept as data but no longer offered: refused as any other
         status, v15 = get_json(srv, "/api/step/5?tech=nangate15")
         assert status == 400 and v15["code"] == "char.tech"
         status, bad = get_json(srv, "/api/step/5?tech=tsmc7")
@@ -194,9 +194,9 @@ def test_edit_mode_over_a_vecadd_session(tmp_path, monkeypatch):
             assert status == 200 and got["transform"] == transform, got
             assert got["log"].startswith(f"step {got['index']}  {transform} ")
             logs.append(got["log"])
-        # the cycles before and after; the unmapped cycles only where they change (D155, D156:
-        # no not-mapped count), the bind's renamed W, the design checks' problems and notes:
-        # graph.unbound until the bind, a note before Save (D156)
+        # the cycles before and after; the unmapped cycles only where they change (no not-mapped
+        # count), the bind's renamed W, the design checks' problems and notes:
+        # graph.unbound until the bind, a note before Save
         assert [line.split(" · C ")[1] for line in logs] == [
             "0 → 0 · 1 note", "0 → 0 · 1 note", "0 → 0 · 1 note",
             "0 → 16 · unmapped 64 → 0 · renamed W → W_acc"]  # fmt: skip
@@ -214,7 +214,7 @@ def test_edit_mode_over_a_vecadd_session(tmp_path, monkeypatch):
             True,
         )
         assert v["estimate"]["groups"][0]["cycles"] == 16
-        # 3 ports x 16 beats x 4 channels over 32 banks: 6 cycles, under 16, no note (D155)
+        # 3 ports x 16 beats x 4 channels over 32 banks: 6 cycles, under 16, no note
         assert v["estimate"]["groups"][0]["bank_bound"] == 6
         # the left column's Bindings: the unit with the split's W, an input in edit mode
         (unit,) = v["bindings_section"]["entries"]
@@ -277,7 +277,7 @@ def test_edit_mode_over_a_vecadd_session(tmp_path, monkeypatch):
 
 @pytest.mark.slow
 def test_a_param_changes_log_line_counts_its_checks(tmp_path, monkeypatch):
-    """D156: a param change's log line gives the step's problem and note counts as an apply's:
+    """A param change's log line gives the step's problem and note counts as an apply's:
     dot 1 at 8/8, then W_acc_2 = 10, one connect.pad problem (the pads never written)."""
     monkeypatch.setattr(session, "_import", imported)
     roots = Roots(tmp_path / "sessions", tmp_path / "recipes", tmp_path / "sandbox")
@@ -329,7 +329,7 @@ def test_a_param_changes_log_line_counts_its_checks(tmp_path, monkeypatch):
 
 @pytest.mark.slow
 def test_the_site_route_takes_a_selection(tmp_path, monkeypatch):
-    """D72: GET /api/step/<k>/site?sel=…&sel=… on dot_1_enc (its recipe at its step 4, before
+    """GET /api/step/<k>/site?sel=…&sel=… on dot_1_enc (its recipe at its step 4, before
     encapsulate): the two group outlines offer encapsulate with both units ticked, one unit's box
     only that unit (the one-item route as before), split over two is "Not here"; at step 5 the
     accelerator's outline (dot) offers unencapsulate; no sel is a 400."""
@@ -360,7 +360,7 @@ def test_the_site_route_takes_a_selection(tmp_path, monkeypatch):
 @pytest.mark.slow
 def test_a_factor_given_as_a_number_is_a_param_on_the_page(tmp_path, monkeypatch):
     """POST /api/apply with factor 8: the step stores W (the log line says so) and the step's
-    Bindings list the split with W = 8 as an input, changeable after the bind (C§12)."""
+    Bindings list the split with W = 8 as an input, changeable after the bind."""
     monkeypatch.setattr(session, "_import", imported)
     roots = Roots(tmp_path / "sessions", tmp_path / "recipes", tmp_path / "sandbox")
     with served(make_edit_server(0, roots=roots)) as srv:

@@ -176,7 +176,7 @@ def test_a_fifo_above_its_depth_or_not_empty_at_the_end_is_named(run):
 
 
 # =============================================================================
-# Packed beats (D142): a beat's words are its mover's num_channel
+# Packed beats: a beat's words are its mover's num_channel
 # =============================================================================
 
 

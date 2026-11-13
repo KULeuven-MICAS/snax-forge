@@ -69,7 +69,7 @@ def designs(*recipes: str | Design) -> list[Design]:
     return [r if isinstance(r, Design) else Design(r) for r in recipes]
 
 
-PADDED = "memory.passes.layout=padded_rows"  # each row a word longer (D86)
+PADDED = "memory.passes.layout=padded_rows"  # each row a word longer
 QUICK = designs("vecadd_i32", "vsum_tree_i8", "dot_1", "dot_1_enc", "dot_4", "axpy")
 SETS = {
     "quick": QUICK,

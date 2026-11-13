@@ -1,4 +1,4 @@
-"""Buffer layout: where an operand's elements live in a memory (D70, D86, D87).
+"""Buffer layout: where an operand's elements live in a memory.
 
 A layout is affine, like the nests it serves:
 
@@ -13,8 +13,8 @@ This is the form of the design point's memory plan:
 snax_forge/design/memory.py makes one per container and memory, and
 SNAX-LOWER reads them. ``check`` holds the L1 rules streams.py needs; the
 design checks judge a whole plan, in L1 and L2. A layout places each element
-at its dtype's itemsize, so a word holds several narrow ones (D142). A
-container a tail pads (dfg/pad.py, D144) keeps its logical shape, its strides
+at its dtype's itemsize, so a word holds several narrow ones. A
+container a tail pads (dfg/pad.py) keeps its logical shape, its strides
 row-major over the padded shape; ``over`` gives its padded block, what the
 DMA moves and what memory it takes, a row's padding included when the rows are pitched
 (``padded_rows``). ``l2_bytes`` is a container's array in L2,
@@ -101,8 +101,8 @@ class Layout(Config):
 
 
 def over(lay: Layout, shape: tuple[int, ...]) -> Layout:
-    """``lay``'s base and strides over ``shape``: with a container's padded shape (dfg/pad.py,
-    D144), the block it takes in memory, its pads included. Each dimension after the first is
+    """``lay``'s base and strides over ``shape``: with a container's padded shape (dfg/pad.py), the
+    block it takes in memory, its pads included. Each dimension after the first is
     widened to its pitch, the stride before it over its own, where the strides leave a gap
     (``padded_rows``' rows of an odd number of words, design/memory.py): the gap's elements
     are padding too, so a pitched row-major layout's block is contiguous, what the DMA moves.
@@ -123,10 +123,12 @@ def round_up(x: int, a: int) -> int:
 
 def moved_bytes(lay: Layout, elem_bytes: int, beat: int) -> int:
     """The bytes the DMA moves for a layout of ``elem_bytes`` elements: its size padded to
-    whole beats (D105), e.g. 16 int32 or 64 int8 elements per 64-byte beat."""
+    whole beats, e.g. 16 int32 or 64 int8 elements per 64-byte beat."""
     return round_up(int(np.prod(lay.shape)) * elem_bytes, beat)
 
 
+# NB (D105): the DMA moves a container as whole beats, so L2 and L1 hold it padded to whole
+# beats.
 def l2_bytes(point: DesignPoint, c: str) -> int:
     """The bytes of container ``c``'s array in L2: its L2 layout over its padded shape (a
     tail's pads included) in whole DMA beats of the platform's ``l2.beat_bits``.

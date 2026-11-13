@@ -3,21 +3,20 @@
     python -m snax_forge.flow.forge RECIPE [--platform P] [--set NAME=VALUE ...]
                                     [--trace LEVEL[:SOURCES]]          (pixi forge)
 
-Three steps, each the tool of that name called as its command line would be
-(D136), nothing decided here:
+Three steps, each the tool of that name called as its command line would be, nothing decided here:
 
     flow     ``python -m snax_forge.flow RECIPE --platform P [--set ...] [--trace ...]``:
              the design point and the run on SNAX-GVSoC      out/flow/<name>/
     bundle   ``python -m snax_forge.gen.bundle`` on the flow's design point, then the
              flow's expected lines beside it (``bundle.write_expected``: its
              ``forge counter`` lines, ``forge data: 0 errors`` and each
-             counter's streamer fill, the bound D123 allows on the RTL)
+             counter's streamer fill, the bound the RTL comparison allows)
                                                              out/bundle/<name>/
     sw       the bundle's program, by snax-gvsoc's generic app (``make sw``), and its
              sha256 checked against the flow's ``elf_sha256`` (docs/RUN.md section 8)
                                                              out/forge/<name>/sw/forge.elf
-             with the quiet build beside it, the same main.c with -DFORGE_QUIET
-             (D135), and its sections' legend from the bundle
+             with the quiet build beside it, the same main.c with -DFORGE_QUIET, and its sections'
+             legend from the bundle
                                                              sw/forge_quiet.elf, sw/obs_marks.json
 
 ``<name>`` is the flow's folder name (the recipe's with every ``--set``, then
@@ -27,7 +26,7 @@ line prints it (sbt's and make's lines too), goes to ``out/forge/<name>/forge.lo
 the terminal gets one line per step, SNAX-GVSoC's four ``forge`` lines from
 the flow's ``run/stdout.txt``, and the commands that run the bundle's ELF on
 snax_cluster's Verilator build, ``B`` and ``E`` filled in by absolute path.
-snax-forge never calls into snax_cluster (D130).
+snax-forge never calls into snax_cluster.
 
 Exit 0 when every step passed, 1 when one failed (the step named, the last 30
 lines of the log and its path), 2 on bad arguments.
@@ -56,7 +55,7 @@ from snax_forge.sandbox import Recipe, SandboxError
 from . import __main__ as flow_cli
 from . import run as flow_run
 
-QUIET_ELF = "forge_quiet.elf"  # snax-gvsoc's forge app's second ELF, -DFORGE_QUIET (D135)
+QUIET_ELF = "forge_quiet.elf"  # snax-gvsoc's forge app's second ELF, -DFORGE_QUIET
 
 OUT = flow_run.ROOT / "out" / "forge"
 PLATFORM = flow_run.ROOT / "platforms" / "snax_forge.json"
@@ -108,7 +107,7 @@ def _step(log: IO[str], step: str, argv: list[str], main) -> None:
 def _sw(log: IO[str], name: str, bundle_dir: Path, forge_dir: Path, flow_sha: str) -> Path:
     """The bundle's program by ``make sw`` (its output into ``log``); its ELF, checked to be the
     flow's (``flow_sha``), with the quiet build beside it and the bundle's ``obs_marks.json``
-    copied there (D135)."""
+    copied there."""
     sw = forge_dir / "sw"
     variables = {"APPS": "forge", "FORGE": str(bundle_dir.resolve()), "DESIGN": name,
                  "FORGE_BUILD": str(sw.resolve())}  # fmt: skip
@@ -125,7 +124,7 @@ def _sw(log: IO[str], name: str, bundle_dir: Path, forge_dir: Path, flow_sha: st
         print(message, file=log, flush=True)
         raise StepFailed(message)
     if not (sw / QUIET_ELF).is_file():
-        raise StepFailed(f"sw: no {cwd_relative(sw / QUIET_ELF)}, the quiet build (D135)")
+        raise StepFailed(f"sw: no {cwd_relative(sw / QUIET_ELF)}, the quiet build")
     marks = bundle_dir / OBS_MARKS
     if not marks.is_file():
         raise StepFailed(f"sw: no {cwd_relative(marks)}, the quiet build's legend")

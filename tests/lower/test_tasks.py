@@ -1,4 +1,4 @@
-"""Tests for the task-list format (D64) and its values against a design point.
+"""Tests for the task-list format and its values against a design point.
 
 Sections:
   1. round trips (the checked-in fixture, derived task lists)
@@ -192,7 +192,7 @@ def _narrow(point: DesignPoint, job_width: int) -> DesignPoint:
 
 
 def test_an_accelerator_tasks_csr_writes_fit_job_width():
-    """D152: JOBS (vecadd: n / 1) and JOB_BEATS (vsum: T) at most 2^job_width - 1."""
+    """JOBS (vecadd: n / 1) and JOB_BEATS (vsum: T) at most 2^job_width - 1."""
     check_values(task_list(add("x", nb=15), start("x")), _narrow(vecadd_point(), 4))
     with pytest.raises(
         TaskListError, match=r"JOBS 16 \(unit acc\) is past acc_csr.job_width = 4 bits, at most 15"
@@ -218,6 +218,6 @@ def test_an_accelerator_tasks_head_firings_stay_below_2_to_the_32():
 
 
 def test_an_idle_mover_has_every_bound_0():
-    """Another group's mover in an accelerator of several (D148): every temporal bound 0."""
+    """Another group's mover in an accelerator of several: every temporal bound 0."""
     idle = {**GOOD_STREAM, "temporal_bounds": [0], "temporal_strides": [8]}
     check_values(task_list({**stream("x", "acc_a"), "values": idle}, start("x")), vecadd_point())

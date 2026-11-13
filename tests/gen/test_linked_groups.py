@@ -1,4 +1,4 @@
-"""Linked groups on the generator (D112, D147, C§17): one accelerator of linked units, streamers
+"""Linked groups on the generator: one accelerator of linked units, streamers
 on the outer ports only, one task per group, and the register writes of dot 6 and matvec 6."""
 
 from __future__ import annotations
@@ -81,7 +81,7 @@ def test_matvec6_rereads_p_for_every_row(tmp_path):
     ("recipe", "fold"), [("dot_2", "SUM"), ("dot_3", "SUM"), ("dot_4", "MAC"), ("dot_5", "MAC")]
 )
 def test_one_group_names_one_fold_csr(tmp_path, recipe, fold):
-    """C§17's table: START 0, JOBS 1, the fold's JOB_BEATS 2, STATUS 3, BUSY_COUNTER 4; the tree or
+    """the table: START 0, JOBS 1, the fold's JOB_BEATS 2, STATUS 3, BUSY_COUNTER 4; the tree or
     serial sum after a MAC has a fixed T of 1 and no JOB_BEATS."""
     out = _generated(tmp_path, recipe)
     header = (out / "include" / "dot_csr.h").read_text()

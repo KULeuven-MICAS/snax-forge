@@ -48,7 +48,7 @@ def load_recorded(name: str | Path, events: str = "events.log") -> Recorded:
     )
 
 
-# vecadd's one streamer set, acc, and its file (D157)
+# vecadd's one streamer set, acc, and its file
 STREAMER_FILE = "snax_forge_vecadd_streamer_acc.hjson"
 
 CLUSTER: dict[str, Any] = {
@@ -79,7 +79,7 @@ STREAMER: dict[str, Any] = {
                            "fifo_depth": [8]},
 }  # fmt: skip
 
-# vecadd's accelerator.json (C§17), as the recorded run's
+# vecadd's accelerator.json, as the recorded run's
 UNIT: dict[str, Any] = json.loads(
     (Path(__file__).parent / "fixtures" / "vecadd" / "accelerator.json").read_text()
 )
@@ -95,7 +95,7 @@ POINT: dict[str, Any] = {
 }
 
 
-# vecadd's manifest, what run/ reads of it: its one set's streamer range and trace path (C§16)
+# vecadd's manifest, what run/ reads of it: its one set's streamer range and trace path
 MANIFEST: dict[str, Any] = {
     "csrs": {"streamers": [{"name": "acc", "first": 960, "last": 977,
                             "trace": "snax_acc0/streamer_acc"}]},
@@ -289,7 +289,8 @@ class Traffic:
     the writer's grant at t + 5 + b; words A[i] = i + 1 on reader 0, 100 + i on the others,
     their sum written; the class runs of the summary lines ``synthetic`` writes (the unit
     stall_in for 2 cycles from t + 2, then busy; each mover busy for n cycles from t + 1, then
-    stall_xbar for 1, then idle for 2). A copy of ``size`` bytes: one beat of 64 bytes a cycle from t + 1, its
+    stall_xbar for 1, then idle for 2). A copy of ``size`` bytes: one beat of 64 bytes a cycle from
+    t + 1, its
     bursts (one read, or one write per beat)."""
 
     def __init__(self, cluster: Any) -> None:

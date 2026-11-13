@@ -1,4 +1,4 @@
-"""Blocks (REUSE1, open item 117, blocks.py): a kernel's pattern found in a bigger graph, lifted
+"""Blocks (blocks.py): a kernel's pattern found in a bigger graph, lifted
 as a block, and a recipe applied there. mvt holds a dot in each row of each half and a mat-vec
 in each half (half 2 through Aᵀ); matvec_dotK is matvec's variant K written as dot's variant K
 on the rows."""

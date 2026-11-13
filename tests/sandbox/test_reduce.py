@@ -4,7 +4,7 @@ Accepted when ``recipes/dot/dot_1.json`` gives ``dot_accelerated.snaxdfg`` at it
 last bind, the fixture's instances ``mul`` and ``sum`` named ``vmul`` and ``vsum``
 (the multiply map bound to simd, the sum map to accumulate, each step
 passing the reference check), ``recipes/dot/dot_1_enc.json`` the same and then both
-groups in the accelerator ``dot`` (D148), and the bound graph equals ``np.dot``; the
+groups in the accelerator ``dot``, and the bound graph equals ``np.dot``; the
 accumulate binding with one lane (the Chisel Accumulator) works as well, the
 reduce matcher rejects every mismatch by name, and unbind and join_map take
 dot back to the imported graph.
@@ -113,7 +113,7 @@ def test_every_w_that_divides_n(w):
 
 
 def test_the_sum_folds_every_lane_into_one():
-    """out[0] becomes the one lane out[0:1], with no reduce: the BRM folds (D102)."""
+    """out[0] becomes the one lane out[0:1], with no reduce: the BRM folds."""
     s = Graph.load(FIXTURES / "dot_accelerated.snaxdfg").node("sum")
     assert s.outputs["out"].to_dict() == {"data": "out", "subset": ["0:1"]}
     assert s.inputs["a"].subset == ["4 * n_1_t:4 * n_1_t + 4"]

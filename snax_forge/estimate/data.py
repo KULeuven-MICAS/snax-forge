@@ -1,4 +1,4 @@
-"""The data side of the ideal estimate (D155, C§19): where each container lives, what it
+"""The data side of the ideal estimate: where each container lives, what it
 occupies and what moves, per container, per outer port and per tailed split.
 
     containers(graph) -> dict[str, ContainerData]
@@ -7,7 +7,7 @@ occupies and what moves, per container, per outer port and per tailed split.
 
 **Placement**: ``link`` (with its depth) when a link node names the container, ``local`` when
 it is a fused nest's local value (``loop.local``), else ``l1``. **Bytes**: the padded shape
-(D144, dfg/pad.py) times the itemsize. **Traffic**, in 64-bit words: a bound outer port moves
+(dfg/pad.py) times the itemsize. **Traffic**, in 64-bit words: a bound outer port moves
 beats · num_ch per task, beats from the firing loops its streamer runs over
 (design/streamers.py's ``port_loops``), num_ch = ceil(lanes / num_slc) with num_slc the
 elements of its container's dtype in a 64-bit word (as the DFG viewer's ``packing``); a

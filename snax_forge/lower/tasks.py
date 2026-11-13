@@ -1,4 +1,4 @@
-"""The task list: SNAX-LOWER's ordered list of tasks (D64, D135).
+"""The task list: SNAX-LOWER's ordered list of tasks.
 
 A task list says which component runs which task with which values, where
 each task is configured and started, and what it depends on. The C backend
@@ -25,7 +25,7 @@ program waits for this task when the lowering inserts a wait for it.
 The structural rules are checked here, without a cluster: task names are
 unique; ``after``, ``start`` and ``sync`` refer to tasks configured earlier;
 a component has at most one configured task that has not started yet (its
-registers are buffered, D116), so one start never launches two tasks on one
+registers are buffered), so one start never launches two tasks on one
 component; a task starts once, after its ``after`` tasks have started; every
 configured task is started.
 
@@ -40,13 +40,13 @@ have exactly the type's keys (a streamer's ``base``, ``temporal_bounds``,
 runtime params, ``n`` and its named rates, and each slot it reads from a
 container, ``{"from": <container>}``, a kernel's scalar argument in a memory
 (a CSR the program writes); a linked group's, each unit's by unit, in the
-group's order); an accelerator task's CSR writes fit them (D152:
-JOBS and every JOB_BEATS the program writes, c.py's ``job_writes``, at most
+group's order); an accelerator task's CSR writes fit them (JOBS and every JOB_BEATS the program
+writes, c.py's ``job_writes``, at most
 2^job_width - 1, the platform's ``acc_csr.job_width``, and its head firings,
 JOBS times every T of the group, below 2^32, SNAX-GVSoC's limit); a streamer's loops fit it (as
 many temporal strides as bounds, no more than its ``temporal_dims``, one
 spatial stride per spatial bound, every bound >= 1, or every one 0: an idle
-mover, which never starts, D148); a DMA's direction is
+mover, which never starts); a DMA's direction is
 ``l2_to_l1`` or ``l1_to_l2`` and its sides have one stride per bound, every
 bound >= 1.
 """
@@ -287,7 +287,7 @@ def _fit(n: int, dims: int, what: str) -> None:
 
 def components(point: DesignPoint) -> dict[str, str]:
     """The design point's components and their types: the DMA (with an L2), then per instance
-    its streamers in port order (a port on a link has none, D112) and the instance, or after a
+    its streamers in port order (a port on a link has none) and the instance, or after a
     linked group's last unit the group."""
     out = {"dma": "dma"} if point.platform.l2 is not None else {}
     found = instances(point.graph)

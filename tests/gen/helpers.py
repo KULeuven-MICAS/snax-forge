@@ -7,7 +7,7 @@ another W and implementation), on
 ``platforms/snax_forge.json`` (or a given platform), in a folder that stands
 for snax-forge's root: the platform's source hjson is copied into its
 ``platforms/``. The snax-gvsoc submodule (``SUB``) is read only where it is
-checked out (CI's python, chisel and gvsoc jobs fetch it, D134); ``snax_cfg`` imports its
+checked out (CI's python, chisel and gvsoc jobs fetch it); ``snax_cfg`` imports its
 reader.
 ``fake_emit`` stands in for the bundle's ``Emit --spec`` (no JVM).
 """
@@ -96,18 +96,19 @@ def bound_vecmul(w: int = 4) -> Graph:
 
 
 def bound_dot1() -> Graph:
-    """dot 1 bound by the checked-in recipe: two accelerators, vmul and vsum (D157)."""
+    """dot 1 bound by the checked-in recipe: two accelerators, vmul and vsum."""
     return bound_recipe("dot_1", "dot")
 
 
 def bound_dot1_enc() -> Graph:
     """dot 1 encapsulated (``recipes/dot/dot_1_enc.json``): groups vmul and vsum in the accelerator
-    dot, one streamer set (D148)."""
+    dot, one streamer set."""
     return bound_recipe("dot_1_enc", "dot")
 
 
 def bound_recipe(recipe: str, kernel: str) -> Graph:
-    """``recipes/<folder>/<recipe>.json`` applied to the kernel fixture ``<kernel>.snaxdfg``: its bound
+    """``recipes/<folder>/<recipe>.json`` applied to the kernel fixture ``<kernel>.snaxdfg``: its
+    bound
     graph."""
     r = Recipe.load(recipe_path(recipe))
     return apply_recipe(r, Graph.load(FIXTURES / f"{kernel}.snaxdfg"))[-1].graph

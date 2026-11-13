@@ -5,13 +5,13 @@ What this is
 The server (server.py) is a thin HTTP layer; everything it answers comes
 from the functions here, so the tests call them directly and the server
 only turns their results into JSON. Nothing here draws anything: the
-viewer (static/) formats the numbers, and HTML is checked by eye (D55).
+viewer (static/) formats the numbers, and HTML is checked by eye.
 
 Loading
 -------
-A run is a flow's (D136, D137): its folder ``out/flow/<name>/`` or the
+A run is a flow's: its folder ``out/flow/<name>/`` or the
 ``run/`` directory in it. ``run/`` is read with ``run.outputs.read_run``
-(run.json, the profile and, above trace ``off``, the trace, C§7), and the
+(run.json, the profile and, above trace ``off``, the trace), and the
 cluster with ``run.cluster.load_cluster`` from the description files and the
 design point ``run.json`` names, so the views use run/'s dataclasses and
 never parse the files themselves. The design point gives the regions
@@ -51,7 +51,7 @@ Schedule and cluster
 --------------------
 The schedule (lanes, folded segments, detail rows) is schedule.py's queries
 on the index, the cluster view at a cycle and the stepping between cycles
-cluster.py's (D57); a run below the level an answer needs gets ``available``
+cluster.py's; a run below the level an answer needs gets ``available``
 false with the reason. The viewer draws these answers and computes nothing
 of its own.
 """

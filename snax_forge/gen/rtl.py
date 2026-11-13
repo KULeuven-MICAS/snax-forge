@@ -1,4 +1,4 @@
-"""A design point -> its accelerator's RTL, from ``accelerator.json`` (D130, D145, C§17).
+"""A design point -> its accelerator's RTL, from ``accelerator.json``.
 
     accelerator_spec(design_point, root=None) -> Description
     write_accelerator(design_point, out_dir, root=None) -> Description
@@ -11,7 +11,7 @@
 ``accelerator.json`` is the boundary between the Python side and ``hw/chisel/``: the one
 description of the accelerator (accelerator.py), the same bytes gen-gvsoc writes, which
 ``Emit --spec`` reads to build ``<tag>_shell_wrapper`` (its ``<tag>_csr``, ``<tag>_ctrl`` and
-``<tag>_datapath``, D147). Python resolves and checks; Scala only constructs.
+``<tag>_datapath``). Python resolves and checks; Scala only constructs.
 
 **The checks**, against the datapath catalogue ``hw/chisel/blocks.json`` (the signature of each
 Chisel datapath, equal to ``Emit --describe``), each a ``GenError``: first accelerator.py's
@@ -32,7 +32,7 @@ timing
 and per link of depth >= 1 its ``LinkBuffer``'s params (``link.depth``, and the ends'
 ``link.lanes`` and ``link.dtype``), ``gen.params``.
 
-**Ports and pins** (C§17): a port is ``"in"`` / ``"out"`` or ``{"dir": ..., "when": {param:
+**Ports and pins**: a port is ``"in"`` / ``"out"`` or ``{"dir": ..., "when": {param:
 value, ...}}``, a pin a name or ``{"name": ..., "when": {...}}``; one exists only when every
 param its ``when`` lists has that value (``live``), one without ``when`` always.
 
@@ -55,7 +55,8 @@ every ``--spec FILE --out DIR`` pair (``elaborate_all``).
 such param: SimdLanes' ``k`` at two streams, a ``const`` param), ``unit.scalars.<slot>`` whether
 the unit reads that slot from its CSR (SimdLanes' ``k1Csr``; each of the unit's scalars must
 then be a live pin, ``gen.port_map``), ``unit.ports.seed`` whether the unit has a seed port (a
-fold's, D163: TreeAccumulate's and SerialAccumulate's ``seed``); a buffer's ``link.depth``, ``link.lanes`` and ``link.dtype``. Inputs and outputs are
+fold's: TreeAccumulate's and SerialAccumulate's ``seed``); a buffer's ``link.depth``, ``link.lanes``
+and ``link.dtype``. Inputs and outputs are
 the unit's ports by their ``dir``, in the BRM's order.
 
 **The fixtures** (``write_fixture``): ``hw/chisel/src/test/resources/rtl/<design>/`` holds, for
@@ -72,7 +73,7 @@ and the counter with an always-ready streamer, the working in ``working``: one u
 from the control unit's rule (``counter``), a linked group's from snax-gvsoc's group rule
 (``group_counter``: ``snax_group_rule.py`` stepped with an always-ready streamer, any shape the
 rule accepts, by estimate/cycles.py's ``group_cycles``; ``estimate.submodule`` without the
-submodule). C§17's Cycles state the same for dot's
+submodule). the Cycles state the same for dot's
 and matvec's shapes.
 """
 
@@ -206,8 +207,8 @@ def value(v: int | str, params: Mapping[str, Any]) -> int:
 
 
 def flops(datapath: str, params: Mapping[str, Any], cat: Mapping[str, Any]) -> int:
-    """A catalogue datapath's register bits on its params: its ``flops`` (CHAR1's cost model
-    prices a register as its bits, D154)."""
+    """A catalogue datapath's register bits on its params: its ``flops`` (the block cost model
+    prices a register as its bits)."""
     return value(cat[datapath]["flops"], params)
 
 
@@ -290,7 +291,7 @@ def check_link(acc: Description, link: Link, cat: Mapping[str, Any]) -> None:
 def accelerator_spec(design_point: str | Path, root: str | Path | None = None,
                      cat: Mapping[str, Any] | None = None) -> Description:  # fmt: skip
     """The design point's ``accelerator.json`` (accelerator.py), checked against the catalogue; a
-    design whose groups share their movers (D169) is taken as any other, its movers and port mux
+    design whose groups share their movers is taken as any other, its movers and port mux
     checked by accelerator.py (``gen.share``) and built by Emit (``<tag>_<set>_port_mux``)."""
     _, _, acc = load_point(design_point, ROOT if root is None else Path(root))
     cat = catalogue() if cat is None else cat
@@ -339,7 +340,7 @@ def counter(unit: Unit, n: int) -> tuple[int, str]:
 def rule_graph(group: Group) -> tuple[list[dict[str, Any]], list[dict[str, Any]], str]:
     """``group`` as snax_group_rule's GroupRule takes it: per unit its name, L, II, span and
     outer inputs (its ``in`` ports no link feeds); per link ``{from, to, to_input, depth}``,
-    ``to_input`` the fed port's place among its unit's ``in`` ports (C§17's port order); and
+    ``to_input`` the fed port's place among its unit's ``in`` ports; and
     the unit owning the outer output (the one with an ``out`` port no link takes)."""
     fed = {link.to for link in group.links}
     taken = {link.from_ for link in group.links}
@@ -363,7 +364,8 @@ def rule_graph(group: Group) -> tuple[list[dict[str, Any]], list[dict[str, Any]]
 
 def group_counter(group: Group, jobs: int, beats: Mapping[str, int]) -> tuple[int, str]:
     """The counter of a linked group's task with an always-ready streamer, from the group rule
-    (snax-gvsoc's snax_group_rule.py, estimate/cycles.py's ``group_cycles``) stepped with every input
+    (snax-gvsoc's snax_group_rule.py, estimate/cycles.py's ``group_cycles``) stepped with every
+    input
     valid and the output ready, and the working: JOBS ``jobs``, each unit's T its JOB_BEATS
     (``beats``, by unit) or its fixed T (``params.T``, else 1). BUSY_COUNTER counts the busy cycles,
     E - s: the rule starts the run in cycle 0. A run that does not end is ``gen.counter``."""
@@ -554,7 +556,8 @@ def main(argv: list[str] | None = None) -> int:
     ``gen-rtl``): ``accelerator.json`` into ``OUT_DIR`` (default ``out/rtl/<design>/``), then the
     accelerator through ``Emit --spec`` into its ``sv/`` with ``emitted.json``; with
     ``--fixture``, a fixture of hw/chisel's specs (its ``vectors.json``) into ``DIR`` instead
-    (``write_fixture``, no elaboration). The flow does not call it (D136). Exit 0 when written, 1 when refused."""
+    (``write_fixture``, no elaboration). The flow does not call it. Exit 0 when written, 1 when
+    refused."""
     ap = argparse.ArgumentParser(prog="python -m snax_forge.gen.rtl")
     ap.add_argument("design_point", type=Path, help="a design_point.json (the design step's)")
     ap.add_argument("out_dir", type=Path, nargs="?", help="output directory (out/rtl/<design>)")

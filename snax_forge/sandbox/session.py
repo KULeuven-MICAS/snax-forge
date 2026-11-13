@@ -1,4 +1,4 @@
-"""The editor's session (D55, C§12): a kernel or a recipe opened, transforms applied one by one,
+"""The editor's session: a kernel or a recipe opened, transforms applied one by one,
 a cursor for undo and redo, and Save writing a recipe.
 
     Session.from_kernel(kernel, params, symbols=None, dtypes=None, platform=..., name=None)
@@ -14,7 +14,7 @@ params come with it.
 every step applied, n of them), the graphs of steps 0..n in memory (step 0 the import with its
 symbols bound), a cursor k in 0..n (the step shown, the one the next transform applies to) and
 a platform. The graphs are replayed up to ``replayed`` (≥ k): after a param change the steps
-past the cursor stay as redo steps, replayed and checked when the cursor reaches them (D156).
+past the cursor stay as redo steps, replayed and checked when the cursor reaches them.
 Only the recipe and the cursor go to disk, in ``<sessions>/<name>/``: ``recipe.json``, a recipe
 holding every step (named after the session), and ``session.json``, ``{"cursor": k,
 "platform": path, "own_params": [...]}`` (the params the session started with, the recipe's
@@ -23,7 +23,8 @@ cursor that refuses (and the ones after it) left as redo steps. The graphs are r
 from the kernel's import, never stored. The seeded inputs (seed 0) and what step 0 computes on
 them are drawn once and every step is checked against them (run.py's ``checked_step``). The
 roots are injectable (``Roots``): sessions default to ``out/sessions/``, recipes to
-``recipes/`` (its folders by category; Save writes ``custom/``), step files to ``out/sandbox/``. A new session takes its kernel's or its recipe's
+``recipes/`` (its folders by category; Save writes ``custom/``), step files to ``out/sandbox/``. A
+new session takes its kernel's or its recipe's
 name, ``_2``, ``_3``, ... when one is taken; an opened recipe file is never written.
 
 **Changing it**, each a dict with ``ok``; a refusal changes nothing and gives its ``code`` and
@@ -51,7 +52,8 @@ name, ``_2``, ``_3``, ... when one is taken; an opened recipe file is never writ
                                            params (``rename_split_params``; dot 1's ``W`` to
                                            ``W_acc_1``), given back as ``renamed``. With
                                            k < n and no ``drop``: ``session.drop``, the server's
-                                           guard (the page asks ``drop_question`` first). On success the
+                                           guard (the page asks ``drop_question`` first). On success
+                                           the
                                            steps past k go, the new one is step k + 1 and the
                                            cursor; returns its index, transform, params, the
                                            milliseconds it took, its ``diff`` and its ``checks``
@@ -60,7 +62,7 @@ name, ``_2``, ``_3``, ... when one is taken; an opened recipe file is never writ
                                            replayed and checked on the way, and its refusal
                                            (with its ``index``) leaves the cursor where it was
     set_params(values)                     steps 1..k replayed with the new values, the steps
-                                           after k left as redo steps (D156); a step that
+                                           after k left as redo steps; a step that
                                            refuses keeps the old params and graphs and is named
                                            by its ``index``; returns the cursor's ``checks``
     save(name, force=False)                steps 1..k as ``<recipes>/custom/<name>.json``
@@ -95,7 +97,7 @@ DfgError ``dfg``, a failed reference check ``sandbox.check``.
                          ``bind`` on the step, W read off the spatial bound and the instance
                          ``acc_N``, N the bind's order in the session (the binds before step k,
                          plus one), the next N while the graph has it as an instance,
-                         accelerator or group (``default_instance``, D156), each ok (with
+                         accelerator or group (``default_instance``), each ok (with
                          the params that bind it) or refused (with the message), with its
                          timing (latency, II, span) at that W where the implementation
                          resolves there
@@ -105,15 +107,16 @@ DfgError ``dfg``, a failed reference check ``sandbox.check``.
     diff(k)              step k against step k − 1: nodes added, removed and changed (attrs,
                          inputs or outputs, the body by its ids), containers added, removed and
                          changed (attrs, or the estimate's placement); empty at step 0
-    estimate(k, tech)    the ideal estimate (estimate/, D155) on the session's platform, costed
-                         on ``tech`` (default nangate45, C§20)
-    checks(k)            Save's design checks on step k and the platform (D156): ``problems``,
+    estimate(k, tech)    the ideal estimate (estimate/) on the session's platform, costed
+                         on ``tech`` (default nangate45)
+    checks(k)            Save's design checks on step k and the platform: ``problems``,
                          each ``{code, where, message, fix}``, and ``notes``: ``graph.unbound``
                          while building (``before Save: bind it …``) as a note, not a
                          problem, which Save still refuses, and the design notes (check.py's
                          ``NOTES``, ``char.missing``) always, also beside problems
 
-``sites``, ``marks``, ``estimate`` and ``checks`` are cached per step (``sites`` per step and selection,
+``sites``, ``marks``, ``estimate`` and ``checks`` are cached per step (``sites`` per step and
+selection,
 ``estimate`` per step and technology) and
 the caches past a changed step dropped. Every public method holds the session's one lock, so
 the server's threads see one change at a time.
@@ -235,7 +238,7 @@ class Session:
         if cursor is not None and not 0 <= cursor <= len(recipe.steps):
             raise SandboxError(f"session {name}: cursor {cursor} outside 0..{self.n}")
         self.graphs, self.inputs, self.want = self._replay(self.recipe, cursor)
-        try:  # the steps past the cursor too; one that refuses stays a redo step (D156)
+        try:  # the steps past the cursor too; one that refuses stays a redo step
             self._extend(self.recipe, self.graphs, self.inputs, self.want, len(recipe.steps))
         except StepError:
             pass
@@ -387,7 +390,7 @@ class Session:
             added = {x: v for x, v in (new_params or {}).items() if x not in self.recipe.params}
             params = dict(params)
             spec = TRANSFORMS.get(transform)
-            for p in spec.ints if spec else ():  # a number becomes a param of its own (C§12)
+            for p in spec.ints if spec else ():  # a number becomes a param of its own
                 if type(params.get(p)) is int:
                     name = fresh_param(p, {**self.recipe.params, **added})
                     added[name], params[p] = params[p], name
@@ -409,10 +412,10 @@ class Session:
                 return _refused(_code(e), str(e))
             ms = (time.perf_counter() - start) * 1000
             renamed: dict[str, str] = {}
-            if transform == "bind":  # W -> W_<instance> (D156)
+            if transform == "bind":  # W -> W_<instance>
                 trial, renamed = rename_split_params(trial, g, step.params.get("instance"),
                                                      self.own_params)  # fmt: skip
-            if transform == "share":  # the shared group's split params into the other's (D165)
+            if transform == "share":  # the shared group's split params into the other's
                 trial, renamed = merge_shared_params(trial, g, self.own_params)
                 params = dict(trial.steps[k].params)
                 added = {renamed.get(x, x): v for x, v in added.items()}
@@ -665,7 +668,7 @@ def _nodes(g: Graph) -> dict[str, Any]:
                    [k.id for k in n.body or []]) for n, _ in g.walk()}  # fmt: skip
 
 
-# What each of Save's commands does (C§12), in the order Save lists them
+# What each of Save's commands does, in the order Save lists them
 COMMANDS = (
     "writes the steps and checks each against the reference",
     "runs the recipe on SNAX-GVSoC and writes the reports",
@@ -713,7 +716,7 @@ def bind_list(g: Graph, selected: str, order: int = 1) -> list[dict[str, Any]]:
 
 def share_choices(g: Graph, node: str) -> list[dict[str, Any]]:
     """The instances already bound in ``g`` that ``node`` could be bound to as well, one
-    accelerator run once per node (D165, mvt's variant 1: half 2's multiply on half 1's
+    accelerator run once per node (mvt's variant 1: half 2's multiply on half 1's
     ``vmul_x1``): per instance, in the graph's order, ``{value, label, brm, implementation, ok,
     message}``, ``ok`` when ``bind`` on that instance gives a valid graph, else ``message`` its
     refusal (``vmul_x1 has W = 4, tmp2_mult would have 8``, another accelerator); an instance
@@ -757,7 +760,7 @@ def fresh_instance(g: Graph) -> str:
 
 
 def default_instance(taken: set[str], order: int = 1) -> str:
-    """``bind``'s default instance (D156): ``acc_<order>``, ``order`` the bind's in the session
+    """``bind``'s default instance: ``acc_<order>``, ``order`` the bind's in the session
     (``acc_1``, ``acc_2``), the next number while ``taken`` (the graph's instances,
     accelerators and groups) has it."""
     k = order
@@ -772,13 +775,13 @@ def _taken(g: Graph) -> set[str]:
             for k in ("instance", "accelerator", "group") if k in n.attrs}  # fmt: skip
 
 
-# bind's default instance's base, acc_1, acc_2, ... (C§12, D156)
+# bind's default instance's base, acc_1, acc_2, ...
 DEFAULT_INSTANCE = "acc"
 
-# The splits whose inner map a unit's replaced subtree holds (C§12's Bindings): per transform the
+# The splits whose inner map a unit's replaced subtree holds: per transform the
 # suffixes of the maps it makes under the map it splits
 SPLIT_SUFFIXES = {"split": ("_inner",), "split_map": ("_s",), "split_reduce": ("_s", "_final")}
-# A factor param the editor names (fresh_param's W, W_2, ...), which a bind may rename (D156)
+# A factor param the editor names (fresh_param's W, W_2, ...), which a bind may rename
 EDITOR_FACTOR = re.compile(r"^W(_\d+)?$")
 
 
@@ -798,7 +801,7 @@ def map_ids(d: Any) -> set[str]:
 
 def used_params(params: dict[str, Any], steps: list[Step], symbols: dict[str, Any],
                 own: list[str]) -> set[str]:  # fmt: skip
-    """The params a saved recipe keeps (D156): those its steps' or its symbols' expressions
+    """The params a saved recipe keeps: those its steps' or its symbols' expressions
     name, a kept string param's own names with them, and the session's own (a recipe opened
     from a file keeps its params); a link's ``D`` tried and stepped back from goes."""
     names: set[str] = set(own) & set(params)
@@ -842,7 +845,7 @@ def rename_split_params(recipe: Recipe, g: Graph, instance: str | None,
     """After a bind of ``instance`` (``g`` the bound graph), each factor param the editor named
     (``W``, ``W_2``: not in ``own``) that only the splits of this unit name, renamed to
     ``W_<instance>`` (the next free ``_2``, ... if taken) in every step and in the params; the
-    recipe and ``{old: new}`` (D156). A param a symbol, another step or another unit's split
+    recipe and ``{old: new}``. A param a symbol, another step or another unit's split
     names is shared and stays."""
     if instance is None:
         return recipe, {}
@@ -872,7 +875,7 @@ def rename_split_params(recipe: Recipe, g: Graph, instance: str | None,
         users = {j for j, st in enumerate(recipe.steps) if x in _step_names(st)}
         if not users <= set(mine):
             continue  # shared with another unit or step
-        # a node joining an instance (D165): its split takes the param the instance's other
+        # a node joining an instance: its split takes the param the instance's other
         # splits name, at the same value (bind has checked the lanes agree)
         other = [y for j in mine if isinstance(y := recipe.steps[j].params.get("factor"), str)
                  and y != x and y in recipe.params and recipe.params[y] == recipe.params[x]]  # fmt: skip
@@ -898,7 +901,7 @@ def merge_shared_params(recipe: Recipe, g: Graph, own: list[str]) -> tuple[Recip
     name (its units' splits, its links' depths), renamed to the param the matching step of the
     nest it now runs with names (unit by unit, link by link), when the two have the same value
     and only the shared nest's steps name it (not one of ``own``): one param then drives every
-    nest of the group (D165; mvt's ``W_vmul_x2`` into ``W_vmul_x1``, ``D_2`` into ``D``). The
+    nest of the group (mvt's ``W_vmul_x2`` into ``W_vmul_x1``, ``D_2`` into ``D``). The
     recipe and ``{old: new}``."""
     from .share import SHARED
 
@@ -976,7 +979,7 @@ def _renamed(v: Any, renamed: dict[str, str]) -> Any:
     return expr.canonical(re.sub(r"[A-Za-z_]\w*", lambda m: renamed.get(m[0], m[0]), v))
 
 
-# The problems that only say a graph is still being built (D156): notes "before Save", which
+# The problems that only say a graph is still being built: notes "before Save", which
 # Save still refuses (save.graph)
 BEFORE_SAVE = ("graph.unbound",)
 
@@ -984,8 +987,9 @@ BEFORE_SAVE = ("graph.unbound",)
 def design_checks(platform: Platform, g: Graph) -> dict[str, list[dict[str, Any]]]:
     """Save's design checks on ``g`` (``Session.checks``): ``problems`` and ``notes``, each
     ``{code, where, message, fix, before_save}``. ``graph.unbound`` is a "before Save" note
-    (``before_save`` true), not a problem, and the design notes (check.py's ``NOTES``, ``char.missing``) are
-    listed whatever else is wrong, each one that cannot read the graph left out (D156)."""
+    (``before_save`` true), not a problem, and the design notes (check.py's ``NOTES``,
+    ``char.missing``) are
+    listed whatever else is wrong, each one that cannot read the graph left out."""
     from snax_forge.design.check import NOTES
 
     design = Design(platform, g)
@@ -1009,7 +1013,7 @@ def design_checks(platform: Platform, g: Graph) -> dict[str, list[dict[str, Any]
 
 
 # The defaults of the params a site does not fill (the user's choices): an int param's value,
-# and the name the editor gives it, a param of its own (C§12): every factor and depth the editor
+# and the name the editor gives it, a param of its own: every factor and depth the editor
 # writes names a param, W, W_2, ... and D, D_2, ..., so it can change after the bind
 DEFAULT_INT = {"factor": 4, "depth": 1}
 PARAM_BASE = {"factor": "W", "depth": "D"}
@@ -1100,7 +1104,8 @@ def form(
     kinds, ``bind``'s (BRM, implementation) pairs from the bind list with their timing and
     message (one field, ``binding``, whose ``value`` gives both params), ``encapsulate``'s
     units (the instances in no accelerator, in the graph's order, the selection's ticked),
-    ``bake_scalar``'s value (an int literal, or ``csr``, its ``hint`` says; the container's in ``inputs``: the session gives
+    ``bake_scalar``'s value (an int literal, or ``csr``, its ``hint`` says; the container's in
+    ``inputs``: the session gives
     the kernel's ``make_inputs`` at seed 0, axpy's alpha 3; else ``BAKE_DEFAULT``),
     ``fuse_map``'s and ``fuse_seed``'s ``first`` and ``second`` on one map ``selected`` (one
     field, ``pair``, a choice per pair the transform takes with the selected map on either
@@ -1139,7 +1144,7 @@ def form(
                                  "value": filled.get(p), "readonly": p == selection}  # fmt: skip
         if p in spec.ints:
             field["type"] = "int"
-            if field["value"] is None:  # a param of its own, its value beside it (C§12)
+            if field["value"] is None:  # a param of its own, its value beside it
                 field["value"] = fresh_param(p, params)
             field["new_value"] = DEFAULT_INT.get(p, 1)
         elif name == "bake_scalar" and p == "value":  # an int literal, not a param
@@ -1183,7 +1188,7 @@ def form(
             field["value"] = (ok[0]["params"]["instance"] if ok
                               else default_instance(_taken(g), order))  # fmt: skip
             share = share_choices(g, filled["node"])
-            if share:  # an instance the node can share (D165), the page's "share with"
+            if share:  # an instance the node can share, the page's "share with"
                 field["share"] = share
         elif name == "encapsulate" and p == "units":
             nodes = [n for n, _ in g.walk() if n.kind == "accelerated"]

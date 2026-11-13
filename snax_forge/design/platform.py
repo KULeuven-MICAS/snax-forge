@@ -1,4 +1,4 @@
-"""The platform: the SNAX cluster around the accelerators (D84).
+"""The platform: the SNAX cluster around the accelerators.
 
 A platform file describes everything of the cluster that is not the
 accelerator itself: L1, L2, how the program waits, and the streamer shell. It
@@ -27,7 +27,7 @@ the generator read (CONTRACTS.md section 13); each checks its own values.
 
 **The streamer shell.** SNAX's streamers are a shell shaped to what an
 accelerator needs, so the platform does not list them: one streamer is made
-for every port of every accelerated node, named ``<instance>_<port>`` (D75).
+for every port of every accelerated node, named ``<instance>_<port>``.
 Its direction and lanes come from the BRM port (``write``, ``n_ports`` and,
 unless an entry gives them, ``spatial_bounds``), its temporal loops from the
 graph (``temporal_dims``, the firing loops of its port's memlet);
@@ -35,7 +35,7 @@ graph (``temporal_dims``, the firing loops of its port's memlet);
 streamer overrides any of it for that one streamer only. An entry may also
 give ``num_ch``, the number of TCDM channels the streamer uses (never in
 ``default``); without it, the wire default, the lanes over num_slc, the
-slices (elements) per word of the port's container (D142, ``connect.num_ch``).
+slices (elements) per word of the port's container (``connect.num_ch``).
 
 **The word.** A bank word is ``width_bits`` wide; how many elements it holds
 is each container's dtype's business, not the platform's. Resolving
@@ -51,11 +51,11 @@ that source, its only slot renamed to it and set (snax_forge/gen). Both are
 null for a platform not read from one (small16). ``--set
 accelerator_slot=NAME`` changes it as any field.
 
-**The accelerator's CSRs** (``acc_csr``, D152): ``job_width`` (default 32)
+**The accelerator's CSRs** (``acc_csr``): ``job_width`` (default 32)
 is the bits of JOBS and every JOB_BEATS, and of the control units' counters
-(no copies, D168); ``busy_counter_width`` those of BUSY_COUNTER, null to follow
+(no copies); ``busy_counter_width`` those of BUSY_COUNTER, null to follow
 ``job_width``. Each is 1 to 32; the generator writes them as the CSRs'
-widths in ``accelerator.json`` (gen/accelerator.py, C§17).
+widths in ``accelerator.json`` (gen/accelerator.py).
 
 **Changes and working copies.** ``with_changes`` applies ``--set`` paths
 (``l1.n_banks``, ``streamers.acc_a.fifo_depth``) and returns a working
@@ -106,8 +106,9 @@ class L1Config(Config):
     base_addr: int = 0  # byte address of the first L1 word
     wide_bits: int = 512  # widest port, the DMA's: one superbank of 8 banks in SNAX
     # the TCDM crossbar's most inputs: snax-gvsoc's snax_tcdm_xbar.cpp asserts nb_inputs in
-    # (0, 128] (D85, the check connect.xbar_inputs); above warn_xbar_inputs a note
+    # (0, 128] (the check connect.xbar_inputs); above warn_xbar_inputs a note
     # (design.xbar_inputs): the cost extrapolated beyond the tables and beyond SNAX's own crossbar
+    # NB (D85): SNAX-GVSoC's crossbar takes at most 128 inputs; raise both together.
     max_xbar_inputs: int = 128
     warn_xbar_inputs: int = 64
 
@@ -157,7 +158,7 @@ class L2Config(Config):
 
 @dataclass(frozen=True)
 class AccCsrConfig(Config):
-    """The widths of the generated accelerator's CSRs (CONTRACTS.md 13, D152)."""
+    """The widths of the generated accelerator's CSRs (CONTRACTS.md 13)."""
 
     job_width: int = 32  # JOBS and every JOB_BEATS, and the control units' counters
     busy_counter_width: int | None = None  # BUSY_COUNTER; None follows job_width

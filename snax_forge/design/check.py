@@ -1,4 +1,4 @@
-"""The design checks: does this platform fit this bound graph (D85)?
+"""The design checks: does this platform fit this bound graph?
 
 The design step pairs a bound graph (the last step of a recipe) with a
 platform. Before it writes anything it runs every registered check and
@@ -10,7 +10,7 @@ why it fails and the change that fixes it. Checks belong to stages:
                accelerator, BRMs and implementations known, instance names
     connect    the two together: streamer entries, lanes, dtypes, packing,
                padding, num_ch, the crossbar's inputs, temporal loops
-    memory     the memory plan (D86): pins and passes, then the plan
+    memory     the memory plan: pins and passes, then the plan
                the passes make, its residency, shapes, alignment, fit,
                snRuntime's top of L1 and overlaps
 
@@ -226,7 +226,7 @@ def _subtree(node: Node) -> Iterator[Node]:
 
 
 def _streamers(design: Design) -> dict[str, tuple[str, str]]:
-    """Every streamer the graph needs, one per port not on a link (D112): name -> (instance,
+    """Every streamer the graph needs, one per port not on a link: name -> (instance,
     port)."""
     linked = linked_ports(design.graph)
     return {
@@ -464,7 +464,7 @@ def _connect_lanes(design: Design) -> Iterable[Problem]:
 
 
 def _connect_dtype(design: Design) -> Iterable[Problem]:
-    """Each node's containers pass its BRM's dtype rule (brm/dtypes.py, D143): bind checked
+    """Each node's containers pass its BRM's dtype rule (brm/dtypes.py): bind checked
     it, a hand-edited graph may not. A streamer moves one dtype: every node of an instance
     puts the same one on a port."""
     g = design.graph
@@ -514,7 +514,7 @@ def _walk(design: Design, node: Node, conn: str) -> _Walk | None:
         return None
     names = [lp.var for lp in loops]
     symbols = g.bound_symbols
-    shape = padded_shape(g, m.data)  # a tailed split's padding is in the rows (D144)
+    shape = padded_shape(g, m.data)  # a tailed split's padding is in the rows
     rows = [prod(shape[d + 1 :]) for d in range(len(shape))]
     stride = dict.fromkeys(names, 0)
     offset = 0
@@ -539,10 +539,11 @@ def _walk(design: Design, node: Node, conn: str) -> _Walk | None:
 
 
 def _connect_pack(design: Design) -> Iterable[Problem]:
-    """Each port's elements fill whole words (D142): with num_slc slices (elements) of its
+    """Each port's elements fill whole words: with num_slc slices (elements) of its
     container's dtype per word, the fastest spatial bound S_0 is a multiple of num_slc, the
     fastest spatial loop steps 1 element, every other loop a multiple of num_slc, and the start
-    is on a word. At num_slc = 1 every port passes. The base address is memory.align's. At any k, a memlet stays inside
+    is on a word. At num_slc = 1 every port passes. The base address is memory.align's. At any k, a
+    memlet stays inside
     its container's padded shape (a tail's padding, as the reference executor
     requires)."""
     g, pf = design.graph, design.platform
@@ -599,7 +600,7 @@ def _reach(design: Design, node: Node, conn: str) -> Iterator[Problem]:
                 "connect.pack", f"node {node.id}.{conn}",
                 f"memlet {m.data}{m.subset} reaches index {hi} on dimension {d}, past its padded "
                 f"extent {padded[d]} (the container's {g.containers[m.data].shape[d]}, a tail's "
-                "padding included, D144)",
+                "padding included)",
             )  # fmt: skip
 
 
@@ -623,7 +624,7 @@ def _pack(
         yield Problem(
             "connect.pack", where,
             f"the fastest spatial bound S_0 = {s0} is not a multiple of num_slc ({of}): a beat's "
-            "fastest lanes must fill whole words (D142)",
+            "fastest lanes must fill whole words",
             f"make the fastest spatial bound a multiple of {num_slc} (the split factor in the recipe)",
         )  # fmt: skip
         return  # a loop stepping by S_0 fails only because of it: one cause, one problem
@@ -665,12 +666,12 @@ def _pack(
 
 
 def pad_content(g: Graph, c: str, seen: frozenset[str] = frozenset()) -> int | None | str:
-    """What ``c``'s pad words hold in L1 when a fold reads them (D144): ``pad_value`` for a
+    """What ``c``'s pad words hold in L1 when a fold reads them: ``pad_value`` for a
     container no accelerator writes (data.h fills its pads, the DMA moves them); for one that
     units write, the value every writer gives there, its code evaluated on its inputs' pad
     contents (dfg/pad.py's ``code_on_pads``), when each writes its whole padded extent and is
     not a fold; ``"unwritten"`` when a writer stops short of the padded extent, so the pad words
-    are never written (open item 106); None when it cannot say."""
+    are never written; None when it cannot say."""
     writers = [n for n in accelerated(g) if any(m.data == c for m in n.outputs.values())]
     if not writers:
         return pad_value(g, c)
@@ -699,7 +700,7 @@ def _connect_pad(design: Design) -> Iterable[Problem]:
     accelerator writes holds its pad lanes' values too, so a fold may read it through a tail
     only when those are the fold's identity (``pad_content``: dot 1 at W_mul = W_sum = 10, 0 ×
     0 = 0, add's); a producer that never writes the pad words is refused until the program
-    writes the identity there (open item 106); and every reader of a container must need the
+    writes the identity there; and every reader of a container must need the
     same pad."""
     g = design.graph
     nodes = accelerated(g)
@@ -717,13 +718,14 @@ def _connect_pad(design: Design) -> Iterable[Problem]:
             identity = int(REDUCE_OPS[fold_op(n)].identity(np.dtype(g.containers[c].dtype)))
             if held == identity:
                 continue
+            # the program writing the identity into unwritten pads is open item 106
             item = ("; they are never written, so the program would have to write the fold's "
-                    "identity there before the fold's task, open item 106") if held == "unwritten" else ""  # fmt: skip
+                    "identity there before the fold's task") if held == "unwritten" else ""  # fmt: skip
             yield Problem(
                 "connect.pad", f"container {c}",
                 f"is written by {', '.join(writers)} and read through a tail by the fold "
                 f"{n.id}: the producer's pad lanes would reach the fold (the hardware masks "
-                f"nothing, D144{item})",
+                f"nothing{item})",
                 "a size that divides W, or a split factor that divides n",
             )  # fmt: skip
         try:
@@ -772,7 +774,7 @@ def _connect_num_ch(design: Design) -> Iterable[Problem]:
             f"num_ch = {num_ch} for {lanes} lanes of {dtype} (num_slc = {num_slc}): rho = num_ch "
             f"* num_slc / W = {Fraction(num_ch * num_slc, lanes)}. Only the wire default "
             f"W / num_slc = {wire} is placed for now: rho != 1 needs the FIFO slicer, which the "
-            f"flow does not place yet (D142). With rho <= 1, num_ch may be {listed}; a value with "
+            f"flow does not place yet. With rho <= 1, num_ch may be {listed}; a value with "
             "rho > 1 never helps a unit firing once per cycle",
             f"remove num_ch, or {_set(f'streamers.{s}.num_ch', wire)}",
         )  # fmt: skip
@@ -782,11 +784,11 @@ def crossbar_inputs(platform: Platform, graph: Graph,
                     insts: dict[str, Instance]) -> tuple[int, int] | None:  # fmt: skip
     """The TCDM crossbar's inputs as the generator's cluster file gives them to SNAX-GVSoC
     (snitch_cluster.py): the accelerator's ports, its streamer sets' channels
-    (``snax_tcdm_ports``, gen/csrs.py's ``channels``: num_ch summed, D142, a shared set's movers'
-    in place of its ports', D169, streamers.py's ``set_channels``), then a port per core of the
+    (``snax_tcdm_ports``, gen/csrs.py's ``channels``: num_ch summed, a shared set's movers'
+    in place of its ports', streamers.py's ``set_channels``), then a port per core of the
     platform's hjson and one for AXI; as (channels, others). None when the streamers do not
     resolve (another connect check names why) or there are none. The one place the inputs are
-    counted: the check below and HWCOST's crossbar cost (estimate, D167) read it."""
+    counted: the check below and HWCOST's crossbar cost (estimate) read it."""
     try:
         found = resolve(platform, graph, insts)
         channels = sum(set_channels(graph, found).values())
@@ -805,7 +807,7 @@ def xbar_inputs(design: Design) -> tuple[int, int] | None:
 
 def _connect_xbar_inputs(design: Design) -> Iterable[Problem]:
     """No more crossbar inputs than the platform's ``l1.max_xbar_inputs``, where SNAX-GVSoC
-    asserts (D85)."""
+    asserts."""
     counted = xbar_inputs(design)
     limit = design.platform.l1.max_xbar_inputs
     if counted is None or sum(counted) <= limit:
@@ -817,12 +819,12 @@ def _connect_xbar_inputs(design: Design) -> Iterable[Problem]:
         f"{channels + others} TCDM crossbar inputs, the platform takes at most {limit} "
         f"({channels} streamer channels, {others} for the core{'s' if others > 2 else ''} and AXI; "
         "l1.max_xbar_inputs, the limit SNAX-GVSoC's crossbar asserts)",
-        "fewer lanes, or share_ports on a container between two accelerators (D169)",
+        "fewer lanes, or share_ports on a container between two accelerators",
     )  # fmt: skip
 
 
 def _design_xbar_inputs(design: Design) -> Iterable[Problem]:
-    """More crossbar inputs than the platform's ``l1.warn_xbar_inputs`` (D85): the design passes,
+    """More crossbar inputs than the platform's ``l1.warn_xbar_inputs``: the design passes,
     its crossbar cost extrapolated beyond the tables and beyond SNAX's own crossbar."""
     try:
         counted = xbar_inputs(design)
@@ -836,12 +838,12 @@ def _design_xbar_inputs(design: Design) -> Iterable[Problem]:
         "design.xbar_inputs", ", ".join(accelerators(design.graph)) or "graph",
         f"{channels + others} TCDM crossbar inputs, above {warn} (l1.warn_xbar_inputs): beyond "
         "SNAX's own crossbar, its cost extrapolated from the tables",
-        "fewer lanes, or share_ports on a container between two accelerators (D169)",
+        "fewer lanes, or share_ports on a container between two accelerators",
     )  # fmt: skip
 
 
 def _connect_share(design: Design) -> Iterable[Problem]:
-    """A shared set's ports fit its movers (D169, streamers.py's ``shared_movers``)."""
+    """A shared set's ports fit its movers (streamers.py's ``shared_movers``)."""
     try:
         found = resolve(design.platform, design.graph, design.instances)
     except (ValueError, DesignError, BrmError, DfgError):
@@ -857,7 +859,7 @@ def _connect_temporal(design: Design) -> Iterable[Problem]:
     """Every map around a node is a firing loop, and every subset is affine in them.
 
     Each streamer gets one temporal loop per firing loop its memlet runs over
-    (streamers.py, D84): the graph says how many, not the platform.
+    (streamers.py): the graph says how many, not the platform.
     """
     g = design.graph
     for n in accelerated(g):
@@ -978,13 +980,13 @@ def _memory_align(design: Design) -> Iterable[Problem]:
         if "l2" not in mems:
             continue
         beat = ctx.beat_bytes
-        # pads in (D144), and a pitched row's gap (padded_rows): its block, lower.layout.over
+        # pads in, and a pitched row's gap (padded_rows): its block, lower.layout.over
         contiguous = type(lay).contiguous(lay.base, ctx.block(c, lay).shape, elem)
         if lay.strides != contiguous.strides:
             yield Problem(
                 "memory.align", where,
                 f"strides {list(lay.strides)} are not contiguous {list(contiguous.strides)}; "
-                "the DMA moves a container as whole contiguous beats (open item 38)",
+                "the DMA moves a container as whole contiguous beats",
             )  # fmt: skip
         elif lay.base % beat:
             yield Problem(
@@ -996,7 +998,7 @@ def _memory_align(design: Design) -> Iterable[Problem]:
 
 def _extent(lay: Any, elem_bytes: int, beat: int | None = None) -> tuple[int, int]:
     """Bytes ``[lo, hi)`` a layout of ``elem_bytes`` elements covers; with ``beat``, up to the
-    end of its last beat (D105)."""
+    end of its last beat."""
     lo, hi = lay.extent(elem_bytes)
     return (lo, lo + moved_bytes(lay, elem_bytes, beat)) if beat is not None else (lo, hi)
 
@@ -1200,7 +1202,7 @@ def _design_serial_one_lane(design: Design) -> Iterable[Problem]:
 
 def _char_missing(design: Design) -> Iterable[Problem]:
     """A bound unit or a buffer link the estimate's technology does not characterize
-    (snax_forge/char/'s ``lookup`` None, C§20): its cost counts its comb part as 0."""
+    (snax_forge/char/'s ``lookup`` None): its cost counts its comb part as 0."""
     from snax_forge.char import DEFAULT_TECH, load, lookup
     from snax_forge.estimate.cycles import datapath_blocks
 
@@ -1216,8 +1218,8 @@ def _char_missing(design: Design) -> Iterable[Problem]:
 
 def _cost_extrapolated(design: Design) -> Iterable[Problem]:
     """A streamer or the crossbar priced outside HWCOST's tables' grid (snax_forge/char/
-    tables.py, D167): its cost is extrapolated along the axes named; and an L1 bank the table
-    does not hold, costed 0 (C§20)."""
+    tables.py): its cost is extrapolated along the axes named; and an L1 bank the table
+    does not hold, costed 0."""
     from snax_forge.char import DEFAULT_TECH
     from snax_forge.char.tables import bank, load_costs
 
@@ -1252,7 +1254,7 @@ def _cost_extrapolated(design: Design) -> Iterable[Problem]:
     if bank(costs, pf.l1.rows, pf.l1.width_bits) is None:
         yield Problem("cost.extrapolated", "platform.l1",
                       f"no {pf.l1.rows} × {pf.l1.width_bits} bank in {costs.tech}'s table, which "
-                      "is never interpolated (D160): the memory costed 0")  # fmt: skip
+                      "is never interpolated: the memory costed 0")  # fmt: skip
 
 
 register_note("design.serial_one_lane", _design_serial_one_lane)

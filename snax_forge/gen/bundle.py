@@ -1,4 +1,4 @@
-"""A design point -> its bundle for snax_cluster (D111, D130, C§18).
+"""A design point -> its bundle for snax_cluster.
 
     write_bundle(design_point, out_dir, root=None) -> (Bundle, written)
     counter_fills(design_point, tasks) -> {task: fill}
@@ -41,20 +41,20 @@ errors`` line, as the program prints them, then a ``forge fill <task>: <n>``
 line per counter, in the same order: the task's group's streamer fill, the
 estimate's ``fill`` (``counter_fills``, from the design point and the flow's
 ``tasks.json``). A run of the same ELF on snax_cluster's RTL must print the
-data line as it is; each counter's gap beyond its fill gives the verdict (D123):
+data line as it is; each counter's gap beyond its fill gives the verdict:
 the BUSY_COUNTER counts the streamer's head start, which the core's timing between
 STREAMER_START and START sets and SNAX-GVSoC does not model (open items 65,
 67). snax_cluster's ``snax-forge-check`` applies the bound. ``bundle.json``'s
 ``expected`` names the file. A bundle alone has no run, so ``write_bundle``
 removes an earlier one.
 
-**The modules** (``module_tree``, C§18), from accelerator.json, not from
+**The modules** (``module_tree``), from accelerator.json, not from
 Emit's output: the wrapper's three modules, each with the submodules it holds,
 by the names hw/chisel's Emit gives them: ``<tag>_csr`` (``<tag>_peripherals``), ``<tag>_ctrl``
 (``<tag>_<group>_ctrl`` per group of every accelerator, in CSR order) and
 ``<tag>_datapath`` (``<tag>_<unit>`` per unit, then ``<tag>_<link>`` per link
 of depth >= 1, a buffer, group by group), then per accelerator whose groups
-share its movers (D169) ``<tag>_<accelerator>_port_mux``, which holds none,
+share its movers ``<tag>_<accelerator>_port_mux``, which holds none,
 ``<tag>`` the entry's ``<accelerator_slot>_<name>``, the design's name
 (``snax_forge_dot_1``).
 
@@ -63,11 +63,12 @@ slot's ``snax_forge_rtl`` and writes ``generated/snax_forge.f``, which its
 builds read.
 
 **Refused**, each a ``GenError``: what ``generate``, ``accelerator_spec`` and
-``elaborate`` refuse (``gen.*``, the catalogue's checks and a listed file that is not there among them), then
+``elaborate`` refuse (``gen.*``, the catalogue's checks and a listed file that is not there among
+them), then
 ``bundle.empty`` (``emitted.json`` lists no file); and ``write_expected``'s
 ``bundle.expected``: the run's lines hold no ``forge counter`` line or no
 ``forge data: 0 errors`` line, or a counter's task has no fill.
-The flow does not call it (D136).
+The flow does not call it.
 """
 
 from __future__ import annotations

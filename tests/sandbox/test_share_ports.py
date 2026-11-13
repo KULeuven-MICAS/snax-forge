@@ -1,4 +1,4 @@
-"""share_ports and unshare_ports (D169, PORT1): two accelerators on one streamer whose movers
+"""share_ports and unshare_ports: two accelerators on one streamer whose movers
 they share."""
 
 from __future__ import annotations
@@ -69,7 +69,7 @@ def test_names_another_instance_or_accelerator_are_refused():
 
 
 def test_the_mvt_recipes_share_their_halves():
-    """mvt_1_dot2_shared: the linked group mvt (both halves, D165) and vadd on mvt_vadd;
+    """mvt_1_dot2_shared: the linked group mvt (both halves) and vadd on mvt_vadd;
     mvt_2_shared: each half's dot and vadd on its own shared set."""
     assert accelerators(steps("mvt_1_dot2_shared", W=8)[-1]) == {
         "mvt_vadd": ["vmul_x1", "vsum_x1", "vadd"]}  # fmt: skip

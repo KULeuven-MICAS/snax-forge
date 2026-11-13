@@ -1,4 +1,4 @@
-"""A BRM port's dtypes as a rule (D143): which container dtypes a node may bind.
+"""A BRM port's dtypes as a rule: which container dtypes a node may bind.
 
 A port lists the NumPy integer dtypes it takes (``Port.dtypes``, all eight
 by default); the dtype a node puts on a port is its container's, read through
@@ -36,6 +36,8 @@ def bits(dtype: str) -> int:
     return np.dtype(dtype).itemsize * 8
 
 
+# NB (D143): ops run at NumPy's result type of their inputs; the Chisel datapaths and
+# SNAX-GVSoC's classes must compute the same.
 def result_type(dtypes: Iterable[str]) -> str:
     """NumPy's result type of integer ``dtypes``, the type an op on them runs at;
     ValueError when it is not an integer (a signed dtype with uint64)."""
@@ -81,7 +83,7 @@ def check_dtypes(brm: Any, dtypes: Mapping[str, str]) -> list[str]:
             if bits(do) < bits(di):
                 out.append(
                     f"output {o} is {do}, narrower than input {i} ({di}): an output is at "
-                    "least as wide as every input (D143)"
+                    "least as wide as every input"
                 )
     pair = _signed_with_uint64(ints)
     if pair is not None:

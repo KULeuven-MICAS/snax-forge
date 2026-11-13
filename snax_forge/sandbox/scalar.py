@@ -1,4 +1,4 @@
-"""Baking a kernel's scalar argument into the graph, and back (C§12).
+"""Baking a kernel's scalar argument into the graph, and back.
 
 ``bake_scalar(container, value)`` and ``unbake_scalar(container)``
     ``bake_scalar`` fixes how a kernel's scalar argument (``sdfg.scalar``,
@@ -10,7 +10,7 @@
     is read at run time: the connector takes the container's name, so the
     code names it (``out = alpha * in2``), the container stays (data.h holds
     it, the program writes the CSR from it), and ``bind`` reads ``k1`` from
-    it, as it does from a scalar no step marked (D161). Either way the
+    it, as it does from a scalar no step marked. Either way the
     tasklet then has one streamed input, the same shape for both. Refused: a
     container that is not a scalar argument, one a node writes, one read at a
     subset with names, one an accelerated node reads or a bound unit's

@@ -1,4 +1,4 @@
-"""The bundle for snax_cluster (D111, D130, C§18): gen-gvsoc's files at the root, the RTL under
+"""The bundle for snax_cluster: gen-gvsoc's files at the root, the RTL under
 ``rtl/`` with its file list, and ``bundle.json``.
 
 No JVM here: ``elaborate`` is replaced by a fake that writes two files and an ``emitted.json``
@@ -85,7 +85,7 @@ def test_bundle_json(tmp_path, fake):
     out = tmp_path / "bundle"
     b, _ = write_bundle(point(tmp_path), out, tmp_path)
     d = json.loads((out / "bundle.json").read_text())
-    t = "snax_forge_vecadd"  # the tag, <accelerator_slot>_<design> (D157)
+    t = "snax_forge_vecadd"  # the tag, <accelerator_slot>_<design>
     assert d == {"design_point": "design/vecadd/design_point.json", "tag": t,
                  "top": f"{t}_shell_wrapper",
                  "modules": {f"{t}_csr": [f"{t}_peripherals"], f"{t}_ctrl": [f"{t}_acc_ctrl"],
@@ -143,7 +143,7 @@ def test_the_command(tmp_path, fake, monkeypatch, capsys):
 
 
 def test_dot_1_encs_bundle_holds_both_groups(tmp_path, fake):
-    """An accelerator of two groups (D148, dot_1_enc): the bundle's accelerator.json, header and
+    """An accelerator of two groups (dot_1_enc): the bundle's accelerator.json, header and
     program are gen-gvsoc's; the RTL is elaborated from the same file."""
     from .helpers import bound_dot1_enc
 
@@ -156,7 +156,7 @@ def test_dot_1_encs_bundle_holds_both_groups(tmp_path, fake):
 
 
 def test_dot_1s_bundle_holds_both_accelerators(tmp_path, fake):
-    """dot 1, two accelerators (D157): one shell, a header pair per set."""
+    """dot 1, two accelerators: one shell, a header pair per set."""
     from .helpers import bound_dot1
 
     out = tmp_path / "bundle"
@@ -168,8 +168,8 @@ def test_dot_1s_bundle_holds_both_accelerators(tmp_path, fake):
 
 
 def test_the_module_tree_names_every_group_unit_and_buffer():
-    """From the description, not Emit (C§18), under the tag: dot_1_enc's two groups and units,
-    and dot_serial's the same over its two accelerators (one shell, D157); a linked group's units
+    """From the description, not Emit, under the tag: dot_1_enc's two groups and units,
+    and dot_serial's the same over its two accelerators (one shell); a linked group's units
     and its buffer (a wire is no module)."""
     from tests.gen.test_accelerator import dot, dot4, dot_serial
 
@@ -221,7 +221,7 @@ def test_the_expected_lines_and_their_refusal(tmp_path, fake):
 
 
 def test_each_counter_s_fill_is_its_group_s_from_the_estimate(tmp_path):
-    """counter_fills: per accelerator task the estimate's fill of the group it runs (D123), 3
+    """counter_fills: per accelerator task the estimate's fill of the group it runs, 3
     for vmul's two inputs and 2 for vsum's one, in dot 1's two accelerators."""
     path = point(tmp_path, name="dot_1", graph=bound_dot1())
     tasks = path.with_name("tasks.json")

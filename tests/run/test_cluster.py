@@ -1,5 +1,5 @@
 """run/cluster.py: the cluster as a run is named, from the description files (the slot's sets
-form, D157) and the design point."""
+form) and the design point."""
 
 import json
 
@@ -126,7 +126,7 @@ def test_a_cluster_that_does_not_fit_is_refused(edit, code):
 
 
 def test_each_set_has_its_trace_path(cluster):
-    """The manifest's trace path, its crossbar inputs' prefix from it (D157)."""
+    """The manifest's trace path, its crossbar inputs' prefix from it."""
     (s,) = cluster.accelerator.csrs.sets
     assert (s.name, s.trace, s.xbar) == ("acc", "snax_acc0/streamer_acc", "snax_acc0.streamer_acc")
     assert cluster.accelerator.set_at("/chip/soc/cluster_0/snax_acc0/streamer_acc") == s
@@ -173,7 +173,7 @@ def test_the_old_one_streamer_slot_is_refused(tmp_path):
 def test_two_sets_read_set_by_set(tmp_path):
     """dot_serial as the generator writes it: two streamer sets of the one entry, each its movers
     counted from reader0 and writer0 within the set, its streamer range (mul 960-977, sum
-    982-994, C§16), each mover's CSRs from its own set's first (beats.py's mover_csrs)."""
+    982-994), each mover's CSRs from its own set's first (beats.py's mover_csrs)."""
     from snax_forge.gen import generate
     from snax_forge.run.beats import mover_csrs
     from tests.gen.helpers import bound_recipe

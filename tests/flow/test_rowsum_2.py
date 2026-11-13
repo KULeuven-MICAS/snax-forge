@@ -1,4 +1,4 @@
-"""rowsum 2 on SNAX-GVSoC (B2 R4): the lane accumulator, each lane its own row's running sum, W
+"""rowsum 2 on SNAX-GVSoC: the lane accumulator, each lane its own row's running sum, W
 rows a job, a column a beat: JOBS = M / W, JOB_BEATS = N, (M / W) * N firings.
 
 The worked example, W = 2, M = 4, N = 3: A's rows (1, 2, 3), (4, 5, 6), (7, 8, 9), (10, 11, 12)
@@ -6,10 +6,10 @@ give y = (6, 15, 24, 33); 6 firings. At the defaults, W = 4, M = 8, N = 64: 128
 firings. Contiguous, A's rows are 64 words apart and the four lanes' first reads all fall in
 bank 0; the model's lanes are channels of their own, so after that first collision (3 conflicts
 on bank 0) they run a cycle apart each and never meet again. Under padded_rows the rows are 65
-words apart, the lanes in four banks from the first beat. The counters are checked by D171 (each
-within 10 % of the estimate's); as recorded in CORE1 R1 on one core: worked 9, contiguous 129
+words apart, the lanes in four banks from the first beat. The counters are checked as sound (each
+within 10 % of the estimate's); as recorded on one core: worked 9, contiguous 129
 (the first collision falls in the streamer's head start, its START 10 cycles after the streamer's
-start, D155; 134 on two cores), padded 131.
+start; 134 on two cores), padded 131.
 """
 
 from __future__ import annotations

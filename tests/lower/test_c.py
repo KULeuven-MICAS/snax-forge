@@ -1,4 +1,4 @@
-"""The C backend (D135): vecadd's main.c read as text (no marks, the window, forge_check), vsum's
+"""The C backend: vecadd's main.c read as text (no marks, the window, forge_check), vsum's
 counter, every refusal, and main.c compiled against snax-gvsoc's sw/ where the image's clang is."""
 
 from __future__ import annotations
@@ -81,14 +81,14 @@ BARRIER = "snrt_cluster_hw_barrier();"
 
 
 def two_cores(c):
-    """The cluster before D170: the DMA on a second core, the slot on core 0 alone."""
+    """The two-core cluster: the DMA on a second core, the slot on core 0 alone."""
     c["snax_forge_core_template"]["xdma"] = False
     c["dma_core_template"] = {"isa": "rv32ima", "xdma": True}
     c["cluster"]["hives"][0]["cores"].append({"$ref": "#/dma_core_template"})
 
 
 def test_vecadd_runs_the_dma_and_the_accelerator_on_core_0(tmp_path):
-    """The base cluster's one core (D170) runs both, with no barrier."""
+    """The base cluster's one core runs both, with no barrier."""
     src = text(tmp_path)
     f = functions(src)
     assert list(f) == ["forge_core_0", "forge_check", "main"]
@@ -161,7 +161,7 @@ def test_a_dependence_on_a_dma_task_brings_its_wait_back(tmp_path):
 
 
 def test_vecadd_starts_the_movers_with_one_csr_then_the_accelerator(tmp_path):
-    """Its set's start (D157: every streamer macro prefixed with the set's name), then START."""
+    """Its set's start (every streamer macro prefixed with the set's name), then START."""
     src = text(tmp_path)
     assert src.count("csrw_ss(ACC_STREAMER_START_CSR, 1);") == 1
     # the two start CSRs back to back
@@ -196,7 +196,7 @@ def test_vecadd_checks_itself(tmp_path):
 
 
 def test_vsum_sets_jobs_and_job_beats_and_reads_its_counter(tmp_path):
-    """JOBS = n / T, JOB_BEATS = T (D146); the counter checked against the beats n."""
+    """JOBS = n / T, JOB_BEATS = T; the counter checked against the beats n."""
     src = text(tmp_path, graph=bound_vsum(), name="vsum")
     assert "csrw_ss(ACC_RW_JOBS, 1);\n    csrw_ss(ACC_RW_JOB_BEATS, 64);" in src
     assert "err += forge_counter[0] < 64;" in src
@@ -208,7 +208,7 @@ def test_the_same_point_gives_the_same_text(tmp_path):
 
 
 def test_one_core_has_no_barriers(tmp_path):
-    src = text(tmp_path)  # the base cluster: one core runs both (D170)
+    src = text(tmp_path)  # the base cluster: one core runs both
     assert "hw_barrier" not in src
     assert list(functions(src)) == ["forge_core_0", "forge_check", "main"]
     assert "// Core 0: the DMA and the accelerator acc" in src
@@ -319,7 +319,7 @@ def test_job_values():
 
 
 def dot1_text(tmp_path) -> str:
-    """dot_1_enc's main.c: groups vmul and vsum in the accelerator dot (D148)."""
+    """dot_1_enc's main.c: groups vmul and vsum in the accelerator dot."""
     from tests.gen.helpers import bound_dot1_enc
 
     p, tasks, cluster, acc, arrays = parts(tmp_path, graph=bound_dot1_enc(), name="dot_1_enc")
@@ -406,7 +406,7 @@ def test_an_idle_mover_outside_an_encapsulated_set_is_refused(tmp_path):
 
 
 def test_two_accelerators_each_run_through_their_own_set(tmp_path):
-    """D157: dot_serial's mul and sum are two accelerators, two streamer sets of the one entry;
+    """Dot_serial's mul and sum are two accelerators, two streamer sets of the one entry;
     each task configures, starts and waits on its own set's macros and its own header's CSRs
     (c.instances retired)."""
     from tests.gen.helpers import bound_recipe
@@ -418,7 +418,7 @@ def test_two_accelerators_each_run_through_their_own_set(tmp_path):
     acc_lines = [x for x in core if "START" in x or "STATUS" in x or "BUSY" in x
                  or x.startswith("forge_counter") or x == BARRIER]  # fmt: skip
     # mul: its set's streamers, its CSRs, its streamer start, START; sum the same once the
-    # serial sync (D158), the one wait between them, has waited for mul (its writer too, waits.py)
+    # serial sync, the one wait between them, has waited for mul (its writer too, waits.py)
     # and read its counter
     assert acc_lines == [
         "csrw_ss(MUL_STREAMER_START_CSR, 1);", "csrw_ss(MUL_RW_START, 1);",
@@ -503,7 +503,7 @@ def test_main_c_compiles_against_snax_gvsocs_sw(tmp_path, design):
 @pytest.mark.skipif(_riscv_clang() is not None or OBJCOPY is None, reason="no RISC-V clang")
 @pytest.mark.parametrize("design", ["vecadd", "vecmul", "vsum"])
 def test_the_quiet_parts_leave_the_default_build_as_it_was(tmp_path, design):
-    """D135: main.c compiled as it is and with its FORGE_QUIET blocks removed give the same
+    """Main.c compiled as it is and with its FORGE_QUIET blocks removed give the same
     object once the debug information is stripped (snRuntime builds with -g, so the lines the
     blocks take move every line number there); with -DFORGE_QUIET it compiles with -Werror."""
     gen = tmp_path / "gen"
@@ -526,7 +526,7 @@ def test_the_quiet_parts_leave_the_default_build_as_it_was(tmp_path, design):
 
 
 # =============================================================================
-# The quiet build (D135 amended)
+# The quiet build
 # =============================================================================
 
 

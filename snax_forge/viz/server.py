@@ -1,4 +1,4 @@
-"""Local HTTP server of the visualiser (D55).
+"""Local HTTP server of the visualiser.
 
 What it does
 ------------
@@ -44,13 +44,14 @@ Routes (every answer is JSON except the static files):
                                             task boundary (B boundary)
     POST /api/reload                        read every run directory again
 
-Every POST, on this viewer and the DFG viewer, needs ``Content-Type: application/json``
-(D55): another type is a 415, so a page of another origin cannot post a form to it. Its body,
+Every POST, on this viewer and the DFG viewer, needs ``Content-Type: application/json``: another
+type is a 415, so a page of another origin cannot post a form to it. Its body,
 when it has one, is a JSON object; another body is a 400.
 
 All the work is in api.py; this module only parses paths and queries and
 turns results and errors into responses: 404 for an unknown run, memory or
-file, 400 for a bad query (a mark the run lacks included, with the reason), 500 with the message when a reload fails (the old runs stay
+file, 400 for a bad query (a mark the run lacks included, with the reason), 500 with the message
+when a reload fails (the old runs stay
 loaded). A movement or schedule route answers a run below the level it needs
 (beat, or stall for the conflicts; task for the schedule, beat for its
 detail) with ``available`` false and the reason.

@@ -1,15 +1,15 @@
-"""SNAX-FORGE visualiser (D55).
+"""SNAX-FORGE visualiser.
 
 A local server plus a static viewer, for humans: ``python -m snax_forge.viz
 DIR [DIR ...]`` serves the flow runs given (``out/flow/<name>/`` or its
-``run/``, C§7) at http://127.0.0.1:8765/. LLMs read the profile and the
-reports (``snax_forge.report``, D99) instead.
+``run/``) at http://127.0.0.1:8765/. LLMs read the profile and the
+reports (``snax_forge.report``) instead.
 
 * api.py: loading runs and every answer of the API, as plain functions, each
   route one query's dict;
 * index.py: a run's events grouped by their ids and lookups once at load
   (``RunIndex``), and the memory tab's marks, added by registration;
-* memory.py: the memory tab's layout, folded rows and marks on them (D57);
+* memory.py: the memory tab's layout, folded rows and marks on them;
 * movement.py: data movement as queries on the index: journey, residency,
   patterns, conflicts;
 * schedule.py, cluster.py: the schedule's lanes, folded segments and detail

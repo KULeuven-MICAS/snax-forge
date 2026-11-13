@@ -1,4 +1,4 @@
-"""SYN2's synthesized flops, the fixture ``tests/estimate/fixtures/syn2_flops.json`` (D154).
+"""SYN2's synthesized flops, the fixture ``tests/estimate/fixtures/syn2_flops.json``.
 
     pixi run python util/syn2_flops.py [--experiments DIR] [--out FILE]
 

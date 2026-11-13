@@ -1,4 +1,4 @@
-"""SNAX-DESIGN: a bound graph on a platform, checked, towards the design point (D84, D85, D87).
+"""SNAX-DESIGN: a bound graph on a platform, checked, towards the design point.
 
 The platform file (platform.py): the SNAX cluster around the accelerators,
 with its streamer shell, ``--set`` changes and working copies; the shell

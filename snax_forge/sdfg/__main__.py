@@ -4,7 +4,7 @@
     python -m snax_forge.sdfg --list         list the kernels in kernels/
 
 The expanded SDFG (the simplified one with MatMul and Transpose in dot's
-shape, ``expand.py``) is the input of the SNAX-DFG importer (D71); the
+shape, ``expand.py``) is the input of the SNAX-DFG importer; the
 simplified and the expanded one are each compiled and checked against NumPy.
 """
 

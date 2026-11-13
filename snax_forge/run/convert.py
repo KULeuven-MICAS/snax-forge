@@ -1,4 +1,4 @@
-"""SNAX-GVSoC's events -> a run's profile and trace (C§7, D137).
+"""SNAX-GVSoC's events -> a run's profile and trace.
 
     convert(lines, cluster, tasks, total_cycles, level, functional_check, regions, filter)
         -> (Profile, Trace)
@@ -12,22 +12,22 @@ the ``events`` lines renamed and cut, and above ``task`` the ``beats``, ``stalls
 accelerator of several groups each of one unit (dot 1's ``mul`` and ``sum``) is read unit by
 unit, each beat line under its unit and each streamer line under the task launched with its
 unit's (beats.py's ``pairing``); a group of several linked units is a RunError
-(``convert.level``): its beat lines are not read yet (open item 96).
+(``convert.level``): its beat lines are not read yet.
 
-**Names.** A line's component path becomes a C§7 name: ``snax_acc<i>/unit`` the accelerator's
-unit (``acc``), with several groups ``snax_acc<i>/unit_<unit>`` each (D148, ``mul``, ``sum``;
+**Names.** A line's component path becomes a trace name: ``snax_acc<i>/unit`` the accelerator's
+unit (``acc``), with several groups ``snax_acc<i>/unit_<unit>`` each (``mul``, ``sum``;
 a shell has no trace of its own), ``snax_acc<i>/group_<group>`` a linked group, named after
 the group (``dot``; its tasks are the group's), whose lines are at its boundary: its
 ``firings`` and ``count`` the head unit's, ``rate`` the head's firings per result of the last
 unit (snax-gvsoc's docs/EVENTS.md), a streamer set's streamer at its trace path (the
-manifest's ``csrs.streamers[].trace``, ``snax_acc<i>/streamer_<set>``, D157) with its
+manifest's ``csrs.streamers[].trace``, ``snax_acc<i>/streamer_<set>``) with its
 ``mover`` the set's mover (``reader0`` of ``streamer_acc`` -> ``acc_a``; movers are numbered
 within their set), ``pe<i>`` the core ``core<i>``, ``idma/fe`` and the AXI backend
 (``idma/axi_read``, ``idma/axi_write``) the DMA (``dma``), ``tcdm/snax_xbar`` the crossbar,
 whose inputs become ports (``snax_acc<i>.streamer_<set>.reader0.lane1`` -> ``acc_a.lane1``,
 ``core<i>`` and ``axi`` as they are). Any other path is a RunError (``convert.path``).
 
-**The window** (task level) is the program's own (D135): on the accelerator's core, from its
+**The window** (task level) is the program's own: on the accelerator's core, from its
 ``mcycle`` read in ``main`` to its ``mcycle`` read in ``forge_check``, each read picked by the
 function span it falls in (from the function's ``func`` line to the core's next one). The
 window's length must be ``total_cycles`` exactly, the ``forge cycles:`` the program printed
@@ -44,7 +44,8 @@ more (the first idle cycle); an accelerator's ``done`` keeps its firings and its
 last firing, shifted, and carries its run's ``cycles``, the classes of its summary ``run``
 line (``index`` the run's start among the unit's starts); a mover's ``done`` carries its
 summary ``mover`` line's (``run`` the start's index among the streamer's starts), its four
-classes by name. A run without its summary line is a RunError (``convert.summary``). Starts are matched to the task list's tasks of their component in order
+classes by name. A run without its summary line is a RunError (``convert.summary``). Starts are
+matched to the task list's tasks of their component in order
 (accelerator tasks, a mover's streamer tasks), a done to its start. A core's ``csr`` and
 ``poll`` get the ``block`` whose CSR it is (``acc``, ``acc_streamer``, else ``-``); a ``poll``
 or ``barrier`` is at its first cycle. A DMA ``issue`` gets its direction from its addresses
@@ -54,7 +55,8 @@ issue order, whose direction it must have; its fields are renamed ``from``, ``to
 ``from_stride``, ``to_stride`` (``src`` is the event's source); a ``done`` gets its copy's
 task. A count or direction that does not match is a RunError (``convert.tasks``).
 
-**Profile.** Per unit, an accelerator's classes are the sums of its ``run`` lines, ``idle`` the rest of
+**Profile.** Per unit, an accelerator's classes are the sums of its ``run`` lines, ``idle`` the rest
+of
 ``total_cycles``, ``utilisation`` busy over ``total_cycles``; a mover's likewise from its
 ``mover`` lines, its FIFO maximum per lane the highest over its runs; a core's CSR counts are
 its ``csrs`` line; the DMA's and the ports' and banks' their lines. A core's cycles in the
@@ -68,8 +70,8 @@ events: the cores' cycles are None and there is no trace.
 every DMA issue; a core's classes add up to the window; the accelerator's firings in its
 ``done`` events are its summary's; with the run's regions, each container's L2 bytes its
 copies touch (``load_<C>``, ``store_<C>``, every row) are its array's, from the ELF's
-symbol its region's ``size`` (regions.py): its padded shape in whole DMA beats (D105, D144,
-``lower.layout.l2_bytes``), and no copy touches L2 outside it; above ``task``, the beat
+symbol its region's ``size`` (regions.py): its padded shape in whole DMA beats
+(``lower.layout.l2_bytes``), and no copy touches L2 outside it; above ``task``, the beat
 part's (beats.py).
 """
 
@@ -105,7 +107,7 @@ MOVER_CLASSES = ("busy", "stall_xbar", "stall_fifo")
 
 
 def source_of(line: Line, cluster: Cluster) -> str:
-    """The C§7 name of a line's component (the crossbar is ``xbar``, the streamer its mover)."""
+    """The trace name of a line's component (the crossbar is ``xbar``, the streamer its mover)."""
     segs = line.path.split("/")
     last, parent = segs[-1], segs[-2] if len(segs) > 1 else ""
     acc = cluster.accelerator
@@ -129,7 +131,7 @@ def source_of(line: Line, cluster: Cluster) -> str:
 
 
 def port_of(name: str, cluster: Cluster) -> str:
-    """A crossbar input's C§7 port name (module doc)."""
+    """A crossbar input's trace port name (module doc)."""
     acc = cluster.accelerator
     for s in acc.csrs.sets:
         m = re.fullmatch(rf"{re.escape(s.xbar)}\.(\w+)\.lane(\d+)", name)
@@ -479,7 +481,7 @@ def convert(
     """The profile and, above ``off``, the trace of a run (module doc)."""
     if at_least(level, "beat") and linked(cluster.accelerator.description):
         raise RunError("convert.level", f"trace {level}: the beat lines of a group of several "
-                       "linked units are not read yet (open item 96); task and off are")  # fmt: skip
+                       "linked units are not read yet; task and off are")  # fmt: skip
     named = [(source_of(x, cluster), x) for x in lines]
     profile = profile_of(named, cluster, total_cycles, functional_check)
     if level == "off":

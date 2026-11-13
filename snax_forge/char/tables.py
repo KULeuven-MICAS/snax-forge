@@ -1,4 +1,4 @@
-"""HWCOST's tables: the streamers, the TCDM crossbar and the L1 banks (C§20).
+"""HWCOST's tables: the streamers, the TCDM crossbar and the L1 banks.
 
     load_costs(tech) -> Costs | None                   snax_forge/char/<tech>/, None without one
     streamer_cost(costs, depth, loops, channels) -> Cost   one reader (a writer priced as a reader)
@@ -26,7 +26,7 @@ is each bank count's value at inputs = banks. Two or three axes are done one aft
 **Outside the grid** snax-forge extrapolates where X53 refuses: along an axis whose query lies
 below its first or above its last grid value, the same formula through the two nearest grid
 values, in the axis's own scale; the result is clamped at zero, the axes named in ``Cost``'s
-``extrapolated``, and a warning logged (the estimate's design note ``cost.extrapolated``, C§14).
+``extrapolated``, and a warning logged (the estimate's design note ``cost.extrapolated``).
 
 **The crossbar's input kinds** (X71). xbar.csv prices every input as a read-write port; a
 streamer's reader only reads (its write and data are constants) and a writer only writes (its
@@ -40,7 +40,7 @@ The factor form keeps the table as the source (exact at its points, read-write i
 before); the crosspoint form needs no table, its area extrapolated outside the grid it was fitted
 on (``XbarKinds.inputs`` and ``banks``). The energy per access is the table's in both.
 
-**The banks** are a lookup, never interpolated (D160, X48): a depth or width off the table's grid
+**The banks** are a lookup, never interpolated (X48): a depth or width off the table's grid
 (depth 32–4096 in steps of 32, width 8–256 in steps of 8) gives None.
 """
 

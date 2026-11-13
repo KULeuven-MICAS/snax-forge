@@ -1,24 +1,25 @@
 """The run report, ``run.md``: where one flow run's cycles went.
 
 Read from the run the way the viewer reads it (viz/api.py): the profile, the
-trace's task events and the cluster (C§7, run/). Nothing is modelled here;
+trace's task events and the cluster (run/). Nothing is modelled here;
 every number is a counter or an event SNAX-GVSoC wrote, as the converter
-named it (D137).
+named it.
 
     summary       the program's window (total cycles), passed, data errors over
                   the output words, each task's counter as the program printed
                   it next to the BUSY_COUNTER the ideal estimate expects, a guide
-                  and not a check (D155: its group's cycles plus the streamers'
+                  and not a check (its group's cycles plus the streamers'
                   fill; with its group's bank-bound note where its streams need
-                  more L1 time than the ideal cycles), the trace level and the boot's length (the cycles before
+                  more L1 time than the ideal cycles), the trace level and the boot's length (the
+                  cycles before
                   the window, which the profile, the cores and the trace share)
     tasks         per block each task's start, done and length, named from the
-                  task list, with the accelerator (its streamer set, D157) it
+                  task list, with the accelerator (its streamer set) it
                   runs on; a mover's task with every temporal bound 0 (another
                   group's in the same encapsulated set, started only for the
-                  set's shared start, D148) tagged idle; a DMA copy with its
+                  set's shared start) tagged idle; a DMA copy with its
                   direction and bytes                    (needs a task trace)
-    accelerators  per accelerator, one streamer set each (D157): its groups,
+    accelerators  per accelerator, one streamer set each: its groups,
                   its CSRs (its streamer's, then its own, first to last), its
                   streamer's busy windows (its STREAMER_START to its busy low:
                   the first start of its movers to their last done, one window
@@ -90,15 +91,16 @@ class TaskRow(Record):
     cycles: int
     direction: str | None = None
     bytes: int | None = None
-    group: str | None = None  # the group whose start launched it (D148); None for the DMA's
+    group: str | None = None  # the group whose start launched it; None for the DMA's
     idle: bool = False  # every temporal bound 0: another group's in the same encapsulated set
     accelerator: str | None = None  # the accelerator (streamer set) it runs on; None: the DMA's
 
 
 @dataclass
 class AcceleratorRow(Record):
-    """One accelerator, its streamer set (D157): its groups, its CSRs, its streamer's busy
-    windows (None without a task trace) and each group's BUSY_COUNTERs as the program printed them."""
+    """One accelerator, its streamer set: its groups, its CSRs, its streamer's busy
+    windows (None without a task trace) and each group's BUSY_COUNTERs as the program printed
+    them."""
 
     name: str
     groups: list[str]
@@ -138,7 +140,7 @@ class MoverRow(Record):
 
 @dataclass
 class GroupMovers(Record):
-    """One group's movers, the report's collapsible under Accelerators (C§7)."""
+    """One group's movers, the report's collapsible under Accelerators."""
 
     group: str
     unit: str  # the accelerator profile's name: the unit, or a linked group's
@@ -330,22 +332,24 @@ def _next_task(rows: list[TaskRow] | None, after: int) -> TaskRow | None:
     return min(later, key=lambda r: (r.start, r.block)) if later else None
 
 
+# NB (D123): a run's data and each group's BUSY_COUNTER are compared with snax_cluster's RTL;
+# keep the counter's meaning in step with the RTL's.
 def expected_counters(point: Any) -> dict[str, int]:
-    """Per accelerator task, the BUSY_COUNTER the ideal estimate expects (D155): its group's (a task's
+    """Per accelerator task, the BUSY_COUNTER the ideal estimate expects: its group's (a task's
     component is its group), for a group that runs one task."""
     return {t: g.counter for t, g in _task_groups(point).items()}
 
 
 def expected_parts(point: Any) -> dict[str, tuple[int, int]]:
     """Per accelerator task (as ``expected_counters``), its group's ideal cycles and its
-    streamers' fill (D155), the two parts of the expected BUSY_COUNTER; D171's tolerance reads
-    them as D123 reads the fill."""
+    streamers' fill, the two parts of the expected BUSY_COUNTER; the run test's tolerance reads
+    them as the RTL comparison reads the fill."""
     return {t: (g.cycles, g.fill) for t, g in _task_groups(point).items()}
 
 
 def bank_notes(point: Any) -> dict[str, str]:
     """Per accelerator task (as ``expected_counters``), its group's bank-bound note where L1's
-    banks allow fewer cycles than the ideal ones (D155)."""
+    banks allow fewer cycles than the ideal ones."""
     return {t: g.bank_bound_note for t, g in _task_groups(point).items() if g.bank_bound_note}
 
 
@@ -484,7 +488,7 @@ def build_run(rv: api.RunView) -> RunReport:
 
 def counters_text(c: CheckRow) -> str:
     """The summary's Counters cell: each task's counter, the estimate's expected BUSY_COUNTER beside
-    it, a guide and not a check, and its group's bank-bound note there (D155)."""
+    it, a guide and not a check, and its group's bank-bound note there."""
 
     def one(t: str, n: int) -> str:
         if t not in c.expected:
@@ -547,7 +551,7 @@ def render_run(r: RunReport) -> str:
     if any(t.idle for t in r.tasks or []):
         out += ["", ("A task tagged idle has every temporal bound 0: the mover of another group "
                      "in the same encapsulated set, started only because the set's movers share "
-                     "one start (D148); it moves nothing.")]  # fmt: skip
+                     "one start; it moves nothing.")]  # fmt: skip
 
     out += ["", "## Cores", ""]
     out += table(
@@ -604,7 +608,7 @@ def render_run(r: RunReport) -> str:
 
 
 def render_sets(rows: list[AcceleratorRow], traced: bool) -> list[str]:
-    """The Accelerators table: one row per accelerator, its streamer set (D157)."""
+    """The Accelerators table: one row per accelerator, its streamer set."""
     out = table(
         ["Accelerator", "Groups", "CSRs", "Streamer busy", "BUSY_COUNTER"],
         [[a.name, ", ".join(a.groups), f"{a.first}–{a.last}",
@@ -612,7 +616,7 @@ def render_sets(rows: list[AcceleratorRow], traced: bool) -> list[str]:
           ", ".join(f"{g} {', '.join(map(str, n))}" for g, n in a.counters.items() if n) or "–"]
          for a in rows],
     )  # fmt: skip
-    out += ["", ("Each accelerator is one streamer set: its streamer's CSRs, then its own (C§16). "
+    out += ["", ("Each accelerator is one streamer set: its streamer's CSRs, then its own. "
                  "Its streamer is busy from its start (STREAMER_START) until its busy drops, its "
                  "movers' first start to their last done, one window per start"
                  + ("" if traced else "; the windows need at least a task trace (--trace task)")
@@ -621,7 +625,7 @@ def render_sets(rows: list[AcceleratorRow], traced: bool) -> list[str]:
 
 
 def render_group_movers(groups: list[GroupMovers]) -> list[str]:
-    """Per group its movers in a collapsible (C§7): ``<details>`` with ``group ▸ movers`` as its
+    """Per group its movers in a collapsible: ``<details>`` with ``group ▸ movers`` as its
     summary and the movers' table inside."""
     out: list[str] = []
     for g in groups:

@@ -1,4 +1,4 @@
-"""The affine dataflow notation (D70): the first version of open item 1.
+"""The affine dataflow notation, the first of the dataflow notations.
 
 One nest per port says in which order the accelerator consumes or produces
 its operand's elements, in logical indices. It describes only the
@@ -35,7 +35,7 @@ Temporal bounds, strides, shape and offset may use runtime params.
 Checked by ``Brm.resolve``: the spatial bounds are ints >= 1 whose product
 is the port's lanes. Checked by ``task_nest`` once the task's start
 parameters are known: ``n`` is a multiple of the port's rate, the temporal
-bounds give n / rate beats (D68), and every index lies inside the shape.
+bounds give n / rate beats, and every index lies inside the shape.
 
 A stride may be 0 (the same element again; on a reader's innermost
 temporal loop the streamer repeats the beat) or negative. Whether the

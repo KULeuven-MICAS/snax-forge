@@ -1,4 +1,4 @@
-"""Catalogue blocks alone -> their RTL, for characterising each block on its own (CHAR1, C§17).
+"""Catalogue blocks alone -> their RTL, for characterising each block on its own.
 
     check_entry(entry, cat=None) -> None
     emit_blocks(entries) -> list[list[Path]]

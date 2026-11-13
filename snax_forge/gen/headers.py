@@ -5,7 +5,7 @@ and the runtime's view of the cluster.
 in the manifest:
 
     streamer_<set>_csr_addr_map.h
-                              per streamer set (D157), its streamer's CSRs:
+                              per streamer set, its streamer's CSRs:
                               byte for byte the header snax_cluster's
                               StreamerSwHeaderGen writes for the set
                               (``Streamer.scala``'s ``writeCsrAddrMap`` with
@@ -21,8 +21,8 @@ in the manifest:
                               ``STREAMER_START_CSR``, ``STREAMER_BUSY_CSR``,
                               ``STREAMER_PERFORMANCE_COUNTER_CSR``; every
                               define's name prefixed ``<SET>_``
-    <acc>_csr.h               per accelerator, its own CSRs (accelerator.py,
-                              D146), each by ``Accelerator.define``, in CSR
+    <acc>_csr.h               per accelerator, its own CSRs (accelerator.py), each by
+    ``Accelerator.define``, in CSR
                               order, at its number in the entry (csrs.py):
                               ``<ACC>_<RW|RO>_[<GROUP>_][<UNIT>_]<NAME>``;
                               vecadd's ``ACC_RW_START``, ``ACC_RW_JOBS``,
@@ -42,7 +42,7 @@ The two cluster headers are what snax_cluster's templates
 render from the cluster file, the generated one: below the header comment,
 text-equal but for the templates' copyright and blank lines. The runtime
 puts its stacks at the L1's end (``start.S``), so a program and its runtime
-built against them fit the design point's L1 (D126). A
+built against them fit the design point's L1. A
 ``cluster_base_offset`` that is not a power of two is a ``GenError``
 (``gen.platform``): ``CLUSTER_ADDRWIDTH`` is its log2; a missing or
 non-integer key is ``gen.source``.
@@ -50,7 +50,7 @@ non-integer key is ``gen.source``.
 Streamer.scala's optional per-mover CSRs (address remap, byte enables) and
 its datapath extensions are not in snax-gvsoc's streamer model, so they never
 appear (their comment lines do, as the Chisel writes them); a shared set's
-masked mover (``configurable_channel``, D169) has ``ENABLED_CHANNEL_<M>`` and
+masked mover (``configurable_channel``) has ``ENABLED_CHANNEL_<M>`` and
 ``ENABLED_CHANNEL_<M>_CSR_NUM`` after its temporal strides, as Streamer.scala
 writes them. Its ``<acc>_csr.h`` ends with ``<ACC>_RW_PORT_MUX_SEL``. The
 streamer header is checked against snax_cluster ry/slot1's (``tests/gen/``);
@@ -113,7 +113,7 @@ def streamer_header(movers: list[dict[str, Any]], first: int, prefix: str,
             for i in range(n):
                 lines.append(f"#define {kind}_{tag}_{i} {csr}")
                 csr += 1
-        if m.get("configurable_channel"):  # a shared set's masked mover (D169)
+        if m.get("configurable_channel"):  # a shared set's masked mover
             n = (m["num_channel"] + 31) // 32
             lines.append(f"#define ENABLED_CHANNEL_{tag} {csr}")
             lines.append(f"#define ENABLED_CHANNEL_{tag}_CSR_NUM {n}")
@@ -134,7 +134,7 @@ def streamer_header(movers: list[dict[str, Any]], first: int, prefix: str,
 def accelerator_header(acc: Any, numbers: Mapping[str, int], point_path: str) -> str:
     """The text of <acc>_csr.h for the accelerator ``acc`` (accelerator.Accelerator), each CSR
     at its number in ``numbers`` (csrs.CsrLayout's ``accelerator``)."""
-    what = (f"Accelerator {acc.name}'s own CSRs (accelerator.json, D146, D157): per group START, "
+    what = (f"Accelerator {acc.name}'s own CSRs (accelerator.json): per group START, "
             "JOBS, its units' R/W, STATUS, BUSY_COUNTER, numbered after its streamer's.")  # fmt: skip
     lines = [generated_header(point_path, what)]
     lines += [f"#define {name} {numbers[name]}" for name in acc.defines()]

@@ -1,9 +1,9 @@
-"""The memory plan: where every container lives (D86).
+"""The memory plan: where every container lives.
 
 The plan gives each container a layout per memory it lives in: ``base``
 (byte address of index (0, ..., 0)), ``shape`` and one byte stride per
 dimension (``snax_forge.lower.layout.Layout``). Banks follow from
-addresses under the fixed word-interleaved map (open item 18) and are not
+addresses under the fixed word-interleaved map and are not
 stated. It is made by three passes, each registered by name so a policy can
 replace any one of them (``register_memory_pass``):
 
@@ -11,7 +11,7 @@ replace any one of them (``register_memory_pass``):
                 container that is not transient in L2 and L1 when the
                 platform has an L2 (the DMA loads and stores it), else in
                 L1; a transient in L1, but a link's container and a
-                fused nest's local value in none (D112, D150);
+                fused nest's local value in none;
                 a container read only through slot connectors
                 (a CSR's value, the core writes it) in L2 when
                 the platform has one, else in L1
@@ -19,11 +19,10 @@ replace any one of them (``register_memory_pass``):
                 memory, base 0                           row-major, each
                                                          element its
                                                          dtype's itemsize
-                                                         (D142: a word holds
+                                                         (a word holds
                                                          several narrow ones),
                                                          over the padded
-                                                         shape (a tail's,
-                                                         D144); padded_rows:
+                                                         shape (a tail's); padded_rows:
                                                          rows an odd number
                                                          of words apart
                                                          (``padded_rows_layout``)
@@ -31,7 +30,7 @@ replace any one of them (``register_memory_pass``):
                 the graph's container order, from L1's first
                 byte, no gaps; a layout the DMA moves (in L2 and L1) starts
                 on a wide beat and keeps its last beat to itself (a size
-                that is not whole beats is padded, D105), others start on a
+                that is not whole beats is padded), others start on a
                 word
 
 An L2 layout keeps base 0: the program's link places its array (data.h's,
@@ -222,7 +221,7 @@ class MemoryContext:
         return over(lay, self.padded(container))
 
     def elem_bytes(self, container: str) -> int:
-        """An element's bytes: the container's dtype itemsize (D142; a word holds several of a
+        """An element's bytes: the container's dtype itemsize (a word holds several of a
         narrower one)."""
         return np.dtype(self.graph.containers[container].dtype).itemsize
 
@@ -502,7 +501,7 @@ def pin_problems(ctx: MemoryContext, spec: MemorySpec) -> list[Problem]:
             out.append(
                 Problem(
                     "memory.pin", where,
-                    f"the program's link places {c}'s {m} array, not the plan (D86); "
+                    f"the program's link places {c}'s {m} array, not the plan; "
                     "pin its L1 base",
                 )
             )  # fmt: skip

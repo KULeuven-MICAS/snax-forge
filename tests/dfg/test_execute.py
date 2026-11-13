@@ -3,7 +3,7 @@
 Accepted when the imported vecadd equals the kernel's ``reference`` on
 ``make_inputs``, for N a multiple of the lane count and not, and the plain,
 split and accelerated graphs agree; and when the imported dot equals
-``np.dot`` on integer inputs (D28), its sum map folding with ``reduce``
+``np.dot`` on integer inputs, its sum map folding with ``reduce``
 from the identity. Also: transients and offset subsets, the
 accelerated node's firing order and tasks, and every check named.
 """
@@ -281,7 +281,7 @@ def test_rejected(name, edit, message):
 
 
 def test_port_dtypes_follow_the_rule():
-    """The containers' dtypes pass the BRM's rule (D143): an int32 output under int64 inputs
+    """The containers' dtypes pass the BRM's rule: an int32 output under int64 inputs
     is refused, naming the outputs it would take."""
     d = as_dict("vecadd_accelerated")
     d["containers"]["C"]["dtype"] = "int32"

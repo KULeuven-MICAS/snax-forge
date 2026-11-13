@@ -1,4 +1,4 @@
-"""Recipes (D72): an ordered list of transforms applied to an imported graph.
+"""Recipes: an ordered list of transforms applied to an imported graph.
 
 A recipe is a hand-written JSON file, kept in a folder of ``recipes/`` by category
 (``recipes/elementwise/vecadd.json``; the editor's Save writes ``recipes/custom/``):
@@ -22,11 +22,11 @@ A transform declares which of its own params are ints (``split_map``'s
 ``factor``); those take an int or an expression over the recipe params
 (snax_forge/expr.py), everything else is taken as written. ``--set W=8`` on
 the command line (``Recipe.with_params``) overrides a param, so one recipe
-covers a sweep: the same steps, one run per value (D72; there is no sweep
+covers a sweep: the same steps, one run per value (there is no sweep
 runner yet). The recipe written next to a run's output has the values
 that run used.
 
-**Dtypes** (D113, D142). ``dtypes`` gives some of the kernel's containers
+**Dtypes**. ``dtypes`` gives some of the kernel's containers
 another integer dtype: the import applies it to the kernel's descriptors
 before DaCe builds the SDFG (``import_kernel``), so DaCe and the importer see
 those types, and the kernel's inputs are cast to them (``astype``, wrapping;
@@ -34,7 +34,8 @@ those types, and the kernel's inputs are cast to them (``astype``, wrapping;
 container one at the import, which knows the kernel's.
 
 Every field is written (``dtypes`` only when it is not empty); ``params`` and
-``symbols`` default to empty, unknown keys are errors (D26). Whether a step's transform exists and takes its
+``symbols`` default to empty, unknown keys are errors. Whether a step's transform exists and takes
+its
 params is checked when the recipe runs (run.py), where the transforms are
 registered.
 

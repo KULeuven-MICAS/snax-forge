@@ -1,7 +1,7 @@
-"""The trace of a flow run (C§7, D137).
+"""The trace of a flow run.
 
 SNAX-GVSoC's ``events`` lines (``beats``, ``stalls`` and the cores' ``insn`` above ``task``),
-renamed into C§7 and cut to the program's window: t = 0 is the program's ``mcycle`` read in
+renamed into the trace's names and cut to the program's window: t = 0 is the program's ``mcycle`` read in
 main on the accelerator's core, and events outside ``[0, total_cycles)`` (up to its read in
 ``forge_check``) are dropped. Every event is a flat dict of ``t``, ``k``, ``src`` and the
 kind's own fields, by the lowest level that has it:
@@ -88,7 +88,7 @@ def check_event(e: dict[str, Any]) -> None:
     own = set(e) - set(HEAD)
     if not fits(own, KINDS[k]):
         raise RunError("trace.field", f"a {k} event's fields are {sorted(own)}, not one of "
-                       f"{[sorted(req) for req, _ in KINDS[k]]} (C§7): {e}")  # fmt: skip
+                       f"{[sorted(req) for req, _ in KINDS[k]]}: {e}")  # fmt: skip
 
 
 @dataclass

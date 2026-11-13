@@ -1,4 +1,4 @@
-"""The whole path, kernel to a SNAX-GVSoC run (D136).
+"""The whole path, kernel to a SNAX-GVSoC run.
 
 1. up to the generator on vecadd and vsum, SNAX-GVSoC stubbed (helpers.stub):
    main.c without marks and with forge_check, data.h's goldens the kernel's
@@ -506,7 +506,7 @@ def test_default_name():
     assert both == "vecadd_W8_l1.n_banks32_B.l1.base576"
     # a value that is not a plain word keeps one plain directory name
     assert default_name(r, {}, [("x.y", [2, 2]), ("z", "a/b c")]) == "vecadd_x.y2,2_zabc"
-    # a name ending in a digit gets a '-' before its value (DRY1-2 R4), the others none
+    # a name ending in a digit gets a '-' before its value, the others none
     assert default_name(r, {"W_acc_1": 10, "W_acc_2": 4}) == "vecadd_W_acc_1-10_W_acc_2-4"
     assert default_name(r, {"W": 4, "W_acc_1": 8}) == "vecadd_W4_W_acc_1-8"
 
@@ -556,7 +556,7 @@ def test_the_beat_levels_stubbed(tmp_path, monkeypatch, level):
                           "tcdm/snax_xbar/beats"]  # fmt: skip
     assert ("snax_acc0/streamer_acc/stalls" in traces) == (level != "beat")
     assert [x for x in traces if x.endswith("/insn")] == (
-        ["pe0/insn"] if level == "finegrained" else []  # one core (D170)
+        ["pe0/insn"] if level == "finegrained" else []  # one core
     )
     lanes = ",".join(f"snax_acc0.streamer_acc.{m}.lane{i}" for m in ("reader0", "reader1", "writer0")
                      for i in range(4))  # fmt: skip
@@ -566,7 +566,7 @@ def test_the_beat_levels_stubbed(tmp_path, monkeypatch, level):
     assert ("fifo" in kinds) == ("stall" in kinds) == (level != "beat")
     assert ("insn" in kinds) == (level == "finegrained")
     sources = ["acc", "acc_a", "acc_b", "acc_out", "dma"]
-    sources += ["core0"] if level == "finegrained" else []  # one core (D170)
+    sources += ["core0"] if level == "finegrained" else []  # one core
     run = tmp_path / level / "run"
     assert json.loads((run / "trace_meta.json").read_text())["filter"] == sources
     assert json.loads((run / "run.json").read_text())["trace_sources"] == sources
@@ -682,7 +682,7 @@ def test_the_flow_on_snax_gvsoc(tmp_path, design, level):
 @needs_gvsoc
 def test_matadd_the_first_2d_bind_on_snax_gvsoc(tmp_path):
     """matadd at W = 4, M = 8, N = 16: two firing loops (the rows, the column beats), so each
-    streamer has two temporal loops (D84); 32 firings, every output checked."""
+    streamer has two temporal loops; 32 firings, every output checked."""
     f = run_flow(recipe_path("matadd"), SNAX_FORGE, out=tmp_path / "matadd")
     assert f.passed, summary(f)
     assert f.check["exit_code"] == 0 and f.check["data_errors"] == 0 and f.total_cycles > 0
@@ -698,7 +698,7 @@ def test_matadd_the_first_2d_bind_on_snax_gvsoc(tmp_path):
 @needs_gvsoc
 @pytest.mark.parametrize("design, beats", [("rowsum", 128), ("rowsum_serial", 64)])
 def test_rowsum_restarts_every_row_on_snax_gvsoc(tmp_path, design, beats):
-    """rowsum: one sum per row, T = N / W = 16 beats each (open item 81), so the accumulator
+    """rowsum: one sum per row, T = N / W = 16 beats each, so the accumulator
     restarts M times in one run; A's reader has two temporal loops, y's writer one."""
     f = run_flow(recipe_path(design), SNAX_FORGE, out=tmp_path / design)
     assert f.passed, summary(f)
@@ -720,7 +720,7 @@ RELU_B = [0, 5, 0, 0, 7, 0, 2, 0]
 @pytest.mark.gvsoc
 @needs_gvsoc
 def test_relu_on_one_stream_on_snax_gvsoc(tmp_path, monkeypatch):
-    """relu at W = 4, N = 8, int32 (B2 R2's worked example): simd at one stream, op max, k 0;
+    """relu at W = 4, N = 8, int32 (the worked example): simd at one stream, op max, k 0;
     A = (-3, 5, 0, -1 | 7, -8, 2, -2) gives B = (0, 5, 0, 0 | 7, 0, 2, 0) on SNAX-GVSoC, in
     JOBS = 2 firings, each beat 2 channels (4 int32 in 2 words) on the reader and the writer."""
     from snax_forge.dfg import reference
@@ -733,7 +733,7 @@ def test_relu_on_one_stream_on_snax_gvsoc(tmp_path, monkeypatch):
                  out=tmp_path / "relu")  # fmt: skip
     assert f.passed, summary(f)
     assert f.check["exit_code"] == 0 and f.check["data_errors"] == 0
-    sound(f)  # D171; the counter was 4 as recorded, 2 firings and 2 cycles of the shell
+    sound(f)  # the counter was 4 as recorded, 2 firings and 2 cycles of the shell
     assert {t: (x["beats"], x["group"]) for t, x in f.check["tasks"].items()} == {
         "numpy_maximum_acc": (2, "acc")
     }
@@ -754,7 +754,7 @@ def test_relu_on_one_stream_on_snax_gvsoc(tmp_path, monkeypatch):
 @needs_gvsoc
 def test_a_64_kib_l1_runs_on_its_own_runtime(tmp_path):
     """vecadd at l1.rows = 256: the program and its runtime take the design point's cluster
-    headers (snax-forge D126), so the stacks sit at the end of the 64 KiB L1 the model places."""
+    headers, so the stacks sit at the end of the 64 KiB L1 the model places."""
     f = run_flow(recipe_path("vecadd"), SNAX_FORGE, platform_sets=[("l1.rows", 256)],
                  out=tmp_path / "vecadd")  # fmt: skip
     assert f.passed, summary(f)

@@ -105,7 +105,7 @@ def test_cli_imports_and_checks_the_b0_kernels(tmp_path, capsys, kernel, sizes):
 
 def test_cli_reports_an_unsupported_kernel(tmp_path, capsys):
     assert main(["import", "jacobi1d", "--out", str(tmp_path)]) == 1
-    assert "control flow is open item 36" in capsys.readouterr().err
+    assert "no control flow yet" in capsys.readouterr().err
     assert not (tmp_path / "jacobi1d.snaxdfg").exists()
 
 
@@ -242,7 +242,7 @@ def test_names():
 @pytest.mark.parametrize(
     ("kernel", "message"),
     [
-        ("jacobi1d", "4 states .*control flow is open item 36"),
+        ("jacobi1d", "4 states .*no control flow yet"),
     ],
 )
 def test_unsupported_kernels(kernel, message):
@@ -267,9 +267,9 @@ def test_raw_vecadd_has_three_states():
             "view 'V' is used other than by one copy of the whole",
         ),
         (progs.unsupported_dependent_params, "range of 'j' depends on 'i' of the same map"),
-        (progs.unsupported_cast, "cast 'dace.int64\\(a\\)' .* a non-constant .* open item 37"),
-        (progs.unsupported_cast_type, "cast to int32, not the output's type int64 .* open item 37"),
-        (progs.unsupported_cast_float, "cast to float64, not an integer type .* open item 37"),
+        (progs.unsupported_cast, "cast 'dace.int64\\(a\\)' .* a non-constant"),
+        (progs.unsupported_cast_type, "cast to int32, not the output's type int64"),
+        (progs.unsupported_cast_float, "cast to float64, not an integer type"),
         (progs.unsupported_transient_scalar, "array 's': a transient Scalar is not imported"),
         (progs.unsupported_copy, "copy 'A' -> 'B'"),
         (progs.unsupported_strides, "strides \\[2\\] are not the default \\[1\\]"),

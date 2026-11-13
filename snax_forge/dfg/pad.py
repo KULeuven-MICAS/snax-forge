@@ -1,4 +1,4 @@
-"""A loop bound that is not a multiple of the spatial bound (D144).
+"""A loop bound that is not a multiple of the spatial bound.
 
 ``split`` (or ``split_map``) of a map over ``n`` iterations by a factor W that does not
 divide n runs its outer map ceil(n / W) times and records the valid count
@@ -20,7 +20,7 @@ container is padded in memory, in the data itself, never by the hardware:
                              ``pads``, its inputs' pad contents by port, with the
                              reference executor's operators at each container's
                              dtype, cast to its output's: what a unit writes into
-                             its output's pad lanes (D144); None when it cannot
+                             its output's pad lanes; None when it cannot
                              say (no code, several outputs)
 
 The reference executor reads a pad lane as ``pad_value`` and never writes
@@ -79,6 +79,8 @@ def split_factor(node: Node) -> int:
     raise DfgError(f"map {node.id}: a tailed split without a spatial map or bound lanes")
 
 
+# NB (D144): padding lives in the data; the hardware masks nothing, so every pad lane must hold
+# a value its reader ignores (zero, or a max or min fold's identity).
 def padded_shape(graph: Graph, c: str) -> tuple[int, ...]:
     """``c``'s shape with each dimension a tailed split indexes rounded up to a multiple of its
     factor W; see the module doc."""

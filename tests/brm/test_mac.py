@@ -1,4 +1,4 @@
-"""The MAC (D149): the BRM ``mac`` and its kind, and ``accumulate``'s ``chisel_serial``; each
+"""The MAC: the BRM ``mac`` and its kind, and ``accumulate``'s ``chisel_serial``; each
 implementation's datapath takes its instance (gen/blocks.py)."""
 
 from __future__ import annotations

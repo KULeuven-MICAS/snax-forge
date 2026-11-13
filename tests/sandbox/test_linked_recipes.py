@@ -1,5 +1,5 @@
-"""The linked recipes (D150, C§12): dot 2–6 and matvec 1–6 run step by step with the reference
-check, at W = 4 and 8, and end in the groups and links C§17's table has. At N = 32 (and M = 2
+"""The linked recipes: dot 2–6 and matvec 1–6 run step by step with the reference
+check, at W = 4 and 8, and end in the groups and links the table has. At N = 32 (and M = 2
 for matvec): the groups and links do not depend on the sizes, and the reference executor runs
 at every step."""
 

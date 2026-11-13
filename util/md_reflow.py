@@ -1,4 +1,4 @@
-"""Markdown prose to one line per paragraph, list item and table row (D117).
+"""Markdown prose to one line per paragraph, list item and table row.
 
     python util/md_reflow.py [FILE ...]           reflow the files in place
     python util/md_reflow.py --check [FILE ...]   list the hard-wrapped paragraphs; exit 1 if any
@@ -222,7 +222,7 @@ def main(argv: list[str] | None = None) -> int:
             path.write_text(new)
             print(f"{name}: {text.count(chr(10))} -> {new.count(chr(10))} lines")
     if args.check and bad:
-        print(f"{bad} hard-wrapped paragraphs: python util/md_reflow.py FILE joins them (D117)")
+        print(f"{bad} hard-wrapped paragraphs: python util/md_reflow.py FILE joins them")
         return 1
     return 0
 

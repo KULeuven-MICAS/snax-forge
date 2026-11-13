@@ -1,15 +1,15 @@
 """SNAX-LOWER: design point -> task list -> program (ARCHITECTURE.md 5.5).
 
-An ordered task list (tasks.py, D64) says which component runs which task
+An ordered task list (tasks.py) says which component runs which task
 with which values; ``check_values`` checks it against the design point, and
 waits.py places the waits correctness needs. A BRM port's nest is mapped
 through a buffer layout (layout.py, the memory plan's form) onto a
-streamer's values (streams.py, D70). A design point's task list (derive.py,
-D64): streamer values from memlets through the memory plan's layouts,
+streamer's values (streams.py). A design point's task list (derive.py): streamer values from memlets
+through the memory plan's layouts,
 checked against each BRM's nest; named rates in the accelerator task, so
 accelerators chain through L1 with one wait between them; containers the DMA
-moves padded to whole beats (D105). The task list as C on snRuntime (c.py,
-D135). The command line is ``python -m snax_forge.lower tasks`` (pixi
+moves padded to whole beats. The task list as C on snRuntime (c.py). The command line is ``python -m
+snax_forge.lower tasks`` (pixi
 ``lower``).
 """
 

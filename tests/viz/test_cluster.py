@@ -157,7 +157,7 @@ def test_a_bad_step_is_refused():
 
 
 # =============================================================================
-# An accelerator of two groups at beat level (dot 1, DRY1-2 R2)
+# An accelerator of two groups at beat level (dot 1)
 # =============================================================================
 
 
@@ -217,7 +217,7 @@ def dot1_sets(tmp_path_factory):
 
 def test_the_cluster_view_has_a_streamer_per_set(dot1_sets, dot1_stall):
     """dot 1 (fixtures/dot_1): two streamers inside the accelerator, vmul's busy at a vmul firing
-    and vsum's quiet; dot_1_enc one, busy with both groups' tasks (D157)."""
+    and vsum's quiet; dot_1_enc one, busy with both groups' tasks."""
     idx = dot1_sets.index
     t = next(e["t"] for e in idx.events if e["k"] == "fire" and e["src"] == "vmul")
     a = cv.cluster_at(idx, t)
@@ -235,7 +235,7 @@ def test_the_cluster_view_has_a_streamer_per_set(dot1_sets, dot1_stall):
 
 
 def test_the_schedule_groups_lanes_accelerator_then_group(dot1_sets, dot1_stall):
-    """As the editor's Bindings (D156): per accelerator, per group its movers then its unit."""
+    """As the editor's Bindings: per accelerator, per group its movers then its unit."""
     from snax_forge.viz import schedule
 
     def order(run):

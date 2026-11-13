@@ -1,4 +1,4 @@
-"""Values: an int, or a small integer expression over names (D71).
+"""Values: an int, or a small integer expression over names.
 
 Shared by SNAX-BRM and SNAX-DFG. A value field holds either a plain int or a
 string. Every string is an expression: a name (``"W"``, ``"N"``, ``"i_t"``)
@@ -431,7 +431,8 @@ def check_code(
     return lines
 
 
-# the operators and calls ``unify`` lets commute: ``a + b`` is ``b + a``, ``max(a, 0)`` ``max(0, a)``
+# the operators and calls ``unify`` lets commute: ``a + b`` is ``b + a``, ``max(a, 0)`` ``max(0,
+# a)``
 COMMUTING_OPS = (ast.Add, ast.Mult)
 COMMUTING_CALLS = frozenset({"max", "min"})
 

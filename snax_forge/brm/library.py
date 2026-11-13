@@ -1,4 +1,4 @@
-"""The BRM library: hand-written BRMs, one JSON file each (D68).
+"""The BRM library: hand-written BRMs, one JSON file each.
 
 ``library/<name>.json`` holds the BRM called ``name``; the file name and the
 BRM's ``name`` must agree. Files are kept in the form ``Brm.to_json``
@@ -17,12 +17,12 @@ Library BRMs:
     accumulate        the sum of every lane of T beats of ``a``, one element
                       of ``out`` per T beats (pattern family ``reduce``):
                       chisel_adder_tree, the Chisel datapath TreeAccumulate
-                      (L = 1, II = 1, drain 0, D133) at W lanes, summed by its
+                      (L = 1, II = 1, drain 0) at W lanes, summed by its
                       tree and accumulated (vsum's at W = 1); chisel_serial,
                       the Chisel datapath SerialAccumulate (L = 1, span W:
                       lane k in cycle k), every recipe named serial
     mac               out = a * b folded per lane over T beats (pattern family
-                      ``lane_fold``, a fused nest; D149): the Chisel datapath
+                      ``lane_fold``, a fused nest): the Chisel datapath
                       Mac with accumulate (L = 1, II = 1, span 1)
 """
 

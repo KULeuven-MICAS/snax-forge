@@ -1,4 +1,4 @@
-"""The program's L2 data, read from its ELF (C§7, D86): where the linker put each container.
+"""The program's L2 data, read from its ELF: where the linker put each container.
 
     read_symbols(elf) -> {name: (addr, size)}
     l2_symbols(point, symbols) -> {container: {"addr", "size"}}
@@ -12,8 +12,9 @@ the arrays' symbols once the program is linked (its ``sw`` stage) into ``run.jso
 ``read_symbols`` reads the ELF's symbol table with the standard library (32- and 64-bit,
 little-endian; ``.symtab`` and its string table), every named symbol with its value and size.
 ``l2_symbols`` keeps the design point's containers in L2: each must have a symbol of its
-L2 bytes, its padded shape (a tail's pads included, D144) in whole DMA beats, as gen/data.py
-declares it (D105, ``lower.layout.l2_bytes``; the platform's ``l2.beat_bits``). Other symbols (``C_golden``, the runtime's) are not regions. A
+L2 bytes, its padded shape (a tail's pads included) in whole DMA beats, as gen/data.py
+declares it (``lower.layout.l2_bytes``; the platform's ``l2.beat_bits``). Other symbols
+(``C_golden``, the runtime's) are not regions. A
 file that is not such an ELF, a container with no symbol, or one of another size is a
 RunError (``elf.<rule>``), which the flow reports as its ``sw`` stage's.
 """

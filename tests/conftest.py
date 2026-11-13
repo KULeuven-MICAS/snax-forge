@@ -1,4 +1,4 @@
-"""Test session setup: the markers ``gvsoc`` (the full flow on SNAX-GVSoC, D136: skipped where
+"""Test session setup: the markers ``gvsoc`` (the full flow on SNAX-GVSoC: skipped where
 out/snax-gvsoc/install is missing, run by CI's gvsoc job with ``-m gvsoc``) and ``slow`` (DaCe
 builds and compiles, and the largest generated design: run by default, left out by
 ``pytest -m "not slow"`` for a quick local run)."""

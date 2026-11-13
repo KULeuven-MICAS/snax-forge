@@ -1,9 +1,9 @@
-"""The transpose marker (MVT1): a tasklet's input read across its loop order, marked as such.
+"""The transpose marker: a tasklet's input read across its loop order, marked as such.
 
 ``mark_transpose(node, container)`` and ``unmark_transpose(node, container)``
     ``node`` is any map of a nest (the chain of single-child maps down to one tasklet) or its
     tasklet. For each input memlet of that tasklet, ``loop_orders`` gives π: each container
-    dimension's index names exactly one loop dimension (a map's ``loop.dim``, D162, so the
+    dimension's index names exactly one loop dimension (a map's ``loop.dim``, so the
     pieces of a split dimension and a tag keep it), and π orders the container's dimensions by
     the depth of the outermost map of their loop dimension. mvt's ``A[m, n]`` under the loops
     (n, m) gives π = (1, 0), under (m, n) (0, 1). An index naming two loop dimensions or none

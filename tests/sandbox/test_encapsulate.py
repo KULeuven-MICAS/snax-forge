@@ -1,4 +1,4 @@
-"""encapsulate and unencapsulate (D148): groups into one accelerator and back.
+"""encapsulate and unencapsulate: groups into one accelerator and back.
 
 dot's two instances, ``mul`` and ``sum``, each a group of its own, become one
 accelerator ``dot``: every accelerated node of each carries ``accelerator``,

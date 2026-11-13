@@ -1,4 +1,4 @@
-"""MatMul and Transpose expanded into dot's shape before import (sdfg/expand.py, D71).
+"""MatMul and Transpose expanded into dot's shape before import (sdfg/expand.py).
 
 Accepted when bicg, mvt, gesummv and atax have no MatMul or Transpose left
 after ``expand``, their expanded SDFGs compile in DaCe and match NumPy, and

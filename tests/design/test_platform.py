@@ -1,4 +1,4 @@
-"""The platform file (D84): format, round trip, --set changes, working copies, save."""
+"""The platform file: format, round trip, --set changes, working copies, save."""
 
 from __future__ import annotations
 
@@ -226,7 +226,7 @@ def test_a_set_the_config_rejects_is_a_value_problem():
 
 
 def test_the_csr_widths_are_set_and_counter_width_follows_job_width_when_null():
-    """acc_csr (D152): job_width 1-32; busy_counter_width 1-32, or null to follow job_width."""
+    """acc_csr: job_width 1-32; busy_counter_width 1-32, or null to follow job_width."""
     w = Platform.load(SMALL16).with_changes([("acc_csr.job_width", 16)])
     assert (w.acc_csr.job_width, w.acc_csr.counter) == (16, 16)
     w = w.with_changes([("acc_csr.busy_counter_width", 8)])
@@ -236,7 +236,7 @@ def test_the_csr_widths_are_set_and_counter_width_follows_job_width_when_null():
 
 
 def test_the_crossbar_limit_is_a_platform_value():
-    """l1.max_xbar_inputs (D85): 128 by default and in both platform files, at least 1; the
+    """l1.max_xbar_inputs: 128 by default and in both platform files, at least 1; the
     warning l1.warn_xbar_inputs 64, from 1 to the limit."""
     assert (L1Config().max_xbar_inputs, L1Config().warn_xbar_inputs) == (128, 64)
     for path in (SMALL16, SNAX_FORGE):

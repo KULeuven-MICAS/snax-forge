@@ -1,4 +1,4 @@
-"""The register bits of the estimate (D154, C§19): a control unit's registers from its group
+"""The register bits of the estimate: a control unit's registers from its group
 description (estimate/bits.py), every datapath's and control unit's bits against what DC kept in
 SYN2's 48 points (``fixtures/syn2_flops.json``, util/syn2_flops.py), and the RTL fixtures'
 ``ctrl_registers.json`` (hw/chisel's CtrlRegistersSpec) current."""
@@ -34,12 +34,12 @@ def _link(frm: str, to: str, depth: int) -> dict:
 
 
 def test_a_fold_alone_counts_its_t_from_the_start():
-    """vsum: one TreeAccumulate, T from JOB_BEATS read live (D168): its counter, jobs digit and
+    """vsum: one TreeAccumulate, T from JOB_BEATS read live: its counter, jobs digit and
     v, no copy of JOBS or JOB_BEATS."""
     regs = ctrl_registers([_unit("acc", 1)], [], "acc", {"acc": None}, JW)
     assert regs == [("busy", 1), ("acc_job_beats_counter", 32), ("acc_jobs_counter", 32),
                     ("acc_v", 1), ("done", 1)]  # fmt: skip
-    # 67: CTRL1's 131 less the two 32-bit copies, JOBS and JOB_BEATS
+    # 67: 131 less the two 32-bit copies of JOBS and JOB_BEATS
     assert ctrl_bits([_unit("acc", 1)], [], "acc", {"acc": None}, JW) == 67
 
 
@@ -153,8 +153,8 @@ def test_ctrl_bits_against_syn2s(syn2, capsys):
     built they matched at all 48 (firtool drops a v at L 0 and a wire's or depth-1 buffer's
     slots, and ctrl_bits leaves them out); the check of the count asks within 10 %, so a later
     control change does not fail on a bit or two. SYN2 synthesized CTRL1's control units, which
-    held copies of JOBS and each JOB_BEATS that CTRL2 removed (D168): the count plus those
-    copies' bits (``copies``) is compared, until CTRL2's R5 refreshes the fixture from the new
+    held copies of JOBS and each JOB_BEATS the control unit no longer keeps: the count plus those
+    copies' bits (``copies``) is compared, until the fixture is refreshed from the new
     synthesis."""
     lines = [
         "| point | recipe | W | counted | + copies | synthesized | difference |",

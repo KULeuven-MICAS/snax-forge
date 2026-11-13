@@ -170,7 +170,7 @@ def test_refused_a_bound_unit_inside():
 
 
 def test_refused_inside_an_accelerated_node():
-    """An accelerated node with a nested block (C§11) holding a nest."""
+    """An accelerated node with a nested block holding a nest."""
     d = copy.deepcopy(imported("rowsum").to_dict())
     rowsum = d["body"][0]
     d["body"][0] = {"id": "blk", "kind": "accelerated",
@@ -208,7 +208,7 @@ def test_refused_a_fused_nests_outer_map():
 
 def test_refused_an_order_dependent_fold(monkeypatch):
     """A fold over two of the chain's maps, one of them moved, with an op that is not
-    order-free; every registered op is order-free (D28), so add is marked as one that is not.
+    order-free; every registered op is order-free, so add is marked as one that is not.
     sum_map (m) -> sum_map_1 (n_1_t) -> sum_map_1_s (n_2_s): y[m] folds over n_1_t and n_2_s."""
     _, g = run([SPLIT_COLS])
     monkeypatch.setitem(REDUCE_OPS, "add", ReduceOp(REDUCE_OPS["add"].ufunc,

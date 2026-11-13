@@ -1,4 +1,4 @@
-"""Sandbox transforms (D72, D73): each takes a graph and returns a new one.
+"""Sandbox transforms: each takes a graph and returns a new one.
 
 A transform is registered with ``register_transform(name, fn, ints=...,
 site=...)``; ``fn(graph, **params) -> graph`` never changes its input.
@@ -6,7 +6,7 @@ site=...)``; ``fn(graph, **params) -> graph`` never changes its input.
 expressions over its own params (recipe.py). The result is a new ``Graph``,
 validated as any graph is; the reference check after the step is run.py's.
 
-**Sites** (D72). ``site(graph, selected)`` is the graph-shape test of where a
+**Sites**. ``site(graph, selected)`` is the graph-shape test of where a
 transform applies, for a node id, a container name, a group's or an accelerator's name
 (``site_of`` takes the editor's selection, one item or several: a transform that takes
 several, ``encapsulate`` and ``fuse_map``, registers a ``multi`` site over the list, any
@@ -22,13 +22,13 @@ name) stay in the transform.
     an outer map over ``0:(e - b) // factor``, keeping the map's id
     and attrs and recording the split (``loop.split``, with the record it
     had before as ``prior`` when it was split before), around an inner map
-    ``<id>_inner`` over ``0:factor``, both untagged (D73). The variables follow
+    ``<id>_inner`` over ``0:factor``, both untagged. The variables follow
     dfg/loops.py's rule: the map keeps its piece k of its dimension, the inner
     map is piece k + 1, the pieces below move down one, and every variable of
     the dimension is named again (``n`` -> ``n_1``, ``n_2``; ``n_2`` split ->
     ``n_1``, ``n_2``, ``n_3``); every use of ``v`` in the body becomes
     ``b + factor * v_1 + v_2`` on the two pieces. A length n that is not a
-    multiple of the factor (D144) runs the outer piece over ceil(n / factor) and
+    multiple of the factor runs the outer piece over ceil(n / factor) and
     records n in ``loop.split`` (``valid``): only the lanes with
     ``factor * v_1 + v_2`` below n are the kernel's, the rest pad lanes
     (dfg/pad.py), which the reference executor neither reads nor writes and
@@ -61,7 +61,7 @@ name) stay in the transform.
     memlet becomes the port's lanes as a range over the spatial variable,
     the container dtype must be the port's, and, for a BRM in the
     ``affine`` notation, the memlets together with the temporal maps around
-    must give the elements in the order of the port's nest (D70); in
+    must give the elements in the order of the port's nest; in
     the ``stream`` notation the memlet is the order. The tasklet's code, on
     the BRM's port names, must be the BRM's ``function.code``: a code table (brm.py's ``Code``,
     ``simd``'s one entry per ``op`` and ``streams``, then ``axpby``'s two) is tried in order,
@@ -83,14 +83,15 @@ name) stay in the transform.
     two plain tasklets (``fuse_map``, the second no fold) binds as one, the second's code with
     the first's expression in place of the local value (axpy's ``out = y + alpha * x``,
     patterns.py's ``fused_view``). The
-    accelerated node carries that code and the replaced subtree (D82), and, for a fused nest, the nest's local value
+    accelerated node carries that code and the replaced subtree, and, for a fused nest, the nest's
+    local value
     (``loop.local``), which only its two tasklets named: it leaves the graph's containers for
     the node's ``locals`` (dfg/kinds.py), and ``unbind`` puts it back at its index. A folding
     output (``reduce``) whose memlet does not use the spatial variable (dot's
     ``out[0]``) folds every lane into one: its port must have one lane, its
     index becomes the range of that lane (``out[0:1]``, no ``reduce`` on
     the accelerated node), and its order is checked over the temporal maps
-    it uses, one beat per T firings, T from ``named_rates`` (D102).
+    it uses, one beat per T firings, T from ``named_rates``.
 ``unbind(node)`` and ``join_map(map)``
     the inverses: the subtree an accelerated node replaced, and the
     map a split pair was split from (``loop.split``, its ``prior`` record back),
@@ -117,20 +118,21 @@ name) stay in the transform.
     variables of the maps around it); the pair inside an accelerated node or
     a bound unit under the inner one (unbind first); a fused nest's outer map
     in the chain (``loop.fused``: unfuse_map first); a fold under them whose op
-    is not order-free (dfg/reduce.py's ``order_free``; every registered op is,
-    D28) over two or more of the chain's maps, one of them moved (the order of
+    is not order-free (dfg/reduce.py's ``order_free``; every registered op is) over two or more of
+    the chain's maps, one of them moved (the order of
     its writes would change). The site takes a map with at least one partner
     (``partners``: every map above and below it, each with its refusal).
 ``encapsulate(accelerator, units)`` and ``unencapsulate(accelerator)``
     put the groups of the instances ``units`` into one accelerator of that
-    name (D148): every accelerated node of each carries ``accelerator``. A
+    name: every accelerated node of each carries ``accelerator``. A
     group is one instance, named after it, unless ``link`` merged several
     (compose.py). The
     groups keep the graph's order, which ``units`` must give (the CSRs and
-    the tasks follow it, C§17); a unit already in an accelerator, a name an
+    the tasks follow it); a unit already in an accelerator, a name an
     instance or an accelerator has, or a unit the graph lacks is an error.
     ``unencapsulate`` takes the attr off again: each group its own
-    accelerator (refused while ``share_ports`` marks a container of it). Their sites take a unit (a node id or an instance) and
+    accelerator (refused while ``share_ports`` marks a container of it). Their sites take a unit (a
+    node id or an instance) and
     fill ``units`` with its instance, or ``accelerator`` with its
     accelerator (``unencapsulate``'s also takes an accelerator's name).
 """
@@ -177,7 +179,7 @@ class TransformSpec:
     fn: Transform
     ints: tuple[str, ...] = ()
     site: Site | None = None
-    multi: MultiSite | None = None  # its site over a selection of several items (D72)
+    multi: MultiSite | None = None  # its site over a selection of several items
     # the inputs the step fixes, {container: array} from (graph, **params): its reference check
     # runs the graph before it and after it on them (run.py's checked_step; bake_scalar's value)
     fixes: Callable[..., dict[str, Any]] | None = None
@@ -206,7 +208,7 @@ def register_transform(
     fixes: Callable[..., dict[str, Any]] | None = None,
     params: tuple[str, ...] | None = None,
 ) -> None:
-    """Make ``{"transform": name}`` usable in a recipe (principle 6), with its site (D72),
+    """Make ``{"transform": name}`` usable in a recipe (principle 6), with its site,
     for a transform that takes several items its site over a selection (``multi``), and for
     one that fixes an input (``bake_scalar``) the inputs it fixes (``fixes``), and for one whose
     params a Python signature cannot name (a keyword) its params (``params``)."""
@@ -216,7 +218,7 @@ def register_transform(
 
 
 def site_of(name: str, g: Graph, selected: str | list[str]) -> dict[str, Any]:
-    """Transform ``name``'s site on a selection, one item or several (D72): one item goes to its
+    """Transform ``name``'s site on a selection, one item or several: one item goes to its
     ``site`` as before (or its ``multi`` when it has one, which must agree); several to its
     ``multi``, and a transform without one refuses them (``site.one``, "takes one
     selection")."""
@@ -336,7 +338,7 @@ def _split_site(g: Graph, map: str, what: str) -> dict[str, Any]:
 
 
 # The suffix of a split's inner map id: ``split``'s neutral one and ``split_map``'s (and
-# ``split_reduce``'s), which tags in the same step (D73). The variables follow loops.py's rule.
+# ``split_reduce``'s), which tags in the same step. The variables follow loops.py's rule.
 SPLIT_NEUTRAL = "_inner"
 SPLIT_TAGGED = "_s"
 
@@ -636,7 +638,7 @@ def _bind_seeds(site: _Site, b: Any, brm: str, given: Mapping[str, Any],
     if seeds and not any(p.name == SEED for p in b.interface.ports):
         (s,) = seeds.values()
         raise SandboxError(f"{what}: the fold is seeded from {s.data}; {brm!r} has no seed port "
-                           "(TreeAccumulate and SerialAccumulate take one, D163): unfuse_seed "
+                           "(TreeAccumulate and SerialAccumulate take one): unfuse_seed "
                            "first")  # fmt: skip
     if given_seed is not None and given_seed != int(bool(seeds)):
         raise SandboxError(f"{what}: seed = {given_seed!r} given, but the fold is "
@@ -1327,7 +1329,7 @@ def _encapsulate_site(g: Graph, selected: str) -> dict[str, Any]:
 
 def selected_units(g: Graph, selected: list[str]) -> list[str]:
     """The instances a selection stands for, in the graph's order: a unit's node id or instance
-    itself, a group's name its units, an accelerator's name its groups' units (D148); an item
+    itself, a group's name its units, an accelerator's name its groups' units; an item
     that names none of these is a SandboxError."""
     nodes = _accelerated(g)
     order = list(dict.fromkeys(n.attrs["instance"] for n in nodes))
@@ -1376,7 +1378,7 @@ def encapsulate(g: Graph, accelerator: str, units: list[str]) -> Graph:
     graph_order = [u for u in order if u in units]
     if graph_order != units:
         raise SandboxError(f"{what}: units {units} in another order than the graph runs them, "
-                           f"{graph_order}; the groups keep the graph's order (C§17)")  # fmt: skip
+                           f"{graph_order}; the groups keep the graph's order")  # fmt: skip
     for n in nodes:
         if n.attrs["instance"] in units:
             n.attrs["accelerator"] = accelerator
@@ -1398,7 +1400,7 @@ def _unencapsulate_site(g: Graph, selected: str) -> dict[str, Any]:
 
 def unencapsulate(g: Graph, accelerator: str) -> Graph:
     """The inverse of encapsulate: each group of ``accelerator`` its own accelerator again; one
-    whose groups share its movers (``share_ports``, D169) is refused (unshare_ports first)."""
+    whose groups share its movers (``share_ports``) is refused (unshare_ports first)."""
     if _unencapsulate_site(g, accelerator)["accelerator"] != accelerator:  # a unit's name
         raise SandboxError(f"unencapsulate {accelerator!r}: no accelerator of that name")
     shared = [c for c, cont in g.containers.items()

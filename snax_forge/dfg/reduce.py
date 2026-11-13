@@ -1,4 +1,4 @@
-"""Reductions on a memlet (D102): how many writes to one element combine.
+"""Reductions on a memlet: how many writes to one element combine.
 
 A tasklet output whose memlet has a ``reduce`` does not overwrite its element:
 every iteration of the maps around it folds its value in with the op. The
@@ -14,8 +14,8 @@ the same field:
 
 The op is a name registered here (``register_reduction``, principle 6) with the
 NumPy ufunc that folds it and the identity it has for a dtype. Every
-registered op is associative and commutative on the integers it runs on
-(D28), so the order the writes land in never changes the result: a map
+registered op is associative and commutative on the integers it runs on, so the order the writes
+land in never changes the result: a map
 with a ``reduce`` memlet can be split, tiled or run in parallel as any other.
 A float op, whose result depends on the order, needs the order its BRM
 defines and is not registered here. ``ReduceOp.order_free`` says so for each
@@ -23,7 +23,7 @@ op (True for all four): a transform that changes the order a fold's writes
 land in (``interchange_map``) reads it, so an op registered with
 ``order_free=False`` is refused there.
 
-**The seed** (M13 B2 R5). In place of ``identity`` a reduce may hold
+**The seed.** In place of ``identity`` a reduce may hold
 ``seed``, an element of a container the fold starts from instead, read once
 per element before the first write (``fuse_seed`` in sandbox/seed.py makes
 it, the fold of matvec_acc's ``q += A p`` as ``x' = x (+) fold_j(a_j)``):
@@ -51,7 +51,7 @@ from .subset import canonical_dim
 @dataclass(frozen=True)
 class ReduceOp:
     """A registered op: the ufunc that folds it, its identity for an integer dtype, and whether
-    its result is the same in any order (associative and commutative, D28)."""
+    its result is the same in any order (associative and commutative)."""
 
     ufunc: np.ufunc
     identity: Callable[[np.dtype], int]

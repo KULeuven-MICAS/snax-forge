@@ -1,4 +1,4 @@
-"""Data movement of a run, as queries on its index (D57, index.py).
+"""Data movement of a run, as queries on its index (index.py).
 
 What this is
 ------------

@@ -1,4 +1,4 @@
-"""The cluster view at one cycle (D57), data side only, and stepping between cycles. Queries on
+"""The cluster view at one cycle, data side only, and stepping between cycles. Queries on
 the run's index (index.py) that read no file; the viewer only draws their answers.
 
     cluster_at(index, t)       -> one dict per block at cycle t, and the cycle's events
@@ -6,7 +6,8 @@ the run's index (index.py) that read no file; the viewer only draws their answer
 
 **Blocks** at ``t`` (the cores and the controller are the schedule's core lanes):
 
-- ``dma``: the copies open at ``t`` (issue to done, both included: ``RunIndex.span``) with their task,
+- ``dma``: the copies open at ``t`` (issue to done, both included: ``RunIndex.span``) with their
+task,
   direction and bytes; from ``beat`` on, its L1 beat at ``t`` (``i`` of the copy's ``n``
   beats of that op) and its AXI bursts at ``t``, each with its region, elements and values,
   and its reads whose data comes back at ``t`` (``back``: L1 beats and L2 bursts);
@@ -17,9 +18,9 @@ the run's index (index.py) that read no file; the viewer only draws their answer
 - ``acc``: the unit whose task is open at ``t`` (the first unit when none is), its ``name``,
   ``group`` and ``accelerator`` (its streamer set's), whether its task is open, from ``beat``
   its class at ``t``, its firing at ``t`` with its operands' values and its push with the
-  result; ``accelerator`` the entry's name and ``units`` every unit so (one per group, D148:
+  result; ``accelerator`` the entry's name and ``units`` every unit so (one per group:
   ``vmul`` and ``vsum`` in dot 1);
-- ``streamers``, one per streamer set inside the accelerator (D157), in set order: its
+- ``streamers``, one per streamer set inside the accelerator, in set order: its
   ``name`` (the set's, its accelerator's), ``groups``, its CSRs (``first``, ``last``), its
   ``movers``, and whether it is ``busy`` at ``t`` (a task of one of its movers open) with
   that ``task``;

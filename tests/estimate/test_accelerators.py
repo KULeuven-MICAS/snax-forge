@@ -1,4 +1,4 @@
-"""The estimate's accelerators (C§19, D157): one streamer set each, its groups, CSRs and streamer,
+"""The estimate's accelerators: one streamer set each, its groups, CSRs and streamer,
 the same numbers the generator writes (gen/csrs.py's layout), the streamer not costed."""
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from .helpers import estimated
 
 
 def test_dot_1_two_streamers_40_csrs_dot_1_enc_one_and_37():
-    """dot 1: vmul 960-981, vsum 982-999 (C§16's table); dot_1_enc: one set dot, 960-996."""
+    """dot 1: vmul 960-981, vsum 982-999; dot_1_enc: one set dot, 960-996."""
     one, enc = estimated("dot_1"), estimated("dot_1_enc")
     assert (one.streamers, one.csrs, enc.streamers, enc.csrs) == (2, 40, 1, 37)
     assert [(a.name, a.groups, a.csrs, a.own_csrs, a.streamer.csrs) for a in one.accelerators] == [
@@ -24,7 +24,7 @@ def test_dot_1_two_streamers_40_csrs_dot_1_enc_one_and_37():
     assert (dot.name, dot.groups, dot.csrs, dot.streamer.movers, dot.streamer.channels,
             dot.streamer.temporal_dims) == ("dot", ["vmul", "vsum"], (960, 996), 5, 17,
                                             [1, 1, 1, 1, 1])  # fmt: skip
-    # every port's streamer is costed under its accelerator (D167): vmul a, b, out; vsum in, out
+    # every port's streamer is costed under its accelerator: vmul a, b, out; vsum in, out
     costed = [[x["name"] for x in a["cost"]["streamers"]] for a in one.to_dict()["accelerators"]]
     assert [len(x) for x in costed] == [3, 2]
 
@@ -61,7 +61,7 @@ def test_without_a_platform_no_csrs_and_round_trip():
 
 
 def test_the_caveat_states_the_aim_and_what_is_left_out():
-    """D167: about 30 %, the control unit's comb area a rough estimate, the cores, I-cache, DMA
+    """About 30 %, the control unit's comb area a rough estimate, the cores, I-cache, DMA
     and csr left out."""
     c = caveat()
     assert "about 30 %" in c and "comb area" in c

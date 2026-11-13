@@ -13,17 +13,17 @@ C array or two:
              ``const``
     output   the kernel's ``inout``, the array the DMA stores into: zeroed,
              or ``make_inputs``' value when it gives one (an in-place
-             update, axpy's ``y``, open item 47), then ``<name>_golden``: the
+             update, axpy's ``y``), then ``<name>_golden``: the
              reference executor (``dfg/execute.py``) on the bound graph and
              those inputs, as the flow checks a run, ``const``
 
 The C type is the container's dtype (``int64_t``, ``int32_t``, ``int8_t``,
 ...): the arrays hold the elements packed as NumPy lays them out, several to
-a word for a narrow dtype (D142).
+a word for a narrow dtype.
 Each array, golden included, is written in the container's padded shape (a
-tail's, dfg/pad.py, D144: its pads hold ``pad_value``), then padded with
-zeros to whole DMA beats, the container's L2 bytes (``lower/layout.py``'s ``l2_bytes``,
-D105) and aligned to the beat (``l2.beat_bits``, 64 bytes on snax_forge).
+tail's, dfg/pad.py: its pads hold ``pad_value``), then padded with
+zeros to whole DMA beats, the container's L2 bytes (``lower/layout.py``'s ``l2_bytes``) and aligned
+to the beat (``l2.beat_bits``, 64 bytes on snax_forge).
 main.c (lower/c.py) reads the arrays by name: a DMA's L2 side is the array its task names
 (``symbol``).
 
@@ -62,8 +62,8 @@ PER_LINE = 8
 @dataclass(frozen=True)
 class Array:
     """One C array of data.h: ``role`` is ``input``, ``output`` or ``golden``; ``values`` are
-    the container in its ``padded`` shape (row-major, a tail's pads holding the pad value,
-    D144, a pitched row's gap zero, ``padded_rows``), then zeros to ``len(values)``;
+    the container in its ``padded`` shape (row-major, a tail's pads holding the pad value, a pitched
+    row's gap zero, ``padded_rows``), then zeros to ``len(values)``;
     ``elements`` counts the container's own, the ``shape`` it has (the valid elements, which
     the self-check compares)."""
 

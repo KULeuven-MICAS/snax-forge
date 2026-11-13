@@ -1,4 +1,4 @@
-"""The transforms that compose units into one accelerator (D148, D150), each with its inverse.
+"""The transforms that compose units into one accelerator, each with its inverse.
 
 The mapping is spelled step by step, one recipe per variant: a
 reduction split into lane partials and a final sum, two nests fused into one,
@@ -25,7 +25,7 @@ name), ``unlink``'s a link node or its container.
     as the tasklet did. The temporal map records both
     (``loop.split_reduce``); ``join_reduce`` takes them back and joins the
     map (``join_map``). A length that is not a multiple of the factor is
-    refused: the partials' padding is not placed yet (D144). A seeded fold
+    refused: the partials' padding is not placed yet. A seeded fold
     (seed.py's ``fuse_seed``) keeps its seed on the final sum only, which
     takes the fold's record too; the partials start from the identity and are
     named after the transient the seed took (matvec_acc's ``tmp1_partial``),
@@ -144,7 +144,7 @@ def _split_reduce_site(g: Graph, map: str) -> dict[str, Any]:
     folds = [(c, m) for c, m in t.outputs.items() if m.reduce is not None]
     if len(t.outputs) != 1 or len(folds) != 1 or node.attrs["var"] in folds[0][1].names:
         raise SandboxError(f"{what}: its tasklet must fold its one output into an element that "
-                           f"does not move with {node.attrs['var']!r} (a reduction, D102)")  # fmt: skip
+                           f"does not move with {node.attrs['var']!r} (a reduction)")  # fmt: skip
     return {"map": map}
 
 
@@ -155,7 +155,7 @@ def split_reduce(g: Graph, map: str, factor: int) -> Graph:
     node = body[i]
     if type(factor) is int and factor > 0 and _bound(g, _length(node), what) % factor:
         raise SandboxError(f"{what}: the length is not a multiple of {factor}; the partials' "
-                           "padding is not placed yet (D144)")  # fmt: skip
+                           "padding is not placed yet")  # fmt: skip
     g = split_map(g, map, factor)
     body, i, outer = _locate(g, map)
     node = body[i]

@@ -1,10 +1,11 @@
-"""A BRM's ``function``, run firing by firing: the accelerator kinds (D19, D68).
+"""A BRM's ``function``, run firing by firing: the accelerator kinds.
 
 A BRM's ``function`` names a kind registered here and gives the kind's
 params as expressions over its design params; ``function_of(instance,
 dtypes)`` builds the kind with them resolved and the node's port dtypes
 (``dtypes``, port -> dtype, from its containers: ``brm.port_dtypes``; None
-when built without a graph), which every kind's factory takes as a keyword. The reference executor (dfg/execute.py)
+when built without a graph), which every kind's factory takes as a keyword. The reference executor
+(dfg/execute.py)
 runs an accelerated node through it, so the kind says what a firing computes
 and when each port moves a beat; timing (L, II, drain) is the
 implementation's, not the kind's.
@@ -12,7 +13,7 @@ implementation's, not the kind's.
 Ports (``AccelPort``): name, direction, lanes per beat and a rate: a port
 moves one beat every ``rate`` firings, an int or the name of a runtime param
 (e.g. ``"T"``). An input of rate r is taken at firings 0, r, 2r, ...; an
-output of rate r is given at firings r-1, 2r-1, ... (C§10).
+output of rate r is given at firings r-1, 2r-1, ....
 
     fn(k, ins, state, params) -> outs
 
@@ -23,7 +24,7 @@ task (a reduction's partial sum); ``params`` are the task's runtime params.
 
 Kinds: ``simd`` (every port rate 1, N inputs folded into one output,
 lane by lane, at the inputs' dtype: the executor casts the result into the
-output's when it writes it, D143; one input with the constant ``k``,
+output's when it writes it; one input with the constant ``k``,
 ``op(a, k)``, k cast to a's dtype; op ``axpby``, two inputs, ``k1 * a + k2 * b``
 at their result type, ``+ b`` with k2 unset) and ``reduce`` (input ``a`` at rate 1,
 output ``out`` at rate ``"T"``, the lanes folded too when ``lanes_out`` is 1;
@@ -44,7 +45,8 @@ A function param that names a design param the instance leaves unset (``simd``'s
 ``axpby``'s ``k1`` and ``k2``) is unset in the instance and listed in its ``read``
 (instance.py, which refuses a slot the code needs with neither): the kind builds without
 it, and the reference executor resolves the instance with the value read from the node's
-slot connector (a firing without a value is refused, a guard nothing reaches). ``function_of`` refuses, as a BrmError, a kind that is not registered, params
+slot connector (a firing without a value is refused, a guard nothing reaches). ``function_of``
+refuses, as a BrmError, a kind that is not registered, params
 the kind rejects, and a kind whose ports (name, direction, lanes, rate, in
 order) are not the BRM's.
 """

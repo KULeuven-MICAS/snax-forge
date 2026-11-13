@@ -59,7 +59,7 @@ def test_rejected(d, message):
 
 
 def test_every_recipe_is_in_a_folder_once_under_its_name():
-    """The recipes live one folder deep by category (C§12): none directly in ``recipes/``, each
+    """The recipes live one folder deep by category: none directly in ``recipes/``, each
     name in one folder only, and each recipe's ``name`` its file's stem."""
     assert not list(RECIPE_ROOT.glob("*.json"))
     paths = recipe_paths()

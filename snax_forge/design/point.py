@@ -1,4 +1,4 @@
-"""The design point: one bound graph on one platform, with its memory plan (D87).
+"""The design point: one bound graph on one platform, with its memory plan.
 
 What SNAX-LOWER reads to make the task list (lower/derive.py) and the
 generator the cluster file (gen/gvsoc.py). The design step writes it once every check
@@ -8,7 +8,7 @@ has passed; it is not edited by hand.
      "name":       "vecadd",  the design's name (``design_of``): the recipe's
      "graph_from": "out/sandbox/vecadd/2_bind.snaxdfg",
      "graph":      {...},     the bound graph as it was read: instances, code,
-                              replaced, loop.split (D71, D82)
+                              replaced, loop.split
      "platform":   {...},     the platform working copy: values, base, changes
      "streamers":  {...},     the resolved shell, <instance>_<port> -> instance,
                               port, write, n_ports, spatial_bounds,
@@ -53,7 +53,7 @@ def design_name(graph: Path) -> str:
 
 def design_of(graph: Path) -> str:
     """The design's name, which the design point holds and the generated entry is named after
-    (``<accelerator_slot>_<name>``, D131): the ``name`` of the recipe the sandbox (or Save)
+    (``<accelerator_slot>_<name>``): the ``name`` of the recipe the sandbox (or Save)
     kept beside a step's graph, ``recipe.json``, which no ``--set`` changes
     (``out/flow/vecmul_W32/sandbox/2_bind.snaxdfg`` -> ``vecmul``); else ``design_name``."""
     recipe = Path(graph).parent / "recipe.json"

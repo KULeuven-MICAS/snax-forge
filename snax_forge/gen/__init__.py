@@ -1,11 +1,11 @@
 """SNAX-GEN: generated accelerators from a design point.
 
 A design point's accelerators as one description, ``accelerator.json``
-(accelerator.py, D145), each datapath an adapter registered by name
-(blocks.py); its cluster on SNAX-GVSoC as its description files (D134):
-the cluster, a streamer per streamer set (D157) and ``accelerator.json``
+(accelerator.py), each datapath an adapter registered by name
+(blocks.py); its cluster on SNAX-GVSoC as its description files:
+the cluster, a streamer per streamer set and ``accelerator.json``
 (gvsoc.py), and the C
-headers a program drives it with (headers.py). The program (D135): ``main.c``
+headers a program drives it with (headers.py). The program: ``main.c``
 from the task list (SNAX-LOWER's C backend, ``lower/c.py``), and its data,
 ``data.h`` (data.py). What is written names the design point by its path from
 snax-forge's root and is byte-identical wherever it is written (gvsoc.py,

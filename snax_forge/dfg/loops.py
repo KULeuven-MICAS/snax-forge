@@ -1,4 +1,4 @@
-"""Loop variables named after their dimension (B2 R4b): one rule, applied after every change.
+"""Loop variables named after their dimension: one rule, applied after every change.
 
 Each map carries two namespaced attrs: ``loop.dim``, its dimension's base name, and
 ``loop.piece``, its number among the pieces of that dimension, 1 outer to inner. The pieces of a

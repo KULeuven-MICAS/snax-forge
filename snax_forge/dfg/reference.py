@@ -14,7 +14,7 @@ such container, never reads it (``on_graph``), so data.h holds no array for it a
 are the graph's at the value. ``mismatches`` is
 the one comparison of a run with the kernel's reference (``execute.against_reference``, each
 on its own copy of the inputs): the reference executor's in ``reference_check`` (the flow's
-guard that the goldens are the kernel's, D108) and ``dfg check``'s, and a compiled SDFG's in
+guard that the goldens are the kernel's) and ``dfg check``'s, and a compiled SDFG's in
 ``sdfg.build.verify``.
 
 A kernel name that is not one, or inputs that do not fit the graph, raise KernelError naming
@@ -63,7 +63,7 @@ def kernel_inputs(spec: Any, graph: Graph, seed: int) -> dict[str, np.ndarray]:
     """The kernel's ``make_inputs`` at every size the graph binds: each bound symbol by its
     lower-case name (``M`` gives ``m=``, ``N`` gives ``n=``); then the arrays' shapes must give
     the graph's values (``spec.bind_symbols``). Each array is cast to its container's dtype
-    (``astype``, wrapping: a recipe's ``dtypes``, D113)."""
+    (``astype``, wrapping: a recipe's ``dtypes``)."""
     params = inspect.signature(spec.make_inputs).parameters
     kw = {}
     for sym, v in graph.bound_symbols.items():
@@ -133,5 +133,5 @@ def reference_check(spec: Any, graph: Graph, seed: int) -> Goldens:
         text = ", ".join(f"{c} in {n} of {size} elements" for c, (n, size) in wrong.items())
         raise KernelError(f"gen: the graph's reference executor differs from the {spec.name} "
                           f"reference: {text}; the goldens would not be the kernel's "
-                          "(D108)")  # fmt: skip
+                          "")  # fmt: skip
     return Goldens(inputs, {c: got for c, (got, _) in pairs.items()})

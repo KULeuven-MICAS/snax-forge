@@ -2,7 +2,8 @@
 step's output in ``out/forge/<name>/forge.log``, one line per step on the terminal.
 
 SNAX-GVSoC is stubbed as in test_flow.py (helpers.stub), the bundle's ``Emit --spec`` as in
-tests/gen (``fake_emit``, with ``tmp_path`` as the root), and the kernel's import is the vecadd fixture (no DaCe); the bundle's
+tests/gen (``fake_emit``, with ``tmp_path`` as the root), and the kernel's import is the vecadd
+fixture (no DaCe); the bundle's
 ``make sw`` gives the flow's ELF, or another one for the refusal.
 """
 
@@ -56,7 +57,7 @@ def forged(tmp_path, monkeypatch):
         elf.parent.mkdir(parents=True)
         flows = tmp_path / "flow" / Path(forge_dir).name / "sw" / flow_run.ELF
         elf.write_bytes(fake.elf if fake.elf is not None else flows.read_bytes())
-        (elf.parent / forge_mod.QUIET_ELF).write_bytes(b"quiet")  # the second ELF (D135)
+        (elf.parent / forge_mod.QUIET_ELF).write_bytes(b"quiet")  # the second ELF
         log.write("make sw\n")  # forge.log, open: make writes straight into it
         return 0
 
@@ -69,7 +70,7 @@ def test_forge_prints_each_step_and_snax_clusters_commands(tmp_path, forged, cap
     sw = tmp_path / "forge" / "vecadd" / "sw"
     assert (sw / "obs_marks.json").read_bytes() == (
         tmp_path / "bundle" / "vecadd" / "obs_marks.json"
-    ).read_bytes()  # the quiet build's legend beside its ELF (D135)
+    ).read_bytes()  # the quiet build's legend beside its ELF
     out = capsys.readouterr().out.splitlines()
     flow, bundle = tmp_path / "flow" / "vecadd", tmp_path / "bundle" / "vecadd"
     forge = tmp_path / "forge" / "vecadd"

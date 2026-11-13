@@ -2,7 +2,7 @@
 
 The rows, boxes and edges are what the panel draws, so they are checked here
 exactly; where the browser puts them, and the SVG curves, are checked by eye
-(D55) on the three vecadd fixtures and a recipe's output directory.
+ on the three vecadd fixtures and a recipe's output directory.
 """
 
 from __future__ import annotations
@@ -208,7 +208,7 @@ def recipe_view(tmp_path: Path, recipe: str) -> dict:
     ],
 )  # fmt: skip
 def test_a_port_edge_labels_its_packing(tmp_path, recipe, want):
-    """Each accelerated port's edge: dtype, num_slc = 64 / b, num_ch = W / num_slc (D142)."""
+    """Each accelerated port's edge: dtype, num_slc = 64 / b, num_ch = W / num_slc."""
     v = recipe_view(tmp_path, recipe)
     edges = [v["details"][f"edge:{e['id']}"] for e in v["edges"]]
     assert {e["data"]: e["packing"] for e in edges if e["packing"]} == want
@@ -246,7 +246,7 @@ def test_the_bound_dot_shows_both_accelerators():
 
 
 def test_dot_1_enc_draws_one_accelerator_of_two_groups(tmp_path):
-    """dot_1_enc (D148): the accelerator dot, its groups vmul and vsum in the graph's order,
+    """dot_1_enc: the accelerator dot, its groups vmul and vsum in the graph's order,
     each unit in its group and its group's box around its top-level map; each unit's panel names
     its group and accelerator. dot 1 draws the two as two accelerators."""
     from tests.gen.helpers import bound_dot1, bound_dot1_enc
@@ -279,7 +279,7 @@ def test_without_encapsulate_each_group_is_its_own_accelerator():
 
 @pytest.mark.slow
 def test_a_maps_bar_starts_with_its_id():
-    """C§12: vecmul as imported at N = 2048, its map's bar ``mult_map · n · 2048 · untagged``."""
+    """Vecmul as imported at N = 2048, its map's bar ``mult_map · n · 2048 · untagged``."""
     from snax_forge.viz.dfg.api import Entry
     from tests.helpers import steps
 
@@ -290,7 +290,7 @@ def test_a_maps_bar_starts_with_its_id():
 
 @pytest.mark.slow
 def test_the_containers_section_of_vecmul_and_matvec():
-    """C§12's Containers, in the graph's order: vecmul's A, B, C each ``N``, 2048 int64, 16 KiB
+    """the Containers, in the graph's order: vecmul's A, B, C each ``N``, 2048 int64, 16 KiB
     in L1 over N; matvec's matrix over M and N, its vectors over one each; a step view has it."""
     from snax_forge.design import Platform
     from snax_forge.estimate import estimate
@@ -330,10 +330,10 @@ def _cost_rows(t):
 
 @pytest.mark.slow
 def test_the_cost_tables_of_vecmul_and_dot_1():
-    """C§12's cost table, a row per unit, buffer link and control unit, a row per port's
-    streamer and the accelerator's words through the crossbar and the banks (D167), then the
+    """the cost table, a row per unit, buffer link and control unit, a row per port's
+    streamer and the accelerator's words through the crossbar and the banks, then the
     total, one table per accelerator: vecmul at W = 8 (N = 2048) its unit 55 300 µm², 23.137 nJ,
-    its control unit 362 µm² (flops and an equal comb, 34 bits: no copy of JOBS, D168), 0.066 nJ,
+    its control unit 362 µm² (flops and an equal comb, 34 bits: no copy of JOBS), 0.066 nJ,
     three streamers of 8 channels,
     its 4096 reads and 2048 writes 44.569 nJ; dot_1_enc at W = 8 one table for its two groups,
     tmp0's round trip in its L1 row; Compare's cells before → after."""
@@ -392,7 +392,7 @@ def test_the_cost_tables_of_vecmul_and_dot_1():
 
 @pytest.mark.slow
 def test_the_bank_note_under_its_group():
-    """vecmul at N = 2048 (D155): at W = 16 the group's summary has its bank note and Compare
+    """vecmul at N = 2048: at W = 16 the group's summary has its bank note and Compare
     against W = 8 a ``bank bound`` row under the group, "–" on the side with none."""
     from snax_forge.design import Platform
     from snax_forge.viz.dfg.api import Entry, compare_view, step_view
@@ -415,7 +415,7 @@ def test_the_bank_note_under_its_group():
 
 @pytest.mark.slow
 def test_the_estimate_panel_gives_the_unmapped_and_total_cycles():
-    """D155 in the page: vecmul at N = 2048 as imported, all 2048 cycles unmapped (the assumption
+    """The unmapped estimate in the page: vecmul at N = 2048 as imported, all 2048 cycles unmapped (the assumption
     in its title and the note), the bound step 256 on the accelerator; Compare's rows 2048 → 256."""
     from snax_forge.design import Platform
     from snax_forge.viz.dfg.api import Entry, compare_view, step_view
@@ -437,9 +437,7 @@ def test_the_estimate_panel_gives_the_unmapped_and_total_cycles():
     assert (
         s0["unmapped_note"]
         == s0["cycles"][1]["title"]
-        == (
-            "2048 iterations no unit runs, at 1 cycle each: an assumption (a core takes several), D155"
-        )
+        == ("2048 iterations no unit runs, at 1 cycle each: an assumption (a core takes several)")
     )
     s2 = step_view(b, "2 bind", platform)["summary"]
     assert [c["value"] for c in s2["cycles"]] == [256, 0, 256] and s2["unmapped_note"] is None
@@ -453,12 +451,12 @@ def test_the_estimate_panel_gives_the_unmapped_and_total_cycles():
             "0 streamer sets",
             "1 streamer set · 22 CSRs",
         ),
-    }  # fmt: skip (one unmapped count, D156)
+    }  # fmt: skip (one unmapped count)
 
 
 @pytest.mark.slow
 def test_the_symbols_section():
-    """C§12's Symbols: each kernel symbol with its value and the containers using it; an input
+    """the Symbols: each kernel symbol with its value and the containers using it; an input
     on the param of its name with a session's recipe in edit mode, read only otherwise."""
     from snax_forge.sandbox import Recipe
     from snax_forge.viz.dfg.api import symbols_section
@@ -498,7 +496,7 @@ def _entries(b):
 
 @pytest.mark.slow
 def test_the_bindings_of_vecmul_dot_1_and_dot_4():
-    """C§12's Bindings: vecmul's split before its bind (``mult_map split · W = 8 · not bound``),
+    """the Bindings: vecmul's split before its bind (``mult_map split · W = 8 · not bound``),
     then the unit (``acc · simd · W = 8``); dot 1 with W_mul and W_sum, two entries,
     nothing shared; dot 4 at W = 4, one W shared by mac and sum; a param in none is unused."""
     from dataclasses import replace
@@ -750,7 +748,7 @@ def test_dot6_draws_a_buffer_with_its_depth(tmp_path):
 
 
 # =============================================================================
-# The cost in Compare and Details (C§12, C§20)
+# The cost in Compare and Details
 # =============================================================================
 
 
@@ -792,7 +790,8 @@ def test_compare_gives_two_columns_when_the_groups_differ():
                                               True)}  # fmt: skip
     assert _rows(rows, "group mac")["energy"] == ("26.007 nJ", "–", True)
     assert _rows(rows, "group dot")["cycles"] == ("–", "265 = 256 + 9", True)
-    # D167: the link drops a streamer set (two streamers and 16 crossbar inputs), the banks the same;
+    # The link drops a streamer set (two streamers and 16 crossbar inputs), the banks the
+    # same;
     # its 16 fewer accesses make it the cheaper one too, as an access has one price; the crossbar's
     # 24 + 9 and 16 + 1 read-only and write-only inputs priced as such (X71)
     bars = c["cost_bars"]
@@ -871,12 +870,12 @@ def test_a_block_with_no_flops_holds_dash():
 
 
 # =============================================================================
-# DRY1-2 R3: the Bindings tree, the params' names in the boxes and Details
+# The Bindings tree, the params' names in the boxes and Details
 # =============================================================================
 
 
 def test_the_bindings_tree():
-    """D156: dot 1 accelerator ▸ group ▸ unit (dot ▸ mul ▸ mul's entry); dot 2's linked group
+    """Dot 1 accelerator ▸ group ▸ unit (dot ▸ mul ▸ mul's entry); dot 2's linked group
     not encapsulated at the top; vecmul's unit alone at the top; a split not bound yet at the
     top beside a bound unit."""
     from dataclasses import replace
@@ -908,7 +907,7 @@ def test_the_bindings_tree():
 
 
 def test_the_recipes_param_names_in_the_boxes_and_details():
-    """D156: with the recipe, a unit's box gives its split's param (``W_mul 8``, not ``W 8``)
+    """With the recipe, a unit's box gives its split's param (``W_mul 8``, not ``W 8``)
     and a split map's Details its range with the param and its iterations (``0:N // W_mul =
     256``); dot 2's shared W in both boxes; without a recipe the boxes keep ``W``."""
     from snax_forge.design import Platform
@@ -954,7 +953,7 @@ def test_a_unit_with_a_slot_shows_it():
 
 
 # =============================================================================
-# Scalars: axpy's alpha (B2 R3b)
+# Scalars: axpy's alpha
 # =============================================================================
 
 
@@ -1121,7 +1120,7 @@ def test_the_lane_accumulator_reads_as_a_fold():
 
 
 # =============================================================================
-# The fold's seed: matvec_seed (B2 R5)
+# The fold's seed: matvec_seed
 # =============================================================================
 
 
@@ -1161,7 +1160,7 @@ def test_the_seed_is_two_edges_of_x_on_the_fold():
 
 
 # =============================================================================
-# Partners: the maps a map fuses, seeds or interchanges with (B2 R5)
+# Partners: the maps a map fuses, seeds or interchanges with
 # =============================================================================
 
 
@@ -1236,7 +1235,7 @@ def test_matvec_acc_partners_at_import():
 
 
 def test_matvec_acc_partners_after_the_tag_and_split():
-    """After tag_map sum_map temporal, mult (untagged) still fuses with sum (B0.2: it takes the
+    """After tag_map sum_map temporal, mult (untagged) still fuses with sum (it takes the
     tag). After split_map sum_map_1 4 too, the two no longer fuse: mult_map is a near partner
     of sum_map, its tag the refusal naming split_map mult_map_1 4; every map of the sum's nest
     seeds with the elementwise nest, its kept loop m_t, and the three maps of the sum's nest
@@ -1294,7 +1293,7 @@ def test_a_seeded_or_bound_graph_has_no_seed_partner():
 
 
 # =============================================================================
-# Folds: drawn as upside-down trapezoids (B2 R5)
+# Folds: drawn as upside-down trapezoids
 # =============================================================================
 
 

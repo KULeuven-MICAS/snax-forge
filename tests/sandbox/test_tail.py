@@ -1,4 +1,4 @@
-"""split_map with a tail (open item 31, D144): ceil(n / W) firings, the valid count recorded,
+"""split_map with a tail: ceil(n / W) firings, the valid count recorded,
 the lanes past it padding; bind and join_map on such a split."""
 
 from __future__ import annotations

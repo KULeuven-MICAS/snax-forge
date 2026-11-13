@@ -1,5 +1,5 @@
-"""Shared movers (D169, PORT1): the crossbar's inputs by hand, the movers and their masks, the
-fit rule, and the crossbar's warning and limit (D85)."""
+"""Shared movers: the crossbar's inputs by hand, the movers and their masks, the
+fit rule, and the crossbar's warning and limit."""
 
 from __future__ import annotations
 
@@ -36,7 +36,8 @@ def _inputs(name: str, **params: int) -> tuple[int, int]:
     ],
 )  # fmt: skip
 def test_the_crossbar_inputs_by_hand(name, params, dedicated, shared):
-    """n_in = Σ movers' channels + the core (one since D170) + AXI: dot 1 at W = 4 is 4 + 4 + 4 (reader0 vmul.a /
+    """n_in = Σ movers' channels + the core (one) + AXI: dot 1 at W = 4 is 4 + 4 + 4
+    (reader0 vmul.a /
     vsum.a, reader1 vmul.b, writer0 vmul.out / vsum.out) against 4 · 3 + 4 + 1; mvt_1_dot2 at
     W = 8 is 8 · 3 against 8 · 5 + 1; mvt_2 two such sets against twice 41."""
     assert sum(_inputs(name, **params)) == dedicated
@@ -82,7 +83,7 @@ def test_unshared_designs_pass_unchanged():
 
 @pytest.mark.slow
 def test_above_64_inputs_a_note_above_128_a_refusal():
-    """D85 amended: mvt_2 at W = 8 (84 inputs) and vecmul at W = 32 (98) pass with the note
+    """Mvt_2 at W = 8 (84 inputs) and vecmul at W = 32 (98) pass with the note
     design.xbar_inputs; vecmul at W = 64 (194) is refused (connect.xbar_inputs); shared, mvt_2
     takes 50 and gets no note."""
     pf = Platform.load(SNAX_FORGE)
@@ -97,7 +98,7 @@ def test_above_64_inputs_a_note_above_128_a_refusal():
     wide = Design(pf, steps("vecmul", W=64, N=2048)[-1])
     (p,) = [p for p in run_checks(wide) if p.code == "connect.xbar_inputs"]
     assert p.message.startswith("194 TCDM crossbar inputs, the platform takes at most 128")
-    assert p.fix == "fewer lanes, or share_ports on a container between two accelerators (D169)"
+    assert p.fix == "fewer lanes, or share_ports on a container between two accelerators"
 
 
 def test_the_warning_is_a_platform_value():

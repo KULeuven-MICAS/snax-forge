@@ -1,4 +1,4 @@
-"""The register bits of a group's control unit, from its description alone (D154, C§19).
+"""The register bits of a group's control unit, from its description alone.
 
     ctrl_registers(units, links, owner, fixed, job_width, declared=False) -> list[(str, int)]
     ctrl_bits(units, links, owner, fixed, job_width) -> int
@@ -8,11 +8,12 @@ The group description is the one ``cycles.py``'s ``group_cycles`` steps: ``units
 ``name``, ``L``, ``ii`` and ``span``; ``links`` ``{from, to, to_input, depth}`` by unit name;
 ``owner`` the unit with the outer output. ``fixed`` gives per unit its T when fixed at design
 time (a fold's ``params.T``, 1 for a unit without a fold), None when a JOB_BEATS CSR sets it,
-read live by the control unit; ``job_width`` is the platform's ``acc_csr.job_width`` (D152). A count of a T,
+read live by the control unit; ``job_width`` is the platform's ``acc_csr.job_width``. A count of a
+T,
 ⌈log₂ T⌉ bits for a fixed T and ``job_width`` for one from a JOB_BEATS, is Chisel's ``log2Ceil``.
 
 **The registers** of ``<tag>_<group>_ctrl``, every one ``GroupRule.scala`` and
-``GroupCtrl.scala`` declare (D153, D168: no copy of JOBS or a JOB_BEATS, read live from the
+``GroupCtrl.scala`` declare (no copy of JOBS or a JOB_BEATS, read live from the
 csr), by their ``suggestName``; those marked *dropped* are declared but never written, so
 firtool removes them and DC never sees them:
 
@@ -32,13 +33,12 @@ firtool removes them and DC never sees them:
     done                          1          GroupCtrl.scala:92, the done pulse registered
 
 ``ctrl_registers`` lists what firtool keeps (``declared=True`` every declared one), and
-``ctrl_bits`` sums it: DC keeps what firtool emits, so it matched SYN2's ctrl flops at all 48
+``ctrl_bits`` sums it: DC keeps what firtool emits, so it matched the synthesized ctrl flops at all 48
 points when it was built (``util/ctrl_regs.py`` on the fixtures; ``tests/estimate/test_bits.py``
-holds it within 10 %, SYN2's flops still holding CTRL1's copies of JOBS and each JOB_BEATS,
-which CTRL2 removed: the control unit reads the csr's, D168).
+holds it within 10 %).
 
 **Against the emitted RTL**: ``accelerator_registers`` reads each group's description from an
-``accelerator.json`` (C§17) as hw/chisel's ``AccCtrl.desc`` does; ``util/ctrl_regs.py --json``
+``accelerator.json`` as hw/chisel's ``AccCtrl.desc`` does; ``util/ctrl_regs.py --json``
 writes it for every RTL fixture into ``ctrl_registers.json`` beside them (``registers_json``),
 which hw/chisel's ``CtrlRegistersSpec`` compares, register by register, with each emitted
 ``<tag>_<group>_ctrl``, and ``tests/estimate/test_bits.py`` checks the file is current.
@@ -112,7 +112,7 @@ def ctrl_bits(units: Sequence[Mapping[str, Any]], links: Sequence[Mapping[str, A
 
 
 def accelerator_registers(accelerator: Mapping[str, Any]) -> dict[str, list[tuple[str, int]]]:
-    """Per group of an ``accelerator.json`` (C§17), its control unit ``<tag>_<group>_ctrl`` and
+    """Per group of an ``accelerator.json``, its control unit ``<tag>_<group>_ctrl`` and
     ``ctrl_registers`` on the group as the RTL reads it (hw/chisel's ``AccCtrl.desc``): each
     unit's timing, its T None with a JOB_BEATS CSR, else its ``params.T`` (1 without one), the
     links by unit, and ``job_width`` the JOBS CSR's width."""

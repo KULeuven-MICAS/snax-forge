@@ -1,4 +1,4 @@
-"""Shared helpers for the flow tests (D136).
+"""Shared helpers for the flow tests.
 
 The flow runs on SNAX-GVSoC, so CI (which never builds it) runs everything up
 to the generator for real and SNAX-GVSoC through ``stub``: ``run_gvsoc``
@@ -12,14 +12,14 @@ build's folder is the test's own. The recipe flows start from the import
 fixtures (``PLAIN``), so they need no DaCe. The full flow on SNAX-GVSoC is
 marked ``gvsoc`` and skipped where ``out/snax-gvsoc/install`` is missing.
 
-``sound`` is D171's check of a run on SNAX-GVSoC: what the program computes exactly (exit 0,
+``sound`` checks a run on SNAX-GVSoC: what the program computes exactly (exit 0,
 no data error, every counter at least its beats), each counter only within 10 % of the
-estimate's (D123's NEAR); a test pins no window and no counter, and a counter beyond 10 % is
+estimate's, as the RTL comparison's NEAR; a test pins no window and no counter, and a counter beyond 10 % is
 a finding to investigate, not a number to update.
 
 ``excerpts_hold`` is the check the walk-throughs in ``examples/`` share: a
 table quoted in a README under ``<!-- excerpt: FOLDER/report/FILE -->`` must
-be, line for line, part of that report, a number in a table row within 10 % (D171);
+be, line for line, part of that report, a number in a table row within 10 %;
 ``near`` is the same tolerance for a number stated in prose.
 """
 
@@ -45,7 +45,7 @@ from tests.helpers import recipe_path
 from tests.run.helpers import point_symbols, synthetic, tiny_elf
 
 PLAIN = FIXTURES / "vecadd.snaxdfg"  # the import of the vecadd kernel
-SOUND = 0.10  # D171: a counter's gap beyond its fill, as a share of the expected counter
+SOUND = 0.10  # a counter's gap beyond its fill, as a share of the expected counter
 PLAINS = {"vecadd": PLAIN, "vsum": FIXTURES / "vsum.snaxdfg"}
 
 COMMIT = "a" * 40
@@ -59,9 +59,9 @@ needs_gvsoc = pytest.mark.skipif(
 
 
 def sound(f: Any) -> dict[str, int]:
-    """D171 on a flow's result: exit 0, no data error, every counter at least its beats, and each
+    """A flow's result is sound: exit 0, no data error, every counter at least its beats, and each
     counter within 10 % of the estimate's expected BUSY_COUNTER beyond its fill (the gap
-    max(0, |counter - cycles| - fill) at most 10 % of cycles + fill, as D123's NEAR); the
+    max(0, |counter - cycles| - fill) at most 10 % of cycles + fill, as the RTL comparison's NEAR); the
     counters by task."""
     from snax_forge.report.run import expected_parts
 
@@ -75,7 +75,7 @@ def sound(f: Any) -> dict[str, int]:
             gap = max(0, abs(x["counter"] - cycles) - fill)
             assert gap <= SOUND * (cycles + fill), (
                 f"{t}: counter {x['counter']} against the estimate's {cycles} + fill {fill}, "
-                "beyond 10 %: investigate (D171)"
+                "beyond 10 %: investigate"
             )
     return {t: x["counter"] for t, x in c["tasks"].items()}
 
@@ -113,7 +113,7 @@ class FakeMake:
                 Path(variables["FORGE"]).parent / "design" / "design_point.json"
             )
             elf.write_bytes(tiny_elf(point_symbols(point)))
-            (elf.parent / QUIET_ELF).write_bytes(b"quiet")  # the forge app's second ELF (D135)
+            (elf.parent / QUIET_ELF).write_bytes(b"quiet")  # the forge app's second ELF
         elif goal == "run":
             text = self.stdout if self.stdout is not None else program_output(variables)
             if variables.get("EVENTS"):
@@ -194,12 +194,12 @@ NUMBER = re.compile(r"(-?\d+(?:\.\d+)?)(%?)")
 
 
 def near(got: float, stated: float, rel: float = SOUND) -> bool:
-    """A number as a walk-through states it (D171): within ``rel`` of the run's."""
+    """A number as a walk-through states it: within ``rel`` of the run's."""
     return abs(got - stated) <= rel * abs(stated)
 
 
 def _cells_near(quoted: str, line: str) -> bool:
-    """A quoted table row against a report row (D171): the same cells, a number within 10 %."""
+    """A quoted table row against a report row: the same cells, a number within 10 %."""
     a, b = quoted.split("|"), line.split("|")
     if len(a) != len(b):
         return False
@@ -215,7 +215,7 @@ def _cells_near(quoted: str, line: str) -> bool:
 def excerpts_hold(readme: str, root: Path) -> int:
     """Every excerpt of ``readme`` (the lines after its marker, up to the first empty one) is
     made of lines of the report it names, a path under ``root``, each line as it is or, a
-    table row, with its numbers within 10 % (D171); returns how many there are."""
+    table row, with its numbers within 10 %; returns how many there are."""
     lines = readme.splitlines()
     seen = 0
     for i, line in enumerate(lines):

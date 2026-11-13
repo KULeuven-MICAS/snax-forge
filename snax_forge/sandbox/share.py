@@ -1,4 +1,4 @@
-"""Sharing a group's hardware (D165, MVT1): a group run on another's units, one accelerator run
+"""Sharing a group's hardware: a group run on another's units, one accelerator run
 once per nest.
 
 ``share(group, with)`` and ``unshare(group)``

@@ -1,9 +1,9 @@
-"""Design and run reports in the layout of HLS reports (D99).
+"""Design and run reports in the layout of HLS reports.
 
 ``design.md`` says what was built (design.py), ``run.md`` where the cycles
 went (run.py); both are dataclass trees (record.py) rendered as Markdown, so
 humans, LLMs and GitHub read the same text. They read a flow run as the
-viewer does (run/, C§7). ``write_reports(DIR)`` writes them for a flow folder
+viewer does (run/). ``write_reports(DIR)`` writes them for a flow folder
 (files.py); the flow calls it after every run; the command line is
 ``python -m snax_forge.report DIR`` (pixi ``report``).
 """

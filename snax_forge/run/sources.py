@@ -1,4 +1,4 @@
-"""A run's trace level and sources, as SNAX-GVSoC is told them (C§7, D137).
+"""A run's trace level and sources, as SNAX-GVSoC is told them.
 
     parse_trace("stall:acc,acc_a")      -> ("stall", ["acc", "acc_a"])
     sources_for(cluster, level, given)  -> the sources, given or by default
@@ -7,7 +7,7 @@
 A level is which traces are on (snax-gvsoc ``docs/EVENTS.md``), cumulative: ``off`` the
 ``summary`` lines, ``task`` and the ``events`` lines, ``beat`` and the ``beats`` lines,
 ``stall`` and the ``stalls`` lines, ``finegrained`` and the cores' ``insn`` lines. The sources
-are C§7 names (the accelerator's units, ``acc``, its movers, ``dma``, ``core<i>``, ``axi``);
+are trace names (the accelerator's units, ``acc``, its movers, ``dma``, ``core<i>``, ``axi``);
 they say whose beat, stall and instruction lines are written, never the summary's or events'.
 By default, at ``beat`` and ``stall``, the units, the movers and the DMA; at
 ``finegrained`` also every core, for its ``insn`` lines only (its crossbar lines are written
@@ -17,7 +17,7 @@ when it is named).
 ``TRACES`` (one ``--trace`` regex each: ``summary`` and ``events`` whole, then per component,
 a unit's ``beats`` for it (``snax_acc<i>/unit``, ``unit_<unit>`` with several groups), its
 set's streamer's ``beats`` (its ``class`` lines) and ``stalls`` for a mover, at the set's
-trace path (the manifest's, ``snax_acc<i>/streamer_<set>``, D157), the crossbar's
+trace path (the manifest's, ``snax_acc<i>/streamer_<set>``), the crossbar's
 ``beats`` and ``stalls`` for its inputs, the AXI backend's ``beats`` for ``dma``, ``pe<i>/insn``
 for a core), the crossbar's ``trace_inputs`` parameter (the named inputs by name: a mover's
 lanes ``snax_acc<i>.streamer_<set>.<mover>.lane<l>``, ``core<i>``, ``axi``, and ``dma``), and with

@@ -1,4 +1,4 @@
-"""A platform read from snax_cluster's cluster file (D131).
+"""A platform read from snax_cluster's cluster file.
 
     platform_from_hjson(path, name, root=None) -> Platform
 
@@ -22,7 +22,7 @@ reader takes from it:
                              ``snax_streamer_cfg``): every mover's
                              ``fifo_depth``, which must agree; its
                              ``temporal_dim`` is not read, each streamer's
-                             comes from the graph (D84)
+                             comes from the graph
     hjson                    the file's path from ``root`` (snax-forge's
                              root by default), ``/``-separated: the
                              platform's source, which the GVSoC generator
@@ -30,14 +30,14 @@ reader takes from it:
     accelerator_slot         ``ACCELERATOR_SLOT`` (``snax_forge``), the
                              generated accelerator's name, never the
                              source's ``snax_acc_name``, so a generated
-                             design takes no name of snax_cluster's own
-                            ; the source must still have one
+                             design takes no name of snax_cluster's own; the source must still have
+                             one
                              accelerator, its name an identifier
 
 A word's elements are not the platform's: each container's dtype decides
-them (D142). ``spatial_bounds`` and ``num_channel`` are not stored: the
-shell derives them from the accelerator's ports and their containers (D84,
-D142): the GVSoC generator lowers the streamer per design point (D134).
+them. ``spatial_bounds`` and ``num_channel`` are not stored: the
+shell derives them from the accelerator's ports and their containers: the GVSoC generator lowers the
+streamer per design point.
 
 The rest of a platform (``wait_mode``) is small16's. The cores,
 the I-cache, the interconnect and the CSR counts are not read; they are the
@@ -46,7 +46,8 @@ generator's (gen/gvsoc.py). The core count is read on its own
 snRuntime's top of L1 (``memory.runtime``, check.py).
 
 Everything wrong is a ``DesignError``, each problem coded ``hjson.<what>``:
-``hjson.parse`` (the file), ``hjson.path`` (a file outside ``root``), ``hjson.ref`` (a ``$ref``), ``hjson.key`` (a key
+``hjson.parse`` (the file), ``hjson.path`` (a file outside ``root``), ``hjson.ref`` (a ``$ref``),
+``hjson.key`` (a key
 missing or of the wrong type, by its path), ``hjson.value`` (a value no
 platform can take), ``hjson.accelerators`` (not exactly one accelerator),
 ``hjson.movers`` (movers that disagree).
@@ -189,8 +190,8 @@ def _mover_value(template: Mapping[str, Any], key: str, at: str) -> int:
         raise _fail(
             "hjson.movers", f"{at}.{key}",
             f"the movers differ ({listed}); a platform holds one value for every streamer",
-            "a frozen streamer file given as input is open item 78; the GVSoC generator lowers "
-            "the streamer per design point (D134)",
+            "a frozen streamer file given as input is not supported yet; the GVSoC generator lowers "
+            "the streamer per design point",
         )  # fmt: skip
     return flat.pop()
 

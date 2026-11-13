@@ -1,8 +1,8 @@
-"""Library nodes into maps, in dot's shape, before the importer (D71).
+"""Library nodes into maps, in dot's shape, before the importer.
 
 ``expand(sdfg)`` rewrites a simplified SDFG in place (and returns it), with
 no simplify after it. The importer takes maps, tasklets and the ``Reduce``
-library node (D102); this pass brings DaCe's ``MatMul`` and ``Transpose``
+library node; this pass brings DaCe's ``MatMul`` and ``Transpose``
 into that form, the shape ``np.sum(A * B)`` already has: a multiply map
 into a transient, then a ``Reduce`` (sum, identity 0) over the contracted
 axis, innermost. It is one fixed form and decides nothing else (principle

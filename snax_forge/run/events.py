@@ -1,4 +1,4 @@
-"""SNAX-GVSoC's events, read (D137): ``run/events.log`` as snax-gvsoc's ``docs/EVENTS.md``
+"""SNAX-GVSoC's events, read: ``run/events.log`` as snax-gvsoc's ``docs/EVENTS.md``
 writes it, one ``Line`` per line.
 
 A line is GVSoC's header, ``<ps>: <cycles>: [<path>] `` with ANSI colour codes around the
@@ -39,7 +39,7 @@ Fields = frozenset[str]
 
 def forms(*alternatives: tuple[str | set[str], str | set[str]]) -> list[tuple[Fields, Fields]]:
     """A table entry: its alternatives, each its required and its optional fields (a set, or
-    the names separated by spaces). The events' grammar here, the C§7 events' in trace.py."""
+    the names separated by spaces). The events' grammar here, the trace events' in trace.py."""
 
     def names(x: str | set[str]) -> Fields:
         return frozenset(x.split() if isinstance(x, str) else x)

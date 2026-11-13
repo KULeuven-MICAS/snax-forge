@@ -1,4 +1,4 @@
-"""The DFG viewer's HTTP server (D55): the viewer's server for the graph page, in two modes.
+"""The DFG viewer's HTTP server: the viewer's server for the graph page, in two modes.
 
 Same stdlib ``ThreadingHTTPServer`` on 127.0.0.1, same static files and the same ``Handler``
 for them (server.py), with the page ``dfg.html`` at ``/``. One handler serves both modes;
@@ -39,7 +39,8 @@ files go to the roots the server was given (sandbox/session.py's ``Roots``).
     GET  /api/sessions              the sessions (name, kernel, steps, cursor, platform, date)
     POST /api/session               start or open the session: ``{kernel, params, symbols?,
                                     dtypes?, platform?}``, ``{recipe}`` (a path, or a name
-                                    in a folder of the recipes, ``find_recipe``) or ``{session}`` (a folder, or a name in the
+                                    in a folder of the recipes, ``find_recipe``) or ``{session}`` (a
+                                    folder, or a name in the
                                     sessions); answers as GET
     GET  /api/session               its name, kernel, params, symbols, steps, cursor, n, the
                                     steps' ``labels``, the ``undo`` and ``redo`` steps (null
@@ -48,13 +49,13 @@ files go to the roots the server was given (sandbox/session.py's ``Roots``).
                                     working ``recipe`` and the ``command`` that replays it
                                     (``pixi run sandbox``)
     GET  /api/step/<k>              step k's view, with its diff against step k − 1 and Save's
-                                    design checks on it (``problems`` and ``notes``, D156;
+                                    design checks on it (``problems`` and ``notes``;
                                     Session.checks); a redo step not replayed since a param
                                     change is a 400 ``session.redo``
     GET  /api/step/<k>/site?sel=<id>&sel=<id>
                                     Session.sites on a selection, one item or several in the
                                     order selected (a node's id, a container's, a group's or an
-                                    accelerator's name; D72), bind's with the bind list, each
+                                    accelerator's name), bind's with the bind list, each
                                     accepted transform with its ``form``; a transform that takes
                                     one item refuses several, ``site.one``
     GET  /api/step/<k>/site/<id>    the same on a one-item selection
@@ -72,7 +73,7 @@ files go to the roots the server was given (sandbox/session.py's ``Roots``).
 Every POST answer, a refusal's too, carries ``log``, the page's log line for it (an apply's
 ``step 2  bind add simd …  ok · 5 ms · changed add · C 0 → 16 · unmapped 64 → 0 ·
 renamed W → W_acc_1 · 1 note``, C the accelerator cycles before and after, the unmapped cycles
-where they change (D155), the params a bind renamed and the design checks' problems and notes
+where they change, the params a bind renamed and the design checks' problems and notes
 on the new step). A refusal is a 400 with ``{code, message}`` (and
 ``problems`` for a save, ``question`` for ``session.drop``); a route before a session is open is
 a 400 ``session.none``; an unknown route or step is a 404, as in view mode. ``GET /api/mode``
@@ -239,7 +240,7 @@ def session_summary(s: Any) -> dict[str, Any]:
 
 
 def _cycles(s: Any, k: int) -> tuple[int, int] | None:
-    """Step k's accelerator cycles and unmapped cycles (D155), None where the estimate cannot
+    """Step k's accelerator cycles and unmapped cycles, None where the estimate cannot
     judge it."""
     from snax_forge.dfg import DfgError
 
@@ -282,7 +283,7 @@ def apply_log(s: Any, transform: str, params: dict[str, Any], out: dict[str, Any
 
 def checks_parts(checks: dict[str, Any] | None) -> list[str]:
     """A log line's design-check counts, ``1 problem``, ``2 notes`` (none where there are none),
-    as an apply's and a param change's lines give them (D156)."""
+    as an apply's and a param change's lines give them."""
     out = []
     for key, word in (("problems", "problem"), ("notes", "note")):
         if n := len((checks or {}).get(key) or []):
@@ -391,7 +392,7 @@ class DfgHandler(Handler):
                 return edit_step(s, k, tech, (q or {}).get("expand", []))
             if parts[2] == "site" and len(parts) == 4:  # one item, as before
                 return s.sites(k, parts[3])
-            if parts[2] == "site":  # a selection: ?sel=<id>&sel=<id> (D72)
+            if parts[2] == "site":  # a selection: ?sel=<id>&sel=<id>
                 sel = [x for x in (q or {}).get("sel", []) if x]
                 if not sel:
                     raise _Refused("request.query", "the query needs at least one 'sel'")

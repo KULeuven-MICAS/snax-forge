@@ -1,4 +1,4 @@
-"""The fold's seed: ``fuse_seed`` and ``unfuse_seed`` on matvec_acc (C§11, C§12, M13 B2 R5).
+"""The fold's seed: ``fuse_seed`` and ``unfuse_seed`` on matvec_acc.
 
 matvec_acc (``q += A p``, ``tests/dfg/fixtures/matvec_acc.snaxdfg``) imports as matvec's
 multiply into ``tmp0``, the sum folding into the transient ``tmp1[m]``, then the elementwise

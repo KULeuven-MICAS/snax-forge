@@ -1,4 +1,4 @@
-"""run/ on a recorded run of two groups sharing one streamer's movers (D169): dot_1_shared at
+"""run/ on a recorded run of two groups sharing one streamer's movers: dot_1_shared at
 trace levels task and stall (fixtures/dot_1_shared/README.md), converted without GVSoC.
 
 vmul and vsum share the set dot: mover k of each role carries the k-th widest port of each group,

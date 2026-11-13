@@ -1,7 +1,7 @@
-"""An implementation's binding: its datapath and how the BRM fills it (D129).
+"""An implementation's binding: its datapath and how the BRM fills it.
 
     {"datapath":   "SimdLanes",                 a datapath of the catalogue
-                                                (hw/chisel/blocks.json, D147)
+                                                (hw/chisel/blocks.json)
      "args":       {"lanes": "W", "op": "op"},  its parameters, each an
                                                 expression over design params,
                                                 or a bool (a design-time variant:
@@ -12,9 +12,9 @@
                                                 datapath's port of that role (by
                                                 default the same name)
 
-``controller`` is a registered kind (D19): ``register_controller``.
+``controller`` is a registered kind: ``register_controller``.
 ``counted`` is the only one: the shell's nest controller counts the firings,
-JOBS outermost and each fold's beats inside (D146). The CSRs are not
+JOBS outermost and each fold's beats inside. The CSRs are not
 the binding's: they follow from the unit's group (snax_forge/gen/accelerator.py).
 Which datapaths exist is the generators' business (snax_forge/gen/blocks.py
 registers them), so ``datapath`` is only a name here. Every expression is
@@ -53,7 +53,7 @@ def register_controller(name: str, meaning: str) -> None:
 
 register_controller(
     "counted", "the shell's nest controller counts the firings: JOBS outermost, each fold's "
-    "beats inside (D147)",
+    "beats inside",
 )  # fmt: skip
 
 

@@ -1,8 +1,8 @@
-"""The C backend: a design point's task list -> ``main.c`` on snRuntime (D135).
+"""The C backend: a design point's task list -> ``main.c`` on snRuntime.
 
     main_c(point, tasks, cluster, acc, arrays, includes, point_path) -> str
 
-SNAX-LOWER's backend of the task list (derive.py, C§9). It reads the
+SNAX-LOWER's backend of the task list (derive.py). It reads the
 cluster file the generator writes (gen/gvsoc.py: its cores), the
 accelerators' description (gen/accelerator.py's ``Description``: their CSRs,
 named by its ``define`` as each ``include/<acc>_csr.h`` names them), data.h's
@@ -14,20 +14,21 @@ cluster file: the DMA's core is the one with ``xdma``, the accelerators'
 the one whose ``snax_acc_cfg`` holds the generated entry (the description's
 ``tag``). Each core with a task gets a function of its own, ``forge_core_<n>``
 (``static``, ``noinline``): its steps in task-list order, a straight line
-with the barriers at the same points as every other core's; a core with none runs ``forge_core_idle``, the barriers
+with the barriers at the same points as every other core's; a core with none runs
+``forge_core_idle``, the barriers
 only. ``main`` reads ``mcycle`` first (``t0``), reads
 ``snrt_cluster_core_idx()`` once (not ``snrt_is_compute_core()``: with one
-core snRuntime counts zero compute cores, open item 80) and calls its core's
+core snRuntime counts zero compute cores) and calls its core's
 function through a table; on the accelerator's core it then adds
 ``forge_check(t0)``, and it returns the sum.
 
 **The window.** The program's cycles are one window, from ``mcycle`` at
 main's entry to ``mcycle`` read first in ``forge_check()``, which prints it
-as ``forge cycles: <n>``; the flow takes it as ``total_cycles`` (D136, C§7).
+as ``forge cycles: <n>``; the flow takes it as ``total_cycles``.
 No task marks in the default build: nothing is read inside the window but the
 counters, so the core's timing between the steps is the program's own.
 
-**The quiet build** (D135 amended, CORE1), the same ``main.c`` built with
+**The quiet build**, the same ``main.c`` built with
 ``-DFORGE_QUIET`` (``forge_quiet.elf``), for power: its parts sit in
 ``#ifdef FORGE_QUIET`` blocks and each ``printf`` in ``#ifndef FORGE_QUIET``,
 so the default build's code is the text without them (``strip_quiet``). Every
@@ -46,10 +47,10 @@ which the generator writes as ``obs_marks.json``; each ``csrw`` carries its
 label as a comment. More than 255 marks, ``obs_o``'s 8 bits, is refused
 (``c.obs``).
 
-**The accelerators** (D148, D157) are the design point's, in the graph's
+**The accelerators** are the design point's, in the graph's
 order, each one streamer set: its groups in the graph's order, each with its
 own tasks (a unit alone, or the units ``link`` joined, one task for the
-group); its movers are every port on no link (D112), readers the input ports
+group); its movers are every port on no link, readers the input ports
 and writers the outputs, unit by unit in the BRM's port order, as its
 streamer file, named in its set's header ``streamer_<set>_csr_addr_map.h``
 with the set's prefix (dot_serial's ``MUL_BASE_PTR_READER_0_LOW``).
@@ -58,11 +59,11 @@ with the set's prefix (dot_serial's ``MUL_BASE_PTR_READER_0_LOW``).
 (``<SET>_`` and the name Streamer.scala gives): the base
 (``<SET>_BASE_PTR_<M>_LOW`` / ``_HIGH``), the spatial strides,
 then the temporal bounds and strides, padded to the streamer's
-``temporal_dim`` with bound 1 and stride 0 (C§9); an idle mover's bounds are
+``temporal_dim`` with bound 1 and stride 0; an idle mover's bounds are
 all 0, so it never starts. An accelerator task writes its group's JOBS = n /
 T and, for a fold whose T is not the description's ``params.T``, its unit's
-JOB_BEATS = T, from the task's values (n and the rates, C§9; ``job_values``,
-D146), on its accelerator's ``<acc>_csr.h``'s names. A linked group's task
+JOB_BEATS = T, from the task's values (n and the rates; ``job_values``), on its accelerator's
+``<acc>_csr.h``'s names. A linked group's task
 holds each unit's values by unit: JOBS = n_u / ∏ T_v over its first unit u and the group's folds
 v, then each fold's JOB_BEATS in unit order (``job_writes``). Then each slot a unit reads from a
 container (``{"k1": {"from": "alpha"}}``) is written into its R/W CSR from data.h's element,
@@ -77,10 +78,10 @@ once for all of the accelerator's movers (the other groups' idle, at bound
 0), then its group's ``START`` (bit 0 set), in the step's order, back to
 back; a DMA task starts at its place in the step.
 
-**Waits.** On the SNAX components, as waits.py places them (D64,
-``placed_waits``): on the owner's core, a wait on a unit or one of its
+**Waits.** On the SNAX components, as waits.py places them (``placed_waits``): on the owner's core,
+a wait on a unit or one of its
 streamers polls its group's ``STATUS & 1`` (busy), then its set's
-``<SET>_STREAMER_BUSY_CSR``; D158's serial sync before the next accelerator's
+``<SET>_STREAMER_BUSY_CSR``; the serial sync before the next accelerator's
 start (derive.py) is such a wait, on the previous accelerator's task. On the
 DMA, from dependences only: the iDMA queues transfers (the hjson's
 ``dma_req_fifo_depth``; a full queue stalls the core), so a DMA task starts
@@ -92,7 +93,7 @@ passes), every core then calls ``snrt_cluster_hw_barrier()``: every core
 walks the same steps, so the barrier counts match by construction.
 
 
-**Shared movers** (D169). In a set whose groups share its movers (``share_ports``), the task
+**Shared movers**. In a set whose groups share its movers (``share_ports``), the task
 list still holds a configure per port of the set (derive.py's idle movers); the program writes
 each mover once per start: its group's port, else the first idle user's, at the mover's
 temporal dims. A masked mover's ENABLED_CHANNEL is its user's first channels, (1 << num_ch) - 1;
@@ -106,7 +107,7 @@ side is the data.h array its task names (``symbol``).
 
 **Self-check**, ``forge_check(t0)`` (``static``, ``noinline``), on the
 accelerator's core after its function: after ``forge cycles:``, every output
-against its golden, its valid elements only (a matrix a tail pads, D144,
+against its golden, its valid elements only (a matrix a tail pads,
 row by row over its padded rows; ``forge data: <e> errors (<words> words)``,
 the words the valid elements), each
 accelerator task's counter (``forge counter <task>: <c>``, its group's
@@ -128,7 +129,8 @@ stride is 0, which would start and read anyway (snax_cluster's Reader.scala:
 stride 0 on loop 0 forces that bound to 1 and repeats each beat the bound's
 times; ``c.idle``), a wait in
 ``signal`` mode (``c.signal``: nothing to signal with on SNAX), a DMA
-pattern that is neither form (``c.dma``), more marks than ``obs_o`` holds (``c.obs``), a CSR the description lacks
+pattern that is neither form (``c.dma``), more marks than ``obs_o`` holds (``c.obs``), a CSR the
+description lacks
 (``c.csrs``), a select change on a busy shared set (``c.port_mux``), a task list whose values do
 not fit the design point (``c.tasks``, ``check_values``), and an
 accelerator task no wait covers (``c.wait``: its counter is never read).
@@ -161,7 +163,7 @@ if TYPE_CHECKING:  # design imports lower, gen imports lower
 MAIN_C = "main.c"
 OBS_MARKS = "obs_marks.json"
 INDENT = "    "
-QUIET = "FORGE_QUIET"  # the quiet build's define (D135)
+QUIET = "FORGE_QUIET"  # the quiet build's define
 QUIET_ON, QUIET_OFF, QUIET_END = f"#ifdef {QUIET}", f"#ifndef {QUIET}", f"#endif  // {QUIET}"
 OBS_CSR = 0x7C5  # snitch.sv's CsrObsRegister; obs_o its low 8 bits
 MAX_MARKS = 255
@@ -181,8 +183,10 @@ def fold_rate(inst: Instance) -> str | None:
     return None
 
 
+# NB (D146): a unit fires JOBS · ∏ T over itself and the folds after it; its control unit
+# counts exactly these, so JOBS and JOB_BEATS must match the BRM's rates.
 def job_values(inst: Instance, values: Mapping[str, int], fixed: bool = False) -> dict[str, int]:
-    """An accelerator task's CSR values from its values (``n`` and the named rates, C§9):
+    """An accelerator task's CSR values from its values (``n`` and the named rates):
     ``JOBS`` = n / T and, for a fold, ``JOB_BEATS`` = T, none when its T is ``fixed``
     (the description's ``params.T``); T is 1 for a unit without a fold, and T = 0 is an empty
     run (JOBS 0)."""
@@ -224,7 +228,7 @@ def mover_name(write: bool, index: int) -> str:
 def accelerators(
     point: DesignPoint, fail: Callable[[str, str], Exception] | None = None
 ) -> dict[str, dict[str, Instance]]:
-    """The accelerators in the order the graph first uses them (CSR order, D157), each its
+    """The accelerators in the order the graph first uses them (CSR order), each its
     units in the graph's order, every one with a binding; ``fail(rule, message)`` makes the error
     of a unit without one (``binding``): a ``c.binding`` CError by default, the generator's own
     (gen/accelerator.py)."""
@@ -307,7 +311,7 @@ class _Program:
         port order, readers and writers counted apart."""
         out = {}
         for acc, units in self.accs.items():
-            if acc in self.shared:  # every user's port on its shared mover (D169)
+            if acc in self.shared:  # every user's port on its shared mover
                 n = {False: 0, True: 0}
                 for m in self.shared[acc]:
                     for u in m.users:
@@ -325,7 +329,7 @@ class _Program:
         return out
 
     def shared_mover(self, component: str) -> SharedMover | None:
-        """The shared mover a port's streamer is on (D169), None in a set that shares none."""
+        """The shared mover a port's streamer is on, None in a set that shares none."""
         acc = self.movers[component][0]
         return next((m for m in self.shared.get(acc, []) if m.user(component)), None)
 
@@ -334,7 +338,7 @@ class _Program:
         return self.acc_of[self.unit_of(component)]
 
     def prefix(self, acc: str) -> str:
-        """The set's macro prefix in its streamer header (``VMUL_``, D157)."""
+        """The set's macro prefix in its streamer header (``VMUL_``)."""
         return f"{acc.upper()}_"
 
     @property
@@ -450,7 +454,7 @@ class _Program:
             if groups == 1:
                 raise CError("c.start", f"{s.task_name}: an idle mover (every temporal bound 0) of "
                              f"{acc}, a set of one group: only another group's mover in an "
-                             "encapsulated set is idle (D148), and this group's run would never "
+                             "encapsulated set is idle, and this group's run would never "
                              "end")  # fmt: skip
             if not v["temporal_strides"][0]:
                 raise CError("c.idle", f"{s.task_name}: an idle mover (every temporal bound 0) "
@@ -490,7 +494,7 @@ class _Program:
         lines += [f"csrw_ss({m('T_BOUND')}_{i}, {x});" for i, x in enumerate(bounds)]
         lines += [f"csrw_ss({m('T_STRIDE')}_{i}, {x});" for i, x in enumerate(strides)]
         if shared is not None and shared.masked and any(tb):
-            # its user's first channels on (ENABLED_CHANNEL, D169): (1 << num_ch) - 1, by word
+            # its user's first channels on (ENABLED_CHANNEL): (1 << num_ch) - 1, by word
             mask = (1 << shared.user(s.component).num_ch) - 1
             for i in range((shared.num_ch + 31) // 32):
                 at = m("ENABLED_CHANNEL") + (f" + {i}" if i else "")
@@ -543,8 +547,10 @@ class _Program:
                 self.quiet(core, *self.polls(c.component))
                 self.last_task[self.set_of(c.component)] = t
 
+    # NB (D169): the port mux knows the group only from PORT_MUX_SEL, written before each
+    # STREAMER_START of a shared set.
     def port_mux(self, acc: str, s: Start, where: str, core: int) -> None:
-        """A shared set's PORT_MUX_SEL, the started group's index in its port mux (D169), written
+        """A shared set's PORT_MUX_SEL, the started group's index in its port mux, written
         when it changes, after the wait on the set's previous task (``c.port_mux``)."""
         sel = self.acc.port_mux_sel(acc)
         if sel is None:
@@ -559,7 +565,7 @@ class _Program:
         if prev is not None and prev not in self.waited:
             raise CError("c.port_mux", f"{where}: PORT_MUX_SEL of {acc} to {group} ({index}) "
                          f"while its previous task {prev} has no wait: the select changes only on "
-                         "an idle streamer (D169)")  # fmt: skip
+                         "an idle streamer")  # fmt: skip
         self.emit(core, f"csrw_ss({sel}, {index});")
         self.sel[acc] = index
 
@@ -638,7 +644,8 @@ class _Program:
                 self.configure(s)
             elif isinstance(s, Start):
                 needs = {self.core_of(self.conf[t].component) for t in s.tasks}
-                # The DMA queues: none of the lowering's waits on it, one where a dependence needs it
+                # The DMA queues: none of the lowering's waits on it, one where a dependence needs
+                # it
                 here = [w for w in waits.get(i, []) if w.component != "dma"]
                 here += self.dma_wait(i, s)
                 for w in sorted(here, key=lambda w: self.order.index(w.covers[w.component])):
@@ -695,9 +702,9 @@ class _Program:
                 else f"core {self.cores.dma} runs the DMA, core {self.cores.slot} {self.named}; "
             )
             + "the SNAX waits as the lowering "
-            "places them (D64), the DMA's on dependences only (D135), a barrier where another "
+            "places them, the DMA's on dependences only, a barrier where another "
             "core goes on. One function per core, a straight line; the window from main's entry "
-            "to forge_check()'s. Built with -DFORGE_QUIET (D135): every start waited at once, "
+            "to forge_check()'s. Built with -DFORGE_QUIET: every start waited at once, "
             "each section marked in CSR 0x7c5 (obs_marks.json), no prints."
         )
         head = [
@@ -752,6 +759,8 @@ def _loud(line: str) -> list[str]:
     return [QUIET_OFF, line, QUIET_END]
 
 
+# NB (D116): one program runs on SNAX-GVSoC and on snax_cluster's RTL; it never branches on
+# which.
 def program(point: DesignPoint, tasks: TaskList, cluster: Mapping[str, Any], acc: Description,
             arrays: Sequence[Array], includes: Sequence[str],
             point_path: str) -> tuple[str, list[dict[str, Any]]]:  # fmt: skip

@@ -1,10 +1,10 @@
 """A run's events grouped by their ids and lookups, built once per run when the viewer loads
-it: what the memory tab's marks (D57), the movement view, the schedule and the cluster
+it: what the memory tab's marks, the movement view, the schedule and the cluster
 view query.
 
     RunIndex.from_run(outputs, cluster, regions, tasks) -> RunIndex
 
-The events are the trace's (C§7, ``run/trace.py``), as the converter wrote them: their ids
+The events are the trace's (``run/trace.py``), as the converter wrote them: their ids
 link lines directly and their lookups (``task``, ``mem``, absolute ``addr``, ``bank``,
 ``row``, ``region``, ``elems``, ``vals``) are done already. The index only puts each event
 under its keys; it never counts lines or matches them by order. Every list keeps the trace's
@@ -59,8 +59,8 @@ and results' grants their streamers' tasks. It comes from the run's task list (`
 in the flow folder, lower/tasks.py's ``TaskList``), whose ``start`` step launches an
 accelerator task together with its streamer tasks; each task's component is its configure
 step's. ``streamers[acc task] = {mover: streamer task}`` and ``accel[streamer task] = acc
-task``: a start launches one unit's task with a task on every mover of its streamer set
-(D157); with several groups in one encapsulated set (D148) the movers of another group in the
+task``: a start launches one unit's task with a task on every mover of its streamer set; with
+several groups in one encapsulated set the movers of another group in the
 same encapsulated set are idle (every bound 0, ``idle``: ``idle_tasks``), which SNAX-GVSoC
 starts and ends at once. An accelerator task launched without a streamer task for one of its
 set's movers, or with two for one, or with a streamer task on no mover of its set, is a
@@ -156,7 +156,7 @@ class RunIndex:
     def span(self, start: Event, done: Event | None) -> tuple[int, int]:
         """A task's or a copy's cycles ``[first, last]``: its start (or issue) to its done, or
         to the window's last cycle, ``total_cycles - 1``, when the window holds no done (the
-        window is ``[0, total_cycles)``, C§7)."""
+        window is ``[0, total_cycles)``)."""
         return start["t"], done["t"] if done is not None else self.total_cycles - 1
 
     def copies(self) -> list[tuple[int, Event]]:
@@ -168,7 +168,7 @@ class RunIndex:
         return f"needs --trace {level}; this run was traced at {self.level}"
 
     def word_of(self, addr: int) -> int:
-        """The first byte of the bank word ``addr`` is in (L2 words are L1's, D142)."""
+        """The first byte of the bank word ``addr`` is in (L2 words are L1's)."""
         w = self.cluster.bank_bytes
         return addr // w * w
 
@@ -322,8 +322,8 @@ class RunIndex:
 
 def idle_tasks(tasks: TaskList) -> set[str]:
     """The streamer tasks with every temporal bound 0: the movers of another group in the same
-    encapsulated set, started only because the set's movers share one start (D148, D157,
-    lower/derive.py), which SNAX-GVSoC starts and ends at once."""
+    encapsulated set, started only because the set's movers share one start (lower/derive.py), which
+    SNAX-GVSoC starts and ends at once."""
     return {s.task_name for s in tasks.of_type("streamer")
             if not any(s.values.get("temporal_bounds") or [1])}  # fmt: skip
 

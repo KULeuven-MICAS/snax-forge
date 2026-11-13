@@ -1,4 +1,4 @@
-"""A flow run's measurements (C§7, D137): SNAX-GVSoC's events converted into the profile and the
+"""A flow run's measurements: SNAX-GVSoC's events converted into the profile and the
 trace the reports and the viewer read.
 
 * events.py: ``run/events.log`` read, line by line, in snax-gvsoc's grammar (its

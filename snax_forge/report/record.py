@@ -1,10 +1,10 @@
-"""Plain dataclass records with ``to_dict`` / ``from_dict`` for the reports (D99).
+"""Plain dataclass records with ``to_dict`` / ``from_dict`` for the reports.
 
 A report is a tree of records: every field is a plain value (int, float,
 str, bool, None), a list or dict of plain values, a record, or a list of
 records. ``to_dict`` writes every field in declaration order; ``from_dict``
 rebuilds the tree from the type hints, rejecting unknown keys, so a report
-round-trips exactly (D26's rule for artefacts).
+round-trips exactly, as every artefact does.
 """
 
 from __future__ import annotations

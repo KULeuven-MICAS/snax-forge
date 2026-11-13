@@ -1,23 +1,26 @@
-"""A flow run's cluster, as the converter, the reports and the viewer name it (C§7, D137).
+"""A flow run's cluster, as the converter, the reports and the viewer name it.
 
 ``load_cluster(cluster_hjson, design_point)`` reads the generator's files (the cluster
 file, and what its slot refers to: per streamer set its streamer file, ``snax_streamer_sets``,
-and ``accelerator.json``, D134, D157; and ``manifest.json`` beside them, for each set's
-streamer trace path, ``csrs.streamers[].trace``, C§16) and the design point, and gives what the events need to
+and ``accelerator.json``; and ``manifest.json`` beside them, for each set's
+streamer trace path, ``csrs.streamers[].trace``) and the design point, and gives what the events
+need to
 be named and read: the accelerator, the generated entry as one shell (accelerator.json's one
 accelerator's ``name``, or with several the entry's ``tag``), on the core whose
 ``snax_acc_cfg`` holds the entry, ``<accelerator_slot>_<name>`` (the design point's
-``name``); its units (``Unit``, one per group, D148: for a group of one unit the
+``name``); its units (``Unit``, one per group: for a group of one unit the
 instance, ``acc``, its group, its SNAX-GVSoC path, ``unit`` with one group and
 ``unit_<unit>`` with several; for a linked group, SNAX-GVSoC's one component for its units,
-the group's name, ``group_<group>``; and its group's START, STATUS and BUSY_COUNTER); its movers, set by set, every unit's, readers first as its
+the group's name, ``group_<group>``; and its group's START, STATUS and BUSY_COUNTER); its movers,
+set by set, every unit's, readers first as its
 set's streamer orders them (``reader<i>``, ``writer<j>`` counted within the set), each named
 by its port as the design point names its streamers (``acc_a``, ``acc_out``), with its set,
 its lanes (the crossbar ports ``acc_a.lane<l>``), FIFO depth, spatial bounds and temporal
 loops (its CSRs); its CSRs (gen/csrs.py's layout: per set its streamer's range with its start,
 busy and counter and its SNAX-GVSoC trace path, ``snax_acc<i>/streamer_<set>``, as the
 manifest names it, ``sets``; the accelerators' R/W CSRs but the STARTs as ``fields``, and the
-first group's START, STATUS and BUSY_COUNTER as start, busy and counter), from 0x3C0; the cores (``core<i>``) and the DMA's; the
+first group's START, STATUS and BUSY_COUNTER as start, busy and counter), from 0x3C0; the cores
+(``core<i>``) and the DMA's; the
 L1 (the cluster's base and TCDM size: the iDMA's local area) and its banks, word-interleaved
 (``bank_row``: bank = (a / w) mod B, row = a / (w B) for the offset a, w the bank's bytes, B
 the banks); the DMA's beat (the cluster file's ``dma_data_width``). Nothing is inferred from
@@ -55,7 +58,7 @@ def core_name(index: int) -> str:
 
 @dataclass(frozen=True)
 class Mover:
-    name: str  # C§7: the instance and its port, acc_a
+    name: str  # its trace name: the instance and its port, acc_a
     gvsoc: str  # SNAX-GVSoC's: reader<i>, writer<j>
     port: str
     write: bool
@@ -64,8 +67,8 @@ class Mover:
     spatial_bounds: tuple[int, ...]
     temporal_dim: int
     instance: str = ""  # the unit whose port it is (the design point's streamer's instance)
-    set: str = ""  # its streamer set, accelerator.json's accelerator (D157)
-    # a shared mover (D169): its users' streamers (<instance>_<port>) and units, and its
+    set: str = ""  # its streamer set, accelerator.json's accelerator
+    # a shared mover: its users' streamers (<instance>_<port>) and units, and its
     # ENABLED_CHANNEL CSRs (masked)
     users: tuple[str, ...] = ()
     user_units: tuple[str, ...] = ()
@@ -138,9 +141,9 @@ class Csrs:
 class Unit:
     """One unit of the accelerator: its instance, its group, its SNAX-GVSoC component
     below ``snax_acc<i>`` and its group's START, STATUS and BUSY_COUNTER, which bound the group's
-    CSRs (C§17)."""
+    CSRs."""
 
-    name: str  # C§7: the instance, acc
+    name: str  # its trace name: the instance, acc
     group: str
     path: str  # unit, or unit_<unit> with several groups
     start: int
@@ -150,7 +153,7 @@ class Unit:
 
 @dataclass(frozen=True)
 class Accelerator:
-    name: str  # accelerator.json's one accelerator's (D148), or the entry's tag with several
+    name: str  # accelerator.json's one accelerator's, or the entry's tag with several
     core: int
     slot: str
     description: dict[str, Any]  # the slot's accelerator.json, as written
@@ -169,7 +172,7 @@ class Accelerator:
 
     def accelerators(self) -> list[tuple[str, list[str]]]:
         """accelerator.json's accelerators, one per streamer set in CSR order: each its name and
-        its groups' names (D157)."""
+        its groups' names."""
         return [(a["name"], [g["name"] for g in a["groups"]])
                 for a in self.description.get("accelerators", [])]  # fmt: skip
 
@@ -178,7 +181,7 @@ class Accelerator:
         return next((a for a, gs in self.accelerators() if group in gs), None)
 
     def window(self, set_: str) -> tuple[int, int]:
-        """A set's CSRs, first and last: its streamer's, then its accelerator's own (C§16)."""
+        """A set's CSRs, first and last: its streamer's, then its accelerator's own."""
         groups = dict(self.accelerators())[set_]
         return (self.csrs.named(set_).first,
                 max(u.counter for u in self.units if u.group in groups))  # fmt: skip
@@ -219,7 +222,7 @@ class Accelerator:
         out = [m for m in self.movers if m.instance in mine or mine & set(m.user_units)]
         if not any(m.users for m in out):
             return out
-        # a shared set's (D169): its movers in the order of the ports they serve the unit's
+        # a shared set's: its movers in the order of the ports they serve the unit's
         # group, readers first, each unit's ports in accelerator.json's order
         order = [f"{u['name']}_{p}" for g in self.groups() for u in g["units"] if u["name"] in mine
                  for p in u["ports"]]  # fmt: skip
@@ -233,7 +236,7 @@ class Accelerator:
 
     def lanes_of(self, m: Mover, unit: str) -> int:
         """The lanes of a beat between ``unit``'s group and mover ``m``: a shared mover's user's
-        channels (the ones it enables, D169), else the mover's."""
+        channels (the ones it enables), else the mover's."""
         if not m.users:
             return m.lanes
         mine = set(self.members(unit))
@@ -242,7 +245,7 @@ class Accelerator:
         )
 
     def unit_of_mover(self, mover: str) -> str | None:
-        """The unit (its C§7 name) a mover belongs to."""
+        """The unit (its trace name) a mover belongs to."""
         for u in self.units:
             if any(m.name == mover for m in self.movers_of(u.name)):
                 return u.name
@@ -291,7 +294,7 @@ class Cluster:
 
     @property
     def sources(self) -> list[str]:
-        """Every C§7 source, in the cluster's order: the accelerator, its movers, the DMA, the
+        """Every trace source, in the cluster's order: the accelerator, its movers, the DMA, the
         cores."""
         a = self.accelerator
         return [*a.unit_names, *(m.name for m in a.movers), DMA, *self.cores]
@@ -385,7 +388,7 @@ def csrs_of(templates: dict[str, dict[str, Any]], description: dict[str, Any],
 
 def traces_of(manifest: dict[str, Any], templates: dict[str, dict[str, Any]],
               description: dict[str, Any]) -> dict[str, str]:  # fmt: skip
-    """Each set's streamer trace path, by set, from the manifest's ``csrs.streamers`` (C§16),
+    """Each set's streamer trace path, by set, from the manifest's ``csrs.streamers``,
     whose sets and CSR ranges must be the layout's."""
     try:
         rows = dig(manifest, "csrs.streamers")
@@ -449,7 +452,7 @@ def _slots(cores: list[dict[str, Any]], slot: str) -> list[tuple[int, dict[str, 
 
 
 def entry_name(point: dict[str, Any], what: str) -> str:
-    """The generated entry's name, ``<accelerator_slot>_<name>`` (D131), from the design point's
+    """The generated entry's name, ``<accelerator_slot>_<name>``, from the design point's
     platform's slot and its name, the design's."""
     return f"{_get(point, 'platform.accelerator_slot', what)}_{_get(point, 'name', what)}"
 
@@ -484,7 +487,7 @@ def cluster_from(cluster: dict[str, Any], templates: dict[str, dict[str, Any]],
         template = templates.get(a["name"])
         if template is None:
             raise RunError("cluster.sets", f"no streamer file for the set {a['name']!r}")
-        if a.get("movers"):  # a shared set (D169): a mover per shared mover, named <set>_<mover>
+        if a.get("movers"):  # a shared set: a mover per shared mover, named <set>_<mover>
             k = {False: 0, True: 0}
             for dm in a["movers"]:
                 write = dm["role"] == "write"
@@ -555,7 +558,7 @@ def load_cluster(cluster_hjson: str | Path, design_point: str | Path) -> Cluster
     sets = slots[0].get("snax_streamer_sets")
     if not isinstance(sets, list) or not sets:
         raise RunError("cluster.sets", f"{cp}: the slot {slot_name} has no snax_streamer_sets "
-                       f"(the sets form, D157): {sets!r}")  # fmt: skip
+                       f"(the sets form): {sets!r}")  # fmt: skip
     templates = {}
     for k, x in enumerate(sets):
         if not isinstance(x, dict) or not isinstance(x.get("name"), str):

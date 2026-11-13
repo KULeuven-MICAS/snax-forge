@@ -85,8 +85,8 @@ def test_a_broken_file_does_not_validate(folder, name, file, edit):
 
 
 def test_the_dtypes_are_the_brms():
-    """A port's dtype and an opType are the BRM's integer dtypes (D143); counted is the only
-    controller, so the file names none (D147)."""
+    """A port's dtype and an opType are the BRM's integer dtypes; counted is the only
+    controller, so the file names none."""
     assert set(schema("accelerator")["$defs"]["dtype"]["enum"]) == set(INT_DTYPES)
     assert list(CONTROLLERS) == ["counted"]
 

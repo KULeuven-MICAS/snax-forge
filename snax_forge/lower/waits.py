@@ -1,4 +1,4 @@
-"""Where a task list waits (D64).
+"""Where a task list waits.
 
 ``placed_waits(tasks, point)`` walks the steps in order and places the waits
 correctness needs, for the backend (``c.py``):
@@ -17,18 +17,19 @@ component, so it ends on the component's latest task and covers every
 earlier one on it.
 
 A wait on a writer streamer also covers the unit it serves (a linked
-group's: the group) and its reader streamers, for the tasks the same start launched: their data flows
+group's: the group) and its reader streamers, for the tasks the same start launched: their data
+flows
 into the writer, so the writer finishes last (``upstream``, from the design
 point's streamers: their ``instance`` and ``write``). A wait on an accelerator's
 task (a unit, or a linked group) also covers its writer streamers, and so their
 readers, for the tasks the same start launched: the C backend polls the group's
 STATUS, then its set's STREAMER_BUSY, which is clear only once every mover of
-the set is done (lower/c.py). So D158's serial sync on the previous
+the set is done (lower/c.py). So the serial sync on the previous
 accelerator's task leaves out the data wait on its writer (dot_serial: one wait
 between mul and sum, the sync).
 
 An idle mover's task (every temporal bound 0: another group's mover in an
-accelerator of several, D148) never needs a wait: it never starts and moves
+accelerator of several) never needs a wait: it never starts and moves
 nothing.
 
 Nothing here decides anything (principle 4): where configures, starts and

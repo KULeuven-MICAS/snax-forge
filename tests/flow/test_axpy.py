@@ -1,4 +1,4 @@
-"""axpy on SNAX-GVSoC (B2 R3b): y += alpha * x as one simd unit at op axpby, k1 an R/W CSR.
+"""axpy on SNAX-GVSoC: y += alpha * x as one simd unit at op axpby, k1 an R/W CSR.
 
 The worked example, W = 2, N = 4, int32: x = (1, -2 | 4, 0), y = (10, 20 | -5, 7). With k1
 read from alpha (``recipes/elementwise/axpy.json``), main.c writes K1 = data.h's ``alpha[0]``
@@ -57,7 +57,7 @@ def test_axpy_reads_k1_from_alpha(tmp_path, worked):
     f = run_flow(recipe_path("axpy"), SNAX_FORGE, recipe_sets=SETS, out=tmp_path / "axpy")
     assert f.passed, summary(f)
     assert f.check["exit_code"] == 0 and f.check["data_errors"] == 0
-    sound(f)  # D171; the counter was 4 as recorded, 2 firings and 2 cycles of the shell
+    sound(f)  # the counter was 4 as recorded, 2 firings and 2 cycles of the shell
     assert {t: (x["beats"], x["group"]) for t, x in f.check["tasks"].items()} == {
         "mult_acc": (2, "acc")
     }
@@ -102,7 +102,7 @@ def test_the_same_design_with_alpha_5_in_data_h(tmp_path, worked):
     _, result = flow_run.check_output(stdout, flow_run.run_exit_code(rc, stderr),
                                       {t.name: t.beats for t in manifest.tasks})  # fmt: skip
     assert result["exit_code"] == 0 and result["data_errors"] == 0, stdout[-2000:]
-    assert result["tasks"]["mult_acc"]["counter"] >= 2  # its beats (D171)
+    assert result["tasks"]["mult_acc"]["counter"] >= 2  # its beats
 
 
 def test_axpy_baked_writes_no_k1(tmp_path, worked):
@@ -110,7 +110,7 @@ def test_axpy_baked_writes_no_k1(tmp_path, worked):
                  out=tmp_path / "axpy_baked")  # fmt: skip
     assert f.passed, summary(f)
     assert f.check["exit_code"] == 0 and f.check["data_errors"] == 0
-    sound(f)  # D171; the counter was 4 as recorded, 2 firings and 2 cycles of the shell
+    sound(f)  # the counter was 4 as recorded, 2 firings and 2 cycles of the shell
     assert {t: (x["beats"], x["group"]) for t, x in f.check["tasks"].items()} == {
         "mult_acc": (2, "acc")
     }

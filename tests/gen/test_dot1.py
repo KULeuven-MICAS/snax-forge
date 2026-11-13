@@ -1,9 +1,9 @@
-"""dot 1 through the generator (D148, D157, C§16, C§17): ``recipes/dot/dot_1_enc.json``, one
+"""dot 1 through the generator: ``recipes/dot/dot_1_enc.json``, one
 accelerator ``dot`` of two groups, ``vmul`` and ``vsum``, in encapsulate's order, each with its
 own CSRs and a task of its own; ``recipes/dot/dot_1.json``, the same groups as two accelerators,
 two streamer sets of the one entry; and dot_serial, two accelerators ``mul`` and ``sum``.
 
-dot_1_enc's description is C§17's (tests/gen/test_accelerator.py's ``dot``): VMUL at offsets
+dot_1_enc's description is the (tests/gen/test_accelerator.py's ``dot``): VMUL at offsets
 0-3, VSUM at 4-8 (rw 5, ro 4); the header names every CSR with its group; the set's streamer
 holds every unit's movers, readers vmul.a, vmul.b, vsum.a and writers vmul.out, vsum.out; the
 manifest lists both tasks with their group's values and their unit's trace path. dot 1's and
@@ -123,7 +123,7 @@ def test_dot_serials_description_is_two_accelerators(serial):
 
 
 def test_dot_serials_slot_has_two_sets(serial):
-    """D157, C§16: one set per accelerator in CSR order, each its streamer file and counts; the
+    """One set per accelerator in CSR order, each its streamer file and counts; the
     TCDM ports their sum, the interconnect one group per set."""
     tmp, _, m = serial
     (slot,) = parsed(tmp / "out" / m.cluster)["snax_forge_core_template"]["snax_acc_cfg"]
@@ -162,7 +162,7 @@ def plain(tmp_path_factory):
 
 
 def test_dot_1_is_c16s_two_sets(plain):
-    """dot 1 (F2b, no encapsulate): C§16's table, vmul's streamer 960-977 and own 978-981, vsum's
+    """dot 1 (F2b, no encapsulate): the table, vmul's streamer 960-977 and own 978-981, vsum's
     982-994 and 995-999; its slot two sets, a streamer file and a header pair each."""
     tmp, path, m = plain
     want = replace(dot1(), design_point="design/dot_1/design_point.json")

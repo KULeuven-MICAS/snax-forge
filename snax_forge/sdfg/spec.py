@@ -46,7 +46,7 @@ class KernelSpec:
             raise ValueError(f"{self.name}: no descriptor for {sorted(missing)}")
 
     def with_dtypes(self, dtypes: dict[str, str], what: str = "dtypes") -> KernelSpec:
-        """The spec with some containers' integer dtype replaced (a recipe's ``dtypes``, D113):
+        """The spec with some containers' integer dtype replaced (a recipe's ``dtypes``):
         their descriptors, so DaCe builds the SDFG at those types; ``make_inputs`` is cast
         by its caller (``dfg.reference.kernel_inputs``). A name that is not a descriptor raises
         ValueError naming it."""

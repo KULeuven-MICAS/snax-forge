@@ -1,4 +1,4 @@
-"""Reference executor (D79): run a ``.snaxdfg`` in NumPy.
+"""Reference executor: run a ``.snaxdfg`` in NumPy.
 
 It gives the golden output of a graph at any step of the flow: as imported,
 split, or with accelerated nodes, so SNAX-SANDBOX can check every transform
@@ -13,7 +13,7 @@ kernel's scalar argument, shape ``[1]``) a 0-d input (``np.int64(3)``) or a
 1-element one. A symbol the graph binds keeps its value; one that
 is null is read off the input shapes (``A`` of shape ``["N"]`` gives ``N =
 len(A)``), and the two must agree. Containers start as copies of the
-inputs; transients start as zeros. Only integer containers are run (D28).
+inputs; transients start as zeros. Only integer containers are run.
 
 **Order.** The body runs in order, each node to completion before the next.
 How a node runs is registered per kind (``register_executor``, principle
@@ -31,7 +31,7 @@ How a node runs is registered per kind (``register_executor``, principle
     index array, cast to the container's dtype (integer overflow wraps as in
     C). All reads come before all writes. Two iterations writing one
     element is an error (a write conflict), unless the output memlet has a
-    ``reduce`` (D102): then the elements it writes are set to its identity and
+    ``reduce``: then the elements it writes are set to its identity and
     every iteration's value is folded in with the op's ufunc (``ufunc.at``,
     which wraps as C does), so dot's sum map leaves ``sum(tmp0)`` in
     ``out[0]`` whatever ``out`` held before; a seeded fold (``reduce.seed``)
@@ -40,13 +40,13 @@ How a node runs is registered per kind (``register_executor``, principle
 ``accelerated``
     one firing at a time, through the BRM's function, its registered
     kind's ``fn(k, ins, state, params)`` (``brm.function_of``, given the node's
-    containers' dtypes: a fold's lanes are cast to its output's before its tree, D143). An
+    containers' dtypes: a fold's lanes are cast to its output's before its tree). An
     input connector that is no BRM port is a slot read from a scalar (axpy's ``k1:
     alpha[0]``, a CSR): the instance is resolved with the slot at that element's value, a
     baked slot's value being in the node's params. The
     ``temporal`` maps directly around the node are
     its firing loop, outermost first, as the BRM nest orders them;
-    the node's ``code`` must be the BRM's ``function.code`` at its params (D82), and its
+    the node's ``code`` must be the BRM's ``function.code`` at its params, and its
     ``replaced`` subtree is history, never run;
     ``k`` counts firings, ``state`` lives for one task, ``n`` is the number
     of firings. Maps further out (a tile, an untagged map) start a new task
@@ -62,7 +62,7 @@ How a node runs is registered per kind (``register_executor``, principle
     of two tasklets, the first writing a local container the second reads
     at the same index, so it runs as two tasklets over one grid.
 
-**A tail** (D144, dfg/pad.py). Under a map ``split`` split
+**A tail** (dfg/pad.py). Under a map ``split`` split
 with a tail (``loop.split`` has ``valid``: n), a lane is the kernel's only
 when ``W * v_t + v_s`` is below n. A tasklet there reads and writes its
 valid lanes only; an accelerated node reads a pad lane as the container's
@@ -164,7 +164,7 @@ def execute(graph: Graph, inputs: Mapping[str, np.ndarray]) -> dict[str, np.ndar
     for name, c in graph.containers.items():
         dtype = np.dtype(c.dtype)
         if dtype.kind not in "iu":
-            raise ExecutionError(f"container {name!r}: {c.dtype} is not an integer type (D28)")
+            raise ExecutionError(f"container {name!r}: {c.dtype} is not an integer type")
         shape = tuple(_int(s, symbols, f"container {name!r}.shape") for s in c.shape)
         if c.transient:
             data[name] = np.zeros(shape, dtype)
@@ -414,7 +414,7 @@ def _run_tasklet(node: Node, ctx: Context) -> None:
         if np.unique(flat).size != np.size(flat):
             raise ExecutionError(
                 f"{what}.outputs.{c}: several iterations write one element of {m.data!r} "
-                "(a write conflict; a reduction says so with a reduce on the memlet, D102)"
+                "(a write conflict; a reduction says so with a reduce on the memlet)"
             )
         arr[full] = value
 
@@ -580,5 +580,5 @@ def _lanes(x: np.ndarray, port: Any, what: str) -> np.ndarray:
 register_executor("map", _run_map)
 register_executor("tasklet", _run_tasklet)
 register_executor("accelerated", _run_accelerated)
-# A link (D148) runs as the transient it replaced: its writer and reader still name it
+# A link runs as the transient it replaced: its writer and reader still name it
 register_executor("link", lambda node, ctx: None)

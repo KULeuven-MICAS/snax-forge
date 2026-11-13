@@ -1,4 +1,4 @@
-"""A BRM instance: one BRM built one way (D68).
+"""A BRM instance: one BRM built one way.
 
 An instance is an implementation and a value for every design param. It is
 what a design point holds, what SNAX-LOWER and the generator read, and what
@@ -19,7 +19,8 @@ slot of the BRM's code. One code entry must fit the instance (brm.py's ``Functio
 params, every slot its code names set or read, every other slot neither), so a one-stream
 ``simd`` without ``k``, neither baked nor read, is refused here; ``code`` is that entry's.
 The instance's ``ports`` are the BRM's ports present at its
-params (``Port.when``), in order: every reader after ``resolve`` takes them. It then checks a bound implementation against the
+params (``Port.when``), in order: every reader after ``resolve`` takes them. It then checks a bound
+implementation against the
 generator's datapaths (``gen.DATAPATHS``): its ``datapath`` must be registered
 and the datapath's adapter must take the instance, so an instance that exists
 can be generated.

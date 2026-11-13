@@ -1,4 +1,4 @@
-"""The stream dataflow notation (D70): a unit BRM's ports, ordered by the bound memlet.
+"""The stream dataflow notation: a unit BRM's ports, ordered by the bound memlet.
 
 A unit block (one function applied lane by lane, beat by beat) takes its
 elements in whatever order the streamers bring them; the order is the bound

@@ -15,11 +15,11 @@
   class default.
 * ``to_json``, the one JSON writer for every file snax-forge writes: insertion order, small
   containers on one line, final newline. It is deterministic, and ``json.loads`` gives the
-  object back (D116). ``JsonFile``, a mixin giving a class with ``to_dict`` / ``from_dict``
+  object back. ``JsonFile``, a mixin giving a class with ``to_dict`` / ``from_dict``
   its ``to_json``, ``save`` and ``load``.
 
 Until the contracts freeze these are plain dataclasses and plain JSON, with versioned schemas
-after (D26). This module imports nothing from the package, so every package can use it.
+after. This module imports nothing from the package, so every package can use it.
 """
 
 from __future__ import annotations
