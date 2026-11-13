@@ -1,82 +1,15 @@
-"""The cost of a design: the first-order block model of its groups and the cost model's
+"""The cost of a design (CONTRACTS, "Cost model"): the block model of its groups, and its
 streamers, crossbar and L1 banks.
 
-    Block(datapath, params, fires)                 a unit or a buffer link to cost
-    block_cost(table, block, bits, c_acc) -> BlockCost
-    group_cost(table, blocks, bits, ctrl_bits, c_acc) -> GroupCost
-    StreamerCounts, streamer_cost(costs, counts) -> StreamerCost   one port's streamer
-    xbar_kinds(counts) -> (read_only, write_only)   the crossbar inputs the streamers only read
-                                                   or only write through
-    xbar_cost(costs, inputs, banks, accesses, read_only, write_only, form) -> XbarCost
-                                                   the TCDM crossbar
-    memory_cost(costs, n, depth, width, reads, writes) -> MemoryCost   the L1 banks
-    L1Cost                                         an accelerator's words through the crossbar
-                                                   and the banks
-    Part, PARTS, shares(parts)                     the five parts a design's cost is shown in,
-                                                   and each one's share of the totals
-    sig3(x) -> str                                 an area as shown: 3 significant figures
-    dec3(x) -> str                                 an energy as shown: 3 decimal places
-    heading(tech), CAVEAT                          what every shown cost is headed with
-
-**The groups**, per unit and per buffer link over one run of the accelerator, with n_fire its
-fires, n_bits its register bits (the estimate's ``bits``), C_acc the accelerator's cycles
-(``accelerator_cycles``: no clock gating, so every flop holds through every group's cycles) and
-e_comb, A_comb its comb energy per fire and area from the table (snax_forge/char/):
-
-    e_fire = e_comb + n_bits (e_load − e_hold)          pJ per fire
-    hold   = n_bits e_hold                              pJ per cycle
-    task   = n_fire e_fire + C_acc hold                 (nJ)
-    area   = A_comb + n_bits A_flop                     µm²
-
-and per group its control unit, n_bits^ctrl its ``ctrl_bits`` and f_ctrl the table's counter
-factor: energy f_ctrl n_bits^ctrl C_acc e_hold, area its flops' n_bits^ctrl A_flop plus an equal
-comb area (``CTRL_COMB_PER_FLOP``, a rough early estimate; its comb energy taken as
-negligible); the csr is left out. n_fire is a unit's firings times its span
-(SerialAccumulate reads span beats per firing); a buffer link loads once per output of its
-producer, its firings over its T (a fold gives once per T beats: dot 6's Mac once per job, dot
-2's mul at every firing). A block the table does not hold (``lookup`` None) or the generator
-does not fill has ``found`` None and its comb part counted as 0; its flops are still counted,
-the description gives them.
-
-**The streamers, crossbar and banks** (the tables in snax_forge/char/<tech>/, tables.py):
-per port's streamer, D_p its FIFO depth, L_p its loops, C_p its channels and W_p the 64-bit
-words it moves in L1 in one run (a link's container is not in L1, and the DMA's traffic, the
-same for every variant, is not counted), so W_p / C_p beats:
-
-    streamer   area A_strm(D_p, L_p, C_p), energy (W_p / C_p) e_beat(D_p, L_p, C_p)
-    crossbar   area A_xbar(n_in, n_banks) (1 − f_ro n_ro / n_in − f_wo n_wo / n_in),
-               energy (Σ_p W_p) e_acc(n_banks, n_banks), n_in the streamers' channels plus
-               the cores' and AXI's ports (check.py's ``crossbar_inputs``), n_ro of them a
-               reader's channels and n_wo a writer's (``xbar_kinds``; the cores and AXI read
-               and write); one price per access for a bank count, a full crossbar's, so the
-               energy follows the accesses alone, whatever the inputs and whether the
-               accelerators run in series or not
-
-The crossbar's area is the factor form by default; ``form="crosspoint"`` gives the option
-b (c_rw n_rw + c_ro n_ro + c_wo n_wo) + d n_in + e b + g (tables.py, X71).
-    memory     area n_banks A_bank, energy N_rd e_rd + N_wr e_wr, the words read and written
-
-Movers a shared set's groups share are priced once each, at their own depth, loops and
-channels (the widest user's), on their first user; each user's energy per beat at its own
-channels; the port mux between them and the groups costs nothing (it takes the port's path to
-the interconnect).
-
-A writer is priced as a reader (X52); a streamer is priced per beat, its clock while it waits
-for its accelerator's turn left out, as the crossbar's per-cycle part is. A query outside a table's
-grid is extrapolated, its
-``extrapolated`` axes named (tables.py). An accelerator's ``L1Cost`` is its words' share of the
-crossbar's and the banks' energy, so the accelerators' L1 rows add up to those two parts.
-
-**The parts** (``PARTS``): datapath (units and buffer links), control (control units),
-streamers, crossbar, memory; each an area and an energy, None where not costed (no platform, or
-a technology without HWCOST's tables), shown with its share of the total.
-
-**Shown, not stored.** The fields keep full precision; everything a reader sees (``design.md``,
-the viewer and the editor) is rounded for display only, an area by ``sig3`` (3 significant figures)
-and an energy by
-``dec3`` (3 decimal places in its unit, so two close designs can be told apart), and headed by
-``heading`` with ``CAVEAT``: the model is first-order, aimed at about 30 % of synthesis on the
-large costs.
+``block_cost`` and ``group_cost`` price a group's units and buffer links (``Block``) and its
+control unit from a technology's table; ``streamer_cost`` prices one port's streamer
+(``StreamerCounts``; a shared mover once, on its first user), ``xbar_cost`` the TCDM crossbar
+(its read-only and write-only inputs from ``xbar_kinds``; the factor form by default,
+``form="crosspoint"`` the option), ``memory_cost`` the L1 banks, and ``l1_cost`` an
+accelerator's words through the crossbar and the banks (``L1Cost``). ``PARTS`` are the five
+parts a design's cost is shown in and ``shares`` each one's share of the totals. The fields keep
+full precision; what a reader sees is rounded by ``sig3`` (an area, 3 significant figures) and
+``dec3`` (an energy, 3 decimal places) and headed by ``heading`` and ``CAVEAT``.
 """
 
 from __future__ import annotations

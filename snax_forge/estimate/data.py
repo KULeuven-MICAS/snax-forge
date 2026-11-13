@@ -1,23 +1,13 @@
-"""The data side of the ideal estimate: where each container lives, what it
-occupies and what moves, per container, per outer port and per tailed split.
+"""The data side of the ideal estimate (CONTRACTS, "Estimate"): per container, outer port and
+tailed split.
 
-    containers(graph) -> dict[str, ContainerData]
-    ports(graph) -> dict[str, PortData]
-    splits(graph) -> dict[str, SplitData]
+    containers(graph) -> dict[str, ContainerData]   placement, bytes, L1 reads and writes
+    ports(graph) -> dict[str, PortData]             per outer port its loops, beats and num_ch
+    splits(graph) -> dict[str, SplitData]           per tailed split its W and lane use
 
-**Placement**: ``link`` (with its depth) when a link node names the container, ``local`` when
-it is a fused nest's local value (``loop.local``), else ``l1``. **Bytes**: the padded shape
-(dfg/pad.py) times the itemsize. **Traffic**, in 64-bit words: a bound outer port moves
-beats · num_ch per task, beats from the firing loops its streamer runs over
-(design/streamers.py's ``port_loops``), num_ch = ceil(lanes / num_slc) with num_slc the
-elements of its container's dtype in a 64-bit word (as the DFG viewer's ``packing``); a
-tasklet no unit runs moves one element per memlet per iteration of every map around it,
-ceil(iterations · b / 64) words (b the dtype's bits). A link's and a local value's traffic is
-not L1 traffic: none is counted.
-
-**Splits**: per map whose split left a tail (``loop.split.valid`` n), its W (dfg/pad.py's
-``split_factor``: the inner map's length, or once bound the lanes) and lane use
-n / (ceil(n / W) · W).
+``outer_ports`` gives the bound ports on no link. A port's beats come from the firing loops its
+streamer runs over (design/streamers.py's ``port_loops``), its num_slc as the DFG viewer's
+``packing``. A link's and a local value's traffic is not L1 traffic.
 """
 
 from __future__ import annotations

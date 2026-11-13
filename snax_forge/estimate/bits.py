@@ -1,47 +1,17 @@
 """The register bits of a group's control unit, from its description alone.
 
-    ctrl_registers(units, links, owner, fixed, job_width, declared=False) -> list[(str, int)]
-    ctrl_bits(units, links, owner, fixed, job_width) -> int
-    accelerator_registers(accelerator) -> {module: list[(str, int)]}
-
-The group description is the one ``cycles.py``'s ``group_cycles`` steps: ``units`` with
-``name``, ``L``, ``ii`` and ``span``; ``links`` ``{from, to, to_input, depth}`` by unit name;
-``owner`` the unit with the outer output. ``fixed`` gives per unit its T when fixed at design
-time (a fold's ``params.T``, 1 for a unit without a fold), None when a JOB_BEATS CSR sets it,
-read live by the control unit; ``job_width`` is the platform's ``acc_csr.job_width``. A count of a
-T,
-⌈log₂ T⌉ bits for a fixed T and ``job_width`` for one from a JOB_BEATS, is Chisel's ``log2Ceil``.
-
-**The registers** of ``<tag>_<group>_ctrl``, every one ``GroupRule.scala`` and
-``GroupCtrl.scala`` declare (no copy of JOBS or a JOB_BEATS, read live from the
-csr), by their ``suggestName``; those marked *dropped* are declared but never written, so
-firtool removes them and DC never sees them:
-
-    busy                          1          GroupRule.scala:200
-    per unit k, in unit order:
-      <u>_job_beats_counter       the count of its T, none at a fixed T of 1  (:222, :231)
-      <u>_<j>_job_beats_counter   the count of T_j, per unit j after k (nearest first) whose T
-                                  is not a fixed 1, unless k borrows (L 0 with a wire out)  (:237)
-      <u>_jobs_counter            job_width  :240, unless k borrows
-      <u>_gap                     ⌈log₂(II + 1)⌉ at II > 1  :242
-      <u>_v                       max(L, 1)  :243, the pipeline's valid bits; dropped at L 0
-      <u>_lane                    ⌈log₂ span⌉  :244, none at span 1
-    per link, wires included:
-      <from>_<to>_occupancy       ⌈log₂(depth + 1)⌉  :255
-      <from>_<to>_wslot, _rslot   ⌈log₂ max(depth, 2)⌉ each  :258, :261; dropped for a wire
-                                  and for a buffer of depth 1 (one slot)
-    done                          1          GroupCtrl.scala:92, the done pulse registered
-
-``ctrl_registers`` lists what firtool keeps (``declared=True`` every declared one), and
-``ctrl_bits`` sums it: DC keeps what firtool emits, so it matched the synthesized ctrl flops at all 48
-points when it was built (``util/ctrl_regs.py`` on the fixtures; ``tests/estimate/test_bits.py``
-holds it within 10 %).
-
-**Against the emitted RTL**: ``accelerator_registers`` reads each group's description from an
-``accelerator.json`` as hw/chisel's ``AccCtrl.desc`` does; ``util/ctrl_regs.py --json``
-writes it for every RTL fixture into ``ctrl_registers.json`` beside them (``registers_json``),
-which hw/chisel's ``CtrlRegistersSpec`` compares, register by register, with each emitted
-``<tag>_<group>_ctrl``, and ``tests/estimate/test_bits.py`` checks the file is current.
+``ctrl_registers(units, links, owner, fixed, job_width)`` lists the registers of
+``<tag>_<group>_ctrl`` that firtool keeps by their ``suggestName`` (``declared=True``: every one
+``GroupRule.scala`` and ``GroupCtrl.scala`` declare), and ``ctrl_bits`` sums them (CONTRACTS,
+"Estimate"). The description is the one ``cycles.py``'s ``group_cycles`` steps; ``fixed`` gives
+per unit its T when fixed at design time, None when a JOB_BEATS CSR sets it. A count of T is
+⌈log₂ T⌉ bits for a fixed T, ``job_width`` for one from a JOB_BEATS. Per group ``busy`` and
+``done``; per unit its job-beats counters, ``jobs_counter`` (none when the unit borrows),
+``gap`` (at II > 1), ``v`` (max(L, 1) bits, dropped at L 0) and ``lane`` (at span > 1); per link
+``occupancy`` and two slots (dropped for a wire and a depth-1 buffer). ``accelerator_registers``
+reads each group's description from an ``accelerator.json``, and ``registers_json`` gives the
+text of ``ctrl_registers.json``, which ``util/ctrl_regs.py --json`` writes beside the RTL
+fixtures and hw/chisel's ``CtrlRegistersSpec`` compares with the emitted RTL.
 """
 
 from __future__ import annotations

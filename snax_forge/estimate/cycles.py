@@ -1,53 +1,14 @@
-"""The ideal cycles of a bound graph's groups, and the work no unit runs.
+"""The ideal cycles of a bound graph's groups, and the work no unit runs (CONTRACTS, "Estimate").
 
-    group_rule() -> module                    snax-gvsoc's snax/snax_group_rule.py (GroupRule)
-    group_cycles(units, links, owner, jobs, ts) -> int | None
-    groups(graph) -> list[GroupEstimate]
-    group_blocks(graph) -> list[(GroupEstimate, units, buffer links)]   the blocks to cost
-    datapath_blocks(graph) -> dict[str, Block]                          the same, no cycles
-    not_mapped(graph) -> int
-
-**The rule.** A group's cycles are snax-gvsoc's group rule stepped with every outer input
-valid and the outer output ready: the BUSY_COUNTER of the accelerator's control rule on ideal streams. Plus the streamers'
-fill they are the expected BUSY_COUNTER, a guide and not a check: a run's BUSY_COUNTER counts from
-its group's START until busy drops, so it holds bank conflicts and is shortened by the
-streamers' head start. ``group_cycles`` is that stepping, the one place it
-is done: gen/rtl.py's ``group_counter`` calls it for a fixture's counter. The rule is loaded by
-path from the submodule (``gvsoc/snax-gvsoc``), once; without it, ``estimate.submodule``
-names the fix.
-
-**A group**: its units, the accelerated nodes of one ``group`` (``link``'s), else
-of one instance, in the graph's order, and its links, from the link nodes. Per unit its L, II
-and span are its BRM implementation's timing at its params; its firings n and named rates are
-SNAX-LOWER's (lower/derive.py's ``unit_firings``), and JOBS and each unit's T are what the
-program writes (lower/c.py's ``job_writes``): T a fold's named rate, else 1. A unit alone runs
-one task per node; a linked unit has one node. Then:
-
-    cycles       the rule's
-    bottleneck   max over the units of n · max(II, span)
-    ramp         the cycles to start and finish the pipeline: Σ over the units of
-                 L + span − 1, plus 1 per buffer link (depth >= 1), 0 per wire
-    stall        cycles − bottleneck − ramp
-    fill         the streamers' fill: 3, or 2 for a group whose units have one outer
-                 input between them; ``counter``, cycles + fill, is the expected
-                 BUSY_COUNTER, a guide
-    bank_bound   on a platform, ceil(the words its streams move / l1.n_banks): the fewest
-                 cycles of L1 time its streams take, a bound on the streams, not on the
-                 BUSY_COUNTER; its note compares only this group's streamers
-    bits         per unit and per link (by its container) the register bits of its datapath,
-                 the catalogue's ``flops`` on its params (gen/rtl.py's ``unit_flops`` and
-                 ``link_flops``): a wire none; a unit whose implementation the generator
-                 does not fill (no binding, a datapath not registered) has none listed
-    ctrl_bits    the register bits of its control unit firtool keeps (bits.py), its T fixed or
-                 from the start as accelerator.py decides it, at the platform's
-                 ``acc_csr.job_width``
-    cost         on a technology, the block cost model (cost.py): per unit and buffer link its
-                 area, energy and how its table entry was found, its control unit's, the totals;
-                 set by ``estimate`` once the accelerator's cycles are known
-
-**Not mapped**: the iterations of the nests no unit runs, counted once per innermost map that
-holds tasklets (a fused nest's two count once), over every map around it but the spatial ones,
-itself included; a tasklet outside every map counts 1. Never added to cycles.
+``groups(graph)`` gives a ``GroupEstimate`` per group (the units of one ``group``, else of one
+instance, and its links) with the fields CONTRACTS lists; ``cost`` is set later by
+``estimate``. ``group_cycles`` steps snax-gvsoc's group rule with every outer input valid and the
+outer output ready, the one place this is done (gen/rtl.py's ``group_counter`` calls it);
+``group_rule`` loads ``snax/snax_group_rule.py`` from the submodule once, and without it
+``estimate.submodule`` names the fix. A unit's L, II and span are its implementation's timing
+at its params, its firings and named rates SNAX-LOWER's (``unit_firings``), JOBS and each T what
+the program writes (``job_writes``). ``group_blocks`` and ``datapath_blocks`` give the blocks to
+cost, with and without the cycles; ``not_mapped`` counts the iterations no unit runs.
 """
 
 from __future__ import annotations

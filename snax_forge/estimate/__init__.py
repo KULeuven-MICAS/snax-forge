@@ -1,32 +1,14 @@
-"""SNAX-ESTIMATE: the ideal, engine-alone estimate of a bound graph.
+"""SNAX-ESTIMATE: the ideal, engine-alone estimate of a bound graph (CONTRACTS, "Estimate").
 
     estimate(graph, platform=None, tech="nangate45") -> Estimate
 
-What a mapping buys before any run: per group the exact cycles of snax-gvsoc's group rule on
-ideal streams, split into bottleneck, ramp and stall, and the register bits of its datapaths
-and of its control unit, the block cost model's counts (cycles.py, bits.py); on a
-technology (``tech``, snax_forge/char/; None skips it) the cost, per unit, buffer link, control
-unit, group and accelerator its area and energy, and on a platform HWCOST's: per port its
-streamer, the crossbar and the L1 banks, per accelerator its words through the crossbar and the
-banks (``l1``), and the design's cost in five parts (``parts``: datapath, control, streamers,
-crossbar, memory), cost.py; per accelerator its streamer set, its groups, CSRs
-and streamer (``accelerators``, accelerators.py); and the data side, per
-container its placement, bytes and L1 traffic, per outer port its streamer's loops, beats and
-channels, per tailed split its lane use (data.py). No bank conflicts, no streamer fill, no DMA,
-no core control. A group's expected BUSY_COUNTER, its cycles plus the streamers' fill, is a
-guide, not a check: a run's BUSY_COUNTER counts from the group's START until busy drops, so it holds
-bank conflicts and is shortened by the streamers' head start. Beside the ideal cycles, on
-a platform, each group's ``bank_bound``: ceil(words its streams move / l1.n_banks), the fewest
-cycles of L1 time its streams take, a bound on the streams and not on the BUSY_COUNTER, a note where
-it exceeds the cycles (dot 1 at W_mul = 16: mul's 192 against 128). Work no unit runs is a
-not-mapped count of iterations (spatial maps
-skipped, the ``not_mapped``) and, over every map, spatial ones included, since a tag alone
-runs nothing (``unmapped_iterations``), at ``UNMAPPED_CYCLES_PER_ITERATION`` (1) cycle each,
-``unmapped_cycles``: an assumption (a core
-takes several), held in this one constant so a measured value can replace it; the
-``total_cycles`` are the accelerator's plus the unmapped ones. A group's BUSY_COUNTER never holds
-them. The viewers and
-``design.md`` read it (report/design.py).
+What a mapping buys before any run, on ideal streams (no bank conflicts, no streamer fill, no
+DMA, no core control): per group its cycles, their split and its register bits (cycles.py,
+bits.py), per accelerator its streamer set and CSRs (accelerators.py), the data side (data.py)
+and, on a technology, the cost (cost.py; ``tech=None`` leaves it out). The work no unit runs is
+``unmapped_iterations`` at ``UNMAPPED_CYCLES_PER_ITERATION`` cycles each, an assumption held in
+this one constant so a measured value can replace it; ``total_cycles`` adds it to the
+accelerator's. The viewers and ``design.md`` read it (report/design.py).
 """
 
 from __future__ import annotations
