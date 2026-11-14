@@ -1,44 +1,47 @@
 # SNAX-FORGE Architecture
 
-> What SNAX-FORGE is, its components and how they fit together. Why: `docs/DECISIONS.md` (Dn); the artefacts field by field: `docs/CONTRACTS.md` (C§n); open work: `docs/STATUS.md`. A change to this file comes with a decision (D117). Each component's details live in its module docstrings.
->
-> Markers: **[PLANNED]** = not built yet, with its milestone. **[OPEN]** = undecided.
+What SNAX-FORGE is, its components and how they fit together. The why is in `docs/DECISIONS.md` (Dn), the artefacts field by field in `docs/CONTRACTS.md` (C§n), open work in `docs/STATUS.md`, each component's details in its module docstrings. A change to this file comes with a decision (D117).
+
+Markers: **[PLANNED]** not built yet, with its milestone; **[OPEN]** undecided.
 
 ---
 
 ## 1. Purpose
 
-SNAX-FORGE is a platform for deciding which accelerators a SNAX compute cluster should hold, and how they are composed, before committing to RTL.
+SNAX-FORGE helps decide which accelerators a SNAX compute cluster should hold, and how they are composed, before committing to RTL.
 
-A user brings a workload and a library of accelerator block models (BRMs). SNAX-FORGE imports the workload into its own dataflow graph (SNAX-DFG), maps it by hand in SNAX-SANDBOX (loops split into temporal and spatial parts, accelerators bound), pairs it with a platform in the design step, and derives what a run needs. The run happens in SNAX-GVSoC, a GVSoC model of the SNAX cluster in which a Snitch core runs the real program (D116), and the same design is generated for the SNAX cluster itself: the accelerator RTL, the cluster's hjson and the program (D111). Profiles, traces, views and reports tell a human or an LLM where the cycles went, so they can choose the next design.
+- A user brings a workload and a library of accelerator block models (BRMs).
+- SNAX-FORGE imports the workload into its own dataflow graph (SNAX-DFG), maps it by hand in SNAX-SANDBOX (loops split into temporal and spatial parts, accelerators bound), pairs it with a platform in the design step, and derives what a run needs.
+- The run happens in SNAX-GVSoC, a GVSoC model of the SNAX cluster in which a Snitch core runs the real program (D116). The same design is generated for the SNAX cluster itself: the accelerator RTL, the cluster's hjson and the program (D111).
+- Profiles, traces, views and reports tell a human or an LLM where the cycles went, so they can choose the next design.
 
-The user describes the accelerator; the platform around it is the model's (D51). Model cycles are trusted as far as the comparison with snax_cluster RTL shows (section 7).
+The user describes the accelerator; the platform around it is the model's (D51). Model cycles are trusted as far as the comparison with snax_cluster's RTL shows (section 7).
 
 ## 2. Positioning
 
 SNAX-FORGE complements analytical DSE tools such as ZigZag and Stream:
 
-- **Cycle-level cluster microarchitecture.** Bank arbitration, affine streamers, FIFO back-pressure, DMA and the control the core does, rather than analytical cost terms; the ideal estimate (D155) is a first look before a run, and the numbers still come from the cycle-level run.
-- **Arbitrary dataflow graphs**, not only DNN layers: PolyBench kernels, stencils, reductions, and later HDC workloads (D113).
-- **Composition.** Unit BRMs bound on the graph and stitched into accelerators (D112).
-- **One description, two outputs.** A BRM gives the model's accelerator and its Chisel RTL; the hjson describes the cluster to both (D111, D116).
-- **Human- and LLM-in-the-loop.** Every artefact is text (D8).
+- **Cycle-level cluster microarchitecture**: bank arbitration, affine streamers, FIFO back-pressure, the DMA and the core's control, not analytical cost terms. The ideal estimate (D155) is a first look; the numbers come from the run.
+- **Arbitrary dataflow graphs**, not only DNN layers: PolyBench kernels, stencils, reductions, later HDC workloads (D113).
+- **Composition**: unit BRMs bound on the graph and stitched into accelerators (D112).
+- **One description, two outputs**: a BRM gives the model's accelerator and its Chisel RTL; the hjson describes the cluster to both (D111, D116).
+- **Human- and LLM-in-the-loop**: every artefact is text (D19).
 
 The simulation technique is GVSoC's, not ours. `docs/PAPER.md` section 8 holds the related work.
 
-## 3. Guiding Principles
+## 3. Guiding principles
 
-1. **The BRM is the user's source of truth.** The model's accelerator and the RTL are generated from it and checked against each other by running one program on both (D116).
-2. **One slice before generality.** Every component is first built in the simplest form that carries `vecadd` end to end, then generalised when a real kernel needs it.
-3. **The user owns the accelerator, the model owns the platform** (D51). The platform is SNAX's, read from its hjson, and modelled to match its RTL.
-4. **Decisions are separate from derivations.** SNAX-SANDBOX and the design step decide; SDFG ingest, importers and SNAX-LOWER derive; the model measures.
-5. **Everything is text and diffable.** Graphs, BRMs, recipes, platforms, design points, task lists, programs, profiles and traces.
+1. **The BRM is the user's source of truth.** The model's accelerator and the RTL are generated from it and checked against each other by one program on both (D116).
+2. **One slice before generality.** A component is first built in the simplest form that carries a kernel end to end, then generalised when a real kernel needs it.
+3. **The user owns the accelerator, the model owns the platform** (D51). The platform is SNAX's, read from its hjson and modelled to match its RTL.
+4. **Decisions are separate from derivations.** SNAX-SANDBOX and the design step decide; SDFG ingest, the importer and SNAX-LOWER derive; the model measures.
+5. **Everything is text and diffable**: graphs, BRMs, recipes, platforms, design points, task lists, programs, profiles, traces.
 6. **Extend without editing the core**, by registration and namespaced attrs (D19).
 
-## 4. System Overview
+## 4. System overview
 
 ```mermaid
-flowchart LR
+flowchart TD
     W[Kernel] --> IMP[Importer] --> DFG[SNAX-DFG]
     W -. inputs, reference .-> REF[Reference executor]
     DFG --> SBX[SNAX-SANDBOX: recipe]
@@ -64,13 +67,12 @@ flowchart LR
     T --> PLAT
 ```
 
-**Inner loop:** kernel → importer → SNAX-DFG → SNAX-SANDBOX (recipe) → design step (platform) → design point → SNAX-LOWER and the generator → a SNAX-GVSoC run → reports and views → the thinker edits the recipe or the platform. `pixi run flow` runs it once (section 5.8).
-
-**SNAX link:** the same design point gives the bundle snax_cluster builds, and the flow's ELF runs on its RTL (section 5.7, `pixi run forge`).
+- **The inner loop**: kernel → importer → SNAX-DFG → SNAX-SANDBOX (recipe) → design step (platform) → design point → SNAX-LOWER and the generator → a SNAX-GVSoC run → reports and views → the thinker edits the recipe or the platform. `pixi run flow` runs it once (section 5.8).
+- **The SNAX link**: the same design point gives the bundle snax_cluster builds, and the flow's ELF runs on its RTL (section 5.7, `pixi run forge`).
 
 ## 5. Components
 
-| Component | Code | Fields | Consumes | Produces |
+| Component | Code | Contract | Consumes | Produces |
 |---|---|---|---|---|
 | SDFG ingest | `sdfg/` | | a kernel's DaCe source in `kernels/` | raw, simplified and expanded SDFG |
 | Importer | `dfg/import_sdfg.py` | C§2 | a kernel's expanded SDFG | `.snaxdfg` |
@@ -78,77 +80,93 @@ flowchart LR
 | SNAX-BRM | `brm/` | C§3 | hand-written BRMs | instances |
 | SNAX-SANDBOX | `sandbox/` | C§4 | `.snaxdfg`, BRMs, recipe | a `.snaxdfg` per step |
 | Design step | `design/` | C§5–C§7 | bound graph, platform | design point |
-| Estimate | `estimate/` | C§13, C§14 | bound graph, platform (optional), technology (optional) | the ideal estimate and its expected BUSY_COUNTER, a guide (D155), its bank bound on the streams' L1 time and its cost in five parts, the groups' (D154) and the streamers', crossbar's and banks' (D167), read by the viewers and `design.md` |
-| Cost table | `char/` ([guide](../snax_forge/char/README.md)) | C§14 | snax-forge-experiments' `char.json` per technology, and its streamer, crossbar and bank tables and the crossbar's input kinds (`pixi run import-costs`) | the blocks' comb area and energy per fire and the flop's and ctrl's constants, looked up per block (D154); a streamer's, the crossbar's and a bank's area and energy, interpolated per axis or looked up (`char/tables.py`, D167) |
+| Estimate | `estimate/` | C§13, C§14 | bound graph, platform and technology (both optional) | cycles, the expected BUSY_COUNTER (D155), the cost in five parts (D154, D167) |
+| Cost tables | `char/` ([guide](../snax_forge/char/README.md)) | C§14 | snax-forge-experiments' tables (`pixi run import-costs`) | per block, streamer, crossbar and bank: area and energy |
 | SNAX-LOWER | `lower/` | C§8, C§9 | design point | task list, `main.c` |
-| Generator | `gen/gvsoc.py`, `gen/headers.py`, `gen/data.py` | C§9 | design point, the platform's source hjson | cluster and streamer hjson, `accelerator.json`, CSR headers, `data.h`, `main.c` |
-| HW generator | `gen/rtl.py`, `hw/chisel/` | C§10 | design point, the datapath catalogue | `accelerator.json`, the accelerator RTL |
+| Generator | `gen/gvsoc.py`, `gen/headers.py`, `gen/data.py` | C§9 | design point, the platform's source hjson | cluster and streamer hjson, `accelerator.json`, headers, `data.h`, `main.c` |
+| HW generator | `gen/rtl.py`, `hw/chisel/` | C§10 | design point, the datapath catalogue | the accelerator RTL |
 | Bundle | `gen/bundle.py` | C§11 | design point | snax_cluster's input |
 | SNAX-GVSoC | `gvsoc/snax-gvsoc` (submodule), `gvsoc/Makefile` | | hjson, program | the program's check and window, events (D137) |
-| Run | `run/` | C§12 | SNAX-GVSoC's events, the design point, task list | profile, trace |
+| Run | `run/` | C§12 | SNAX-GVSoC's events, the design point, the task list | profile, trace |
 | Flow, forge | `flow/` | C§12 | recipe or bound graph, platform | all of the above, checked |
-| Viewers | `viz/` | | run directories, `.snaxdfg` files | local HTML views |
-| Reports | `report/` | | a flow folder or run directory | `design.md`, `run.md` |
+| Viewers | `viz/` | C§4, C§12 | run folders, `.snaxdfg` files | local HTML views |
+| Reports | `report/` | | a flow folder | `design.md`, `run.md` |
 
-Packages are under `snax_forge/` except `hw/chisel/`. SNAX-GVSoC is its own KULeuven-MICAS repository (D116), a submodule at `gvsoc/snax-gvsoc` that `gvsoc/Makefile` builds and runs in snax-forge's development image from `container/` (D118). Each package's tests are in `tests/<package>/` (the Chisel specs in `hw/chisel/src/test/`, the examples' in `tests/flow/`), their fixtures beside them (`tests/dfg/fixtures/`, `tests/run/fixtures/`, `hw/chisel/src/test/resources/rtl/`); the inputs are in `kernels/` (with `tests/kernels/`), `recipes/`, `platforms/` (with snax-forge's base cluster), `snax_forge/brm/library/` and `hw/chisel/blocks.json`; `util/` holds the clean, environment-check, kernel-list and Markdown tools, and those that copy snax-forge-experiments' results into test fixtures (`syn2_flops.py`, `char_model.py`, `ctrl_regs.py`).
+Where things live:
+
+- Packages are under `snax_forge/`, but `hw/chisel/`. SNAX-GVSoC is its own repository (D116), a submodule at `gvsoc/snax-gvsoc` that `gvsoc/Makefile` builds in snax-forge's image (D118).
+- Each package's tests are in `tests/<package>/` (the Chisel specs in `hw/chisel/src/test/`, the examples' in `tests/flow/`), their fixtures beside them.
+- The inputs: `kernels/`, `recipes/`, `platforms/` (with snax-forge's base cluster), `snax_forge/brm/library/`, `hw/chisel/blocks.json`.
+- `util/`: the clean, environment-check, kernel-list and Markdown tools, and those that copy snax-forge-experiments' results into test fixtures.
 
 ### 5.1 SNAX-DFG and the importer
 
-SNAX-FORGE's own dataflow graph, a `.snaxdfg` JSON file (D71, `dfg/`; C§2): symbols, containers and an ordered body of registered node kinds, body order being execution order, memlets on the connectors of the nodes that use the data. A map's loop is tagged in the sandbox (D73); a reduction is a map whose output memlet carries a `reduce` (D102); an accelerated node is one beat of a bound BRM instance (D82). Expressions use one grammar shared with the BRM (`expr.py`).
+SNAX-FORGE's own dataflow graph, a `.snaxdfg` JSON file (D71, `dfg/`; C§2): symbols, containers and an ordered body of registered node kinds, body order being execution order.
 
-Before it, `sdfg/expand.py` expands DaCe's MatMul and Transpose into dot's shape, a multiply map and a Reduce over the contracted axis (D71). The importer (`dfg/import_sdfg.py`, `pixi run import-dfg <kernel>`) reads the expanded SDFG that `pixi run sdfg <kernel>` writes, keeps the kernel's names, decides nothing, and names what it does not support (D71). Sequential loops and branches come with the kernels that need them (open item 36).
+- A map's loop is tagged in the sandbox (D73); a reduction is a map whose output memlet carries a `reduce` (D102); an accelerated node is one beat of a bound BRM instance (D82).
+- Expressions use one grammar shared with the BRM (`expr.py`).
+- `sdfg/expand.py` first expands DaCe's MatMul and Transpose into dot's shape. The importer (`pixi run import-dfg <kernel>`) reads the expanded SDFG, keeps the kernel's names, decides nothing, and names what it does not support; sequential loops and branches come with the kernels that need them (open item 36).
 
 ### 5.2 Reference executor
 
-A NumPy interpreter of any `.snaxdfg`, as imported, split or accelerated (D79, `dfg/execute.py`): maps run over their whole space at once, accelerated nodes firing by firing through their BRM's function. On the imported graph it must equal the kernel's own reference; every sandbox step and every run is compared with it.
+A NumPy interpreter of any `.snaxdfg`, imported, split or accelerated (D79, `dfg/execute.py`): maps run over their whole space at once, accelerated nodes firing by firing through their BRM's function. On the imported graph it must equal the kernel's own reference; every sandbox step and every run is compared with it.
 
 ### 5.3 SNAX-BRM
 
-One hand-written JSON file per accelerator in `snax_forge/brm/library/` (D68, `brm/`; C§3): a shared part and implementations, the timing always the user's numbers. The library holds `simd`, `accumulate` and `mac`.
+One hand-written JSON file per block in `snax_forge/brm/library/` (D68, `brm/`; C§3): a shared part and implementations, the timing always the user's numbers. The library holds `simd`, `accumulate`, `mac` and `lane_accumulate`.
 
-Each implementation's binding (D129) has two outputs: the GVSoC accelerator on `SnaxGroup` and `SnaxShell` (D134), and the Chisel RTL in its shell wrapper (D130). The pair is accepted when one ELF gives the same counters on both (D123).
+- Each implementation's binding (D129) has two outputs: the GVSoC accelerator on `SnaxGroup` and `SnaxShell` (D134), and the Chisel RTL in its shell wrapper (D130).
+- The pair is accepted when one ELF gives the same counters on both (D123).
 
 ### 5.4 SNAX-SANDBOX and the design step
 
-**SNAX-SANDBOX** (D72, `sandbox/`; C§4). Registered transforms rewrite a `.snaxdfg`; a recipe in a category folder of `recipes/` (`custom/` for the editor's saves) names a kernel, params, symbol values and the steps; the reference executor checks every step; `--set W=8` runs one point of a sweep. Transforms: `split` (a split without tags and with neutral names, D73), `split_map` (`split`, then both tags), `tag_map` (a tag without a split), `bind` (patterns `simd`, `reduce` and `lane_fold`, design params read off the graph and a code entry's slots off its literals or a kernel's scalar argument, D73, D82, D161), `encapsulate`, `split_reduce`, `fuse_map`, `interchange_map` (its own inverse), `link` (D148, D150), `bake_scalar` (D161), `fuse_seed` (D163), `mark_transpose` (D164), `share` (D165) and `share_ports` (D169), and their inverses `untag_map`, `unbind`, `join_map`, `unencapsulate`, `join_reduce`, `unfuse_map`, `unlink`, `unbake_scalar`, `unfuse_seed`, `unmark_transpose`, `unshare` and `unshare_ports`; a recipe is the unit of reuse (D166, `sandbox/blocks.py`): `lift` makes a region matching a kernel a block, `apply_recipe` runs a recipe of that kernel on it, `name_block` names a region by hand, and `unlift` and `unapply` undo them; each has a `site(g, selected)`, the graph-shape test of where it applies, which it calls first (D72). **[PLANNED]** a tile transform (LOW3b). The editor's session (`sandbox/session.py`, C§4): a working recipe replayed in memory, a cursor for undo and redo, each step checked against the reference outputs drawn once, Save after the design checks, and per step the sites, the bind list, the marks, the diff and the estimate; a session from the kernel's symbols alone, a new param per split (renamed `W_<instance>` when its map is bound, unless shared), `bind`'s default instance `acc_N`, Save's design checks run on every apply and param change, a param change replaying the steps up to the cursor only, and Save's commands each with what it does.
+**SNAX-SANDBOX** (D72, `sandbox/`; C§4): registered transforms rewrite a `.snaxdfg`, in the order a recipe names them, and the reference executor checks every step. `--set W=8` runs one point of a sweep.
 
-**The design step** (D84–D87, `design/`; C§5–C§7). It pairs a bound graph with a platform from `platforms/`, resolves the streamers (D12), makes the memory plan from registered passes, runs every design check, and writes `design_point.json`, SNAX-LOWER's and the generator's only input. The platform `platforms/snax_forge.json` is read from snax-forge's base cluster, `platforms/snax_forge_cluster.hjson` (`design from-hjson`, D131).
+- The transforms and their inverses are C§4's table: splitting and tagging (D73), `bind` (D82, D161), composition (`encapsulate`, `link`, `fuse_map`, `split_reduce`, D148, D150), `fuse_seed` (D163), `mark_transpose` (D164), sharing (`share`, `share_ports`, D165, D169), and recipe reuse (`lift`, `apply_recipe`, D166). **[PLANNED]** a tile transform (M15).
+- Each transform may give a `site(g, selected)`, the graph-shape test of where it applies, which it calls first and the editor lists from (D72).
+- The editor's session (`sandbox/session.py`) is a working recipe replayed in memory with a cursor for undo and redo; per step it gives the sites, the bind list, the marks, the diff, the estimate and the design checks, and Save writes a recipe after those checks.
+
+**The design step** (D84–D87, `design/`; C§5–C§7) pairs a bound graph with a platform from `platforms/`, resolves the streamers (D12), makes the memory plan from registered passes, runs every design check, and writes `design_point.json`, SNAX-LOWER's and the generator's only input. `platforms/snax_forge.json` is read from snax-forge's base cluster, `platforms/snax_forge_cluster.hjson` (D131).
 
 ### 5.5 SNAX-LOWER
 
-Turns a design point into what a run needs, and decides nothing (`lower/`).
+Turns a design point into what a run needs, and decides nothing (`lower/`):
 
-- **Task list** (D64, `lower/derive.py`, `lower/waits.py`; C§8): one group of tasks per accelerated node, loads before and stores after, so two accelerators chain through L1 with one wait (D105).
-- **C program** (D135, `lower/c.py`; C§9): the task list as `main.c` on snRuntime, one function per core, direct CSR writes on the generated headers' names, ending in `forge_check()`, the self-check against `data.h`'s goldens; main's entry and `forge_check()`'s bound the window. One entry per program, each accelerator a streamer set, in series for now (D158).
+- **Task list** (D64, `lower/derive.py`, `lower/waits.py`; C§8): a group of tasks per accelerated node, loads before and stores after, so two accelerators chain through L1 with one wait (D105); accelerators in series for now (D158).
+- **C program** (D135, `lower/c.py`; C§9): the task list as `main.c` on snRuntime, one function per core, direct CSR writes on the generated headers' names, ending in `forge_check()`, the self-check against `data.h`'s goldens; main's entry and `forge_check()` bound the window.
 
 ### 5.6 SNAX-GVSoC
 
-A GVSoC model of the SNAX cluster in its own repository: a detached copy of a chosen GVSoC commit with its history, the submodules folded in and the upstream changes listed (`UPSTREAM.md`, D116). The flow builds the generated program and runs it there (D136). It builds two targets, `snitch` and `snax_hjson`, the second read from a cluster hjson at run time (D134): a design point's cluster file is passed with `--param hjson=`, its default the vecadd fixture's. It holds:
+A GVSoC model of the SNAX cluster in its own repository: a detached copy of a chosen GVSoC commit with its history, the upstream changes listed in its `UPSTREAM.md` (D116). It builds two targets, `snitch` and `snax_hjson`, the second reading a cluster hjson at run time (`--param hjson=`, D134). It holds:
 
-- a **core patch**: the Snitch core sends CSRs 0x3C0 to 0x5FF as IO requests to an accelerator component per core (D120); its loads as the hjson and the RTL have them (D125);
-- the **DMA**, GVSoC's iDMA fitted to the RTL by measurement (D121); one **streamer** per streamer set of the slot (`streamer_<set>`, from each set's streamer template, D157), and for a set whose groups share its movers a **`SnaxPortMux`** between them and the groups' ports, selected by `PORT_MUX_SEL` (D169); the **crossbar**, up to 128 inputs (D85), with the sparse interconnect's arbiter and the DMA on whole superbanks (D122);
-- the generic **`SnaxGroup`**, one component per group of `accelerator.json`, and its **`SnaxShell`** (the group's CSRs): the group's control model is one C++ class (`SnaxGroupRule`, `snax/snax_group.hpp`, the `<tag>_<group>_ctrl` of C§10) over a registry of datapath classes, one per catalogue datapath (`snax/snax_datapath.hpp`), so a new basic block is one class and one registry line there (D129); its group cases (`tests/snax/group/cases/`), and the shell's (`tests/snax/shell/cases/`), are what snax-forge's Chisel control unit and wrapper are checked against too (C§10);
-- **events**: `summary`, `events`, `beats` and `stalls` traces per SNAX component in its own grammar (snax-gvsoc `docs/EVENTS.md`), which `run/` renames, never recounts (D137).
+- **the core patch**: the Snitch core sends CSRs 0x3C0 to 0x5FF as IO requests to an accelerator component per core (D120); its loads as the RTL has them (D125);
+- **the DMA**, GVSoC's iDMA fitted to the RTL by measurement (D121);
+- **the streamers**, one per streamer set (D157), and a `SnaxPortMux` where a set's groups share its movers (D169);
+- **the crossbar**, up to 128 inputs (D85), with the sparse interconnect's arbiter and the DMA on whole superbanks (D122);
+- **`SnaxGroup`**, one component per group of `accelerator.json`, and its **`SnaxShell`** (the group's CSRs): the control model is one C++ class (`SnaxGroupRule`) over a registry of datapath classes, one per catalogue datapath, so a new block is one class there (D129). Its group and shell cases are what the Chisel control unit and wrapper are checked against too (C§10);
+- **events**: `summary`, `events`, `beats` and `stalls` traces per component (its `docs/EVENTS.md`), which `run/` renames, never recounts (D137).
 
 What it models is what snax_cluster's RTL does; where the two differ, the RTL wins (section 7).
 
 ### 5.7 SNAX link
 
-A design point gives SNAX-GVSoC its cluster and streamer hjson and `accelerator.json` (D145), the CSR and cluster headers, `data.h` and `main.c`, and no generated code to compile (`gen/gvsoc.py`, D134; C§9). For snax_cluster it gives a bundle (`pixi run bundle`, `gen/bundle.py`, D111; C§11): the same files, and the accelerator RTL that `Emit --spec` builds from `accelerator.json` (C§10), checked against the datapath catalogue `hw/chisel/blocks.json`, as `<tag>_shell_wrapper` with its own CSR manager (D130); inside it `<tag>_csr` (with `<tag>_peripherals`), `<tag>_ctrl` and `<tag>_datapath`, each register placed by who writes it and who reads it, so the settings live in the csr and the control unit reads them with no copy (D168), and for a set whose groups share its movers `<tag>_<set>_port_mux`, wires between the movers at the wrapper and the groups' ports, selected by the csr's PORT_MUX_SEL (D169). The design's accelerators are the base cluster's one entry, named `snax_forge_<design>` (`accelerator_slot` its prefix), each a streamer set in it (D157), and its cluster `snax_forge_cluster`, so neither takes a name of snax_cluster's own (D131).
+A design point gives SNAX-GVSoC its hjson files, `accelerator.json` (D145), headers, `data.h` and `main.c`, and no generated code to compile (`gen/gvsoc.py`, D134; C§9). For snax_cluster it gives a bundle (`pixi run bundle`, D111; C§11): the same files and the accelerator RTL that `Emit --spec` builds from `accelerator.json` (C§10).
 
-`pixi run forge RECIPE [--set ...]` (`flow/forge.py`) runs the flow, the bundle and the bundle's program, checks that the program is the flow's ELF, writes each step's output to `out/forge/<name>/forge.log`, writes the bundle's `forge_expected.txt` (the run's counter and data lines), and prints the commands that run that ELF on snax_cluster's RTL. snax_cluster and snax-forge stay separate checkouts, joined only by the bundle's files (D130): snax_cluster's `snax_forge.mk` builds and runs a bundle. The check is local (D123): `pixi run forge-set quick|full` makes a set's bundles and prints the one `make snax-forge-check` line that runs them in snax_cluster and compares each with its `forge_expected.txt` (`docs/TOOL.md` section 6; CLAUDE.md says when each set is due).
-
-**Cosim** (M10, D52) swaps one accelerator for its RTL and checks its output, latency and II.
+- The RTL is `<tag>_shell_wrapper` with its own CSR manager (D130), holding `<tag>_csr` (with `<tag>_peripherals`), `<tag>_ctrl` and `<tag>_datapath`, each register where its writer and reader are (D168), and a port mux where a set's groups share its movers (D169).
+- The design's accelerators are streamer sets of the base cluster's one entry, `snax_forge_<design>` (D157), in the cluster `snax_forge_cluster`, so neither takes a name of snax_cluster's own (D131).
+- `pixi run forge RECIPE` runs the flow, the bundle and its program, checks the program is the flow's ELF, writes `forge_expected.txt` and prints the commands that run it on snax_cluster's RTL. snax_cluster and snax-forge stay separate checkouts, joined only by the bundle's files (D130).
+- The check is local (D123): `pixi run forge-set quick|full` makes a set's bundles and prints the one `make snax-forge-check` line that runs them in snax_cluster (`docs/TOOL.md` section 6).
+- **Cosim** (M10, D52) swaps one accelerator for its RTL and checks its output, latency and II.
 
 ### 5.8 Feedback and the flow
 
-**The flow** (D136, D108, `flow/`; C§12): `pixi run flow RECIPE --platform P [--set ...]`, or from a bound `.snaxdfg`, runs the inner loop once on SNAX-GVSoC: the design point is generated, built and run, and the program checks itself; everything goes to `out/flow/<name>/`, with `flow.log`. The manual loop is flow, reports and viewer, then a changed `--set`; `examples/loop1/` walks it, and `examples/dot/` runs dot's six recipes, each with a test of its numbers; `examples/dryrun/` holds the dry runs, tutorials with no test that name no commits (D98): `1_vecmul.md`, vecmul from the kernel through the editor to SNAX-GVSoC and its RTL; `2_dot_1.md`, dot 1 as two accelerators and encapsulated; `3_dot_2_6.md`, dot 2 to 6 against SYN2.
-
-**Profile and trace** (D137, `run/`; C§12): SNAX-GVSoC's events converted, the trace at level `task`, `beat`, `stall` or `finegrained` (none at `off`), and `--vcd` a gtkwave dump. The beat levels read an accelerator of several groups of one unit each (dot 1); a group of several linked units stays refused there (open item 96). The run report and viewer list an accelerator's movers per group and mark a streamer task started only for the shared start idle; a task's BUSY_COUNTER counts from its group's START until busy drops, beside its expected BUSY_COUNTER, a guide (D155).
-
-**Viewers** (D55, `viz/`; `pixi run view DIR ...`, `pixi run view-dfg FILE|DIR ...`): a local server and a static page. A run view goes through four layers, one job each: `run/`'s dataclasses; `viz/index.py`, the run's events grouped by their ids once at load; the queries (`viz/memory.py`, `viz/movement.py`, `viz/schedule.py`, `viz/cluster.py`), which read no file; and `viz/api.py`, whose routes return one query's dict for `static/` to draw. The graph page (`viz/dfg/`, `static/dfg.js`) has two modes on one server (`viz/dfg/server.py`), its compact texts, Details, marks, diff and estimate worked out in Python (`viz/dfg/api.py`). View mode (`pixi run view-dfg`) shows the given `.snaxdfg` files one step at a time from a dropdown: each node a compact box (its name, loops and operations), plain edges, independent chains as columns side by side with a container they share drawn once above them (a marked read's edge labelled `Aᵀ`, D164), a block one box in its firing loops until opened (D166), and on the right the Details of the selected item and the Estimate (D155, C§13) with the cost estimate on the technology the page's dropdown picks (C§4, C§14); Compare shows two steps side by side, Details and Estimate as two columns, the left step's and the right's; the state is in the URL hash. Edit mode (`pixi run edit-dfg`, `static/edit.js`) works on a session (`sandbox/session.py`): a start dialog (a kernel, a recipe or a session to resume), the params as chips, the history with undo and redo; select a node or a container and the left sidebar lists the transforms whose `site` accepts it (D72), each with the form the API gives, and Apply, then the Blocks, each opened or closed there or by a double-click; the step's marks and diff on the graph, a log at the bottom with the working recipe, Export step and Save recipe after the design checks. Both modes: a map's id on its bar; in the scrolling left column the Symbols and a line per container, then the Bindings, a drop-down per accelerator and group holding its units' entries, each param with the unit, split or link it configures (inputs in edit mode; the top bar has none); the side panels resized by dragging; the Estimate's accelerator, unmapped and total cycles (D155), in edit mode the design checks' problems under it, the cost as a table per accelerator with its L1 accesses' row (D154) and a group's bank note.
-
-**Reports** (D99, `report/`; `pixi run report DIR`): `design.md` (what was built) and `run.md` (where the cycles went).
+- **The flow** (D136, D108, `flow/`; C§12): `pixi run flow RECIPE --platform P`, or from a bound `.snaxdfg`, runs the inner loop once on SNAX-GVSoC: the design point is generated, built and run, the program checks itself, and everything goes to `out/flow/<name>/`. The manual loop is flow, reports and viewer, then a changed `--set`.
+- **The walk-throughs** (D98): `examples/loop1/` walks that loop and `examples/dot/` runs dot's six recipes, each with a test of its numbers; `examples/dryrun/` holds tutorials with no test: vecmul from the kernel through the editor to the RTL, dot 1 as two accelerators and encapsulated, dot 2 to 6 against SYN2.
+- **Profile and trace** (D137, `run/`; C§12): SNAX-GVSoC's events converted, the trace at `task`, `beat`, `stall` or `finegrained`, and `--vcd` a gtkwave dump. A group of several linked units stays at `task` (open item 96).
+- **Viewers** (D55, `viz/`; TOOL.md sections 4 and 5): a local server and a static page that only draws.
+  - A run view goes through four layers, one job each: `run/`'s dataclasses; `viz/index.py`, the events grouped by their ids once at load; the queries (`viz/memory.py`, `movement.py`, `schedule.py`, `cluster.py`), which read no file; `viz/api.py`, whose routes return one query's dict.
+  - The graph page (`viz/dfg/`) has two modes on one server: `view-dfg` shows given `.snaxdfg` files step by step, `edit-dfg` a session (`static/edit.js`). Each node is a compact box; independent chains are columns; a closed block is one box in its firing loops (D166); Details, the Estimate and the cost are worked out in Python (`viz/dfg/api.py`); Compare shows two steps as two columns.
+- **Reports** (D55, `report/`; `pixi run report DIR`): `design.md` (what was built) and `run.md` (where the cycles went).
 
 ## 6. Correctness
 
@@ -162,13 +180,13 @@ Reductions are exact: integers first; a float reduction follows its BRM's accumu
 
 ## 7. The baseline (M16)
 
-SNAX-GVSoC is checked against snax_cluster's RTL by one ELF on both (D123). snax-gvsoc's `make regress` runs its cluster tests on the forge fixtures' cluster, snax-forge's base cluster (D131), and checks that every program finishes and each fixture's counters agree with its units' run lines. A generated design is accepted when snax-forge's ELF from its bundle prints the same `forge counter` and `forge data` lines on SNAX-GVSoC and on the RTL (`snax-forge-check`, `docs/TOOL.md` section 6) and the window is within 10%; the full set's numbers are open item 95's.
+SNAX-GVSoC is checked against snax_cluster's RTL by one ELF on both (D123). snax-gvsoc's `make regress` runs its cluster tests on the forge fixtures' cluster, snax-forge's base cluster (D131), and checks that every program finishes and each fixture's counters agree with its units' run lines. A generated design is accepted when snax-forge's ELF from its bundle prints the same `forge data` line on SNAX-GVSoC and on the RTL and each `forge counter` within its streamer fill, the verdicts of D123 (`snax-forge-check`, `docs/TOOL.md` section 6); the full set's numbers are open item 95's.
 
-## 8. Build Order
+## 8. Build order
 
-Done: M1, M4a, M3, M4b, M5 and X1 (git history at tag `pre-gvsoc`), M16 (the baseline) and M14 (generation to both sides, closed by CLN1). The order from here (D116), each milestone's phases and tasks in `docs/STATUS.md`'s Milestones:
+Done: M1, M3, M4a, M4b, M5, X1, M16 (the baseline) and M14 (generation to both sides). The order from here, each milestone's tasks in `docs/STATUS.md`:
 
-1. **M13, the block library**: M7's tier A, the composed bind and BASE1's forge side as one milestone (B0 to DRY1-3 done; then two tracks, the code with B2, L2V1, XBAR1, tier A and PORT1, and the server with RAM1 (done: memories from CACTI), the streamer and interconnect sweeps and DaCe's dot, joined in HWCOST). SYN1's results, forge's accelerators beside the HLS points at n2048, are in KULeuven-MICAS/snax-forge-experiments' `results/forge_vs_hls.md`; CHAR1 and CHAR1b characterize each basic block alone into `snax_forge/char/<tech>.json`, which the estimate, the viewer and the editor cost each design from; HWCOST adds the streamers, the memory and the interconnect from snax-forge-experiments' tables in `snax_forge/char/nangate45/` (D167), on Nangate 45 nm only.
+1. **M13, the block library**: M7's tier A, the composed bind and the forge side of the baseline as one milestone, with the cost model of every block, streamer, crossbar and bank on Nangate 45 nm (D154, D167).
 2. **M7 tiers B, C and P:** multi-cycle, multi-phase, then int8 packing.
 3. **M15:** tiling, a DMA per tile.
 4. **M7 tier D** with the GeMM (M9 inside it), then **tier E**.
@@ -176,7 +194,7 @@ Done: M1, M4a, M3, M4b, M5 and X1 (git history at tag `pre-gvsoc`), M16 (the bas
 
 Alongside: P1 (paper plan). When called for: M6 (contract freeze), M8 (automated DSE), M10 (cosim).
 
-## 9. Non-Goals (for now)
+## 9. Non-goals, for now
 
 - Generating the SNAX cluster itself: SNAX-FORGE writes its configuration, SNAX builds it (D111).
 - Automated design-space search before manual exploration works.
