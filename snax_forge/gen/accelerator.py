@@ -432,7 +432,7 @@ def _check_links(acc: Accelerator) -> None:
         if len({root(u.name) for u in g.units}) > 1:
             raise GenError("gen.group", f"accelerator {acc.name}: group {g.name}'s units "
                            f"{[u.name for u in g.units]} are not connected by its links")  # fmt: skip
-        _check_chain(acc, g, ports)
+        _check_chain(acc, g)
         for name, p in ports.items():
             if name not in linked:
                 outer[p.dir].append(name)
@@ -477,7 +477,7 @@ def _check_shared(acc: Accelerator) -> None:
         raise GenError("gen.share", f"{what}: {missing} on no mover")
 
 
-def _check_chain(acc: Accelerator, g: Group, ports: dict[str, Port]) -> None:
+def _check_chain(acc: Accelerator, g: Group) -> None:
     """``gen.chain`` and ``gen.span``, SNAX-GVSoC's limits (module doc)."""
     names = [u.name for u in g.units]
     hops = [(k.from_.split(".")[0], k.to.split(".")[0]) for k in g.links]
