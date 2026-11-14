@@ -4,7 +4,7 @@ The 2-D analogue of vecadd, changing exactly one variable. Every other 2-D
 kernel here also carries a reduction or library nodes; this isolates
 dimensionality so a failure points at map rank and nothing else.
 
-int32 (D113), packed two per 64-bit word (D142).
+int32, packed two per 64-bit word.
 """
 
 import dace

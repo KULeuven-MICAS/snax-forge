@@ -1,7 +1,7 @@
 """Elementwise integer divide: C = A // B, B nonzero.
 
 Tier B (PAPER §6.1): the multi-cycle unit, a divider with II > 1. Staged:
-not yet linked to the flow. int64 (D113). A and B take both signs, so the
+not yet linked to the flow. int64. A and B take both signs, so the
 reference's floor (NumPy, Python) and C's truncation differ on some
 elements; the divider's BRM states which one it computes.
 """

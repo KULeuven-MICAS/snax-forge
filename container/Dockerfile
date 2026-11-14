@@ -1,4 +1,4 @@
-# SNAX-FORGE development container (D118): one image for snax-forge,
+# SNAX-FORGE development container: one image for snax-forge,
 # snax-gvsoc and the programs built from snax_cluster.
 #
 # Holds tools only: GVSoC's build tools and Python packages, snax_cluster's

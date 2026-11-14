@@ -1,4 +1,4 @@
-"""Tests that docs/CONTRACTS.md and the code cannot drift apart (D46).
+"""Tests that docs/CONTRACTS.md and the code cannot drift apart.
 
 Every fenced block in the document that names a source is really in that
 source, a checked-in file (a file of the snax-gvsoc submodule is checked where

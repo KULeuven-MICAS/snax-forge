@@ -3,7 +3,7 @@
 Two symbols (M, N) and two top-level map scopes -- the first kernel implying
 more than one accelerator from a single SDFG.
 
-Tier A (PAPER §6.1). int64 (D113).
+Tier A (PAPER §6.1). int64.
 """
 
 import dace

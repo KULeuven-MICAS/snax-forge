@@ -4,7 +4,7 @@ First non-arithmetic kernel -- a comparator and select rather than an adder,
 which is different hardware. The op shows up in the tasklet `calls` histogram
 rather than `ops`, so it also tests that side of the compute extractor.
 
-int32 (D113), packed two per 64-bit word (D142).
+int32, packed two per 64-bit word.
 """
 
 import dace

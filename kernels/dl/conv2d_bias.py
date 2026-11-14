@@ -4,7 +4,7 @@
 # conv2d_dace.py, and conv2d_numpy.py as the reference
 """A 2-D convolution, stride 1, no padding, NHWC, plus a bias per output channel.
 
-Tier E (PAPER §6.1). Staged: not yet linked to the flow. int64 (D113): plain
+Tier E (PAPER §6.1). Staged: not yet linked to the flow. int64: plain
 integer arithmetic, so NPBench's float32 becomes int64. NPBench's return
 becomes the output argument out. The body allocates by the symbols and
 calls a DaCe program, so the reference is NPBench's NumPy version.

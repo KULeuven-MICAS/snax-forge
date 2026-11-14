@@ -5,7 +5,7 @@
 """PolyBench covariance: the column means, the centred data, then cov = data^T data / (n - 1).
 
 Tier C (PAPER §6.1): three phases (mean, centre, product); its mean is tier
-B's integer divide. Staged: not yet linked to the flow. int64 (D113): NPBench's
+B's integer divide. Staged: not yet linked to the flow. int64: NPBench's
 np.mean and / (float_n - 1.0) become integer divides (// float_n,
 // (float_n - 1)), and float_n holds N as an int64. NPBench's return
 becomes the output argument out. The body allocates and loops over the

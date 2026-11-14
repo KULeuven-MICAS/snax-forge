@@ -3,7 +3,7 @@
 # From NPBench (github.com/spcl/npbench, f2d7f27): npbench/benchmarks/polybench/k3mm/k3mm_dace.py
 """PolyBench 3mm: out = A B C D, as ((A B) C) D.
 
-Tier D (PAPER §6.1). Staged: not yet linked to the flow. int64 (D113);
+Tier D (PAPER §6.1). Staged: not yet linked to the flow. int64;
 NPBench's return becomes the output argument out.
 """
 

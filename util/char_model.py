@@ -1,4 +1,4 @@
-"""CHAR1's model against SYN2, the fixture ``tests/estimate/fixtures/char_model.json``.
+"""The cost model's kernel energy against SYN2, the fixture ``tests/estimate/fixtures/char_model.json``.
 
     pixi run python util/char_model.py [--experiments DIR] [--out FILE]
 

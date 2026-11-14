@@ -1,7 +1,7 @@
 {
  "$schema": "https://json-schema.org/draft/2020-12/schema",
  "title": "SNAX-FORGE streamer file",
- "description": "<slot>_streamer.hjson: a slot's streamer template as snax_cluster's hjson has it, lowered per design point (snax_forge/gen/gvsoc.py, D134). Readers are the input ports in the BRM's port order, writers the output ports; per group, one list entry per mover.",
+ "description": "<slot>_streamer.hjson: a slot's streamer template as snax_cluster's hjson has it, lowered per design point (snax_forge/gen/gvsoc.py). Readers are the input ports in the BRM's port order, writers the output ports; per group, one list entry per mover.",
  "type": "object",
  "properties": {
   "data_reader_params": {"$ref": "#/$defs/movers"},
@@ -39,7 +39,7 @@
      "items": {"$ref": "#/$defs/count"}
     },
     "configurable_channel": {
-     "description": "Per mover, whether it has ENABLED_CHANNEL (snax_cluster's configurable_channel): only in a shared set with a mover of this role narrower users take (D169).",
+     "description": "Per mover, whether it has ENABLED_CHANNEL (snax_cluster's configurable_channel): only in a shared set with a mover of this role narrower users take.",
      "type": "array",
      "minItems": 1,
      "items": {"type": "boolean"}

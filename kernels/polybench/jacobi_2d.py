@@ -3,7 +3,7 @@
 # From NPBench (github.com/spcl/npbench, f2d7f27): npbench/benchmarks/polybench/jacobi_2d/jacobi_2d_dace.py
 """PolyBench jacobi-2d: TSTEPS - 1 sweeps of a 5-point average, A into B, then B into A.
 
-Tier D (PAPER §6.1). Staged: not yet linked to the flow. int64 (D113):
+Tier D (PAPER §6.1). Staged: not yet linked to the flow. int64:
 NPBench's 0.2 * (...) becomes (...) // 5, until the tier's wider
 fixed-point type.
 """
