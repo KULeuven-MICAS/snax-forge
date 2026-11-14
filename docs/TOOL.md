@@ -333,7 +333,7 @@ Commit the folder in snax-gvsoc as written, then bump the submodule here so the 
 | `pixi run test` | every test, on all cores; `-m "not slow"` leaves out the DaCe builds, the compiles and the largest design |
 | `pixi run test-<block>` | one block: `lower`, `brm`, `dfg`, `sandbox`, `char`, `estimate`, `design`, `flow`, `run`, `report`, `gen`, `kernels`, `viz`, `docs` |
 | `pixi run lint` | ruff's checks and format check, and the Markdown rule (`util/md_reflow.py --check`); CI runs it |
-| `pixi run fmt` | ruff's fixes and format; the Markdown is fixed with `python util/md_reflow.py FILE` |
+| `pixi run fmt` | ruff's fixes and format, then the Markdown rule (`util/md_reflow.py`) |
 | `pixi run clean` | removes `out/` (but the GVSoC build and the editor's sessions, unless `--all`), caches and Chisel build trees; `--dry-run` lists first |
 | `pixi run -e hw chisel-test`, `chisel-gen`, `chisel-check`, `chisel-fmt` | the Chisel specs, elaboration, and scalafmt check and format in `hw/chisel/` (its README) |
 | `pixi run import-costs [--experiments DIR]` | copies the streamer, crossbar and bank tables from snax-forge-experiments into `snax_forge/char/<tech>/` |

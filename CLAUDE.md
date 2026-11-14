@@ -6,41 +6,44 @@ Read before designing or changing a component, and only what the task needs (D11
 - `docs/DECISIONS.md`: the entries cited there. Do not contradict one; propose a new one with the next free number, following the rules at the top of that file.
 - `docs/CONTRACTS.md`: the section of the artefact you produce or read. A snippet in it is checked against the file it came from, so update both together.
 - `docs/STATUS.md`: the task you work on and its open items. Update it with every change.
-- `docs/PAPER.md`: only for paper work (P1).
+- `docs/PAPER.md`: only for paper work.
+- `docs/TOOL.md`: every command, with what it reads and writes and an example.
 
 Keep the documents short (D117): one fact in one place, a decision only for a choice someone may want to reverse, implementation details in module docstrings and tests.
 
 ## Principles
+
 - The BRM is the user's source of truth; the model's accelerator and the RTL come from it and are checked against each other by one program on both (D116).
-- The model is SNAX-GVSoC, checked against snax_cluster RTL.
+- The model is SNAX-GVSoC, checked against snax_cluster's RTL.
 - DSE decides, LOWER derives, the model measures. Never mix roles.
-- All artefacts (DFG, BRM, recipe, platform, design point, task list, program, profile, trace) are serialisable text and must round-trip.
+- Every artefact (DFG, BRM, recipe, platform, design point, task list, program, profile, trace) is serialisable text and round-trips.
 - Extend by registration and namespaced attrs, never by editing core classes.
-- Build the vecadd vertical slice before generalising.
 
 ## Commands
-- Environment: `pixi install`; `pixi run check` checks DaCe and its pins.
-- Tests: `pixi run test` (all, `-n auto`), or one block: `test-lower`, `test-brm`, `test-dfg`, `test-sandbox`, `test-char`, `test-estimate`, `test-design`, `test-flow`, `test-run`, `test-report`, `test-gen`, `test-kernels`, `test-viz`, `test-docs` (the contracts and the Markdown rule). CI runs `pixi run -e ci test`. `pixi run test -m "not slow"` leaves out the DaCe builds and compiles and the largest design, for a quick local run.
-- Lint: `pixi run lint` (CI runs it); `pixi run fmt` fixes.
-- The whole path, on SNAX-GVSoC (D136, in the image, submodule checked out): `pixi run flow recipes/elementwise/vecadd.json --platform platforms/snax_forge.json [--set W=8] [--set platform.PATH=VALUE] [--set memory.PATH=VALUE] [--trace LEVEL[:SOURCES]] [--vcd]`, everything in `out/flow/<name>/` (`<name>_<level>` above `off`); it builds GVSoC when needed. The run's events become `run/profile.json` and, from `task` (then `beat`, `stall`, `finegrained`), `run/trace.jsonl` (`snax_forge/run/`, D137); `--vcd` adds gtkwave's `run/all.vcd`. From a bound graph instead of a recipe (no sandbox, D108): `pixi run flow out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/snax_forge.json [--kernel K]`. The single steps (`sdfg`, `import-dfg`, `check-dfg`, `sandbox`, `design`, `lower`) are in docs/TOOL.md, section 3.
-- Recipe to snax_cluster: `pixi run forge recipes/elementwise/vecadd.json [--set N=512]` runs the flow, the bundle with its `forge_expected.txt` and the bundle's program (the flow's ELF), each step's output in `out/forge/<name>/forge.log`, and prints snax_cluster's commands for the design (docs/TOOL.md section 6).
-- A set of bundles: `pixi run forge-set quick|full|mvt [--sim vsim|vlt] [-j N]` runs forge on each recipe of the set (quick: vecadd_i32, vsum_tree_i8, dot_1, dot_1_enc, dot_4, axpy; full: those and seventeen more, among them matvec_1 (snax_cluster #688's case), matvec_seed and matvec_seed_serial, and rowsum_2 twice, at its defaults and with `--set` values of its own, `memory.passes.layout=padded_rows`; mvt: its own set, not in quick or full, eleven bundles at M = N = 40: mvt_1 and mvt_1_dot2 at W = 4 and 8, mvt_2 at W = 4, each contiguous and with padded_rows, then mvt_2_reuse) and writes `out/forge-set/<set>.md`, each bundle's expected lines (`forge_expected.txt`, from its SNAX-GVSoC run) and the one `make snax-forge-check ... SNAX_CLUSTER_IMAGE=<image>` line that checks them all in snax_cluster's `target/snitch_cluster` (docs/TOOL.md section 6).
-- Generator: `pixi run gen-gvsoc out/design/<name>/design_point.json` writes a design point's cluster and streamer hjson, its `accelerator.json` (C§10), headers, `data.h` and `main.c` to `out/gvsoc/<name>/`. `pixi run gen-rtl out/design/<name>/design_point.json` writes the same `accelerator.json` and the accelerator's RTL (`Emit --spec`, java on a cached classpath) to `out/rtl/<name>/` (GEN1). `pixi run bundle out/design/<name>/design_point.json` writes both, the RTL's file list and `bundle.json` to `out/bundle/<name>/`, snax_cluster's input (C§11, D130).
-- SNAX-GVSoC: `gvsoc/Makefile` (`make build`, `make sw`, `make run`), from the container's plain shell or through pixi (`pixi run make -C gvsoc ...`); `docs/TOOL.md` section 7 walks through it.
-- Kernels: `pixi run kernels` lists the staged kernels in `kernels/` (tier, dtype, whether the SDFG builds).
-- Viewers: `pixi run view DIR ...` (flow runs, port 8765), `pixi run view-dfg FILE|DIR ... [--platform P] [--tech T]` (graphs as a read-only history, port 8766), `pixi run edit-dfg [--kernel K --set NAME=VALUE ... | --recipe R | --session DIR] [--platform P] [--tech T]` (the editor on a session in `out/sessions/`, port 8767); every POST needs `Content-Type: application/json`.
-- Reports: the flow writes `report/design.md` and `report/run.md`; `pixi run report DIR [--tech T]` writes them again for a flow folder.
-- Chisel: `pixi run -e hw chisel-test` (with the four `SNAX_GVSOC_*` case folders set, `hw/chisel/README.md`), `chisel-gen`, `chisel-check` after any Scala edit; `hw/chisel/` is a project of its own.
-- Clean slate: `pixi run clean` (`--dry-run` lists first; it keeps the GVSoC build in `out/snax-gvsoc/` and the editor's sessions in `out/sessions/`, `--all` removes them too).
+
+The whole list is `docs/TOOL.md`; the ones used most:
+
+- `pixi install`, then `pixi run check` (DaCe and its pins).
+- `pixi run test` (all, on every core; `-m "not slow"` leaves out the DaCe builds, the compiles and the largest design), or one block: `test-lower`, `test-brm`, `test-dfg`, `test-sandbox`, `test-char`, `test-estimate`, `test-design`, `test-flow`, `test-run`, `test-report`, `test-gen`, `test-kernels`, `test-viz`, `test-docs`. CI runs `pixi run -e ci test`.
+- `pixi run lint` (CI runs it) and `pixi run fmt` (ruff's fixes and format, then the Markdown rule). Always the pixi tasks, never ruff or pytest directly, so the versions are the pinned ones.
+- `pixi run flow RECIPE --platform platforms/snax_forge.json [--set ...] [--trace LEVEL]` runs a recipe on SNAX-GVSoC into `out/flow/<name>/` (D136; in the image, the submodule checked out). TOOL.md section 2.
+- `pixi run forge RECIPE` and `pixi run forge-set quick|full|mvt` make bundles for snax_cluster's RTL check (the sets are listed in `snax_forge/flow/forge_set.py`). TOOL.md section 6.
+- `pixi run sandbox`, `design`, `lower`, `gen-gvsoc`, `gen-rtl`, `bundle`: one stage alone. TOOL.md section 3.
+- `pixi run view`, `view-dfg`, `edit-dfg` (ports 8765, 8766, 8767; every POST needs `Content-Type: application/json`). TOOL.md sections 4 and 5.
+- `pixi run -e hw chisel-test`, `chisel-gen`, and `chisel-check` after any Scala edit; `hw/chisel/` is a project of its own.
+- `pixi run clean` (`--dry-run` lists first; `--all` also removes the GVSoC build and the editor's sessions).
 
 ## Conventions
-- The local RTL check: a change to the emitted RTL or to the program (`main.c`) needs the quick set checked on vsim before its PR merges, with no FAIL (D123; a NEAR or WARNING gets an open item) (`pixi run forge-set quick`, then the line it prints, in snax_cluster's `target/snitch_cluster`), and a phase's close needs the full set (`pixi run forge-set full`); the numbers go into open item 95's table.
+
+- The local RTL check: a change to the emitted RTL or to the program (`main.c`) needs the quick set checked on vsim before its PR merges, with no FAIL (D123; a NEAR or WARNING gets an open item), and a phase's close needs the full set; the numbers go into open item 95's table. TOOL.md section 6 runs it.
 - Python 3.11, type hints on all public functions, dataclasses for artefacts.
-- One package per component under `snax_forge/` (ARCHITECTURE.md section 5 lists them). Recipes live in `recipes/<category>/` (the editor's Save writes `recipes/custom/`), platforms in `platforms/`, BRMs in `snax_forge/brm/library/`.
+- One package per component under `snax_forge/` (ARCHITECTURE section 5 lists them). Recipes live in `recipes/<category>/` (the editor's Save writes `recipes/custom/`), platforms in `platforms/`, BRMs in `snax_forge/brm/library/`.
 - Generated files (`.snaxdfg`, design points, runs) go under `out/`, not in git; test fixtures are the exception (`tests/dfg/fixtures/`, in the form `Graph.to_json` writes).
 - Value expressions (BRM fields, SNAX-DFG subsets, ranges, shapes) are one grammar in `snax_forge/expr.py`: ints, names, `+ - * //`, parsed with `ast`, stored canonical.
-- Every new artefact type gets a `to_dict` / `from_dict` and a round-trip test. The generator's hjson files have schemas (`snax_forge/gen/schema/`); versioned schemas for the contracts come with M6 (F2), not before.
+- Every new artefact type gets a `to_dict` / `from_dict` and a round-trip test. The generator's hjson files have schemas (`snax_forge/gen/schema/`); versioned schemas for the contracts come with M6, not before.
 - Shared test helpers live in `tests/<package>/helpers.py`, not copied per file.
-- Every Chisel module gets a seeded random spec against a Scala model written from its documented behaviour (random data and Decoupled stalls; `hw/chisel/README.md`, Tests).
-- Walk-throughs live in `examples/`: those under `examples/dryrun/` are tutorials with no test that name no commits (their numbers as printed when written, free to drift); the others (`examples/<name>/README.md`) keep a test checking every number they state (D98). Their outputs are not checked in.
-- Markdown prose is one line per paragraph, list item and table row, never hard-wrapped (D117; `util/md_reflow.py`, checked by `pixi run lint`); headings, code blocks, tables, display maths and HTML stay as they are, and code comments and docstrings keep the formatter's line length. Code that writes Markdown prose (the reports, generated READMEs) follows the same rule.
+- Every Chisel module gets a seeded random spec against a Scala model written from its documented behaviour (`hw/chisel/README.md`, Tests).
+- No task, round or X tags in code, tests or messages, and a CONTRACTS section is cited by its title (`CONTRACTS, "Recipe"`); Markdown may cite `C§n`. A comment `# NB (Dn): ...` (`// NB` in Scala and C) marks the few spots where the model must match the RTL or a choice looks wrong but is not; keep those. An error message says the fix, not a tag.
+- A module docstring is at most about 15 lines: what it does, its entry points, the contract it reads or writes by name. Format detail lives in CONTRACTS, history in git.
+- Walk-throughs live in `examples/`: those under `examples/dryrun/` are tutorials with no test, their numbers as printed when written; the others keep a test checking every number they state (D98). Their outputs are not checked in.
+- Markdown prose is one line per paragraph, list item and table row, never hard-wrapped (`util/md_reflow.py`, checked by `pixi run lint`); headings, code blocks, tables, display maths and HTML stay as they are. Sections open with two or three sentences, then bullets and tables; a Mermaid diagram where a structure reads better as a picture. Code that writes Markdown (the reports) follows the same rule.
