@@ -1,10 +1,19 @@
 # The cost tables: CHAR1's and HWCOST's first-order model
 
-`snax_forge/char/<tech>.json` holds, per technology, what snax-forge needs to put an area and an energy beside a design's cycles before any synthesis: the comb area and comb energy per fire of each catalogue block, and a handful of constants for registers and control (D154, C§14). `snax_forge/char/<tech>/` holds HWCOST's three tables for the rest of the design, the streamers, the TCDM crossbar and the L1 banks (D167): only nangate45 has them, and only nangate45 is offered; `nangate15.json` stays as data. The estimate (`snax_forge/estimate/cost.py`) combines them with counts it already has from the description: each unit's fires, its register bits and the accelerator's cycles. `design.md`, the DFG viewer and the editor show the result as a first-order estimate, an area to 3 significant figures and an energy to 3 decimals in its unit; the decimals tell two close designs apart and are display precision, not accuracy.
+What snax-forge needs to put an area and an energy beside a design's cycles before any synthesis (D154, D167, C§14):
+
+- `snax_forge/char/<tech>.json`: per technology, the comb area and comb energy per fire of each catalogue block, and a few constants for registers and control.
+- `snax_forge/char/<tech>/`: HWCOST's tables for the rest of the design, the streamers, the TCDM crossbar and the L1 banks. Only nangate45 has them, and only nangate45 is offered; `nangate15.json` stays as data.
+- The estimate (`snax_forge/estimate/cost.py`) combines them with counts it already has from the description: each unit's fires, its register bits and the accelerator's cycles.
+- `design.md`, the DFG viewer and the editor show the result as a first-order estimate: an area to 3 significant figures and an energy to 3 decimals in its unit, display precision and not accuracy.
 
 ## What it is and is not
 
-It is a first-order model: registers are bits, a block is its comb energy per fire, control is its bits held every cycle times a factor. It aims at the large costs and at showing a designer how a design is costed, not at accuracy: about 30 % of synthesis on the large costs is the intent, and a small block can be much further off. The evidence so far: on CHAR1's checked designs (vecmul, vsum, dot 4 and dot 5 at W = 8 and 32, N = 2048, on Nangate 45 and 15 nm) the model's kernel energy (datapath and control) lands at 0.99 to 1.04 of the synthesized and simulated accelerator (snax-forge-experiments `results/char/char_table.md`, Model, "Against SYN2"); per unit the Mac is at 1.03 to 1.04, while dot 4's TreeAccumulate sum is at 0.06 to 0.19 and dot 5's SerialAccumulate sum at 0.41 to 0.78. That is evidence on eight designs per technology, not a promise for others.
+It is a first-order model: registers are bits, a block is its comb energy per fire, control is its bits held every cycle times a factor. It aims at the large costs and at showing how a design is costed, about 30 % of synthesis on the large costs; a small block can be much further off.
+
+- On CHAR1's checked designs (vecmul, vsum, dot 4 and dot 5 at W = 8 and 32, N = 2048, Nangate 45 and 15 nm) the kernel energy (datapath and control) lands at 0.99 to 1.04 of the synthesized and simulated accelerator (snax-forge-experiments `results/char/char_table.md`, "Against SYN2").
+- Per unit the Mac is at 1.03 to 1.04, dot 4's TreeAccumulate sum at 0.06 to 0.19, dot 5's SerialAccumulate sum at 0.41 to 0.78.
+- That is evidence on eight designs per technology, not a promise for others.
 
 The known limits (C§14):
 
@@ -105,15 +114,29 @@ The constants (`nangate45.json`, `flop` and `ctrl`): $e_{\mathit{load}}$ = 17.16
 - per task: 1.06 × 103 × 265 × 7.1476 fJ = 206 799 fJ, 0.207 nJ;
 - area: 103 × 5.32 = 548 µm² of flops and as much comb (the rough estimate), 1 096 µm².
 
-**The streamers, crossbar and banks** (HWCOST, D167). `mac_a` and `mac_b` read 2048 words each over 256 beats of 8 channels at FIFO depth 8 and one loop, a grid point of `streamer.csv`: 38 525 µm² and 39.65753 pJ a beat each, 10.152 nJ; `sum_out` writes 1 word on 1 channel, 5 469 µm² and 0.005 nJ. The crossbar has 8 + 8 + 1 channels and 2 cores and AXI, 20 inputs, on 32 banks: between the grid's 16 and 24 inputs, its area linear in inputs, $t = 0.5$, 103 432 µm² in `xbar.csv`; its 16 reader channels only read and the writer's one only writes (X71), so $103{,}432 \times (1 - 0.396496 \cdot 16/20 - 0.41077 \cdot 1/20) = 103{,}432 \times 0.66226 = 68{,}499$ µm²; every access at a full crossbar's price, `xbar.csv`'s 32 inputs on 32 banks, 2.739443 pJ, so 4097 accesses cost 11.223 nJ. The 32 banks of 512 × 64 bits are 32 × 13 522.7 = 432 726 µm², and 4096 reads at 3.53819 pJ and 1 write at 6.4677 pJ cost 14.499 nJ.
+**The streamers, crossbar and banks** (HWCOST, D167):
+
+- `mac_a` and `mac_b` read 2048 words each over 256 beats of 8 channels at FIFO depth 8 and one loop, a grid point of `streamer.csv`: 38 525 µm² and 39.65753 pJ a beat each, 10.152 nJ; `sum_out` writes 1 word on 1 channel, 5 469 µm² and 0.005 nJ.
+- The crossbar has 8 + 8 + 1 channels plus 2 cores and AXI, 20 inputs, on 32 banks: between the grid's 16 and 24 inputs, $t = 0.5$, 103 432 µm² in `xbar.csv`. Its 16 reader channels only read and the writer's one only writes (X71), so $103{,}432 \times (1 - 0.396496 \cdot 16/20 - 0.41077 \cdot 1/20) = 103{,}432 \times 0.66226 = 68{,}499$ µm².
+- Every access is at a full crossbar's price, `xbar.csv`'s 32 inputs on 32 banks, 2.739443 pJ, so 4097 accesses cost 11.223 nJ.
+- The 32 banks of 512 × 64 bits are 32 × 13 522.7 = 432 726 µm², and 4096 reads at 3.53819 pJ and 1 write at 6.4677 pJ cost 14.499 nJ.
 
 **The total**: the kernel 25.868 + 0.135 + 0.207 = 26.210 nJ per run, the streamers 20.310 nJ, the crossbar 11.223 nJ and the banks 14.499 nJ, 72.243 nJ in all; 61 049 + 1 249 + 1 096 = 63 394 µm² of datapath and control, with the streamers' 82 519 µm² and the crossbar's 68 499 µm² 214 412 µm² without the banks, 647 138 µm² with them, shown as 214 000 µm² and 647 000 µm². dot 4 at W = 8 has the kernel 26.160 nJ.
 
-**Against SYN2** (snax-forge-experiments `results/forge/nangate45/`, the same design synthesized whole and simulated for one task, `char_table.md`'s Model; SYN2's design still holds CTRL1's copies of JOBS and the Mac's JOB_BEATS, so the numbers below are the model's for that 167-bit control unit, 26.339 nJ in all; CTRL2 R5 resynthesized forge at n2048 and W ≤ 16 only, `results/compare/ctrl2_before_after.md`, not SYN2's 48 points): the kernel is 25.540 nJ, so the model is at 1.031; per part the Mac is 24.912 nJ (1.038), the sum 0.297 nJ (0.456: its inputs change on each of the Mac's 256 fires, which the model does not count) and the control unit 0.331 nJ (1.012). In area DC gives the Mac 61 051 µm² (1.000), the sum 1 282 µm² (0.974) and the control unit 1 750 µm², against the model's 1 777 µm² (1.015), its 888 µm² of flops and the placeholder's equal comb area; the csr's 1 103 µm² is outside the model. SYN2 has no L1 and no streamer, so HWCOST's parts are checked against their own tables (snax-forge-experiments `docs/cost_tables.md`) and later against the cluster synthesis (CSYN1).
+**Against SYN2** (snax-forge-experiments `results/forge/nangate45/`, the same design synthesized whole and simulated for one task, `char_table.md`'s Model). SYN2's design still holds CTRL1's copies of JOBS and the Mac's JOB_BEATS, so the numbers are the model's for that 167-bit control unit, 26.339 nJ in all:
+
+- the kernel is 25.540 nJ, so the model is at 1.031;
+- per part the Mac is 24.912 nJ (1.038), the sum 0.297 nJ (0.456: its inputs change on each of the Mac's 256 fires, which the model does not count) and the control unit 0.331 nJ (1.012);
+- in area DC gives the Mac 61 051 µm² (1.000), the sum 1 282 µm² (0.974) and the control unit 1 750 µm² against the model's 1 777 µm² (1.015); the csr's 1 103 µm² is outside the model;
+- SYN2 has no L1 and no streamer, so HWCOST's parts are checked against their own tables (snax-forge-experiments `docs/cost_tables.md`) and against the cluster synthesis (CSYN1).
 
 ## Adding a block, a dtype or a technology
 
-**A block** (a new catalogue datapath, or new params of one): the datapath and its `flops` go into snax-forge's catalogue first (`hw/chisel/blocks.json`, `BlockFlopsSpec` checks the count). Then in snax-forge-experiments: its points in `char/points.json` (X28, X29); `pixi run char-rtl`; `pixi run syn run '<points>' --source char --tech <tech>`; its windows (a kind of its own needs a source in `sim/sources/char.py` and a testbench, X31) and `pixi run pwr run '<points>' --source char --tech <tech>`; `pixi run char-export` and `pixi run char-table`, and the result reviewed in `char_table.md`. Copy `results/char/<tech>/char.json` here byte for byte as `<tech>.json` and run `pixi run test-char`.
+**A block** (a new catalogue datapath, or new params of one):
+
+- the datapath and its `flops` go into snax-forge's catalogue first (`hw/chisel/blocks.json`; `BlockFlopsSpec` checks the count);
+- in snax-forge-experiments: its points in `char/points.json`; `pixi run char-rtl`; `pixi run syn run '<points>' --source char --tech <tech>`; its windows (a kind of its own needs a source in `sim/sources/char.py` and a testbench) and `pixi run pwr run '<points>' --source char --tech <tech>`; `pixi run char-export` and `pixi run char-table`, the result reviewed in `char_table.md`;
+- copy `results/char/<tech>/char.json` here byte for byte as `<tech>.json` and run `pixi run test-char`.
 
 **A dtype** is an entry of its own: the lookup matches params exactly, so int32 points under an entry whose params name int32 leave int64's as they are. Measure it as a block above.
 
