@@ -2,7 +2,12 @@
 
 Every kernel SNAX-FORGE targets, one file each with a `KernelSpec`. The flow uses `vecadd`, `vecmul`, `vsum`, `dot` and `relu` (`recipes/`). The kernels tagged `staged` are here to be read and their graphs looked at (`pixi run sdfg K`, `pixi run import-dfg K`, `pixi run view-dfg`); they are not linked to the flow. `pixi run kernels` prints each kernel's directory, tier, dtype, whether its SDFG builds and whether `import-dfg` takes it, or why not.
 
-The PolyBench and DL kernels are NPBench's DaCe sources (BSD-3, `NPBENCH_LICENSE`) with their structure kept (D113): a `return X` becomes `out[:] = X`, and a body that only runs under DaCe (it loops over symbols or calls DaCe programs) has NPBench's NumPy version as its reference (`ref`). They are `int64` where the kernel is integer arithmetic, at PolyBench's MINI sizes; `softmax`, `mlp`, `lenet` and `resnet` keep NPBench's `float32` (`float-staged`) until their tier decides the integer form. The tiers are PAPER §6.1's.
+The PolyBench and DL kernels are NPBench's DaCe sources (BSD-3, `NPBENCH_LICENSE`) with their structure kept (D113):
+
+- a `return X` becomes `out[:] = X`;
+- a body that only runs under DaCe (it loops over symbols or calls DaCe programs) has NPBench's NumPy version as its reference (`ref`);
+- they are `int64` where the kernel is integer arithmetic, at PolyBench's MINI sizes; `softmax`, `mlp`, `lenet` and `resnet` keep NPBench's `float32` (`float-staged`) until their tier decides the integer form;
+- the tiers are PAPER §6.1's.
 
 ## Regularity
 
