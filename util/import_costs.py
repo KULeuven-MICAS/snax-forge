@@ -4,7 +4,7 @@
 
 Copies ``results/ram/<tech>/ram_table.csv``, ``results/strm/<tech>/streamer.csv``,
 ``results/strm/<tech>/xbar.csv`` and ``results/strm/<tech>/xbar_kinds.json`` (the crossbar's
-read-only and write-only inputs, X71) as they are, and writes ``SOURCE`` with the repository, its
+read-only and write-only inputs) as they are, and writes ``SOURCE`` with the repository, its
 commit and each file's path and sha256 (no date, so a re-run that brings nothing new changes
 nothing). By default it fetches the latest main of
 snax-forge-experiments (a shallow ``git clone`` into a temporary folder); ``--experiments DIR``

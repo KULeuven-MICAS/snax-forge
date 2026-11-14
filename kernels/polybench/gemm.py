@@ -3,7 +3,7 @@
 # From NPBench (github.com/spcl/npbench, f2d7f27): npbench/benchmarks/polybench/gemm/gemm_dace.py
 """PolyBench gemm: C = alpha A B + beta C.
 
-Tier D (PAPER §6.1). Staged: not yet linked to the flow. int64 (D113).
+Tier D (PAPER §6.1). Staged: not yet linked to the flow. int64.
 """
 
 import dace as dc

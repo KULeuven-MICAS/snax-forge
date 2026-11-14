@@ -5,7 +5,7 @@ MatMul library nodes. A map-scope walker finds nothing here, which is why
 library-node expansion is mandatory rather than optional. Also the canonical
 chaining barrier: the second reduction cannot start until the first completes.
 
-Tier A (PAPER §6.1). int64 (D113).
+Tier A (PAPER §6.1). int64.
 """
 
 import dace

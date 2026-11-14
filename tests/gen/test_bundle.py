@@ -3,7 +3,7 @@
 
 No JVM here: ``elaborate`` is replaced by a fake that writes two files and an ``emitted.json``
 in Emit's form, and the checkout's commit is stubbed. The real ``Emit --spec`` runs in the
-chisel job (``gen-rtl``) and by hand (``pixi run bundle``, docs/RUN.md).
+chisel job (``gen-rtl``) and by hand (``pixi run bundle``, docs/TOOL.md).
 """
 
 from __future__ import annotations

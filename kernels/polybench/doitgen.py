@@ -4,7 +4,7 @@
 # doitgen_dace.py, and doitgen_numpy.py as the reference
 """PolyBench doitgen: A[r, q, :] = A[r, q, :] C4 for every r and q, in place.
 
-Tier D (PAPER §6.1). Staged: not yet linked to the flow. int64 (D113). The
+Tier D (PAPER §6.1). Staged: not yet linked to the flow. int64. The
 body loops over and reshapes by the symbols, so the reference is NPBench's
 NumPy version.
 """

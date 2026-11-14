@@ -357,7 +357,7 @@ def test_the_cost_tables_of_vecmul_and_dot_1():
         ("total", "", "171 000", "98.229", "100.0%")]  # fmt: skip
     parts = [(p["name"], p["area_text"], p["area_share_text"], p["energy_text"],
               p["energy_share_text"]) for p in cost_parts(estimate(g, platform))]  # fmt: skip
-    # the crossbar's 16 read-only and 8 write-only inputs priced as such (X71)
+    # the crossbar's 16 read-only and 8 write-only inputs priced as such
     assert parts == [("datapath", "55 300 µm²", "8.0%", "23.137 nJ", "23.6%"),
                      ("control", "362 µm²", "0.1%", "0.066 nJ", "0.1%"),
                      ("streamers", "116 000 µm²", "16.8%", "30.457 nJ", "31.0%"),
@@ -793,7 +793,7 @@ def test_compare_gives_two_columns_when_the_groups_differ():
     # The link drops a streamer set (two streamers and 16 crossbar inputs), the banks the
     # same;
     # its 16 fewer accesses make it the cheaper one too, as an access has one price; the crossbar's
-    # 24 + 9 and 16 + 1 read-only and write-only inputs priced as such (X71)
+    # 24 + 9 and 16 + 1 read-only and write-only inputs priced as such
     bars = c["cost_bars"]
     assert [b["label"] for b in bars["area"]] == ["5 bind", "6 link"]
     assert [b["total_text"] for b in bars["area"]] == ["769 000 µm²", "642 000 µm²"]

@@ -1,7 +1,7 @@
 {
  "$schema": "https://json-schema.org/draft/2020-12/schema",
  "title": "SNAX-FORGE accelerator description",
- "description": "accelerator.json: a design point's accelerators, each a streamer set of one snax_cluster entry, with their groups, units and CSRs, which SNAX-GVSoC reads (snax-gvsoc snax/snax_cfg.py) and Emit (snax_forge/gen/accelerator.py, D145, D157, C§17).",
+ "description": "accelerator.json: a design point's accelerators, each a streamer set of one snax_cluster entry, with their groups, units and CSRs, which SNAX-GVSoC reads (snax-gvsoc snax/snax_cfg.py) and Emit (snax_forge/gen/accelerator.py, CONTRACTS, \"Accelerator RTL spec\").",
  "type": "object",
  "properties": {
   "design_point": {"description": "The design point by its path from the root.", "type": "string", "minLength": 1},
@@ -26,7 +26,7 @@
     },
     "groups": {"description": "In CSR order.", "type": "array", "minItems": 1, "items": {"$ref": "#/$defs/group"}},
     "movers": {
-     "description": "Only when its groups share its movers (D169): per mover in the streamer's order, readers first; its inputs and outputs are then on their users, not one per mover.",
+     "description": "Only when its groups share its movers: per mover in the streamer's order, readers first; its inputs and outputs are then on their users, not one per mover.",
      "type": "array",
      "minItems": 1,
      "items": {"$ref": "#/$defs/mover"}
@@ -74,7 +74,7 @@
     "name": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]*$"},
     "access": {"enum": ["rw", "ro"]},
     "offset": {"description": "From the shell's first CSR, contiguous over the accelerators.", "type": "integer", "minimum": 0},
-    "width": {"description": "Its bits: START 1, JOBS and JOB_BEATS the platform's job_width, STATUS 2, BUSY_COUNTER its busy_counter_width (D152).", "type": "integer", "minimum": 1, "maximum": 32},
+    "width": {"description": "Its bits: START 1, JOBS and JOB_BEATS the platform's job_width, STATUS 2, BUSY_COUNTER its busy_counter_width.", "type": "integer", "minimum": 1, "maximum": 32},
     "pin": {"description": "A scalar's datapath pin.", "$ref": "#/$defs/name"}
    },
    "required": ["name", "access", "offset", "width"],
@@ -107,7 +107,7 @@
      "minProperties": 1,
      "additionalProperties": {"$ref": "#/$defs/port"}
     },
-    "opType": {"description": "A SIMD or Mac unit's: NumPy's result type of its inputs (D143).", "$ref": "#/$defs/dtype"},
+    "opType": {"description": "A SIMD or Mac unit's: NumPy's result type of its inputs.", "$ref": "#/$defs/dtype"},
     "params": {"description": "What the ports do not give (op, accumulate, regOut, a baked slot), and T, a fold's rate fixed at design time.", "type": "object"},
     "scalars": {
      "description": "Each slot read from a container, in slot order, at its dtype: an R/W CSR the program writes (two at 64 bits, low word first), the datapath's pin.",

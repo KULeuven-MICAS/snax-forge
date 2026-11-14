@@ -85,7 +85,7 @@ def test_vecmul_at_w8_by_part():
     """The hand-worked design of the HWCOST notes: vecmul at W = 8, N = 2048, three ports of 8
     channels and one loop, 256 beats each, 6144 words; the crossbar at 24 + 1 + 1 = 26 inputs
     (the one core and AXI) on 32 banks, its table area linear in inputs (t = 2/8 between 24
-    and 32), its 16 readers' channels read-only and 8 writer's write-only (X71:
+    and 32), its 16 readers' channels read-only and 8 writer's write-only (the factor
     × (1 − 0.396496 · 16/26 − 0.41077 · 8/26)),
     every access at a full crossbar's price (32 inputs on 32 banks, a grid point); 32 banks,
     4096 reads and 2048 writes."""
@@ -125,7 +125,7 @@ def test_dot_4_by_part():
     """dot 4 at W = 4, N = 512: two readers of 4 channels (128 beats), a one-lane writer of one
     word; the crossbar at 4 + 4 + 1 + 2 = 11 inputs (the one core and AXI), its table
     area 56,117.5 µm² (t = 3/8 between 8 and 16 inputs; cost_tables.md's example 3 has 61,450.9 at
-    12, two cores) with 8 read-only and 1 write-only (X71), its accesses at a full crossbar's
+    12, two cores) with 8 read-only and 1 write-only, its accesses at a full crossbar's
     price."""
     e = estimated("dot_4")
     s = {c.counts.name: c for c in e.streamer_costs}
@@ -356,7 +356,7 @@ def test_the_clusters_dot_3_crossbar_in_both_forms():
     """dot 3 at W = 16, N = 2048, the design synthesized in the whole cluster: two readers of
     16 channels and a one-channel writer, 35 inputs on 32 banks with the one core. The
     factor form gives 113,776 µm², the crosspoint option 110,638 (the two-core cluster: 36
-    inputs, 119,308 and 115,763 against its synthesized 107,685, X71); the energy per access is
+    inputs, 119,308 and 115,763 against its synthesized 107,685); the energy per access is
     the same."""
     e = estimated("dot_3", W=16, N=2048)
     f, c = e.xbar, e.xbar_in("crosspoint")

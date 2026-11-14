@@ -431,7 +431,7 @@ def _bind_site(g: Graph, node: str, what: str) -> _Site:
     for m in temporal:
         kind = m.attrs.get("loop.kind")
         if kind == "tile":
-            raise SandboxError(f"{what}: map {m.id!r} is a tile; tiles are not lowered yet (LOW3b)")
+            raise SandboxError(f"{what}: map {m.id!r} is a tile; tiles are not lowered yet")
         if kind is None:
             raise SandboxError(
                 f"{what}: map {m.id!r} around it is untagged; the maps around the spatial map are "

@@ -476,7 +476,7 @@ def generate(
     shown = point_name(point_path, root if named_from is None else Path(named_from))
     point = DesignPoint.load(point_path)
     platform = point.platform
-    cluster = source(platform, root)  # first: a platform without one is gen.source (RUN.md §6)
+    cluster = source(platform, root)  # first: a platform without one is gen.source
     acc = describe(point, shown)
     found = units(point)
     members = {u: inst for mine in found.values() for u, inst in mine.items()}

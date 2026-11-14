@@ -4,7 +4,7 @@ The control for atax. Same ingredients -- one matvec over A and one over A^T --
 but the two results are INDEPENDENT, so there is no transient between them and
 no chaining barrier. If the chaining analysis flags atax and not bicg, it works.
 
-Tier A (PAPER §6.1). int64 (D113).
+Tier A (PAPER §6.1). int64.
 """
 
 import dace

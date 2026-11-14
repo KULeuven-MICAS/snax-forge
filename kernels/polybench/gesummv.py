@@ -3,7 +3,7 @@
 # From NPBench (github.com/spcl/npbench, f2d7f27): npbench/benchmarks/polybench/gesummv/gesummv_dace.py
 """PolyBench gesummv: y = alpha A x + beta B x.
 
-Tier A (PAPER §6.1). Staged: not yet linked to the flow. int64 (D113);
+Tier A (PAPER §6.1). Staged: not yet linked to the flow. int64;
 NPBench's return becomes the output argument out.
 """
 

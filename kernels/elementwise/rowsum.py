@@ -4,7 +4,7 @@ Partial reduction: the reduced axis differs from the output axis, unlike dot
 where they coincide. This is the shape softmax's normalisation pass takes,
 so it is worth having the structure characterised early.
 
-int64 (D113).
+int64.
 """
 
 import dace

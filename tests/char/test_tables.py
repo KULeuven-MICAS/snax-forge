@@ -1,6 +1,6 @@
 """HWCOST's tables (snax_forge/char/tables.py): the files against SOURCE, the rule
 against snax-forge-experiments' worked examples (its ``docs/cost_tables.md``), extrapolation
-outside the grid, the bank lookup, and the crossbar's read-only and write-only inputs (X71)."""
+outside the grid, the bank lookup, and the crossbar's read-only and write-only inputs."""
 
 from __future__ import annotations
 
@@ -78,7 +78,7 @@ def test_grid_values_are_exact(costs):
 
 
 def test_the_tcdm_bank(costs):
-    """The 512 × 64 bank of snax_cluster's TCDM (X48's row)."""
+    """The 512 × 64 bank of snax_cluster's TCDM (the RAM table's row)."""
     b = bank(costs, 512, 64)
     assert b is not None and (b.area_um2, b.e_rd_pj, b.e_wr_pj) == (13522.7, 3.53819, 6.4677)
 
@@ -130,7 +130,7 @@ def test_extrapolation_is_clamped_at_zero():
 
 
 def test_xbar_kinds_are_the_imported_constants(costs):
-    """xbar_kinds.json (X71): the factor form's two shares, the crosspoint form's coefficients
+    """xbar_kinds.json: the factor form's two shares, the crosspoint form's coefficients
     and the grid they were fitted on."""
     k = costs.kinds
     assert (k.f_ro, k.f_wo) == (0.396496, 0.41077)
@@ -166,7 +166,7 @@ def test_xbar_example_6_all_read_only(costs):
 
 
 def test_xbar_without_kinds_is_the_table(costs):
-    """No read-only or write-only input: the factor form is the table's area, as before X71."""
+    """No read-only or write-only input: the factor form is the table's area."""
     for q in ((27, 32), (4, 16), (64, 64)):
         assert xbar_cost(costs, *q, 0, 0).area_um2 == xbar_cost(costs, *q).area_um2
         assert (

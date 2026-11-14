@@ -103,7 +103,7 @@ def bundle_dir(output: str) -> Path:
 # The image snax-forge-check runs both simulators' steps in: a placeholder, with where to find it
 IMAGE_HINT = (
     "`<image>` is snax_cluster's development image (podman), which both simulators need; on the "
-    "MICAS servers the one docs/RUN.md section 8 names."
+    "MICAS servers the one docs/TOOL.md section 6 names."
 )
 
 

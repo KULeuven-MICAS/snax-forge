@@ -9,7 +9,7 @@
 
 import { CLASS_GROUP as GROUP, accelGroup, h, int, pct, section, table, unitFacts, unitsOf } from "./dom.js";
 
-// Cycle classes per component kind, in CONTRACTS.md section 7 order.
+// Cycle classes per component kind, in the order of CONTRACTS, "Profile and trace".
 const CLASS_ORDER = {
   accel: ["busy", "stall_out", "stall_in", "flush", "idle"],
   streamer: ["busy", "stall_xbar", "stall_fifo", "idle"],

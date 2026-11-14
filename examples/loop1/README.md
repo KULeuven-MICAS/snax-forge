@@ -1,6 +1,6 @@
 # LOOP1: one turn of the loop by hand
 
-This walk-through takes vecadd on `platforms/snax_forge.json` once around the loop on SNAX-GVSoC: run it, read why it takes the cycles it takes, write down what a change should do, make the change, and check. Every number below is checked by `tests/flow/test_loop1.py`, so the text stays true as the code moves. The outputs are not in git (D98): the commands make them again in a few minutes, in snax-forge's image (`docs/RUN.md`).
+This walk-through takes vecadd on `platforms/snax_forge.json` once around the loop on SNAX-GVSoC: run it, read why it takes the cycles it takes, write down what a change should do, make the change, and check. Every number below is checked by `tests/flow/test_loop1.py`, so the text stays true as the code moves. The outputs are not in git (D98): the commands make them again in a few minutes, in snax-forge's image (`docs/TOOL.md` section 1).
 
 Every quoted table is copied line for line from the report named above it.
 
@@ -71,7 +71,7 @@ So the accelerator is not what makes the run 471 cycles long: it is busy for 27.
 pixi run view out/flow/vecadd_N512_stall
 ```
 
-The Schedule tab (`docs/RUN.md` says how to open it on a server) shows one lane per core, the DMA, each mover and the accelerator over the window. The cluster has one core (D170), which starts the copies, configures the accelerator and waits for it. Three quiet stretches, where no task or copy is open, are folded:
+The Schedule tab (`docs/TOOL.md` section 1 says how to open it on a server) shows one lane per core, the DMA, each mover and the accelerator over the window. The cluster has one core (D170), which starts the copies, configures the accelerator and waits for it. Three quiet stretches, where no task or copy is open, are folded:
 
 - cycles 0–33, the setup: the core runs `main` and enters `forge_core_0`, which starts the first copy at 34;
 - cycles 325–355, between the accelerator's end and the store;

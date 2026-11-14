@@ -4,7 +4,7 @@ First kernel with a SCALAR argument and a two-op tasklet -- multiply then add,
 i.e. a MAC. That fused pair is the atom of every datapath downstream, so this
 is the smallest kernel that exercises operator chaining inside one tasklet.
 
-int32 (D113), packed two per 64-bit word (D142).
+int32, packed two per 64-bit word.
 """
 
 import dace

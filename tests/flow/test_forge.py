@@ -101,8 +101,8 @@ def test_forge_prints_each_step_and_snax_clusters_commands(tmp_path, forged, cap
         "  pixi run make -C target/snitch_cluster snax-forge-run SIM=vlt CFG_OVERRIDE=$B ELF=$E",
         (
             "Questa: rtl-gen and vsim_preparation in snax_cluster's development image, then "
-            "snax-forge-sim and snax-forge-run with SIM=vsim and the same B and E: docs/RUN.md "
-            "section 8."
+            "snax-forge-sim and snax-forge-run with SIM=vsim and the same B and E: docs/TOOL.md "
+            "section 6."
         ),
     ]
     # The log: each step's command and its whole output, as its own command line prints it

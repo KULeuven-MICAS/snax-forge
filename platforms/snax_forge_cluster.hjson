@@ -2,11 +2,11 @@
 // Licensed under the Apache License, Version 2.0, see LICENSE for details.
 // SPDX-License-Identifier: Apache-2.0
 
-// snax-forge's base cluster (D131), read by `pixi run design from-hjson
+// snax-forge's base cluster, read by `pixi run design from-hjson
 // platforms/snax_forge_cluster.hjson snax_forge`: from snax_cluster's
 // target/snitch_cluster/cfg/snax_alu_cluster.hjson at the pin
 // (gvsoc/snax-gvsoc/sw/README.md, ccc7688f), its values unchanged, its names
-// snax-forge's, but for one Snitch core (D170): core 0 holds both the
+// snax-forge's, but for one Snitch core: core 0 holds both the
 // accelerator slot and the DMA (xdma), where snax_alu_cluster.hjson has a
 // second core for the DMA. Its accelerator slot is the one the generator sets
 // for a design, and the one the platform's streamer template is read from.

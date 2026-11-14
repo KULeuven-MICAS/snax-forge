@@ -1,5 +1,4 @@
 # Housekeeping
-- Format: `pixi run fmt`. Lint: `pixi run lint`.
-- Always use the pixi tasks, never call ruff/black/pytest directly, so versions match the pinned environment.
-- Formatting and linting also run automatically via hooks; if a hook reports lint errors, fix them before finishing.
-- After finishing your work, make sure to run the formatting and linting tasks to ensure code quality.
+
+- Use the pixi tasks (`pixi run fmt`, `pixi run lint`, `pixi run test ...`), never ruff or pytest directly, so the versions match the pinned environment.
+- A hook formats each Python file you edit, and another runs `pixi run lint` when you stop and sends its errors back: fix them before finishing.

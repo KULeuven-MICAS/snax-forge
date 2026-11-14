@@ -4,7 +4,7 @@ dot is `out = Σ A[i] · B[i]` over N elements (`kernels/` `dot`). Six recipes b
 
 ## 1. Run one
 
-In snax-forge's image (`docs/RUN.md` section 1):
+In snax-forge's image (`docs/TOOL.md` section 1):
 
 ```bash
 pixi run flow recipes/dot/dot_4.json --platform platforms/snax_forge.json
@@ -18,7 +18,7 @@ Any of the six runs the same way, at W = 4 and the recipe's N (512; dot 1's is 6
 
 ## 2. The six
 
-| Recipe | Groups | Units, in chain order | Link | BUSY_COUNTER | C§17 | Fill |
+| Recipe | Groups | Units, in chain order | Link | BUSY_COUNTER | C§10 | Fill |
 |---|---|---|---|---:|---:|---:|
 | `dot_1` | `vmul`, `vsum`, an accelerator and a task each | `vmul` SimdLanes; `vsum` TreeAccumulate | none: `tmp0` in L1 | 131, 131 | 128, 129 | 3, 2 |
 | `dot_2` | `dot` | `mul` SimdLanes → `sum` TreeAccumulate | `tmp0`, a buffer of depth 1 | 133 | 130 | 3 |
@@ -27,7 +27,7 @@ Any of the six runs the same way, at W = 4 and the recipe's N (512; dot 1's is 6
 | `dot_5` | `dot` | `mac` Mac → `sum` SerialAccumulate | `out_partial`, a wire (depth 0) | 136 | 133 | 3 |
 | `dot_6` | `dot` | `mac` Mac → `sum` SerialAccumulate | `out_partial`, a buffer of depth 1 | 137 | 134 | 3 |
 
-BUSY_COUNTER is the group's busy cycles at N = 512, W = 4 (T = N / W = 128 beats, one job). C§17 gives the accelerator alone on ideal streams:
+BUSY_COUNTER is the group's busy cycles at N = 512, W = 4 (T = N / W = 128 beats, one job). C§10 gives the accelerator alone on ideal streams:
 
     C2 = JT + 2, C3 = JT + 1, C4 = JT + 2, C5 = J(T + W − 1) + 2, C6 = (J − 1)·max(T, W) + T + W + 2
 
@@ -42,4 +42,4 @@ What each builds:
 
 ## 3. What this does not show
 
-The counts are SNAX-GVSoC's; snax_cluster's RTL runs the same ELF from the bundle (`pixi run forge`, `docs/RUN.md` section 8). Bank and port statistics per group and the beat-level trace of a linked group are parked to SYN1 (`docs/STATUS.md` open item 96): `--trace beat` is refused for dot 2 to dot 6 (`convert.level`).
+The counts are SNAX-GVSoC's; snax_cluster's RTL runs the same ELF from the bundle (`pixi run forge`, `docs/TOOL.md` section 6). Bank and port statistics per group and the beat-level trace of a linked group are parked to SYN1 (`docs/STATUS.md` open item 96): `--trace beat` is refused for dot 2 to dot 6 (`convert.level`).

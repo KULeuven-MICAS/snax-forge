@@ -69,7 +69,7 @@ jobs:
     timeout-minutes: 30
     # The unit cases the specs drive the blocks through, the shell cases the shell
     # wrapper is driven through, the group cases the control unit is driven through and the
-    # datapath vectors the datapaths are checked on (C§17), from the submodule.
+    # datapath vectors the datapaths are checked on (CONTRACTS, "Accelerator RTL spec"), from the submodule.
     env:
       SNAX_GVSOC_UNIT_CASES: ${{ github.workspace }}/gvsoc/snax-gvsoc/tests/snax/unit/cases
       SNAX_GVSOC_SHELL_CASES: ${{ github.workspace }}/gvsoc/snax-gvsoc/tests/snax/shell/cases
@@ -126,7 +126,7 @@ jobs:
           test -f out/hw/FifoSlicer_w2_i8_n4.sv
           test -f out/hw/FifoPacker_n4_i8_w2.sv
 
-  # The flow on SNAX-GVSoC (D136): GVSoC built from the submodule, then
+  # The flow on SNAX-GVSoC: GVSoC built from the submodule, then
   # `pixi run flow` on vecadd at trace stall, which no test runs, and the tests
   # marked `gvsoc` (vecadd and vsum at trace off and task among them; D137: the
   # events converted, the reports written). The only
@@ -139,7 +139,7 @@ jobs:
     # A cold GVSoC build (no ccache) takes most of it; snax-gvsoc's job (build
     # and regress) fits in 30.
     timeout-minutes: 45
-    # Public image with GVSoC's build tools, snax_cluster's toolchain and pixi (D118).
+    # Public image with GVSoC's build tools, snax_cluster's toolchain and pixi.
     container: ghcr.io/kuleuven-micas/snax-forge:main
     defaults:
       run:

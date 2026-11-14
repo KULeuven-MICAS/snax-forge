@@ -1,10 +1,14 @@
 # SNAX-FORGE Paper Plan
 
-What the paper claims, how each claim is measured, and which milestones deliver the evidence (P1, D100). Every number the paper states will come from a checked-in command; the tests that check them, as `examples/loop1`'s do, follow after the submission (PAP4). Items marked **[open]** are listed in section 10.
+What the paper claims, how each claim is measured, and which milestones deliver the evidence (P1). Every number the paper states will come from a checked-in command; the tests that check them, as `examples/loop1`'s do, follow after the submission (PAP4). Items marked **[open]** are listed in section 10.
 
 ## 1. Venue
 
-ISPASS 2027 (D100): the abstract on 11 Dec 2026, the paper on 18 Dec. C3 leads, as an analysis of which cluster-level effects decide what a cluster should hold; C4 is why the answer can be trusted, C1 why it is practical, and E7 why the generated blocks are worth using (PAP3). DAC 2027 is dropped; ICCAD and MICRO were the other candidates. Double-blind: SNAX, SNAX-MLIR, OpenGeMM, DataMaestro and Hypercorex are cited in the third person, the repository goes through an anonymous mirror, and the tool is named Atelier in the paper.
+ISPASS 2027: the abstract on 11 Dec 2026, the paper on 18 Dec (PAP3).
+
+- C3 leads, as an analysis of which cluster-level effects decide what a cluster should hold; C4 is why the answer can be trusted, C1 why it is practical, E7 why the generated blocks are worth using.
+- DAC 2027 is dropped; ICCAD and MICRO were the other candidates.
+- Double-blind: SNAX, SNAX-MLIR, OpenGeMM, DataMaestro and Hypercorex are cited in the third person, the repository goes through an anonymous mirror, and the tool is named Atelier in the paper.
 
 ## 2. Problem
 
@@ -21,13 +25,19 @@ HLS and XLS produce engines, not the shell. Analytical tools (ZigZag, Stream, Ti
 
 > An accelerator cluster is a shell holding accelerators that are themselves compositions of unit engines. SNAX-FORGE binds unit engines onto a workload's dataflow graph, evaluates the composed cluster in a cycle-level model of the shell with the real control program, reports the cause of every lost cycle, and generates the chosen composition as RTL that plugs into SNAX, so shell compositions can be compared and explained before RTL.
 
-**Problem and solution, as the paper puts them.** Deciding which accelerators to build into a compute cluster, and how, is slow and unguided: the costs that decide it (bank time, interconnect ports, DMA, control, the hand-offs between accelerators) show only after RTL integration. The solution is one design with three levels of feedback, each checked against the one below: (1) the workload's dataflow graph, where the designer splits loops into streamer and lane work and binds blocks, every step showing its early cycle, DMA, interconnect, area and energy cost (seconds); (2) the accelerators, program and cluster configuration generated from that graph and run on SNAX-GVSoC (minutes); (3) the same design as RTL on vsim and through synthesis (hours), the final form. To our knowledge no other flow puts the cluster's cost on the workload's own graph for a designer who decides, and generates from that graph several accelerators in a shared-L1 cluster checked against RTL; DSAGEN and OverGen cost an architecture graph inside an automated search over a fixed set of fabric primitives (section 8.4).
+**Problem and solution, as the paper puts them.** Deciding which accelerators to build into a compute cluster, and how, is slow and unguided: the costs that decide it (bank time, interconnect ports, DMA, control, the hand-offs between accelerators) show only after RTL integration. The solution is one design with three levels of feedback, each checked against the one below:
+
+1. the workload's dataflow graph, where the designer splits loops into streamer and lane work and binds blocks, every step showing its early cycle, DMA, interconnect, area and energy cost (seconds);
+2. the accelerators, program and cluster configuration generated from that graph and run on SNAX-GVSoC (minutes);
+3. the same design as RTL on vsim and through synthesis (hours), the final form.
+
+To our knowledge no other flow puts the cluster's cost on the workload's own graph for a designer who decides, and generates from that graph several accelerators in a shared-L1 cluster checked against RTL; DSAGEN and OverGen cost an architecture graph inside an automated search over a fixed set of fabric primitives (section 8.4).
 
 Composition is one spectrum: unit engines stitched on the graph (a multiplier into an accumulator, `dot`), a unit set that forms a known accelerator (SNAX's GeMM core as a spatial array plus a SIMD unit), or a full accelerator. `bind` in a recipe covers all three (D102, D112).
 
 ## 4. Contributions
 
-1. **The engine–shell split.** A unit engine is a BRM (interface, per-port affine dataflow, latency, II, drain, function; D68, D103); the shell is modelled once, in SNAX-GVSoC, and checked against snax_cluster RTL (D116). Shown to capture existing SNAX accelerators and an engine from HLS.
+1. **The engine–shell split.** A unit engine is a BRM (interface, per-port affine dataflow, latency, II, drain, function; D68); the shell is modelled once, in SNAX-GVSoC, and checked against snax_cluster RTL (D116). Shown to capture existing SNAX accelerators and an engine from HLS.
 2. **A pre-RTL path from NumPy to a composed cluster.** DaCe SDFG, SNAX-DFG, recipes that bind unit engines, a design point, a generated program, and a cycle-level run with reports that name causes (D99).
 3. **Composition as design-space exploration.** Sweeps over compositions with cycles against area, and cases where the cluster-level choice differs from the per-engine choice.
 4. **One description, two outputs.** Each BRM gives the model's accelerator and its Chisel RTL, and the hjson describes the cluster to both, so the chosen composition runs in the model and in SNAX from the same design (D111, D116).
@@ -46,7 +56,7 @@ Not contributions: the simulation technique (GVSoC's) and the LLM; an agent driv
 
 ## 6. Evaluation plan
 
-The ISPASS 2027 paper (PAP3, D100) carries E1–E4, E7 and E11, with E5 if it lands; the order of the work is in STATUS's Next Up.
+The ISPASS 2027 paper (PAP3) carries E1–E4, E7 and E11, with E5 if it lands; the order of the work is in STATUS's Next Up.
 
 | ID | Experiment | Workload | Output | ISPASS 2027 |
 |---|---|---|---|---|
@@ -90,7 +100,12 @@ Down the table, the unit stops being one firing per cycle, and the question move
 
 ## 7. Cost model
 
-Area first, energy if characterisation allows; characterised once, then read from tables: post-synthesis area per BRM parameter (lanes, width, depth), fitted linearly where it is; the L1 macros and bank counts on a PDK; TCDM interconnect area against banks and ports; later per-access energy times the counts the model keeps, as Accelergy does. Each fit's error is stated. No place and route. From 5 Nov 2026 characterization is on Nangate 45 nm only (D159): the memories come from CACTI 7 at 45 nm (RAM1, D160), a lookup table of area and read and write energy per access and `.lib` macros generated from it, with memory energy counted as accesses times the table, so the L1 macros, the cluster synthesis and E11 exist at 45 nm only; what is at 15 nm already (SYN1, SYN2, CHAR1, HSYN1) stays as data, and snax-forge offers nangate45 only (D167). The PDK question is answered: the Nangate 45 nm and 15 nm Open Cell Libraries, synthesis and gate-level power in KULeuven-MICAS/snax-forge-experiments, with results committed. SYN1 gives forge's area and dynamic energy beside the HLS points at one task of N = 2048, with ctrl and csr apart (`results/forge_vs_hls.md`); CHAR1 characterizes each basic block alone, and HWCOST (D167) adds the streamers (per reader: FIFO depth, loops, channels), the crossbar (inputs against banks, its energy per access in 1/inputs) and the banks from STRM1's and RAM1's tables, interpolated per axis, the design's cost in five parts (datapath, control, streamers, crossbar, memory); the blocks were checked against dot 2–6 synthesized whole, the cluster level against CSYN1.
+Area first, energy if characterisation allows; characterised once, then read from tables, each fit's error stated, no place and route.
+
+- **What is characterised**: post-synthesis area per BRM parameter (lanes, width, depth), fitted linearly where it is; the L1 macros and bank counts; TCDM interconnect area against banks and ports; per-access energy times the counts the model keeps, as Accelergy does.
+- **Where**: the Nangate 45 nm and 15 nm Open Cell Libraries, synthesis and gate-level power in KULeuven-MICAS/snax-forge-experiments, with results committed. From 5 Nov 2026 on Nangate 45 nm only: the memories come from CACTI 7 at 45 nm (RAM1), so the L1 macros, the cluster synthesis and E11 exist at 45 nm only; what is at 15 nm already (SYN1, SYN2, CHAR1, HSYN1) stays as data, and snax-forge offers nangate45 only (D167).
+- **What exists**: SYN1 gives forge's area and dynamic energy beside the HLS points at one task of N = 2048, ctrl and csr apart (`results/forge_vs_hls.md`); CHAR1 characterizes each basic block alone; HWCOST (D167) adds the streamers, the crossbar and the banks from STRM1's and RAM1's tables, the design's cost in five parts (C§14).
+- **Checked**: the blocks against dot 2–6 synthesized whole, the cluster level against CSYN1.
 
 ## 8. Related work and positioning
 
@@ -204,8 +219,8 @@ The draft's line, then the author's after reading, which wins. A row whose secon
 | Shared crossbar ports across streamer sets | E4 | M13 PORT1 (done; open item 128) |
 | DMA cost on the graph | Level 1's feedback, E4 | M13 L2V1 (open item 99 for the graph-level node) |
 | Interconnect markers | Level 1's feedback, E4 | M13 XBAR1 |
-| The engine-alone number | C3's baseline in E4 | M13 VIEW2, the ideal estimate (D155, C§19) |
-| Cost model: blocks, streamers, memory, interconnect | E4, E7, C4's cost check | M13 CHAR1, CHAR1b (done), RAM1, HWCOST (section 7, D159) |
+| The engine-alone number | C3's baseline in E4 | M13 VIEW2, the ideal estimate (D155, C§13) |
+| Cost model: blocks, streamers, memory, interconnect | E4, E7, C4's cost check | M13 CHAR1, CHAR1b (done), RAM1, HWCOST (section 7) |
 | A sweep script | E4 | over `pixi run flow --set`; DSE5 (M8) is not needed |
 | Cluster synthesis on the same macros | C4's cost check at cluster level, E11 | RAM1, then 2–3 composites and the homogeneous cluster at 45 nm |
 | `exp`, `max`, division | softmax in E5 | M7 tiers B and C (FE1b, FE1c; open item 37) |
@@ -251,7 +266,7 @@ A guide, not a verdict: what has to be settled before the outline (section 12). 
 **Related work.**
 
 - **Q11. Does each separating sentence hold after the reading?** Tested in section 8.4; one that fails changes the claim.
-- **Q12. Head-to-head run or a feature table?** Stream as E9, exploratory and parked (D23).
+- **Q12. Head-to-head run or a feature table?** Stream as E9, exploratory and parked.
 - **Q13. HLS and XLS: input or competitor?** Input (E7, E8). PAP3: E7 only; E8 is future work.
 - **Q14. The name clash with AccelForge?** At least one sentence of contrast.
 
