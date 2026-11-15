@@ -7,7 +7,7 @@ Rules (D117):
 - An entry is a choice with a real alternative that someone may want to reverse: direction, ownership, the interfaces between components, the order of work. Implementation details live in the module's docstring and its tests.
 - An entry says what was decided, why, and where the detail lives, in a few short bullets; an edge case only when there is one. A change is written into the entry, not chained after it.
 - Entries merged into one keep all their numbers in its heading, so a cite of any of them still finds it. A number is never changed or reused; the text of a removed entry is in git history.
-- A new decision gets the next free number, under the area it belongs to. Next free number: **D172**.
+- A new decision gets the next free number, under the area it belongs to. Next free number: **D173**.
 
 Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29–D45, D47–D50, D53, D54, D56, D58–D63, D65–D67, D69, D74, D76–D78, D80, D81, D83, D88–D97, D100, D101, D103, D104, D106, D107, D109, D110, D114, D115, D119, D124, D127, D128, D132, D133, D138–D141, D151, D156, D159, D160.
 
@@ -266,15 +266,15 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 - **Why:** a quick number before any run. A run's BUSY_COUNTER counts from START until busy drops, so it includes bank conflicts and is shortened by the streamers' head start.
 - **Where:** CONTRACTS, "Estimate".
 
-### D154 — A first-order cost model before synthesis
+### D154 · D172 — A first-order cost model on clock-gated blocks, before synthesis
 
-- **Decided:** the cost of a design's groups comes from the description: registers are bits (e_load when loading, e_hold every cycle), a block its comb energy per fire, control its bits × e_hold × a factor; the table is `snax_forge/char/<tech>.json`. A control unit's area is its flops' area plus an equal comb area.
-- **Why:** an early estimate (about 30 % on the large costs), shown as such, with no synthesis in the loop.
+- **Decided:** the cost of a design's groups comes from the description: a block costs its fires, each its comb energy and its register bits loading (e_load); a flop that holds costs nothing, as clock gating makes it; control is its bits × e_ctrl every cycle. The table is `snax_forge/char/<tech>.json`, snax-forge-experiments' clock-gated block table. A control unit's area is its flops' area plus an equal comb area.
+- **Why:** an early estimate (about 30 % on the large costs), shown as such, with no synthesis in the loop. Clock-gated synthesis is the basis (snax-forge-experiments X79 · X87 · X88): a held bit costs about 0.07 fJ a cycle there against 7.1 fJ ungated, so the hold term moved dot 3's datapath by 0.004 pJ and is dropped. Control keeps one constant, so a group's control unit stays visible beside its datapath, the HLS comparison's basis.
 - **Where:** CONTRACTS, "Cost model"; `snax_forge/char/README.md`.
 
 ### D167 — The cost in five parts
 
-- **Decided:** a design's cost is reported in five parts (datapath, control, streamers, crossbar, memory), each with its share, beside the total and the total without the banks. Streamers, crossbar and banks are priced from snax-forge-experiments' tables, copied as they are (`pixi run import-costs`) and interpolated, extrapolated with a note beyond them. A streamer is priced per beat and a crossbar access at one price per bank count, so the energy follows the accesses. The crossbar's area prices a reader's channels as read-only inputs and a writer's as write-only. The cores, I-cache, DMA and csr are not costed. nangate45 only.
+- **Decided:** a design's cost is reported in five parts (datapath, control, streamers, crossbar, memory), each with its share, beside the total and the total without the banks. Streamers, crossbar and banks are priced from snax-forge-experiments' clock-gated tables, copied as they are with the block table (`pixi run import-costs`) and interpolated, extrapolated with a note beyond them. A streamer is priced per beat and a crossbar access at one price per bank count, so the energy follows the accesses. The crossbar's area prices a reader's channels as read-only inputs and a writer's as write-only. The cores, I-cache, DMA and csr are not costed. nangate45 only.
 - **Why:** the parts a user can change are the parts the estimate shows.
 - **Where:** CONTRACTS, "Cost model"; `snax_forge/char/tables.py`, `estimate/cost.py`.
 
