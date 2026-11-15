@@ -1,6 +1,6 @@
 # HWCOST's tables, copied as they are by util/import_costs.py (pixi run import-costs)
 repo: https://github.com/KULeuven-MICAS/snax-forge-experiments
-commit: 71a99b5fe20f28ccfeb8239f42f4ffa4373ce810
+commit: f0b604386d8f87335178bd4cd0f5d29f378c26e6
 block_table: results/char/nangate45/char_cg.json sha256 1bd6f5e6bcdced41bf1a85d48b1a5673792d359d30301d64fa42617976be22a9
 ram_table.csv: results/ram/nangate45/ram_table.csv sha256 061b988c635e25ff83e8ab5371ee530f8e992bba8b1ff47012b0a001688338fe
 streamer.csv: results/strm/nangate45/streamer.csv sha256 1e07485ec08f96566fe97c23772d0eba880f6e9f349c49478d942ec159166f8e
