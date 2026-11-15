@@ -86,6 +86,8 @@ To do, in two tracks, each task in its own PR:
   2. **PACK1a** (`wip`, branch `ry/pack1a`): int8, int16 and int32 in on the tier-done and untiered kernels whose streams pack, int32 or int64 accumulate, as presets of each kernel (`--set types=i8|i16|i32`, D113 · D173); exact products by the kernel's cast, types following the program (D143 · D175); inputs wire-sliced, outputs wired or packed by a `FifoPacker` the flow places (D142 · D174). In four levels, each run on SNAX-GVSoC first, then on vsim: L1 vecadd, vecmul, relu, axpy, matadd; L2 vsum, rowsum; L3 dot_1 to dot_6, dot_1_enc, dot_1_shared, and dot_serial at i32 only; L4 matvec_1, 3, 4, 6 and matvec_dot1, 3, 4, 6. Left at int64 and untouched: rowsum_2, matvec_2, matvec_5 (column forms, whose narrow input is not contiguous), their `matvec_dot` twins, rowsum_serial (a span > 1 unit on the streamer, `gen.span`), dot_serial at i8 and i16 (its serial sum reads the int32 products one lane at a time, an input narrower than a word), the seeded recipes (open item 133), mvt, atax and bicg (open item 132), E7's points. No characterization: the new types' blocks and the packer show as not characterized (open item 134). PACK1's requantization and tier P stay in M7.
      - R5: the packer in the Chisel, cycle for cycle with snax-gvsoc's `SnaxPacker` (its ry/pack1a at 2a151d7): `GroupCtrl`'s `last` from the counters, `FifoPacker`'s `clear`, `last` and zero fill, placed by `ShellWrapper` on an outer output with `d_out`; `GroupCasesSpec` runs the 41 group cases, the 11 `pack_*` ones through the packer.
      - R6: the flow places the packer: `connect.pack`'s output rule (contiguous pushes, whole-word starts and outer steps, d_out dividing the innermost count under an outer loop), `d_out` on the design point's streamers and a packed outer output's port in `accelerator.json`, the writer one channel of one word, LOWER's loop fold, the estimate's words and the packer's flops (not characterized), the DFG label and the report's `d_out` column.
+     - R7: L2–L4 on SNAX-GVSoC, 110 points (each preset at its smallest W and at W = 32): every run `forge data: 0 errors`, every packed group on its estimate; the multiply group of matvec_1 and matvec_dot1 at W = 32 over its estimate at the bank bound the design report gives (its wide L1 product), not the packer's.
+     - R8: `forge-set quick` (8, now with vsum and matvec_3 at i8) and `pack` (28 narrow designs) on vsim: 31 PERFECT, 5 NEAR (each counter within its fill), no data error; every packed design PERFECT. Open item 95 has the rows.
   3. **MVT1** (`wip`, paused at step 1 on 10 Nov, branch `ry/mvt1-2`; part 1 in #60; split from B2): mvt in the row form on both sides, $x_1 \mathrel{+}= A y_1$ as dots per row and $x_2 \mathrel{+}= A^T y_2$ by the transposed read, at M = N = 40, recipe against recipe, each on SNAX-GVSoC and snax_cluster, written up in `examples/dryrun/4_mvt.md`.
      - Built: the DFG view in columns and `mark_transpose` (D164), one instance or linked group shared by both halves (D165); variant 1 as `mvt_1` (both halves on one `vmul`, `vsum`, `vadd`) and `mvt_1_dot2` (one `vmul → link → vsum` group run twice), variant 2 as `mvt_2` (a dot group and a `vadd` per half), each with its `_reuse` twin.
      - Step 1 (done, paused there): the six recipes at 40 × 40, W = 4 and 8, `contiguous` and `padded_rows`, on SNAX-GVSoC and vsim (open items 95, 120); mvt_2 at W = 8 dropped (85 crossbar inputs).
@@ -215,6 +217,34 @@ Questions not decided yet. Numbers are never reused; a closed item is removed, a
     | mvt_1_dot2_shared at 40 × 40, W = 4 (estimate 824) | 402, 13, 452, 13 (vsim 408, 13, 452, 13: NEAR 0.7 %) | 1466 | 1434 |
     | mvt_1_dot2_shared at 40 × 40, W = 8 (estimate 414) | 208, 8, 337, 8 (vsim 215, 8, 348, 8: NEAR 2.4 %) | 1166 | 1134 |
     | mvt_2_shared at 40 × 40, W = 8 (estimate 414) | 208, 8, 328, 8 (vsim 215, 8, 347, 8: NEAR 4.9 %) | 1200 | 1195 |
+    | vsum_tree at i8, W = 8 (snax_cluster #695; packed d_out 2) | 11 | 180 | 158 |
+    | rowsum at i8, W = 8 (packed) | 67 | 280 | 246 |
+    | matvec_3 at i8, W = 8 (packed) | 1028 | 1345 | 1325 |
+    | matvec_3 at i8, W = 32 (packed) | 260 | 577 | 557 |
+    | matvec_4 at i8, W = 8 (packed) | 1029 | 1351 | 1325 |
+    | matvec_6 at i8, W = 8 (packed) | 1037 | 1357 | 1334 |
+    | matvec_1 at i8, W = 8 (packed) | 529, 515 | 1373 | 1349 |
+    | matvec_dot1 at i8, W = 8 (packed) | 1057, 1027 | 2461 | 2426 |
+    | matvec_dot3 at i8, W = 8 (packed) | 1028 | 1345 | 1325 |
+    | matvec_dot4 at i8, W = 8 (packed) | 1029 | 1351 | 1325 |
+    | matvec_dot6 at i8, W = 8 (packed) | 1037 | 1357 | 1334 |
+    | dot_1 at i8, W = 8 (packed) | 10, 11 | 286 | 245 |
+    | dot_1_enc at i8, W = 8 (packed) | 10, 11 (vsim 8, 11: NEAR, 0.0 % beyond the fill) | 329 | 297 |
+    | dot_1_shared at i8, W = 8 (packed) | 8, 11 (vsim 10, 9: NEAR, 0.0 % beyond the fill) | 298 | 259 |
+    | dot_2 at i8, W = 8 (packed) | 69 | 272 | 251 |
+    | dot_3 at i8, W = 8 (packed) | 68 | 272 | 251 |
+    | dot_3 at i8, W = 32 (packed) | 20 | 224 | 203 |
+    | dot_3 at i16, W = 4 (packed d_out 2) | 132 | 354 | 323 |
+    | dot_3 at i32, W = 2 | 260 | 509 | 486 |
+    | dot_4 at i8, W = 8 (packed) | 69 | 272 | 251 |
+    | dot_5 at i8, W = 8 (packed) | 76 | 278 | 260 |
+    | dot_6 at i8, W = 8 (packed) | 77 | 278 | 260 |
+    | dot_serial at i32, W = 2 | 32, 67 (vsim 35, 65: NEAR, 0.0 % beyond the fill) | 333 | 299 |
+    | vecadd at i8, W = 8 | 10 | 239 | 208 |
+    | vecmul at i8, W = 8 | 10 | 239 | 208 |
+    | relu at i8, W = 8 | 10 | 197 | 158 |
+    | axpy at i8, W = 8 | 11 | 239 | 208 |
+    | matadd at i8, W = 8 | 18 | 255 | 236 |
 
 96. The measurements of a linked group: per-unit and per-link events, the converter at beat level for a group of several linked units (`convert.level` refuses it; an accelerator of several one-unit groups, dot 1, is done) and the run viewer's view of it; bank and port statistics, the export CSV, the area × cycles metric. The bank conflicts measured so far (F3, SNAX-GVSoC) stay inside C§10's cycles plus the fill.
 97. dot 1's row form at 16 × 512 does not fit: tmp0 needs 132 KiB of the 128 KiB L1, so it runs at 8 × 512.
