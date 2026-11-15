@@ -81,8 +81,17 @@ def test_a_failing_forge_stops_the_set(tmp_path, stubbed, capsys):
 
 
 def test_the_full_set_holds_the_quick_one():
-    assert fs.SETS["full"][: len(fs.QUICK)] == fs.QUICK and len(fs.SETS["full"]) == 23
+    assert fs.SETS["full"][: len(fs.QUICK)] == fs.QUICK and len(fs.SETS["full"]) == 25
     assert fs.SETS["full"][-3] == fs.Design("relu") and fs.Design("relu") not in fs.QUICK
+
+
+def test_the_pack_set_runs_every_narrow_recipe_once_at_i8():
+    """PACK1a's set: each recipe in scope at i8 and its smallest W, dot_serial at i32 only, and
+    dot_3 and matvec_3 again at W = 32, dot_3 at i16 and i32; the names forge's folders take."""
+    pack = fs.SETS["pack"]
+    assert len(pack) == 28 and len({d.name for d in pack}) == 28
+    assert fs.Design("matvec_3", ("types=i8", "W=8")) in fs.QUICK
+    assert fs.Design("matvec_3", ("types=i8", "W=8")).name == "matvec_3_typesi8_W8"
 
 
 def test_a_design_carries_its_own_sets():
@@ -116,8 +125,8 @@ def test_every_sets_recipe_is_found_in_its_folder():
     """forge_set takes its names through ``find_recipe``: each set's recipes are in a folder of
     ``recipes/``, and the sets keep their names."""
     assert [d.recipe for d in fs.QUICK] == ["vecadd_i32", "vsum_tree_i8", "dot_1", "dot_1_enc",
-                                            "dot_4", "axpy"]  # fmt: skip
-    assert all(not d.sets for d in fs.QUICK)
+                                            "dot_4", "axpy", "vsum_tree", "matvec_3"]  # fmt: skip
+    assert all(not d.sets for d in fs.QUICK[:6]) and all(d.sets == fs.I8 for d in fs.QUICK[6:])
     for name in {d.recipe for names in fs.SETS.values() for d in names}:
         path = fs.find_recipe(name)
         assert path.parent.parent == REPO / "recipes" and path.stem == name

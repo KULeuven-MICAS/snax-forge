@@ -1,6 +1,6 @@
 """A set of bundles for the local RTL check, in one command.
 
-    python -m snax_forge.flow.forge_set quick|full|mvt [--sim vsim|vlt] [-j N]    (pixi forge-set)
+    python -m snax_forge.flow.forge_set quick|full|mvt|pack [--sim vsim|vlt] [-j N]    (pixi forge-set)
 
 ``forge_set`` runs ``pixi run forge`` (flow/forge.py) on each ``Design`` of the set in ``SETS``
 (a recipe and its ``--set`` values, named as forge's folder), ``-j`` at a time (default the CPU
@@ -62,7 +62,45 @@ def designs(*recipes: str | Design) -> list[Design]:
 
 
 PADDED = "memory.passes.layout=padded_rows"  # each row a word longer
-QUICK = designs("vecadd_i32", "vsum_tree_i8", "dot_1", "dot_1_enc", "dot_4", "axpy")
+I8 = ("types=i8", "W=8")  # int8 in, int32 out and accumulate, at its smallest W (D173)
+QUICK = designs("vecadd_i32", "vsum_tree_i8", "dot_1", "dot_1_enc", "dot_4", "axpy",
+                Design("vsum_tree", I8), Design("matvec_3", I8))  # fmt: skip
+# Every recipe PACK1a runs narrow, at i8 (the packed outputs, D174), and a few at W = 32, i16, i32
+PACK = [
+    *(
+        Design(r, I8)
+        for r in (
+            "vecadd",
+            "vecmul",
+            "relu",
+            "axpy",
+            "matadd",
+            "vsum_tree",
+            "rowsum",
+            "dot_1",
+            "dot_1_enc",
+            "dot_1_shared",
+            "dot_2",
+            "dot_3",
+            "dot_4",
+            "dot_5",
+            "dot_6",
+            "matvec_1",
+            "matvec_3",
+            "matvec_4",
+            "matvec_6",
+            "matvec_dot1",
+            "matvec_dot3",
+            "matvec_dot4",
+            "matvec_dot6",
+        )
+    ),
+    Design("dot_serial", ("types=i32", "W=2")),
+    Design("dot_3", ("types=i8", "W=32")),
+    Design("matvec_3", ("types=i8", "W=32")),
+    Design("dot_3", ("types=i16", "W=4")),
+    Design("dot_3", ("types=i32", "W=2")),
+]
 SETS = {
     "quick": QUICK,
     "full": [*QUICK, *designs("vecadd", "vsum", "rowsum_serial", "vecmul_i32_i64", "dot_2",
@@ -75,6 +113,7 @@ SETS = {
             Design("mvt_1_dot2", ("W=8", PADDED)),
             Design("mvt_2"), Design("mvt_2", (PADDED,)),
             Design("mvt_2_reuse")],
+    "pack": PACK,
 }  # fmt: skip
 
 

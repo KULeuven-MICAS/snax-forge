@@ -245,12 +245,12 @@ One ELF, snax-forge's, runs on SNAX-GVSoC and on snax_cluster's RTL. The RTL run
 | Command | What it does | Writes |
 |---|---|---|
 | `pixi run forge RECIPE` | the flow, the bundle of its design point with `forge_expected.txt`, the bundle's ELF (checked to be the flow's), then snax_cluster's commands for the design | `out/forge/<name>/forge.log`, `out/bundle/<name>/` |
-| `pixi run forge-set quick\|full\|mvt` | forge on every recipe of a set at once | `out/forge-set/<set>.md`, `out/forge-set/<set>/<design>.txt`, and one line to run in snax_cluster |
+| `pixi run forge-set quick\|full\|mvt\|pack` | forge on every recipe of a set at once | `out/forge-set/<set>.md`, `out/forge-set/<set>/<design>.txt`, and one line to run in snax_cluster |
 
 - `forge` takes `--platform` (default `platforms/snax_forge.json`), `--set` and `--trace`, passed to the flow. `forge-set` takes `--sim vsim|vlt` and `-j N`.
 - `forge_expected.txt` holds the run's counter and data lines, then each counter's `forge fill`, its group's streamer fill from the estimate.
 - Beside `forge.elf`, forge leaves `forge_quiet.elf` (the same `main.c` with `-DFORGE_QUIET`: every start waited on at once, each section marked in CSR `0x7c5`, no prints) and its legend `obs_marks.json`, for a power run on the netlist.
-- The sets: `quick` is vecadd_i32, vsum_tree_i8, dot_1, dot_1_enc, dot_4 and axpy. `full` adds seventeen more (the list in `snax_forge/flow/forge_set.py`), among them matvec_1, matvec_seed, matvec_seed_serial and rowsum_2 twice. `mvt` is eleven bundles at M = N = 40, not in the other two.
+- The sets: `quick` is vecadd_i32, vsum_tree_i8, dot_1, dot_1_enc, dot_4, axpy, and vsum_tree and matvec_3 at `types=i8`, W = 8 (packed outputs, D174). `full` adds seventeen more (the list in `snax_forge/flow/forge_set.py`), among them matvec_1, matvec_seed, matvec_seed_serial and rowsum_2 twice. `mvt` is eleven bundles at M = N = 40, not in the other two. `pack` is 28 narrow designs: every recipe PACK1a runs at i8 and W = 8, dot_serial at i32, and dot_3 and matvec_3 at W = 32, dot_3 at i16 and i32.
 - When each set is due is CLAUDE.md's rule: the quick set on vsim before a PR that changes the emitted RTL or `main.c` merges, the full set at a phase's close, the numbers into open item 95.
 
 Example:
@@ -259,7 +259,7 @@ Example:
 pixi run forge-set quick
 ```
 
-    forge-set quick: 6 designs, 32 at a time; each forge's output in out/forge-set/quick/<design>.txt
+    forge-set quick: 8 designs, 32 at a time; each forge's output in out/forge-set/quick/<design>.txt
       vecadd_i32       passed
       ...
       axpy             passed
