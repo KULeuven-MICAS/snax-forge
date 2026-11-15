@@ -81,6 +81,7 @@ Every node has `id` (unique: task names are built from it, D75), `kind`, `inputs
 
 - a Scalar becomes a `[1]` container with `sdfg.scalar`; a Map with several parameters becomes one map per parameter, outermost first; a Reduce becomes one map per input dimension around `out = in1`, its output folding;
 - a map over `0:X` is named `lower(X)` (D162); other names are lower case with underscores stripped, `_1` added on a clash (`__tmp0` → `tmp0`);
+- a convert map (`out = dace.int32(inp)`, from the kernel's `astype`) into a transient is folded into its consumer, which reads the convert's input through a value cast `int32(x)`; a cast to the type the value already has is dropped (D143 · D175);
 - what it does not take (control flow, open item 36) is refused by name.
 
 ### Folding writes
@@ -105,7 +106,7 @@ A bound graph nests accelerator ⊃ groups ⊃ units and links (D146, D148):
 ### Names and expressions
 
 - Every name in an expression is a symbol or an enclosing map's `var`; shapes use symbols only; symbols, containers and variables never share a name.
-- An expression is ints, names, `+ - * //`, and `max(a, b)`, `min(a, b)` (`snax_forge/expr.py`), stored as `ast.unparse` writes it, one without names as an int.
+- An expression is ints, names, `+ - * //`, and `max(a, b)`, `min(a, b)` (`snax_forge/expr.py`), stored as `ast.unparse` writes it, one without names as an int. A tasklet's code also takes value casts `int8(x)` … `uint64(x)`.
 
 vecadd after `split_map` (W = 4) and `bind` (`tests/dfg/fixtures/vecadd_accelerated.snaxdfg`): the accelerated node holds what it computes and what it replaced.
 
@@ -165,7 +166,7 @@ The first four are shared: designs that differ only in timing, supported values 
 
 ### The function and its code
 
-`code` is one `output = expression` per output port over the input ports, per lane of one firing. The ops are `add`, `sub`, `mul`, `min`, `max`, `and`, `or` and `xor`; `simd` works at its inputs' result type, `reduce` casts its lanes to the output's dtype before its tree, `mac` multiplies at the inputs' result type, then casts (D143). A reduction says what one element contributes (`accumulate`'s `out = a`); its fold is its pattern's and kind's (D102).
+`code` is one `output = expression` per output port over the input ports, per lane of one firing. The ops are `add`, `sub`, `mul`, `min`, `max`, `and`, `or` and `xor`; `simd` works at its inputs' result type, `reduce` casts its lanes to the output's dtype before its tree, `mac` multiplies at the inputs' result type, then casts (D143). A tasklet's operand casts (`int32(a) * int32(b)`, section 2) are types, not code: they set the op's type, the unit's `opType` (section 10), and `bind` strips them before matching, so no BRM's code has one (D143 · D175). A reduction says what one element contributes (`accumulate`'s `out = a`); its fold is its pattern's and kind's (D102).
 
 `code` may instead be a list of entries, `{"params": {...}, "code": ...}`, each fixing design params. `simd` has twelve: add, sub, mul, min and max at two streams; the same five at one stream with the slot `k` for `b`; axpby as `out = k1 * a + k2 * b` and `out = k1 * a + b`.
 
@@ -362,7 +363,7 @@ One streamer per port of every accelerated instance, `<instance>_<port>`, but a 
 
 - **From the port**: `write`, `n_ports` (its lanes) and, unless an entry gives them, `spatial_bounds` (fastest first: an `affine` nest's spatial loops, a `stream` port's memlet ranges).
 - **From the graph**: `temporal_dims`, the firing loops the port's memlet runs over (at least 1, the most over an instance's nodes), recorded per streamer in the design point.
-- **From the platform**: `default.fifo_depth` (≥ 1); an entry named after a streamer overrides it and `spatial_bounds` for that streamer, and may give `num_ch` (never in `default`), the TCDM channels it uses, else W / num_slc (D142).
+- **From the platform**: `default.fifo_depth` (≥ 1); an entry named after a streamer overrides it and `spatial_bounds` for that streamer, and may give `num_ch` (never in `default`), the TCDM channels it uses, else W / num_slc, or 1 for an output packed d_out = num_slc / W results to a word (D142 · D174).
 
 ### Working copies and cluster files
 
@@ -405,9 +406,9 @@ The `platform` and `graph` stages run independently, `connect` when both passed,
 | `connect.derived` | a streamer entry that sets `write` or `n_ports` |
 | `connect.lanes` | an entry's `spatial_bounds` that are not the port's lanes |
 | `connect.dtype` | containers that break the BRM's dtype rule (`brm/dtypes.py`, D143: each port's dtype allowed, every output at least as wide as every input, no signed input with a `uint64` one), or two dtypes on one port of an instance |
-| `connect.pack` | a port whose elements do not fill whole words (D142), below |
+| `connect.pack` | an input whose elements do not fill whole words, an output neither wired nor packed (D142 · D174), below |
 | `connect.pad` | a fold reading through a tail what an accelerator wrote, unless the producer's tasklet on its pad values gives the fold's identity (D144), below |
-| `connect.num_ch` | a `num_ch` other than W / num_slc, which needs the FIFO slicer (D142); the message lists the values that would fit |
+| `connect.num_ch` | a `num_ch` other than the derived one (W / num_slc, or 1 for a packed output; D142 · D174); the message lists the values that would fit |
 | `connect.xbar_inputs` | more crossbar inputs than `l1.max_xbar_inputs`, below |
 | `share.shape` | a shared set's user whose spatial bounds do not fit in its mover's first channels (D169, `design/streamers.py`'s `shared_movers`) |
 | `connect.temporal` | a map around an accelerated node that is not `temporal`, or a subset not affine in the firing loops |
@@ -423,7 +424,7 @@ The `platform` and `graph` stages run independently, `connect` when both passed,
 
 The three checks that need the most explaining:
 
-- **`connect.pack`**: a word holds num_slc elements of the container's dtype. The fastest spatial bound must be a multiple of num_slc (W < num_slc: make the container 64-bit or give the port num_slc lanes), the fastest spatial loop must step 1 element (not a column), and every other step and the start must be multiples of num_slc (the fix pads the leading dimension). Row strides are over the padded shape: a 3 × 7 int32 matrix split by 4 has row stride 8. At num_slc = 1 every port passes.
+- **`connect.pack`**: a word holds num_slc elements of the container's dtype. An input is wired: its fastest spatial bound must be a multiple of num_slc (W < num_slc needs the parked FIFO slicer: make the container 64-bit or give the port num_slc lanes), its fastest spatial loop must step 1 element (not a column), and every other step and the start must be multiples of num_slc (the fix pads the leading dimension). Row strides are over the padded shape: a 3 × 7 int32 matrix split by 4 has row stride 8. An output is wired the same way, or packed when W divides num_slc, d_out = num_slc / W: its pushes must be contiguous (innermost stride W · b / 8 bytes), its start and every outer stride whole words, and with an outer loop d_out must divide the innermost count, since only the run's last word may be short (a 4 × 5 int32 output at W = 1 is refused: pad the row to 6). At num_slc = 1 every port passes.
 - **`connect.pad`**: the hardware masks nothing, so a producer's pad lanes reach the fold. dot 1 at W_mul = W_sum = 10 passes (0 × 0 = 0, add's identity); at W_mul = 8, W_sum = 10 the producer never writes the pad words and is refused (open item 106). The fix: a size that W divides, or a factor that divides n.
 - **`connect.xbar_inputs`**: the inputs as the generated cluster file gives them to SNAX-GVSoC: every streamer's num_ch, a shared set's movers' channels once (D169), one per core and one for AXI. vecmul at W = 64: `acc: 194 TCDM crossbar inputs, the platform takes at most 128 (192 streamer channels, 2 for the core and AXI; …)`; W = 32 has 98, which passes with a note. The fix: fewer lanes, or `share_ports`.
 
@@ -466,7 +467,7 @@ A note is registered (`register_note(code, fn)`) and runs once the checks passed
 | `graph_from` | the `.snaxdfg` it was made from (D108) |
 | `graph` | that graph as read |
 | `platform` | the platform working copy (section 5) |
-| `streamers` | the resolved shell, `<instance>_<port>` → `instance`, `port`, `write`, `n_ports`, `spatial_bounds`, `temporal_dims`, `dtype`, `num_slc`, `num_ch`, `fifo_depth` |
+| `streamers` | the resolved shell, `<instance>_<port>` → `instance`, `port`, `write`, `n_ports`, `spatial_bounds`, `temporal_dims`, `dtype`, `num_slc`, `num_ch`, `d_out` (1 unless packed), `fifo_depth` |
 | `memory` | the plan: `passes`, `changes`, `layouts` (container → memory → layout) |
 
 ## 8. Task list
@@ -528,6 +529,7 @@ flowchart TD
 - **A linked group** is one task at its first unit's node, `<node>_<group>`, on the group as its component: streamers only on the ports on no link (a link's container is never loaded or stored), and one accelerator task whose `values` are each unit's, by unit. Dot 6's `mult_dot`: `{"mac": {"n": 128, "T": 128}, "sum": {"n": 1, "T": 1}}`. The program writes the group's JOBS = n_u / ∏ T_v over its first unit u and its folds v, then each fold's JOB_BEATS (section 10).
 - **Chains through L1** (D105): `after` holds data dependences only, so two groups chain with one wait, on the first's writer.
 - **In place**: a writer never waits for a reader it starts with. That is an in-place update, allowed only when the reader is a port of its own unit visiting the same addresses in the same order (axpy's `y`, a fold's seed), and refused by name otherwise.
+- **A packed output** (D174): its writer's innermost loop of n pushes at stride s = W · b / 8 bytes becomes $(\lceil n / d_{out} \rceil, d_{out}\thinspace s)$, one write per 8-byte word, its spatial bounds `[1]`, the outer loops and the base unchanged. matvec at i8, M = 10 int32 outputs at W = 1: (10, 4 B) becomes (5, 8 B).
 - **In series** (D158): before each accelerator's `start`, one `sync` on the previous accelerator's task, its own configures placed before it, so it is set up while the previous one runs. None when an `after` already holds that task, and none between the groups of one encapsulated accelerator. dot_serial: `sum_sum`'s configures, `sync mult_mul`, its start.
 
 vecadd's design point on `platforms/snax_forge.json` gives `tests/run/fixtures/vecadd/tasks.json` exactly; its end:
@@ -648,8 +650,8 @@ A unit:
 | Key | Holds |
 |---|---|
 | `name`, `brm`, `datapath` | the bind's instance, its BRM, a catalogue datapath |
-| `ports` | per BRM port, in its order: `port` (the datapath's), `dir`, `dtype`, `lanes` |
-| `opType` | a SIMD or `Mac` unit's op type, NumPy's result type of its inputs (D143) |
+| `ports` | per BRM port, in its order: `port` (the datapath's), `dir`, `dtype`, `lanes`; an outer output that a packer feeds also `d_out` (absent at 1, D174) |
+| `opType` | a SIMD or `Mac` unit's op type, NumPy's result type of its inputs or of the kernel's casts (D143 · D175) |
 | `params` | only what the ports do not give: `op`, a baked slot (relu's `k`), a `Mac`'s `accumulate` and `regOut`, `T` when fixed at design time (then no JOB_BEATS) |
 | `scalars` | each slot read from a scalar and its type (axpy's `{"k1": "int32"}`), each an R/W CSR with its datapath `pin` |
 | `timing` | `latency`, `ii`, `span` (the cycles a unit reads one input in place; its throughput is one beat per max(ii, span)) |
@@ -659,7 +661,7 @@ A CSR is `name`, `access` (`rw`, `ro`), `offset` from the shell's first CSR, `wi
 
 - **`movers`**, with `share_ports`: per mover in the streamer's order `{name (reader<k>, writer<k>), role, num_channel, masked, users}`, each user `{group, port, num_channel}`.
 - **`port_mux`**: `{groups (in PORT_MUX_SEL's order), csr}`; PORT_MUX_SEL is the accelerator's last CSR, R/W, as wide as a group's index.
-- **Derived, never stored**: each port's num_slc and num_ch (D142), each link's kind and `to_input` (the fed port's place among its unit's inputs), every unit's firings.
+- **Derived, never stored**: each port's num_slc and num_ch (D142; 1 for a packed output, whose `d_out` a reader checks against num_slc / W), each link's kind and `to_input` (the fed port's place among its unit's inputs), every unit's firings.
 
 dot 4's file, one accelerator `dot` of one group `dot`, the MAC's lane partials wired into the tree:
 
@@ -729,7 +731,7 @@ dot 4's file, one accelerator `dot` of one group `dot`, the MAC's lane partials 
 Each a `GenError`, before anything is written:
 
 - **The entry**: a tag that is not an identifier, or a platform without an `accelerator_slot` (`gen.tag`: a design named `dot-1`).
-- **A unit**: a null binding (`gen.binding`), an unregistered datapath (`gen.datapath`), a controller other than `counted` (`gen.controller`), a drain other than 0 (`gen.drain`), timing other than the catalogue's (`gen.timing`), and what the datapath refuses: args (`gen.args`), op (`gen.op`), ports (`gen.ports`), rates (`gen.rate`), lanes not whole 64-bit channels (`gen.lanes`), a dtype not intN or uintN (`gen.dtype`).
+- **A unit**: a null binding (`gen.binding`), an unregistered datapath (`gen.datapath`), a controller other than `counted` (`gen.controller`), a drain other than 0 (`gen.drain`), timing other than the catalogue's (`gen.timing`), and what the datapath refuses: args (`gen.args`), op (`gen.op`), ports (`gen.ports`), rates (`gen.rate`), an input's lanes not whole 64-bit channels or an output's neither whole channels nor packed (`gen.lanes`), a dtype not intN or uintN (`gen.dtype`).
 - **Links and groups**: a link not from an `out` to an `in` of the same dtype and lanes (`gen.link`), a port on two links (`gen.link_port`), `inputs` or `outputs` not exactly the unlinked ports (`gen.outer`), a group not connected (`gen.group`), a shared accelerator not as `movers` and `port_mux` say (`gen.share`).
 - **Until the phase that lifts it**: a group that is not a chain in unit order, only the last unit's output outer (`gen.chain`, until tier A), and a unit of span > 1 on an outer input (`gen.span`, until B2).
 
@@ -830,6 +832,7 @@ $$C_2 = JT + 2, \quad C_3 = JT + 1, \quad C_4 = JT + 2, \quad C_5 = J(T + W - 1)
 
 - `clk_i`, `rst_ni` (active low); `csr_req_addr_i`, `csr_req_data_i` (32 bits), `csr_req_write_i`, `csr_req_valid_i`, `csr_req_ready_o`, `csr_rsp_data_o` (32 bits), `csr_rsp_valid_o`, `csr_rsp_ready_i`.
 - Per input port k, numbered across the sets in set order, `stream2acc_<k>_data_i`, `_valid_i`, `_ready_o`; per output port `acc2stream_<k>_data_o`, `_valid_o`, `_ready_i`, in the order of `inputs` and `outputs`. Data is `num_channel × 64` bits, lane i at bits `[w(i+1)-1 : wi]` (D142).
+- **A packed output** (D174): a `FifoPacker` of depth d_out sits between the unit's output and `acc2stream_<k>`, on the group's side of a shared set's port mux. Its slice pointer clears at START; each push fills the next slice, and the word goes to the writer when the slice is d_out − 1 or the push is the run's last (the group rule's done condition), the slices above zero; only a sending push waits for the writer's ready, so no cycle is added.
 - Per group `<group>_busy_o` and `<group>_done_o`.
 - **A shared accelerator** (D169) has its movers at the wrapper instead, readers then writers, and its port mux between them and its groups' ports, pure wires selected by PORT_MUX_SEL (reset 0, never held): a reader's data to each user, its valid and ready the selected group's only; a writer the selected user's data, zero-padded. snax-gvsoc's `SnaxPortMuxRule` without its fatal cases.
 
