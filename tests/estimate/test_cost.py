@@ -1,6 +1,6 @@
 """The cost of the estimate (estimate/cost.py): the block cost model on a technology's table,
-its counting, and the kernel energy against snax-forge-experiments' model of SYN2's four designs
-(``fixtures/char_model.json``, util/char_model.py)."""
+its counting, and dot 3's five parts against snax-forge-experiments' own implementation on the
+clock-gated tables (``fixtures/dot3_gated.json``)."""
 
 from __future__ import annotations
 
@@ -9,41 +9,50 @@ from pathlib import Path
 
 import pytest
 
-from snax_forge.char import TECHS, CharError, Table, load
+from snax_forge.char import CharError, Table, load
 from snax_forge.design.platform import Platform
 from snax_forge.estimate import Estimate, estimate
-from snax_forge.estimate.cost import CAVEAT, Block, block_cost, dec3, group_cost, heading, sig3
+from snax_forge.estimate.cost import (
+    CAVEAT,
+    Block,
+    BlockCost,
+    block_cost,
+    dec3,
+    group_cost,
+    heading,
+    sig3,
+)
 from tests.helpers import steps
 
-from .helpers import SNAX_FORGE, copies, estimated
+from .helpers import SNAX_FORGE, estimated
 
-MODEL = Path(__file__).parent / "fixtures" / "char_model.json"
-TOL = 0.005
-TABLE = Table("t", 10.0, {"snax_forge": "x"}, 2.0, 0.003, 0.001, 1.5, {
+GATED = Path(__file__).parent / "fixtures" / "dot3_gated.json"
+TABLE = Table("t", 10.0, {"snax_forge": "x"}, 2.0, 0.003, 0.0015, {
     "TreeAccumulate": [{"params": {"inType": "int64", "outType": "int64", "op": "add"},
                         "lanes_rule": "interpolate",
                         "points": [{"lanes": 2, "comb_um2": 100.0, "e_comb_pj": 4.0}]}]})  # fmt: skip
 TREE = {"inType": "int64", "outType": "int64", "op": "add", "lanes": 2}
 
 
-def test_a_block_costs_its_comb_per_fire_its_loads_and_its_holds():
-    """e_fire = e_comb + n_bits (e_load − e_hold), hold = n_bits e_hold, task = n_fire e_fire +
-    C_acc hold; area = A_comb + n_bits A_flop."""
+def test_a_block_costs_its_comb_and_its_loads_per_fire():
+    """e_fire = e_comb + n_bits e_load, task = n_fire e_fire (a held flop costs nothing, clock
+    gated); area = A_comb + n_bits A_flop."""
     c = block_cost(TABLE, Block("TreeAccumulate", TREE, 10), 64, 100)
     assert (c.found, c.comb_um2, c.flops_um2, c.total_um2) == ("measured", 100.0, 128.0, 228.0)
-    assert c.e_fire_pj == pytest.approx(4.0 + 64 * 0.002) and c.e_hold_pj == pytest.approx(0.064)
-    assert c.task_nj == pytest.approx((10 * 4.128 + 100 * 0.064) / 1000)
+    assert c.e_fire_pj == pytest.approx(4.0 + 64 * 0.003)
+    assert c.task_nj == pytest.approx(10 * 4.192 / 1000)
+    assert BlockCost.from_dict(c.to_dict()) == c
 
 
 def test_a_block_not_characterized_counts_its_comb_as_0_and_its_flops():
     for b in (Block("TreeAccumulate", {**TREE, "lanes": 64}, 10), Block(None, {}, 10)):
         c = block_cost(TABLE, b, 64, 100)
         assert (c.found, c.comb_um2, c.flops_um2) == (None, 0.0, 128.0)
-        assert c.task_nj == pytest.approx((10 * 0.128 + 100 * 0.064) / 1000)
+        assert c.task_nj == pytest.approx(10 * 0.192 / 1000)
 
 
-def test_a_groups_ctrl_is_its_bits_held_times_the_counter_factor():
-    """Its energy f_ctrl n_bits e_hold per cycle; its area its flops' plus an equal comb area (a
+def test_a_groups_ctrl_is_its_bits_times_e_ctrl_every_cycle():
+    """Its energy e_ctrl n_bits per cycle; its area its flops' plus an equal comb area (a
     placeholder)."""
     g = group_cost(TABLE, {"acc": Block("TreeAccumulate", TREE, 10)}, {}, {"acc": 64}, 131, 100)
     assert (g.ctrl_bits, g.ctrl_flops_um2, g.ctrl_comb_um2, g.ctrl_um2) == (
@@ -53,7 +62,7 @@ def test_a_groups_ctrl_is_its_bits_held_times_the_counter_factor():
         524.0,
     )
     assert g.to_dict()["ctrl"]["area"] == {"flops": 262.0, "comb": 262.0, "total": 524.0}
-    assert g.ctrl_nj == pytest.approx(1.5 * 131 * 100 * 0.001 / 1000)
+    assert g.ctrl_nj == pytest.approx(0.0015 * 131 * 100 / 1000)
     assert g.area == pytest.approx(228.0 + 524.0)
     assert g.energy == pytest.approx(g.units["acc"].task_nj + g.ctrl_nj) and g.missing == []
 
@@ -74,10 +83,10 @@ def test_a_unit_fires_its_firings_times_its_span_a_buffer_its_producers_outputs(
 
 
 # Rows of snax_forge/char/nangate45/ HWCOST's hand-worked designs read
-READER_8_1_8 = (38525.045548, 39.65753)  # depth, loops, channels -> area µm², pJ per beat
-READER_8_1_4 = (19635.587779, 20.02126)
-READER_8_1_1 = (5469.225952, 5.315563)
-READER_8_2_4 = (20155.085786, 20.29734)
+READER_8_1_8 = (31739.119316, 22.49923)  # depth, loops, channels -> area µm², pJ per beat
+READER_8_1_4 = (16195.409662, 11.44502)
+READER_8_1_1 = (4556.313922, 3.229712)
+READER_8_2_4 = (16691.765669, 11.54413)
 BANK = (13522.7, 3.53819, 6.4677)  # 512 × 64: area µm², pJ per read, pJ per write
 
 
@@ -100,19 +109,19 @@ def test_vecmul_at_w8_by_part():
     x = e.xbar
     assert (x.inputs, x.banks, x.accesses, x.extrapolated) == (26, 32, 6144, ())
     assert (x.read_only, x.write_only, x.form) == (16, 8, "factor")
-    table = 124078.629252 + 2 / 8 * (164650.280089 - 124078.629252)
+    table = 123926.211252 + 2 / 8 * (164995.016077 - 123926.211252)
     assert x.area_um2 == pytest.approx(table * (1 - 0.396496 * 16 / 26 - 0.41077 * 8 / 26))
-    assert x.e_access_pj == 2.739443  # xbar.csv's 32 inputs on 32 banks
+    assert x.e_access_pj == 2.752585  # xbar.csv's 32 inputs on 32 banks
     m = e.memory
     assert (m.n, m.depth, m.width, m.reads, m.writes) == (32, 512, 64, 4096, 2048)
     assert m.area_um2 == pytest.approx(32 * BANK[0])
     assert m.energy_nj == pytest.approx((4096 * BANK[1] + 2048 * BANK[2]) / 1000)
     shown = {k: (sig3(v.area_um2), dec3(v.energy_nj)) for k, v in p.items()}
-    # control 362 µm², 0.066 nJ: 34 bits, 66 less its 32-bit copy of JOBS
-    assert shown == {"datapath": ("55 300", "23.137"), "control": ("362", "0.066"),
-                     "streamers": ("116 000", "30.457"), "crossbar": ("84 500", "16.831"),
+    # control 360 µm², 0.066 nJ: 34 bits
+    assert shown == {"datapath": ("55 300", "23.137"), "control": ("360", "0.066"),
+                     "streamers": ("95 200", "17.279"), "crossbar": ("84 500", "16.912"),
                      "memory": ("433 000", "27.738")}  # fmt: skip
-    assert (sig3(e.area), sig3(e.area_design), dec3(e.energy)) == ("688 000", "256 000", "98.229")
+    assert (sig3(e.area), sig3(e.area_design), dec3(e.energy)) == ("668 000", "235 000", "85.132")
     assert e.energy == pytest.approx(sum(v.energy_nj for v in p.values()))
     assert e.area_design == pytest.approx(e.area - m.area_um2)
     assert e.kernel_energy == pytest.approx(p["datapath"].energy_nj + p["control"].energy_nj)
@@ -136,10 +145,10 @@ def test_dot_4_by_part():
         (2 * 128 * READER_8_1_4[1] + READER_8_1_1[1]) / 1000)  # fmt: skip
     assert (e.xbar.read_only, e.xbar.write_only) == (8, 1)
     assert e.xbar.area_um2 == pytest.approx(
-        (40117.322998 + 3 / 8 * (82784.522084 - 40117.322998))
+        (40287.828993 + 3 / 8 * (83108.244072 - 40287.828993))
         * (1 - 0.396496 * 8 / 11 - 0.41077 / 11)
     )
-    assert e.xbar.e_access_pj == 2.739443
+    assert e.xbar.e_access_pj == 2.752585
     assert (e.memory.reads, e.memory.writes) == (1024, 1)
 
 
@@ -158,10 +167,10 @@ def test_mvt_1_dot2_counts_a_shared_set_once_and_its_words_twice():
     assert (a.area_um2, a.e_beat_pj) == READER_8_2_4
     assert (e.xbar.inputs, e.xbar.read_only, e.xbar.write_only) == (23, 16, 5)
     assert e.xbar.area_um2 == pytest.approx(
-        (82784.522084 + 7 / 8 * (124078.629252 - 82784.522084))
+        (83108.244072 + 7 / 8 * (123926.211252 - 83108.244072))
         * (1 - 0.396496 * 16 / 23 - 0.41077 * 5 / 23)
     )
-    assert e.xbar.e_access_pj == 2.739443
+    assert e.xbar.e_access_pj == 2.752585
     assert sum(x.energy_nj for x in e.l1.values()) == pytest.approx(
         e.xbar.energy_nj + e.memory.energy_nj)  # fmt: skip
 
@@ -203,14 +212,13 @@ def test_words_are_counted_packed_and_a_link_keeps_its_container_out():
 
 def test_not_costed_without_a_platform_or_the_tables():
     """No platform: no streamer, crossbar or bank counts; the datapath and control parts stay,
-    the others are None and named. (nangate15's case, no HWCOST tables, dropped: the
-    technology is no longer offered.)"""
+    the others are None and named; a technology with no table is refused."""
     bare = estimate(steps("vecmul", W=8, N=2048)[-1], None, "nangate45")
     assert bare.not_costed == ["streamers, crossbar and memory: no platform"]
     assert bare.parts["memory"] == bare.parts["crossbar"] == bare.parts["streamers"]
     assert bare.parts["memory"].area_um2 is None and bare.l1 == {}
     assert bare.energy == pytest.approx(bare.kernel_energy)
-    with pytest.raises(CharError, match="no longer offered"):
+    with pytest.raises(CharError, match="no table for technology 'nangate15'"):
         estimate(steps("vecmul", W=8, N=2048)[-1], Platform.load(SNAX_FORGE), "nangate15")
 
 
@@ -231,9 +239,9 @@ def test_an_access_costs_the_same_whatever_the_inputs():
     s = steps("dot_5", W=8, N=2048)
     two, one = (estimate(s[k], Platform.load(SNAX_FORGE)) for k in (5, 6))
     assert (two.xbar.inputs, one.xbar.inputs) == (35, 19)
-    assert two.xbar.e_access_pj == one.xbar.e_access_pj == 2.739443
+    assert two.xbar.e_access_pj == one.xbar.e_access_pj == 2.752585
     assert (two.xbar.accesses, one.xbar.accesses) == (4113, 4097)
-    assert (dec3(two.energy), dec3(one.energy)) == ("72.455", "72.243")  # ctrl without copies
+    assert (dec3(two.energy), dec3(one.energy)) == ("63.630", "63.457")
 
 
 def test_the_cost_round_trips():
@@ -281,7 +289,7 @@ def test_a_cost_is_shown_to_3_significant_figures():
 
 def test_an_energy_is_shown_to_3_decimals():
     """Display precision only, so two close designs can be told apart (dot 4 and dot 5 at W =
-    8: 26.160 and 26.210 nJ); the caveat beside it is unchanged."""
+    8: 26.133 and 26.158 nJ); the caveat beside it is unchanged."""
     assert [dec3(x) for x in (26.28497, 26.33877, 97.2592, 3.6596, 0.1353, 0.0, 1234.5)] == [
         "26.285", "26.339", "97.259", "3.660", "0.135", "0.000", "1 234.500"]  # fmt: skip
     assert dec3(None) is None
@@ -289,43 +297,22 @@ def test_an_energy_is_shown_to_3_decimals():
 
 def test_dot_4_and_dot_5_read_apart():
     four, five = (estimated(r, W=8, N=2048).kernel_energy for r in ("dot_4", "dot_5"))
-    # 26.160 and 26.210: their control units without 64 bits of copies
-    assert (dec3(four), dec3(five)) == ("26.160", "26.210") and sig3(four) == sig3(five)
+    assert (dec3(four), dec3(five)) == ("26.133", "26.158")
     assert heading("nangate45") == "Cost estimate (first-order) on nangate45"
     assert "about 30 %" in CAVEAT and "csr" in CAVEAT and "4 × e_load" not in CAVEAT
 
 
-@pytest.mark.slow
-def test_the_kernel_energy_is_the_experiments_formula(capsys):
-    """A consistency check, not one of accuracy: vecmul, vsum_tree, dot 4 and dot 5 at W = 8
-    and 32, N = 2048, on nangate45 (its nangate15 rows skipped: the technology is no longer
-    offered), the estimate's kernel energy (units, links and ctrl) against
-    snax-forge-experiments' model, the same formula on the same inputs (its C_acc SYN2's
-    window, its ctrl bits DC's); within 0.5 %, the table's rounding. DC's ctrl bits still
-    hold the copies of JOBS and each JOB_BEATS the control unit no longer keeps: the estimate's bits plus
-    those (``copies``), and its kernel energy plus their control energy, are compared, until
-    the fixture is refreshed."""
-    rows = [r for r in json.loads(MODEL.read_text())["rows"] if r["tech"] in TECHS]
-    lines = ["| tech | recipe | W | C_acc | ctrl bits | estimate nJ | model nJ | ratio |",
-             "|---|---|---|---|---|---|---|---|"]  # fmt: skip
-    bad = []
-    for r in rows:
-        e = estimate(steps(r["recipe"], W=r["W"], N=2048)[-1], _platform(), r["tech"])
-        (g,) = e.groups
-        extra = copies(r["recipe"])
-        was = e.kernel_energy + g.cost.ctrl_nj * extra / g.ctrl_bits  # with the copies
-        ratio = was / r["kernel_nj"]  # the L1 accesses are not the kernel's
-        lines.append(f"| {r['tech']} | {r['recipe']} | {r['W']} | {e.accelerator_cycles} | "
-                     f"{g.ctrl_bits} + {extra} | {was:.3f} | {r['kernel_nj']:.3f} | {ratio:.4f} |")  # fmt: skip
-        assert (e.accelerator_cycles, g.ctrl_bits + extra) == (r["c_acc"], r["ctrl_bits"]), r
-        if abs(ratio - 1) > TOL:
-            bad.append((r["tech"], r["recipe"], r["W"], ratio))
-    with capsys.disabled():
-        print(
-            "\nkernel energy, the estimate against the experiments' formula (consistency):\n"
-            + "\n".join(lines)
-        )
-    assert len(rows) == 8 and not bad, bad
+def test_dot_3_is_the_experiments_gated_hwcost():
+    """An independent implementation: dot 3 at W = 2 to 32, N = 2048, each of the five parts
+    against snax-forge-experiments' pricing on the same clock-gated tables, within 1e-6 (that
+    one kept the hold term: at most 0.004 pJ on the datapath)."""
+    d = json.loads(GATED.read_text())
+    for w in sorted({r["W"] for r in d["rows"]}):
+        parts = estimate(steps(d["recipe"], W=w, N=d["N"])[-1], _platform(), d["tech"]).parts
+        for r in (r for r in d["rows"] if r["W"] == w):
+            got = parts[r["part"]]
+            assert got.area_um2 == pytest.approx(r["area_um2"], rel=1e-6), (w, r["part"])
+            assert got.energy_nj == pytest.approx(r["energy_nj"], rel=1e-6), (w, r["part"])
 
 
 def _platform():
@@ -355,9 +342,9 @@ def test_a_one_stream_simd_is_not_the_two_input_point():
 def test_the_clusters_dot_3_crossbar_in_both_forms():
     """dot 3 at W = 16, N = 2048, the design synthesized in the whole cluster: two readers of
     16 channels and a one-channel writer, 35 inputs on 32 banks with the one core. The
-    factor form gives 113,776 µm², the crosspoint option 110,638 (the two-core cluster: 36
-    inputs, 119,308 and 115,763 against its synthesized 107,685); the energy per access is
-    the same."""
+    factor form gives 113,891 µm², the crosspoint option 110,638, against the gated cluster's
+    103,257 (snax-forge-experiments' cost_tables.md, example 5); the energy per access is the
+    same."""
     e = estimated("dot_3", W=16, N=2048)
     f, c = e.xbar, e.xbar_in("crosspoint")
     assert (f.inputs, f.read_only, f.write_only, f.form, c.form) == (
@@ -367,6 +354,6 @@ def test_the_clusters_dot_3_crossbar_in_both_forms():
         "factor",
         "crosspoint",
     )
-    assert (round(f.area_um2), round(c.area_um2)) == (113776, 110638)
+    assert (round(f.area_um2), round(c.area_um2)) == (113891, 110638)
     assert f.e_access_pj == c.e_access_pj and f.energy_nj == c.energy_nj
     assert e.parts["crossbar"].area_um2 == f.area_um2

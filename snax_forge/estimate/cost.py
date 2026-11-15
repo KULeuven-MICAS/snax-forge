@@ -87,7 +87,6 @@ class BlockCost:
     comb_um2: float
     flops_um2: float
     e_fire_pj: float
-    e_hold_pj: float
     task_nj: float
 
     @property
@@ -97,14 +96,13 @@ class BlockCost:
     def to_dict(self) -> dict[str, Any]:
         return {"datapath": self.datapath, "fires": self.fires, "found": self.found,
                 "area": {"comb": self.comb_um2, "flops": self.flops_um2, "total": self.total_um2},
-                "energy": {"fire": self.e_fire_pj, "hold": self.e_hold_pj,
-                           "task": self.task_nj}}  # fmt: skip
+                "energy": {"fire": self.e_fire_pj, "task": self.task_nj}}  # fmt: skip
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> BlockCost:
         a, e = d["area"], d["energy"]
         return cls(d["datapath"], d["fires"], d["found"], a["comb"], a["flops"], e["fire"],
-                   e["hold"], e["task"])  # fmt: skip
+                   e["task"])  # fmt: skip
 
 
 @dataclass
@@ -378,17 +376,16 @@ def shares(parts: Mapping[str, Part]) -> dict[str, tuple[float | None, float | N
 
 
 def block_cost(table: Table, block: Block, bits: int, c_acc: int) -> BlockCost:
-    """One block's cost on ``table`` (CONTRACTS, "Cost model")."""
+    """One block's cost on ``table`` (CONTRACTS, "Cost model"): its fires only, each its comb
+    energy and its bits loading; ``c_acc`` is not used, a held flop costing nothing."""
     p = block.params
     got = None
     if block.datapath is not None:
         got = lookup(table, block.datapath, p, p.get("lanes", 1), p.get("depth"))
     comb, e_comb = (got.comb_um2, got.e_comb_pj) if got is not None else (0.0, 0.0)
-    e_fire = e_comb + bits * (table.e_load_pj - table.e_hold_pj)
-    hold = bits * table.e_hold_pj
+    e_fire = e_comb + bits * table.e_load_pj
     return BlockCost(block.datapath, block.fires, got.found if got is not None else None, comb,
-                     bits * table.flop_um2, e_fire, hold,
-                     (block.fires * e_fire + c_acc * hold) / 1000)  # fmt: skip
+                     bits * table.flop_um2, e_fire, block.fires * e_fire / 1000)  # fmt: skip
 
 
 def group_cost(table: Table, units: Mapping[str, Block], links: Mapping[str, Block],
@@ -399,4 +396,4 @@ def group_cost(table: Table, units: Mapping[str, Block], links: Mapping[str, Blo
     return GroupCost({k: block_cost(table, b, bits.get(k, 0), c_acc) for k, b in units.items()},
                      {k: block_cost(table, b, bits.get(k, 0), c_acc) for k, b in links.items()},
                      n, n * table.flop_um2,
-                     table.counter_factor * n * c_acc * table.e_hold_pj / 1000)  # fmt: skip
+                     table.e_ctrl_pj * n * c_acc / 1000)  # fmt: skip

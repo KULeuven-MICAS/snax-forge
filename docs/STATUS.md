@@ -31,7 +31,7 @@ The tasks are a first cut; each milestone is planned in a round of its own.
 | Milestone | Tasks | Content |
 |---|---|---|
 | P1 | PAP3 (`done`), PAP2 (`brief`), BASE1, BASE2 | PAP3 chose the ISPASS 2027 paper's experiments and the order of the work (PAPER §6, Next Up). PAP2: related work after the reading, DSAGEN and OverGen first (PAPER §8.4). BASE1 and BASE2 are E2: the vsim path timed step by step against SNAX-GVSoC's, and both simulators' cycles per second, logged on E1's runs |
-| M13 | B0, B1, B1x, CLN2, VIEW2, SPAN1, SYN1, CTRL1, CHAR1, CHAR1b, DRY1, DRY1-2, SLOT1, DRY1-3, RAM1, B2, REUSE1, STRM1, CTRL2, PORT1, HWCOST, CSYN1, CORE1, CLN3, PWR1, PWR2, CG1, CG2 (`done`); track A: MVT1, PACK1a, L2V1, XBAR1, tier A; track B: CG3, GE, DACE2 | Its tasks, below (M13) |
+| M13 | B0, B1, B1x, CLN2, VIEW2, SPAN1, SYN1, CTRL1, CHAR1, CHAR1b, DRY1, DRY1-2, SLOT1, DRY1-3, RAM1, B2, REUSE1, STRM1, CTRL2, PORT1, HWCOST, CSYN1, CORE1, CLN3, PWR1, PWR2, CG1, CG2, CG3, CG4 (`done`); track A: MVT1, PACK1a, L2V1, XBAR1, tier A; track B: CG5, CG6, GE, DACE2 | Its tasks, below (M13) |
 | M7 | KER0 (`done`), FE1b, FE1c, PACK0 (`done`), PACK1, FE1d, FE1e, FE2, FE3 | The tiers of PAPER §6.1 after tier A (D113), which M13 does. KER0 staged every target kernel in `kernels/`, not linked to the flow (`kernels/README.md`, `pixi run kernels`). FE1b is tier B; FE1c tier C; PACK0 packed int32 and int8 into 64-bit words with NumPy's arithmetic (D142–D144); PACK1 keeps tier P: the exact products, requantization and the int8 kernels (the reference executor accumulates as the hardware does); FE1d tier D; FE1e tier E. FE3 is C2's coverage table |
 | M15 | LOW3b | A tile transform and a DMA per tile, an L2 slice per tile, reductions over tiles (open item 44) |
 | M9 | J1 | Stencil BRM with reuse and double buffering (see open item 76) |
@@ -76,6 +76,8 @@ Done, each in its PRs and git history:
 | PWR2 | snax-forge-experiments #15, #16 | dot_3 at W = 2, 4, 8, 16, 32 through the cluster flow overnight: per W the run section's breakdown beside HWCOST's, as tables and figures; HWCOST follows the synthesized cluster's trend over W, the energy gap left to counting accesses in SNAX-GVSoC (GE) |
 | CG1 | snax-forge-experiments #17 | Clock gating in the cluster's synthesis (`CLK_GATE_ENABLE`, `compile_ultra -gate_clock`, the whole cluster): `dot3_w8_cg` measured as the ungated point, the idle cycles' energy most of what gating removes |
 | CG2 | snax-forge-experiments #18 | HWCOST's block tables made again from gated blocks (the streamer reader, the crossbar, the char blocks) and dot_3 priced with them in snax-forge-experiments: at W = 8 the five parts 61.60 nJ against the gated cluster's 49.48 nJ run section (1.245), the streamers 0.97, memory 0.99, the datapath and crossbar high on the characterization's random data |
+| CG3 | snax-forge-experiments #19 | The gated cluster at W = 2, 4, 16 and 32 against the gated tables, part by part; clock-gated synthesis made the only basis from here on (X87) |
+| CG4 | #77, snax-forge-experiments #20 | HWCOST on the clock-gated tables: `import-costs` brings the gated block table too, a unit costs its fires and control $e_{ctrl}\thinspace n_{bits}^{ctrl}\thinspace C_{acc}$ (D154 · D172), dot 3's five parts equal to the experiments' gated pricing; snax-forge-experiments without nangate15 or the ungated data with a gated twin, its docs and code cleaned up (X88). dot 3's five parts fall from about 70 to 61–63 nJ per W, 43 % off the streamers |
 
 To do, in two tracks, each task in its own PR:
 
@@ -98,9 +100,12 @@ To do, in two tracks, each task in its own PR:
   3. E7's untiered points and DaCe's dot (done, in CSYN1 above).
   4. **CSYN1** (done, above).
   5. **PWR1**, **PWR2**, **CG1**, **CG2** (done, above).
-  6. **CG3** (`wip`, its own thread): the gated cluster at W = 2, 4, 16 (and 32) against the gated tables, part by part.
-  7. **GE** (later): energy costs in SNAX-GVSoC's models, so the accesses a run makes (bank conflicts among them) are counted, not estimated from the graph.
-  8. **DACE2** (later, open item 130): a `dace_tuned` case in hls-exercises beside `dace`, tuned only with DaCe's own transforms and library expansions, then through Vitis, synthesis and power as the other HLS cases (E7).
+  6. **CG3** (done, above).
+  7. **CG4** (done, above).
+  8. **CG5** (next, its own thread): forge's own designs synthesized gated: the accelerators alone (SYN2's points and E7's untiered rows), the `xbar_mix` grid, the char blocks at a current snax-forge (so `DATAPATH_RENAMES` and `TABLE_DEFAULTS` go); then `import-costs` again.
+  9. **CG6**: the HLS generators synthesized gated (Vitis, Bambu, XLS, DaCe), the comparison rebuilt; the last ungated data removed.
+  10. **GE** (later): energy costs in SNAX-GVSoC's models, so the accesses a run makes (bank conflicts among them) are counted, not estimated from the graph.
+  11. **DACE2** (later, open item 130): a `dace_tuned` case in hls-exercises beside `dace`, tuned only with DaCe's own transforms and library expansions, then through Vitis, synthesis and power as the other HLS cases (E7).
 
 ## Next Up
 

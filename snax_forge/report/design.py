@@ -139,9 +139,8 @@ class EstimateRow(Record):
 @dataclass
 class CostRow(Record):
     """One unit, buffer link or control unit of the cost; ``found`` None for a block
-    the table does not hold; ``e_fire_pj`` and ``e_hold_pj`` None for a control unit (its comb
-    area equal to its flops', its comb energy negligible: a placeholder), ``e_hold_pj``
-    None for a block with no flops."""
+    the table does not hold; ``e_fire_pj`` None for a control unit (its comb area equal to its
+    flops', its comb energy negligible: a placeholder)."""
 
     group: str
     block: str
@@ -152,7 +151,6 @@ class CostRow(Record):
     comb_um2: float | None
     flops_um2: float
     e_fire_pj: float | None
-    e_hold_pj: float | None
     energy_nj: float
 
 
@@ -481,11 +479,10 @@ def estimate_table(point: Any, tech: str | None = DEFAULT_TECH) -> EstimateTable
             continue
         for k, b in (*g.cost.units.items(), *g.cost.links.items()):
             cost.append(CostRow(g.name, k, b.datapath, b.found, b.fires, g.bits.get(k, 0),
-                                b.comb_um2, b.flops_um2, b.e_fire_pj, b.e_hold_pj or None,
-                                b.task_nj))  # fmt: skip
+                                b.comb_um2, b.flops_um2, b.e_fire_pj, b.task_nj))  # fmt: skip
         c = g.cost
         cost.append(CostRow(g.name, "ctrl", "group control unit", None, None, c.ctrl_bits,
-                            c.ctrl_comb_um2, c.ctrl_flops_um2, None, None, c.ctrl_nj))  # fmt: skip
+                            c.ctrl_comb_um2, c.ctrl_flops_um2, None, c.ctrl_nj))  # fmt: skip
     notes = [g.bank_bound_note for g in e.groups if g.bank_bound_note]
     got = e.parts
     share = shares(got) if got else {}
@@ -718,8 +715,8 @@ def render_cost(e: EstimateTable) -> list[str]:
            (f"The block cost model on `snax_forge/char/{e.tech}.json` (snax-forge-experiments "
             f"{src}), per run of the accelerator: a unit or buffer link pays its comb energy per "
             "fire, from the table as measured, copied (lanes × the lanes-1 point) or "
-            "interpolated, its register bits at e_load in the cycles it fires and e_hold in every "
-            "other cycle; a control unit its bits × e_hold × the counter factor every cycle, its "
+            "interpolated, and its register bits at e_load in the cycles it fires (clock-gated, a "
+            "flop that holds costs nothing); a control unit its bits × e_ctrl every cycle, its "
             "area its flops' and an equal comb area (a rough estimate). HWCOST on "
             f"`snax_forge/char/{e.tech}/`: each port's streamer its area and its beats × its "
             "energy per beat at its FIFO depth, loops and channels; the crossbar its area and "
@@ -728,12 +725,12 @@ def render_cost(e: EstimateTable) -> list[str]:
             "link's container is not in L1, the DMA's traffic not counted)."),
            ""]  # fmt: skip
     out += table(["Group", "Block", "Datapath", "Found", "Fires", "Bits", "Comb (µm²)",
-                  "Flops (µm²)", "e_fire (pJ)", "Hold (pJ/cycle)", "Energy (nJ)"],
+                  "Flops (µm²)", "e_fire (pJ)", "Energy (nJ)"],
                  [[c.group, c.block, c.datapath,
                    c.found or ("not characterized" if c.block != "ctrl" else None), c.fires,
                    c.bits, _shown(c.comb_um2), _shown(c.flops_um2), _energy(c.e_fire_pj),
-                   _energy(c.e_hold_pj), _energy(c.energy_nj)] for c in e.cost],
-                 {4, 5, 6, 7, 8, 9, 10})  # fmt: skip
+                   _energy(c.energy_nj)] for c in e.cost],
+                 {4, 5, 6, 7, 8, 9})  # fmt: skip
     if e.streamer_cost:
         out += ["", *table(["Accelerator", "Streamer", "Direction", "FIFO depth", "Loops",
                             "Channels", "Beats", "Area (µm²)", "e_beat (pJ)", "Energy (nJ)"],

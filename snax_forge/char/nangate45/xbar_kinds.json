@@ -45,12 +45,12 @@
    "banks": 32,
    "ro": 0,
    "wo": 0,
-   "area_um2": 185459.99,
-   "a_table_um2": 187547.03,
-   "factor_um2": 187547.03,
-   "factor_err_pct": 1.13,
+   "area_um2": 185896.23,
+   "a_table_um2": 187676.3,
+   "factor_um2": 187676.3,
+   "factor_err_pct": 0.96,
    "crosspoint_um2": 183678.78,
-   "crosspoint_err_pct": -0.96
+   "crosspoint_err_pct": -1.19
   },
   {
    "what": "i36_b32_r32_w1",
@@ -58,35 +58,35 @@
    "banks": 32,
    "ro": 32,
    "wo": 1,
-   "area_um2": 118952.01,
-   "a_table_um2": 187547.03,
-   "factor_um2": 119307.85,
-   "factor_err_pct": 0.3,
+   "area_um2": 119307.12,
+   "a_table_um2": 187676.3,
+   "factor_um2": 119390.09,
+   "factor_err_pct": 0.07,
    "crosspoint_um2": 115763.01,
-   "crosspoint_err_pct": -2.68
+   "crosspoint_err_pct": -2.97
   },
   {
-   "what": "cluster dot3_w16 sparse_interconnect_i",
-   "inputs": 36,
+   "what": "cluster dot3_w16_cg sparse_interconnect_i",
+   "inputs": 35,
    "banks": 32,
    "ro": 32,
    "wo": 1,
-   "area_um2": 107685.05,
-   "a_table_um2": 187547.03,
-   "factor_um2": 119307.85,
-   "factor_err_pct": 10.79,
-   "crosspoint_um2": 115763.01,
-   "crosspoint_err_pct": 7.5
+   "area_um2": 103257.21,
+   "a_table_um2": 182005.98,
+   "factor_um2": 113890.83,
+   "factor_err_pct": 10.3,
+   "crosspoint_um2": 110637.96,
+   "crosspoint_err_pct": 7.15
   }
  ],
  "sources": {
   "xbar_mix": {
    "path": "results/xbar_mix/nangate45/synth_dc.csv",
-   "sha256": "876db7e1a4c2701abd60c833bf617814136f76f86fc95fd12cd44bb04cce06a1"
+   "sha256": "3d67b330ea02716518274cee7c5972238713b2e7587623d0aaa641afd803b6b2"
   },
   "xbar": {
    "path": "results/strm/nangate45/xbar.csv",
-   "sha256": "f2fa0f806ef31e864b46f734a0cbeb7b7c9fff8aa21eea5a0499a7a6e4331887"
+   "sha256": "3751226d02013cf717f7eae97eab9457908a9828b87fc588619ae1d0c8f4088c"
   }
  }
 }

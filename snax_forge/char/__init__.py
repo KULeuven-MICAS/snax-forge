@@ -26,10 +26,8 @@ from typing import Any
 from snax_forge.common import CodedError
 
 HERE = Path(__file__).parent
-# The technologies offered: nangate45 only. nangate15's table stays in the repository
-# as data but is no longer offered, as it has no memories.
+# The technologies offered: nangate45 only (snax-forge-experiments synthesizes nothing else).
 TECHS = ("nangate45",)
-RETIRED = ("nangate15",)
 DEFAULT_TECH = "nangate45"
 FOUND = ("measured", "copy", "interpolate")
 # A control unit's comb area is CTRL_COMB_PER_FLOP × its flops' area, a rough early estimate (its
@@ -37,7 +35,7 @@ FOUND = ("measured", "copy", "interpolate")
 # char.json. The L1 side is tables.py's tables.
 CTRL_COMB_PER_FLOP = 1.0
 _IGNORED = ("lanes", "depth")
-# catalogue name -> the name the table has it under, until the table is exported again (module doc)
+# catalogue name -> the name the table has it under: the table was measured before the rename (module doc)
 DATAPATH_RENAMES = {"SimdLanes": "ElementwiseLanes"}
 # per catalogue datapath, a param the table's export predates, at the value its points were
 # measured at: SimdLanes' streams, every point a two-input one (module doc)
@@ -54,15 +52,16 @@ class CharError(CodedError):
 
 @dataclass(frozen=True)
 class Table:
-    """One technology's table (CONTRACTS, "Cost model"); energies in pJ, areas in µm²."""
+    """One technology's table (CONTRACTS, "Cost model"); energies in pJ, areas in µm².
+    ``e_load_pj`` is a flop bit's energy in a cycle it loads; ``e_ctrl_pj`` a control unit's per
+    bit and cycle, the table's ``counter_factor`` × ``e_hold_fj``."""
 
     tech: str
     clock_ns: float
     source: dict[str, str]
     flop_um2: float
     e_load_pj: float
-    e_hold_pj: float
-    counter_factor: float
+    e_ctrl_pj: float
     blocks: dict[str, list[dict[str, Any]]]
 
 
@@ -80,13 +79,11 @@ def load(tech: str) -> Table:
     """The table of ``tech`` (``snax_forge/char/<tech>.json``)."""
     path = HERE / f"{tech}.json"
     if tech not in TECHS or not path.is_file():
-        why = " (kept as data, no longer offered)" if tech in RETIRED else ""
-        raise CharError("char.tech",
-                        f"no table for technology {tech!r}{why}: one of {list(TECHS)}")  # fmt: skip
+        raise CharError("char.tech", f"no table for technology {tech!r}: one of {list(TECHS)}")
     d = json.loads(path.read_text())
     return Table(d["tech"], d["clock_ns"], dict(d["source"]), d["flop"]["area_um2"],
-                 d["flop"]["e_load_fj"] / 1000, d["flop"]["e_hold_fj"] / 1000,
-                 d["ctrl"]["counter_factor"], d["blocks"])  # fmt: skip
+                 d["flop"]["e_load_fj"] / 1000,
+                 d["ctrl"]["counter_factor"] * d["flop"]["e_hold_fj"] / 1000, d["blocks"])  # fmt: skip
 
 
 def _between(x: int, pts: list[tuple[int, Lookup]]) -> Lookup | None:

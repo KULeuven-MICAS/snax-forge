@@ -1047,29 +1047,29 @@ A run's BUSY_COUNTER counts from its group's START every cycle until busy drops 
 
 ## 14. Cost model
 
-What a design costs in area and energy before any synthesis, beside the estimate's cycles: the blocks and control from CHAR1's model (D154), the streamers, crossbar and banks from HWCOST's tables (D167). It aims at the large costs and at comparing variants, about 30 % of synthesis on the large costs; a small block can be much further off. [`snax_forge/char/README.md`](../snax_forge/char/README.md) says where every number comes from, with a worked example. Only nangate45 is offered (`TECHS`); nangate15's table stays as data and is refused (`char.tech`).
+What a design costs in area and energy before any synthesis, beside the estimate's cycles: the blocks and control from CHAR1's model (D154 · D172), the streamers, crossbar and banks from HWCOST's tables (D167), every table from clock-gated synthesis. It aims at the large costs and at comparing variants, about 30 % of synthesis on the large costs; a small block can be much further off. [`snax_forge/char/README.md`](../snax_forge/char/README.md) says where every number comes from, with a worked example. Only nangate45 is offered (`TECHS`); any other technology is refused (`char.tech`).
 
-- **Evidence**: on CHAR1's checked designs (vecmul, vsum, dot 4 and 5 at W = 8 and 32) the kernel energy landed at 0.99–1.04 of SYN2's synthesized accelerators, the Mac at 1.03–1.04, the small sums at 0.06–0.78; the streamer and crossbar tables reproduce their own points within 4 % (a reader's energy) and 2.5 % (the crossbar's) leave-one-out.
+- **Evidence**: on the clock-gated dot 3 cluster at W = 2 to 32 (snax-forge-experiments, `results/cluster/`) the datapath's area is 0.999 of the netlist's and the memory's within 1 %, the datapath's energy 1.61–1.63 of the run's at W = 2 to 16 and 1.06 at 32 (the table is measured on random data); the streamer and crossbar tables reproduce their own points within 5.1 % (a reader's energy) and 2.6 % (the crossbar's) leave-one-out.
 
 ### The tables
 
 | File in `snax_forge/char/` | Holds | From |
 |---|---|---|
-| `<tech>.json` | `tech`, `clock_ns`, `units`, `source`; `flop` (`area_um2`, `e_load_fj`, `e_hold_fj`); `ctrl.counter_factor`; `blocks`, per datapath entries of `params`, `lanes_rule` (`copy`, `interpolate`) and `points` (`lanes`, `depth`, `comb_um2`, `e_comb_pj`) | snax-forge-experiments' `results/char/<tech>/char.json` |
-| `<tech>/streamer.csv` | one reader: FIFO depth 2–16 × loops 1–7 × channels 1–16, `area_um2`, `e_beat_pj` | X52 |
-| `<tech>/xbar.csv` | the sparse interconnect: inputs 4–64 × banks 16, 32, 64, `area_um2`, `e_access_pj` where inputs ≤ banks | X53, X54 |
+| `<tech>.json` | `tech`, `clock_ns`, `units`, `source`; `flop` (`area_um2`, `e_load_fj`, `e_hold_fj`); `ctrl.counter_factor`; `blocks`, per datapath entries of `params`, `lanes_rule` (`copy`, `interpolate`) and `points` (`lanes`, `depth`, `comb_um2`, `e_comb_pj`); $e_{\mathit{ctrl}}$ is `counter_factor` × `e_hold_fj` | snax-forge-experiments' `results/char/<tech>/char_cg.json`, X83 · X85 |
+| `<tech>/streamer.csv` | one reader: FIFO depth 2–16 × loops 1–7 × channels 1–16, `area_um2`, `e_beat_pj` | X52 · X82, X83 · X85 |
+| `<tech>/xbar.csv` | the sparse interconnect: inputs 4–64 × banks 16, 32, 64, `area_um2`, `e_access_pj` where inputs ≤ banks | X53 · X54, X83 · X85 |
 | `<tech>/xbar_kinds.json` | the factor form's $f_{\mathit{ro}}$ and $f_{\mathit{wo}}$ (0.396496, 0.41077), the crosspoint form's coefficients | X71 |
 | `<tech>/ram_table.csv` | CACTI 7: depth 32–4096 × width 8–256, `area_um2`, `e_rd_pj`, `e_wr_pj` | X47, X48 |
 
-- `pixi run import-costs` copies the CSV and JSON files as they are, with `SOURCE` naming the commit and each file's sha256; never run in CI. `tests/char/` checks every block entry against the catalogue and the tables against `SOURCE`.
+- `pixi run import-costs` copies the five files as they are, with `<tech>/SOURCE` naming the commit and each file's path and sha256; never run in CI. `tests/char/` checks every block entry against the catalogue and the tables against `SOURCE`.
 - **Block lookup** (`lookup(table, datapath, params, lanes, depth=None)`): the entry whose params equal the block's (lanes and depth aside), then a point at these lanes as is (`measured`); else under `copy` lanes × the lanes-1 point; under `interpolate` linear between the two measured lanes around it; a LinkBuffer depth linear between two measured depths. Anything else is None (a dtype other than int64, lanes outside the range): the comb part counts 0 and `char.missing` names it.
 - **Table lookup** (`tables.py`'s `streamer_cost`, `xbar_cost`, `bank`): linear along one axis at a time between the two grid values around the query, the crossbar's energy in 1/inputs, and where inputs > banks its value at inputs = banks. Outside the grid, linear through the two nearest grid values, clamped at zero, with `cost.extrapolated`. The banks are a lookup, never interpolated: a bank off the grid costs 0 and is noted. A writer is priced as a reader.
 
 ### The model
 
-Per unit and per buffer link over one run of the accelerator: n_fire its fires (a unit's firings times its span; a buffer's loads), n_bits its `bits` (section 13), C_acc the `accelerator_cycles` (with no clock gating every flop holds through every group's cycles); per group n_bits^ctrl its `ctrl_bits`:
+Per unit and per buffer link over one run of the accelerator: n_fire its fires (a unit's firings times its span; a buffer's loads), n_bits its `bits` (section 13); per group n_bits^ctrl its `ctrl_bits` and C_acc the `accelerator_cycles`. A flop that holds costs nothing (clock-gated, D154 · D172):
 
-$$E_{\mathit{unit}} = n_{\mathit{fire}}\thinspace\big(e_{\mathit{comb}} + n_{\mathit{bits}}\thinspace(e_{\mathit{load}} - e_{\mathit{hold}})\big) + C_{\mathit{acc}}\thinspace n_{\mathit{bits}}\thinspace e_{\mathit{hold}}, \qquad E_{\mathit{ctrl}} = f_{\mathit{ctrl}}\thinspace n_{\mathit{bits}}^{\mathit{ctrl}}\thinspace C_{\mathit{acc}}\thinspace e_{\mathit{hold}}$$
+$$E_{\mathit{unit}} = n_{\mathit{fire}}\thinspace(e_{\mathit{comb}} + n_{\mathit{bits}}\thinspace e_{\mathit{load}}), \qquad E_{\mathit{ctrl}} = e_{\mathit{ctrl}}\thinspace n_{\mathit{bits}}^{\mathit{ctrl}}\thinspace C_{\mathit{acc}}$$
 
 $$A_{\mathit{unit}} = A_{\mathit{comb}} + n_{\mathit{bits}}\thinspace A_{\mathit{flop}}, \qquad A_{\mathit{ctrl}} = 2\thinspace n_{\mathit{bits}}^{\mathit{ctrl}}\thinspace A_{\mathit{flop}}$$
 
@@ -1082,21 +1082,21 @@ $$A = \sum_b A_b + \sum_g A_{\mathit{ctrl},g} + \sum_p A_{\mathit{strm}}(D_p, L_
 $$E = \sum_b E_b + \sum_g E_{\mathit{ctrl},g} + \sum_p \frac{W_p}{C_p}\thinspace e_{\mathit{beat}}(D_p, L_p, C_p) + \Big(\sum_p W_p\Big)\thinspace e_{\mathit{acc}}(n_{\mathit{banks}}, n_{\mathit{banks}}) + N_{\mathit{rd}}\thinspace e_{\mathit{rd}} + N_{\mathit{wr}}\thinspace e_{\mathit{wr}}$$
 
 - **The five parts** (`PARTS`): datapath (the units and buffer links, b), control (g), streamers, crossbar, memory (the banks). The csr, the cores, the I-cache and the DMA are not costed: the DMA's traffic is the same for every variant, and the cores' and AXI's ports enter only as crossbar inputs.
-- **The crossbar's energy** has one price per access for a bank count, a full crossbar's ($e_{\mathit{acc}}$ at inputs = banks, 2.739443 pJ on 32 banks), so it follows the accesses alone: dot 5 linked (20 inputs, 4097 accesses) costs 72.371 nJ against 72.648 nJ unlinked (36 inputs, 4113).
-- **The crossbar's area** prices a reader's channel as a read-only input and a writer's as write-only, since synthesis removes what their constant bits make dead (X70, X71). The factor form above is the default; the crosspoint form, $b\thinspace(c_{\mathit{rw}}\thinspace n_{\mathit{rw}} + c_{\mathit{ro}}\thinspace n_{\mathit{ro}} + c_{\mathit{wo}}\thinspace n_{\mathit{wo}}) + d\thinspace n_{\mathit{in}} + e\thinspace b + g$, is an option (`Estimate.xbar_in("crosspoint")`). dot 3 at W = 16 on the one-core cluster (35 inputs, 32 read-only, 1 write-only): 113 776 µm², where every input read-write gave 181 823; the synthesized cluster has 102 884 µm².
+- **The crossbar's energy** has one price per access for a bank count, a full crossbar's ($e_{\mathit{acc}}$ at inputs = banks, 2.752585 pJ on 32 banks), so it follows the accesses alone: dot 5 linked (19 inputs, 4097 accesses) costs 63.457 nJ against 63.630 nJ unlinked (35 inputs, 4113).
+- **The crossbar's area** prices a reader's channel as a read-only input and a writer's as write-only, since synthesis removes what their constant bits make dead (X70, X71). The factor form above is the default; the crosspoint form, $b\thinspace(c_{\mathit{rw}}\thinspace n_{\mathit{rw}} + c_{\mathit{ro}}\thinspace n_{\mathit{ro}} + c_{\mathit{wo}}\thinspace n_{\mathit{wo}}) + d\thinspace n_{\mathit{in}} + e\thinspace b + g$, is an option (`Estimate.xbar_in("crosspoint")`). dot 3 at W = 16 on the one-core cluster (35 inputs, 32 read-only, 1 write-only): 113 891 µm², where every input read-write gives 182 006; the synthesized gated cluster has 103 257 µm².
 - **A shared set's movers** (D169) are priced once each: each user's beats at its own C_p, the area only at the mover's first user, at the mover's channels (`StreamerCounts`' `mover`, `mover_channels`, `area`). The port mux costs nothing.
 - Every count is read where it is made, so a change to it (the crossbar's inputs, a port's channels) changes the cost without touching the model.
 
-Worked example, vecmul at W = 8 and N = 2048 (three ports of 8 channels and one loop, 256 beats each; 27 inputs on 32 banks, 16 read-only and 8 write-only; 4096 reads, 2048 writes):
+Worked example, vecmul at W = 8 and N = 2048 (three ports of 8 channels and one loop, 256 beats each; 26 inputs on 32 banks, 16 read-only and 8 write-only; 4096 reads, 2048 writes):
 
 | Part | Area (µm²) | Energy (nJ) |
 |---|---|---|
 | datapath | 55 300 | 23.137 |
-| control | 362 | 0.066 |
-| streamers | 116 000 | 30.457 |
-| crossbar | 89 600 | 16.831 |
+| control | 360 | 0.066 |
+| streamers | 95 200 | 17.279 |
+| crossbar | 84 500 | 16.912 |
 | memory | 433 000 | 27.738 |
-| total (without the banks) | 694 000 (261 000) | 98.229 |
+| total (without the banks) | 668 000 (235 000) | 85.132 |
 
 ### The fields
 
@@ -1104,7 +1104,7 @@ Worked example, vecmul at W = 8 and N = 2048 (three ports of 8 channels and one 
 
 | Field | Holds |
 |---|---|
-| a group's `cost.units`, `cost.links` | per unit and buffer link: `datapath`, `fires`, `found` (`measured`, `copy`, `interpolate`, or null), `area` (`comb`, `flops`, `total`, µm²), `energy` (`fire` and `hold` in pJ, `task` in nJ) |
+| a group's `cost.units`, `cost.links` | per unit and buffer link: `datapath`, `fires`, `found` (`measured`, `copy`, `interpolate`, or null), `area` (`comb`, `flops`, `total`, µm²), `energy` (`fire` in pJ, `task` in nJ) |
 | a group's `cost.ctrl` | `bits`, `area` (`flops`, `comb`, `total`), `energy` |
 | a group's `cost.area`, `cost.energy` | its units', links' and control unit's added up |
 | an accelerator's `cost.streamers` | per port's streamer: its counts (`depth`, `loops`, `channels`, `words`, `beats`), `area`, `e_beat`, `energy`, `extrapolated` |
@@ -1114,16 +1114,17 @@ Worked example, vecmul at W = 8 and N = 2048 (three ports of 8 channels and one 
 
 ### What is shown
 
-- The fields keep full precision. A reader sees an area to 3 significant figures (`sig3`: 63 200 µm²) and an energy to 3 decimals in its unit (`dec3`: 26.285 nJ per run, 97.259 pJ per fire), so two close designs can be told apart (dot 4 and dot 5 at W = 8: 26.285 and 26.339 nJ). The decimals are display precision, not accuracy.
+- The fields keep full precision. A reader sees an area to 3 significant figures (`sig3`: 63 200 µm²) and an energy to 3 decimals in its unit (`dec3`: 26.285 nJ per run, 97.259 pJ per fire), so two close designs can be told apart (dot 4 and dot 5 at W = 8: 26.133 and 26.158 nJ). The decimals are display precision, not accuracy.
 - Every cost is shown under "Cost estimate (first-order) on <tech>" with one line, `CAVEAT`.
 - `design.md` (`pixi run report DIR --tech T`) shows each group's area and energy beside its cycles, how each unit, link and control unit is costed, each port's streamer, each accelerator's L1 words, the cost by part with its shares, and what is not characterized, not costed or extrapolated; the viewers show the same, the parts as two bars to scale.
 
 ### The checks and the known limits
 
-- `tests/estimate/test_cost.py` checks consistency, not accuracy: on vecmul, vsum_tree, dot 4 and dot 5 at W = 8 and 32 the kernel energy is within 0.5 % of snax-forge-experiments' model of the same designs (`tests/estimate/fixtures/char_model.json`, from `util/char_model.py`). It also prices vecmul at W = 8, dot 4 and mvt_1_dot2 by hand from the tables' rows, and vecmul at W = 32 off the grid. `tests/char/test_tables.py` checks the lookup rule against `cost_tables.md`'s four worked examples.
+- `tests/estimate/test_cost.py` checks consistency, not accuracy: dot 3 at W = 2 to 32, N = 2048, each of the five parts within 1e-6 of snax-forge-experiments' own pricing on the same gated tables (`tests/estimate/fixtures/dot3_gated.json`). It also prices vecmul at W = 8, dot 4 and mvt_1_dot2 by hand from the tables' rows, and vecmul at W = 32 off the grid. `tests/char/test_tables.py` checks the lookup rule against `cost_tables.md`'s six worked examples.
 - **Limits**:
   - The control unit's comb area is only its 1 : 1 estimate.
   - A streamer is priced per beat and a crossbar access at one price: a streamer's clock while it waits, the crossbar's per-cycle part and its conflicts are not counted, and a writer is priced as a reader.
   - An accumulator's isolated fire costs 25–30 % more than a back-to-back one.
   - Deep LinkBuffers come out about 1.4–1.8× high on nangate45 (X35).
+  - The blocks are measured on random 64-bit data, so a datapath on real data (dot's) is priced high: 1.6× in the gated cluster at W = 2 to 16.
   - Comb energy is counted per fire, so a unit fed by another is undercounted when its inputs change more often than it fires: dot 4's tree sum comes out at 0.06–0.19 of SYN2, the kernel staying within 4 %.

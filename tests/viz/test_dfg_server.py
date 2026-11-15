@@ -83,23 +83,22 @@ def test_view_mode_over_dot_2s_steps(tmp_path):
         # an area to 3 significant figures, an energy to 3 decimals; ?tech= picks the
         # technology, an unknown one 400
         assert v["details"]["node:sum"]["cost"] == {
-            "found": "measured on nangate45", "area": "1 640 µm² (comb 1 300, flops 340)",
-            "per fire": "2.495 pJ", "holding": "0.457 pJ per cycle",
-            "per task": "0.379 nJ (128 fires, 64 bits)"}  # fmt: skip
+            "found": "measured on nangate45", "area": "1 480 µm² (comb 1 140, flops 339)",
+            "per fire": "2.635 pJ", "per task": "0.337 nJ (128 fires, 64 bits)"}  # fmt: skip
         assert list(v["details"]["node:sum"])[-2:] == ["timing", "cost"]
         assert v["details"]["node:tmp0"]["cost"]["found"] == "copy on nangate45"
         assert v["details"]["group:dot"]["cost"] == {
-            "area": "32 500 µm²", "energy": "6.882 nJ",
-            "ctrl": "132 bits, 1 400 µm² (flops 702, comb 702), 0.130 nJ"}  # fmt: skip
+            "area": "32 000 µm²", "energy": "6.801 nJ",
+            "ctrl": "132 bits, 1 400 µm² (flops 699, comb 699), 0.130 nJ"}  # fmt: skip
         assert "cost" not in v["details"]["group:dot"]["estimate"]
         assert (s["groups"][0]["area_text"], s["groups"][0]["energy_text"]) == (
-            "32 500 µm²",
-            "6.882 nJ",
+            "32 000 µm²",
+            "6.801 nJ",
         )
         assert (s["cost"]["heading"], s["cost"]["missing"]) == (
             "Cost estimate (first-order) on nangate45", [])  # fmt: skip
         assert "about 30 %" in s["cost"]["caveat"] and v["tech"] == "nangate45"
-        # nangate15 is kept as data but no longer offered: refused as any other
+        # a technology with no table is refused
         status, v15 = get_json(srv, "/api/step/5?tech=nangate15")
         assert status == 400 and v15["code"] == "char.tech"
         status, bad = get_json(srv, "/api/step/5?tech=tsmc7")

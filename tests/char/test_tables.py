@@ -29,52 +29,53 @@ def costs():
 
 
 def test_files_match_source():
-    """Each table is the file SOURCE names, byte for byte (its sha256), from one commit."""
+    """Each table, and the block table ``nangate45.json``, is the file SOURCE names, byte for byte
+    (its sha256), from one commit; the block table is the clock-gated one."""
     src = read_source(HERE / "nangate45" / "SOURCE")
     assert src["repo"].endswith("snax-forge-experiments") and len(src["commit"]) == 40
-    for name in FILES:
+    for name, file in [*((n, HERE / "nangate45" / n) for n in FILES),
+                       ("block_table", HERE / "nangate45.json")]:  # fmt: skip
         path, _, digest = src[name].partition(" sha256 ")
-        assert path.endswith(name)
-        assert hashlib.sha256((HERE / "nangate45" / name).read_bytes()).hexdigest() == digest
+        assert path.endswith(name if name in FILES else "char_cg.json")
+        assert hashlib.sha256(file.read_bytes()).hexdigest() == digest
 
 
-def test_no_tables_for_nangate15():
-    """nangate15 has no memories and no streamer or crossbar tables."""
+def test_no_tables_for_a_technology_without_them():
     assert load_costs("nangate15") is None
 
 
 def test_example_1_reader_between_two_channel_counts(costs):
     """cost_tables.md example 1: depth 8, 2 loops, 3 channels, only channels interpolated."""
     c = streamer_cost(costs, 8, 2, 3)
-    assert round(c.energy_pj, 4) == 15.3916
-    assert round(c.area_um2, 1) == 15424.9
+    assert round(c.energy_pj, 4) == 8.7904
+    assert round(c.area_um2, 1) == 12794.7
     assert c.extrapolated == ()
 
 
 def test_example_2_reader_on_two_axes(costs):
     """cost_tables.md example 2: depth 6 and 3 channels between grid values, 3 loops on it."""
-    assert round(streamer_cost(costs, 6, 3, 3).energy_pj, 4) == 13.5002
+    assert round(streamer_cost(costs, 6, 3, 3).energy_pj, 4) == 8.2413
 
 
 def test_example_3_xbar_energy_in_one_over_inputs(costs):
     """cost_tables.md example 3: 12 inputs, 32 banks; energy in 1/inputs, area in inputs."""
     c = xbar_cost(costs, 12, 32)
-    assert round(c.energy_pj, 4) == 3.4030
-    assert round(c.area_um2, 1) == 61450.9
+    assert round(c.energy_pj, 4) == 3.4495
+    assert round(c.area_um2, 1) == 61698.0
 
 
 def test_example_4_more_inputs_than_banks(costs):
     """cost_tables.md example 4: 40 inputs, 32 banks; the energy at inputs = banks, the
     area measured."""
     c = xbar_cost(costs, 40, 32)
-    assert round(c.energy_pj, 4) == 2.7394
-    assert round(c.area_um2, 1) == 210443.8
+    assert round(c.energy_pj, 4) == 2.7526
+    assert round(c.area_um2, 1) == 210357.6
 
 
 def test_grid_values_are_exact(costs):
     """A query on grid values returns the row as is (streamer.csv's 8, 1, 8)."""
     c = streamer_cost(costs, 8, 1, 8)
-    assert (c.area_um2, c.energy_pj) == (38525.045548, 39.65753)
+    assert (c.area_um2, c.energy_pj) == (31739.119316, 22.49923)
 
 
 def test_the_tcdm_bank(costs):
@@ -147,21 +148,21 @@ def test_xbar_kinds_are_the_imported_constants(costs):
 
 def test_xbar_example_5_the_clusters_interconnect(costs):
     """snax-forge-experiments' cost_tables.md example 5: 36 inputs on 32 banks, 32 read-only and 1
-    write-only. Factor: the table's 187,547.0 µm² (between 32 and 40 inputs) × (1 − 0.396496 · 32/36
-    − 0.41077 / 36) = 119,308; crosspoint: 115,763. The energy per access is the table's in both."""
+    write-only. Factor: the table's 187,676.3 µm² (between 32 and 40 inputs) × (1 − 0.396496 · 32/36
+    − 0.41077 / 36) = 119,390; crosspoint: 115,763. The energy per access is the table's in both."""
     table = xbar_cost(costs, 36, 32)
-    assert table.area_um2 == pytest.approx(187547.02857750002)
+    assert table.area_um2 == pytest.approx(187676.3045655)
     f = xbar_cost(costs, 36, 32, 32, 1)
-    assert f.area_um2 == pytest.approx(187547.02857750002 * (1 - 0.396496 * 32 / 36 - 0.41077 / 36))
-    assert round(f.area_um2) == 119308 and f.energy_pj == table.energy_pj
+    assert f.area_um2 == pytest.approx(187676.3045655 * (1 - 0.396496 * 32 / 36 - 0.41077 / 36))
+    assert round(f.area_um2) == 119390 and f.energy_pj == table.energy_pj
     c = xbar_cost(costs, 36, 32, 32, 1, "crosspoint")
     assert round(c.area_um2) == 115763 and c.extrapolated == ()
 
 
 def test_xbar_example_6_all_read_only(costs):
-    """Example 6: 16 inputs, 16 banks, all read-only: factor 41,886.0 × (1 − 0.396496) = 25,278;
+    """Example 6: 16 inputs, 16 banks, all read-only: factor 42,048.5 × (1 − 0.396496) = 25,376;
     crosspoint 95.0644 · 16 · 16 + 26.3019 · 16 − 19.4338 · 16 − 201.0074 = 24,245."""
-    assert round(xbar_cost(costs, 16, 16, 16, 0).area_um2) == 25278
+    assert round(xbar_cost(costs, 16, 16, 16, 0).area_um2) == 25376
     assert round(xbar_cost(costs, 16, 16, 16, 0, "crosspoint").area_um2) == 24245
 
 

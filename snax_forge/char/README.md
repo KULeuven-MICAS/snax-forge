@@ -1,19 +1,19 @@
 # The cost tables: CHAR1's and HWCOST's first-order model
 
-What snax-forge needs to put an area and an energy beside a design's cycles before any synthesis (D154, D167, C§14):
+What snax-forge needs to put an area and an energy beside a design's cycles before any synthesis (D154 · D172, D167, C§14). Every table comes from clock-gated synthesis in snax-forge-experiments (its X79 · X87 · X88):
 
-- `snax_forge/char/<tech>.json`: per technology, the comb area and comb energy per fire of each catalogue block, and a few constants for registers and control.
-- `snax_forge/char/<tech>/`: HWCOST's tables for the rest of the design, the streamers, the TCDM crossbar and the L1 banks. Only nangate45 has them, and only nangate45 is offered; `nangate15.json` stays as data.
+- `snax_forge/char/<tech>.json`: per technology, the comb area and comb energy per fire of each catalogue block, and a few constants for registers and control (snax-forge-experiments' `char_cg.json`).
+- `snax_forge/char/<tech>/`: HWCOST's tables for the rest of the design, the streamers, the TCDM crossbar and the L1 banks, and `SOURCE`, which names the commit and each of the five files with its sha256 (`pixi run import-costs`). Only nangate45 exists.
 - The estimate (`snax_forge/estimate/cost.py`) combines them with counts it already has from the description: each unit's fires, its register bits and the accelerator's cycles.
 - `design.md`, the DFG viewer and the editor show the result as a first-order estimate: an area to 3 significant figures and an energy to 3 decimals in its unit, display precision and not accuracy.
 
 ## What it is and is not
 
-It is a first-order model: registers are bits, a block is its comb energy per fire, control is its bits held every cycle times a factor. It aims at the large costs and at showing how a design is costed, about 30 % of synthesis on the large costs; a small block can be much further off.
+It is a first-order model: registers are bits that cost energy only when they load, a block is its comb energy per fire, control is its bits times one constant every cycle. It aims at the large costs and at showing how a design is costed, about 30 % of synthesis on the large costs; a small block can be much further off.
 
-- On CHAR1's checked designs (vecmul, vsum, dot 4 and dot 5 at W = 8 and 32, N = 2048, Nangate 45 and 15 nm) the kernel energy (datapath and control) lands at 0.99 to 1.04 of the synthesized and simulated accelerator (snax-forge-experiments `results/char/char_table.md`, "Against SYN2").
-- Per unit the Mac is at 1.03 to 1.04, dot 4's TreeAccumulate sum at 0.06 to 0.19, dot 5's SerialAccumulate sum at 0.41 to 0.78.
-- That is evidence on eight designs per technology, not a promise for others.
+- On the clock-gated dot 3 cluster at W = 2 to 32 (snax-forge-experiments `results/cluster/`), the datapath's area is 0.999 of the netlist's at every W, its energy 1.61 to 1.63 of the run's at W = 2 to 16 and 1.06 at W = 32; the memory is within 1 % in both.
+- The datapath's energy is high because the blocks are measured on random 64-bit data, which toggles more than dot's; kept so, a pessimistic price, until a kernel's own data is worth characterizing.
+- The ungated table landed at 0.99 to 1.04 of SYN2's ungated accelerators (vecmul, vsum, dot 4 and dot 5 at W = 8 and 32); the accelerators alone are synthesized gated again before that check is made on this table.
 
 The known limits (C§14):
 
@@ -21,31 +21,31 @@ The known limits (C§14):
 - A streamer is priced per beat and a crossbar access at one price per bank count, a full crossbar's: a streamer's clock while it waits, the crossbar's per-cycle part and its conflicts are not counted, and a writer is priced as a reader (snax-forge-experiments X52).
 - The crossbar's area prices a reader's channels as read-only inputs and a writer's as write-only (X71's factor form on `xbar.csv`, from `xbar_kinds.json`); the further constants a whole cluster puts on it (priority, user and strobe bits) are not, which left CSYN1's synthesized cluster's interconnect about 10 % under the estimate (snax-forge-experiments X70, X71).
 - An accumulator's isolated fire costs 25 to 30 % more than a back-to-back one (its inputs change at one edge and its accumulator at the next, so its adders settle twice); the model has back-to-back fires only (X34).
-- Deep LinkBuffers come out about 1.4 to 1.8 times high on nangate45: there the stream slope PrimePower gives is 0.56 to 0.71 of one held slot per depth (X35); nangate15's is 0.96 to 1.14.
+- Deep LinkBuffers came out about 1.4 to 1.8 times high on the ungated table: the stream slope PrimePower gave was 0.56 to 0.71 of one held slot per depth (X35).
 - Comb energy is counted per fire only, so a unit fed by another unit is undercounted when its inputs change more often than it fires: dot 4's sum fires once but sees 256 new Mac outputs. The kernel stays within 4 % because such sums are small.
 - A TreeAccumulate alone keeps the logic for its `first` pin, which dot 4 ties and firtool folds, so the table's comb area is above the block inside dot 4 by about 370 µm² on nangate45 (82 % at W = 1, 4 % at W = 32).
-- The table holds int64 only, the Mac in its accumulating form only, and ElementwiseLanes (now SimdLanes, mapped by `DATAPATH_RENAMES` until the next export) `add` and `mul` only, two-input points (`streams` 2 and no slot from a CSR, `kCsr`, `k1Csr`, `k2Csr` false, `TABLE_DEFAULTS`, so a one-stream SimdLanes such as relu's, or axpy's axpby, is not characterized); anything else is "not characterized" (its comb counted as 0, its flops still counted) and the design note `char.missing` names it.
+- The table holds int64 only, the Mac in its accumulating form only, and ElementwiseLanes (now SimdLanes, mapped by `DATAPATH_RENAMES`: the table was measured before the rename) `add` and `mul` only, two-input points (`streams` 2 and no slot from a CSR, `kCsr`, `k1Csr`, `k2Csr` false, `TABLE_DEFAULTS`, so a one-stream SimdLanes such as relu's, or axpy's axpby, is not characterized); anything else is "not characterized" (its comb counted as 0, its flops still counted) and the design note `char.missing` names it.
 
 ## Where the numbers come from
 
-Every number is measured by CHAR1 in [snax-forge-experiments](https://github.com/KULeuven-MICAS/snax-forge-experiments) (`results/char/`, X28 to X37; run notes `results/char/runs/2026-11-03_char1_r0.md` to `_r4.md`), and `<tech>.json` here is a byte copy of its `results/char/<tech>/char.json`, which names the snax-forge and snax-forge-experiments commits it was made from.
+Every number is measured by CHAR1 in [snax-forge-experiments](https://github.com/KULeuven-MICAS/snax-forge-experiments) (`results/char/`, X28 to X37; run notes `results/char/runs/2026-11-03_char1_r0.md` to `_r4.md`), synthesized again with clock gating (X83 · X85, `results/strm/runs/` of CG2), and `<tech>.json` here is a byte copy of its `results/char/<tech>/char_cg.json`, which names the snax-forge and snax-forge-experiments commits it was made from.
 
 - **The blocks** (X28, X29): 27 points at int64, each one catalogue block at full params emitted alone by snax-forge's `gen-block` (`Emit --block`, C§10), the module an accelerator holds with its asynchronous reset: ElementwiseLanes add and mul at W = 1, 8, 32; the accumulating Mac at W = 1, 8, 32; TreeAccumulate at W = 1, 2, 4, 8, 16, 32; SerialAccumulate at W = 2, 4, 8, 16, 32; LinkBuffer at depth 1, 2, 4, 8, 16 at W = 1 and depth 1 at W = 8 and 32.
-- **Synthesis** (X30): Synopsys Design Compiler on Nangate 45 nm and 15 nm, a 10 ns clock, the block as the top, the settings of SYN1 and SYN2 (`compile_ultra -no_autoungroup`, no wire-load model); a block alone has the area of the same module inside SYN2's accelerators within 0.05 % wherever the accelerator drives its pins.
+- **Synthesis** (X30, X79): Synopsys Design Compiler on Nangate 45 nm, a 10 ns clock, the block as the top, `compile_ultra -no_autoungroup -gate_clock`, no wire-load model; a block alone has the area of the same module inside the accelerators within 0.05 % wherever the accelerator drives its pins.
 - **Activity** (X31, X32): a zero-delay Questa simulation of the mapped netlist with rand64 data (seed 0), inputs changing at the rising edge, through fixed 128-cycle windows after a lead-in: `busy` (a fire every cycle; SerialAccumulate a read every cycle) and `idle` (the enable at 0, every other input held) for ElementwiseLanes, Mac, TreeAccumulate and SerialAccumulate, and `stream` (a load every cycle at full occupancy) for LinkBuffer; the VCD is cut per window and turned into a SAIF.
-- **Power** (X33): PrimePower on the same netlist, library and constraints, per window the energy per cycle of each power group: comb, and the flops' (clock, register and sequential) as e_flop; e_bit is e_flop over the block's flops.
-- **The table** (X37): `report/char_export.py` (`pixi run char-export`) writes `char.json` from the CSVs; `char_table.md` (`pixi run char-table`) shows every number it holds and the model against SYN2.
+- **Power** (X33): PrimePower on the same netlist, library and constraints, per window the energy per cycle of each power group: comb, and the flops' (clock, register and sequential, the clock gates among them) as e_flop; e_bit is e_flop over the block's flops.
+- **The table** (X37, X83 · X85): `report/char_export.py` (`pixi run char-export --clk-gate`) writes `char_cg.json` from the gated rows; an integrated clock gate counts as a sequential cell, and the control factor is set so the control unit's energy stays the ungated table's.
 
 ## How each field is computed
 
 | Field | How | From |
 |---|---|---|
-| `flop.area_um2` | sequential area over sequential cells | one value at all 21 registered points: 5.32 µm² on nangate45, 1.277952 µm² on nangate15 |
-| `flop.e_load_fj` | the mean busy e_bit | the 17 points whose flops all load every cycle: Mac, TreeAccumulate and SerialAccumulate busy, LinkBuffer depth 1 stream (nangate45 17.1692 fJ, 6.85 % range) |
-| `flop.e_hold_fj` | the mean idle e_bit | the 14 idle points of Mac, TreeAccumulate and SerialAccumulate (nangate45 7.1476 fJ, 0.17 % range) |
-| `ctrl.counter_factor` | per point the control unit's e_dyn per cycle over its flops × e_hold, the mean to two decimals | SYN2's 48 accelerators, `ctrl/ctrl` (nangate45 1.06, nangate15 1.12) |
+| `flop.area_um2` | sequential area over sequential cells, the clock gates among them | the registered points: 5.296378 µm² |
+| `flop.e_load_fj` | the mean busy e_bit | the points whose flops all load every cycle: Mac, TreeAccumulate and SerialAccumulate busy, LinkBuffer depth 1 stream: 17.8153 fJ |
+| `flop.e_hold_fj` | the mean idle e_bit | the idle points of Mac, TreeAccumulate and SerialAccumulate: 0.0655 fJ, which gating leaves of a held bit; used only through $e_{\mathit{ctrl}}$ |
+| `ctrl.counter_factor` | the ungated factor × the ungated e_hold over this e_hold, so $e_{\mathit{ctrl}}$ is the ungated table's | 1.06 × 7.1476 / 0.0655 = 115.67, so $e_{\mathit{ctrl}}$ = 115.67 × 0.0655 fJ = 7.576 fJ |
 | a point's `comb_um2` | the block's comb area | `char_synth.csv` |
-| a point's `e_comb_pj` | the comb energy per cycle of the busy window, a fire every cycle, so per fire; LinkBuffer's stream window, per load | `char_power.csv` |
+| a point's `e_comb_pj` | the comb energy per cycle of the busy window, a fire every cycle, so per fire; LinkBuffer's stream window, per load (0 at depth 1: a register alone) | `char_power.csv` |
 | an entry's `lanes_rule` | `copy` where the block is lane copies (ElementwiseLanes, Mac, LinkBuffer: their W = 8 and 32 points are within 3 % of W × the lanes-1 point), `interpolate` where it is not (TreeAccumulate, SerialAccumulate) | X37 |
 
 A block's register bits are not in the table: they are the catalogue's `flops` on its params (`hw/chisel/blocks.json`, C§10), which CHAR1 checked against DC's sequential cells at every point.
@@ -62,19 +62,19 @@ A block's register bits are not in the table: they are the catalogue's `flops` o
 
 Per unit and per buffer link, over one run of the accelerator:
 
-$$E_{\mathit{unit}} = n_{\mathit{fire}}\thinspace\big(e_{\mathit{comb}} + n_{\mathit{bits}}\thinspace(e_{\mathit{load}} - e_{\mathit{hold}})\big) + C_{\mathit{acc}}\thinspace n_{\mathit{bits}}\thinspace e_{\mathit{hold}}$$
+$$E_{\mathit{unit}} = n_{\mathit{fire}}\thinspace(e_{\mathit{comb}} + n_{\mathit{bits}}\thinspace e_{\mathit{load}})$$
 
 $$A_{\mathit{unit}} = A_{\mathit{comb}} + n_{\mathit{bits}}\thinspace A_{\mathit{flop}}$$
 
-and per group its control unit:
+and per group its control unit, over the accelerator's $C_{\mathit{acc}}$ cycles:
 
-$$E_{\mathit{ctrl}} = f_{\mathit{ctrl}}\thinspace n_{\mathit{bits}}^{\mathit{ctrl}}\thinspace C_{\mathit{acc}}\thinspace e_{\mathit{hold}}, \qquad A_{\mathit{ctrl}} = 2\thinspace n_{\mathit{bits}}^{\mathit{ctrl}}\thinspace A_{\mathit{flop}}$$
+$$E_{\mathit{ctrl}} = e_{\mathit{ctrl}}\thinspace n_{\mathit{bits}}^{\mathit{ctrl}}\thinspace C_{\mathit{acc}}, \qquad A_{\mathit{ctrl}} = 2\thinspace n_{\mathit{bits}}^{\mathit{ctrl}}\thinspace A_{\mathit{flop}}$$
 
 and, from HWCOST's tables, per port's streamer p (FIFO depth $D_p$, loops $L_p$, channels $C_p$, $W_p$ words in L1 over $W_p / C_p$ beats), the crossbar at its $n_{\mathit{in}}$ inputs and $n_{\mathit{banks}}$ banks and the banks' $N_{\mathit{rd}}$ reads and $N_{\mathit{wr}}$ writes (C§14 has the rule and every symbol):
 
 $$E_{\mathit{L1}} = \sum_p \frac{W_p}{C_p}\thinspace e_{\mathit{beat}}(D_p, L_p, C_p) + \Big(\sum_p W_p\Big)\thinspace e_{\mathit{acc}}(n_{\mathit{banks}}, n_{\mathit{banks}}) + N_{\mathit{rd}}\thinspace e_{\mathit{rd}} + N_{\mathit{wr}}\thinspace e_{\mathit{wr}}$$
 
-A flop that loads costs $e_{\mathit{load}}$ in that cycle and one that holds $e_{\mathit{hold}}$; there is no clock gating, so every flop holds in every cycle it does not load, and $n_{\mathit{fire}}\thinspace e_{\mathit{load}} + (C_{\mathit{acc}} - n_{\mathit{fire}})\thinspace e_{\mathit{hold}}$ per bit is the form above regrouped. A group's cost is its units', buffer links' and control unit's added up; the design's is its groups' (the datapath and control parts, the kernel's) plus its streamers', its crossbar's and its banks' (D167).
+A flop that loads costs $e_{\mathit{load}}$ in that cycle; one that holds costs nothing, since clock gating stops its clock (0.0655 fJ a bit and cycle is what is left, 0.004 pJ on dot 3's datapath at W = 2). The control unit's counters and state change every cycle, so it keeps one constant per bit and cycle, $e_{\mathit{ctrl}}$. A group's cost is its units', buffer links' and control unit's added up; the design's is its groups' (the datapath and control parts, the kernel's) plus its streamers', its crossbar's and its banks' (D167).
 
 Where the estimate gets each count:
 
@@ -83,52 +83,45 @@ Where the estimate gets each count:
 | $n_{\mathit{fire}}$ | a unit's fires: its firings times its span (SerialAccumulate reads span beats per firing); a buffer link's loads: its producer's outputs, its firings over its T (a fold gives once per T beats) | SNAX-LOWER's firings (`lower/derive.py`), the catalogue's span (`estimate/cycles.py`) |
 | $n_{\mathit{bits}}$ | the register bits of the unit's datapath or the buffer | the catalogue's `flops` on its params (`gen/rtl.py`, the estimate's `bits`) |
 | $n_{\mathit{bits}}^{\mathit{ctrl}}$ | the register bits of the group's control unit firtool keeps | `estimate/bits.py`, the estimate's `ctrl_bits` |
-| $C_{\mathit{acc}}$ | the accelerator's cycles, every group's | the group rule stepped on ideal streams (D155), `accelerator_cycles` |
+| $C_{\mathit{acc}}$ | the accelerator's cycles, every group's, for its control unit | the group rule stepped on ideal streams (D155), `accelerator_cycles` |
 | $e_{\mathit{comb}}$, $A_{\mathit{comb}}$ | the block's comb energy per fire and comb area | this table's lookup |
-| $e_{\mathit{load}}$, $e_{\mathit{hold}}$, $A_{\mathit{flop}}$, $f_{\mathit{ctrl}}$ | the technology's constants | this table's `flop` and `ctrl` |
+| $e_{\mathit{load}}$, $A_{\mathit{flop}}$, $e_{\mathit{ctrl}}$ | the technology's constants | this table's `flop` and `ctrl` ($e_{\mathit{ctrl}}$ = `counter_factor` × `e_hold_fj`) |
 
 ## A worked example: dot 5 at W = 8 on nangate45
 
 dot 5 (`recipes/dot/dot_5.json`, N = 2048, W = 8) is one group, `dot`: a Mac `mac` at lanes 8 feeding a SerialAccumulate `sum` at lanes 8 over a wire. The estimate gives $C_{\mathit{acc}}$ = 265 cycles.
 
-The constants (`nangate45.json`, `flop` and `ctrl`): $e_{\mathit{load}}$ = 17.1692 fJ, $e_{\mathit{hold}}$ = 7.1476 fJ, so $e_{\mathit{load}} - e_{\mathit{hold}}$ = 10.0216 fJ; $A_{\mathit{flop}}$ = 5.32 µm²; $f_{\mathit{ctrl}}$ = 1.06.
+The constants (`nangate45.json`, `flop` and `ctrl`): $e_{\mathit{load}}$ = 17.8153 fJ; $A_{\mathit{flop}}$ = 5.296378 µm²; $e_{\mathit{ctrl}}$ = 115.67 × 0.0655 fJ = 7.576385 fJ.
 
-**The Mac.** It fires once per beat of 8 elements: $n_{\mathit{fire}}$ = 2048 / 8 = 256. Its `flops` is `lanes * width(outType) * max(accumulate, regOut)` = 8 × 64 × 1, so $n_{\mathit{bits}}$ = 512. The table has the accumulating int64 Mac measured at lanes 8: $A_{\mathit{comb}}$ = 58 325 µm², $e_{\mathit{comb}}$ = 92.128 pJ.
+**The Mac.** It fires once per beat of 8 elements: $n_{\mathit{fire}}$ = 2048 / 8 = 256. Its `flops` is `lanes * width(outType) * max(accumulate, regOut)` = 8 × 64 × 1, so $n_{\mathit{bits}}$ = 512. The table has the accumulating int64 Mac measured at lanes 8: $A_{\mathit{comb}}$ = 57 131 µm², $e_{\mathit{comb}}$ = 92.181 pJ.
 
-- per fire: 92.128 + 512 × 10.0216 fJ = 92.128 + 5.131 = 97.259 pJ;
-- holding: 512 × 7.1476 fJ = 3.660 pJ per cycle;
-- per task: 256 × 97.259 + 265 × 3.660 = 24 898 + 970 = 25 868 pJ, 25.9 nJ;
-- area: 58 325 + 512 × 5.32 = 58 325 + 2 724 = 61 049 µm².
+- per fire: 92.181 + 512 × 17.8153 fJ = 92.181 + 9.121 = 101.302 pJ;
+- per task: 256 × 101.302 = 25 933 pJ, 25.933 nJ;
+- area: 57 131 + 512 × 5.296 = 57 131 + 2 712 = 59 843 µm².
 
-**The sum.** It fires once with span 8 (it reads its 8 lanes one per cycle): $n_{\mathit{fire}}$ = 1 × 8 = 8. Its `flops` is `width(outType)` = 64. The table has SerialAccumulate measured at lanes 8: $A_{\mathit{comb}}$ = 908.4 µm², $e_{\mathit{comb}}$ = 1.1216 pJ.
+**The sum.** It fires once with span 8 (it reads its 8 lanes one per cycle): $n_{\mathit{fire}}$ = 1 × 8 = 8. Its `flops` is `width(outType)` = 64. The table has SerialAccumulate measured at lanes 8: $A_{\mathit{comb}}$ = 821.9 µm², $e_{\mathit{comb}}$ = 1.0340 pJ.
 
-- per fire: 1.1216 + 64 × 10.0216 fJ = 1.1216 + 0.6414 = 1.7630 pJ;
-- holding: 64 × 7.1476 fJ = 0.4574 pJ per cycle;
-- per task: 8 × 1.7630 + 265 × 0.4574 = 14.1 + 121.2 = 135.3 pJ, 0.135 nJ (almost all of it holding);
-- area: 908.4 + 64 × 5.32 = 908.4 + 340.5 = 1 249 µm².
+- per fire: 1.0340 + 64 × 17.8153 fJ = 1.0340 + 1.1402 = 2.1741 pJ;
+- per task: 8 × 2.1741 = 17.4 pJ, 0.017 nJ (it holds its sum for the other 257 cycles at no cost);
+- area: 821.9 + 64 × 5.296 = 821.9 + 339.0 = 1 161 µm².
 
 **The wire** between them has no register and no cost.
 
 **The control unit.** `ctrl_bits` is 103: `busy` 1, the Mac's `mac_job_beats_counter` and `mac_jobs_counter` 32 each and `mac_v` 1, the sum's `sum_jobs_counter` 32, `sum_v` 1 and `sum_lane` 3, and `done` 1 (`estimate/bits.py`); JOBS and the Mac's JOB_BEATS are read live from the csr, with no copy (D168).
 
-- per task: 1.06 × 103 × 265 × 7.1476 fJ = 206 799 fJ, 0.207 nJ;
-- area: 103 × 5.32 = 548 µm² of flops and as much comb (the rough estimate), 1 096 µm².
+- per task: 103 × 265 × 7.576385 fJ = 206 797 fJ, 0.207 nJ;
+- area: 103 × 5.296 = 546 µm² of flops and as much comb (the rough estimate), 1 091 µm².
 
 **The streamers, crossbar and banks** (HWCOST, D167):
 
-- `mac_a` and `mac_b` read 2048 words each over 256 beats of 8 channels at FIFO depth 8 and one loop, a grid point of `streamer.csv`: 38 525 µm² and 39.65753 pJ a beat each, 10.152 nJ; `sum_out` writes 1 word on 1 channel, 5 469 µm² and 0.005 nJ.
-- The crossbar has 8 + 8 + 1 channels plus 2 cores and AXI, 20 inputs, on 32 banks: between the grid's 16 and 24 inputs, $t = 0.5$, 103 432 µm² in `xbar.csv`. Its 16 reader channels only read and the writer's one only writes (X71), so $103{,}432 \times (1 - 0.396496 \cdot 16/20 - 0.41077 \cdot 1/20) = 103{,}432 \times 0.66226 = 68{,}499$ µm².
-- Every access is at a full crossbar's price, `xbar.csv`'s 32 inputs on 32 banks, 2.739443 pJ, so 4097 accesses cost 11.223 nJ.
+- `mac_a` and `mac_b` read 2048 words each over 256 beats of 8 channels at FIFO depth 8 and one loop, a grid point of `streamer.csv`: 31 739 µm² and 22.49923 pJ a beat each, 5.760 nJ; `sum_out` writes 1 word on 1 channel, 4 556 µm² and 0.003 nJ.
+- The crossbar has 8 + 8 + 1 channels plus the core and AXI, 19 inputs, on 32 banks: between the grid's 16 and 24 inputs, $t = 3/8$, 98 415 µm² in `xbar.csv`. Its 16 reader channels only read and the writer's one only writes (X71), so $98{,}415 \times (1 - 0.396496 \cdot 16/19 - 0.41077 \cdot 1/19) = 98{,}415 \times 0.64449 = 63{,}427$ µm².
+- Every access is at a full crossbar's price, `xbar.csv`'s 32 inputs on 32 banks, 2.752585 pJ, so 4097 accesses cost 11.277 nJ.
 - The 32 banks of 512 × 64 bits are 32 × 13 522.7 = 432 726 µm², and 4096 reads at 3.53819 pJ and 1 write at 6.4677 pJ cost 14.499 nJ.
 
-**The total**: the kernel 25.868 + 0.135 + 0.207 = 26.210 nJ per run, the streamers 20.310 nJ, the crossbar 11.223 nJ and the banks 14.499 nJ, 72.243 nJ in all; 61 049 + 1 249 + 1 096 = 63 394 µm² of datapath and control, with the streamers' 82 519 µm² and the crossbar's 68 499 µm² 214 412 µm² without the banks, 647 138 µm² with them, shown as 214 000 µm² and 647 000 µm². dot 4 at W = 8 has the kernel 26.160 nJ.
+**The total**: the kernel 25.933 + 0.017 + 0.207 = 26.158 nJ per run, the streamers 11.523 nJ, the crossbar 11.277 nJ and the banks 14.499 nJ, 63.457 nJ in all; 59 843 + 1 161 + 1 091 = 62 095 µm² of datapath and control, with the streamers' 68 035 µm² and the crossbar's 63 427 µm² 193 557 µm² without the banks, 626 284 µm² with them, shown as 194 000 µm² and 626 000 µm². dot 4 at W = 8 has the kernel 26.133 nJ.
 
-**Against SYN2** (snax-forge-experiments `results/forge/nangate45/`, the same design synthesized whole and simulated for one task, `char_table.md`'s Model). SYN2's design still holds CTRL1's copies of JOBS and the Mac's JOB_BEATS, so the numbers are the model's for that 167-bit control unit, 26.339 nJ in all:
-
-- the kernel is 25.540 nJ, so the model is at 1.031;
-- per part the Mac is 24.912 nJ (1.038), the sum 0.297 nJ (0.456: its inputs change on each of the Mac's 256 fires, which the model does not count) and the control unit 0.331 nJ (1.012);
-- in area DC gives the Mac 61 051 µm² (1.000), the sum 1 282 µm² (0.974) and the control unit 1 750 µm² against the model's 1 777 µm² (1.015); the csr's 1 103 µm² is outside the model;
-- SYN2 has no L1 and no streamer, so HWCOST's parts are checked against their own tables (snax-forge-experiments `docs/cost_tables.md`) and against the cluster synthesis (CSYN1).
+**Against synthesis.** The gated cluster priced the same way (snax-forge-experiments `results/cluster/`, dot 3 at W = 2 to 32) is the check this table has so far. In area the datapath, control and memory are within 1 %, the streamers 0.83 to 1.02 and the crossbar 1.06 to 1.12 of the netlist. In energy, at W = 2 to 16, the datapath and control are 1.5 to 1.6 times high (random data), the streamers 0.93 to 0.97, the crossbar 1.26 to 1.48 (a full crossbar's price per access) and the memory 0.99; at W = 32 the run stalls, which the estimate does not see.
 
 ## Adding a block, a dtype or a technology
 
@@ -136,11 +129,11 @@ The constants (`nangate45.json`, `flop` and `ctrl`): $e_{\mathit{load}}$ = 17.16
 
 - the datapath and its `flops` go into snax-forge's catalogue first (`hw/chisel/blocks.json`; `BlockFlopsSpec` checks the count);
 - in snax-forge-experiments: its points in `char/points.json`; `pixi run char-rtl`; `pixi run syn run '<points>' --source char --tech <tech>`; its windows (a kind of its own needs a source in `sim/sources/char.py` and a testbench) and `pixi run pwr run '<points>' --source char --tech <tech>`; `pixi run char-export` and `pixi run char-table`, the result reviewed in `char_table.md`;
-- copy `results/char/<tech>/char.json` here byte for byte as `<tech>.json` and run `pixi run test-char`.
+- `pixi run char-export --clk-gate` there, then `pixi run import-costs` here and `pixi run test-char`.
 
 **A dtype** is an entry of its own: the lookup matches params exactly, so int32 points under an entry whose params name int32 leave int64's as they are. Measure it as a block above.
 
-**A technology**: synthesize and simulate the 27 points on it in snax-forge-experiments, and SYN2's 48 accelerators too, since the counter factor comes from their control units (`results/forge/<tech>/`). Copy its `char.json` here as `<tech>.json` and add the name to `TECHS` in `__init__.py`: the estimate, `design.md` (`pixi run report DIR --tech`), the viewers' `--tech` and the page's dropdown then offer it.
+**A technology**: synthesize and simulate the 27 points on it in snax-forge-experiments, and SYN2's 48 accelerators too, since the counter factor comes from their control units (`results/forge/<tech>/`). Add its paths to `util/import_costs.py`'s `PATHS` if they differ, run `pixi run import-costs --tech <tech>` and add the name to `TECHS` in `__init__.py`: the estimate, `design.md` (`pixi run report DIR --tech`), the viewers' `--tech` and the page's dropdown then offer it.
 
 `tests/char/` checks every table against the catalogue: each entry's datapath exists, its params with each point's lanes (and depth) are a valid and complete param set there, its rule is `copy` or `interpolate`, its points are unique.
 
@@ -151,6 +144,6 @@ The constants (`nangate45.json`, `flop` and `ctrl`): $e_{\mathit{load}}$ = 17.16
 | the table against the catalogue | `tests/char/` | every entry names a datapath and params the generator can build |
 | `flops` against the emitted RTL | `BlockFlopsSpec` (`hw/chisel/`) | the catalogue's count is the register bits firtool emits, at random params |
 | bits against SYN2 | `tests/estimate/test_bits.py` | each datapath's count matched DC's flops at SYN2's 48 points; the control unit's matched them when it was built and is held within 10 %: a check of the counts, not a promise |
-| the estimate against the experiments' model | `tests/estimate/test_cost.py` | a consistency check: the code computes the experiments' formula on the same inputs, within 0.5 % (the table's rounding) on 16 designs; it says nothing about accuracy |
-| the model against synthesis | snax-forge-experiments `char_table.md`, Model | the evidence: kernel energy at 0.99 to 1.04 of SYN2 on eight designs per technology, small units much further off |
+| the estimate against the experiments' pricing | `tests/estimate/test_cost.py` | a consistency check: dot 3 at W = 2 to 32, each of the five parts within 1e-6 of snax-forge-experiments' own implementation on the same gated tables; it says nothing about accuracy |
+| the model against synthesis | snax-forge-experiments `results/cluster/` (the gated cluster) and `char_table.md`, Model (the ungated table) | the evidence: the datapath's area at 0.999 of the gated cluster's, its energy 1.6 times high on random data; the ungated table at 0.99 to 1.04 of SYN2's kernels |
 | a block alone against inside | snax-forge-experiments X30, R0 | the block CHAR1 measured is the block an accelerator holds: area within 0.05 % where the accelerator drives its pins |

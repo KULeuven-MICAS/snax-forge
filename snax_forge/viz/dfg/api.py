@@ -1029,7 +1029,6 @@ def cost_details(c: Any, bits: int, tech: str) -> dict[str, str]:
         "found": f"{c.found} on {tech}" if c.found else f"not characterized on {tech}",
         "area": f"{_um2(c.total_um2)} (comb {sig3(c.comb_um2)}, flops {sig3(c.flops_um2)})",
         "per fire": f"{dec3(c.e_fire_pj)} pJ",
-        "holding": f"{dec3(c.e_hold_pj)} pJ per cycle" if c.e_hold_pj else "–",  # no flops
         "per task": f"{_nj(c.task_nj)} ({c.fires} fires, {bits} bits)",
     }
 

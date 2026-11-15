@@ -104,7 +104,7 @@ Area first, energy if characterisation allows; characterised once, then read fro
 
 - **What is characterised**: post-synthesis area per BRM parameter (lanes, width, depth), fitted linearly where it is; the L1 macros and bank counts; TCDM interconnect area against banks and ports; per-access energy times the counts the model keeps, as Accelergy does.
 - **Where**: the Nangate 45 nm and 15 nm Open Cell Libraries, synthesis and gate-level power in KULeuven-MICAS/snax-forge-experiments, with results committed. From 5 Nov 2026 on Nangate 45 nm only: the memories come from CACTI 7 at 45 nm (RAM1), so the L1 macros, the cluster synthesis and E11 exist at 45 nm only; what is at 15 nm already (SYN1, SYN2, CHAR1, HSYN1) stays as data, and snax-forge offers nangate45 only (D167).
-- **What exists**: SYN1 gives forge's area and dynamic energy beside the HLS points at one task of N = 2048, ctrl and csr apart (`results/forge_vs_hls.md`); CHAR1 characterizes each basic block alone; HWCOST (D167) adds the streamers, the crossbar and the banks from STRM1's and RAM1's tables, the design's cost in five parts (C§14).
+- **What exists**: SYN1 gives forge's area and dynamic energy beside the HLS points at one task of N = 2048, ctrl and csr apart (`results/forge_vs_hls.md`); CHAR1 characterizes each basic block alone; HWCOST (D167) adds the streamers, the crossbar and the banks from STRM1's and RAM1's tables, the design's cost in five parts (C§14). Every table is clock-gated synthesis since CG4 (D154 · D172), so a held flop costs nothing; forge's accelerators alone and the HLS points are synthesized gated again in CG5 and CG6.
 - **Checked**: the blocks against dot 2–6 synthesized whole, the cluster level against CSYN1.
 
 ## 8. Related work and positioning
