@@ -40,13 +40,13 @@ BOUND = ".snaxdfg"
 
 def setting(text: str) -> tuple[str, str, Any]:
     """A dotted path as the design step reads it (platform. or memory.), else a recipe
-    param as the sandbox reads it."""
+    param, ``types`` or ``dtypes.<name>`` as the sandbox reads it."""
     path = text.partition("=")[0]
-    if "." not in path:
+    if "." not in path or path.partition(".")[0] == "dtypes":
         return ("recipe", *sandbox_setting(text))
     if path.partition(".")[0] not in ("platform", "memory"):
         raise argparse.ArgumentTypeError(
-            f"{text!r}: a dotted path starts with platform. or memory."
+            f"{text!r}: a dotted path starts with platform., memory. or dtypes."
         )
     return design_setting(text)
 

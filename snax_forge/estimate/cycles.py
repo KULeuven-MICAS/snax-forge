@@ -141,9 +141,8 @@ def _datapath_blocks(graph: Graph, insts: dict[str, Any], members: list[str],
     producer's ``gives``, a load per output), and per unit and link its register bits (CONTRACTS,
     "Estimate"): a wire 0 and no block; a unit the generator does not fill a block with no params
     and no bits. The generator is imported here: gen/rtl.py imports this package."""
-    from snax_forge.brm import port_dtypes
     from snax_forge.gen.accelerator import Unit
-    from snax_forge.gen.blocks import DATAPATHS, GenError
+    from snax_forge.gen.blocks import DATAPATHS, GenError, fill_node
     from snax_forge.gen.rtl import buffer_params, catalogue, fill, flops
 
     cat, nodes, filled, units, links = catalogue(), instance_nodes(graph), {}, {}, {}
@@ -154,7 +153,7 @@ def _datapath_blocks(graph: Graph, insts: dict[str, Any], members: list[str],
         if dp not in DATAPATHS or dp not in cat:
             continue
         try:
-            f = DATAPATHS[dp].fill(inst, port_dtypes(graph, nodes[u]))
+            f = fill_node(dp, inst, graph, nodes[u])
         except GenError:
             continue
         filled[u] = Unit(u, inst.brm.name, dp, f.ports, dict(f.params), inst.latency,

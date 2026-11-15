@@ -592,7 +592,7 @@ def run_flow(
             else:
                 from snax_forge.dfg.import_sdfg import import_kernel
 
-                graph = import_kernel(recipe.kernel, recipe.dtypes)
+                graph = import_kernel(recipe.kernel, recipe.dtypes, recipe.types)
         with _timed(times, "sandbox"):
             steps = write_steps(recipe, apply_recipe(recipe, graph, seed=o.seed), out / "sandbox")
         f = _from_graph(steps[-1], recipe.kernel, f"recipe {recipe.name}", name, point_name, out,

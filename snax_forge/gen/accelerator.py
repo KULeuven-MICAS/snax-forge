@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from snax_forge import expr
-from snax_forge.brm import Instance, port_dtypes
+from snax_forge.brm import Instance
 from snax_forge.common import JsonFile
 from snax_forge.design.streamers import group_links as shared_links
 from snax_forge.design.streamers import groups as graph_groups
@@ -37,7 +37,7 @@ from snax_forge.dfg.subset import map_range, parse_dim
 from snax_forge.lower.c import accelerators as c_accelerators
 from snax_forge.lower.c import fold_rate
 
-from .blocks import DATAPATHS, GenError, Port, port_dtype
+from .blocks import DATAPATHS, GenError, Port, fill_node, port_dtype
 
 if TYPE_CHECKING:
     from snax_forge.design.point import DesignPoint
@@ -609,7 +609,7 @@ def _unit(point: DesignPoint, name: str, inst: Instance, offsets: Iterator[int])
         raise GenError("gen.controller", f"{what}: controller "
                        f"{inst.impl.binding['controller']!r}; the nest controller is counted")  # fmt: skip
     dp = DATAPATHS[datapath]
-    fill = dp.fill(inst, port_dtypes(point.graph, instance_nodes(point.graph)[name]))
+    fill = fill_node(datapath, inst, point.graph, instance_nodes(point.graph)[name])
     if inst.drain != 0:
         raise GenError("gen.drain", f"{what}: drain {inst.drain}; the nest controller has none, "
                        "so a bound implementation's drain is 0")  # fmt: skip

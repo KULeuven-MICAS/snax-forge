@@ -135,7 +135,7 @@ Questions not decided yet. Numbers are never reused; a closed item is removed, a
 33. An MLIR importer that writes `.snaxdfg` directly.
 34. A hand-edited `.snaxdfg` runs through the flow (D108) but cannot be replayed or swept, and the design checks' fixes speak of the recipe.
 36. Control flow in SNAX-DFG: a sequential `loop` kind and a `branch` kind, registered when a kernel needs them (M9).
-37. The expression grammar has `+ - * //`, `max` and `min`, and constant casts to the output's type: branches need comparisons, jacobi1d a cast of a value.
+37. The expression grammar has `+ - * //`, `max` and `min`, constant casts to the output's or the op's type and value casts (`int32(x)`, a kernel's `astype`, D143 · D175): branches need comparisons.
 38. The DMA moves a container as contiguous whole beats (D105); strided or 2-D transfers when a kernel needs them.
 40. Switching runs in the viewer clears the selected cycle.
 41. A report glossary, a "where the cycles went" ranking and the knobs' `--set` paths: on hold.

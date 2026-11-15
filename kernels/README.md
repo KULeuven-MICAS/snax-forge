@@ -9,6 +9,17 @@ The PolyBench and DL kernels are NPBench's DaCe sources (BSD-3, `NPBENCH_LICENSE
 - they are `int64` where the kernel is integer arithmetic, at PolyBench's MINI sizes; `softmax`, `mlp`, `lenet` and `resnet` keep NPBench's `float32` (`float-staged`) until their tier decides the integer form;
 - the tiers are PAPER §6.1's.
 
+The kernels PACK1a runs at narrow types (`vecadd`, `vecmul`, `matadd`, `relu`, `axpy`, `vsum`, `rowsum`, `dot`, `matvec`) list type presets in their `SPEC` (`presets`), chosen with `--set types=` (D113 · D173):
+
+| Preset | Inputs | Outputs and `ACC` |
+|---|---|---|
+| `i8` | `int8` | `int32` |
+| `i16` | `int16` | `int32` |
+| `i32` | `int32` | `int64` |
+
+- `ACC`, a type parameter (`SPEC.types`), is the type a product or sum runs at, written as a cast in the kernel: dot is `np.sum(A.astype(ACC) * B.astype(ACC))`. At its default (`int64`, or the containers' own type) the cast changes nothing.
+- NumPy's own form, products that wrap at the inputs' type, is `--set dtypes.ACC=int8` on top of `i8`; `tests/kernels/` checks each preset's graph against the kernel's function in NumPy.
+
 ## Regularity
 
 The kernels on two axes of regularity: access, what the streamers do, across; compute, what the unit does, down. The argument is PAPER §6.2's.

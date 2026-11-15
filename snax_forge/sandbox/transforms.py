@@ -404,6 +404,7 @@ class _Bound:
     folds: set[str]
     code: str  # the matched code entry's
     scalars: dict[str, Memlet]  # slot -> the scalar operand it is read from (a CSR)
+    op_type: str | None = None  # the op's type set by the kernel's casts, when not its inputs'
 
 
 def _bind_site(g: Graph, node: str, what: str) -> _Site:
@@ -464,14 +465,16 @@ def _bind_check(g: Graph, site: _Site, brm: str, implementation: str,
     lanes param from that bound, the rest given or default)."""
     from snax_forge.brm import BrmError
 
-    tasklet = site.tasklet
     try:
         b = load_brm(brm)
     except BrmError as e:
         raise SandboxError(f"{what}: {e}") from None
     conn_dtypes = {
-        c: g.containers[m.data].dtype for c, m in (tasklet.inputs | tasklet.outputs).items()
+        c: g.containers[m.data].dtype
+        for c, m in (site.tasklet.inputs | site.tasklet.outputs).items()
     }
+    site, casts = _without_casts(site, conn_dtypes, what)
+    tasklet = site.tasklet
     given = dict(params or {})
     seeds = _bind_seeds(site, b, brm, given, what)
     scalars = _scalar_inputs(g, site, what)
@@ -483,8 +486,9 @@ def _bind_check(g: Graph, site: _Site, brm: str, implementation: str,
     entry, ports, slots = _bind_entry(b, brm, tasklet, ports, names, given, what)
     _check_port_dtypes(b, ports, conn_dtypes, what)  # the entry's assignment of the inputs
     computes = _computes(tasklet, ports, names)
+    op_type, cast_op_type = _op_types(tasklet, ports, conn_dtypes, casts)
     from_scalar = _bind_slots(b, brm, entry, tasklet, ports, slots, names, conn_dtypes, given,
-                              computes, what)  # fmt: skip
+                              computes, cast_op_type or op_type, what)  # fmt: skip
     var_s, end, memlets, folds = _bind_lanes(g, site, b, ports, given, what)
     try:
         inst = b.resolve(implementation, given, from_scalar)
@@ -506,7 +510,69 @@ def _bind_check(g: Graph, site: _Site, brm: str, implementation: str,
                 f"{what}: {c} folds every lane into one, port {ports[c]!r} has "
                 f"{inst.lanes(ports[c])} lanes"
             )
-    return _Bound(b, ports, inst, var_s, end, memlets, folds, entry.code, from_scalar)
+    kept = cast_op_type if cast_op_type != op_type else None
+    return _Bound(b, ports, inst, var_s, end, memlets, folds, entry.code, from_scalar, kept)
+
+
+def _without_casts(site: _Site, conn_dtypes: Mapping[str, str],
+                   what: str) -> tuple[_Site, dict[str, str]]:  # fmt: skip
+    """The site with its tasklets' value casts stripped (a copy: the graph keeps them, and
+    ``replaced`` with them), and the dtype each input connector of the bound tasklet is cast
+    to. A cast that does not hold every value of its input (int32 to int8, int8 to uint32) is
+    refused: the datapaths only extend."""
+    try:
+        _, casts = expr.strip_casts(site.tasklet.attrs["code"], what)
+    except ExprError as e:
+        raise SandboxError(str(e)) from None
+    if not casts:
+        return site, {}
+    for c, dt in casts.items():
+        if not np.can_cast(conn_dtypes[c], dt, "safe"):
+            raise SandboxError(f"{what}: the cast {dt}({c}) of {conn_dtypes[c]} does not hold "
+                               f"every value of its input; the hardware only extends: cast to a "
+                               f"type that holds {conn_dtypes[c]}")  # fmt: skip
+
+    def strip(n: Node) -> Node:
+        n = Node.from_dict(n.to_dict(), n.id)
+        for t in _tasklets(n):
+            t.attrs["code"] = expr.strip_casts(t.attrs["code"], what)[0]
+        return n
+
+    pattern = strip(site.pattern)
+    if site.pattern is site.tasklet:
+        tasklet = pattern
+    elif (found := fused_view(pattern)) is not None:
+        tasklet = found[2]
+    else:  # a lane fold: the spatial map of one tasklet
+        tasklet = pattern.body[0]
+    return _Site(tasklet, pattern, site.smap, site.temporal), casts
+
+
+def _tasklets(n: Node) -> list[Node]:
+    """``n`` if it is a tasklet, and every tasklet under it."""
+    out = [n] if n.kind == "tasklet" else []
+    for k in n.body or []:
+        out += _tasklets(k)
+    return out
+
+
+def _op_types(tasklet: Node, ports: Mapping[str, str], conn_dtypes: Mapping[str, str],
+              casts: Mapping[str, str]) -> tuple[str | None, str | None]:  # fmt: skip
+    """The op's type from its array inputs' containers (NumPy's result type, D143) and, with
+    casts, from the casts' types (None without); None where there is no integer result type."""
+    from snax_forge.brm import result_type
+
+    ins = [c for c in tasklet.inputs if c in ports]
+
+    def rt(dts: list[str]) -> str | None:
+        try:
+            return result_type(dts)
+        except ValueError:
+            return None  # no integer result type: check_dtypes refused it above
+
+    plain = rt([conn_dtypes[c] for c in ins]) if ins else None
+    cast = rt([casts.get(c, conn_dtypes[c]) for c in ins]) if casts and ins else None
+    return plain, cast
 
 
 def _bind_seeds(site: _Site, b: Any, brm: str, given: Mapping[str, Any],
@@ -557,17 +623,12 @@ def _bind_entry(b: Any, brm: str, tasklet: Node, ports: dict[str, str], names: d
 
 def _bind_slots(b: Any, brm: str, entry: Any, tasklet: Node, ports: dict[str, str],
                 slots: dict[str, Any], names: dict[str, str], conn_dtypes: dict[str, Any],
-                given: dict[str, Any], computes: str, what: str) -> dict[str, Memlet]:  # fmt: skip
-    """The entry's slots: a literal goes into ``given`` (it must fit the op type), a scalar
+                given: dict[str, Any], computes: str, op_type: str | None,
+                what: str) -> dict[str, Memlet]:  # fmt: skip
+    """The entry's slots: a literal goes into ``given`` (it must fit ``op_type``), a scalar
     operand is read from its container; the latter returned by slot."""
-    from snax_forge.brm import fits, result_type
+    from snax_forge.brm import fits
 
-    op_type = None
-    if slots:
-        try:
-            op_type = result_type([conn_dtypes[c] for c in tasklet.inputs if c in ports])
-        except ValueError:
-            op_type = None  # no integer result type: check_dtypes refused it above
     from_scalar: dict[str, Memlet] = {}
     for k, v in slots.items():
         if isinstance(v, str):  # a scalar operand: the slot is read from its container (a CSR)
@@ -582,7 +643,7 @@ def _bind_slots(b: Any, brm: str, entry: Any, tasklet: Node, ports: dict[str, st
             if op_type is not None and not np.can_cast(dt, op_type, "safe"):
                 raise SandboxError(
                     f"{what}: {k} reads the scalar {m.data}, {dt}, which the op type {op_type} "
-                    "does not hold (NumPy's result type of the input ports' dtypes)"
+                    "does not hold (NumPy's result type of the input ports' dtypes or casts)"
                 )
             from_scalar[k] = m
             continue
@@ -594,7 +655,7 @@ def _bind_slots(b: Any, brm: str, entry: Any, tasklet: Node, ports: dict[str, st
         if op_type is not None and not fits(v, op_type):
             raise SandboxError(
                 f"{what}: {k} = {v} does not fit the op type {op_type} (NumPy's result type of "
-                "the input ports' dtypes; the literal is weak, NEP 50)"
+                "the input ports' dtypes or casts; the literal is weak, NEP 50)"
             )
         given[k] = v
     return from_scalar
@@ -798,6 +859,8 @@ def _bind_rewrite(g: Graph, site: _Site, bound: _Bound, brm: str, implementation
         },
         body=[],
     )
+    if bound.op_type is not None:  # the kernel's casts set the op's type (D143)
+        acc.attrs["opType"] = bound.op_type
     marks = tasklet.attrs.get(TRANSPOSE, {})  # mark_transpose's, onto the port (transpose.py)
     if any(c in ports for c in marks):
         acc.attrs[TRANSPOSE] = {ports[c]: list(p) for c, p in marks.items() if c in ports}

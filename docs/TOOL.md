@@ -54,7 +54,7 @@ flowchart TD
 | Flag | What it does |
 |---|---|
 | `--platform P` | the platform the design point is on; `platforms/snax_forge.json` is snax_cluster's base cluster |
-| `--set NAME=VALUE` | a recipe param (`--set W=8`), or a design one with `platform.` or `memory.` in front (`--set memory.passes.layout=padded_rows`); each is added to the run's folder name |
+| `--set NAME=VALUE` | a recipe param (`--set W=8`), the kernel's type preset (`--set types=i8`) or one dtype (`--set dtypes.C=int16`), or a design one with `platform.` or `memory.` in front (`--set memory.passes.layout=padded_rows`); each is added to the run's folder name |
 | `--trace LEVEL[:SOURCES]` | how much of the run is traced (the table below); the level is added to the folder name |
 | `--vcd` | also writes gtkwave's `run/all.vcd` and `run/view.gtkw` of the traced sources |
 | `--keep-work` | keeps gvrun's `run/work/` after a passing run (a failing run always keeps it) |

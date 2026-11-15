@@ -20,7 +20,7 @@ import dace
 import numpy as np
 import pytest
 
-from snax_forge.dfg import Graph
+from snax_forge.dfg import DfgError, Graph
 from snax_forge.dfg.__main__ import main
 from snax_forge.dfg.import_sdfg import (
     SdfgImportError,
@@ -251,8 +251,8 @@ def test_unsupported_kernels(kernel, message):
 
 
 def test_raw_vecadd_has_three_states():
-    """The raw SDFG still has the transient copy in a state of its own."""
-    with pytest.raises(SdfgImportError, match="3 states"):
+    """The raw SDFG still has the transient copies in states of their own."""
+    with pytest.raises(SdfgImportError, match=r"\d+ states .* only one is imported"):
         import_sdfg(build(load("vecadd"), simplify=False), "vecadd")
 
 
@@ -267,8 +267,7 @@ def test_raw_vecadd_has_three_states():
             "view 'V' is used other than by one copy of the whole",
         ),
         (progs.unsupported_dependent_params, "range of 'j' depends on 'i' of the same map"),
-        (progs.unsupported_cast, "cast 'dace.int64\\(a\\)' .* a non-constant"),
-        (progs.unsupported_cast_type, "cast to int32, not the output's type int64"),
+        (progs.unsupported_cast_type, "cast to int32, not the output's or the op's type"),
         (progs.unsupported_cast_float, "cast to float64, not an integer type"),
         (progs.unsupported_transient_scalar, "array 's': a transient Scalar is not imported"),
         (progs.unsupported_copy, "copy 'A' -> 'B'"),
@@ -278,3 +277,44 @@ def test_raw_vecadd_has_three_states():
 def test_unsupported_constructs(make, message):
     with pytest.raises(SdfgImportError, match=message):
         import_sdfg(make(), "t")
+
+
+# =============================================================================
+# Casts and convert maps (D143 · D175)
+# =============================================================================
+
+
+def test_a_value_cast_is_kept():
+    (t,) = [n for n, _ in import_sdfg(progs.value_cast(), "t").walk() if n.kind == "tasklet"]
+    assert t.attrs["code"] == "o = int64(a) // 3"
+
+
+@pytest.mark.parametrize(
+    ("types", "dtypes", "code", "params"),
+    [
+        (None, None, "out = in1 * in2", {}),  # ACC int64 on int64: the converts are copies
+        ("i8", None, "out = int32(in1) * int32(in2)", {"ACC": "int32"}),
+        ("i8", {"ACC": "int8"}, "out = in1 * in2", {"ACC": "int8"}),  # NumPy's wrapped product
+        ("i32", None, "out = int64(in1) * int64(in2)", {}),  # ACC int64 is its default
+    ],
+)
+def test_converts_fold_into_their_reader(types, dtypes, code, params):
+    """dot's ``A.astype(ACC) * B.astype(ACC)``: DaCe's two convert maps into transients fold
+    into the multiply, which reads A and B through the casts (none where they are no-ops), and
+    the product keeps its name tmp0, as without the casts."""
+    g = import_kernel("dot", dtypes, types)
+    assert [n.id for n in g.body] == ["mult_map", "sum_map"]
+    assert g.node("mult").attrs["code"] == code
+    assert {c: m.data for c, m in g.node("mult").inputs.items()} == {"in1": "A", "in2": "B"}
+    assert set(g.containers) == {"A", "B", "out", "tmp0"}
+    assert g.type_params == params
+    assert Graph.from_dict(g.to_dict()) == g
+
+
+def test_type_params_are_written_only_when_set_and_checked():
+    d = import_kernel("dot", None, "i8").to_dict()
+    assert d["type_params"] == {"ACC": "int32"}
+    assert "type_params" not in import_kernel("dot").to_dict()
+    d["type_params"] = {"ACC": "float32"}
+    with pytest.raises(DfgError, match="type_params.ACC: must be an integer dtype"):
+        Graph.from_dict(d)

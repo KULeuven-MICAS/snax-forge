@@ -129,13 +129,19 @@ def simd(
     k1: int | None = None,
     k2: int | None = None,
     dtypes: Mapping[str, str] | None = None,
+    op_type: str | None = None,
 ) -> AccelFunction:
     """N inputs -> 1 output, one beat each per firing, ``op`` folding them left to right at
-    the inputs' dtype (``dtypes`` is not read: the result is cast when written). One input
-    takes the constant ``k`` as its second operand, ``op(a, k)``, k cast to a's dtype; two or
-    more take none. ``op`` ``"axpby"`` (two inputs): ``k1 * a + k2 * b``, or ``k1 * a + b``
-    with ``k2`` unset, at the inputs' result type. A slot read from a scalar is unset here
-    (module doc): the firing needs it."""
+    the inputs' dtype, or at ``op_type`` when the kernel's casts set it, each input extended
+    to it first (``dtypes`` is not read: the result is cast when written). One input takes
+    the constant ``k`` as its second operand, ``op(a, k)``, k cast to a's dtype; two or more
+    take none. ``op`` ``"axpby"`` (two inputs): ``k1 * a + k2 * b``, or ``k1 * a + b`` with
+    ``k2`` unset, at the inputs' result type. A slot read from a scalar is unset here (module
+    doc): the firing needs it."""
+
+    def at(x: Any) -> Any:
+        return np.asarray(x) if op_type is None else np.asarray(x).astype(op_type)
+
     names = [chr(ord("a") + i) for i in range(n_inputs)]
     axpby = op == AXPBY
     if n_inputs != 1 and k is not None:
@@ -149,7 +155,7 @@ def simd(
         if axpby:
             if k1 is None:
                 raise ValueError("k1 has no value: a slot read from a scalar needs it")
-            a, b = np.asarray(ins["a"]), np.asarray(ins["b"])
+            a, b = at(ins["a"]), at(ins["b"])
             t = np.result_type(a.dtype, b.dtype)
             a, b = a.astype(t), b.astype(t)
             scaled = b if k2 is None else np.asarray(k2).astype(t) * b
@@ -157,9 +163,9 @@ def simd(
         if n_inputs == 1:
             if k is None:
                 raise ValueError("one input takes the constant k, op(a, k); k has no value")
-            a = np.asarray(ins["a"])
+            a = at(ins["a"])
             return {"out": op(a, np.asarray(k).astype(a.dtype))}
-        return {"out": _fold(op, (ins[n] for n in names))}
+        return {"out": _fold(op, (at(ins[n]) for n in names))}
 
     ports = [AccelPort(n, "in", lanes) for n in names] + [AccelPort("out", "out", lanes)]
     return AccelFunction(tuple(ports), fn, "simd")
@@ -171,6 +177,7 @@ def reduce_kind(
     op: Callable[[Any, Any], Any] = np.add,
     seed: int = 0,
     dtypes: Mapping[str, str] | None = None,
+    op_type: str | None = None,
 ) -> AccelFunction:
     """T input beats -> 1 output beat, T the runtime param ``"T"``.
 
@@ -180,7 +187,8 @@ def reduce_kind(
     folded, so the tree and the accumulator run at that dtype; without ``dtypes``, at
     the input's. With ``seed`` 1 an input ``seed`` of ``lanes_out`` lanes at rate T: a job's
     first firing folds into it instead of its running sum (``acc_in = first ? seed : s``,
-    ``s <- acc_in op tree(a)``), cast to the output's dtype too.
+    ``s <- acc_in op tree(a)``), cast to the output's dtype too. ``op_type`` (a cast of the
+    input in the kernel) changes nothing: the lanes are cast to the output's dtype anyway.
     """
     out_dtype = None if dtypes is None else dtypes.get("out")
     lanes_out = lanes if lanes_out is None else lanes_out
@@ -214,14 +222,19 @@ def mac_kind(
     lanes: int = 1,
     op: Callable[[Any, Any], Any] = np.add,
     dtypes: Mapping[str, str] | None = None,
+    op_type: str | None = None,
 ) -> AccelFunction:
     """T beats of ``a`` and ``b`` -> 1 beat of ``out``, each lane on its own: ``a * b`` at the
-    inputs' result type, cast to the output's dtype (``dtypes["out"]``), folded with ``op``
-    over the T beats; without ``dtypes``, at the product's."""
+    inputs' result type, or at ``op_type`` when the kernel's casts set it, cast to the output's
+    dtype (``dtypes["out"]``), folded with ``op`` over the T beats; without ``dtypes``, at the
+    product's."""
     out_dtype = None if dtypes is None else dtypes.get("out")
 
     def fn(k, ins, state, params):
-        x = np.multiply(ins["a"], ins["b"])
+        a, b = np.asarray(ins["a"]), np.asarray(ins["b"])
+        if op_type is not None:
+            a, b = a.astype(op_type), b.astype(op_type)
+        x = np.multiply(a, b)
         x = x if out_dtype is None else np.asarray(x).astype(out_dtype)
         state["acc"] = x.copy() if "acc" not in state else op(state["acc"], x)
         if (k + 1) % params["T"] == 0:
@@ -237,11 +250,12 @@ def lane_accumulate_kind(
     lanes: int = 1,
     op: Callable[[Any, Any], Any] = np.add,
     dtypes: Mapping[str, str] | None = None,
+    op_type: str | None = None,
 ) -> AccelFunction:
     """T beats of ``a`` -> 1 beat of ``out``, each lane its own: ``a`` at its dtype cast to
     the output's (``dtypes["out"]``), folded with ``op`` over the T beats; without
-    ``dtypes``, at ``a``'s. The lanes are never folded together (``reduce``'s ``lanes_out``
-    1 does that)."""
+    ``dtypes``, at ``a``'s; ``op_type`` changes nothing, as ``reduce``'s. The lanes are never
+    folded together (``reduce``'s ``lanes_out`` 1 does that)."""
     out_dtype = None if dtypes is None else dtypes.get("out")
 
     def fn(k, ins, state, params):
@@ -313,9 +327,11 @@ register_kind("mac", _with_op(mac_kind))
 register_kind("lane_accumulate", _with_op(lane_accumulate_kind))
 
 
-def function_of(inst: Instance, dtypes: Mapping[str, str] | None = None) -> AccelFunction:
-    """The instance's function, its params resolved and the node's port ``dtypes`` given; see
-    the module doc. Raises BrmError."""
+def function_of(inst: Instance, dtypes: Mapping[str, str] | None = None,
+                op_type: str | None = None) -> AccelFunction:  # fmt: skip
+    """The instance's function, its params resolved and the node's port ``dtypes`` given, at
+    ``op_type`` when the kernel's casts set it (the node's ``opType``); see the module doc.
+    Raises BrmError."""
     what = f"brm {inst.brm.name!r} implementation {inst.implementation!r}"
     kind = inst.brm.function.accel
     if kind not in KINDS:
@@ -323,7 +339,7 @@ def function_of(inst: Instance, dtypes: Mapping[str, str] | None = None) -> Acce
     params = {k: inst.value(v) for k, v in inst.brm.function.params.items()
               if expr.names(v) <= set(inst.params)}  # an unset param is not evaluated  # fmt: skip
     try:
-        built = KINDS[kind](**params, dtypes=dtypes)
+        built = KINDS[kind](**params, dtypes=dtypes, **({"op_type": op_type} if op_type else {}))
     except (TypeError, ValueError) as e:
         raise BrmError(f"{what}: kind {kind!r} rejects {params}: {e}") from None
     declared = [(p.name, p.direction, inst.lanes(p.name), p.rate) for p in inst.ports]

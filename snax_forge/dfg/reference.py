@@ -114,7 +114,8 @@ def reference_check(spec: Any, graph: Graph, seed: int) -> Goldens:
     """The reference executor on ``graph`` against the kernel's reference, on the kernel's
     inputs: data.h's goldens are the first, so a graph that computes something else (one
     edited by hand) would pass its own check; a KernelError naming each output that
-    differs. The inputs and the executor's outputs, which data.h takes as they are."""
+    differs. The reference runs at the graph's type parameters (``type_params``). The inputs and the executor's outputs, which data.h takes as they are."""
+    spec = spec.with_types(graph.type_params, f"{graph.name}.type_params")
     inputs = kernel_inputs(spec, graph, seed)
     pairs = against_reference(spec, inputs, lambda x: execute(graph, on_graph(graph, x)))
     wrong = _differing(pairs)

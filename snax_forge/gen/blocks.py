@@ -85,6 +85,20 @@ class Datapath:
 DATAPATHS: dict[str, Datapath] = {}
 
 
+def fill_node(datapath: str, inst: Instance, graph: Any, node: Any) -> Fill:
+    """``datapath``'s adapter on the instance bound at ``node``, its op type the node's
+    ``opType`` where the kernel's casts set one (D143), else its inputs' result type."""
+    from dataclasses import replace
+
+    from snax_forge.brm import port_dtypes
+
+    f = DATAPATHS[datapath].fill(inst, port_dtypes(graph, node))
+    op_type = node.attrs.get("opType")
+    if op_type is None or f.op_type is None:
+        return f
+    return replace(f, op_type=op_type, scalars={s: op_type for s in f.scalars})
+
+
 def register_datapath(name: str, latency: int | str, adapter: Adapter, span: int | str = 1) -> None:
     """Add the datapath ``name`` (a binding's ``datapath``) of latency ``latency`` and span
     ``span`` (module doc)."""

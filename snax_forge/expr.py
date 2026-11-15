@@ -1,8 +1,10 @@
 """Values: an int, or a small integer expression over names.
 
 Shared by SNAX-BRM and SNAX-DFG. A value is a plain int or a string expression: names, ints,
-``+ - * //``, parentheses, ``max(a, b)`` and ``min(a, b)`` (two arguments each), and
-``width(t)``, the bits of a name bound to a NumPy dtype; no other call and no string literals.
+``+ - * //``, parentheses, ``max(a, b)`` and ``min(a, b)`` (two arguments each),
+``width(t)``, the bits of a name bound to a NumPy dtype, and a value cast ``int8(x)`` ...
+``uint64(x)`` (tasklet code, from a kernel's ``astype``), wrapping as NumPy's ``astype``; no
+other call and no string literals.
 Expressions are parsed with ``ast`` and walked, never passed to ``eval``. The arithmetic works
 on Python ints, NumPy integer scalars and arrays (``max``, ``min`` elementwise), so the
 reference executor can evaluate a subset for a whole map nest at once. What binds the names (a
@@ -12,8 +14,9 @@ Entry points: ``check``, ``names``, ``is_name``, ``constant``, ``evaluate`` and 
 one expression; ``canonical``, the stored form (an int, or the text ``ast.unparse`` writes), so
 rewritten and hand-written files diff cleanly; ``substitute``; ``linear``, an affine value's
 constant and per-variable coefficients; and, on tasklet code, ``statements``,
-``canonical_code``, ``rename_code``, ``check_code`` and ``unify``, a match against a code
-whose slots stand for an int constant or a scalar argument, ``+``, ``*``, ``max`` and ``min``
+``canonical_code``, ``rename_code``, ``check_code``, ``strip_casts`` (the code without its
+value casts, and the type each name is cast to) and ``unify``, a match against a code whose
+slots stand for an int constant or a scalar argument, ``+``, ``*``, ``max`` and ``min``
 commuting.
 """
 
@@ -39,6 +42,8 @@ _BINOPS = {
 CALLS = {"max": np.maximum, "min": np.minimum}
 # and its one-argument call on a dtype's name: its bits
 DTYPE_CALLS = {"width"}
+# and the value casts, one argument each, as NumPy's astype (wrapping)
+CASTS = ("int8", "uint8", "int16", "uint16", "int32", "uint32", "int64", "uint64")
 
 
 class ExprError(ValueError):
@@ -71,15 +76,20 @@ def _parsed(expr: str) -> ast.expr:
 
 
 def _check_call(node: ast.Call, expr: str) -> None:
-    """``max(a, b)``, ``min(a, b)`` or ``width(name)``; any other call is an error."""
+    """``max(a, b)``, ``min(a, b)``, ``width(name)`` or a cast ``int32(x)``; any other call is
+    an error."""
     fn = node.func.id if isinstance(node.func, ast.Name) else None
+    if fn in CASTS:
+        if len(node.args) != 1 or node.keywords:
+            raise ExprError(f"{expr!r}: the cast {fn} takes exactly one argument")
+        return
     if fn in DTYPE_CALLS:
         if len(node.args) != 1 or node.keywords or not isinstance(node.args[0], ast.Name):
             raise ExprError(f"{expr!r}: {fn} takes exactly one argument, a name")
         return
     if fn not in CALLS:
-        raise ExprError(f"{expr!r}: call {ast.unparse(node)!r} is not allowed (only max, min "
-                        "and width)")  # fmt: skip
+        raise ExprError(f"{expr!r}: call {ast.unparse(node)!r} is not allowed (only max, min, "
+                        "width and the integer casts)")  # fmt: skip
     if len(node.args) != 2 or node.keywords:
         raise ExprError(f"{expr!r}: {fn} takes exactly two arguments")
 
@@ -195,6 +205,8 @@ def evaluate(v: Value, env: Mapping[str, Any]) -> Any:
             return -_int(walk(node.operand))
         if isinstance(node, ast.Call) and node.func.id in DTYPE_CALLS:
             return _width(walk(node.args[0]), v)
+        if isinstance(node, ast.Call) and node.func.id in CASTS:
+            return np.asarray(_int(walk(node.args[0]))).astype(node.func.id)[()]
         if isinstance(node, ast.Call):
             a, b = (_int(walk(x)) for x in node.args)
             r = CALLS[node.func.id](a, b)
@@ -222,7 +234,7 @@ def canonical(v: Value) -> Value:
 @functools.lru_cache(maxsize=16384)
 def _canonical(v: str) -> Value:
     if not _names_of(v):
-        return evaluate(v, {})
+        return int(evaluate(v, {}))
     return ast.unparse(_parsed(v))
 
 
@@ -410,6 +422,33 @@ def check_code(
             if name not in ins:
                 raise ExprError(f"{what}: {name!r} is not an input")
     return lines
+
+
+def strip_casts(code: str, what: str) -> tuple[str, dict[str, str]]:
+    """``code`` (valid, see ``statements``) without its value casts, and the dtype each name
+    was cast to: ``out = int32(a) * int32(b)`` gives ``out = a * b`` and ``{a: int32, b:
+    int32}``. A cast of anything but a name, or one name cast to two types, is an ExprError."""
+    casts: dict[str, str] = {}
+
+    class Strip(ast.NodeTransformer):
+        def visit_Call(self, node: ast.Call) -> ast.expr:
+            self.generic_visit(node)
+            if not (isinstance(node.func, ast.Name) and node.func.id in CASTS):
+                return node
+            (arg,) = node.args
+            if not isinstance(arg, ast.Name):
+                raise ExprError(f"{what}: the cast {ast.unparse(node)!r} is of an expression, "
+                                "not of an input")  # fmt: skip
+            if casts.setdefault(arg.id, node.func.id) != node.func.id:
+                raise ExprError(f"{what}: {arg.id} is cast to {casts[arg.id]} and to "
+                                f"{node.func.id}")  # fmt: skip
+            return arg
+
+    lines = []
+    for t, e in statements(code, what):
+        tree = Strip().visit(_parse(str(e)))
+        lines.append(f"{t} = {canonical(ast.unparse(tree))}")
+    return "\n".join(lines), casts
 
 
 # the operators and calls ``unify`` lets commute: ``a + b`` is ``b + a``, ``max(a, 0)`` ``max(0,

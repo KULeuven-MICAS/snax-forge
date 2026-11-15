@@ -5,7 +5,8 @@ int64, one element per 64-bit L1 word, as dot. A test kernel: it exists to
 exercise accumulate's Chisel Accumulator on its own, since dot binds two
 instances (simd and accumulate) and snax_forge's board has one
 accelerator slot. The importer turns the Reduce into a sum map folding into
-``out[0]`` with ``add``.
+``out[0]`` with ``add``;
+the type presets ``i8``, ``i16`` and ``i32`` are in ``SPEC`` (kernels/README.md).
 
 Tier done (PAPER §6.1).
 """
@@ -40,4 +41,9 @@ SPEC = KernelSpec(
     flops=lambda n=1024: n,
     bytes_moved=lambda n=1024: 8 * n + 8,
     sweep_sizes=(1 << 10, 1 << 12, 1 << 14, 1 << 16, 1 << 18),
+    presets={
+        "i8": {"A": "int8", "out": "int32"},
+        "i16": {"A": "int16", "out": "int32"},
+        "i32": {"A": "int32", "out": "int64"},
+    },
 )

@@ -4,7 +4,8 @@ First non-arithmetic kernel -- a comparator and select rather than an adder,
 which is different hardware. The op shows up in the tasklet `calls` histogram
 rather than `ops`, so it also tests that side of the compute extractor.
 
-int32, packed two per 64-bit word.
+int32, packed two per 64-bit word;
+the type presets ``i8``, ``i16`` and ``i32`` are in ``SPEC`` (kernels/README.md).
 """
 
 import dace
@@ -37,4 +38,9 @@ SPEC = KernelSpec(
     bytes_moved=lambda n=1024: 2 * 4 * n,
     sweep_sizes=(1 << 10, 1 << 12, 1 << 14, 1 << 16, 1 << 18),
     tags=("activation", "select", "streamable"),
+    presets={
+        "i8": {"A": "int8", "B": "int32"},
+        "i16": {"A": "int16", "B": "int32"},
+        "i32": {"A": "int32", "B": "int64"},
+    },
 )

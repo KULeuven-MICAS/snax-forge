@@ -3,11 +3,13 @@
 ``Recipe`` (``Recipe.load``, ``to_dict``) and its ``Step`` read and write a recipe, a JSON file
 in a category folder of ``recipes/`` (CONTRACTS, "Recipe"). ``find_recipe`` finds one by name,
 ``recipe_paths`` lists them all. A transform's int params take an int or an expression over the
-recipe params (snax_forge/expr.py); ``Recipe.with_params`` (``--set W=8``) overrides a param, so
-one recipe covers a sweep, and the recipe written next to a run has the values that run used.
+recipe params (snax_forge/expr.py); ``Recipe.with_params`` (``--set W=8``) overrides a param, and
+``--set types=i8`` a kernel's type preset and ``--set dtypes.C=int16`` one container's or type
+parameter's dtype, so one recipe covers a sweep, and the recipe written next to a run has the
+values that run used.
 
-An unknown dtype is an error here; an unknown container one at the import, which knows the
-kernel's. Whether a step's transform exists and takes its params is checked when the recipe
+An unknown dtype is an error here; an unknown container, type parameter or preset one at the
+import, which knows the kernel's. Whether a step's transform exists and takes its params is checked when the recipe
 runs (run.py), where the transforms are registered.
 """
 
@@ -89,6 +91,7 @@ class Recipe(JsonFile):
     symbols: dict[str, Value] = field(default_factory=dict)
     steps: list[Step] = field(default_factory=list)
     dtypes: dict[str, str] = field(default_factory=dict)
+    types: str | None = None  # the kernel's type preset (its SPEC's ``presets``)
 
     def __post_init__(self) -> None:
         for what, v in (("name", self.name), ("kernel", self.kernel)):
@@ -101,6 +104,8 @@ class Recipe(JsonFile):
                 raise SandboxError(f"{self.name}.params.{k}: must be an int or a string")
         for s, v in self.symbols.items():
             self.value(v, f"{self.name}.symbols.{s}")
+        if self.types is not None and (not isinstance(self.types, str) or not self.types):
+            raise SandboxError(f"{self.name}.types: must be a preset's name, got {self.types!r}")
         from snax_forge.brm import INT_DTYPES
 
         for c, dt in self.dtypes.items():
@@ -125,13 +130,18 @@ class Recipe(JsonFile):
         return {s: self.value(v, f"{self.name}.symbols.{s}") for s, v in self.symbols.items()}
 
     def with_params(self, values: Mapping[str, int | str]) -> Recipe:
-        """The recipe with some params set (``--set``); each must already be a param."""
-        unknown = sorted(set(values) - set(self.params))
+        """The recipe with some params set (``--set``), each already a param, its type preset
+        (``types``) and some dtypes (``dtypes.<name>``)."""
+        params = dict(values)
+        types = params.pop("types", self.types)
+        dtypes = dict(self.dtypes)
+        for k in [k for k in params if k.startswith("dtypes.")]:
+            dtypes[k.partition(".")[2]] = params.pop(k)
+        unknown = sorted(set(params) - set(self.params))
         if unknown:
-            raise SandboxError(
-                f"{self.name}: no param {unknown[0]!r} (params: {list(self.params)})"
-            )
-        return replace(self, params={**self.params, **values})
+            raise SandboxError(f"{self.name}: no param {unknown[0]!r} (params: "
+                               f"{list(self.params)}; also types and dtypes.<name>)")  # fmt: skip
+        return replace(self, params={**self.params, **params}, dtypes=dtypes, types=types)
 
     # --- files ---
 
@@ -142,12 +152,13 @@ class Recipe(JsonFile):
             "params": dict(self.params),
             "symbols": dict(self.symbols),
             **({"dtypes": dict(self.dtypes)} if self.dtypes else {}),
+            **({"types": self.types} if self.types is not None else {}),
             "steps": [s.to_dict() for s in self.steps],
         }
 
     @classmethod
     def from_dict(cls, d: Mapping[str, Any]) -> Recipe:
-        _keys(d, ("name", "kernel"), ("params", "symbols", "dtypes", "steps"), "recipe")
+        _keys(d, ("name", "kernel"), ("params", "symbols", "dtypes", "types", "steps"), "recipe")
         name = d["name"]
         for key in ("params", "symbols", "dtypes"):
             if not isinstance(d.get(key, {}), Mapping):
@@ -162,4 +173,5 @@ class Recipe(JsonFile):
             dict(d.get("symbols", {})),
             [Step.from_dict(s, f"{name}.steps[{i}]") for i, s in enumerate(steps)],
             dict(d.get("dtypes", {})),
+            d.get("types"),
         )

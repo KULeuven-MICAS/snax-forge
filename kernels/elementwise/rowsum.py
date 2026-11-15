@@ -4,7 +4,8 @@ Partial reduction: the reduced axis differs from the output axis, unlike dot
 where they coincide. This is the shape softmax's normalisation pass takes,
 so it is worth having the structure characterised early.
 
-int64.
+int64;
+the type presets ``i8``, ``i16`` and ``i32`` are in ``SPEC`` (kernels/README.md).
 """
 
 import dace
@@ -42,4 +43,9 @@ SPEC = KernelSpec(
         {"m": 128, "n": 512},
     ),
     tags=("reduction", "partial-reduction"),
+    presets={
+        "i8": {"A": "int8", "y": "int32"},
+        "i16": {"A": "int16", "y": "int32"},
+        "i32": {"A": "int32", "y": "int64"},
+    },
 )
