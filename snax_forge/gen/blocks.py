@@ -35,19 +35,21 @@ class GenError(CodedError):
 @dataclass(frozen=True)
 class Port:
     """A unit's BRM port in ``accelerator.json``: the datapath's port, its direction (``in``
-    or ``out``, the BRM port's), its dtype, its lanes."""
+    or ``out``, the BRM port's), its dtype, its lanes; a packed outer output's d_out."""
 
     port: str
     dir: str
     dtype: str | None  # None: judged without a graph (module doc)
     lanes: int
+    d_out: int = 1  # an outer output's results per word through its packer (D174)
 
     def to_dict(self) -> dict[str, Any]:
-        return {"port": self.port, "dir": self.dir, "dtype": self.dtype, "lanes": self.lanes}
+        d = {"port": self.port, "dir": self.dir, "dtype": self.dtype, "lanes": self.lanes}
+        return d | ({"d_out": self.d_out} if self.d_out > 1 else {})
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> Port:
-        return cls(d["port"], d["dir"], d["dtype"], d["lanes"])
+        return cls(d["port"], d["dir"], d["dtype"], d["lanes"], d.get("d_out", 1))
 
 
 @dataclass(frozen=True)
@@ -148,7 +150,7 @@ def _fill_ports(inst: Instance, dtypes: Mapping[str, str] | None, words: set[str
     """Every port of the instance in its order: the binding's datapath port (by default the same
     name), its
     dtype and its lanes; a port in ``words`` must be whole 64-bit channels (``gen.lanes``),
-    the others are one word (a fold's output)."""
+    or, an output, divide one (its packer, D174); the others are one word (a fold's output)."""
     mapping = inst.impl.binding.get("ports") or {}
     out = {}
     for p in inst.ports:
@@ -156,7 +158,8 @@ def _fill_ports(inst: Instance, dtypes: Mapping[str, str] | None, words: set[str
         if dtypes is not None:
             dtype = dtypes[p.name]
             bits, _ = port_dtype(dtype, f"{what} port {p.name}")
-            if p.name in words and n * bits % 64:
+            packs = p.direction == "out" and 64 % (n * bits) == 0
+            if p.name in words and n * bits % 64 and not packs:
                 raise GenError(
                     "gen.lanes",
                     f"{what}: port {p.name}'s {n} lanes of {bits} bits are not whole 64-bit "

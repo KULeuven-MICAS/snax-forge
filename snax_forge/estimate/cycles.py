@@ -21,15 +21,16 @@ from types import ModuleType
 from typing import Any
 
 from snax_forge.common import CodedError, repo_root
-from snax_forge.design.streamers import group_links, group_runs, instance_nodes, instances
+from snax_forge.design.streamers import group_links, group_runs, instance_nodes, instances, packed
 from snax_forge.design.streamers import groups as graph_groups
 from snax_forge.dfg import Graph, Node
 from snax_forge.dfg.subset import map_range
 from snax_forge.lower.c import fold_rate, job_writes
 from snax_forge.lower.derive import unit_firings
 
-from .bits import ctrl_bits
+from .bits import ctrl_bits, packer_bits
 from .cost import Block, GroupCost
+from .data import WORD_BITS
 
 SUBMODULE = repo_root() / "gvsoc" / "snax-gvsoc"
 # The streamers' fill a run adds to a group's cycles: 3, or 2 with one outer input
@@ -140,7 +141,8 @@ def _datapath_blocks(graph: Graph, insts: dict[str, Any], members: list[str],
     fills them and its fires (cost.py: a unit's ``firings`` times its span, a buffer's its
     producer's ``gives``, a load per output), and per unit and link its register bits (CONTRACTS,
     "Estimate"): a wire 0 and no block; a unit the generator does not fill a block with no params
-    and no bits. The generator is imported here: gen/rtl.py imports this package."""
+    and no bits. A packed outer output's ``FifoPacker`` joins the links by ``<unit>.<port>``, a
+    fire per result. The generator is imported here: gen/rtl.py imports this package."""
     from snax_forge.gen.accelerator import Unit
     from snax_forge.gen.blocks import DATAPATHS, GenError, fill_node
     from snax_forge.gen.rtl import buffer_params, catalogue, fill, flops
@@ -172,6 +174,16 @@ def _datapath_blocks(graph: Graph, insts: dict[str, Any], members: list[str],
         links[name] = Block("LinkBuffer", buffer_params(depth, end.lanes, end.dtype,
                                                         cat["LinkBuffer"]), gives[unit])  # fmt: skip
         bits[name] = flops("LinkBuffer", links[name].params, cat)
+    taken = {frm for _, frm, _ in ends}
+    for u, unit in filled.items():  # a packed outer output's packer, by <unit>.<port> (D174)
+        for p, port in unit.ports.items():
+            if port.dir != "out" or f"{u}.{p}" in taken or port.dtype is None:
+                continue
+            d_out = packed(port.dtype, port.lanes, True, WORD_BITS)
+            if d_out > 1:
+                params = {"d_out": d_out, "lanes": port.lanes, "dtype": port.dtype}
+                links[f"{u}.{p}"] = Block("FifoPacker", params, gives[u])
+                bits[f"{u}.{p}"] = packer_bits(d_out, port.lanes, port.dtype)
     return units, links, bits
 
 

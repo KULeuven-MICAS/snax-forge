@@ -1017,7 +1017,7 @@ A group's fields:
 | `counter` | `cycles` + `fill`: the expected BUSY_COUNTER (below) |
 | `bank_bound` | ⌈Σ over its outer ports of beats × num_ch / `l1.n_banks`⌉, the fewest cycles of L1 time its streams take (null without a platform) |
 | `channels`, `words_per_cycle` | the sum of num_ch over its outer ports; the 64-bit words they move per cycle |
-| `bits`, `ctrl_bits` | per unit and buffer link its datapath's register bits (the catalogue's `flops`), and its control unit's (`estimate/bits.py`): the cost model's counts (D154) |
+| `bits`, `ctrl_bits` | per unit and buffer link its datapath's register bits (the catalogue's `flops`), a packed output's `FifoPacker` by `<unit>.<port>` ((d_out − 1) · W · b held, ⌈log₂ d_out⌉ count; D174), and its control unit's (`estimate/bits.py`): the cost model's counts (D154) |
 | `cost` | on a technology, its units', links' and control unit's area and energy, and the totals (section 14) |
 
 How the cycles grow along dot's recipe at N = 512:
@@ -1109,7 +1109,7 @@ Worked example, vecmul at W = 8 and N = 2048 (three ports of 8 channels and one 
 
 | Field | Holds |
 |---|---|
-| a group's `cost.units`, `cost.links` | per unit and buffer link: `datapath`, `fires`, `found` (`measured`, `copy`, `interpolate`, or null), `area` (`comb`, `flops`, `total`, µm²), `energy` (`fire` in pJ, `task` in nJ) |
+| a group's `cost.units`, `cost.links` | per unit and buffer link (and a packed output's packer, `FifoPacker` by `<unit>.<port>`, a fire per result, not characterized until open item 134): `datapath`, `fires`, `found` (`measured`, `copy`, `interpolate`, or null), `area` (`comb`, `flops`, `total`, µm²), `energy` (`fire` in pJ, `task` in nJ) |
 | a group's `cost.ctrl` | `bits`, `area` (`flops`, `comb`, `total`), `energy` |
 | a group's `cost.area`, `cost.energy` | its units', links' and control unit's added up |
 | an accelerator's `cost.streamers` | per port's streamer: its counts (`depth`, `loops`, `channels`, `words`, `beats`), `area`, `e_beat`, `energy`, `extrapolated` |

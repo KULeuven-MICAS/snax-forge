@@ -357,3 +357,21 @@ def test_the_clusters_dot_3_crossbar_in_both_forms():
     assert (round(f.area_um2), round(c.area_um2)) == (113891, 110638)
     assert f.e_access_pj == c.e_access_pj and f.energy_nj == c.energy_nj
     assert e.parts["crossbar"].area_um2 == f.area_um2
+
+
+def test_a_packed_output_moves_words_and_its_packer_is_not_characterized(tmp_path):
+    """matvec_3 at i8, W = 8 (M = 16): the sum's int32 results packed 2 to a word, so its writer
+    moves 8 words; its FifoPacker, one held int32 and a 1-bit count, is in the group's cost by
+    sum.out, not characterized yet."""
+    from snax_forge.design import DesignPoint
+    from tests.gen.helpers import designed
+
+    point = DesignPoint.load(tmp_path / designed(tmp_path, "matvec_3", "m3", ["types=i8", "W=8"]))
+    assert point.streamers["sum_out"].d_out == 2
+    e = estimate(point.graph, point.platform)
+    assert e.ports["sum.out"].beats == 8
+    (g,) = e.groups
+    assert g.bits["sum.out"] == 33
+    packer = g.cost.links["sum.out"]
+    assert (packer.datapath, packer.found, packer.fires) == ("FifoPacker", None, 16)
+    assert "sum.out" in e.missing

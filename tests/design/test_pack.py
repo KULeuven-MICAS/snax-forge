@@ -1,4 +1,4 @@
-"""Packing narrow elements into words: the streamers' dtype, num_slc and num_ch, and
+"""Packing narrow elements into words: the streamers' dtype, num_slc, num_ch and d_out, and
 the checks connect.pack and connect.num_ch, on small hand-built graphs."""
 
 from __future__ import annotations
@@ -26,12 +26,14 @@ def _vecadd(dtypes: dict[str, str], brm: str = "simd") -> Graph:
     return Graph.from_dict(d)
 
 
-def _grid(shape: list[int], loops: list[tuple[str, str]], subset: list[str]) -> Graph:
-    """vecadd's node on int32 matrices of ``shape``: temporal maps ``loops`` (var, range),
-    outermost first, around it, every port's memlet ``subset``."""
+def _grid(shape: list[int], loops: list[tuple[str, str]], subset: list[str],
+          out: str = "int32") -> Graph:  # fmt: skip
+    """vecadd's node on matrices of ``shape``, A and B int32 or (with a narrower ``out``)
+    int64, C ``out``: temporal maps ``loops`` (var, range), outermost first, around it, every
+    port's memlet ``subset``."""
     d = graph_dict()
-    for c in d["containers"].values():
-        c.update(shape=list(shape), dtype="int32")
+    for c, cont in d["containers"].items():
+        cont.update(shape=list(shape), dtype=out if c == "C" or out == "int32" else "int64")
     node = copy.deepcopy(accel_node(d))
     for m in (*node["inputs"].values(), *node["outputs"].values()):
         m["subset"] = list(subset)
@@ -46,6 +48,13 @@ def _grid(shape: list[int], loops: list[tuple[str, str]], subset: list[str]) -> 
     return Graph.from_dict(d)
 
 
+def _narrow_out(d: dict) -> dict:
+    """``_grid``'s graph with its inputs int64 (one element a word) and its output int32."""
+    for c, cont in d["containers"].items():
+        cont["dtype"] = "int32" if c == "C" else "int64"
+    return d
+
+
 def _vsum(dtypes: dict[str, str]) -> Graph:
     """vsum bound by recipes/reduce/vsum_tree.json (accumulate, adder tree, W = 4), of ``dtypes``."""
     recipe = Recipe.load(recipe_path("vsum_tree"))
@@ -58,6 +67,10 @@ def _vsum(dtypes: dict[str, str]) -> Graph:
 def _shell(g: Graph, platform: Platform | None = None) -> dict[str, tuple]:
     pf = platform or Platform.load(SMALL16)
     return {k: (s.dtype, s.num_slc, s.num_ch) for k, s in resolve(pf, g, instances(g)).items()}
+
+
+def _d_out(g: Graph) -> dict[str, int]:
+    return {k: s.d_out for k, s in resolve(Platform.load(SMALL16), g, instances(g)).items()}
 
 
 def _pack(g: Graph) -> list:
@@ -87,6 +100,21 @@ def test_vsum_int32_into_int64():
     g = _vsum({"A": "int32", "out": "int64"})
     assert problems(paired(g)) == []
     assert _shell(g) == {"acc_a": ("int32", 2, 2), "acc_out": ("int64", 1, 1)}
+
+
+def test_vsum_int32_out_is_packed_two_to_a_word():
+    g = _vsum({"A": "int32", "out": "int32"})
+    assert problems(paired(g)) == []
+    assert _shell(g) == {"acc_a": ("int32", 2, 2), "acc_out": ("int32", 2, 1)}
+    assert _d_out(g) == {"acc_a": 1, "acc_out": 2}
+
+
+def test_a_4x6_int32_output_at_w_1_is_packed():
+    """Rows of 6 int32 at W = 1: the pushes step one element, a row is three whole words."""
+    g = _grid([4, 6], [("i", "0:4"), ("j", "0:6")], ["i", "j:j + 1"], out="int32")
+    g = Graph.from_dict(_narrow_out(g.to_dict()))
+    assert _pack(g) == []  # connect.dtype refuses an output narrower than its inputs: a fold's
+    assert _d_out(g)["acc_out"] == 2
 
 
 def test_matadd_int32_4x6_in_2x2_tiles():
@@ -146,16 +174,49 @@ def test_a_column_does_not_run_along_contiguous_elements():
     )
 
 
-def test_a_one_lane_narrow_output_needs_a_word():
-    got = _pack(_vsum({"A": "int32", "out": "int32"}))
-    assert [(p.code, p.where) for p in got] == [("connect.pack", "node sum.out")]
+def test_a_narrow_input_needs_the_parked_slicer():
+    got = _pack(_vsum({"A": "int8", "out": "int32"}))
+    assert [(p.code, p.where) for p in got] == [("connect.pack", "node sum.a")]
     assert got[0].message == (
-        "W = 1 lane < num_slc = 2 (int32, num_slc = 2 slices per word): a beat would fill part of a word"
+        "W = 4 lanes < num_slc = 8 (int8, num_slc = 8 slices per word): a beat would fill part of "
+        "a word, and an input's slicer is parked"
     )
     assert got[0].fix == (
-        "make the output container out int64 or uint64 (one element per word), or give the "
-        "port num_slc = 2 lanes"
+        "make the container A int64 or uint64 (one element per word), or give the port num_slc = "
+        "8 lanes"
     )
+
+
+def test_a_packed_row_ending_inside_a_word_pads_the_row():
+    """4 x 5 int32 at W = 1: a row of 5 pushes ends inside a word."""
+    g = _grid([4, 5], [("i", "0:4"), ("j", "0:5")], ["i", "j:j + 1"], out="int32")
+    got = _pack(Graph.from_dict(_narrow_out(g.to_dict())))
+    assert [p.where for p in got] == ["node add.out"]
+    assert got[0].message == (
+        "loop j pushes 5 results per pass, not a multiple of d_out = 2: a word would end inside "
+        "the pass, and only the run's last word may be short (int32, num_slc = 2, W = 1: packed "
+        "d_out = 2 results to a word)"
+    )
+    assert got[0].fix == "pad the row to 6 elements"
+
+
+def test_packed_pushes_down_a_column_are_not_contiguous():
+    g = _grid([4, 6], [("j", "0:6"), ("i", "0:4")], ["i", "j:j + 1"], out="int32")
+    got = _pack(Graph.from_dict(_narrow_out(g.to_dict())))
+    assert [p.where for p in got] == ["node add.out"]
+    assert got[0].message == (
+        "loop i steps 6 elements of C, not W = 1: the pushes are not contiguous (int32, num_slc = "
+        "2, W = 1: packed d_out = 2 results to a word)"
+    )
+
+
+def test_a_packed_output_has_one_channel():
+    g = _vsum({"A": "int32", "out": "int32"})
+    got = problems(paired(g, sets=[("streamers.acc_out.num_ch", 2)]))
+    assert [(p.code, p.where) for p in got] == [
+        ("connect.num_ch", "platform.streamers.acc_out.num_ch")
+    ]
+    assert got[0].fix == "remove num_ch, or --set platform.streamers.acc_out.num_ch=1"
 
 
 def test_num_ch_other_than_the_wire_default_is_refused():

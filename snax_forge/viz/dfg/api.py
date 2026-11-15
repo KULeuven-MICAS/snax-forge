@@ -39,6 +39,7 @@ from snax_forge.design.streamers import (
     firing_loops,
     group_of,
     instance_of,
+    packed,
     port_loops,
 )
 from snax_forge.dfg import DfgError, Graph, Memlet, Node
@@ -942,7 +943,8 @@ def cost_tables(est: Any, g: Graph | None = None) -> list[dict[str, Any]]:
             for kind, blocks in (("unit", c.units), ("link", c.links)):
                 for k, b in blocks.items():
                     dp = b.datapath or "–"
-                    raw.append((k, kind, dp if b.found else f"{dp} · not characterized",
+                    what = "packer" if b.datapath == "FifoPacker" else kind  # by <unit>.<port>
+                    raw.append((k, what, dp if b.found else f"{dp} · not characterized",
                                 b.found is not None, b.total_um2, b.task_nj))  # fmt: skip
             raw.append((f"{gname} ctrl", "ctrl", "control unit", True, c.ctrl_um2, c.ctrl_nj))
         if not raw:
@@ -1498,8 +1500,9 @@ def _uses(n: Node) -> list[tuple[str, Node, str, Memlet]]:
 
 
 def packing(g: Graph, n: Node, port: str, data: str) -> str | None:
-    """``int32 · num_slc 2 · num_ch 2`` for an accelerated node's port; None for any other node,
-    or an instance the BRM library does not resolve."""
+    """``int32 · num_slc 2 · num_ch 2`` for an accelerated node's port (``int32 · num_slc 2 ·
+    d_out 2 · num_ch 1`` for a packed output, D174); None for any other node, or an instance the
+    BRM library does not resolve."""
     if n.kind != "accelerated":
         return None
     try:
@@ -1508,6 +1511,9 @@ def packing(g: Graph, n: Node, port: str, data: str) -> str | None:
         return None
     dtype = g.containers[data].dtype
     num_slc = max(1, WORD_BITS // bits(dtype))
+    d_out = packed(dtype, lanes, port in n.outputs, WORD_BITS)
+    if d_out > 1:
+        return f"{dtype} · num_slc {num_slc} · d_out {d_out} · num_ch 1"
     return f"{dtype} · num_slc {num_slc} · num_ch {-(-lanes // num_slc)}"
 
 

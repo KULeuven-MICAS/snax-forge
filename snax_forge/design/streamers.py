@@ -15,6 +15,9 @@ port order) on mover k, which takes its users' widest channels and spatial bound
 temporal loops and deepest FIFO; a user that does not fit is ``share.shape``. ``set_channels``
 gives each accelerator's channels, the sum over roles and k of the widest k-th port over its
 groups, the count check.py's ``crossbar_inputs`` sums.
+
+An outer output whose W lanes divide num_slc is packed (D174, ``packed``): d_out = num_slc / W
+results fill one word, on one channel.
 """
 
 from __future__ import annotations
@@ -47,6 +50,7 @@ class Streamer:
     dtype: str
     num_slc: int
     num_ch: int
+    d_out: int = 1  # results per word through the output's packer (D174), 1 for a wire
 
     @property
     def n_ports(self) -> int:
@@ -63,6 +67,7 @@ class Streamer:
             "dtype": self.dtype,
             "num_slc": self.num_slc,
             "num_ch": self.num_ch,
+            "d_out": self.d_out,
             **self.options.to_dict(),
         }
 
@@ -71,6 +76,15 @@ def slices_per_word(dtype: str, width_bits: int) -> int:
     """num_slc: slices (elements) of ``dtype`` in one bank word of ``width_bits``, at
     least 1."""
     return max(1, width_bits // (np.dtype(dtype).itemsize * 8))
+
+
+def packed(dtype: str, lanes: int, write: bool, width_bits: int) -> int:
+    """d_out of a port of ``lanes`` lanes of ``dtype``: num_slc / W for an output whose lanes
+    fill less than a word and divide num_slc (its packer, D174), else 1."""
+    num_slc = slices_per_word(dtype, width_bits)
+    if write and lanes < num_slc and num_slc % lanes == 0:
+        return num_slc // lanes
+    return 1
 
 
 def port_dtype(graph: Graph, nodes: list[Node], port: str) -> str:
@@ -284,9 +298,9 @@ class SharedMover:
 # streamer RTL and SNAX-GVSoC read them in the same order.
 def word_bounds(s: Streamer) -> tuple[int, ...]:
     """A streamer's spatial bounds in words, fastest first: the fastest over num_slc (gen.lanes
-    refuses a fastest bound that is not whole words)."""
+    refuses a fastest bound that is not whole words), one word for a packed output."""
     s0, *rest = s.spatial_bounds
-    return (s0 // s.num_slc, *rest)
+    return (1 if s.d_out > 1 else s0 // s.num_slc, *rest)
 
 
 def shared_containers(graph: Graph) -> list[str]:
@@ -495,6 +509,9 @@ def resolve(platform: Platform, graph: Graph, insts: dict[str, Instance]) -> dic
             dtype = port_dtype(graph, mine, p.name)
             num_slc = slices_per_word(dtype, platform.l1.width_bits)
             num_ch = platform.num_ch(s)
+            d_out = packed(dtype, prod(sb), p.direction == "out", platform.l1.width_bits)
+            if num_ch is None and d_out > 1:
+                num_ch = 1
             if num_ch is None:
                 if prod(sb) % num_slc:
                     raise ValueError(
@@ -504,6 +521,6 @@ def resolve(platform: Platform, graph: Graph, insts: dict[str, Instance]) -> dic
                 num_ch = prod(sb) // num_slc
             out[s] = Streamer(
                 s, name, p.name, p.direction == "out", tuple(sb), max([1, *dims]),
-                platform.options(s), dtype, num_slc, num_ch,
+                platform.options(s), dtype, num_slc, num_ch, d_out,
             )  # fmt: skip
     return out

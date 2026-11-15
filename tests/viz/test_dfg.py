@@ -185,14 +185,15 @@ def test_vecadd_accelerated():
         "A[4 * n_1_t:4 * n_1_t + 4]", "int64 · num_slc 1 · num_ch 4", [["n_1_t", 16]], 16, True)  # fmt: skip
 
 
-def recipe_view(tmp_path: Path, recipe: str) -> dict:
-    """The view of ``recipes/<folder>/<recipe>.json``'s last (bound) graph."""
+def recipe_view(tmp_path: Path, recipe: str, params: dict | None = None) -> dict:
+    """The view of ``recipes/<folder>/<recipe>.json``'s last (bound) graph, with ``params`` set
+    (``--set``)."""
     from snax_forge.dfg.import_sdfg import import_kernel
     from snax_forge.sandbox import Recipe, apply_recipe
 
-    r = Recipe.load(recipe_path(recipe))
+    r = Recipe.load(recipe_path(recipe)).with_params(params or {})
     path = tmp_path / f"{recipe}.snaxdfg"
-    apply_recipe(r, import_kernel(r.kernel, r.dtypes))[-1].graph.save(path)
+    apply_recipe(r, import_kernel(r.kernel, r.dtypes, r.types))[-1].graph.save(path)
     return view(path)
 
 
@@ -212,6 +213,15 @@ def test_a_port_edge_labels_its_packing(tmp_path, recipe, want):
     v = recipe_view(tmp_path, recipe)
     edges = [v["details"][f"edge:{e['id']}"] for e in v["edges"]]
     assert {e["data"]: e["packing"] for e in edges if e["packing"]} == want
+
+
+def test_a_packed_output_edge_shows_its_d_out(tmp_path):
+    """vsum at i8, W = 8: the int32 sum packed 2 to a word on one channel (D174)."""
+    v = recipe_view(tmp_path, "vsum_tree", {"types": "i8", "W": 8})
+    edges = [v["details"][f"edge:{e['id']}"] for e in v["edges"]]
+    assert {e["data"]: e["packing"] for e in edges if e["packing"]} == {
+        "A": "int8 · num_slc 8 · num_ch 1", "out": "int32 · num_slc 2 · d_out 2 · num_ch 1"
+    }  # fmt: skip
 
 
 def test_a_folding_write_names_its_op():

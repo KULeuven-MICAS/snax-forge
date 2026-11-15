@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from functools import partial
 from itertools import pairwise
 from typing import TYPE_CHECKING, Any
@@ -31,7 +31,7 @@ from snax_forge.brm import Instance
 from snax_forge.common import JsonFile
 from snax_forge.design.streamers import group_links as shared_links
 from snax_forge.design.streamers import groups as graph_groups
-from snax_forge.design.streamers import instance_nodes, linked_ports, shared_movers
+from snax_forge.design.streamers import instance_nodes, linked_ports, shared_movers, streamer_name
 from snax_forge.dfg import Graph, Node
 from snax_forge.dfg.subset import map_range, parse_dim
 from snax_forge.lower.c import accelerators as c_accelerators
@@ -619,6 +619,11 @@ def _unit(point: DesignPoint, name: str, inst: Instance, offsets: Iterator[int])
             "gen.timing", f"{what}: latency {inst.latency}, II {inst.initiation_interval}, span "
             f"{inst.span}; {datapath} here is latency {latency}, II 1, span {span}",
         )  # fmt: skip
+    ports = dict(fill.ports)
+    for p, port in ports.items():  # a packed outer output (D174)
+        s = point.streamers.get(streamer_name(name, p))
+        if s is not None and s.d_out > 1:
+            ports[p] = replace(port, d_out=s.d_out)
     fixed = fixed_fold(point.graph, instance_nodes(point.graph)[name], inst)
     params = dict(fill.params) | ({} if fixed is None else {"T": fixed})
     unit_rw = ["JOB_BEATS"] if fold_rate(inst) is not None and fixed is None else []
@@ -626,7 +631,7 @@ def _unit(point: DesignPoint, name: str, inst: Instance, offsets: Iterator[int])
     for slot, dtype in fill.scalars.items():  # after JOB_BEATS, in slot order
         width = min(port_dtype(dtype, f"{what}.{slot}")[0], 32)
         unit_csrs += [Csr(c, "rw", next(offsets), width, slot) for c in scalar_csrs(slot, dtype)]
-    return Unit(name, inst.brm.name, datapath, fill.ports, params, inst.latency,
+    return Unit(name, inst.brm.name, datapath, ports, params, inst.latency,
                 inst.initiation_interval, unit_csrs, fill.op_type, inst.span,
                 dict(fill.scalars))  # fmt: skip
 

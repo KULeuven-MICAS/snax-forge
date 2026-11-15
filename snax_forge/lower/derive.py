@@ -11,8 +11,9 @@ base ``layout.base + sum_d (c_d + sum_k a_dk * b_k) * strides[d]`` for firing lo
 (begin ``b_k``, step ``s_k``); one temporal loop per firing loop, innermost first, stride
 ``sum_d a_dk * s_k * strides[d]``; one spatial loop per range dimension, the last range first.
 The spatial bounds must be the streamer's, and for an ``affine`` BRM the addresses visited beat
-by beat (``addresses``) must be the nest's through the same layout (streams.py). Accelerators
-run in series (``serial_syncs``); a ``LowerError`` names what does not fit.
+by beat (``addresses``) must be the nest's through the same layout (streams.py). A packed
+output's writer moves words (``packed_values``, D174). Accelerators run in series
+(``serial_syncs``); a ``LowerError`` names what does not fit.
 """
 
 from __future__ import annotations
@@ -92,6 +93,17 @@ def memlet_values(
         "spatial_strides": in_words([s for _, s in fastest], num_slc),
     }
     return values, [b for b, _ in fastest]
+
+
+def packed_values(values: dict[str, Any], d_out: int) -> dict[str, Any]:
+    """A packed output's writer values (CONTRACTS, "Task list"): its innermost loop of more
+    than one push, (n, s), becomes (ceil(n / d_out), d_out * s), one write per word; the outer
+    loops and the base stay (connect.pack checked that they are whole words)."""
+    bounds, strides = list(values["temporal_bounds"]), list(values["temporal_strides"])
+    k = next((i for i, n in enumerate(bounds) if n > 1), None)  # innermost first
+    if k is not None:
+        bounds[k], strides[k] = -(-bounds[k] // d_out), strides[k] * d_out
+    return {**values, "temporal_bounds": bounds, "temporal_strides": strides}
 
 
 def addresses(values: dict[str, Any], spatial_bounds: list[int]) -> np.ndarray:
@@ -332,6 +344,8 @@ class _Derivation:
                             f"{what}.{p}: the memlet gives {values}, the BRM's nest gives {want}: "
                             "they take the elements in different orders"
                         )
+                if s.d_out > 1:  # words, on one channel
+                    values, sb = packed_values(values, s.d_out), [1, *sb[1:]]
                 task = f"{un.id}_{s.name}"
                 c = m.data
                 if p in un.inputs:
