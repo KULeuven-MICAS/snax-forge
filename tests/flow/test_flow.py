@@ -364,11 +364,21 @@ FATAL = (
 
 
 def test_the_simulators_first_error_line():
-    """GVSoC's fatal line (its path in red, dropped) or an ASSERT FAILED one, stdout first."""
+    """GVSoC's fatal line (its path in red, dropped) or an ASSERT FAILED one, stdout first; the
+    cluster file's refusal by snax_cfg before the run."""
     assert first_error(f"boot\n{FATAL}\n", "ASSERT FAILED: later\n") == (
         "nb_inputs must be in (0, 64], got 99")  # fmt: skip
     assert first_error("boot\n", "\x1b[31mASSERT FAILED: x > 0\x1b[0m\n") == "x > 0"
     assert first_error("forge cycles: 3\n", "make: *** [Makefile:110: run] Error 1\n") is None
+    cfg = (
+        '  File "snax_cfg.py", line 1214, in _check_shape\n'
+        "snax_cfg.CfgSlotError: gen/snax_forge.hjson: cluster.hives[0]...groups: unit acc: "
+        "opType int32 does not hold its inputs' result type int64 (snax_op_result_type)\n"
+        "make: *** [Makefile:127: run] Error 1\n"
+    )
+    assert first_error("", cfg) == (
+        "CfgSlotError: gen/snax_forge.hjson: cluster.hives[0]...groups: unit acc: opType int32 "
+        "does not hold its inputs' result type int64 (snax_op_result_type)")  # fmt: skip
 
 
 def test_a_run_that_asserts_names_the_simulators_error(tmp_path, monkeypatch):

@@ -351,6 +351,8 @@ ANSI = re.compile(r"\x1b\[[0-9;]*m")
 # assert of a component without a trace
 FATAL = re.compile(r"\[\x1b\[31m[^\x1b]*\x1b\[0m\]\s*(.*)$")
 ASSERT = re.compile(r"ASSERT FAILED:\s*(.*)$|Assertion .* failed")
+# the cluster file's reader (snax_cfg.py, gvrun's generator) refusing it: its traceback's last line
+CFG_ERROR = re.compile(r"^snax_cfg\.(\w+Error): (.*)$")
 
 
 def check_toolchain(which: Callable[[str], str | None] = shutil.which) -> None:
@@ -364,7 +366,12 @@ def check_toolchain(which: Callable[[str], str | None] = shutil.which) -> None:
 def first_error(stdout: str, stderr: str) -> str | None:
     """The simulator's first error line, from ``stdout`` then ``stderr``: GVSoC's fatal line
     (an assert, its component's path dropped) or an ``ASSERT FAILED`` one, its colour codes
-    stripped; None when neither has one."""
+    stripped; else the cluster file's refusal by ``snax_cfg`` before the program ran (its error
+    and message); None when there is none."""
+    for line in stderr.splitlines():
+        m = CFG_ERROR.match(ANSI.sub("", line))
+        if m:
+            return f"{m[1]}: {m[2].strip()}"
     for text in (stdout, stderr):
         for line in text.splitlines():
             m = FATAL.search(line)
