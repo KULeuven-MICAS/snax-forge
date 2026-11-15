@@ -1,0 +1,158 @@
+{
+ "_doc": "dot_3 at N = 2048, W = 2 to 32 on nangate45, HWCOST's five parts on the clock-gated tables as snax-forge-experiments' own implementation priced them (results/cluster/nangate45/hwcost_cg.csv, its gated rows): an independent check of the estimate (tests/estimate/test_cost.py). That implementation kept the hold term, which moves the datapath by at most 0.004 pJ.",
+ "recipe": "dot_3",
+ "N": 2048,
+ "tech": "nangate45",
+ "rows": [
+  {
+   "W": 2,
+   "part": "datapath",
+   "area_um2": 14771.330264,
+   "energy_nj": 24.984215443
+  },
+  {
+   "W": 2,
+   "part": "control",
+   "area_um2": 709.714652,
+   "energy_nj": 0.52030824
+  },
+  {
+   "W": 2,
+   "part": "streamers",
+   "area_um2": 21372.833592,
+   "energy_nj": 12.212553744
+  },
+  {
+   "W": 2,
+   "part": "crossbar",
+   "area_um2": 25297.005259,
+   "energy_nj": 11.277340745
+  },
+  {
+   "W": 2,
+   "part": "memory",
+   "area_um2": 432726.4,
+   "energy_nj": 14.49889394
+  },
+  {
+   "W": 4,
+   "part": "datapath",
+   "area_um2": 29130.542335,
+   "energy_nj": 24.34702919
+  },
+  {
+   "W": 4,
+   "part": "control",
+   "area_um2": 709.714652,
+   "energy_nj": 0.260407929
+  },
+  {
+   "W": 4,
+   "part": "streamers",
+   "area_um2": 36947.133246,
+   "energy_nj": 11.722930192
+  },
+  {
+   "W": 4,
+   "part": "crossbar",
+   "area_um2": 37993.56565,
+   "energy_nj": 11.277340745
+  },
+  {
+   "W": 4,
+   "part": "memory",
+   "area_um2": 432726.4,
+   "energy_nj": 14.49889394
+  },
+  {
+   "W": 8,
+   "part": "datapath",
+   "area_um2": 57848.966479,
+   "energy_nj": 24.169520275
+  },
+  {
+   "W": 8,
+   "part": "control",
+   "area_um2": 709.714652,
+   "energy_nj": 0.130457773
+  },
+  {
+   "W": 8,
+   "part": "streamers",
+   "area_um2": 68034.552554,
+   "energy_nj": 11.522835472
+  },
+  {
+   "W": 8,
+   "part": "crossbar",
+   "area_um2": 63427.388722,
+   "energy_nj": 11.277340745
+  },
+  {
+   "W": 8,
+   "part": "memory",
+   "area_um2": 432726.4,
+   "energy_nj": 14.49889394
+  },
+  {
+   "W": 16,
+   "part": "datapath",
+   "area_um2": 115285.814761,
+   "energy_nj": 23.878773882
+  },
+  {
+   "W": 16,
+   "part": "control",
+   "area_um2": 709.714652,
+   "energy_nj": 0.065482696
+  },
+  {
+   "W": 16,
+   "part": "streamers",
+   "area_um2": 130184.919166,
+   "energy_nj": 11.411367952
+  },
+  {
+   "W": 16,
+   "part": "crossbar",
+   "area_um2": 113890.805132,
+   "energy_nj": 11.277340745
+  },
+  {
+   "W": 16,
+   "part": "memory",
+   "area_um2": 432726.4,
+   "energy_nj": 14.49889394
+  },
+  {
+   "W": 32,
+   "part": "datapath",
+   "area_um2": 230159.511337,
+   "energy_nj": 23.984634541
+  },
+  {
+   "W": 32,
+   "part": "control",
+   "area_um2": 709.714652,
+   "energy_nj": 0.032995157
+  },
+  {
+   "W": 32,
+   "part": "streamers",
+   "area_um2": 254485.65239,
+   "energy_nj": 11.355634192
+  },
+  {
+   "W": 32,
+   "part": "crossbar",
+   "area_um2": 213962.115687,
+   "energy_nj": 11.277340745
+  },
+  {
+   "W": 32,
+   "part": "memory",
+   "area_um2": 432726.4,
+   "energy_nj": 14.49889394
+  }
+ ]
+}

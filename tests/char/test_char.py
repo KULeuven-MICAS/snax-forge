@@ -28,7 +28,7 @@ def test_every_entry_is_a_catalogue_datapath_with_complete_params(tech):
     depth) a valid and complete param set there, its rule known, its points unique."""
     cat, t = catalogue(), load(tech)
     assert t.tech == tech and t.source["snax_forge"] and t.source["snax_forge_experiments"]
-    assert t.flop_um2 > 0 and t.e_load_pj > t.e_hold_pj > 0 and t.counter_factor >= 1
+    assert t.flop_um2 > 0 and t.e_load_pj > t.e_ctrl_pj > 0
     renamed = {table: cat_name for cat_name, table in DATAPATH_RENAMES.items()}
     assert set(renamed) <= set(t.blocks) and set(DATAPATH_RENAMES) <= set(cat)
     for table_dp, entries in t.blocks.items():
@@ -47,7 +47,8 @@ def test_every_entry_is_a_catalogue_datapath_with_complete_params(tech):
                     full["depth"] = p["depth"]
                 assert set(full) == set(sig), (dp, sorted(full), sorted(sig))
                 check_params(dp, full, sig)
-                assert p["comb_um2"] > 0 and p["e_comb_pj"] > 0
+                # >= 0: a LinkBuffer of depth 1 is its flops alone, no comb energy when gated
+                assert p["comb_um2"] > 0 and p["e_comb_pj"] >= 0
 
 
 @pytest.mark.parametrize("tech", TECHS)
@@ -63,7 +64,7 @@ def test_an_unknown_technology_is_refused():
 
 
 def _table(blocks) -> Table:
-    return Table("t", 10.0, {}, 1.0, 0.002, 0.001, 1.0, blocks)
+    return Table("t", 10.0, {}, 1.0, 0.002, 0.001, blocks)
 
 
 def _pt(lanes, comb, e, depth=None):

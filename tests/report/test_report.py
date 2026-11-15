@@ -561,13 +561,13 @@ def test_design_md_costs_each_group_beside_its_cycles(dot1):
             f"without the banks) and {e.energy_nj:.3f} nJ per run.") in text  # fmt: skip
     # an area shown to 3 significant figures, an energy to 3 decimals
     assert (
-        "| vsum | vsum | TreeAccumulate | measured | 16 | 64 | 1 300 | 340 | 2.495 | 0.457 | 0.055 |"
+        "| vsum | vsum | TreeAccumulate | measured | 16 | 64 | 1 140 | 339 | 2.635 | 0.042 |"
         in text
     )
-    # a block with no flops (the SimdLanes mul) holds "–"
+    # a block with no flops (the SimdLanes mul): 0 bits and 0 µm² of flops
     (mul,) = [x for x in text.splitlines()
-              if x.startswith("| vmul | vmul | SimdLanes |") and len(x.split(" | ")) == 11]  # fmt: skip
-    assert mul.split(" | ")[9] == "–", mul
+              if x.startswith("| vmul | vmul | SimdLanes |") and len(x.split(" | ")) == 10]  # fmt: skip
+    assert mul.split(" | ")[5:8:2] == ["0", "0"], mul
     assert (f"| dot | L1 accesses (crossbar and banks) | {l1.reads} | {l1.writes} | "
             f"{l1.xbar_nj:.3f} | {l1.banks_nj:.3f} | {l1.energy_nj:.3f} |") in text  # fmt: skip
     m = parts["memory"]
