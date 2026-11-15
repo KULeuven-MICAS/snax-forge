@@ -4,6 +4,8 @@ import scala.collection.immutable.SeqMap
 
 import chisel3._
 
+import snax.forge.stream.FifoPacker
+
 /** The wrapper's ports but the clock and reset, named as `snax_acc_wrapper.sv.tpl` connects `<tag>_shell_wrapper` with
   * `snax_disable_csr_manager`: the CSR request and response after `snax_csr_mux_demux`, then per input port k
   * `stream2acc_<k>_{data_i,valid_i,ready_o}` and per output port `acc2stream_<k>_{data_o,valid_o,ready_i}`; then per
@@ -62,6 +64,12 @@ class ShellPorts(val readers: Seq[Int], val writers: Seq[Int], val groups: Seq[S
   * writers in the file's order, each `num_channel * 64` bits (the streamer template's ports for the set's hjson), and
   * holds `<tag>_<set>_port_mux` (`PortMux`) between them and the groups' ports, its select PORT_MUX_SEL from
   * `<tag>_csr`; the groups and their control units are as in an unshared set.
+  *
+  * A packed outer output (`d_out` > 1 in its port, D174) has a `FifoPacker(lanes, dtype, 1)`, `<unit>_<port>_packer`,
+  * between its datapath's port and its writer, on the group's side of a shared set's mux: the group's outer handshake
+  * is the packer's input, the writer's data and valid its output, its slice pointer cleared when the group's start is
+  * accepted, `last` the group's `last` (its next push is the run's last result, from the counters). A filling push
+  * needs no room at the writer; the port is one 64-bit word.
   *
   * Clock `clk_i`, reset `rst_ni` active low and asynchronous, as snax_cluster's (`RequireAsyncReset` in ReqRspManager).
   */
@@ -206,9 +214,23 @@ class ShellWrapper(spec: AcceleratorSpec) extends RawModule {
         for ((j, brm)    <- spec.outs(u.name)) {
           require(k == desc.output, s"${u.name}.$brm: an outer output of a unit that has an out-edge")
           val (data, valid, ready) = outPort(j)
-          data        := d(brm).asUInt
-          valid       := c.out.valid
-          c.out.ready := ready
+          val p                    = u.port(brm)
+          if (p.dOut == 1) {
+            data        := d(brm).asUInt
+            valid       := c.out.valid
+            c.out.ready := ready
+          } else { // packed (D174): the packer between the port and its writer, before a shared set's mux
+            val packer = Module(new FifoPacker(p.lanes, p.dtype, 1)).suggestName(s"${u.name}_${brm}_packer")
+            require(packer.r == p.dOut, s"${u.name}.$brm: d_out ${p.dOut}, its packer's r ${packer.r}")
+            packer.io.in.valid  := c.out.valid
+            c.out.ready         := packer.io.in.ready
+            packer.io.in.bits   := d(brm).asTypeOf(packer.io.in.bits)
+            data                := packer.io.out.bits.asUInt
+            valid               := packer.io.out.valid
+            packer.io.out.ready := ready
+            packer.io.clear     := c.start.fire
+            packer.io.last      := c.last
+          }
         }
         val e = c.units(k)
         for ((name, pin) <- d.elements if !u.ports.exists(_._1 == name))

@@ -25,7 +25,7 @@ object SnaxGroupCases {
   )
 
   /** A cycle line: the outer inputs' valids (unit by unit), the output's ready; per unit fire and give; per buffer its
-    * occupancy after the cycle; busy.
+    * occupancy after the cycle; with `dout`, whether the packer sent a word to the writer (`sent`); busy.
     */
   case class Cycle(
     valids:    Seq[Boolean],
@@ -33,7 +33,8 @@ object SnaxGroupCases {
     fire:      Seq[Boolean],
     give:      Seq[Boolean],
     occupancy: Seq[Int],
-    busy:      Boolean
+    busy:      Boolean,
+    sent:      Boolean = false
   )
 
   /** A link line: its producer's and its consumer's names, its depth. */
@@ -44,6 +45,9 @@ object SnaxGroupCases {
     */
   case class Data(lanes: Int, a: Seq[BigInt], b: Seq[BigInt], sums: Seq[BigInt])
 
+  /** A case; `dOut`, its outer output packed that many results to a 64-bit word (`dout`, 1 without), and `words`, the
+    * words its packer sends (push n's result -(n + 1), D174).
+    */
   case class Case(
     name:   String,
     units:  Seq[UnitLine],
@@ -52,7 +56,9 @@ object SnaxGroupCases {
     start:  (Int, String),
     runs:   Seq[RunLine],
     cycles: Seq[Cycle],
-    data:   Option[Data]
+    data:   Option[Data],
+    dOut:   Int         = 1,
+    words:  Seq[BigInt] = Seq.empty
   ) {
     def depths: Seq[Int] = links.map(_.depth)
   }
@@ -66,6 +72,8 @@ object SnaxGroupCases {
     var runs           = Vector.empty[RunLine]
     var lanes          = 0
     var data           = Map.empty[String, Seq[BigInt]]
+    var dOut           = 1
+    var words          = Seq.empty[BigInt]
     for (line <- header) line.split("\\s+").toList match {
       case "unit" :: n :: d :: "latency" :: l :: "ii" :: ii :: "span" :: s :: "t" :: t :: "inputs" :: i :: seed
           if seed.isEmpty || seed == List("seed", "0") || seed == List("seed", "1") =>
@@ -77,13 +85,17 @@ object SnaxGroupCases {
       case "lanes" :: l :: Nil                         => lanes = l.toInt
       case "data" :: x :: vs if Set("a", "b")(x)       => data += x -> vs.map(CaseFile.number)
       case "sums" :: vs                                => data += "sums" -> vs.map(CaseFile.number)
+      case "dout" :: d :: Nil if Set("2", "4", "8")(d) => dOut  = d.toInt
+      case "words" :: ws                               => words = ws.map(w => BigInt(w.stripPrefix("0x"), 16))
       case _ => throw new IllegalArgumentException(s"$path: `$line` is not a header line")
     }
+    require(dOut == 1 || words.nonEmpty, s"$path: dout $dOut without words")
     val buffers = links.count(_.depth > 0)
     val ins    = units.map(_.inputs).sum
+    val packed = dOut > 1
     val cycles = rows.map { line =>
       val cols = line.split("\\|").map(_.trim.split("\\s+").filter(_.nonEmpty).map(_.toInt).toSeq).toSeq
-      require(cols.size == 2 + units.size + (if (buffers > 0) 1 else 0), s"$path: `$line`")
+      require(cols.size == 2 + units.size + (if (buffers > 0) 1 else 0) + (if (packed) 1 else 0), s"$path: `$line`")
       val head = cols.head
       val fg   = cols.slice(1, 1 + units.size)
       Cycle(
@@ -92,11 +104,12 @@ object SnaxGroupCases {
         fg.map(_(0) == 1),
         fg.map(_(1) == 1),
         if (buffers > 0) cols(1 + units.size) else Seq.empty,
-        cols.last.head == 1
+        cols.last.head == 1,
+        packed && cols(cols.size - 2).head == 1
       )
     }
     val own    = Option.when(lanes > 0)(Data(lanes, data("a"), data("b"), data("sums")))
-    Case(CaseFile.name(path), units, links, jobs, start, runs, cycles, own)
+    Case(CaseFile.name(path), units, links, jobs, start, runs, cycles, own, dOut, words)
   }
 
   /** Every case of the folder `Env` names (`CaseFile.all`). */

@@ -23,8 +23,13 @@ object AcceleratorSpec {
     require(1 <= width && width <= 32, s"CSR $name: width $width, must be 1 to 32")
   }
 
-  /** A unit's BRM port: the datapath's port, its direction (`in` or `out`), its dtype (NumPy's name), its lanes. */
-  case class PortSpec(port: String, dir: String, dtype: String, lanes: Int)
+  /** A unit's BRM port: the datapath's port, its direction (`in` or `out`), its dtype (NumPy's name), its lanes;
+    * `dOut`, on an outer output a packer feeds, its results per 64-bit word (`d_out`, written only when packed, else 1;
+    * D174).
+    */
+  case class PortSpec(port: String, dir: String, dtype: String, lanes: Int, dOut: Int = 1) {
+    require(dOut >= 1, s"port $port: d_out $dOut, must be 1 or more")
+  }
 
   /** A link: from a unit's output BRM port to another unit's input, `(unit, port)` each; depth 0 a wire, >= 1 a buffer
     * of that many beats (`LinkBuffer`, `<tag>_<name>`). The group's graph is checked by `ctrl.GroupDesc`.
@@ -130,7 +135,13 @@ object AcceleratorSpec {
               u("brm").str,
               u("datapath").str,
               u("ports").obj.toSeq.map { case (k, p) =>
-                k -> PortSpec(p("port").str, p("dir").str, p("dtype").str, p("lanes").num.toInt)
+                k -> PortSpec(
+                  p("port").str,
+                  p("dir").str,
+                  p("dtype").str,
+                  p("lanes").num.toInt,
+                  p.obj.get("d_out").map(_.num.toInt).getOrElse(1)
+                )
               },
               u.obj.get("opType").map(_.str),
               u("params").obj.toMap,
