@@ -216,6 +216,26 @@ def test_a_port_edge_labels_its_packing(tmp_path, recipe, want):
     assert {e["data"]: e["packing"] for e in edges if e["packing"]} == want
 
 
+def test_a_packed_output_draws_its_packer(tmp_path):
+    """vsum at i8, W = 8: a FifoPacker box between the sum's output and out (D174), the edge
+    out of it d_out 2 a word; at int64 the output is wired, no packer."""
+    v = recipe_view(tmp_path, "vsum_tree", {"types": "i8", "W": 8})
+    (pk,) = v["packers"]
+    assert (pk["id"], pk["text"], pk["d_out"]) == ("acc_out_packer", "FifoPacker · d_out 2", 2)
+    assert {"kind": "packers", "column": 0, "nodes": [pk]} in v["rows"]
+    ends = {(e["from"], e["to"]): e.get("per_word") for e in v["edges"] if e["data"] == "out"}
+    assert ends == {("sum.out", "acc_out_packer.in"): None, ("acc_out_packer.out", "out@1"): 2}
+    d = v["details"]["node:acc_out_packer"]
+    assert (d["kind"], d["unit"], d["port"], d["lanes"], d["bits"]) == (
+        "packer",
+        "acc",
+        "out",
+        1,
+        33,
+    )
+    assert recipe_view(tmp_path, "vsum_tree")["packers"] == []
+
+
 def test_a_packed_output_edge_shows_its_d_out(tmp_path):
     """vsum at i8, W = 8: the int32 sum packed 2 to a word on one channel (D174)."""
     v = recipe_view(tmp_path, "vsum_tree", {"types": "i8", "W": 8})

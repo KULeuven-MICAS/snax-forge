@@ -312,6 +312,7 @@ The page only draws; Python builds every text and number (`viz/dfg/api.py`, D55)
 - The URL hash holds the whole view (`step=`, `tech=`, `open=` for the blocks opened); `?tech=` names the technology (`char.tech` for an unknown one).
 - **Bindings** is a tree, `{kind: accelerator | group, name, children}` down to `{kind: entry, index}` into `entries`: one entry per bound unit with its split's params, a split not bound yet, a link whose depth is a param. A param several entries name says `shared with …`.
 - **Blocks** (D166): a closed block is drawn as one box inside its firing loops, each edge labelled with the slice one firing takes (`A[m_t, 0:N]`).
+- **Packers** (D174): a packed output's `FifoPacker` is drawn as a box of its own (`packers`, a row between its node and the container it writes, inside its group's outline), the edge out of it `int32 · 2 per word`; it is the view's, not a node of the graph, and appears from `bind` on, where `design/streamers.py`'s `packed` places it.
 - **Partners**: a selected map's partners for `fuse_map`, `fuse_seed` and `interchange_map`, from the transforms' own sites, and a near partner with its refusal and fix.
 
 ## 5. Platform

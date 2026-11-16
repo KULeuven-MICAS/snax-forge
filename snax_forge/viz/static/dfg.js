@@ -130,6 +130,7 @@ function legend() {
     h("li", {}, h("i", { class: "key c-unit" }), "unit"),
     h("li", {}, h("i", { class: "key c-fold" }), "fold"),
     h("li", {}, h("i", { class: "key c-link" }), "link"),
+    h("li", {}, h("i", { class: "key c-packer" }), "packer"),
     h("li", {}, h("i", { class: "key c-pill" }), "container"),
     h("li", {}, h("i", { class: "key c-pill transient" }), "transient"),
     h("li", {}, h("i", { class: "key c-pill scalar" }), "scalar"),
@@ -155,7 +156,7 @@ function nodeEl(n) {
       h("div", { class: "c-bar" }, n.text),
       h("div", { class: "c-body" }, n.body.map(nodeEl)));
   }
-  const cls = { tasklet: "c-tasklet", accelerated: "c-unit", link: "c-link" }[n.kind] || "c-tasklet";
+  const cls = { tasklet: "c-tasklet", accelerated: "c-unit", link: "c-link", packer: "c-packer" }[n.kind] || "c-tasklet";
   // a fold (api.py's ``fold``): an upside-down trapezoid, its fill a layer of its own under
   // the text (style.css), the output connectors inside its narrow bottom
   return h("div", { class: `c-node ${cls}${n.fold ? " c-fold" : ""}`, "data-sel": n.id },
@@ -189,6 +190,7 @@ function rowEls(v, rows) {
       return h("div", { class: "c-cols" }, r.columns.map((c) =>
         h("div", { class: "c-col", "data-column": c.id }, rowEls(v, c.rows))));
     }
+    if (r.kind === "packers") return h("div", { class: "c-row" }, r.nodes.map(topEl)); // api.py's packer_node
     return r.kind === "containers"
       ? h("div", { class: "c-row" }, r.boxes.map((key) => pill(v, key)))
       : h("div", { class: "c-row" }, topEl(r.node));
@@ -307,7 +309,7 @@ function drawEdges(canvas, svg, edges, k, containers = {}) {
       const left = x2 < x1 - 4; // an edge going left: its label on its left side
       const t = svgEl("text", { x: tx + (left ? -7 : 7), y: ty, "text-anchor": left ? "end" : "start", class: "edge-label dtype", "data-sel": e.data });
       t.style.fontSize = pillFont;
-      t.textContent = dtype;
+      t.textContent = e.per_word ? `${dtype} · ${e.per_word} per word` : dtype; // out of a packer, its d_out
       out.push(t);
     }
     if (e.label && e.transpose) { // a marked read (mark_transpose, api.py): Aᵀ beside its edge, just above the reader's top-level map, at the container's font size
