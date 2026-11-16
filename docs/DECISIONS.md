@@ -7,7 +7,7 @@ Rules (D117):
 - An entry is a choice with a real alternative that someone may want to reverse: direction, ownership, the interfaces between components, the order of work. Implementation details live in the module's docstring and its tests.
 - An entry says what was decided, why, and where the detail lives, in a few short bullets; an edge case only when there is one. A change is written into the entry, not chained after it.
 - Entries merged into one keep all their numbers in its heading, so a cite of any of them still finds it. A number is never changed or reused; the text of a removed entry is in git history.
-- A new decision gets the next free number, under the area it belongs to. Next free number: **D176**.
+- A new decision gets the next free number, under the area it belongs to. Next free number: **D177**.
 
 Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29–D45, D47–D50, D53, D54, D56, D58–D63, D65–D67, D69, D74, D76–D78, D80, D81, D83, D88–D97, D100, D101, D103, D104, D106, D107, D109, D110, D114, D115, D119, D124, D127, D128, D132, D133, D138–D141, D151, D156, D159, D160.
 
@@ -268,8 +268,14 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 
 ### D154 · D172 — A first-order cost model on clock-gated blocks, before synthesis
 
-- **Decided:** the cost of a design's groups comes from the description: a block costs its fires, each its comb energy and its register bits loading (e_load); a flop that holds costs nothing, as clock gating makes it; control is its bits × e_ctrl every cycle, e_ctrl measured on the clock-gated forge accelerators alone (5.43 fJ a bit and cycle on nangate45). The table is `snax_forge/char/<tech>.json`, snax-forge-experiments' clock-gated block table (its `char.json`, X37). A control unit's area is its flops' area plus an equal comb area.
+- **Decided:** the cost of a design's groups comes from the description: a block costs its fires, each its comb energy and its register bits loading (e_load); a flop that holds costs nothing, as clock gating makes it; control is its bits × e_ctrl every cycle, e_ctrl measured on the clock-gated forge accelerators alone (5.45 fJ a bit and cycle on nangate45). The table is `snax_forge/char/<tech>.json`, snax-forge-experiments' clock-gated block table (its `char.json`, X37). A control unit's area is its flops' area plus an equal comb area.
 - **Why:** an early estimate (about 30 % on the large costs), shown as such, with no synthesis in the loop. Clock-gated synthesis is the basis (snax-forge-experiments X79 · X87 · X88): a held bit costs about 0.07 fJ a cycle there against 7.1 fJ ungated, so the hold term moved dot 3's datapath by 0.004 pJ and is dropped. Control keeps one constant, so a group's control unit stays visible beside its datapath, the HLS comparison's basis.
+- **Where:** CONTRACTS, "Cost model"; `snax_forge/char/README.md`.
+
+### D176 — A block priced at its width pair
+
+- **Decided:** the block table holds each block at its width pairs (snax-forge-experiments X89), and a unit is looked up at its pair: its widest input and its output, a SimdLanes' output at most its op's width (the low bits of a sum or product need only its operands' low bits, a wider output only copies the sign), a Mac's at its output, an unsigned type as the signed one of its width. Over lanes: `copy` from the pair's point, a narrow fold's `slope` (the int64 cost per lane × w_in / 64), a narrow LinkBuffer the int64 one × w / 64. A packed output's FifoPacker is looked up by its lane type and d_out, its point naming the bits that load per push. The table is keyed by the catalogue's names and full params.
+- **Why:** synthesis removes the logic on copied sign bits, so a narrow block costs what it computes; one measured point per pair and one rule over lanes keep the table small and every block priced the same way.
 - **Where:** CONTRACTS, "Cost model"; `snax_forge/char/README.md`.
 
 ### D167 — The cost in five parts

@@ -11,11 +11,13 @@ from pathlib import Path
 
 import pytest
 
-from snax_forge.char import DATAPATH_RENAMES
 from snax_forge.estimate import ctrl_bits, ctrl_registers
 from tests.helpers import REPO
 
 from .helpers import copies, estimated
+
+# SYN2 synthesized SimdLanes before its rename: its modules keep the old name
+SYN2_NAMES = {"SimdLanes": "ElementwiseLanes"}
 
 _spec = importlib.util.spec_from_file_location("ctrl_regs", REPO / "util" / "ctrl_regs.py")
 ctrl_regs = importlib.util.module_from_spec(_spec)
@@ -138,13 +140,12 @@ def test_every_datapath_has_the_flops_dc_kept(syn2):
 @pytest.mark.slow
 def test_each_synthesized_module_is_its_instances_datapath(syn2):
     """SYN2's module names stay as synthesized: each instance's is its estimated datapath's,
-    under the name CHAR's table still has (``DATAPATH_RENAMES``: SimdLanes was
-    ElementwiseLanes)."""
+    under the name it had then (``SYN2_NAMES``: SimdLanes was ElementwiseLanes)."""
     for r, g in syn2:
         blocks = g.cost.units | g.cost.links
         for k, v in r["instances"].items():
             dp = blocks[k].datapath
-            assert v["module"].startswith(f"{DATAPATH_RENAMES.get(dp, dp)}_"), (r["point"], k)
+            assert v["module"].startswith(f"{SYN2_NAMES.get(dp, dp)}_"), (r["point"], k)
 
 
 @pytest.mark.slow

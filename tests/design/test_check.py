@@ -623,11 +623,13 @@ def _missing(graph):
 
 
 def test_a_block_the_table_does_not_hold_is_noted():
-    """vecadd_i32: an int32 SimdLanes, which nangate45's table (int64) does not hold."""
+    """relu: a one-stream SimdLanes max, which nangate45's table does not hold; vecadd at int32
+    it does (D176)."""
     from tests.helpers import steps
 
-    assert _missing(steps("vecadd_i32")[-1]) == [
+    assert _missing(steps("relu")[-1]) == [
         "[char.missing] acc: not characterized: SimdLanes at lanes 4 on nangate45"]  # fmt: skip
+    assert _missing(steps("vecadd_i32")[-1]) == []
 
 
 def test_only_the_block_outside_the_measured_lanes_is_noted():

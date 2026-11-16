@@ -15,7 +15,8 @@ import org.scalatest.flatspec.AnyFlatSpec
   * (a Vec of the params' lanes), in its direction, and per live pin an input `io_<pin>`, but for a pin of no bits,
   * which firtool leaves out: `LinkBuffer`'s `wslot` and `rslot` at depth 1, `SerialAccumulate`'s `lane` at lanes 1. A
   * registered block (all but `SimdLanes` and the plain `Mac`) has every `always` block of its files on `posedge clock
-  * or posedge reset`, a flop with an asynchronous reset; the others none.
+  * or posedge reset`, a flop with an asynchronous reset; the others none. The stream block FifoPacker at its three char
+  * configs, and at int32 the very module `ShellWrapper` holds on a packed output.
   */
 class BlockEmitSpec extends AnyFlatSpec {
 
@@ -170,6 +171,59 @@ class BlockEmitSpec extends AnyFlatSpec {
         assert(always.forall(_ == "always @(posedge clock or posedge reset) begin"), s"$top: ${always.distinct}")
       } else assert(always.isEmpty, s"$top: ${always.distinct}")
     }
+
+  /** The stream block FifoPacker at CHAR2's char configs (one lane in, one word out, d_out 2, 4, 8): its top
+    * `FifoPacker_n1_<t>_w1` alone in its file, the slice counter on the asynchronous reset and the held slots on none.
+    */
+  private val packers = Seq("int32" -> "i32", "int16" -> "i16", "int8" -> "i8")
+
+  private lazy val packed: Map[String, Path] = {
+    val root = Files.createTempDirectory("emit-packer")
+    val dirs = packers.map { case (t, _) => t -> root.resolve(t) }
+    Emit.main(dirs.flatMap { case (t, d) =>
+      Seq("--block", "FifoPacker", "--params", s"""{"inLanes":1,"laneType":"$t","words":1}""", "--out", d.toString)
+    }.toArray)
+    dirs.toMap
+  }
+
+  for ((t, tag) <- packers)
+    it should s"emit FifoPacker at laneType $t alone as FifoPacker_n1_${tag}_w1" in {
+      val dir     = packed(t)
+      val top     = s"FifoPacker_n1_${tag}_w1"
+      val listing = ujson.read(Files.readString(dir.resolve("emitted.json")))
+      assert(listing("block").str == "FifoPacker")
+      assert(ujson.write(listing("params")) == s"""{"inLanes":1,"laneType":"$t","words":1}""")
+      assert(listing("top").str == top)
+      assert(listing("modules").arr.map(_.str).toSeq == Seq(top))
+      assert(listing("files").arr.map(_.str).toSeq == Seq(s"sv/$top.sv"))
+      val ports   = SvHeader.ports(dir.resolve(s"sv/$top.sv"), top)
+      assert(ports.filter(x => Set("clock", "reset")(x._1)) == Set(("clock", "input", 1), ("reset", "input", 1)))
+      val always  = Files.readAllLines(dir.resolve(s"sv/$top.sv")).asScala.map(_.trim).filter(_.startsWith("always"))
+      assert(
+        always.toSet == Set("always @(posedge clock) begin", "always @(posedge clock or posedge reset) begin"),
+        s"$top: $always"
+      )
+    }
+
+  it should "emit FifoPacker as the module it is inside an accelerator, byte for byte" in {
+    // ShellPackedSpec's accelerator: vsum_tree_i32's sum at int32, d_out 2, its packer FifoPacker(1, int32, 1)
+    val base   = shell.RtlFixtures.all.find(_.name == "vsum_tree_i32").get.spec
+    val spec   = base.copy(groups = base.groups.map { g =>
+      g.copy(units = g.units.map { u =>
+        u.copy(ports = u.ports.map {
+          case ("out", p) => "out" -> p.copy(dtype = "int32", dOut = 2)
+          case other      => other
+        })
+      })
+    })
+    val inside = Files.createTempDirectory("emit-packed-shell")
+    Emit.elaborate(new shell.ShellWrapper(spec), inside, split = true)
+    val name = "FifoPacker_n1_i32_w1.sv"
+    assert(Files.readString(packed("int32").resolve(s"sv/$name")) == Files.readString(inside.resolve(name)))
+  }
+
+  it should "refuse FifoPacker params whose inLanes does not divide the beat" in
+    assertThrows[IllegalArgumentException](Emit.block("FifoPacker", """{"inLanes":3,"laneType":"int32","words":1}"""))
 
   private val tree = """{"inType":"int64","outType":"int64","lanes":8,"op":"add","seed":false}"""
 

@@ -156,7 +156,7 @@ The flow's stages are commands of their own. Each reads the previous one's outpu
 | `pixi run gen-gvsoc DP` | a design point | `out/gvsoc/<design>/`: the cluster and streamer hjson, `accelerator.json`, headers, `data.h`, `main.c`, `manifest.json` | `--out DIR` |
 | `pixi run gen-rtl DP` | a design point | `out/rtl/<design>/`: `accelerator.json`, `sv/`, `emitted.json` | `--fixture DIR` (a fixture for the Chisel specs) |
 | `pixi run bundle DP` | a design point | `out/bundle/<design>/`: gen-gvsoc's files, `rtl/` with `files.f`, `bundle.json` | `--out DIR` |
-| `pixi run gen-block LIST` | a JSON list of `{"datapath", "params", "out"}` | each block alone, as an accelerator holds it, into its `out/sv/` | |
+| `pixi run gen-block LIST` | a JSON list of `{"datapath", "params", "out"}`, `datapath` a catalogue datapath or the stream block `FifoPacker` | each block alone, as an accelerator holds it, into its `out/sv/` | |
 
 Example: vecadd by hand, then its program and run with `gvsoc/Makefile` (section 7), which prints the same four `forge` lines as the flow:
 
@@ -178,15 +178,17 @@ The RTL commands need sbt; the flow calls none of them:
 - `gen-rtl` checks `accelerator.json` against the datapath catalogue (`hw/chisel/blocks.json`), then runs `hw/chisel/`'s `Emit --spec` on a classpath sbt exports once into `hw/chisel/target/emit-classpath-<hash>.txt` (again after a change under `hw/chisel/src/main/` or to `build.sbt`).
 - The modules are named after the entry's tag, `<accelerator_slot>_<design>`: `snax_forge_vecadd_shell_wrapper` is what snax_cluster's `snax_acc_wrapper.sv.tpl` connects, and it holds `snax_forge_vecadd_csr`, `snax_forge_vecadd_ctrl` and `snax_forge_vecadd_datapath`.
 - `bundle` writes no `forge_expected.txt` (a bundle alone has no SNAX-GVSoC run); `pixi run forge` does (section 6).
-- `gen-block` is for snax-forge-experiments, which synthesizes and simulates a block alone:
+- `gen-block` is for snax-forge-experiments, which synthesizes and simulates a block alone. Beside the catalogue's datapaths it takes the stream block `FifoPacker` (a packed output's packer, D174), params `inLanes`, `laneType`, `words`, `inLanes` dividing the beat's `words` × 64 / width elements:
 
 ```bash
-echo '[{"datapath": "TreeAccumulate", "params": {"inType": "int64", "outType": "int64", "lanes": 8, "op": "add"}, "out": "out/block/tree"}]' > blocks.json
+echo '[{"datapath": "TreeAccumulate", "params": {"inType": "int64", "outType": "int64", "lanes": 8, "op": "add", "seed": false}, "out": "out/block/tree"},
+       {"datapath": "FifoPacker", "params": {"inLanes": 1, "laneType": "int32", "words": 1}, "out": "out/block/packer"}]' > blocks.json
 pixi run gen-block blocks.json
 ```
 
     ...
     wrote out/block/tree: TreeAccumulate_i64_i64_n8, 1 file(s) in sv/
+    wrote out/block/packer: FifoPacker_n1_i32_w1, 1 file(s) in sv/
 
 ## 4. Look at the results
 

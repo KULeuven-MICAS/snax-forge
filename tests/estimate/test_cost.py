@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from snax_forge.char import CharError, Table, load
+from snax_forge.char import CharError, Table, load, lookup
 from snax_forge.design.platform import Platform
 from snax_forge.estimate import Estimate, estimate
 from snax_forge.estimate.cost import (
@@ -121,7 +121,7 @@ def test_vecmul_at_w8_by_part():
     assert shown == {"datapath": ("55 300", "23.137"), "control": ("360", "0.047"),
                      "streamers": ("95 200", "17.279"), "crossbar": ("84 600", "16.912"),
                      "memory": ("433 000", "27.738")}  # fmt: skip
-    assert (sig3(e.area), sig3(e.area_design), dec3(e.energy)) == ("668 000", "236 000", "85.113")
+    assert (sig3(e.area), sig3(e.area_design), dec3(e.energy)) == ("668 000", "236 000", "85.114")
     assert e.energy == pytest.approx(sum(v.energy_nj for v in p.values()))
     assert e.area_design == pytest.approx(e.area - m.area_um2)
     assert e.kernel_energy == pytest.approx(p["datapath"].energy_nj + p["control"].energy_nj)
@@ -241,7 +241,7 @@ def test_an_access_costs_the_same_whatever_the_inputs():
     assert (two.xbar.inputs, one.xbar.inputs) == (35, 19)
     assert two.xbar.e_access_pj == one.xbar.e_access_pj == 2.752585
     assert (two.xbar.accesses, one.xbar.accesses) == (4113, 4097)
-    assert (dec3(two.energy), dec3(one.energy)) == ("63.570", "63.398")
+    assert (dec3(two.energy), dec3(one.energy)) == ("63.571", "63.399")
 
 
 def test_the_cost_round_trips():
@@ -252,9 +252,11 @@ def test_the_cost_round_trips():
 
 
 def test_the_estimate_lists_what_is_not_characterized():
-    e = estimated("vecadd_i32")
+    """relu's one-stream SimdLanes max is not in the table; vecadd at int32 is (D176)."""
+    e = estimated("relu")
     assert e.missing == ["acc"] and e.groups[0].cost.units["acc"].found is None
     assert e.to_dict()["cost"]["missing"] == ["acc"]
+    assert estimated("vecadd_i32").missing == []
 
 
 def test_no_technology_skips_the_cost_and_both_round_trip():
@@ -289,7 +291,7 @@ def test_a_cost_is_shown_to_3_significant_figures():
 
 def test_an_energy_is_shown_to_3_decimals():
     """Display precision only, so two close designs can be told apart (dot 4 and dot 5 at W =
-    8: 26.077 and 26.099 nJ); the caveat beside it is unchanged."""
+    8: 26.078 and 26.099 nJ); the caveat beside it is unchanged."""
     assert [dec3(x) for x in (26.28497, 26.33877, 97.2592, 3.6596, 0.1353, 0.0, 1234.5)] == [
         "26.285", "26.339", "97.259", "3.660", "0.135", "0.000", "1 234.500"]  # fmt: skip
     assert dec3(None) is None
@@ -297,7 +299,7 @@ def test_an_energy_is_shown_to_3_decimals():
 
 def test_dot_4_and_dot_5_read_apart():
     four, five = (estimated(r, W=8, N=2048).kernel_energy for r in ("dot_4", "dot_5"))
-    assert (dec3(four), dec3(five)) == ("26.077", "26.099")
+    assert (dec3(four), dec3(five)) == ("26.078", "26.099")
     assert heading("nangate45") == "Cost estimate (first-order) on nangate45"
     assert "about 30 %" in CAVEAT and "csr" in CAVEAT and "4 × e_load" not in CAVEAT
 
@@ -359,10 +361,10 @@ def test_the_clusters_dot_3_crossbar_in_both_forms():
     assert e.parts["crossbar"].area_um2 == f.area_um2
 
 
-def test_a_packed_output_moves_words_and_its_packer_is_not_characterized(tmp_path):
+def test_a_packed_output_moves_words_and_its_packer_is_priced(tmp_path):
     """matvec_3 at i8, W = 8 (M = 16): the sum's int32 results packed 2 to a word, so its writer
     moves 8 words; its FifoPacker, one held int32 and a 1-bit count, is in the group's cost by
-    sum.out, not characterized yet."""
+    sum.out, its table point's bits loading per push (half a slot and the count, 17)."""
     from snax_forge.design import DesignPoint
     from tests.gen.helpers import designed
 
@@ -373,5 +375,8 @@ def test_a_packed_output_moves_words_and_its_packer_is_not_characterized(tmp_pat
     (g,) = e.groups
     assert g.bits["sum.out"] == 33
     packer = g.cost.links["sum.out"]
-    assert (packer.datapath, packer.found, packer.fires) == ("FifoPacker", None, 16)
-    assert "sum.out" in e.missing
+    assert (packer.datapath, packer.found, packer.fires) == ("FifoPacker", "measured", 16)
+    got = lookup(load("nangate45"), "FifoPacker", {"d_out": 2, "lanes": 1, "dtype": "int32"}, 1)
+    assert got.load_bits == 17
+    assert packer.e_fire_pj == pytest.approx(got.e_comb_pj + 17 * load("nangate45").e_load_pj)
+    assert "sum.out" not in e.missing

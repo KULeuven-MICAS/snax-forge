@@ -74,9 +74,9 @@ The specs on the fixtures:
 
 ### One block alone
 
-`Emit --block NAME --params JSON --out DIR` (C§10) checks the params (`Datapath.check`) and builds `make(params)` as the top module with an asynchronous reset, as inside the wrapper; `pixi run gen-block LIST.json` runs a list of them in one java call. The reset comes from `DatapathModule.asyncTop`, which `emitBlock` sets around the construction, so no block, builder or wrapper changes.
+`Emit --block NAME --params JSON --out DIR` (C§10) checks the params (`Datapath.check`) and builds `make(params)` as the top module with an asynchronous reset, as inside the wrapper; `pixi run gen-block LIST.json` runs a list of them in one java call. The reset comes from `DatapathModule.asyncTop`, which `emitBlock` sets around the construction, so no block, builder or wrapper changes. `NAME` may also be a stream block of `Emit.streamBlocks` (`FifoPacker`), its params checked in `Emit` and built with `RequireAsyncReset`.
 
-- `BlockEmitSpec`: a block of every datapath (Mac in its three forms, SerialAccumulate at lanes 1 and 8, LinkBuffer at depth 1 and 2), its ports against `blocks.json`'s live ports and pins, every flop on `posedge clock or posedge reset`.
+- `BlockEmitSpec`: a block of every datapath (Mac in its three forms, SerialAccumulate at lanes 1 and 8, LinkBuffer at depth 1 and 2), its ports against `blocks.json`'s live ports and pins, every flop on `posedge clock or posedge reset`; FifoPacker at int32, int16 and int8 (d_out 2, 4, 8), at int32 byte for byte the packer in ShellPackedSpec's wrapper.
 - `BlockInShellSpec`: the block alone byte for byte equal to the module inside the accelerator (vsum_tree_w8's TreeAccumulate, dot_5_w1's Mac); dot_5_w1's SerialAccumulate differs only where firtool folds its constant `first`.
 - `BlockFlopsSpec`: a block of every datapath at random params per seed, its declared register bits equal to its `flops`.
 

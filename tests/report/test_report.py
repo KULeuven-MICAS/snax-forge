@@ -599,9 +599,9 @@ def test_design_md_on_no_technology(dot1):
 
 
 def test_design_md_names_what_the_table_does_not_hold(tmp_path):
-    """vecadd_i32: an int32 SimdLanes, not in nangate45's int64 table; its comb counted
-    as 0, listed under the cost and noted (char.missing)."""
-    r = designed_report(tmp_path, "vecadd_i32")
+    """relu: a one-stream SimdLanes max, not in nangate45's table; its comb counted as 0,
+    listed under the cost and noted (char.missing)."""
+    r = designed_report(tmp_path, "relu")
     assert r.estimate.missing == ["acc"]
     text = render_design(r)
     assert "| acc | acc | SimdLanes | not characterized |" in text

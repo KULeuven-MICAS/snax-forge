@@ -7,8 +7,8 @@
   "flop_energy": "fJ per flop per cycle"
  },
  "source": {
-  "snax_forge": "e8611d51d5653e4c6e246184831136ec363727f5",
-  "snax_forge_experiments": "ae0c6b7fe57095b7b0fb0f728a510ac8a58ac103",
+  "snax_forge": "04165576384c4f3031e3b2d27d0ee9c058498b51",
+  "snax_forge_experiments": "aa790f437294f1dc2597d5b7a7a76676670cd5f6",
   "stimulus": "rand64 seed 0",
   "clk_gate": "1"
  },
@@ -18,21 +18,93 @@
   "e_hold_fj": 0.0655
  },
  "ctrl": {
-  "counter_factor": 82.87
+  "counter_factor": 83.2
  },
  "blocks": {
-  "ElementwiseLanes": [
-   {"params": {"inTypes": ["int64", "int64"], "opType": "int64", "outType": "int64", "op": "add"}, "lanes_rule": "copy",
+  "SimdLanes": [
+   {"params": {"inTypes": ["int64", "int64"], "opType": "int64", "outType": "int64", "op": "add", "streams": 2, "k": null, "k1": null, "k2": null, "kCsr": false, "k1Csr": false, "k2Csr": false}, "lanes_rule": "copy",
     "points": [
      {"lanes": 1, "comb_um2": 269.724002, "e_comb_pj": 0.7550801},
      {"lanes": 8, "comb_um2": 2157.79202, "e_comb_pj": 6.205802},
      {"lanes": 32, "comb_um2": 8631.168079, "e_comb_pj": 24.76714}
     ]},
-   {"params": {"inTypes": ["int64", "int64"], "opType": "int64", "outType": "int64", "op": "mul"}, "lanes_rule": "copy",
+   {"params": {"inTypes": ["int64", "int64"], "opType": "int64", "outType": "int64", "op": "mul", "streams": 2, "k": null, "k1": null, "k2": null, "kCsr": false, "k1Csr": false, "k2Csr": false}, "lanes_rule": "copy",
     "points": [
      {"lanes": 1, "comb_um2": 6912.542033, "e_comb_pj": 11.22937},
      {"lanes": 8, "comb_um2": 55300.336266, "e_comb_pj": 90.37756},
      {"lanes": 32, "comb_um2": 221201.345064, "e_comb_pj": 362.233}
+    ]},
+   {"params": {"inTypes": ["int8", "int8"], "opType": "int8", "outType": "int8", "op": "add", "streams": 2, "k": null, "k1": null, "k2": null, "kCsr": false, "k1Csr": false, "k2Csr": false}, "lanes_rule": "copy",
+    "points": [
+     {"lanes": 1, "comb_um2": 31.388, "e_comb_pj": 0.08740851}
+    ]},
+   {"params": {"inTypes": ["int8", "int8"], "opType": "int8", "outType": "int8", "op": "mul", "streams": 2, "k": null, "k1": null, "k2": null, "kCsr": false, "k1Csr": false, "k2Csr": false}, "lanes_rule": "copy",
+    "points": [
+     {"lanes": 1, "comb_um2": 131.138, "e_comb_pj": 0.2242881}
+    ]},
+   {"params": {"inTypes": ["int8", "int8"], "opType": "int16", "outType": "int16", "op": "add", "streams": 2, "k": null, "k1": null, "k2": null, "kCsr": false, "k1Csr": false, "k2Csr": false}, "lanes_rule": "copy",
+    "points": [
+     {"lanes": 1, "comb_um2": 34.846, "e_comb_pj": 0.14792}
+    ]},
+   {"params": {"inTypes": ["int8", "int8"], "opType": "int16", "outType": "int16", "op": "mul", "streams": 2, "k": null, "k1": null, "k2": null, "kCsr": false, "k1Csr": false, "k2Csr": false}, "lanes_rule": "copy",
+    "points": [
+     {"lanes": 1, "comb_um2": 483.854, "e_comb_pj": 0.7478067}
+    ]},
+   {"params": {"inTypes": ["int8", "int8"], "opType": "int32", "outType": "int32", "op": "add", "streams": 2, "k": null, "k1": null, "k2": null, "kCsr": false, "k1Csr": false, "k2Csr": false}, "lanes_rule": "copy",
+    "points": [
+     {"lanes": 1, "comb_um2": 38.038, "e_comb_pj": 0.2659825}
+    ]},
+   {"params": {"inTypes": ["int8", "int8"], "opType": "int32", "outType": "int32", "op": "mul", "streams": 2, "k": null, "k1": null, "k2": null, "kCsr": false, "k1Csr": false, "k2Csr": false}, "lanes_rule": "copy",
+    "points": [
+     {"lanes": 1, "comb_um2": 293.93, "e_comb_pj": 0.6457493}
+    ]},
+   {"params": {"inTypes": ["int8", "int8"], "opType": "int64", "outType": "int64", "op": "add", "streams": 2, "k": null, "k1": null, "k2": null, "kCsr": false, "k1Csr": false, "k2Csr": false}, "lanes_rule": "copy",
+    "points": [
+     {"lanes": 1, "comb_um2": 44.156, "e_comb_pj": 0.503896}
+    ]},
+   {"params": {"inTypes": ["int8", "int8"], "opType": "int64", "outType": "int64", "op": "mul", "streams": 2, "k": null, "k1": null, "k2": null, "kCsr": false, "k1Csr": false, "k2Csr": false}, "lanes_rule": "copy",
+    "points": [
+     {"lanes": 1, "comb_um2": 305.634, "e_comb_pj": 0.8505343}
+    ]},
+   {"params": {"inTypes": ["int16", "int16"], "opType": "int16", "outType": "int16", "op": "add", "streams": 2, "k": null, "k1": null, "k2": null, "kCsr": false, "k1Csr": false, "k2Csr": false}, "lanes_rule": "copy",
+    "points": [
+     {"lanes": 1, "comb_um2": 65.436, "e_comb_pj": 0.1837545}
+    ]},
+   {"params": {"inTypes": ["int16", "int16"], "opType": "int16", "outType": "int16", "op": "mul", "streams": 2, "k": null, "k1": null, "k2": null, "kCsr": false, "k1Csr": false, "k2Csr": false}, "lanes_rule": "copy",
+    "points": [
+     {"lanes": 1, "comb_um2": 584.934, "e_comb_pj": 0.8889959}
+    ]},
+   {"params": {"inTypes": ["int16", "int16"], "opType": "int32", "outType": "int32", "op": "add", "streams": 2, "k": null, "k1": null, "k2": null, "kCsr": false, "k1Csr": false, "k2Csr": false}, "lanes_rule": "copy",
+    "points": [
+     {"lanes": 1, "comb_um2": 69.958001, "e_comb_pj": 0.3027605}
+    ]},
+   {"params": {"inTypes": ["int16", "int16"], "opType": "int32", "outType": "int32", "op": "mul", "streams": 2, "k": null, "k1": null, "k2": null, "kCsr": false, "k1Csr": false, "k2Csr": false}, "lanes_rule": "copy",
+    "points": [
+     {"lanes": 1, "comb_um2": 1124.116005, "e_comb_pj": 1.909343}
+    ]},
+   {"params": {"inTypes": ["int16", "int16"], "opType": "int64", "outType": "int64", "op": "add", "streams": 2, "k": null, "k1": null, "k2": null, "kCsr": false, "k1Csr": false, "k2Csr": false}, "lanes_rule": "copy",
+    "points": [
+     {"lanes": 1, "comb_um2": 78.47, "e_comb_pj": 0.5476602}
+    ]},
+   {"params": {"inTypes": ["int16", "int16"], "opType": "int64", "outType": "int64", "op": "mul", "streams": 2, "k": null, "k1": null, "k2": null, "kCsr": false, "k1Csr": false, "k2Csr": false}, "lanes_rule": "copy",
+    "points": [
+     {"lanes": 1, "comb_um2": 1152.312004, "e_comb_pj": 2.26935}
+    ]},
+   {"params": {"inTypes": ["int32", "int32"], "opType": "int32", "outType": "int32", "op": "add", "streams": 2, "k": null, "k1": null, "k2": null, "kCsr": false, "k1Csr": false, "k2Csr": false}, "lanes_rule": "copy",
+    "points": [
+     {"lanes": 1, "comb_um2": 133.532001, "e_comb_pj": 0.375325}
+    ]},
+   {"params": {"inTypes": ["int32", "int32"], "opType": "int32", "outType": "int32", "op": "mul", "streams": 2, "k": null, "k1": null, "k2": null, "kCsr": false, "k1Csr": false, "k2Csr": false}, "lanes_rule": "copy",
+    "points": [
+     {"lanes": 1, "comb_um2": 1829.814007, "e_comb_pj": 3.011511}
+    ]},
+   {"params": {"inTypes": ["int32", "int32"], "opType": "int64", "outType": "int64", "op": "add", "streams": 2, "k": null, "k1": null, "k2": null, "kCsr": false, "k1Csr": false, "k2Csr": false}, "lanes_rule": "copy",
+    "points": [
+     {"lanes": 1, "comb_um2": 141.512001, "e_comb_pj": 0.6213389}
+    ]},
+   {"params": {"inTypes": ["int32", "int32"], "opType": "int64", "outType": "int64", "op": "mul", "streams": 2, "k": null, "k1": null, "k2": null, "kCsr": false, "k1Csr": false, "k2Csr": false}, "lanes_rule": "copy",
+    "points": [
+     {"lanes": 1, "comb_um2": 4200.938021, "e_comb_pj": 7.189913}
     ]}
   ],
   "Mac": [
@@ -41,10 +113,46 @@
      {"lanes": 1, "comb_um2": 7142.100036, "e_comb_pj": 11.46157},
      {"lanes": 8, "comb_um2": 57131.480286, "e_comb_pj": 92.1806},
      {"lanes": 32, "comb_um2": 228549.861151, "e_comb_pj": 368.8401}
+    ]},
+   {"params": {"inTypes": ["int8", "int8"], "opType": "int32", "outType": "int32", "accumulate": true, "regOut": false}, "lanes_rule": "copy",
+    "points": [
+     {"lanes": 8, "comb_um2": 3416.504033, "e_comb_pj": 4.132013}
+    ]},
+   {"params": {"inTypes": ["int16", "int16"], "opType": "int32", "outType": "int32", "accumulate": true, "regOut": false}, "lanes_rule": "copy",
+    "points": [
+     {"lanes": 8, "comb_um2": 9367.190062, "e_comb_pj": 13.80291}
+    ]},
+   {"params": {"inTypes": ["int32", "int32"], "opType": "int64", "outType": "int64", "accumulate": true, "regOut": false}, "lanes_rule": "copy",
+    "points": [
+     {"lanes": 8, "comb_um2": 34140.834204, "e_comb_pj": 53.63798}
+    ]},
+   {"params": {"inTypes": ["int8", "int8"], "opType": "int8", "outType": "int8", "accumulate": true, "regOut": false}, "lanes_rule": "copy",
+    "points": [
+     {"lanes": 8, "comb_um2": 1390.913994, "e_comb_pj": 1.714247}
+    ]},
+   {"params": {"inTypes": ["int8", "int8"], "opType": "int16", "outType": "int16", "accumulate": true, "regOut": false}, "lanes_rule": "copy",
+    "points": [
+     {"lanes": 8, "comb_um2": 2708.94403, "e_comb_pj": 4.0294}
+    ]},
+   {"params": {"inTypes": ["int8", "int8"], "opType": "int64", "outType": "int64", "accumulate": true, "regOut": false}, "lanes_rule": "copy",
+    "points": [
+     {"lanes": 8, "comb_um2": 4852.904039, "e_comb_pj": 4.329348}
+    ]},
+   {"params": {"inTypes": ["int16", "int16"], "opType": "int16", "outType": "int16", "accumulate": true, "regOut": false}, "lanes_rule": "copy",
+    "points": [
+     {"lanes": 8, "comb_um2": 5330.640001, "e_comb_pj": 7.238368}
+    ]},
+   {"params": {"inTypes": ["int16", "int16"], "opType": "int64", "outType": "int64", "accumulate": true, "regOut": false}, "lanes_rule": "copy",
+    "points": [
+     {"lanes": 8, "comb_um2": 10797.206069, "e_comb_pj": 14.06968}
+    ]},
+   {"params": {"inTypes": ["int32", "int32"], "opType": "int32", "outType": "int32", "accumulate": true, "regOut": false}, "lanes_rule": "copy",
+    "points": [
+     {"lanes": 8, "comb_um2": 17196.900106, "e_comb_pj": 25.67308}
     ]}
   ],
   "TreeAccumulate": [
-   {"params": {"inType": "int64", "outType": "int64", "op": "add"}, "lanes_rule": "interpolate",
+   {"params": {"inType": "int64", "outType": "int64", "op": "add", "seed": false}, "lanes_rule": "interpolate",
     "points": [
      {"lanes": 1, "comb_um2": 340.214003, "e_comb_pj": 0.5033357},
      {"lanes": 2, "comb_um2": 607.278006, "e_comb_pj": 0.7997246},
@@ -52,16 +160,88 @@
      {"lanes": 8, "comb_um2": 2209.662021, "e_comb_pj": 2.894433},
      {"lanes": 16, "comb_um2": 4346.174041, "e_comb_pj": 5.742789},
      {"lanes": 32, "comb_um2": 8619.198081, "e_comb_pj": 11.38667}
+    ]},
+   {"params": {"inType": "int8", "outType": "int32", "op": "add", "seed": false}, "lanes_rule": "slope", "slope": {"comb_um2": 33.383, "e_comb_pj": 0.04423},
+    "points": [
+     {"lanes": 8, "comb_um2": 401.660003, "e_comb_pj": 0.3926042}
+    ]},
+   {"params": {"inType": "int16", "outType": "int32", "op": "add", "seed": false}, "lanes_rule": "slope", "slope": {"comb_um2": 66.766001, "e_comb_pj": 0.088461},
+    "points": [
+     {"lanes": 8, "comb_um2": 637.868006, "e_comb_pj": 0.7543377}
+    ]},
+   {"params": {"inType": "int32", "outType": "int64", "op": "add", "seed": false}, "lanes_rule": "slope", "slope": {"comb_um2": 133.532001, "e_comb_pj": 0.176922},
+    "points": [
+     {"lanes": 8, "comb_um2": 1290.100012, "e_comb_pj": 1.5092}
+    ]},
+   {"params": {"inType": "int8", "outType": "int8", "op": "add", "seed": false}, "lanes_rule": "slope", "slope": {"comb_um2": 33.383, "e_comb_pj": 0.04423},
+    "points": [
+     {"lanes": 8, "comb_um2": 241.794001, "e_comb_pj": 0.3196755}
+    ]},
+   {"params": {"inType": "int8", "outType": "int16", "op": "add", "seed": false}, "lanes_rule": "slope", "slope": {"comb_um2": 33.383, "e_comb_pj": 0.04423},
+    "points": [
+     {"lanes": 8, "comb_um2": 311.752003, "e_comb_pj": 0.373626}
+    ]},
+   {"params": {"inType": "int8", "outType": "int64", "op": "add", "seed": false}, "lanes_rule": "slope", "slope": {"comb_um2": 33.383, "e_comb_pj": 0.04423},
+    "points": [
+     {"lanes": 8, "comb_um2": 581.476004, "e_comb_pj": 0.4226576}
+    ]},
+   {"params": {"inType": "int16", "outType": "int16", "op": "add", "seed": false}, "lanes_rule": "slope", "slope": {"comb_um2": 66.766001, "e_comb_pj": 0.088461},
+    "points": [
+     {"lanes": 8, "comb_um2": 522.690004, "e_comb_pj": 0.6821043}
+    ]},
+   {"params": {"inType": "int16", "outType": "int64", "op": "add", "seed": false}, "lanes_rule": "slope", "slope": {"comb_um2": 66.766001, "e_comb_pj": 0.088461},
+    "points": [
+     {"lanes": 8, "comb_um2": 817.684006, "e_comb_pj": 0.7655674}
+    ]},
+   {"params": {"inType": "int32", "outType": "int32", "op": "add", "seed": false}, "lanes_rule": "slope", "slope": {"comb_um2": 133.532001, "e_comb_pj": 0.176922},
+    "points": [
+     {"lanes": 8, "comb_um2": 1084.48201, "e_comb_pj": 1.428735}
     ]}
   ],
   "SerialAccumulate": [
-   {"params": {"inType": "int64", "outType": "int64"}, "lanes_rule": "interpolate",
+   {"params": {"inType": "int64", "outType": "int64", "seed": false}, "lanes_rule": "interpolate",
     "points": [
      {"lanes": 2, "comb_um2": 444.752004, "e_comb_pj": 0.7884021},
      {"lanes": 4, "comb_um2": 605.150007, "e_comb_pj": 0.9798921},
      {"lanes": 8, "comb_um2": 821.940009, "e_comb_pj": 1.033958},
      {"lanes": 16, "comb_um2": 1306.060026, "e_comb_pj": 1.165664},
      {"lanes": 32, "comb_um2": 2235.730057, "e_comb_pj": 1.296421}
+    ]},
+   {"params": {"inType": "int8", "outType": "int32", "seed": false}, "lanes_rule": "slope", "slope": {"comb_um2": 7.36349, "e_comb_pj": 0.001367},
+    "points": [
+     {"lanes": 8, "comb_um2": 243.390003, "e_comb_pj": 0.294049}
+    ]},
+   {"params": {"inType": "int16", "outType": "int32", "seed": false}, "lanes_rule": "slope", "slope": {"comb_um2": 14.72698, "e_comb_pj": 0.002734},
+    "points": [
+     {"lanes": 8, "comb_um2": 302.442003, "e_comb_pj": 0.3417054}
+    ]},
+   {"params": {"inType": "int32", "outType": "int64", "seed": false}, "lanes_rule": "slope", "slope": {"comb_um2": 29.453959, "e_comb_pj": 0.005468},
+    "points": [
+     {"lanes": 8, "comb_um2": 595.308005, "e_comb_pj": 0.6485512}
+    ]},
+   {"params": {"inType": "int8", "outType": "int8", "seed": false}, "lanes_rule": "slope", "slope": {"comb_um2": 7.36349, "e_comb_pj": 0.001367},
+    "points": [
+     {"lanes": 8, "comb_um2": 115.178002, "e_comb_pj": 0.1735366}
+    ]},
+   {"params": {"inType": "int8", "outType": "int16", "seed": false}, "lanes_rule": "slope", "slope": {"comb_um2": 7.36349, "e_comb_pj": 0.001367},
+    "points": [
+     {"lanes": 8, "comb_um2": 171.038002, "e_comb_pj": 0.2461887}
+    ]},
+   {"params": {"inType": "int8", "outType": "int64", "seed": false}, "lanes_rule": "slope", "slope": {"comb_um2": 7.36349, "e_comb_pj": 0.001367},
+    "points": [
+     {"lanes": 8, "comb_um2": 416.290004, "e_comb_pj": 0.4431918}
+    ]},
+   {"params": {"inType": "int16", "outType": "int16", "seed": false}, "lanes_rule": "slope", "slope": {"comb_um2": 14.72698, "e_comb_pj": 0.002734},
+    "points": [
+     {"lanes": 8, "comb_um2": 212.800002, "e_comb_pj": 0.2668614}
+    ]},
+   {"params": {"inType": "int16", "outType": "int64", "seed": false}, "lanes_rule": "slope", "slope": {"comb_um2": 14.72698, "e_comb_pj": 0.002734},
+    "points": [
+     {"lanes": 8, "comb_um2": 483.854003, "e_comb_pj": 0.482766}
+    ]},
+   {"params": {"inType": "int32", "outType": "int32", "seed": false}, "lanes_rule": "slope", "slope": {"comb_um2": 29.453959, "e_comb_pj": 0.005468},
+    "points": [
+     {"lanes": 8, "comb_um2": 414.694005, "e_comb_pj": 0.5141757}
     ]}
   ],
   "LinkBuffer": [
@@ -74,6 +254,20 @@
      {"lanes": 1, "depth": 4, "comb_um2": 238.070004, "e_comb_pj": 0.8945738},
      {"lanes": 1, "depth": 8, "comb_um2": 460.978013, "e_comb_pj": 0.9158316},
      {"lanes": 1, "depth": 16, "comb_um2": 988.988027, "e_comb_pj": 1.080445}
+    ]}
+  ],
+  "FifoPacker": [
+   {"params": {"inLanes": 1, "laneType": "int32", "words": 1}, "lanes_rule": "none",
+    "points": [
+     {"comb_um2": 102.676, "e_comb_pj": 0.495158, "flops": 33, "load_bits": 17.0}
+    ]},
+   {"params": {"inLanes": 1, "laneType": "int16", "words": 1}, "lanes_rule": "none",
+    "points": [
+     {"comb_um2": 143.108001, "e_comb_pj": 0.3950267, "flops": 50, "load_bits": 14.0}
+    ]},
+   {"params": {"inLanes": 1, "laneType": "int8", "words": 1}, "lanes_rule": "none",
+    "points": [
+     {"comb_um2": 151.088, "e_comb_pj": 0.2436895, "flops": 59, "load_bits": 10.0}
     ]}
   ]
  }

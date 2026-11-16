@@ -385,7 +385,7 @@ def test_the_cost_tables_of_vecmul_and_dot_1():
         ("acc_b", strm, "31 700", "5.760", "6.8%"),
         ("acc_out", strm, "31 700", "5.760", "6.8%"),
         (L1_LABEL, "4 096 reads, 2 048 writes", "–", "44.650", "52.5%"),
-        ("total", "", "151 000", "85.113", "100.0%")]  # fmt: skip
+        ("total", "", "151 000", "85.114", "100.0%")]  # fmt: skip
     parts = [(p["name"], p["area_text"], p["area_share_text"], p["energy_text"],
               p["energy_share_text"]) for p in cost_parts(estimate(g, platform))]  # fmt: skip
     # the crossbar's 16 read-only and 8 write-only inputs priced as such
@@ -407,7 +407,7 @@ def test_the_cost_tables_of_vecmul_and_dot_1():
         ("vsum_a", strm, "31 700", "5.760", "5.5%"),
         ("vsum_out", "streamer · FIFO 8, 1 loop, 1 ch", "4 560", "0.003", "0.0%"),
         (L1_LABEL, "6 144 reads, 2 049 writes", "–", "57.543", "54.8%"),
-        ("total", "", "190 000", "105.036", "100.0%")]  # fmt: skip
+        ("total", "", "190 000", "105.037", "100.0%")]  # fmt: skip
     v = step_view(Entry("2_bind", Path("2_bind.snaxdfg"), g, None), "2 bind", platform)
     assert v["summary"]["cost"]["tables"][0]["rows"][0]["area_text"] == "55 300"
     w16 = steps("vecmul", N=2048, W=16)[-1]
@@ -835,9 +835,9 @@ def test_compare_gives_two_columns_when_the_groups_differ():
     assert _rows(rows, "Cost estimate (first-order) on nangate45") == {
         "area": ("740 000 µm²", "626 000 µm²", True),
         "area without the banks": ("307 000 µm²", "194 000 µm²", True),
-        "energy per run": ("63.570 nJ", "63.398 nJ", True),
+        "energy per run": ("63.571 nJ", "63.399 nJ", True),
         "datapath": ("61 000 µm² · 25.951 nJ", "61 000 µm² · 25.951 nJ", False),
-        "control": ("1 110 µm² · 0.152 nJ", "1 090 µm² · 0.148 nJ", True),
+        "control": ("1 110 µm² · 0.152 nJ", "1 090 µm² · 0.149 nJ", True),
         "streamers": ("132 000 µm² · 11.568 nJ", "68 000 µm² · 11.523 nJ", True),
         "crossbar": ("113 000 µm² · 11.321 nJ", "63 500 µm² · 11.277 nJ", True),
         "memory (banks)": ("433 000 µm² · 14.579 nJ", "433 000 µm² · 14.499 nJ", True),
@@ -878,7 +878,7 @@ def test_compare_gives_two_columns_for_the_same_group():
     assert _rows(rows, "group dot") == {
         "cycles": ("265 = 256 + 9", "517 = 512 + 5", True), "expected BUSY_COUNTER": ("268", "520", True),
         "channels": ("17", "9", True), "area": ("62 100 µm²", "31 900 µm²", True),
-        "energy": ("26.099 nJ", "26.103 nJ", True)}  # fmt: skip
+        "energy": ("26.099 nJ", "26.104 nJ", True)}  # fmt: skip
     assert _rows(rows, "memory")["reads"] == ("4096 words", "4096 words", False)
 
 
