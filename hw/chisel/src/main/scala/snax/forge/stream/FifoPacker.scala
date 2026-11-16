@@ -18,9 +18,8 @@ import snax.forge.IntType
   * is the r-th (count = r - 1) or `last` is high (the run's last result, from the group's counters, never from this
   * cycle's push): `out.valid` is that in-beat's valid, the out-beat the held in-beats, this one at slot count and zeros
   * above it (no older held value leaks), and a sending in-beat is taken when the out-beat leaves (`in.ready` is
-  * `out.ready`); a filling in-beat needs no room (`in.ready` high). `clear` (the
-  * start accepted) resets the count. With the input always valid, the output always ready and `clear` and `last` low,
-  * it takes one in-beat a cycle.
+  * `out.ready`); a filling in-beat needs no room (`in.ready` high). `clear` (the start accepted) resets the count. With
+  * the input always valid, the output always ready and `clear` and `last` low, it takes one in-beat a cycle.
   *
   * @param inLanes
   *   lanes per in-beat; divides `words` * num_slc
