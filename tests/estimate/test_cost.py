@@ -95,7 +95,7 @@ def test_vecmul_at_w8_by_part():
     channels and one loop, 256 beats each, 6144 words; the crossbar at 24 + 1 + 1 = 26 inputs
     (the one core and AXI) on 32 banks, its table area linear in inputs (t = 2/8 between 24
     and 32), its 16 readers' channels read-only and 8 writer's write-only (the factor
-    × (1 − 0.396496 · 16/26 − 0.41077 · 8/26)),
+    × (1 − 0.395299 · 16/26 − 0.409746 · 8/26)),
     every access at a full crossbar's price (32 inputs on 32 banks, a grid point); 32 banks,
     4096 reads and 2048 writes."""
     e = estimated("vecmul", W=8, N=2048)
@@ -110,18 +110,18 @@ def test_vecmul_at_w8_by_part():
     assert (x.inputs, x.banks, x.accesses, x.extrapolated) == (26, 32, 6144, ())
     assert (x.read_only, x.write_only, x.form) == (16, 8, "factor")
     table = 123926.211252 + 2 / 8 * (164995.016077 - 123926.211252)
-    assert x.area_um2 == pytest.approx(table * (1 - 0.396496 * 16 / 26 - 0.41077 * 8 / 26))
+    assert x.area_um2 == pytest.approx(table * (1 - 0.395299 * 16 / 26 - 0.409746 * 8 / 26))
     assert x.e_access_pj == 2.752585  # xbar.csv's 32 inputs on 32 banks
     m = e.memory
     assert (m.n, m.depth, m.width, m.reads, m.writes) == (32, 512, 64, 4096, 2048)
     assert m.area_um2 == pytest.approx(32 * BANK[0])
     assert m.energy_nj == pytest.approx((4096 * BANK[1] + 2048 * BANK[2]) / 1000)
     shown = {k: (sig3(v.area_um2), dec3(v.energy_nj)) for k, v in p.items()}
-    # control 360 µm², 0.066 nJ: 34 bits
-    assert shown == {"datapath": ("55 300", "23.137"), "control": ("360", "0.066"),
-                     "streamers": ("95 200", "17.279"), "crossbar": ("84 500", "16.912"),
+    # control 360 µm², 0.047 nJ: 34 bits
+    assert shown == {"datapath": ("55 300", "23.137"), "control": ("360", "0.047"),
+                     "streamers": ("95 200", "17.279"), "crossbar": ("84 600", "16.912"),
                      "memory": ("433 000", "27.738")}  # fmt: skip
-    assert (sig3(e.area), sig3(e.area_design), dec3(e.energy)) == ("668 000", "235 000", "85.132")
+    assert (sig3(e.area), sig3(e.area_design), dec3(e.energy)) == ("668 000", "236 000", "85.113")
     assert e.energy == pytest.approx(sum(v.energy_nj for v in p.values()))
     assert e.area_design == pytest.approx(e.area - m.area_um2)
     assert e.kernel_energy == pytest.approx(p["datapath"].energy_nj + p["control"].energy_nj)
@@ -146,7 +146,7 @@ def test_dot_4_by_part():
     assert (e.xbar.read_only, e.xbar.write_only) == (8, 1)
     assert e.xbar.area_um2 == pytest.approx(
         (40287.828993 + 3 / 8 * (83108.244072 - 40287.828993))
-        * (1 - 0.396496 * 8 / 11 - 0.41077 / 11)
+        * (1 - 0.395299 * 8 / 11 - 0.409746 / 11)
     )
     assert e.xbar.e_access_pj == 2.752585
     assert (e.memory.reads, e.memory.writes) == (1024, 1)
@@ -168,7 +168,7 @@ def test_mvt_1_dot2_counts_a_shared_set_once_and_its_words_twice():
     assert (e.xbar.inputs, e.xbar.read_only, e.xbar.write_only) == (23, 16, 5)
     assert e.xbar.area_um2 == pytest.approx(
         (83108.244072 + 7 / 8 * (123926.211252 - 83108.244072))
-        * (1 - 0.396496 * 16 / 23 - 0.41077 * 5 / 23)
+        * (1 - 0.395299 * 16 / 23 - 0.409746 * 5 / 23)
     )
     assert e.xbar.e_access_pj == 2.752585
     assert sum(x.energy_nj for x in e.l1.values()) == pytest.approx(
@@ -241,7 +241,7 @@ def test_an_access_costs_the_same_whatever_the_inputs():
     assert (two.xbar.inputs, one.xbar.inputs) == (35, 19)
     assert two.xbar.e_access_pj == one.xbar.e_access_pj == 2.752585
     assert (two.xbar.accesses, one.xbar.accesses) == (4113, 4097)
-    assert (dec3(two.energy), dec3(one.energy)) == ("63.630", "63.457")
+    assert (dec3(two.energy), dec3(one.energy)) == ("63.570", "63.398")
 
 
 def test_the_cost_round_trips():
@@ -289,7 +289,7 @@ def test_a_cost_is_shown_to_3_significant_figures():
 
 def test_an_energy_is_shown_to_3_decimals():
     """Display precision only, so two close designs can be told apart (dot 4 and dot 5 at W =
-    8: 26.133 and 26.158 nJ); the caveat beside it is unchanged."""
+    8: 26.077 and 26.099 nJ); the caveat beside it is unchanged."""
     assert [dec3(x) for x in (26.28497, 26.33877, 97.2592, 3.6596, 0.1353, 0.0, 1234.5)] == [
         "26.285", "26.339", "97.259", "3.660", "0.135", "0.000", "1 234.500"]  # fmt: skip
     assert dec3(None) is None
@@ -297,7 +297,7 @@ def test_an_energy_is_shown_to_3_decimals():
 
 def test_dot_4_and_dot_5_read_apart():
     four, five = (estimated(r, W=8, N=2048).kernel_energy for r in ("dot_4", "dot_5"))
-    assert (dec3(four), dec3(five)) == ("26.133", "26.158")
+    assert (dec3(four), dec3(five)) == ("26.077", "26.099")
     assert heading("nangate45") == "Cost estimate (first-order) on nangate45"
     assert "about 30 %" in CAVEAT and "csr" in CAVEAT and "4 × e_load" not in CAVEAT
 
@@ -342,7 +342,7 @@ def test_a_one_stream_simd_is_not_the_two_input_point():
 def test_the_clusters_dot_3_crossbar_in_both_forms():
     """dot 3 at W = 16, N = 2048, the design synthesized in the whole cluster: two readers of
     16 channels and a one-channel writer, 35 inputs on 32 banks with the one core. The
-    factor form gives 113,891 µm², the crosspoint option 110,638, against the gated cluster's
+    factor form gives 114,095 µm², the crosspoint option 111,137, against the gated cluster's
     103,257 (snax-forge-experiments' cost_tables.md, example 5); the energy per access is the
     same."""
     e = estimated("dot_3", W=16, N=2048)
@@ -354,7 +354,7 @@ def test_the_clusters_dot_3_crossbar_in_both_forms():
         "factor",
         "crosspoint",
     )
-    assert (round(f.area_um2), round(c.area_um2)) == (113891, 110638)
+    assert (round(f.area_um2), round(c.area_um2)) == (114095, 111137)
     assert f.e_access_pj == c.e_access_pj and f.energy_nj == c.energy_nj
     assert e.parts["crossbar"].area_um2 == f.area_um2
 

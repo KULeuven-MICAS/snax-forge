@@ -31,7 +31,7 @@ The tasks are a first cut; each milestone is planned in a round of its own.
 | Milestone | Tasks | Content |
 |---|---|---|
 | P1 | PAP3 (`done`), PAP2 (`brief`), BASE1, BASE2 | PAP3 chose the ISPASS 2027 paper's experiments and the order of the work (PAPER §6, Next Up). PAP2: related work after the reading, DSAGEN and OverGen first (PAPER §8.4). BASE1 and BASE2 are E2: the vsim path timed step by step against SNAX-GVSoC's, and both simulators' cycles per second, logged on E1's runs |
-| M13 | B0, B1, B1x, CLN2, VIEW2, SPAN1, SYN1, CTRL1, CHAR1, CHAR1b, DRY1, DRY1-2, SLOT1, DRY1-3, RAM1, B2, REUSE1, STRM1, CTRL2, PORT1, HWCOST, CSYN1, CORE1, CLN3, PWR1, PWR2, CG1, CG2, CG3, CG4, PACK1a (`done`); track A: MVT1, L2V1, XBAR1, tier A; track B: CG6, CG5, GE, DACE2 | Its tasks, below (M13) |
+| M13 | B0, B1, B1x, CLN2, VIEW2, SPAN1, SYN1, CTRL1, CHAR1, CHAR1b, DRY1, DRY1-2, SLOT1, DRY1-3, RAM1, B2, REUSE1, STRM1, CTRL2, PORT1, HWCOST, CSYN1, CORE1, CLN3, PWR1, PWR2, CG1, CG2, CG3, CG4, PACK1a, CG6, CG5 (`done`); track A: MVT1, L2V1, XBAR1, tier A; track B: GE, DACE2 | Its tasks, below (M13) |
 | M7 | KER0 (`done`), FE1b, FE1c, PACK0 (`done`), PACK1, FE1d, FE1e, FE2, FE3 | The tiers of PAPER §6.1 after tier A (D113), which M13 does. KER0 staged every target kernel in `kernels/`, not linked to the flow (`kernels/README.md`, `pixi run kernels`). FE1b is tier B; FE1c tier C; PACK0 packed int32 and int8 into 64-bit words with NumPy's arithmetic (D142–D144); PACK1 keeps tier P: requantization and the int8 kernels PACK1a (M13) leaves out; FE1d tier D; FE1e tier E. FE3 is C2's coverage table |
 | M15 | LOW3b | A tile transform and a DMA per tile, an L2 slice per tile, reductions over tiles (open item 44) |
 | M9 | J1 | Stencil BRM with reuse and double buffering (see open item 76) |
@@ -79,6 +79,8 @@ Done, each in its PRs and git history:
 | CG3 | snax-forge-experiments #19 | The gated cluster at W = 2, 4, 16 and 32 against the gated tables, part by part; clock-gated synthesis made the only basis from here on (X87) |
 | CG4 | #77, snax-forge-experiments #20 | HWCOST on the clock-gated tables: `import-costs` brings the gated block table too, a unit costs its fires and control $e_{ctrl}\thinspace n_{bits}^{ctrl}\thinspace C_{acc}$ (D154 · D172), dot 3's five parts equal to the experiments' gated pricing; snax-forge-experiments without nangate15 or the ungated data with a gated twin, its docs and code cleaned up (X88). dot 3's five parts fall from about 70 to 61–63 nJ per W, 43 % off the streamers |
 | PACK1a | #79, snax-gvsoc #52 | int8, int16 and int32 presets of the tier-done and untiered kernels (`--set types=i8`, `i16`, `i32`; D113 · D173), types following the program's casts (D143 · D175); inputs wire-sliced, a narrow output packed d_out to a word by a `FifoPacker` the flow places (D142 · D174), cycle for cycle in the Chisel and SNAX-GVSoC; L1 37 and L2–L4 110 points on SNAX-GVSoC with 0 data errors, every packed group on its estimate; on vsim the quick and pack sets (31 PERFECT, 5 NEAR) and the full set (15 PERFECT, 10 NEAR, the 23 designs it shares with CORE1 R2 the same to the cycle); open items 95, 132–134 |
+| CG6 | snax-forge-experiments #21 | The HLS points (Vitis opt and dace, Bambu, XLS) synthesized and measured clock-gated, their ungated rows removed: inside a busy task window gating moves an HLS block's area −6 % (Vitis), −12 % (Bambu), about 0 (XLS) and its energy 0 to −7 % |
+| CG5 | #80, snax-forge-experiments #22 | forge's accelerators alone and the `xbar_mix` grid synthesized gated, every ungated row removed: median area and energy 0.97 of ungated; `char.json` the gated block table, its control constant measured on the gated forge accelerators ($e_{ctrl}$ 7.58 to 5.43 fJ a bit and cycle), `xbar_kinds.json` refitted ($f_{ro}$, $f_{wo}$ 0.3953, 0.4097); the HLS comparison on one gated basis, forge's leads kept; `import-costs` from `char.json`. The 7 W = 32 bundles made before D168 have no gated power (open item 134) |
 
 To do, in two tracks, each task in its own PR:
 
@@ -103,8 +105,7 @@ To do, in two tracks, each task in its own PR:
   5. **PWR1**, **PWR2**, **CG1**, **CG2** (done, above).
   6. **CG3** (done, above).
   7. **CG4** (done, above).
-  8. **CG6** (next, its own thread, before CG5): the HLS generators synthesized gated (Vitis, Bambu, XLS, DaCe), the comparison rebuilt; the last ungated data removed.
-  9. **CG5** (after PACK1a, whose packer is now in the generated RTL): forge's own designs synthesized gated: the accelerators alone (SYN2's points and E7's untiered rows), the `xbar_mix` grid, the char blocks at a current snax-forge (so `DATAPATH_RENAMES` and `TABLE_DEFAULTS` go); then `import-costs` again.
+  8. **CG6**, **CG5** (done, above).
   10. **GE** (later): energy costs in SNAX-GVSoC's models, so the accesses a run makes (bank conflicts among them) are counted, not estimated from the graph.
   11. **DACE2** (later, open item 130): a `dace_tuned` case in hls-exercises beside `dace`, tuned only with DaCe's own transforms and library expansions, then through Vitis, synthesis and power as the other HLS cases (E7).
 
@@ -272,7 +273,7 @@ Questions not decided yet. Numbers are never reused; a closed item is removed, a
 
 132. Tier A at int8: the fold type of `@` and `np.dot` (the operands', so a sum that wraps, D143 · D175), mvt's transposed read (a core task writing the transpose into L1 first, against tier A's column form), the outputs the paper needs, mvt's reuse recipes off `matvec_dot2` if matvec_2 is ever removed, and E4's int8 W sweep (dot_3 crosses the 32-bank bound at W = 128 at int8, 16 at int64: W up to 256 needs 67 crossbar inputs).
 133. The seed port (D163) at a narrow type: one lane, an input narrower than its word, which the input rule refuses (D174), so `matvec_seed` and `matvec_seed_serial` stay int64. The options: the FIFO slicer on that port alone (open item 93), or one seed per word.
-134. The new types' blocks and the packer characterized (int8, int16 and int32 in `char/<tech>.json`, a `FifoPacker` row at d_out 2, 4 and 8) with CG5's char blocks at a current snax-forge; until then the cost report lists them as not characterized. With it, whether `Mac` and `SimdLanes` take a narrow multiplier (w_a + w_b bits sign-extended to `opType`, bit-identical to NumPy's product at `opType`).
+134. The new types' blocks and the packer characterized (int8, int16 and int32 in `char/<tech>.json`, a `FifoPacker` row at d_out 2, 4 and 8), with the int64 char blocks emitted again at a current snax-forge (so `DATAPATH_RENAMES` and `TABLE_DEFAULTS` go) and the forge points rebundled at it (the 7 W = 32 points made before D168 measured for power again; snax-forge-experiments' power flow then needs `ACC` int64 for its int64 points); until then the cost report lists them as not characterized. With it, whether `Mac` and `SimdLanes` take a narrow multiplier (w_a + w_b bits sign-extended to `opType`, bit-identical to NumPy's product at `opType`).
 
 ## Sync Reminders
 

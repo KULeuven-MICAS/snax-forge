@@ -337,4 +337,4 @@ Commit the folder in snax-gvsoc as written, then bump the submodule here so the 
 | `pixi run fmt` | ruff's fixes and format, then the Markdown rule (`util/md_reflow.py`) |
 | `pixi run clean` | removes `out/` (but the GVSoC build and the editor's sessions, unless `--all`), caches and Chisel build trees; `--dry-run` lists first |
 | `pixi run -e hw chisel-test`, `chisel-gen`, `chisel-check`, `chisel-fmt` | the Chisel specs, elaboration, and scalafmt check and format in `hw/chisel/` (its README) |
-| `pixi run import-costs [--experiments DIR]` | copies the clock-gated block table to `snax_forge/char/<tech>.json` and the streamer, crossbar and bank tables into `snax_forge/char/<tech>/` from snax-forge-experiments (main, or a clean checkout), each named in `<tech>/SOURCE` with its sha256 |
+| `pixi run import-costs [--experiments DIR]` | copies the clock-gated block table (`results/char/<tech>/char.json`) to `snax_forge/char/<tech>.json` and the streamer, crossbar and bank tables into `snax_forge/char/<tech>/` from snax-forge-experiments (main, or a clean checkout), each named in `<tech>/SOURCE` with its sha256 |

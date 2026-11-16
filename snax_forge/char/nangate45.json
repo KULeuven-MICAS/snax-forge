@@ -8,10 +8,9 @@
  },
  "source": {
   "snax_forge": "e8611d51d5653e4c6e246184831136ec363727f5",
-  "snax_forge_experiments": "cd90a2c5a2619a32e47d39163ab28fa0b8fe8d0c",
+  "snax_forge_experiments": "ae0c6b7fe57095b7b0fb0f728a510ac8a58ac103",
   "stimulus": "rand64 seed 0",
-  "clk_gate": "1",
-  "ctrl": "ctrl ungated: counter_factor is char.json's x char.json's e_hold / this e_hold (CG2, X83)"
+  "clk_gate": "1"
  },
  "flop": {
   "area_um2": 5.296378,
@@ -19,7 +18,7 @@
   "e_hold_fj": 0.0655
  },
  "ctrl": {
-  "counter_factor": 115.67
+  "counter_factor": 82.87
  },
  "blocks": {
   "ElementwiseLanes": [

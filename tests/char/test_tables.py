@@ -36,7 +36,7 @@ def test_files_match_source():
     for name, file in [*((n, HERE / "nangate45" / n) for n in FILES),
                        ("block_table", HERE / "nangate45.json")]:  # fmt: skip
         path, _, digest = src[name].partition(" sha256 ")
-        assert path.endswith(name if name in FILES else "char_cg.json")
+        assert path.endswith(name if name in FILES else "char.json")
         assert hashlib.sha256(file.read_bytes()).hexdigest() == digest
 
 
@@ -134,36 +134,36 @@ def test_xbar_kinds_are_the_imported_constants(costs):
     """xbar_kinds.json: the factor form's two shares, the crosspoint form's coefficients
     and the grid they were fitted on."""
     k = costs.kinds
-    assert (k.f_ro, k.f_wo) == (0.396496, 0.41077)
+    assert (k.f_ro, k.f_wo) == (0.395299, 0.409746)
     assert (k.c_rw, k.c_ro, k.c_wo, k.d, k.e, k.g) == (
-        159.3358,
-        95.0644,
-        93.6514,
-        26.3019,
-        -19.4338,
-        -201.0074,
+        159.6181,
+        95.4836,
+        93.9346,
+        22.6763,
+        -17.1604,
+        -103.7622,
     )
     assert (k.inputs, k.banks) == ((16, 32, 64), (16, 32, 64))
 
 
 def test_xbar_example_5_the_clusters_interconnect(costs):
     """snax-forge-experiments' cost_tables.md example 5: 36 inputs on 32 banks, 32 read-only and 1
-    write-only. Factor: the table's 187,676.3 µm² (between 32 and 40 inputs) × (1 − 0.396496 · 32/36
-    − 0.41077 / 36) = 119,390; crosspoint: 115,763. The energy per access is the table's in both."""
+    write-only. Factor: the table's 187,676.3 µm² (between 32 and 40 inputs) × (1 − 0.395299 · 32/36
+    − 0.409746 / 36) = 119,595; crosspoint: 116,268. The energy per access is the table's in both."""
     table = xbar_cost(costs, 36, 32)
     assert table.area_um2 == pytest.approx(187676.3045655)
     f = xbar_cost(costs, 36, 32, 32, 1)
-    assert f.area_um2 == pytest.approx(187676.3045655 * (1 - 0.396496 * 32 / 36 - 0.41077 / 36))
-    assert round(f.area_um2) == 119390 and f.energy_pj == table.energy_pj
+    assert f.area_um2 == pytest.approx(187676.3045655 * (1 - 0.395299 * 32 / 36 - 0.409746 / 36))
+    assert round(f.area_um2) == 119595 and f.energy_pj == table.energy_pj
     c = xbar_cost(costs, 36, 32, 32, 1, "crosspoint")
-    assert round(c.area_um2) == 115763 and c.extrapolated == ()
+    assert round(c.area_um2) == 116268 and c.extrapolated == ()
 
 
 def test_xbar_example_6_all_read_only(costs):
-    """Example 6: 16 inputs, 16 banks, all read-only: factor 42,048.5 × (1 − 0.396496) = 25,376;
-    crosspoint 95.0644 · 16 · 16 + 26.3019 · 16 − 19.4338 · 16 − 201.0074 = 24,245."""
-    assert round(xbar_cost(costs, 16, 16, 16, 0).area_um2) == 25376
-    assert round(xbar_cost(costs, 16, 16, 16, 0, "crosspoint").area_um2) == 24245
+    """Example 6: 16 inputs, 16 banks, all read-only: factor 42,048.5 × (1 − 0.395299) = 25,427;
+    crosspoint 95.4836 · 16 · 16 + 22.6763 · 16 − 17.1604 · 16 − 103.7622 = 24,428."""
+    assert round(xbar_cost(costs, 16, 16, 16, 0).area_um2) == 25427
+    assert round(xbar_cost(costs, 16, 16, 16, 0, "crosspoint").area_um2) == 24428
 
 
 def test_xbar_without_kinds_is_the_table(costs):

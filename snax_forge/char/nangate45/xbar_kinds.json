@@ -2,28 +2,28 @@
  "_doc": "The sparse interconnect's read-only and write-only inputs (X71, report/xbar_kinds.py). factor is the default: A = A_table(n, b) * (1 - f_ro * n_ro / n - f_wo * n_wo / n), A_table from xbar.csv. crosspoint is the option: A = b * (c_rw * n_rw + c_ro * n_ro + c_wo * n_wo) + d * n + e * b + g. n = n_rw + n_ro + n_wo inputs, b banks; a reader's channel is read-only, a writer's write-only, the cores and the AXI port read-write. Areas in um2.",
  "tech": "nangate45",
  "factor": {
-  "f_ro": 0.396496,
-  "f_wo": 0.41077,
+  "f_ro": 0.395299,
+  "f_wo": 0.409746,
   "f_ro_range": [
-   0.388964,
-   0.406456
+   0.388303,
+   0.404355
   ],
   "f_wo_range": [
-   0.406639,
-   0.414456
+   0.405064,
+   0.413747
   ],
   "pairs": 9,
   "method": "mean over the (inputs, banks) pairs of 1 - A(all read-only or all write-only) / A(all read-write), both from xbar_mix"
  },
  "crosspoint": {
-  "c_rw": 159.3358,
-  "c_ro": 95.0644,
-  "c_wo": 93.6514,
-  "d": 26.3019,
-  "e": -19.4338,
-  "g": -201.0074,
+  "c_rw": 159.6181,
+  "c_ro": 95.4836,
+  "c_wo": 93.9346,
+  "d": 22.6763,
+  "e": -17.1604,
+  "g": -103.7622,
   "points": 27,
-  "max_residual_pct": 2.9,
+  "max_residual_pct": 2.8,
   "method": "ordinary least squares (numpy.linalg.lstsq), unweighted, the i36_b32 points held out",
   "grid": {
    "inputs": [
@@ -49,8 +49,8 @@
    "a_table_um2": 187676.3,
    "factor_um2": 187676.3,
    "factor_err_pct": 0.96,
-   "crosspoint_um2": 183678.78,
-   "crosspoint_err_pct": -1.19
+   "crosspoint_um2": 184043.53,
+   "crosspoint_err_pct": -1.0
   },
   {
    "what": "i36_b32_r32_w1",
@@ -60,10 +60,10 @@
    "wo": 1,
    "area_um2": 119307.12,
    "a_table_um2": 187676.3,
-   "factor_um2": 119390.09,
-   "factor_err_pct": 0.07,
-   "crosspoint_um2": 115763.01,
-   "crosspoint_err_pct": -2.97
+   "factor_um2": 119595.07,
+   "factor_err_pct": 0.24,
+   "crosspoint_um2": 116267.91,
+   "crosspoint_err_pct": -2.55
   },
   {
    "what": "cluster dot3_w16_cg sparse_interconnect_i",
@@ -73,16 +73,16 @@
    "wo": 1,
    "area_um2": 103257.21,
    "a_table_um2": 182005.98,
-   "factor_um2": 113890.83,
-   "factor_err_pct": 10.3,
-   "crosspoint_um2": 110637.96,
-   "crosspoint_err_pct": 7.15
+   "factor_um2": 114095.3,
+   "factor_err_pct": 10.5,
+   "crosspoint_um2": 111137.46,
+   "crosspoint_err_pct": 7.63
   }
  ],
  "sources": {
   "xbar_mix": {
    "path": "results/xbar_mix/nangate45/synth_dc.csv",
-   "sha256": "3d67b330ea02716518274cee7c5972238713b2e7587623d0aaa641afd803b6b2"
+   "sha256": "018dc06bb905bce0d6cd53a6a64b72e9a16146ee3f52741dd63e2559cee4d677"
   },
   "xbar": {
    "path": "results/strm/nangate45/xbar.csv",

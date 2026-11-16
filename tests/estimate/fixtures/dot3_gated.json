@@ -1,5 +1,5 @@
 {
- "_doc": "dot_3 at N = 2048, W = 2 to 32 on nangate45, HWCOST's five parts on the clock-gated tables as snax-forge-experiments' own implementation priced them (results/cluster/nangate45/hwcost_cg.csv, its gated rows): an independent check of the estimate (tests/estimate/test_cost.py). That implementation kept the hold term, which moves the datapath by at most 0.004 pJ.",
+ "_doc": "dot_3 at N = 2048, W = 2 to 32 on nangate45, HWCOST's five parts on the clock-gated tables as snax-forge-experiments' own implementation priced them (results/cluster/nangate45/hwcost_cg.csv, its gated rows): an independent check of the estimate (tests/estimate/test_cost.py). That implementation kept the hold term, which moves the datapath by at most 0.004 pJ. Its control energies and crossbar areas are rescaled to the constants measured on the gated forge points and xbar_mix grid (control factor 115.67 to 82.87; f_ro, f_wo 0.396496, 0.41077 to 0.395299, 0.409746); the other parts are as priced.",
  "recipe": "dot_3",
  "N": 2048,
  "tech": "nangate45",
@@ -14,7 +14,7 @@
    "W": 2,
    "part": "control",
    "area_um2": 709.714652,
-   "energy_nj": 0.52030824
+   "energy_nj": 0.37276687
   },
   {
    "W": 2,
@@ -25,7 +25,7 @@
   {
    "W": 2,
    "part": "crossbar",
-   "area_um2": 25297.005259,
+   "area_um2": 25326.39142,
    "energy_nj": 11.277340745
   },
   {
@@ -44,7 +44,7 @@
    "W": 4,
    "part": "control",
    "area_um2": 709.714652,
-   "energy_nj": 0.260407929
+   "energy_nj": 0.186565273
   },
   {
    "W": 4,
@@ -55,7 +55,7 @@
   {
    "W": 4,
    "part": "crossbar",
-   "area_um2": 37993.56565,
+   "area_um2": 38047.862208,
    "energy_nj": 11.277340745
   },
   {
@@ -74,7 +74,7 @@
    "W": 8,
    "part": "control",
    "area_um2": 709.714652,
-   "energy_nj": 0.130457773
+   "energy_nj": 0.093464473
   },
   {
    "W": 8,
@@ -85,7 +85,7 @@
   {
    "W": 8,
    "part": "crossbar",
-   "area_um2": 63427.388722,
+   "area_um2": 63531.895073,
    "energy_nj": 11.277340745
   },
   {
@@ -104,7 +104,7 @@
    "W": 16,
    "part": "control",
    "area_um2": 709.714652,
-   "energy_nj": 0.065482696
+   "energy_nj": 0.046914075
   },
   {
    "W": 16,
@@ -115,7 +115,7 @@
   {
    "W": 16,
    "part": "crossbar",
-   "area_um2": 113890.805132,
+   "area_um2": 114095.317454,
    "energy_nj": 11.277340745
   },
   {
@@ -134,7 +134,7 @@
    "W": 32,
    "part": "control",
    "area_um2": 709.714652,
-   "energy_nj": 0.032995157
+   "energy_nj": 0.023638875
   },
   {
    "W": 32,
@@ -145,7 +145,7 @@
   {
    "W": 32,
    "part": "crossbar",
-   "area_um2": 213962.115687,
+   "area_um2": 214365.146553,
    "energy_nj": 11.277340745
   },
   {
