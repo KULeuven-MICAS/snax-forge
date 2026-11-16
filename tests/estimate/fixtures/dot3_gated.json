@@ -1,5 +1,5 @@
 {
- "_doc": "dot_3 at N = 2048, W = 2 to 32 on nangate45, HWCOST's five parts on the clock-gated tables as snax-forge-experiments' own implementation priced them (results/cluster/nangate45/hwcost_cg.csv, its gated rows): an independent check of the estimate (tests/estimate/test_cost.py). That implementation kept the hold term, which moves the datapath by at most 0.004 pJ. Its control energies and crossbar areas are rescaled to the constants measured on the gated forge points and xbar_mix grid (control factor 115.67 to 82.87; f_ro, f_wo 0.396496, 0.41077 to 0.395299, 0.409746); the other parts are as priced.",
+ "_doc": "dot_3 at N = 2048, W = 2 to 32 on nangate45, HWCOST's five parts on the clock-gated tables as snax-forge-experiments' own implementation priced them (results/cluster/nangate45/hwcost_cg.csv, its gated rows): an independent check of the estimate (tests/estimate/test_cost.py). That implementation kept the hold term, which moves the datapath by at most 0.004 pJ. Its control energies and crossbar areas are rescaled to the constants measured on the gated forge points and xbar_mix grid (control factor 115.67 to 83.20; f_ro, f_wo 0.396496, 0.41077 to 0.395299, 0.409746); the other parts are as priced.",
  "recipe": "dot_3",
  "N": 2048,
  "tech": "nangate45",
@@ -14,7 +14,7 @@
    "W": 2,
    "part": "control",
    "area_um2": 709.714652,
-   "energy_nj": 0.37276687
+   "energy_nj": 0.37425128
   },
   {
    "W": 2,
@@ -44,7 +44,7 @@
    "W": 4,
    "part": "control",
    "area_um2": 709.714652,
-   "energy_nj": 0.186565273
+   "energy_nj": 0.187308202
   },
   {
    "W": 4,
@@ -74,7 +74,7 @@
    "W": 8,
    "part": "control",
    "area_um2": 709.714652,
-   "energy_nj": 0.093464473
+   "energy_nj": 0.093836662
   },
   {
    "W": 8,
@@ -104,7 +104,7 @@
    "W": 16,
    "part": "control",
    "area_um2": 709.714652,
-   "energy_nj": 0.046914075
+   "energy_nj": 0.047100893
   },
   {
    "W": 16,
@@ -134,7 +134,7 @@
    "W": 32,
    "part": "control",
    "area_um2": 709.714652,
-   "energy_nj": 0.023638875
+   "energy_nj": 0.023733008
   },
   {
    "W": 32,
