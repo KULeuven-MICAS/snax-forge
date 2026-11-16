@@ -30,8 +30,8 @@ The tasks are a first cut; each milestone is planned in a round of its own.
 
 | Milestone | Tasks | Content |
 |---|---|---|
-| P1 | PAP3 (`done`), PAP2 (`brief`), BASE1, BASE2 | PAP3 chose the ISPASS 2027 paper's experiments and the order of the work (PAPER §6, Next Up). PAP2: related work after the reading, DSAGEN and OverGen first (PAPER §8.4). BASE1 and BASE2 are E2: the vsim path timed step by step against SNAX-GVSoC's, and both simulators' cycles per second, logged on E1's runs |
-| M13 | B0, B1, B1x, CLN2, VIEW2, SPAN1, SYN1, CTRL1, CHAR1, CHAR1b, DRY1, DRY1-2, SLOT1, DRY1-3, RAM1, B2, REUSE1, STRM1, CTRL2, PORT1, HWCOST, CSYN1, CORE1, CLN3, PWR1, PWR2, CG1, CG2, CG3, CG4, PACK1a, CG6, CG5 (`done`); track A: MVT1, L2V1, XBAR1, tier A; track B: GE, DACE2 | Its tasks, below (M13) |
+| P1 | PAP3 (`done`), PAP2 (`brief`), BASE1, BASE2 | PAP3 chose the ISPASS 2027 paper's experiments and the order of the work (PAPER §6, Next Up). PAP2: related work after the reading, DSAGEN and OverGen first (PAPER §8.4). BASE1 and BASE2 (E2) are not run as tasks: a sentence or two in PAPER §3 from the times the runs log anyway |
+| M13 | B0, B1, B1x, CLN2, VIEW2, SPAN1, SYN1, CTRL1, CHAR1, CHAR1b, DRY1, DRY1-2, SLOT1, DRY1-3, RAM1, B2, REUSE1, STRM1, CTRL2, PORT1, HWCOST, CSYN1, CORE1, CLN3, PWR1, PWR2, CG1, CG2, CG3, CG4, PACK1a, CG6, CG5 (`done`); track A: TIERA1 (MVT1's rest inside it), E4S1; track B: CHAR2, GE1; track C: SNB1; track D: E2E1–E2E5; after the paper: L2V1, XBAR1, DACE2 | Its tasks, below (M13) |
 | M7 | KER0 (`done`), FE1b, FE1c, PACK0 (`done`), PACK1, FE1d, FE1e, FE2, FE3 | The tiers of PAPER §6.1 after tier A (D113), which M13 does. KER0 staged every target kernel in `kernels/`, not linked to the flow (`kernels/README.md`, `pixi run kernels`). FE1b is tier B; FE1c tier C; PACK0 packed int32 and int8 into 64-bit words with NumPy's arithmetic (D142–D144); PACK1 keeps tier P: requantization and the int8 kernels PACK1a (M13) leaves out; FE1d tier D; FE1e tier E. FE3 is C2's coverage table |
 | M15 | LOW3b | A tile transform and a DMA per tile, an L2 slice per tile, reductions over tiles (open item 44) |
 | M9 | J1 | Stencil BRM with reuse and double buffering (see open item 76) |
@@ -82,46 +82,45 @@ Done, each in its PRs and git history:
 | CG6 | snax-forge-experiments #21 | The HLS points (Vitis opt and dace, Bambu, XLS) synthesized and measured clock-gated, their ungated rows removed: inside a busy task window gating moves an HLS block's area −6 % (Vitis), −12 % (Bambu), about 0 (XLS) and its energy 0 to −7 % |
 | CG5 | #80, snax-forge-experiments #22 | forge's accelerators alone and the `xbar_mix` grid synthesized gated, every ungated row removed: median area and energy 0.97 of ungated; `char.json` the gated block table, its control constant measured on the gated forge accelerators ($e_{ctrl}$ 7.58 to 5.43 fJ a bit and cycle), `xbar_kinds.json` refitted ($f_{ro}$, $f_{wo}$ 0.3953, 0.4097); the HLS comparison on one gated basis, forge's leads kept; `import-costs` from `char.json`. The 7 W = 32 bundles made before D168 have no gated power (open item 134) |
 
-To do, in two tracks, each task in its own PR:
+To do, in four tracks, each task in its own thread, branch and PR (the ROAD1 plan, 16 Nov 2026). Each task runs in a clone set of its own, so tasks in parallel never share `out/`, a GVSoC build or snax_cluster's imported bundles:
 
-- **Track A, the code** (snax-forge, snax-gvsoc where a task changes the model):
-  1. **CORE1** (done, above).
-  2. **PACK1a** (done, above): rowsum_2, rowsum_serial, dot_serial at i8 and i16, the seeded recipes, mvt, atax and bicg stay int64 (open items 132, 133); no characterization yet (open item 134).
-  3. **MVT1** (`wip`, paused at step 1 on 10 Nov, branch `ry/mvt1-2`; part 1 in #60; split from B2): mvt in the row form on both sides, $x_1 \mathrel{+}= A y_1$ as dots per row and $x_2 \mathrel{+}= A^T y_2$ by the transposed read, at M = N = 40, recipe against recipe, each on SNAX-GVSoC and snax_cluster, written up in `examples/dryrun/4_mvt.md`.
-     - Built: the DFG view in columns and `mark_transpose` (D164), one instance or linked group shared by both halves (D165); variant 1 as `mvt_1` (both halves on one `vmul`, `vsum`, `vadd`) and `mvt_1_dot2` (one `vmul → link → vsum` group run twice), variant 2 as `mvt_2` (a dot group and a `vadd` per half), each with its `_reuse` twin.
-     - Step 1 (done, paused there): the six recipes at 40 × 40, W = 4 and 8, `contiguous` and `padded_rows`, on SNAX-GVSoC and vsim (open items 95, 120); mvt_2 at W = 8 dropped (85 crossbar inputs).
-     - Step 2: variant 3, a dot → link → `vadd` at W = 1 per half (hw-tier-a form 2; no recipe links a fold into a SIMD yet). Step 3: variant 4, the seed per half (`fuse_seed`, from `matvec_seed`). Their shared forms only if a point leaves an area question. Both resume at int64 after PACK1a: mvt's transposed read cannot pack (D142).
+- **Track A, tier A and E4** (snax-forge, snax-gvsoc where a task changes the model):
+  1. **TIERA1** (`brief`): tier A's forms and E4's sweeps brainstormed together, then tier A's rounds: atax on two engines; the overlap of independent accelerators (open item 109); one unit at several regions (open item 113, against what D165 already does); MVT1's variants 3 and 4; bicg and gesummv (fork, join, broadcast, hold, `augment_init`) as the brainstorm keeps them. It lifts `gen.chain` (a group is a chain). MINI first, SMALL only where a case needs it (open item 54). Every round's vsim check gives E1's points.
+     - MVT1, paused at step 1 on 10 Nov and continued inside TIERA1: mvt in the row form on both sides, $x_1 \mathrel{+}= A y_1$ as dots per row and $x_2 \mathrel{+}= A^T y_2$ by the transposed read, at M = N = 40, recipe against recipe, on SNAX-GVSoC and snax_cluster. Part 1 in REUSE1; step 1 on main (`pixi run forge-set mvt`).
+     - Built: the DFG view in columns and `mark_transpose` (D164), one instance or linked group shared by both halves (D165), variant 1 as `mvt_1` (both halves on one `vmul`, `vsum`, `vadd`) and `mvt_1_dot2` (one `vmul → link → vsum` group run twice), variant 2 as `mvt_2` (a dot group and a `vadd` per half), each with its `_reuse` twin.
+     - Step 1 (done): the six recipes at 40 × 40, W = 4 and 8, `contiguous` and `padded_rows`, on SNAX-GVSoC and vsim (open items 95, 120); mvt_2 at W = 8 dropped (85 crossbar inputs).
+     - Left: variant 3, a dot → link → `vadd` at W = 1 per half (no recipe links a fold into a SIMD yet), and variant 4, the seed per half (`fuse_seed`, from `matvec_seed`), both at int64 (mvt's transposed read cannot pack, D142); the column form; `examples/dryrun/4_mvt.md`.
      - The layout stays D86's: W lanes down a column of pitch p words meet $n_\text{banks} / \gcd(p, n_\text{banks})$ banks, so at 40 × 40 on 32 banks W = 4 has no conflict and W = 8 two-way; a pass padding only where W exceeds that would be a new decision.
-     - Left to tier A: the column form, the overlap (open item 109) and the reuse variants; the full set and open item 95 at its close.
-  4. **PORT1** (done, above).
-  5. **L2V1**: each container the DMA moves drawn in the DFG views as its L2 copy with a DMA edge into L1, and a DMA row in the estimate from the memory plan, $\sum_c (\lceil B_c / 64 \rceil + t_0)$ for a 512-bit DMA and a fixed cost $t_0$ per transfer read from a SNAX-GVSoC run, added to the total (amends D155), checked against the run's DMA tasks. The graph-level copy node stays open item 99.
-  6. **XBAR1**: an interconnect marker per running accelerator, $u = \sum_s \mathrm{ch}_s / n_{\mathrm{banks}}$ over its streamers' channels, green at $u \le 0.5$, orange up to 1, red above, the thresholds platform fields (D85), a design note (C§6) in the estimate, `design.md` and the editor (vecmul: W = 4 green, 8 orange, 16 red).
-  7. **tier A**, in two halves: fork, join, broadcast, hold and fragments (applied by output name, `augment_init`) with bicg and gesummv; then mvt's other forms after MVT1 (open item 109) and atax (open item 113). It lifts `gen.chain` (a group is a chain). MINI first, SMALL only where a case needs it (open item 54).
-- **Track B, the server** (snax-forge-experiments, Nangate 45 nm only):
-  1. **RAM1** (done, above).
-  2. **STRM1** (done, above).
-  3. E7's untiered points and DaCe's dot (done, in CSYN1 above).
-  4. **CSYN1** (done, above).
-  5. **PWR1**, **PWR2**, **CG1**, **CG2** (done, above).
-  6. **CG3** (done, above).
-  7. **CG4** (done, above).
-  8. **CG6**, **CG5** (done, above).
-  10. **GE** (later): energy costs in SNAX-GVSoC's models, so the accesses a run makes (bank conflicts among them) are counted, not estimated from the graph.
-  11. **DACE2** (later, open item 130): a `dace_tuned` case in hls-exercises beside `dace`, tuned only with DaCe's own transforms and library expansions, then through Vitis, synthesis and power as the other HLS cases (E7).
+  2. **E4S1** (kickoff from TIERA1's plan): E4's sweep script over `pixi run flow --set` (no DSE5) and its figure, first on what runs today (W on dot 3, matvec and mvt_1; shared against dedicated ports), then on each tier A form as it lands. The bank-bound sweep at int64 and int32: a dot reads $2 W b$ bytes a cycle against $32 \cdot 8 = 256$, so it crosses at W = 16 (int64) and 32 (int32), and W stops at 32.
+- **Track B, costs** (snax-forge-experiments, snax-forge's `char`; Nangate 45 nm only):
+  1. **CHAR2** (`brief`, open item 134): the char blocks again with a type axis, int8, int16 and int32 beside int64, the int64 blocks emitted again at a current snax-forge, a `FifoPacker` row at d_out 2, 4 and 8, lanes up to W = 32, extrapolated only where HWCOST needs it; the tables in chunks by type; the 7 W = 32 points rebundled and powered again, the power flow's `ACC` at int64. Narrow multipliers are a later experiment; the values follow the program (D143 · D175).
+  2. **GE1** (`brief`, after CHAR2): SNAX-GVSoC tags an energy on every access or transaction of each modelled component and sums it per component and per program section (D135), $E = \sum_c \sum_k n_{c,k}\thinspace e_{c,k}$ with the energies from the same tables as the static estimate (D167): the dynamic estimate beside the graph's static one, checked part by part against PWR2 and CG3's gated cluster at W = 2 to 32. Area stays on the graph.
+- **Track C, the Snitch-only baseline** (snax_cluster, snax-forge-experiments; E11):
+  1. **SNB1** (`brief`): the same kernels as hand-written C on `rv32ima` Snitch cores with no accelerator, every tier forge runs, one source per kernel, the type a typedef, the core count from the runtime, forge's inputs; three configs (one core, 1 DMA + 4 cores, 1 DMA + 8 cores) with forge's L1, banks and I-cache, synthesized gated through `pixi run cluster` (open item 88); area and energy per task in coarse parts (memory, interconnect, cores against forge's streamers and accelerators).
+- **Track D, end to end** (snax-forge; after track A, best effort, cut from the bottom; each case sized to fit L1, shortcuts allowed for what is not built):
+  1. **E2E1**: an MLP at batch 1 (matvec, bias add, relu, matvec).
+  2. **E2E2**: a small conv2d.
+  3. **E2E3**: a Transformer decode head (q·Kᵀ, softmax, ·V; E5): max as a fold, exp and the divide as the shortcuts its brainstorm chooses.
+  4. **E2E4**: an image pipeline (grayscale, blur, threshold; E12).
+  5. **E2E5**: a ResNet basic-block slice (conv, requantize, relu, skip add; E6).
+- **After the paper**:
+  - **L2V1**: each container the DMA moves drawn in the DFG views as its L2 copy with a DMA edge into L1, and a DMA row in the estimate from the memory plan, $\sum_c (\lceil B_c / 64 \rceil + t_0)$ for a 512-bit DMA and a fixed cost $t_0$ per transfer read from a SNAX-GVSoC run, added to the total (amends D155), checked against the run's DMA tasks. The graph-level copy node stays open item 99.
+  - **XBAR1**: an interconnect marker per running accelerator, $u = \sum_s \mathrm{ch}_s / n_{\mathrm{banks}}$ over its streamers' channels, green at $u \le 0.5$, orange up to 1, red above, the thresholds platform fields (D85), a design note (C§6) in the estimate, `design.md` and the editor (vecmul: W = 4 green, 8 orange, 16 red).
+  - **DACE2** (open item 130): a `dace_tuned` case in hls-exercises beside `dace`, tuned only with DaCe's own transforms and library expansions, then through Vitis, synthesis and power as the other HLS cases (E7).
 
 ## Next Up
 
-The ISPASS 2027 plan (PAP3, PAPER §6): M13's two tracks above, run at once, track B starting now so the server never waits; HSYN1 finishes in snax-forge-experiments on both technologies. The week of 10 Nov: CTRL2, HWCOST, CSYN1 (with forge's untiered rows for E7) and PORT1 done; next PACK1a, then MVT1's variants 3 and 4 and tier A on track A, and CG3 then GE on track B. Then, as each lands:
+The ISPASS 2027 plan (PAP3, PAPER §6), as ROAD1 set it on 16 Nov: TIERA1, CHAR2 and SNB1 start at once, GE1 after CHAR2, E4S1 from TIERA1's plan, track D after track A. Track A's target is 20 Nov. Then, as each lands:
 
 | Step | Waits for | Gives |
 |---|---|---|
-| E4: the composition sweeps (a sweep script over `pixi run flow --set`, no DSE5) | tier A | C3 |
+| E4: the composition sweeps (E4S1) | tier A; GE1's energy and CHAR2's tables for the final sweeps | C3 |
 | E7: forge against Vitis opt and dace, Bambu and XLS on tier done and untiered, W ≤ 16 | HSYN1, CSYN1 Part A (both done) | the blocks against HLS |
-| E1: mvt and atax (gesummv if time) on vsim, 3–5 compositions each; E2's times logged on the same runs | tier A | C4, C1 |
-| The cluster synthesis (2–3 composites) and E11, the homogeneous cluster (snax_cluster's cores, no accelerator, hand-written C) | E1 for the composites; CSYN1's flow (done) and PWR1 | cluster PPA, the Snitch baseline |
-| E5: Transformer decode, one head (q·Kᵀ, softmax, ·V) at a short context in L1 | tier A; `exp`, `max` and division (M7 tiers B and C) | the end-to-end case |
+| E1: mvt and atax (gesummv if time) on vsim, 3–5 compositions each, from tier A's rounds | tier A | C4, C5 |
+| E11: the Snitch-only clusters against forge's (SNB1) | SNB1's flow; CSYN1's and PWR1's (done) | cluster PPA, the Snitch baseline |
+| E5, E6 and E12: the end-to-end cases (E2E1–E2E5) | track A | where the cycles go per case |
 
-Dates: 27 Nov, E5's cut-off (softmax not running on SNAX-GVSoC moves E5, and E6 with it, to future work); 4 Dec, the abstract's result sentence from E4; 11 Dec, the abstract and the data freeze (figure fixes only after it); 12–18 Dec, writing. PAPER §2 and §3 are written alongside from now.
+Dates: 20 Nov, track A's target (fine if it slips); 27 Nov, the softmax gate (softmax not running on SNAX-GVSoC by then moves E2E3, E5, to future work); 4 Dec, the abstract's result sentence from E4; 11 Dec, the abstract and the data freeze (figure fixes only after it); 12–18 Dec, writing. PAPER §2 and §3 are written alongside.
 
 ## Open Items
 
@@ -142,7 +141,7 @@ Questions not decided yet. Numbers are never reused; a closed item is removed, a
 40. Switching runs in the viewer clears the selected cycle.
 41. A report glossary, a "where the cycles went" ranking and the knobs' `--set` paths: on hold.
 44. Reductions over tiles need partial sums and a final combine; until then no tile loop sits around a `reduce` memlet (LOW3b).
-50. SNAX-GVSoC's speed on large runs, measured in E2 on E1's runs (BASE2); timing-only runs and extrapolation only if it is too slow for C1.
+50. SNAX-GVSoC's speed on large runs, from the times the runs log (E2 is a sentence or two in PAPER §3); timing-only runs and extrapolation only if it is too slow for C1.
 53. A link between two accelerators: amends D12 and D51 and the SNAX shell. Parked (D112).
 54. Which kernels take PolyBench's SMALL in a 128 KiB L1 (M13 tier A); the NumPy tolerance for float sums waits for the float pass (D113).
 65. Instruction fetch: snax_cluster's L0 prefetches the next line and taken branches' targets, GVSoC's I-cache does not, so SNAX-GVSoC misses more lines for fewer cycles each (tens of cycles in fixed-cost phases). A forge accelerator's counter depends on the core's timing between the streamer's and the accelerator's start writes, so GEN2b compares it with care (D123). Modelled when a kernel's numbers need it.
