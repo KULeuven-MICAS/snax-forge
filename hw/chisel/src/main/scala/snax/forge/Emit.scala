@@ -4,7 +4,7 @@ import java.nio.file.{Files, Path}
 
 import scala.jdk.CollectionConverters._
 
-import chisel3.RawModule
+import chisel3.{RawModule, RequireAsyncReset}
 import circt.stage.ChiselStage
 import snax.forge.datapath.DatapathModule
 import snax.forge.shell.{AcceleratorSpec, ShellWrapper}
@@ -32,9 +32,11 @@ import snax.forge.stream.{FifoPacker, FifoSlicer}
   * pixi run chisel-gen -- --spec out/rtl/vecadd/accelerator.json   # the accelerator of an accelerator.json (gen-rtl)
   * pixi run chisel-gen -- --spec A.json --out DIR_A --spec B.json --out DIR_B   # several, in one call
   * pixi run chisel-gen -- --block TreeAccumulate --params '{"inType":"int64","outType":"int64","lanes":8,"op":"add"}' --out DIR
+  * pixi run chisel-gen -- --block FifoPacker --params '{"inLanes":1,"laneType":"int32","words":1}' --out DIR
   * }}}
   *
   * `--block NAME --params JSON --out DIR` repeats like `--spec` (gen-block); `--spec` and `--block` go in one call.
+  * `NAME` is a catalogue datapath or a stream block of `streamBlocks` (FifoPacker).
   */
 object Emit {
 
@@ -71,7 +73,8 @@ object Emit {
     Datapaths.all.map { d =>
       Target(d.name, s"datapath: ${ujson.write(ujson.Obj.from(d.example))}", () => d.make(d.example))
     } ++ Seq(
-      // Built and parked: not in the datapath catalogue, emitted on their own.
+      // Not in the datapath catalogue, emitted on their own: the slicer parked (open item 93), the packer placed by
+      // ShellWrapper on a packed output (D174) and emittable alone at any params with --block
       Target(
         "FifoSlicer",
         "parked: 2 words of int8 in, 4 lanes out per pop (r = 4)",
@@ -134,10 +137,10 @@ object Emit {
         done.files.foreach(f => println(s"[snax-forge] wrote ${RepoPaths.display(f)}"))
         println(s"[snax-forge] ${done.top} from ${RepoPaths.display(spec)}: ${done.modules.size} module(s)")
       }
-      for (((d, p), out) <- blocks) {
-        val done = emitBlock(d, p, out)
+      for ((b, out) <- blocks) {
+        val done = emitBlock(b, out)
         done.files.foreach(f => println(s"[snax-forge] wrote ${RepoPaths.display(f)}"))
-        println(s"[snax-forge] ${done.top} from ${d.name}: ${done.modules.size} module(s)")
+        println(s"[snax-forge] ${done.top} from ${b.name}: ${done.modules.size} module(s)")
       }
       return
     }
@@ -195,32 +198,87 @@ object Emit {
     emitInto(dir, "rtl" -> ujson.Str(RepoPaths.display(specPath)))(sv => elaborate(new ShellWrapper(spec), sv, true))
   }
 
-  /** `--block NAME --params JSON`, checked: the datapath `NAME` of `Datapaths.all` and its full params `JSON` (a JSON
-    * object, as `blocks.json` lists them), `Datapath.check`'s refusals an `IllegalArgumentException`, as is an unknown
-    * name or JSON that is not an object.
+  /** What `--block` builds, its params checked: its name, its params in its order (as `emitted.json` lists them) and
+    * its module.
     */
-  def block(name: String, json: String): (Datapaths.Datapath, Map[String, ujson.Value]) = {
-    val d = Datapaths(name)
-    val p =
+  case class Block(name: String, params: ujson.Obj, gen: () => RawModule)
+
+  /** `--block NAME --params JSON`, checked: `NAME` a datapath of `Datapaths.all` or a stream block of `streamBlocks`,
+    * `JSON` its full params (a JSON object; a datapath's as `blocks.json` lists them, `Datapath.check`'s refusals); an
+    * unknown name, JSON that is not an object or a refused param an `IllegalArgumentException`.
+    */
+  def block(name: String, json: String): Block = {
+    val make = streamBlocks.get(name).orElse(Datapaths.all.find(_.name == name).map(d => datapath(d, _))).getOrElse {
+      val (ds, ss) = (Datapaths.all.map(_.name).mkString(", "), streamBlocks.keys.mkString(", "))
+      throw new IllegalArgumentException(s"no block $name: name a datapath ($ds) or a stream block ($ss)")
+    }
+    val p    =
       try ujson.read(json).obj.toMap
       catch { case e: Exception => throw new IllegalArgumentException(s"$name: --params $json is not a JSON object") }
-    d.check(p)
-    d -> p
+    make(p)
   }
 
-  /** `--block NAME --params JSON --out DIR`: the datapath `d` on `params` alone, `d.make(params)` as the top module
-    * with its ports as they are (`clock`, `reset`, `io_*`) and an asynchronous, active-high reset
-    * (`DatapathModule.asyncTop`) as every datapath has inside an accelerator (`ShellWrapper`'s `withClockAndReset`), so
-    * the module is the one an accelerator holds; into `DIR/sv/`, one file per module, with `DIR/emitted.json` (`block`,
+  /** The datapath `d` on `params`, checked (`Datapath.check`), as a `Block`. */
+  def datapath(d: Datapaths.Datapath, params: Map[String, ujson.Value]): Block = {
+    d.check(params)
+    Block(d.name, ujson.Obj.from(d.params.map { case (n, _, _) => n -> params(n) }), () => d.make(params))
+  }
+
+  /** The stream blocks `--block` builds beside the catalogue's datapaths, by name, each from its params (checked, an
+    * `IllegalArgumentException` that says the fix). They are not in `Datapaths`, which holds what a unit binds: the
+    * flow places a stream block on a port (FifoPacker on a packed outer output, D142 · D174). FifoSlicer stays parked.
+    */
+  val streamBlocks: Map[String, Map[String, ujson.Value] => Block] = Map("FifoPacker" -> (p => packer(p)))
+
+  /** `FifoPacker` on `p`: `inLanes` and `words` positive ints, `laneType` an int type of `IntType`, `inLanes` dividing
+    * the beat's `words` * 64 / width elements (the constructor's `require`, checked first so its refusal says the fix).
+    * Built with an asynchronous, active-high reset (`RequireAsyncReset`), its clock and reset as inside an accelerator,
+    * where `ShellWrapper` builds it under `withClockAndReset(clk_i, (!rst_ni).asAsyncReset)`.
+    */
+  private def packer(p: Map[String, ujson.Value]): Block = {
+    val names            = Seq("inLanes", "laneType", "words")
+    val (missing, extra) = (names.filterNot(p.contains), p.keys.filterNot(names.contains).toSeq.sorted)
+    if (missing.nonEmpty || extra.nonEmpty)
+      throw new IllegalArgumentException(
+        s"FifoPacker: give params ${names.mkString(", ")}; missing [${missing.mkString(", ")}], extra [${extra.mkString(", ")}]"
+      )
+    def count(n: String): Int =
+      p(n) match {
+        case ujson.Num(x) if x.isWhole && x >= 1 && x <= Int.MaxValue => x.toInt
+        case v => throw new IllegalArgumentException(s"FifoPacker.$n: ${ujson.write(v)}; give an int of at least 1")
+      }
+    val (inLanes, words) = (count("inLanes"), count("words"))
+    val laneType = p("laneType").strOpt.filter(IntType.names.contains).getOrElse {
+      val t = ujson.write(p("laneType"))
+      throw new IllegalArgumentException(s"FifoPacker.laneType: $t; give one of ${IntType.names.mkString(", ")}")
+    }
+    val total    = words.toLong * 64 / IntType(laneType).width
+    if (total % inLanes != 0)
+      throw new IllegalArgumentException(
+        s"FifoPacker: inLanes $inLanes does not divide the beat's $total elements ($words word(s) of $laneType); " +
+          s"give an inLanes that divides $total, or more words"
+      )
+    Block(
+      "FifoPacker",
+      ujson.Obj.from(names.map(n => n -> p(n))),
+      () => new FifoPacker(inLanes, laneType, words) with RequireAsyncReset
+    )
+  }
+
+  /** `--block NAME --params JSON --out DIR`: the block `b` alone as the top module with its ports as they are (`clock`,
+    * `reset`, `io_*`) and an asynchronous, active-high reset as it has inside an accelerator (`ShellWrapper`'s
+    * `withClockAndReset`): a datapath's from `DatapathModule.asyncTop`, a stream block's from its own builder. So the
+    * module is the one an accelerator holds; into `DIR/sv/`, one file per module, with `DIR/emitted.json` (`block`,
     * `params`, `top`, `modules`, `files`), the files of a previous one removed first, as `emitSpec` does.
     */
-  def emitBlock(d: Datapaths.Datapath, params: Map[String, ujson.Value], dir: Path): Emitted = {
-    d.check(params)
-    val ordered = ujson.Obj.from(d.params.map { case (n, _, _) => n -> params(n) })
-    emitInto(dir, "block" -> ujson.Str(d.name), "params" -> ordered) { sv =>
-      DatapathModule.asyncTop(elaborate(d.make(params), sv, split = true))
+  def emitBlock(b: Block, dir: Path): Emitted =
+    emitInto(dir, "block" -> ujson.Str(b.name), "params" -> b.params) { sv =>
+      DatapathModule.asyncTop(elaborate(b.gen(), sv, split = true))
     }
-  }
+
+  /** The datapath `d` on `params` alone: `emitBlock` of its `datapath`. */
+  def emitBlock(d: Datapaths.Datapath, params: Map[String, ujson.Value], dir: Path): Emitted =
+    emitBlock(datapath(d, params), dir)
 
   /** `build` into `dir/sv/` (giving the top's name), after removing the files a previous `dir/emitted.json` lists, then
     * `dir/emitted.json`: `head`, `top`, `modules`, `files` (paths from `dir`).
