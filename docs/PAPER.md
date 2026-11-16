@@ -56,21 +56,22 @@ Not contributions: the simulation technique (GVSoC's) and the LLM; an agent driv
 
 ## 6. Evaluation plan
 
-The ISPASS 2027 paper (PAP3) carries E1–E4, E7 and E11, with E5 if it lands; the order of the work is in STATUS's Next Up.
+The ISPASS 2027 paper (PAP3) carries E1, E3, E4, E7 and E11, E2 as a sentence or two in section 3, and the end-to-end cases (E5, E6, E12) as best effort after tier A; the order of the work is in STATUS's Next Up (the ROAD1 plan, 16 Nov 2026).
 
 | ID | Experiment | Workload | Output | ISPASS 2027 |
 |---|---|---|---|---|
 | E1 | Fidelity: SNAX-GVSoC against snax_cluster RTL | Open item 95's 14 designs; mvt and atax (gesummv if time) at 3–5 compositions each that differ in cycles | Rank metrics and error table | in |
-| E2 | Turnaround and speed | E1's runs, each step timed on both paths | Steps and times per level; cycles per second | in |
-| E3 | The composite kernels | tier done, the untiered kernels and tier A, built from basic blocks; an import-level coverage table over the staged kernels | Cycles per kernel; coverage table | in |
-| E4 | Composition sweeps | tier A (mvt serial against overlapped, open item 109; atax on two engines against one shared, open item 113; shared against dedicated crossbar ports, PORT1) and W sweeps across the bank bound, at MINI | Cycles against area and energy per composition, the engine-alone choice marked | in, the headline |
-| E5 | End-to-end case: Transformer decode | One attention head (q·Kᵀ, softmax, ·V) at a short context that fits L1 | Where the cycles go; the best composition | if softmax runs by 27 Nov 2026 |
-| E6 | Familiar case | A TinyML ResNet slice: conv as GeMM, SIMD requant, maxpool | Where the cycles go per layer | future work (needs tier D's GeMM and M15) |
+| E2 | Turnaround and speed | The times the runs log anyway | One or two sentences in section 3 | a sentence, no task |
+| E3 | The composite kernels | tier done, the untiered kernels and tier A, built from basic blocks, then an MLP at batch 1 and a small conv2d; an import-level coverage table over the staged kernels | Cycles per kernel; coverage table | in |
+| E4 | Composition sweeps | tier A (mvt serial against overlapped, open item 109; atax on two engines against one shared, open item 113; shared against dedicated crossbar ports, PORT1) and W sweeps across the bank bound (int64 and int32, W ≤ 32), at MINI | Cycles against area and energy per composition, the engine-alone choice marked | in, the headline |
+| E5 | End-to-end case: Transformer decode | One attention head (q·Kᵀ, softmax, ·V) at a short context that fits L1 | Where the cycles go; the best composition | best effort, if softmax runs by 27 Nov 2026 (STATUS, E2E3) |
+| E6 | Familiar case | A ResNet basic-block slice that fits L1: conv, requantize, relu, skip add, with shortcuts for the GeMM and tiling not built | Where the cycles go per layer | best effort (STATUS, E2E5) |
 | E7 | Engine quality | tier done and untiered: forge against Vitis opt and dace, Bambu and XLS at W ≤ 16, 10 ns HLS clock, n2048 for tier done and Vitis's power sizes for untiered | Post-synthesis area and fmax; dynamic energy per task (PrimeTime); control apart where a tool separates it | in |
 | E8 | Engine-agnostic shell | An HLS engine as a BRM implementation (open item 28) | Cluster-level cycles against the Chisel engine | future work |
 | E9 | Against Stream | The DNN layers of E5 and E6 | Stream's allocation and its rank in SNAX-FORGE | future work |
 | E10 | LLM demo | One E4 composition found by an agent | A short trace | future work |
-| E11 | Against a homogeneous cluster | E1's kernels on snax_cluster with its Snitch cores only (hand-written C) against the chosen compositions, both synthesized on RAM1's macros at 45 nm | Area efficiency and energy per task, not equal area | in |
+| E11 | Against a homogeneous cluster | Every kernel forge runs, as hand-written C on snax_cluster with `rv32ima` Snitch cores only (one core, 1 DMA + 4, 1 DMA + 8), against the chosen compositions, both synthesized gated on RAM1's macros at 45 nm | Area efficiency and energy per task in coarse parts (memory, interconnect, cores against streamers and accelerators), not equal area | in (STATUS, SNB1) |
+| E12 | End-to-end case: an image pipeline | Grayscale, blur and threshold on an image that fits L1 | Where the cycles go; the best composition | best effort (STATUS, E2E4) |
 
 ### 6.1 Kernel set
 
@@ -217,23 +218,24 @@ The draft's line, then the author's after reading, which wins. A row whose secon
 | Overlap of independent accelerators | E4 (mvt) | open item 109, in tier A |
 | One unit across DFG regions | E4 (atax) | open item 113, in tier A |
 | Shared crossbar ports across streamer sets | E4 | M13 PORT1 (done; open item 128) |
-| DMA cost on the graph | Level 1's feedback, E4 | M13 L2V1 (open item 99 for the graph-level node) |
-| Interconnect markers | Level 1's feedback, E4 | M13 XBAR1 |
+| DMA cost on the graph | Level 1's feedback | L2V1, after the paper (open item 99 for the graph-level node) |
+| Interconnect markers | Level 1's feedback | XBAR1, after the paper |
 | The engine-alone number | C3's baseline in E4 | M13 VIEW2, the ideal estimate (D155, C§13) |
-| Cost model: blocks, streamers, memory, interconnect | E4, E7, C4's cost check | M13 CHAR1, CHAR1b (done), RAM1, HWCOST (section 7) |
-| A sweep script | E4 | over `pixi run flow --set`; DSE5 (M8) is not needed |
-| Cluster synthesis on the same macros | C4's cost check at cluster level, E11 | RAM1, then 2–3 composites and the homogeneous cluster at 45 nm |
+| Cost model: blocks, streamers, memory, interconnect | E4, E7, C4's cost check | M13 CHAR1, CHAR1b (done), RAM1, HWCOST (section 7); the narrow types in CHAR2 |
+| Energy per transaction in SNAX-GVSoC | E4's energy, C4 | GE1 |
+| A sweep script | E4 | E4S1, over `pixi run flow --set`; DSE5 (M8) is not needed |
+| Cluster synthesis on the same macros | C4's cost check at cluster level, E11 | RAM1, CSYN1 and PWR2 (done); the Snitch-only clusters in SNB1 |
 | `exp`, `max`, division | softmax in E5 | M7 tiers B and C (FE1b, FE1c; open item 37) |
 | Speed on long runs | E2 | open item 50 |
 | Narrow types: int8, int16, int32 in, outputs packed | E1, E4, E11 | M13 PACK1a (D113 · D173, D142 · D174) |
-| Requantization, tiling, the GeMM | E6, E9 | PACK1, M15, tier D: after the paper |
+| Requantization, tiling, the GeMM | E6, E9 | PACK1, M15, tier D: after the paper; E6 takes shortcuts (E2E5) |
 | HLS engine as a BRM implementation | E8 | open item 28: after the paper |
 
 ## 10. Open questions
 
 1. BASE1 is E2's timed vsim path; the GeMM bring-up stays an anecdote, not a logged baseline (PAP3).
 2. Floating point, the second pass per kernel after the integer tiers (D113): Berkeley HardFloat ops inside the existing blocks' lanes is one option. Either way the multi-cycle rows of section 6.2 stay.
-3. E5's head: size, context length and precision (one head that fits L1, e.g. d = 64 and a context of 128); E6 is future work.
+3. E5's head: size, context length and precision (one head that fits L1, e.g. d = 64 and a context of 128); E6 and E12 sized to fit L1 too, best effort.
 4. The snax_cluster version to pin for SNAX-GVSoC and the bundle.
 5. The newer DIMC: when it joins, and whether as a second anchor or as the heterogeneous case.
 6. E9's effort and who to involve.
