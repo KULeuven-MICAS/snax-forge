@@ -65,7 +65,7 @@ PADDED = "memory.passes.layout=padded_rows"  # each row a word longer
 I8 = ("types=i8", "W=8")  # int8 in, int32 out and accumulate, at its smallest W (D173)
 QUICK = designs("vecadd_i32", "vsum_tree_i8", "dot_1", "dot_1_enc", "dot_4", "axpy",
                 Design("vsum_tree", I8), Design("matvec_3", I8))  # fmt: skip
-# Every recipe PACK1a runs narrow, at i8 (the packed outputs, D174), and a few at W = 32, i16, i32
+# Every recipe with narrow types at i8 (int32 outputs packed, D174), a few at W = 32, i16, i32
 PACK = [
     *(
         Design(r, I8)

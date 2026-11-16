@@ -1,10 +1,8 @@
 """Values: an int, or a small integer expression over names.
 
 Shared by SNAX-BRM and SNAX-DFG. A value is a plain int or a string expression: names, ints,
-``+ - * //``, parentheses, ``max(a, b)`` and ``min(a, b)`` (two arguments each),
-``width(t)``, the bits of a name bound to a NumPy dtype, and a value cast ``int8(x)`` ...
-``uint64(x)`` (tasklet code, from a kernel's ``astype``), wrapping as NumPy's ``astype``; no
-other call and no string literals.
+``+ - * //``, parentheses, ``max(a, b)``, ``min(a, b)``, ``width(t)`` (a dtype's bits) and,
+in tasklet code, a value cast ``int8(x)`` ... ``uint64(x)`` wrapping as NumPy's ``astype``.
 Expressions are parsed with ``ast`` and walked, never passed to ``eval``. The arithmetic works
 on Python ints, NumPy integer scalars and arrays (``max``, ``min`` elementwise), so the
 reference executor can evaluate a subset for a whole map nest at once. What binds the names (a
@@ -14,10 +12,9 @@ Entry points: ``check``, ``names``, ``is_name``, ``constant``, ``evaluate`` and 
 one expression; ``canonical``, the stored form (an int, or the text ``ast.unparse`` writes), so
 rewritten and hand-written files diff cleanly; ``substitute``; ``linear``, an affine value's
 constant and per-variable coefficients; and, on tasklet code, ``statements``,
-``canonical_code``, ``rename_code``, ``check_code``, ``strip_casts`` (the code without its
-value casts, and the type each name is cast to) and ``unify``, a match against a code whose
-slots stand for an int constant or a scalar argument, ``+``, ``*``, ``max`` and ``min``
-commuting.
+``canonical_code``, ``rename_code``, ``check_code``, ``strip_casts`` and ``unify``, a match
+against a code whose slots stand for an int constant or a scalar argument, ``+``, ``*``, ``max``
+and ``min`` commuting.
 """
 
 from __future__ import annotations

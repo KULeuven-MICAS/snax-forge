@@ -8,9 +8,8 @@ reads a step back from the URL hash.
 
 ``graph_view`` lays a graph out in rows in execution order, containers between top-level nodes,
 a container versioned after each write (``A@1``) so no edge goes up; independent chains side by
-side (``columns``), blocks folded into one box (``fold``), groups and accelerators boxed, a
-packed output's ``FifoPacker`` (D174) a box of its own before its container. Every
-item has a compact ``text`` and a ``details`` entry keyed ``<kind>:<id>``, all made here.
+side (``columns``), blocks folded into one box (``fold``), groups, accelerators and a packed
+output's ``FifoPacker`` boxed. Every item has a ``text`` and a ``details`` entry, made here.
 ``step_view`` adds the marks, the estimate, its cost and the left column's sections;
 ``compare_view`` gives two steps' diff as rows ``{label, under, a, b, differs}``; ``partners``
 lists the maps a map can be fused, seeded or interchanged with, from the transforms' own sites.
@@ -1325,15 +1324,23 @@ def _container(g: Graph, name: str, placed: Any = None) -> dict[str, Any]:
             "transient": c.transient, "scalar": bool(c.attrs.get(SCALAR))} | shared  # fmt: skip
 
 
+def _lanes(n: Node, port: str) -> int | None:
+    """An accelerated node's lanes on ``port``; None for any other node, or an instance the BRM
+    library does not resolve."""
+    if n.kind != "accelerated":
+        return None
+    try:
+        return instance_of(n).lanes(port)
+    except (BrmError, ExprError, KeyError):
+        return None
+
+
 def packer_node(g: Graph, n: Node, port: str, data: str) -> dict[str, Any] | None:
     """The ``FifoPacker`` the flow places on accelerated node ``n``'s output ``port`` when its
     lanes fill less than a word (D174, design/streamers.py's ``packed``), as the drawing shows
     it: a box between the port and ``data``'s container; None where the port is wired."""
-    if n.kind != "accelerated" or port not in n.outputs:
-        return None
-    try:
-        lanes = instance_of(n).lanes(port)
-    except (BrmError, ExprError, KeyError):
+    lanes = _lanes(n, port) if port in n.outputs else None
+    if lanes is None:
         return None
     dtype = g.containers[data].dtype
     d_out = packed(dtype, lanes, True, WORD_BITS)
@@ -1540,11 +1547,8 @@ def packing(g: Graph, n: Node, port: str, data: str) -> str | None:
     """``int32 · num_slc 2 · num_ch 2`` for an accelerated node's port (``int32 · num_slc 2 ·
     d_out 2 · num_ch 1`` for a packed output, D174); None for any other node, or an instance the
     BRM library does not resolve."""
-    if n.kind != "accelerated":
-        return None
-    try:
-        lanes = instance_of(n).lanes(port)
-    except (BrmError, ExprError, KeyError):
+    lanes = _lanes(n, port)
+    if lanes is None:
         return None
     dtype = g.containers[data].dtype
     num_slc = max(1, WORD_BITS // bits(dtype))

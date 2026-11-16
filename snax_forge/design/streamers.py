@@ -3,10 +3,10 @@
 ``resolve`` builds one ``Streamer`` per outer port of every accelerated instance, in the order
 the graph first uses them and the BRM's port order, as CONTRACTS, "Platform" (the streamer
 shell) and "Memory plan and design point" (the design point's ``streamers``) define them; a
-port on a link has none. ``instances``, ``groups`` and ``accelerators`` read the instances off
-the graph and put them into groups and accelerators; ``links``, ``linked_ports``, ``unplaced``
-and ``slot_containers`` read the links, the containers with no L1 space and those read only
-through a slot connector. Nothing here checks the pairing: check.py runs first and reports
+port on a link has none, an outer output narrower than a word is packed (``packed``, D174).
+``instances``, ``groups`` and ``accelerators`` read the instances off the graph and put them
+into groups and accelerators; ``links``, ``linked_ports``, ``unplaced`` and ``slot_containers``
+read the links, the containers with no L1 space and those read only through a slot connector. Nothing here checks the pairing: check.py runs first and reports
 every problem, so ``resolve`` raises on the first thing that does not fit.
 
 Shared movers (a container marked ``hw.share_ports``, sandbox/share_ports.py):
@@ -15,9 +15,6 @@ port order) on mover k, which takes its users' widest channels and spatial bound
 temporal loops and deepest FIFO; a user that does not fit is ``share.shape``. ``set_channels``
 gives each accelerator's channels, the sum over roles and k of the widest k-th port over its
 groups, the count check.py's ``crossbar_inputs`` sums.
-
-An outer output whose W lanes divide num_slc is packed (D174, ``packed``): d_out = num_slc / W
-results fill one word, on one channel.
 """
 
 from __future__ import annotations

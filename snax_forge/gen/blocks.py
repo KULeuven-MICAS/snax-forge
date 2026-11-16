@@ -26,6 +26,7 @@ from snax_forge import expr
 from snax_forge.brm import SEED, Instance
 from snax_forge.brm.dtypes import fits, result_type
 from snax_forge.common import CodedError
+from snax_forge.design.streamers import packed
 
 
 class GenError(CodedError):
@@ -148,9 +149,8 @@ def _lanes(inst: Instance, want: dict[str, int], what: str) -> None:
 def _fill_ports(inst: Instance, dtypes: Mapping[str, str] | None, words: set[str],
                 what: str) -> dict[str, Port]:  # fmt: skip
     """Every port of the instance in its order: the binding's datapath port (by default the same
-    name), its
-    dtype and its lanes; a port in ``words`` must be whole 64-bit channels (``gen.lanes``),
-    or, an output, divide one (its packer, D174); the others are one word (a fold's output)."""
+    name), its dtype and its lanes; a port in ``words`` must be whole 64-bit channels
+    (``gen.lanes``) or a packed output (D174); the others are one word (a fold's output)."""
     mapping = inst.impl.binding.get("ports") or {}
     out = {}
     for p in inst.ports:
@@ -158,7 +158,7 @@ def _fill_ports(inst: Instance, dtypes: Mapping[str, str] | None, words: set[str
         if dtypes is not None:
             dtype = dtypes[p.name]
             bits, _ = port_dtype(dtype, f"{what} port {p.name}")
-            packs = p.direction == "out" and 64 % (n * bits) == 0
+            packs = packed(dtype, n, p.direction == "out", 64) > 1
             if p.name in words and n * bits % 64 and not packs:
                 raise GenError(
                     "gen.lanes",

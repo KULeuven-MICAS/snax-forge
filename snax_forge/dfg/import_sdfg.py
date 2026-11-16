@@ -6,11 +6,8 @@ containers (a non-transient Scalar one of shape [1] with ``sdfg.scalar``), the o
 body, each MapEntry/MapExit pair one map per parameter (outermost first), a Tasklet a tasklet,
 and a Reduce library node one map per input dimension around ``out = in1`` with a ``reduce``.
 The only folds done here: a Reduce's scalar copied into an array, or its view copied whole into
-a non-transient array, becomes a direct write. A constant cast to the tasklet's output dtype
-(``dace.int32(0)``) becomes the constant, any other integer cast a value cast (``int32(x)``). A
-convert map (``out = dace.int32(inp)`` over a whole transient, from ``astype``) is folded into
-its readers, which read its input through the cast (dropped when the input has that type
-already), and the ``__tmp<k>`` after it are numbered as if it had not been there.
+a non-transient array, becomes a direct write; the casts and an ``astype``'s convert map fold
+as CONTRACTS, "SNAX-DFG" says (into value casts ``int32(x)`` on their readers).
 
 Names: containers keep the kernel's (a transient's without underscores); maps, tasklets and
 connectors take their DaCe name lower case without underscores (``clean``, ``fresh_all``),

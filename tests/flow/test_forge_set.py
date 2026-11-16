@@ -86,7 +86,7 @@ def test_the_full_set_holds_the_quick_one():
 
 
 def test_the_pack_set_runs_every_narrow_recipe_once_at_i8():
-    """PACK1a's set: each recipe in scope at i8 and its smallest W, dot_serial at i32 only, and
+    """The narrow types' set: each recipe at i8 and its smallest W, dot_serial at i32 only, and
     dot_3 and matvec_3 again at W = 32, dot_3 at i16 and i32; the names forge's folders take."""
     pack = fs.SETS["pack"]
     assert len(pack) == 28 and len({d.name for d in pack}) == 28

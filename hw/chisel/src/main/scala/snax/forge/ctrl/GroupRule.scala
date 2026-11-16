@@ -338,9 +338,9 @@ class GroupRule(val desc: GroupDesc, jobWidth: Int = 32) {
 
   // The sink's R-th push ends the run (the done formula above): then every unit has fired its n, nothing is in flight
   // and every buffer is empty, SnaxGroupRule's finished()
-  // NB (D174): last from the counters, never the push; snax-gvsoc's SnaxPacker counts pushes = results - 1.
-  // lastResult, the sink's next push is the run's last, is done's formula without give(owner): registers and the csr's
-  // JOBS only, so the packer's room, which the sink's frozen reads, does not depend on itself
+  // NB (D174): lastResult is done's formula without give(owner), registers and the csr's JOBS only, never the push:
+  // the packer's room, which the sink's frozen reads, must not depend on itself (snax-gvsoc's SnaxPacker: pushes =
+  // results - 1)
   private val sinkL      = descs(owner).latency
   private val lastResult = busy &&
     (if (sinkL == 0) st(owner).gInc.get === jobs else !left(owner)) &&

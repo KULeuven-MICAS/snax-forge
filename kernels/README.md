@@ -9,7 +9,7 @@ The PolyBench and DL kernels are NPBench's DaCe sources (BSD-3, `NPBENCH_LICENSE
 - they are `int64` where the kernel is integer arithmetic, at PolyBench's MINI sizes; `softmax`, `mlp`, `lenet` and `resnet` keep NPBench's `float32` (`float-staged`) until their tier decides the integer form;
 - the tiers are PAPER §6.1's.
 
-The kernels PACK1a runs at narrow types (`vecadd`, `vecmul`, `matadd`, `relu`, `axpy`, `vsum`, `rowsum`, `dot`, `matvec`) list type presets in their `SPEC` (`presets`), chosen with `--set types=` (D113 · D173):
+The kernels that run at narrow types (`vecadd`, `vecmul`, `matadd`, `relu`, `axpy`, `vsum`, `rowsum`, `dot`, `matvec`) list type presets in their `SPEC` (`presets`), chosen with `--set types=` (D113 · D173):
 
 | Preset | Inputs | Outputs and `ACC` |
 |---|---|---|
@@ -36,7 +36,7 @@ The kernels on two axes of regularity: access, what the streamers do, across; co
 
 ### axpy
 
-`blas/axpy.py` · no tier · int32 (packed two per 64-bit word, D142; int64 from M13 B0 until PACK0 R3)
+`blas/axpy.py` · no tier · int32 (two per 64-bit word, D142)
 
 $$y \leftarrow y + \alpha x$$
 
@@ -54,9 +54,9 @@ $$q = A p, \quad A \in \mathbb{Z}^{M \times N}$$
 
 ### matvec_acc
 
-`blas/matvec_acc.py` · no tier · int64 · M13 B2 R5's fold seed
+`blas/matvec_acc.py` · no tier · int64 · a fold with a seed (D163)
 
-$$q \mathrel{+}= A p, \quad A \in \mathbb{Z}^{M 	imes N}$$
+$$q \mathrel{+}= A p, \quad A \in \mathbb{Z}^{M \times N}$$
 
 - Written as `q += np.sum(A * p, axis=1)`: matvec's two nests, the sum folding into the transient `tmp1[m]`, then the elementwise `q[m] = q[m] + tmp1[m]` (`augassign_19_4_map`), which `fuse_seed` takes into the fold as its seed, read once per row.
 - `recipes/matvec/matvec_seed.json` (adder tree) and `matvec_seed_serial.json` (`chisel_serial`, SerialAccumulate) bind it at 8 × 512, W = 4.
@@ -65,7 +65,7 @@ $$q \mathrel{+}= A p, \quad A \in \mathbb{Z}^{M 	imes N}$$
 
 ### matadd
 
-`elementwise/matadd.py` · no tier · int32 (packed two per 64-bit word, D142; int64 from M13 B0 until PACK0 R3)
+`elementwise/matadd.py` · no tier · int32 (two per 64-bit word, D142)
 
 $$C = A + B, \quad A, B, C \in \mathbb{Z}^{M \times N}$$
 
@@ -74,7 +74,7 @@ $$C = A + B, \quad A, B, C \in \mathbb{Z}^{M \times N}$$
 
 ### relu
 
-`elementwise/relu.py` · no tier · int32 (packed two per 64-bit word, D142; int64 from M13 B0 until PACK0 R3)
+`elementwise/relu.py` · no tier · int32 (two per 64-bit word, D142)
 
 $$B = \max(A, 0)$$
 
