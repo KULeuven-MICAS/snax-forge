@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from snax_forge.char import CharError, Table, load
+from snax_forge.char import CharError, Table, load, lookup
 from snax_forge.design.platform import Platform
 from snax_forge.estimate import Estimate, estimate
 from snax_forge.estimate.cost import (
@@ -252,9 +252,11 @@ def test_the_cost_round_trips():
 
 
 def test_the_estimate_lists_what_is_not_characterized():
-    e = estimated("vecadd_i32")
+    """relu's one-stream SimdLanes max is not in the table; vecadd at int32 is (D176)."""
+    e = estimated("relu")
     assert e.missing == ["acc"] and e.groups[0].cost.units["acc"].found is None
     assert e.to_dict()["cost"]["missing"] == ["acc"]
+    assert estimated("vecadd_i32").missing == []
 
 
 def test_no_technology_skips_the_cost_and_both_round_trip():
@@ -359,10 +361,10 @@ def test_the_clusters_dot_3_crossbar_in_both_forms():
     assert e.parts["crossbar"].area_um2 == f.area_um2
 
 
-def test_a_packed_output_moves_words_and_its_packer_is_not_characterized(tmp_path):
+def test_a_packed_output_moves_words_and_its_packer_is_priced(tmp_path):
     """matvec_3 at i8, W = 8 (M = 16): the sum's int32 results packed 2 to a word, so its writer
     moves 8 words; its FifoPacker, one held int32 and a 1-bit count, is in the group's cost by
-    sum.out, not characterized yet."""
+    sum.out, its table point's bits loading per push (half a slot and the count, 17)."""
     from snax_forge.design import DesignPoint
     from tests.gen.helpers import designed
 
@@ -373,5 +375,8 @@ def test_a_packed_output_moves_words_and_its_packer_is_not_characterized(tmp_pat
     (g,) = e.groups
     assert g.bits["sum.out"] == 33
     packer = g.cost.links["sum.out"]
-    assert (packer.datapath, packer.found, packer.fires) == ("FifoPacker", None, 16)
-    assert "sum.out" in e.missing
+    assert (packer.datapath, packer.found, packer.fires) == ("FifoPacker", "measured", 16)
+    got = lookup(load("nangate45"), "FifoPacker", {"d_out": 2, "lanes": 1, "dtype": "int32"}, 1)
+    assert got.load_bits == 17
+    assert packer.e_fire_pj == pytest.approx(got.e_comb_pj + 17 * load("nangate45").e_load_pj)
+    assert "sum.out" not in e.missing

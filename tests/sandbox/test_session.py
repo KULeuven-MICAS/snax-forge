@@ -569,9 +569,9 @@ def test_every_step_lists_saves_design_checks(roots):
 
 def test_while_building_unbound_is_a_note_and_notes_show_beside_problems(roots):
     """Before the bind graph.unbound is a note ("before Save: bind it …"), not a problem,
-    and Save still refuses it; vecadd_i32's int32 adder, not in nangate45's table, keeps its
-    char.missing note beside a problem (W = 128: too many crossbar inputs), with the
-    design.xbar_inputs and cost.extrapolated notes of a design past HWCOST's tables."""
+    and Save still refuses it; vecadd at int32 and W = 128 has a problem (too many crossbar
+    inputs) with the design.xbar_inputs and cost.extrapolated notes beside it, of a design past
+    HWCOST's tables; its int32 adder is in nangate45's table (D176), so no char.missing."""
     s = Session.from_kernel("vecadd", {"N": 64}, roots=roots)
     split_and_tag(s, "add_map", 4)
     c = s.checks(3)
@@ -588,8 +588,7 @@ def test_while_building_unbound_is_a_note_and_notes_show_beside_problems(roots):
     # beside it, its 194 crossbar inputs above 64 and, off HWCOST's tables' grid, its three
     # streamers of 64 channels and its crossbar, noted as extrapolated
     assert [(n["code"], n["before_save"]) for n in c["notes"]] == [
-        ("design.xbar_inputs", False), ("char.missing", False),
-        *[("cost.extrapolated", False)] * 4]  # fmt: skip
+        ("design.xbar_inputs", False), *[("cost.extrapolated", False)] * 4]  # fmt: skip
     assert not c["problems"][0]["before_save"]
 
 

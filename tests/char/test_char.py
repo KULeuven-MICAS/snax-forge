@@ -5,17 +5,8 @@ from __future__ import annotations
 
 import pytest
 
-from snax_forge.char import (
-    DATAPATH_RENAMES,
-    FOUND,
-    TABLE_DEFAULTS,
-    TECHS,
-    CharError,
-    Lookup,
-    Table,
-    load,
-    lookup,
-)
+from snax_forge.char import FOUND, TECHS, CharError, Lookup, Table, load, lookup, pair_params
+from snax_forge.gen.block import STREAM_BLOCKS
 from snax_forge.gen.rtl import catalogue, check_params
 
 I64 = {"inType": "int64", "outType": "int64"}
@@ -23,28 +14,22 @@ I64 = {"inType": "int64", "outType": "int64"}
 
 @pytest.mark.parametrize("tech", TECHS)
 def test_every_entry_is_a_catalogue_datapath_with_complete_params(tech):
-    """Each entry's datapath is the catalogue's (through ``DATAPATH_RENAMES``), its params with each
-    point's lanes (and
-    depth) a valid and complete param set there, its rule known, its points unique."""
+    """Each entry's datapath is the catalogue's (or the stream block FifoPacker), its params with
+    each point's lanes (and depth) a valid and complete param set there, its rule known, its
+    points unique, a narrow fold's slope given."""
     cat, t = catalogue(), load(tech)
     assert t.tech == tech and t.source["snax_forge"] and t.source["snax_forge_experiments"]
     assert t.flop_um2 > 0 and t.e_load_pj > t.e_ctrl_pj > 0
-    renamed = {table: cat_name for cat_name, table in DATAPATH_RENAMES.items()}
-    assert set(renamed) <= set(t.blocks) and set(DATAPATH_RENAMES) <= set(cat)
-    for table_dp, entries in t.blocks.items():
-        dp = renamed.get(table_dp, table_dp)  # the table's old name, the catalogue's new one
-        assert dp in cat, dp
-        sig = cat[dp]["params"]
+    for dp, entries in t.blocks.items():
+        sig = STREAM_BLOCKS[dp] if dp in STREAM_BLOCKS else cat[dp]["params"]
         for e in entries:
-            assert e["lanes_rule"] in ("copy", "interpolate"), (dp, e["lanes_rule"])
-            keys = [(p["lanes"], p.get("depth")) for p in e["points"]]
+            rule = e["lanes_rule"]
+            assert rule in ("copy", "interpolate", "slope", "none"), (dp, rule)
+            assert (rule == "slope") == ("slope" in e), (dp, e["params"])
+            keys = [(p.get("lanes"), p.get("depth")) for p in e["points"]]
             assert len(keys) == len(set(keys)), (dp, keys)
             for p in e["points"]:
-                # a param the export predates at its default, a const one (k) unset
-                unset = {k: None for k, t in sig.items() if t["type"] == "const"}
-                full = {**unset, **TABLE_DEFAULTS.get(dp, {}), **e["params"], "lanes": p["lanes"]}
-                if "depth" in p:
-                    full["depth"] = p["depth"]
+                full = {**e["params"], **{k: p[k] for k in ("lanes", "depth") if k in p}}
                 assert set(full) == set(sig), (dp, sorted(full), sorted(sig))
                 check_params(dp, full, sig)
                 # >= 0: a LinkBuffer of depth 1 is its flops alone, no comb energy when gated
@@ -80,6 +65,14 @@ SMALL = _table({
     "LinkBuffer": [{"params": {"dtype": "int64"}, "lanes_rule": "copy",
                     "points": [_pt(1, 1.0, 0.1, 1), _pt(8, 9.0, 0.9, 1), _pt(1, 3.0, 0.3, 2),
                                _pt(1, 7.0, 0.7, 4)]}],
+    "SerialAccumulate": [{"params": {"inType": "int8", "outType": "int32"}, "lanes_rule": "slope",
+                          "slope": {"comb_um2": 2.0, "e_comb_pj": 0.25},
+                          "points": [_pt(8, 50.0, 4.0)]}],
+    "SimdLanes": [{"params": {"inTypes": ["int8", "int8"], "opType": "int16", "outType": "int16",
+                              "op": "mul", "k": None}, "lanes_rule": "copy",
+                   "points": [_pt(1, 5.0, 0.5)]}],
+    "FifoPacker": [{"params": {"inLanes": 1, "laneType": "int32", "words": 1}, "lanes_rule": "none",
+                    "points": [{"comb_um2": 100.0, "e_comb_pj": 0.5, "flops": 33, "load_bits": 17.0}]}],
 })  # fmt: skip
 MAC = {"inTypes": ["int64", "int64"], "accumulate": True}
 
@@ -122,26 +115,97 @@ def test_outside_the_measured_range_is_none():
     assert lookup(SMALL, "TreeAccumulate", tree, 16) is None  # above the last
     assert lookup(SMALL, "LinkBuffer", {"dtype": "int64"}, 1, 8) is None  # deeper than measured
     assert lookup(SMALL, "Mac", {**MAC, "accumulate": False}, 8) is None  # no entry
-    assert lookup(SMALL, "LinkBuffer", {"dtype": "int32"}, 1, 1) is None
-    assert lookup(SMALL, "SerialAccumulate", I64, 8) is None  # no datapath
+    assert lookup(SMALL, "SerialAccumulate", I64, 8) is None  # no entry at this pair
+    assert lookup(SMALL, "LaneAccumulate", I64, 8) is None  # no datapath
+
+
+def test_copy_starts_from_the_pairs_smallest_lanes():
+    """A pair measured at W0 = 8 only copies from there (lanes / W0 of its point)."""
+    t = _table({"Mac": [{"params": MAC, "lanes_rule": "copy", "points": [_pt(8, 80.0, 8.0)]}]})
+    assert lookup(t, "Mac", MAC, 2) == Lookup(20.0, 2.0, "copy")
+    assert lookup(t, "Mac", MAC, 32) == Lookup(320.0, 32.0, "copy")
+
+
+def test_a_narrow_fold_adds_its_slope_per_lane_from_the_nearest_point():
+    tree = {"inType": "int8", "outType": "int32"}
+    assert lookup(SMALL, "SerialAccumulate", tree, 8) == Lookup(50.0, 4.0, "measured")
+    assert lookup(SMALL, "SerialAccumulate", tree, 32) == Lookup(98.0, 10.0, "slope")
+    assert lookup(SMALL, "SerialAccumulate", tree, 2) == Lookup(38.0, 2.5, "slope")
+    assert lookup(SMALL, "SerialAccumulate", {**tree, "outType": "uint32"}, 8).found == "measured"
+
+
+def test_a_narrow_linkbuffer_is_the_int64_one_by_its_width():
+    assert lookup(SMALL, "LinkBuffer", {"dtype": "int32"}, 8, 1) == Lookup(4.5, 0.45, "width")
+    got = lookup(SMALL, "LinkBuffer", {"dtype": "uint16"}, 1, 3)
+    assert (got.comb_um2, got.e_comb_pj, got.found) == (1.25, 0.125, "width")
+
+
+def test_simdlanes_is_priced_at_its_widest_input_and_its_op_or_output():
+    """D176: inputs at the widest, the output at most the op's width, unsigned as signed, the
+    constants left None ignored."""
+    base = {"op": "mul", "k": None}
+    for ins, op, out in (
+        (["int8", "int8"], "int16", "int16"),
+        (["int8", "uint8"], "int16", "int64"),
+        (["int8", "int8"], "int32", "int16"),
+    ):
+        got = lookup(SMALL, "SimdLanes", {**base, "inTypes": ins, "opType": op, "outType": out}, 4)
+        assert got == Lookup(20.0, 2.0, "copy"), (ins, op, out)
+    assert pair_params(
+        "SimdLanes",
+        {"inTypes": ["int8", "int32"], "opType": "int32", "outType": "int64", "lanes": 4},
+    )["inTypes"] == ["int32", "int32"]
+
+
+def test_a_packer_by_its_lane_type_and_d_out():
+    got = lookup(SMALL, "FifoPacker", {"d_out": 2, "lanes": 1, "dtype": "int32"}, 1)
+    assert got == Lookup(100.0, 0.5, "measured", 17.0)
+    assert lookup(SMALL, "FifoPacker", {"d_out": 2, "lanes": 2, "dtype": "int16"}, 2) is None
 
 
 @pytest.mark.parametrize("tech", TECHS)
 def test_the_real_tables_on_chars_named_cases(tech):
-    """The cases the cost model names: TreeAccumulate at lanes 64 and SerialAccumulate at lanes 1 are
-    outside, int32 has no entry; a Mac at W = 4 is copied, a SerialAccumulate at 12
-    interpolated, a LinkBuffer of depth 3 interpolated."""
+    """The cases the cost model names: the int64 TreeAccumulate at lanes 64 and SerialAccumulate at
+    lanes 1 are outside; a Mac at W = 4 is copied, a SerialAccumulate at 12 interpolated, a
+    LinkBuffer of depth 3 interpolated; every narrow pair is there (D176)."""
     t = load(tech)
     i64 = {"inTypes": ["int64", "int64"], "opType": "int64", "outType": "int64"}
     mac = {**i64, "accumulate": True, "regOut": False}
-    assert lookup(t, "TreeAccumulate", {**I64, "op": "add"}, 64) is None
-    assert lookup(t, "SerialAccumulate", I64, 1) is None
-    assert lookup(t, "SerialAccumulate", {"inType": "int32", "outType": "int32"}, 8) is None
+    assert lookup(t, "TreeAccumulate", {**I64, "op": "add", "seed": False}, 64) is None
+    assert lookup(t, "SerialAccumulate", {**I64, "seed": False}, 1) is None
+    assert (
+        lookup(
+            t, "SerialAccumulate", {"inType": "int32", "outType": "int32", "seed": False}, 8
+        ).found
+        == "measured"
+    )
+    assert (
+        lookup(
+            t, "SerialAccumulate", {"inType": "int8", "outType": "int32", "seed": False}, 12
+        ).found
+        == "slope"
+    )
+    for i in (8, 16, 32, 64):
+        for o in (8, 16, 32, 64):
+            if o < i:
+                continue
+            ty = {"inTypes": [f"int{i}"] * 2, "opType": f"int{o}", "outType": f"int{o}"}
+            assert lookup(t, "Mac", {**ty, "accumulate": True, "regOut": False}, 8) is not None
+            assert lookup(t, "TreeAccumulate", {"inType": f"int{i}", "outType": f"int{o}", "op": "add",
+                                                "seed": False}, 8) is not None  # fmt: skip
+            for op in ("add", "mul"):
+                assert lookup(t, "SimdLanes", {**ty, "op": op, "streams": 2, "kCsr": False,
+                                               "k1Csr": False, "k2Csr": False}, 1) is not None  # fmt: skip
+    assert lookup(t, "LinkBuffer", {"dtype": "int8"}, 1, 4).found == "width"
+    assert (
+        lookup(t, "FifoPacker", {"d_out": 8, "lanes": 1, "dtype": "int8"}, 1).load_bits is not None
+    )
     assert lookup(t, "Mac", mac, 32).found == "measured"
     assert lookup(t, "Mac", mac, 4).found == "copy"
-    assert lookup(t, "SerialAccumulate", I64, 12).found == "interpolate"
+    assert lookup(t, "SerialAccumulate", {**I64, "seed": False}, 12).found == "interpolate"
     assert lookup(t, "LinkBuffer", {"dtype": "int64"}, 1, 3).found == "interpolate"
     assert lookup(t, "LinkBuffer", {"dtype": "int64"}, 1, 32) is None
-    assert {lookup(t, "SimdLanes", {**i64, "op": op}, 8).found
+    simd = {**i64, "streams": 2, "kCsr": False, "k1Csr": False, "k2Csr": False}
+    assert {lookup(t, "SimdLanes", {**simd, "op": op}, 8).found
             for op in ("add", "mul")} == {"measured"}  # fmt: skip
-    assert set(FOUND) == {"measured", "copy", "interpolate"}
+    assert set(FOUND) == {"measured", "copy", "interpolate", "slope", "width"}
