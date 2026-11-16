@@ -17,7 +17,7 @@ from snax_forge.lower import (
     task_list,
 )
 from snax_forge.lower import __main__ as cli
-from snax_forge.lower.derive import addresses
+from snax_forge.lower.derive import addresses, packed_values
 from tests.brm.helpers import affine_simd
 from tests.design.helpers import (
     SNAX_FORGE,
@@ -509,3 +509,18 @@ def test_a_seed_on_other_elements_than_its_write_is_refused():
     with pytest.raises(LowerError, match=r"node sum\.out: writes q in place of sum_sum_seed's "
                        r"read, but not the same elements in the same order"):  # fmt: skip
         task_list(_seeded("matvec_seed", reversed_seed))
+
+
+@pytest.mark.parametrize(("bounds", "strides", "want"), [
+    ([10], [4], ([5], [8])),  # matvec at i8, M = 10: five words
+    ([9], [2], ([3], [8])),  # rowsum M = 9, int16 out at d_out 4: the last word short
+    ([1], [0], ([1], [0])),  # dot: one result, one word
+    ([6, 4], [4, 24], ([3, 4], [8, 24])),  # a 4 x 6 int32 output: the innermost loop only
+])  # fmt: skip
+def test_a_packed_writer_moves_words(bounds, strides, want):
+    """CONTRACTS, "Task list": the innermost loop of n pushes at s bytes becomes
+    (ceil(n / d_out), d_out * s), the outer loops and the base unchanged."""
+    d_out = 4 if strides[0] == 2 else 2
+    got = packed_values({"base": 64, "temporal_bounds": bounds, "temporal_strides": strides,
+                         "spatial_strides": []}, d_out)  # fmt: skip
+    assert (got["temporal_bounds"], got["temporal_strides"], got["base"]) == (*want, 64)

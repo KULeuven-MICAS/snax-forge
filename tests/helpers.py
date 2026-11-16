@@ -54,17 +54,20 @@ def bound_vsum(w: int = 1, impl: str = "chisel_adder_tree") -> Graph:
 
 
 def imported(
-    kernel: str, dtypes: Mapping[str, str] | Iterable[tuple[str, str]] | None = None
+    kernel: str,
+    dtypes: Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
+    types: str | None = None,
 ) -> Graph:
-    """A kernel's import, once per kernel and dtypes (a dict or its items); no caller changes it."""
-    return _imported(kernel, tuple(sorted(dict(dtypes or {}).items())))
+    """A kernel's import, once per kernel, dtypes (a dict or its items) and type preset; no
+    caller changes it."""
+    return _imported(kernel, tuple(sorted(dict(dtypes or {}).items())), types)
 
 
 @cache
-def _imported(kernel: str, dtypes: tuple[tuple[str, str], ...]) -> Graph:
+def _imported(kernel: str, dtypes: tuple[tuple[str, str], ...], types: str | None) -> Graph:
     from snax_forge.dfg.import_sdfg import import_kernel
 
-    return import_kernel(kernel, dict(dtypes) or None)
+    return import_kernel(kernel, dict(dtypes) or None, types)
 
 
 def dot1_split(w_mul: int, w_sum: int, n: int = 2048) -> Recipe:

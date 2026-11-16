@@ -761,9 +761,10 @@ def test_the_whole_entrys_layout_packs_the_sets_from_960():
 # =============================================================================
 
 
-def _narrow(tmp_path, recipe: str) -> Path:
-    """``recipes/<folder>/<recipe>.json`` designed and generated under ``tmp_path``; the out folder."""
-    point = designed(tmp_path, recipe, recipe)
+def _narrow(tmp_path, recipe: str, sets: tuple[str, ...] = ()) -> Path:
+    """``recipes/<folder>/<recipe>.json`` (``--set`` each of ``sets``) designed and generated under
+    ``tmp_path``; the out folder."""
+    point = designed(tmp_path, recipe, recipe, sets)
     out = tmp_path / "gvsoc" / recipe
     with pytest.MonkeyPatch.context() as mp:
         mp.chdir(tmp_path)
@@ -851,3 +852,21 @@ def test_the_output_folder_is_the_design_point_s_or_its_flow_s(tmp_path):
     design = tmp_path / "out" / "design" / "vecadd_W8" / "design_point.json"
     assert out_dir(None, under, design) == under / "vecadd_W8"
     assert out_dir(tmp_path / "x", under, flow) == tmp_path / "x"
+
+
+@requires_submodule
+def test_a_packed_output_is_one_word_with_its_d_out(tmp_path):
+    """vsum at i8, W = 8: the int8 reader one channel of 8 lanes, the int32 sum packed 2 to a word
+    (D174): its writer one channel of one word, its port d_out 2, which snax-gvsoc's reader
+    takes."""
+    out = _narrow(tmp_path, "vsum_tree", ("types=i8", "W=8"))
+    acc = json.loads((out / "accelerator.json").read_text())
+    (unit,) = acc["accelerators"][0]["groups"][0]["units"]
+    assert unit["ports"]["out"] == {"port": "out", "dir": "out", "dtype": "int32", "lanes": 1,
+                                    "d_out": 2}  # fmt: skip
+    assert "d_out" not in unit["ports"]["a"]
+    writer = parsed(out / streamer_file("vsum_tree"))["data_writer_params"]
+    assert (writer["spatial_bounds"], writer["num_channel"]) == ([[1]], [1])
+    (a,) = snax_cfg().load(out / "snax_forge.hjson").cores[0].accelerators
+    (u,) = a.description.accelerators[0].groups[0].units
+    assert (u.ports["out"].dtype, u.ports["out"].d_out) == ("int32", 2)

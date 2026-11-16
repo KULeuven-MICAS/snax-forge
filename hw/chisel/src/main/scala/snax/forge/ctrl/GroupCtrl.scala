@@ -25,6 +25,7 @@ class GroupCtrlIO(desc: GroupDesc, jobWidth: Int = 32) extends Bundle {
   val busy     = Output(Bool())
   val pulse    = Output(Bool())
   val done     = Output(Bool())
+  val last     = Output(Bool())
   val cls      = Output(UInt(2.W))
 }
 
@@ -43,6 +44,8 @@ class GroupCtrlIO(desc: GroupDesc, jobWidth: Int = 32) extends Bundle {
   *   - `pulse`, the done pulse: high in E (the sink's last push, or a for the empty run), for `<tag>_csr`'s sticky done
   *     bit and BUSY_COUNTER.
   *   - Pins: `busy` and `done`, the done pulse registered: high in E + 1 (a + 1 for an empty run).
+  *   - `last`: the outer output's next push is the run's last result, from the counters only (`GroupRule`), for the
+  *     packer of a packed outer output (D174).
   *
   * Its ports: `in`, every unit's outer inputs' handshakes, unit by unit in port order; `out`, the outer output, its
   * owner's (`GroupDesc.output`); `units`, each unit's enables to its datapath; `links`, each buffer's, in link order (a
@@ -76,6 +79,7 @@ class GroupCtrl(val desc: GroupDesc, tag: String, jobWidth: Int = 32) extends Mo
   io.units     := rule.io.units
   io.links     := rule.io.links
   io.cls       := rule.io.cls
+  io.last      := rule.io.last
 
   private val busy     = rule.io.busy
   private val accepted = io.start.fire

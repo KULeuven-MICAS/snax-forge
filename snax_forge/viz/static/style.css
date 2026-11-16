@@ -482,11 +482,11 @@ table.c-cost-table tr.differs td, table.c-cost-table tr.differs th { background:
 .load-error { color: var(--mem); font-weight: 600; white-space: pre-wrap; overflow-wrap: anywhere; }
 .c-scroll { overflow: visible; }
 .c-canvas { position: relative; width: max-content; min-width: 100%; padding: var(--space-16) var(--space-8) var(--space-6); }
-.c-rows { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: var(--space-8); }
+.c-rows { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: calc(var(--space-8) + var(--space-2)); } /* room for the edges' dtype */
 .c-row { display: flex; gap: var(--space-4); justify-content: center; align-items: flex-start; }
 /* independent chains side by side, each a column of its own rows (api.py's _layout) */
 .c-cols { display: flex; gap: var(--space-14); justify-content: center; align-items: flex-start; }
-.c-col { display: flex; flex-direction: column; align-items: center; gap: var(--space-8); }
+.c-col { display: flex; flex-direction: column; align-items: center; gap: calc(var(--space-8) + var(--space-2)); }
 svg.dfg-edges { position: absolute; top: 0; left: 0; z-index: 0; pointer-events: none; overflow: visible; transition: opacity 0.15s; }
 .c-panel.settling svg.dfg-edges { opacity: 0; } /* while the boxes glide (dfg.js) */
 
@@ -503,6 +503,8 @@ svg.dfg-edges { position: absolute; top: 0; left: 0; z-index: 0; pointer-events:
 .c-node { position: relative; display: flex; flex-direction: column; align-items: stretch; min-width: 7rem; border: 1.5px solid var(--ink); border-radius: 4px; background: var(--panel); cursor: pointer; }
 .c-node.c-unit { border: 2px solid var(--busy); background: var(--busy-bg); }
 .c-node.c-link { border: 2px dashed var(--busy); background: var(--busy-bg); }
+/* a packed output's FifoPacker (api.py's packer_node): the containers' colour, as the memory side it feeds */
+.c-node.c-packer { border: 1.5px solid var(--data); background: color-mix(in srgb, var(--data) 10%, var(--panel)); }
 .c-text { padding: 0.15rem 0.6rem; font-size: 0.82em; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; white-space: nowrap; text-align: center; }
 /* a fold: an upside-down trapezoid, wide on top where the inputs come in, narrow at the bottom
    where the output leaves; ::before the edge's colour, .c-shape the fill inset by the edge's
@@ -524,9 +526,10 @@ svg.dfg-edges { position: absolute; top: 0; left: 0; z-index: 0; pointer-events:
 /* a kernel's scalar argument: a parameter hexagon (its edges labelled "alpha[0] · broadcast") */
 .c-pill.scalar { border: none; border-radius: 0; padding: 0.14rem 1.1rem; background: color-mix(in srgb, var(--data) 28%, var(--panel)); clip-path: polygon(0.6rem 0, calc(100% - 0.6rem) 0, 100% 50%, calc(100% - 0.6rem) 100%, 0.6rem 100%, 0 50%); }
 .c-badge { font-size: 0.8em; color: var(--muted); }
+.c-dtype { color: var(--muted); } /* the container's dtype, at the pill's own size */
 .c-share { margin-left: 0.4rem; padding: 0 0.3rem; border: 1.5px dashed var(--p); border-radius: 3px; font: 600 0.72rem ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
 
-/* edges: no text, a wide transparent stroke under each to click */
+/* edges: their container's dtype beside each (dfg.js), a wide transparent stroke under each to click */
 path.edge { fill: none; stroke: var(--edge); stroke-width: 1.3; }
 path.edge-hit { fill: none; stroke: transparent; stroke-width: 12; pointer-events: stroke; cursor: pointer; }
 path.arrow { fill: var(--edge); }
@@ -541,6 +544,8 @@ svg.dfg-edges text.edge-label.sel { fill: var(--hl); }
 svg.dfg-edges text.edge-label.at-start { paint-order: stroke; stroke: var(--bg); stroke-width: 4px; stroke-linejoin: round; }
 /* a collapsed block's port: the slice one firing takes, in the ink, not a link's green */
 svg.dfg-edges text.edge-label.slice { fill: var(--ink); font-weight: 500; }
+/* an edge's dtype: the page's font at its container's size (set in dfg.js), the grey of the badges, no band */
+svg.dfg-edges text.edge-label.dtype { font-family: inherit; font-weight: 400; fill: var(--muted); }
 /* a marked read's Aᵀ: the container's font size (set in dfg.js), its ink */
 svg.dfg-edges text.edge-label.transpose { font-family: inherit; font-weight: 700; fill: var(--ink); }
 
@@ -687,6 +692,7 @@ i.key.loop-temporal { background: var(--loop-temporal); }
 i.key.loop-spatial { background: var(--loop-spatial); }
 i.key.c-tasklet { background: var(--panel); box-shadow: inset 0 0 0 1.5px var(--ink); }
 i.key.c-unit { background: var(--busy-bg); box-shadow: inset 0 0 0 2px var(--busy); }
+i.key.c-packer { background: color-mix(in srgb, var(--data) 10%, var(--panel)); box-shadow: inset 0 0 0 1.5px var(--data); }
 i.key.c-fold { background: var(--ink); clip-path: polygon(0 0, 100% 0, 75% 100%, 25% 100%); }
 i.key.c-link { background: var(--busy-bg); border: 2px dashed var(--busy); }
 i.key.c-pill { background: color-mix(in srgb, var(--data) 18%, var(--panel)); box-shadow: inset 0 0 0 1.5px var(--data); border-radius: 6px; }

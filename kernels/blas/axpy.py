@@ -4,7 +4,7 @@ First kernel with a SCALAR argument and a two-op tasklet -- multiply then add,
 i.e. a MAC. That fused pair is the atom of every datapath downstream, so this
 is the smallest kernel that exercises operator chaining inside one tasklet.
 
-int32, packed two per 64-bit word.
+int32, ``x`` at ``ACC`` for the product; ``x`` narrower in the presets (``--set types=``).
 """
 
 import dace
@@ -12,11 +12,11 @@ import numpy as np
 
 from snax_forge.sdfg.spec import KernelSpec
 
-N = dace.symbol("N")
+N, ACC = dace.symbol("N"), np.int32  # one line: DaCe names the += after its line
 
 
 def axpy(alpha, x, y):
-    y += alpha * x
+    y += alpha * x.astype(ACC)
 
 
 def make_inputs(rng, n=1024):
@@ -40,4 +40,10 @@ SPEC = KernelSpec(
     bytes_moved=lambda n=1024: 3 * 4 * n,  # read x, read y, write y
     sweep_sizes=(1 << 10, 1 << 12, 1 << 14, 1 << 16, 1 << 18),
     tags=("scalar-arg", "mac", "streamable"),
+    types={"ACC": "int32"},
+    presets={
+        "i8": {"x": "int8", "y": "int32", "alpha": "int32", "ACC": "int32"},
+        "i16": {"x": "int16", "y": "int32", "alpha": "int32", "ACC": "int32"},
+        "i32": {"x": "int32", "y": "int64", "alpha": "int64", "ACC": "int64"},
+    },
 )

@@ -128,18 +128,20 @@ def test_int32_relu_casts_dace_writes():
     ("code", "message"),
     [
         ("__out = max(__in1, dace.int32(3000000000))", "3000000000 does not fit in int32"),
-        ("__out = max(__in1, dace.int32(-1))", None),
-        ("__out = max(__in1, dace.int64(0))", "cast to int64, not the output's type int32"),
-        ("__out = max(dace.int32(__in1), 0)", "a cast of a non-constant"),
+        ("__out = max(__in1, dace.int32(-1))", "out = max(in1, -1)"),
+        ("__out = max(__in1, dace.int64(0))", "cast to int64, not the output's or the op's type"),
+        ("__out = max(dace.int32(__in1), 0)", "out = max(int32(in1), 0)"),
+        ("__out = max(dace.float32(__in1), 0)", "cast to float32, not an integer type"),
     ],
 )
 def test_cast_rule(code, message):
-    """Only a constant cast to the output's type that fits is folded; the rest are refused."""
+    """A constant cast to the output's or the op's type that fits is folded, a cast of a value
+    kept in the grammar's form; the rest are refused."""
     sdfg = _relu_int32()
     _tasklet(sdfg).code = dace.properties.CodeBlock(code)
-    if message is None:
+    if message.startswith("out = "):
         g = import_sdfg(sdfg, "relu")
-        assert g.node("numpy_maximum").attrs["code"] == "out = max(in1, -1)"
+        assert g.node("numpy_maximum").attrs["code"] == message
         return
     with pytest.raises(SdfgImportError, match=message):
         import_sdfg(sdfg, "relu")

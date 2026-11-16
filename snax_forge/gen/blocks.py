@@ -26,6 +26,7 @@ from snax_forge import expr
 from snax_forge.brm import SEED, Instance
 from snax_forge.brm.dtypes import fits, result_type
 from snax_forge.common import CodedError
+from snax_forge.design.streamers import packed
 
 
 class GenError(CodedError):
@@ -35,19 +36,21 @@ class GenError(CodedError):
 @dataclass(frozen=True)
 class Port:
     """A unit's BRM port in ``accelerator.json``: the datapath's port, its direction (``in``
-    or ``out``, the BRM port's), its dtype, its lanes."""
+    or ``out``, the BRM port's), its dtype, its lanes; a packed outer output's d_out."""
 
     port: str
     dir: str
     dtype: str | None  # None: judged without a graph (module doc)
     lanes: int
+    d_out: int = 1  # an outer output's results per word through its packer (D174)
 
     def to_dict(self) -> dict[str, Any]:
-        return {"port": self.port, "dir": self.dir, "dtype": self.dtype, "lanes": self.lanes}
+        d = {"port": self.port, "dir": self.dir, "dtype": self.dtype, "lanes": self.lanes}
+        return d | ({"d_out": self.d_out} if self.d_out > 1 else {})
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> Port:
-        return cls(d["port"], d["dir"], d["dtype"], d["lanes"])
+        return cls(d["port"], d["dir"], d["dtype"], d["lanes"], d.get("d_out", 1))
 
 
 @dataclass(frozen=True)
@@ -83,6 +86,20 @@ class Datapath:
 
 
 DATAPATHS: dict[str, Datapath] = {}
+
+
+def fill_node(datapath: str, inst: Instance, graph: Any, node: Any) -> Fill:
+    """``datapath``'s adapter on the instance bound at ``node``, its op type the node's
+    ``opType`` where the kernel's casts set one (D143), else its inputs' result type."""
+    from dataclasses import replace
+
+    from snax_forge.brm import port_dtypes
+
+    f = DATAPATHS[datapath].fill(inst, port_dtypes(graph, node))
+    op_type = node.attrs.get("opType")
+    if op_type is None or f.op_type is None:
+        return f
+    return replace(f, op_type=op_type, scalars={s: op_type for s in f.scalars})
 
 
 def register_datapath(name: str, latency: int | str, adapter: Adapter, span: int | str = 1) -> None:
@@ -132,9 +149,8 @@ def _lanes(inst: Instance, want: dict[str, int], what: str) -> None:
 def _fill_ports(inst: Instance, dtypes: Mapping[str, str] | None, words: set[str],
                 what: str) -> dict[str, Port]:  # fmt: skip
     """Every port of the instance in its order: the binding's datapath port (by default the same
-    name), its
-    dtype and its lanes; a port in ``words`` must be whole 64-bit channels (``gen.lanes``),
-    the others are one word (a fold's output)."""
+    name), its dtype and its lanes; a port in ``words`` must be whole 64-bit channels
+    (``gen.lanes``) or a packed output (D174); the others are one word (a fold's output)."""
     mapping = inst.impl.binding.get("ports") or {}
     out = {}
     for p in inst.ports:
@@ -142,7 +158,8 @@ def _fill_ports(inst: Instance, dtypes: Mapping[str, str] | None, words: set[str
         if dtypes is not None:
             dtype = dtypes[p.name]
             bits, _ = port_dtype(dtype, f"{what} port {p.name}")
-            if p.name in words and n * bits % 64:
+            packs = packed(dtype, n, p.direction == "out", 64) > 1
+            if p.name in words and n * bits % 64 and not packs:
                 raise GenError(
                     "gen.lanes",
                     f"{what}: port {p.name}'s {n} lanes of {bits} bits are not whole 64-bit "

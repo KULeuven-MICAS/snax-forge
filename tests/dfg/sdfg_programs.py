@@ -126,8 +126,8 @@ def _cast(code: str) -> dace.SDFG:
     return sdfg
 
 
-def unsupported_cast() -> dace.SDFG:
-    """A cast of a value, not of a constant."""
+def value_cast() -> dace.SDFG:
+    """A cast of a value: kept, as the grammar's ``int64(a)``."""
     return _cast("o = dace.int64(a) // 3")
 
 

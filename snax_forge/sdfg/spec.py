@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import inspect
-from collections.abc import Callable
-from dataclasses import dataclass, replace
+import types as pytypes
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 import dace
@@ -26,6 +27,10 @@ class KernelSpec:
     bytes_moved: Callable | None = None  # **sizes -> compulsory traffic
     tags: tuple[str, ...] = ()
     sweep_sizes: tuple = ()  # entries: int (n=) or dict of size kwargs
+    # type parameters the function reads as globals (ACC in ``A.astype(ACC)``) -> their default
+    types: Mapping[str, str] = field(default_factory=dict)
+    # preset name -> {container or type parameter: dtype}, chosen with ``--set types=<name>``
+    presets: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.inout:
@@ -44,6 +49,44 @@ class KernelSpec:
         missing = params - set(self.descriptors)
         if missing:
             raise ValueError(f"{self.name}: no descriptor for {sorted(missing)}")
+        if clash := sorted(set(self.types) & set(self.descriptors)):
+            raise ValueError(f"{self.name}: type parameter {clash[0]!r} is also a container")
+        for name, preset in self.presets.items():
+            if unknown := sorted(set(preset) - set(self.descriptors) - set(self.types)):
+                raise ValueError(f"{self.name}: preset {name!r} names {unknown[0]!r}, neither a "
+                                 "container nor a type parameter")  # fmt: skip
+
+    def kernel_dtypes(self, preset: str | None, dtypes: Mapping[str, str],
+                      what: str = "types") -> dict[str, str]:  # fmt: skip
+        """The dtypes a recipe asks for: its preset's (``--set types=``), then each of
+        ``dtypes`` (``--set dtypes.X=``) on top; an unknown preset raises ValueError naming the
+        kernel's."""
+        if preset is not None and preset not in self.presets:
+            raise ValueError(f"{what}: {self.name} has no preset {preset!r} (presets: "
+                             f"{sorted(self.presets) or 'none'})")  # fmt: skip
+        return {**(self.presets[preset] if preset is not None else {}), **dtypes}
+
+    def with_types(self, dtypes: Mapping[str, str], what: str = "dtypes") -> KernelSpec:
+        """The spec with some containers' dtypes (``with_dtypes``) and type parameters
+        replaced: the function's globals rebound (``ACC = np.int32``), so both DaCe and the
+        reference compute at them."""
+        if unknown := sorted(set(dtypes) - set(self.descriptors) - set(self.types)):
+            raise ValueError(f"{what}: {unknown[0]!r} is not a container of {self.name} "
+                             f"({sorted(self.descriptors)}) nor a type parameter "
+                             f"({sorted(self.types) or 'none'})")  # fmt: skip
+        params = {k: v for k, v in dtypes.items() if k in self.types}
+        spec = self.with_dtypes({k: v for k, v in dtypes.items() if k not in self.types}, what)
+        if not params:
+            return spec
+        f = self.func
+        env = {**f.__globals__, **{k: getattr(np, v) for k, v in params.items()}}
+        func = pytypes.FunctionType(f.__code__, env, f.__name__, f.__defaults__, f.__closure__)
+        func.__module__, func.__qualname__ = f.__module__, f.__qualname__
+        return replace(spec, func=func)
+
+    def type_params(self, dtypes: Mapping[str, str]) -> dict[str, str]:
+        """The type parameters ``dtypes`` set to other than their default."""
+        return {k: v for k, v in dtypes.items() if k in self.types and self.types[k] != v}
 
     def with_dtypes(self, dtypes: dict[str, str], what: str = "dtypes") -> KernelSpec:
         """The spec with some containers' integer dtype replaced (a recipe's ``dtypes``):

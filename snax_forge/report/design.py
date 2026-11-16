@@ -6,7 +6,7 @@ graph has no recipe: the header names the graph and takes the kernel from the ru
 check. ``render_design`` writes the sections: header (kernel, recipe, symbols, platform, memory
 plan), components, accelerators (per streamer set its groups, movers, channels and CSRs, then
 per unit its BRM, params, latency and target II), streamers (one per mover: dtype, num_slc,
-num_ch, FIFO depth, loops), memories (each layout with its padding), estimate
+num_ch, d_out, FIFO depth, loops), memories (each layout with its padding), estimate
 (``estimate_table``: per group its cycles, expected BUSY_COUNTER and cost, then the cost by part;
 CONTRACTS, "Estimate" and "Cost model") and notes (the design notes, then movers whose
 containers share banks, and containers the DMA moves as padded beats).
@@ -90,6 +90,7 @@ class StreamerRow(Record):
     fifo_depth: int
     temporal_dims: int
     container: str | None
+    d_out: int = 1  # a packed output's results per word (D174)
 
 
 @dataclass
@@ -445,12 +446,12 @@ def build_design(
             ref = point.streamers[m.users[0]]
             streamers.append(StreamerRow(m.name, None, m.port, "write" if m.write else "read",
                                          ref.dtype, ref.num_slc, m.lanes, m.fifo_depth,
-                                         m.temporal_dim, None))  # fmt: skip
+                                         m.temporal_dim, None, ref.d_out))  # fmt: skip
             continue
         ref = point.streamers[m.name]
         streamers.append(StreamerRow(m.name, ref.instance, m.port, "write" if m.write else "read",
                                      ref.dtype, ref.num_slc, m.lanes, m.fifo_depth,
-                                     ref.temporal_dims, containers.get(m.name)))  # fmt: skip
+                                     ref.temporal_dims, containers.get(m.name), ref.d_out))  # fmt: skip
     sets = []
     for acc_name, groups in a.accelerators():
         movers = [m for m in a.movers if m.set == acc_name]
@@ -573,6 +574,7 @@ def render_design(r: DesignReport) -> str:
             "dtype",
             "num_slc",
             "num_ch",
+            "d_out",
             "FIFO depth",
             "Temporal loops",
             "Container",
@@ -585,13 +587,14 @@ def render_design(r: DesignReport) -> str:
                 s.dtype,
                 s.num_slc,
                 s.num_ch,
+                s.d_out,
                 s.fifo_depth,
                 s.temporal_dims,
                 s.container,
             ]
             for s in r.streamers
         ],
-        {4, 5, 6, 7},
+        {4, 5, 6, 7, 8},
     )
     for m in r.memories:
         if m.mem == "l1":

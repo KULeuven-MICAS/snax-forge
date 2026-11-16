@@ -331,12 +331,21 @@ def designed_report(tmp_path, recipe, sets=()):
 def test_a_mover_shows_its_dtype_k_and_channels(tmp_path):
     """vecadd_i32: int32, num_slc 2 to a 64-bit word, so 4 lanes take num_ch 2 (num_channel)."""
     r = designed_report(tmp_path, "vecadd_i32")
-    assert [(s.port, s.dtype, s.num_slc, s.num_ch) for s in r.streamers] == [
-        ("a", "int32", 2, 2), ("b", "int32", 2, 2), ("out", "int32", 2, 2)
+    assert [(s.port, s.dtype, s.num_slc, s.num_ch, s.d_out) for s in r.streamers] == [
+        ("a", "int32", 2, 2, 1), ("b", "int32", 2, 2, 1), ("out", "int32", 2, 2, 1)
     ]  # fmt: skip
     text = render_design(r)
-    assert "| Streamer | Serves | Direction | dtype | num_slc | num_ch | FIFO depth |" in text
+    assert (
+        "| Streamer | Serves | Direction | dtype | num_slc | num_ch | d_out | FIFO depth |" in text
+    )
     assert "num_ch 2, FIFO depth" in text
+
+
+def test_a_packed_output_shows_its_d_out(tmp_path):
+    """matvec_3 at i8, W = 8: the sum's int32 output packed 2 to a word, on one channel."""
+    r = designed_report(tmp_path, "matvec_3", ["types=i8", "W=8"])
+    assert [(s.port, s.dtype, s.num_slc, s.num_ch, s.d_out) for s in r.streamers
+            if s.direction == "write"] == [("out", "int32", 2, 1, 2)]  # fmt: skip
 
 
 @pytest.mark.parametrize("w", [1, 4])

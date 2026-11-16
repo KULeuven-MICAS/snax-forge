@@ -205,6 +205,9 @@ register_kind(
 # accelerated
 # =============================================================================
 
+# opType: the op's type when the kernel's casts set it, other than its inputs' result type
+INT_TYPES = ("int8", "uint8", "int16", "uint16", "int32", "uint32", "int64", "uint64")
+
 
 def _check_accelerated(node: Node, scope: Scope, what: str) -> None:
     a = node.attrs
@@ -228,6 +231,8 @@ def _check_accelerated(node: Node, scope: Scope, what: str) -> None:
             ident(a[key], f"{what}.attrs.{key}")
     if "locals" in a:
         _check_locals(a["locals"], f"{what}.attrs.locals")
+    if "opType" in a and a["opType"] not in INT_TYPES:
+        raise DfgError(f"{what}.attrs.opType: must be an integer dtype, got {a['opType']!r}")
     # the replaced subtree itself is checked in graph.py, in this node's scope, with its locals
 
 
@@ -255,7 +260,7 @@ register_kind(
     "accelerated",
     required=("instance", "brm", "implementation", "code"),
     defaults={"params": {}, "replaced": None},
-    optional=("accelerator", "group", "locals"),
+    optional=("accelerator", "group", "locals", "opType"),
     body=True,
     normalize=_normalize_code,
     check=_check_accelerated,

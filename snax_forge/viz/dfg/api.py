@@ -8,8 +8,8 @@ reads a step back from the URL hash.
 
 ``graph_view`` lays a graph out in rows in execution order, containers between top-level nodes,
 a container versioned after each write (``A@1``) so no edge goes up; independent chains side by
-side (``columns``), blocks folded into one box (``fold``), groups and accelerators boxed. Every
-item has a compact ``text`` and a ``details`` entry keyed ``<kind>:<id>``, all made here.
+side (``columns``), blocks folded into one box (``fold``), groups, accelerators and a packed
+output's ``FifoPacker`` boxed. Every item has a ``text`` and a ``details`` entry, made here.
 ``step_view`` adds the marks, the estimate, its cost and the left column's sections;
 ``compare_view`` gives two steps' diff as rows ``{label, under, a, b, differs}``; ``partners``
 lists the maps a map can be fused, seeded or interchanged with, from the transforms' own sites.
@@ -39,11 +39,13 @@ from snax_forge.design.streamers import (
     firing_loops,
     group_of,
     instance_of,
+    packed,
     port_loops,
 )
 from snax_forge.dfg import DfgError, Graph, Memlet, Node
 from snax_forge.dfg.graph import BAKED, SCALAR, TRANSPOSE
 from snax_forge.dfg.subset import dim_names, map_range, parse_dim
+from snax_forge.estimate.bits import packer_bits
 from snax_forge.estimate.cost import L1_LABEL, PARTS, L1Cost, caveat, dec3, heading, shares, sig3
 from snax_forge.expr import ExprError
 from snax_forge.sandbox.blocks import BLOCK
@@ -191,6 +193,9 @@ def graph_view(e: Entry, platform: Any = None, est: Any = None,
         acc["text"] = acc["name"]
         for grp in acc["groups"]:
             grp["text"] = grp["name"]
+            for pk in out["packers"]:  # a packer is its group's hardware: inside its outline
+                if pk["instance"] in {u["instance"] for u in grp["units"]}:
+                    grp["tops"] = [*grp["tops"], pk["id"]]
     out["details"] = details(g, out, est)
     for b in out["blocks"]:
         out["details"][f"block:{b['name']}"] = block_details(g, b)
@@ -942,7 +947,8 @@ def cost_tables(est: Any, g: Graph | None = None) -> list[dict[str, Any]]:
             for kind, blocks in (("unit", c.units), ("link", c.links)):
                 for k, b in blocks.items():
                     dp = b.datapath or "–"
-                    raw.append((k, kind, dp if b.found else f"{dp} · not characterized",
+                    what = "packer" if b.datapath == "FifoPacker" else kind  # by <unit>.<port>
+                    raw.append((k, what, dp if b.found else f"{dp} · not characterized",
                                 b.found is not None, b.total_um2, b.task_nj))  # fmt: skip
             raw.append((f"{gname} ctrl", "ctrl", "control unit", True, c.ctrl_um2, c.ctrl_nj))
         if not raw:
@@ -1214,6 +1220,16 @@ def details(g: Graph, view: dict[str, Any], est: Any) -> dict[str, dict[str, Any
             elif n.kind == "link" and n.attrs["container"] in x.cost.links:
                 c = n.attrs["container"]
                 d["cost"] = cost_details(x.cost.links[c], x.bits.get(c, 0), est.tech)
+    for pk in view.get("packers", []):  # a packed output's FifoPacker (D174)
+        d = {"kind": "packer", "unit": pk["instance"], "port": pk["port"], "dtype": pk["dtype"],
+             "lanes": pk["lanes"], "d_out": pk["d_out"],
+             "what": f"{pk['d_out']} results to a 64-bit word, on one writer channel; placed by the flow",
+             "bits": packer_bits(pk["d_out"], pk["lanes"], pk["dtype"])}  # fmt: skip
+        key = f"{pk['instance']}.{pk['port']}"
+        for x in groups.values():
+            if x.cost is not None and key in x.cost.links:
+                d["cost"] = cost_details(x.cost.links[key], x.bits.get(key, 0), est.tech)
+        out[f"node:{pk['id']}"] = d
     ports = est.ports if est is not None else {}
     loops_of: dict[str, Any] = {}
     for edge in view["edges"]:
@@ -1299,12 +1315,42 @@ def container_text(g: Graph, name: str) -> str:
 
 
 def _container(g: Graph, name: str, placed: Any = None) -> dict[str, Any]:
-    """A container as the drawing shows it: its name and shape, its badge, whether it is
-    transient, and on a ``share_ports`` container its marker ``share_ports · <name>``."""
+    """A container as the drawing shows it: its name and shape, its dtype (in its box and
+    beside its edges), its badge, whether it is transient, and on a ``share_ports`` container
+    its marker ``share_ports · <name>``."""
     c = g.containers[name]
     shared = {"share": f"share_ports · {name}"} if SHARE_PORTS in c.attrs else {}
-    return {"name": name, "text": container_text(g, name), "badge": badge(placed),
+    return {"name": name, "text": container_text(g, name), "dtype": c.dtype, "badge": badge(placed),
             "transient": c.transient, "scalar": bool(c.attrs.get(SCALAR))} | shared  # fmt: skip
+
+
+def _lanes(n: Node, port: str) -> int | None:
+    """An accelerated node's lanes on ``port``; None for any other node, or an instance the BRM
+    library does not resolve."""
+    if n.kind != "accelerated":
+        return None
+    try:
+        return instance_of(n).lanes(port)
+    except (BrmError, ExprError, KeyError):
+        return None
+
+
+def packer_node(g: Graph, n: Node, port: str, data: str) -> dict[str, Any] | None:
+    """The ``FifoPacker`` the flow places on accelerated node ``n``'s output ``port`` when its
+    lanes fill less than a word (D174, design/streamers.py's ``packed``), as the drawing shows
+    it: a box between the port and ``data``'s container; None where the port is wired."""
+    lanes = _lanes(n, port) if port in n.outputs else None
+    if lanes is None:
+        return None
+    dtype = g.containers[data].dtype
+    d_out = packed(dtype, lanes, True, WORD_BITS)
+    if d_out == 1:
+        return None
+    inst = n.attrs["instance"]
+    return {"kind": "packer", "id": f"{inst}_{port}_packer", "instance": inst, "port": port,
+            "text": f"FifoPacker · d_out {d_out}", "d_out": d_out, "lanes": lanes, "dtype": dtype,
+            "inputs": [{"connector": "in", "data": data}],
+            "outputs": [{"connector": "out", "data": data}]}  # fmt: skip
 
 
 def memlet_text(m: Memlet) -> str:
@@ -1498,16 +1544,17 @@ def _uses(n: Node) -> list[tuple[str, Node, str, Memlet]]:
 
 
 def packing(g: Graph, n: Node, port: str, data: str) -> str | None:
-    """``int32 · num_slc 2 · num_ch 2`` for an accelerated node's port; None for any other node,
-    or an instance the BRM library does not resolve."""
-    if n.kind != "accelerated":
-        return None
-    try:
-        lanes = instance_of(n).lanes(port)
-    except (BrmError, ExprError, KeyError):
+    """``int32 · num_slc 2 · num_ch 2`` for an accelerated node's port (``int32 · num_slc 2 ·
+    d_out 2 · num_ch 1`` for a packed output, D174); None for any other node, or an instance the
+    BRM library does not resolve."""
+    lanes = _lanes(n, port)
+    if lanes is None:
         return None
     dtype = g.containers[data].dtype
     num_slc = max(1, WORD_BITS // bits(dtype))
+    d_out = packed(dtype, lanes, port in n.outputs, WORD_BITS)
+    if d_out > 1:
+        return f"{dtype} · num_slc {num_slc} · d_out {d_out} · num_ch 1"
     return f"{dtype} · num_slc {num_slc} · num_ch {-(-lanes // num_slc)}"
 
 
@@ -1825,6 +1872,7 @@ def _layout(g: Graph, tops: list[Node] | None = None) -> dict[str, Any]:
     version = dict.fromkeys(g.containers, 0)
     boxes: dict[str, dict[str, Any]] = {}
     edges: list[dict[str, Any]] = []
+    packed_out: list[dict[str, Any]] = []  # the packers drawn (packer_node), for the outlines
     top_rows: list[dict[str, Any]] = []  # the rows above every column
     rows_of: dict[int, list[dict[str, Any]]] = {col["id"]: [] for col in cols}
     seen: dict[int | None, set[str]] = {None: set()} | {col["id"]: set() for col in cols}
@@ -1862,13 +1910,19 @@ def _layout(g: Graph, tops: list[Node] | None = None) -> dict[str, Any]:
         kl, wrote = last.pop(col)
         names = nxt + [c for c in writes[kl] if c not in nxt]
         fresh = {c: list(dict.fromkeys(n.id for n, _, _ in wrote[c])) for c in writes[kl]}
+        packers = {(n.id, cn): pk for c in writes[kl] for n, cn, _ in wrote[c]
+                   if (pk := packer_node(g, n, cn, c)) is not None}  # fmt: skip
+        if packers:  # a row of their own between the node and the containers it writes
+            rows_of[col].append({"kind": "packers", "column": col, "nodes": list(packers.values())})
+            packed_out.extend(packers.values())
         below = box_row(rows_of[col], col, names, fresh, k)
         for c in writes[kl]:
             for n, cn, m in wrote[c]:
+                pk = packers.get((n.id, cn))
                 edges.append(
                     _edge(
                         f"{n.id}.{cn}",
-                        below[c],
+                        below[c] if pk is None else f"{pk['id']}.in",
                         c,
                         memlet_text(m),
                         "write",
@@ -1876,6 +1930,9 @@ def _layout(g: Graph, tops: list[Node] | None = None) -> dict[str, Any]:
                         slice_=memlet_text(m) if n.kind == "block" else None,
                     )
                 )
+                if pk is not None:  # out of the packer: d_out results a word
+                    edges.append(_edge(f"{pk['id']}.out", below[c], c, memlet_text(m), "write",
+                                       per_word=pk["d_out"]))  # fmt: skip
         return below
 
     csr_read = {n.inputs[c].data for n, _ in g.walk() for c in csr_connectors(g, n)}
@@ -1963,7 +2020,7 @@ def _layout(g: Graph, tops: list[Node] | None = None) -> dict[str, Any]:
                             "columns": [{"id": c, "rows": rows_of[c]} for c in ends]}]  # fmt: skip
     out = [{"id": col["id"], "tops": [tops[k].id for k in col["tops"]], "joins": col["joins"]}
            for col in cols]  # fmt: skip
-    return {"rows": rows, "boxes": boxes, "edges": edges, "columns": out}
+    return {"rows": rows, "boxes": boxes, "edges": edges, "columns": out, "packers": packed_out}
 
 
 def _edge(
@@ -1978,16 +2035,19 @@ def _edge(
     seed: bool = False,
     transpose: bool = False,
     slice_: str | None = None,
+    per_word: int | None = None,
 ) -> dict[str, Any]:
     """One memlet; ``pack`` the port's packing when it meets an accelerated node; ``local`` a
     fused nest's local value between its two tasklets, labelled with the container's name;
     ``label`` any other text drawn beside it (a scalar's ``alpha[0] · broadcast``, a fold's
     seed ``q[m_t]``); ``seed`` a fold's seed; ``transpose`` a read ``mark_transpose`` marked,
     its label ``Aᵀ``; ``slice_`` at a collapsed block's port, the part one firing takes
-    (``A[m_t, 0:N]``), drawn beside the edge."""
+    (``A[m_t, 0:N]``), drawn beside the edge; ``per_word`` out of a packer, its d_out."""
     out = {"id": f"{src}->{dst}", "from": src, "to": dst, "data": data, "text": text, "dir": side}
     if slice_ is not None:
         out["slice"] = slice_
+    if per_word is not None:
+        out["per_word"] = per_word
     if pack is not None:
         out["packing"] = pack
     if seed:

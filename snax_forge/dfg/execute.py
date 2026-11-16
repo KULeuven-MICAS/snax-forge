@@ -374,7 +374,8 @@ def _accel(node: Node, what: str, ctx: Context) -> tuple[Any, Any, list[str]]:
             idx = tuple(_int(d, ctx.symbols, f"{what}.inputs.{c}") for d in m.subset)
             values[c] = int(ctx.data[m.data][idx])
         instance = brm.resolve(a["implementation"], a["params"] | values)
-        return instance, function_of(instance, port_dtypes(ctx.graph, node)), slots
+        fn = function_of(instance, port_dtypes(ctx.graph, node), a.get("opType"))
+        return instance, fn, slots
     except BrmError as e:
         raise ExecutionError(f"{what}: {e}") from None
 

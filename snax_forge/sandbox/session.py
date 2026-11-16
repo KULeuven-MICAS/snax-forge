@@ -91,10 +91,10 @@ def _code(e: Exception) -> str:
     return "dfg" if isinstance(cause, DfgError) else "sandbox"
 
 
-def _import(kernel: str, dtypes: dict[str, str]) -> Graph:
+def _import(kernel: str, dtypes: dict[str, str], types: str | None = None) -> Graph:
     from snax_forge.dfg.import_sdfg import import_kernel
 
-    return import_kernel(kernel, dtypes or None)
+    return import_kernel(kernel, dtypes or None, types)
 
 
 def _unknown_param(transform: str, params: dict[str, Any],
@@ -173,7 +173,7 @@ class Session:
         """A new session on a recipe, replayed from its kernel's import; the file stays as is."""
         roots = roots or Roots()
         recipe = Recipe.load(path)
-        imported = _import(recipe.kernel, recipe.dtypes)
+        imported = _import(recipe.kernel, recipe.dtypes, recipe.types)
         return cls(cls._free(roots, recipe.name), recipe, imported, platform, roots)
 
     @classmethod
@@ -183,7 +183,7 @@ class Session:
         roots = roots or replace(Roots(), sessions=folder.parent)
         recipe = Recipe.load(folder / RECIPE_JSON)
         state = json.loads((folder / SESSION_JSON).read_text())
-        imported = _import(recipe.kernel, recipe.dtypes)
+        imported = _import(recipe.kernel, recipe.dtypes, recipe.types)
         return cls(folder.name, recipe, imported, state["platform"], roots, state["cursor"],
                    state.get("own_params"))  # fmt: skip
 

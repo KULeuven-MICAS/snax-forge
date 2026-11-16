@@ -166,7 +166,7 @@ def session_summary(s: Any) -> dict[str, Any]:
 
     r = s.recipe
     return {"name": s.name, "kernel": r.kernel, "params": dict(r.params),
-            "symbols": dict(r.symbols), "dtypes": dict(r.dtypes),
+            "symbols": dict(r.symbols), "dtypes": dict(r.dtypes), "types": r.types,
             "steps": [x.to_dict() for x in r.steps], "cursor": s.cursor, "n": s.n,
             "labels": [_label(s.step_name(k)) for k in range(s.n + 1)],
             "undo": s.cursor - 1 if s.cursor > 0 else None,

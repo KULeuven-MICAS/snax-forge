@@ -152,7 +152,8 @@ class LinkEnables(depth: Int) extends Bundle {
   * which needs every one of that unit's outer valids; a seeded unit's seed (its last outer input) only on its job's
   * first beat (fire = a.valid ∧ (¬first ∨ seed.valid)), and its ready is that firing (seed.ready = fire ∧ first). The
   * outer output's valid is its owner's offer, never its ready's. `cls` is the cycle's class, judged at the owner, as
-  * the run line counts it: busy 0, stall_in 1, stall_out 2, flush 3.
+  * the run line counts it: busy 0, stall_in 1, stall_out 2, flush 3. `last`: the sink's next push is the run's last
+  * result (the done formula without the push), for a packed outer output's `FifoPacker` (D174).
   */
 class GroupRule(val desc: GroupDesc, jobWidth: Int = 32) {
   // NB (D153): a unit counts its results in nested counters, never against n_k; snax-gvsoc's SnaxGroupRule must
@@ -195,6 +196,7 @@ class GroupRule(val desc: GroupDesc, jobWidth: Int = 32) {
     val links    = MixedVec(desc.buffers.map(i => new LinkEnables(desc.links(i).depth)))
     val busy     = Output(Bool())
     val done     = Output(Bool())
+    val last     = Output(Bool())
     val cls      = Output(UInt(2.W))
   })
 
@@ -336,13 +338,18 @@ class GroupRule(val desc: GroupDesc, jobWidth: Int = 32) {
 
   // The sink's R-th push ends the run (the done formula above): then every unit has fired its n, nothing is in flight
   // and every buffer is empty, SnaxGroupRule's finished()
-  private val sinkL = descs(owner).latency
-  private val done  = busy && give(owner) &&
+  // NB (D174): lastResult is done's formula without give(owner), registers and the csr's JOBS only, never the push:
+  // the packer's room, which the sink's frozen reads, must not depend on itself (snax-gvsoc's SnaxPacker: pushes =
+  // results - 1)
+  private val sinkL      = descs(owner).latency
+  private val lastResult = busy &&
     (if (sinkL == 0) st(owner).gInc.get === jobs else !left(owner)) &&
     !(if (sinkL > 1) st(owner).v.take(sinkL - 1).reduce(_ || _) else false.B)
+  private val done = lastResult && give(owner)
 
   io.done := done
   io.busy := busy
+  io.last := lastResult
 
   // The registers, as step() (the backward pass the pipeline, the II and the lane; then the buffers) and start() (the
   // II gap carries over) change them

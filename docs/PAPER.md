@@ -74,15 +74,15 @@ The ISPASS 2027 paper (PAP3) carries E1–E4, E7 and E11, with E5 if it lands; t
 
 ### 6.1 Kernel set
 
-NPBench's DaCe sources, their structure kept, with the dtype as one parameter (D113). Integers come first: `int64` with an exact reference check through tier C, then `int8` in and `int32` accumulate from tier P on, as SNAX's GeMM (OpenGeMM) does. Float is a second pass per kernel, as a new BRM implementation. About a dozen kernels, chosen by the tier each exercises, the rest in the coverage table as named errors (FE2).
+NPBench's DaCe sources, their structure kept, with the dtype as one parameter (D113). Integers come first: `int64` with an exact reference check through tier C and, before the paper, `int8` in and `int32` accumulate on tier done and the untiered kernels, as SNAX's GeMM (OpenGeMM) does, with `int16` and `int32` in alongside as presets of one source (D113 · D173). Float is a second pass per kernel, as a new BRM implementation. About a dozen kernels, chosen by the tier each exercises, the rest in the coverage table as named errors (FE2).
 
 | Tier | Compute row | Kernels | Width |
 |---|---|---|---|
-| done | II 1, fold | vecadd, vecmul, vsum, dot | int64 |
+| done | II 1, fold | vecadd, vecmul, vsum, dot | int64; int8, int16, int32 in |
 | A | fold, no reuse | atax, bicg, mvt, gesummv | int64, exact |
 | B | multi-cycle, II > 1 | an integer divider unit; covariance's mean | int64, integer divide |
 | C | multi-phase | covariance (mean, center, product), then softmax | int64; softmax quantized: integer max, polynomial or table exp, integer divide (I-BERT style) |
-| P | int8 on kernels that already work | vecadd, dot, atax | int8 in, int32 out |
+| P | int8 on tier A, then requantization | atax, bicg, mvt | int8 in, int32 accumulate (open item 132) |
 | D | reuse (access axis) | gemver (rank-1 update, stride 0, D70), gemm, k2mm, k3mm, doitgen; jacobi_1d, jacobi_2d | int8 in, int32 accumulate; jacobi in a wider fixed-point type |
 | E | DL layers | mlp, conv2d_bias, lenet, resnet | int8 with requantization between layers |
 
@@ -225,7 +225,8 @@ The draft's line, then the author's after reading, which wins. A row whose secon
 | Cluster synthesis on the same macros | C4's cost check at cluster level, E11 | RAM1, then 2–3 composites and the homogeneous cluster at 45 nm |
 | `exp`, `max`, division | softmax in E5 | M7 tiers B and C (FE1b, FE1c; open item 37) |
 | Speed on long runs | E2 | open item 50 |
-| Packing (int8), tiling, the GeMM | E6, E9 | PACK1, M15, tier D: after the paper |
+| Narrow types: int8, int16, int32 in, outputs packed | E1, E4, E11 | M13 PACK1a (D113 · D173, D142 · D174) |
+| Requantization, tiling, the GeMM | E6, E9 | PACK1, M15, tier D: after the paper |
 | HLS engine as a BRM implementation | E8 | open item 28: after the paper |
 
 ## 10. Open questions

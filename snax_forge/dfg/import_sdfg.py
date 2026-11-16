@@ -6,8 +6,8 @@ containers (a non-transient Scalar one of shape [1] with ``sdfg.scalar``), the o
 body, each MapEntry/MapExit pair one map per parameter (outermost first), a Tasklet a tasklet,
 and a Reduce library node one map per input dimension around ``out = in1`` with a ``reduce``.
 The only folds done here: a Reduce's scalar copied into an array, or its view copied whole into
-a non-transient array, becomes a direct write. A constant cast to the tasklet's output dtype
-(``dace.int32(0)``) becomes the constant.
+a non-transient array, becomes a direct write; the casts and an ``astype``'s convert map fold
+as CONTRACTS, "SNAX-DFG" says (into value casts ``int32(x)`` on their readers).
 
 Names: containers keep the kernel's (a transient's without underscores); maps, tasklets and
 connectors take their DaCe name lower case without underscores (``clean``, ``fresh_all``),
@@ -38,7 +38,7 @@ from snax_forge.expr import ExprError, Value
 from .graph import SCALAR, Container, Graph, Memlet, Node
 from .kinds import DfgError
 from .loops import import_names
-from .reduce import REDUCE_OPS, Reduction
+from .reduce import REDUCE_OPS, Reduction, Seed
 from .subset import format_dim
 
 VARIABLES = ("i", "j", "k", "l")
@@ -153,6 +153,7 @@ class _Importer:
         containers = self._containers(set(symbols))
         self.outer_names = set(symbols) | set(containers)  # never a map variable
         body = self._scope(None, {}, 0)
+        body = _fold_converts(body, containers, self.containers)
         g = Graph(self.name, dict.fromkeys(symbols), containers, body)
         import_names(g)  # each variable after its dimension (loops.py)
         return Graph.from_dict(g.to_dict())
@@ -403,7 +404,11 @@ class _Importer:
         inputs = self._memlets((e.dst_conn, e.data) for e in self.state.in_edges(t))
         outputs = self._memlets((e.src_conn, e.data) for e in self.state.out_edges(t))
         dtypes = {self.sdfg.arrays[m.data].dtype.as_numpy_dtype().name for m in outputs.values()}
-        code = _rename_code(_fold_casts(t.code.as_string, dtypes, what), conns, what)
+        ins = [self.sdfg.arrays[m.data].dtype.as_numpy_dtype().name for m in inputs.values()]
+        allowed = (
+            set() if len(dtypes) != 1 else dtypes | {np.result_type(*ins).name} if ins else dtypes
+        )
+        code = _rename_code(_fold_casts(t.code.as_string, allowed, what), conns, what)
         return Node(
             fresh(clean(t.label), self.ids),
             "tasklet",
@@ -534,16 +539,17 @@ def _int_constant(node: ast.expr) -> int | None:
 
 
 def _fold_casts(code: str, dtypes: set[str], what: str) -> str:
-    """Tasklet code with each ``dace.<int type>(<int constant>)`` replaced by the constant.
+    """Tasklet code with each ``dace.<int type>(<int constant>)`` replaced by the constant, and
+    each integer cast of a value kept as a value cast (``int32(x)``).
 
-    Only a cast to the type of the tasklet's output (``dtypes``, one type)
-    of a constant that fits in it; any other cast is an error.
+    A constant only when cast to the type of the tasklet's output or its inputs' result type
+    (``dtypes``: there it is NumPy's weak literal) and it fits; any other cast is an error.
     """
     try:
         tree = ast.parse(code)
     except SyntaxError:
         return code  # the grammar check names it
-    out = next(iter(dtypes)) if len(dtypes) == 1 else None
+    out = sorted(dtypes)
 
     class Fold(ast.NodeTransformer):
         def visit_Call(self, node: ast.Call) -> ast.expr:
@@ -558,20 +564,114 @@ def _fold_casts(code: str, dtypes: set[str], what: str) -> str:
             value = _int_constant(node.args[0]) if one else None
             if dtype.kind not in "iu":
                 why = f"a cast to {dtype.name}, not an integer type"
-            elif dtype.name != out:
-                why = f"a cast to {dtype.name}, not the output's type {out or sorted(dtypes)}"
-            elif value is None:
-                why = "a cast of a non-constant"
+            elif not one:
+                why = "not a cast of one value"
+            elif value is None:  # a value cast, kept in the grammar's form
+                return ast.Call(ast.Name(dtype.name, ast.Load()), node.args, [])
+            elif dtype.name not in out:
+                why = f"a cast to {dtype.name}, not the output's or the op's type {out}"
             elif not np.iinfo(dtype).min <= value <= np.iinfo(dtype).max:
                 why = f"{value} does not fit in {dtype.name}"
             else:
                 return ast.Constant(value)
             raise SdfgImportError(
-                f"{what}: cast {ast.unparse(node)!r} is not imported, {why} (only a constant "
-                "cast to the output's type is)"
+                f"{what}: cast {ast.unparse(node)!r} is not imported, {why} (only an integer "
+                "cast of a value, or a constant cast to the output's type, is)"
             )
 
     return ast.unparse(Fold().visit(tree))
+
+
+def _convert(top: Node, containers: dict[str, Container]) -> tuple[str, str, str] | None:
+    """``(source, transient, dtype)`` when ``top`` is a convert map: maps down to one tasklet
+    ``out = T(inp)`` (or ``out = inp``) writing every element of a transient from the same
+    element of a container of its shape; else None."""
+    chain, n = [], top
+    while n.kind == "map" and len(n.body or []) == 1:
+        chain.append(n)
+        n = n.body[0]
+    if not chain or n.kind != "tasklet" or len(n.inputs) != 1 or len(n.outputs) != 1:
+        return None
+    (cin, m_in), (_, m_out) = *n.inputs.items(), *n.outputs.items()
+    lines = expr.statements(n.attrs["code"], n.id)
+    if len(lines) != 1 or m_out.reduce is not None:
+        return None
+    rhs = str(lines[0][1])
+    src, tmp = containers[m_in.data], containers[m_out.data]
+    dtype = next((t for t in expr.CASTS if rhs == f"{t}({cin})"), src.dtype if rhs == cin else None)
+    variables = [m.attrs["var"] for m in chain]
+    whole = all(m.attrs["range"] == f"0:{dim}" for m, dim in zip(chain, tmp.shape, strict=False))
+    ok = (
+        dtype == tmp.dtype
+        and tmp.transient
+        and m_in.data != m_out.data
+        and len(chain) == len(tmp.shape) == len(src.shape)
+        and src.shape == tmp.shape
+        and whole
+        and m_in.subset == m_out.subset == variables
+    )
+    return (m_in.data, m_out.data, dtype) if ok else None
+
+
+def _fold_converts(body: list[Node], containers: dict[str, Container],
+                   dace_names: dict[str, str]) -> list[Node]:  # fmt: skip
+    """``body`` with every convert map (``_convert``) folded into its readers, in place on
+    ``containers``; the ``tmp<k>`` named after DaCe's ``__tmp<k>`` that follow a folded one
+    renumbered to close the gap (the module doc)."""
+    folds = {}
+    for top in body:
+        found = _convert(top, containers)
+        if found is not None:
+            folds[id(top)] = found
+    if not folds:
+        return body
+    by_tmp = {tmp: (src, dt) for src, tmp, dt in folds.values()}
+
+    def visit(nodes: list[Node]) -> None:
+        for n in nodes:
+            if n.body:
+                visit(n.body)
+            if n.kind != "tasklet":
+                continue
+            for c, m in n.inputs.items():
+                if m.data not in by_tmp:
+                    continue
+                src, dt = by_tmp[m.data]
+                m.data = src
+                if containers[src].dtype != dt:
+                    n.attrs["code"] = "\n".join(
+                        f"{t} = {expr.substitute(e, {c: f'{dt}({c})'})}"
+                        for t, e in expr.statements(n.attrs["code"], n.id)
+                    )
+
+    out = [n for n in body if id(n) not in folds]
+    visit(out)
+    for tmp in by_tmp:
+        del containers[tmp]
+    # DaCe numbers its transients __tmp0, __tmp1, ... in order: close the folded ones' gaps
+    number = {ours: int(m[1]) for d, ours in dace_names.items()
+              if (m := re.fullmatch(r"__tmp(\d+)", d)) and ours == f"tmp{m[1]}"}  # fmt: skip
+    gone = sorted(number[t] for t in by_tmp if t in number)
+    renamed = {t: f"tmp{k - sum(g < k for g in gone)}" for t, k in number.items()
+               if t in containers and any(g < k for g in gone)}  # fmt: skip
+    if renamed:
+        kept = [(renamed.get(k, k), c) for k, c in containers.items()]  # in their order
+        containers.clear()
+        containers.update(kept)
+        _rename_data(out, renamed)
+    return out
+
+
+def _rename_data(nodes: list[Node], renamed: dict[str, str]) -> None:
+    """Every memlet (and fold seed) on a container in ``renamed`` moved to its new name."""
+    for n in nodes:
+        for m in n.memlets():
+            m.data = renamed.get(m.data, m.data)
+            if m.reduce is not None and m.reduce.seed is not None:
+                m.reduce = Reduction(m.reduce.op, None, Seed(renamed.get(m.reduce.seed.data,
+                                     m.reduce.seed.data), m.reduce.seed.subset))  # fmt: skip
+        if n.body:
+            _rename_data(n.body, renamed)
 
 
 def _rename_code(code: str, conns: dict[str, str], what: str) -> str:
@@ -592,19 +692,24 @@ def import_sdfg(sdfg: dace.SDFG, name: str) -> Graph:
     return _Importer(sdfg, name).run()
 
 
-def import_kernel(kernel: str, dtypes: dict[str, str] | None = None) -> Graph:
+def import_kernel(kernel: str, dtypes: dict[str, str] | None = None,
+                  types: str | None = None) -> Graph:  # fmt: skip
     """Build the kernel's simplified SDFG (as ``pixi run sdfg`` does), expand it
-    (``sdfg/expand.py``: MatMul and Transpose into dot's shape) and import it; with
-    ``dtypes`` (a recipe's), those containers at those dtypes, a DfgError naming an
-    unknown container."""
+    (``sdfg/expand.py``: MatMul and Transpose into dot's shape) and import it; at the kernel's
+    preset ``types`` (``i8``) and ``dtypes`` (a recipe's: containers or type parameters) on top,
+    a DfgError naming an unknown one. The type parameters set go into the graph's
+    ``type_params``."""
     from snax_forge.sdfg.build import build
     from snax_forge.sdfg.expand import expand
     from snax_forge.sdfg.loader import load
 
     spec = load(kernel)
-    if dtypes:
-        try:
-            spec = spec.with_dtypes(dtypes, f"recipe dtypes for kernel {kernel}")
-        except ValueError as e:
-            raise DfgError(str(e)) from None
-    return import_sdfg(expand(build(spec, simplify=True)), spec.name)
+    what = f"recipe types for kernel {kernel}"
+    try:
+        chosen = spec.kernel_dtypes(types, dict(dtypes or {}), what)
+        spec = spec.with_types(chosen, what)
+    except ValueError as e:
+        raise DfgError(str(e)) from None
+    g = import_sdfg(expand(build(spec, simplify=True)), spec.name)
+    g.type_params = spec.type_params(chosen)
+    return g

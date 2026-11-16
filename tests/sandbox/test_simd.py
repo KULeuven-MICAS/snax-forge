@@ -140,7 +140,7 @@ LISTED = (r"'simd' computes one of 'out = a \+ b' \(op = 'add', streams = 2\), .
          r"'out = max\(a, k\)' at its slot k = 0")),
         (lambda: relu(code="out = max(in1, 3000000000)"), {},
          (r"k = 3000000000 does not fit the op type int32 \(NumPy's result type of the input "
-          r"ports' dtypes; the literal is weak, NEP 50\)")),
+          r"ports' dtypes or casts; the literal is weak, NEP 50\)")),
         (lambda: relu(code="out = in1 + 128", dtype="int8"), {},
          r"k = 128 does not fit the op type int8"),
         (lambda: relu(code="out = in1 - -1", dtype="uint8"), {},

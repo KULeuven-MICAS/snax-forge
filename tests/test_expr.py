@@ -159,7 +159,10 @@ def test_max_min_kept_in_stored_form():
         ("max(a)", "max takes exactly two arguments"),
         ("min(a, b, c)", "min takes exactly two arguments"),
         ("max(a=1, b=2)", "max takes exactly two arguments"),
-        ("abs(a)", "call 'abs\\(a\\)' is not allowed \\(only max, min and width\\)"),
+        (
+            "abs(a)",
+            "call 'abs\\(a\\)' is not allowed \\(only max, min, width and the integer casts\\)",
+        ),
         ("dace.int32(0)", "is not allowed"),
         ("max(a, 1.5)", "Constant is not allowed"),
     ],
@@ -296,3 +299,31 @@ def test_ordered_names_and_occurrences():
     assert expr.ordered_names("max(in2, in1) + in2") == ["in2", "in1"]
     assert expr.occurrences("max(in2, in1) + in2", "in2") == 2
     assert expr.occurrences("max(a, 0)", "max") == 0
+
+
+# =============================================================================
+# Value casts (tasklet code, from a kernel's astype)
+# =============================================================================
+
+
+def test_a_cast_wraps_as_astype_and_keeps_its_form():
+    a = np.array([100, -100], dtype=np.int8)
+    got = expr.evaluate("int32(a) * int32(a)", {"a": a})
+    assert got.dtype == np.int32 and got.tolist() == [10000, 10000]
+    assert expr.evaluate("a * a", {"a": a}).tolist() == [16, 16]  # int8 wraps
+    assert expr.canonical("int8(300)") == 44 and type(expr.canonical("int8(300)")) is int
+    assert expr.canonical("int32(a)  *  b") == "int32(a) * b"
+    assert expr.names("int32(a) * b") == {"a", "b"}
+    assert expr.substitute("int32(a) * b", {"a": "x"}) == "int32(x) * b"
+
+
+def test_strip_casts():
+    assert expr.strip_casts("out = int32(in1) * int32(in2)", "t") == (
+        "out = in1 * in2", {"in1": "int32", "in2": "int32"})  # fmt: skip
+    assert expr.strip_casts("out = in1 + 3", "t") == ("out = in1 + 3", {})
+    with pytest.raises(ExprError, match="the cast 'int32\\(in1 \\+ in2\\)' is of an expression"):
+        expr.strip_casts("out = int32(in1 + in2)", "t")
+    with pytest.raises(ExprError, match="in1 is cast to int16 and to int32"):
+        expr.strip_casts("out = int16(in1) + int32(in1)", "t")
+    with pytest.raises(ExprError, match="the cast int32 takes exactly one argument"):
+        expr.check("int32(a, b)", "t")

@@ -42,7 +42,7 @@ from snax_forge.design import DesignError
 from snax_forge.design.hjson_platform import accelerators, platform_from_dict
 from snax_forge.design.platform import Platform
 from snax_forge.design.point import DesignPoint
-from snax_forge.design.streamers import instance_nodes, shared_movers, streamer_name
+from snax_forge.design.streamers import instance_nodes, shared_movers, streamer_name, word_bounds
 from snax_forge.dfg.reference import Goldens
 from snax_forge.estimate.cycles import EstimateError
 from snax_forge.lower import CError
@@ -172,14 +172,14 @@ def _movers(point: DesignPoint, name: str, inst: Instance,
         if s is None:  # a port on a link: no streamer
             continue
         port_dtype(dtypes[p.name], f"port {p.name}")  # intN or uintN (gen.dtype)
-        s0, *rest = s.spatial_bounds
-        if s0 % s.num_slc:
+        s0 = s.spatial_bounds[0]
+        if s0 % s.num_slc and s.d_out == 1:
             raise GenError(
                 "gen.lanes", f"streamer {s.name}: its fastest spatial bound {s0} is not whole "
                 f"words of num_slc = {s.num_slc} {dtypes[p.name]} slices",
             )  # fmt: skip
         mover = {
-            "spatial_bounds": [s0 // s.num_slc, *rest],  # in words
+            "spatial_bounds": list(word_bounds(s)),
             "temporal_dim": s.temporal_dims,
             "num_channel": s.num_ch,
             "fifo_depth": s.options.fifo_depth,

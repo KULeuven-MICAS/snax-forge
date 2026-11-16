@@ -232,12 +232,15 @@ class Node:
 
 @dataclass
 class Graph(JsonFile):
-    """A ``.snaxdfg``: symbols, containers and an ordered body of nodes."""
+    """A ``.snaxdfg``: symbols, containers and an ordered body of nodes; ``type_params`` the
+    kernel's type parameters it was imported at, where not their default (``{"ACC": "int32"}``),
+    so its reference runs at them too."""
 
     name: str
     symbols: dict[str, int | None] = field(default_factory=dict)
     containers: dict[str, Container] = field(default_factory=dict)
     body: list[Node] = field(default_factory=list)
+    type_params: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         _validate(self)
@@ -277,11 +280,12 @@ class Graph(JsonFile):
             "symbols": dict(self.symbols),
             "containers": {k: c.to_dict() for k, c in self.containers.items()},
             "body": [n.to_dict() for n in self.body],
+            **({"type_params": dict(self.type_params)} if self.type_params else {}),
         }
 
     @classmethod
     def from_dict(cls, d: Mapping[str, Any]) -> Graph:
-        _keys(d, ("name",), ("symbols", "containers", "body"), "graph")
+        _keys(d, ("name",), ("symbols", "containers", "body", "type_params"), "graph")
         name = d["name"]
         containers = d.get("containers", {})
         if not isinstance(containers, Mapping):
@@ -297,6 +301,7 @@ class Graph(JsonFile):
             dict(symbols),
             {k: Container.from_dict(c, f"container {k!r}") for k, c in containers.items()},
             [Node.from_dict(n, f"{name}.body[{i}]") for i, n in enumerate(body)],
+            dict(d.get("type_params", {})),
         )
 
 
@@ -314,6 +319,10 @@ def _validate(g: Graph) -> None:
             raise DfgError(f"{g.name}.symbols.{s}: must be an int or null, got {v!r}")
     for c, cont in g.containers.items():
         _check_container(g.symbols, c, cont)
+    for k, dt in g.type_params.items():
+        ident(k, f"{g.name}.type_params")
+        if not (isinstance(dt, str) and dt.startswith(("int", "uint")) and hasattr(np, dt)):
+            raise DfgError(f"{g.name}.type_params.{k}: must be an integer dtype, got {dt!r}")
     scope = Scope(frozenset(g.symbols), g.containers)
     ids: set[str] = set()
     instances: dict[str, tuple[Any, ...]] = {}
