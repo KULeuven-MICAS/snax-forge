@@ -2,7 +2,7 @@
 
     pixi run import-costs [--experiments DIR] [--tech nangate45]
 
-Copies, as they are, the block table ``results/char/<tech>/char_cg.json`` (clock-gated) to
+Copies, as they are, the block table ``results/char/<tech>/char.json`` (clock-gated) to
 ``<tech>.json`` and, into ``<tech>/``, ``results/ram/<tech>/ram_table.csv`` and
 ``results/strm/<tech>/``'s ``streamer.csv``, ``xbar.csv`` and ``xbar_kinds.json`` (the crossbar's
 read-only and write-only inputs); then writes ``<tech>/SOURCE`` with the repository, its commit
@@ -27,7 +27,7 @@ REPO = Path(__file__).resolve().parent.parent
 URL = "https://github.com/KULeuven-MICAS/snax-forge-experiments"
 # the name in SOURCE -> (where it goes under snax_forge/char/, where it is in snax-forge-experiments)
 PATHS = {
-    "block_table": ("{tech}.json", "results/char/{tech}/char_cg.json"),
+    "block_table": ("{tech}.json", "results/char/{tech}/char.json"),
     "ram_table.csv": ("{tech}/ram_table.csv", "results/ram/{tech}/ram_table.csv"),
     "streamer.csv": ("{tech}/streamer.csv", "results/strm/{tech}/streamer.csv"),
     "xbar.csv": ("{tech}/xbar.csv", "results/strm/{tech}/xbar.csv"),
