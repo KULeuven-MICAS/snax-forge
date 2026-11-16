@@ -1,5 +1,5 @@
-"""gen-block (``snax_forge/gen/block.py``): a catalogue block alone, checked against
-``hw/chisel/blocks.json`` before ``Emit --block``. The refusals need no JVM; one java call is
+"""gen-block (``snax_forge/gen/block.py``): a catalogue block or a stream block alone, checked
+against ``hw/chisel/blocks.json`` or ``STREAM_BLOCKS`` before ``Emit --block``. The refusals need no JVM; one java call is
 checked by its command line (a fake ``subprocess.run``), and a real one runs where sbt is."""
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ from snax_forge.gen.rtl import EMITTED_JSON
 TREE = {"inType": "int64", "outType": "int64", "lanes": 8, "op": "add", "seed": False}
 MAC = {"inTypes": ["int64", "int64"], "opType": "int64", "outType": "int64", "lanes": 1,
        "accumulate": True, "regOut": False}  # fmt: skip
+PACKER = {"inLanes": 1, "laneType": "int32", "words": 1}
 
 
 def entry(tmp_path: Path, datapath: str = "TreeAccumulate", **params) -> dict:
@@ -27,6 +28,14 @@ def entry(tmp_path: Path, datapath: str = "TreeAccumulate", **params) -> dict:
 def test_a_good_entry_passes(tmp_path):
     check_entry(entry(tmp_path))
     check_entry(entry(tmp_path, "Mac", **MAC))
+    check_entry(entry(tmp_path, "FifoPacker", **PACKER))
+
+
+def test_a_packer_whose_lanes_do_not_divide_its_beat_is_refused(tmp_path):
+    with pytest.raises(GenError) as e:
+        check_entry(entry(tmp_path, "FifoPacker", **{**PACKER, "inLanes": 3}))
+    assert e.value.code == "gen.params"
+    assert "give an inLanes that divides 2" in str(e.value)
 
 
 @pytest.mark.parametrize(
