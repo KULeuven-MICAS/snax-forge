@@ -176,7 +176,8 @@ function pill(v, key) {
   const b = v.boxes[key];
   const c = v.containers[b.container];
   return h("div", { class: `c-pill${c.transient ? " transient" : ""}${c.scalar ? " scalar" : ""}${b.again ? " again" : ""}`, "data-box": key, "data-sel": c.name },
-    h("b", {}, c.text), c.badge ? h("span", { class: "c-badge" }, c.badge) : null,
+    h("b", {}, c.text), c.dtype ? h("span", { class: "c-dtype" }, c.dtype) : null,
+    c.badge ? h("span", { class: "c-badge" }, c.badge) : null,
     c.share ? h("span", { class: "c-share" }, c.share) : null);
 }
 
@@ -231,7 +232,7 @@ function panel(v, k, pick) {
     // the outlines' margins can move boxes without resizing the canvas (a column shorter than
     // its neighbour), so the edges are drawn again until the margins hold
     for (let pass = 0; pass < 3; pass++) {
-      drawEdges(canvas, svg, v.edges, k);
+      drawEdges(canvas, svg, v.edges, k, v.containers);
       if (!drawOutlines(canvas, svg, v)) break;
     }
     outline();
@@ -254,7 +255,7 @@ function anchor(canvas, key) {
   return canvas.querySelector(`[data-box="${CSS.escape(key)}"]`) || canvas.querySelector(`[data-port="${CSS.escape(key)}"]`);
 }
 
-function drawEdges(canvas, svg, edges, k) {
+function drawEdges(canvas, svg, edges, k, containers = {}) {
   const c = canvas.getBoundingClientRect();
   svg.setAttribute("width", canvas.scrollWidth);
   svg.setAttribute("height", canvas.scrollHeight);
@@ -270,6 +271,7 @@ function drawEdges(canvas, svg, edges, k) {
   }
   const out = [];
   const xs = spread(canvas, edges);
+  const pillFont = getComputedStyle(canvas.querySelector(".c-pill") || canvas).fontSize; // the dtype labels' size
   for (const e of edges) {
     const a = anchor(canvas, e.from);
     const b = anchor(canvas, e.to);
@@ -293,7 +295,19 @@ function drawEdges(canvas, svg, edges, k) {
       const left = e.dir === "read" && x2 < x1 - 4; // an edge going left: its label on its left side
       const t = svgEl("text", { x: curveX(x1, y1, x2, y2, bend, sy) + (left ? -8 : 8), y: sy, "text-anchor": left ? "end" : "start",
         class: "edge-label at-start slice", "data-sel": e.data });
-      t.textContent = e.slice;
+      t.textContent = withType(e.slice);
+      out.push(t);
+    }
+    const dtype = containers[e.data] && containers[e.data].dtype;
+    const withType = (text) => (dtype ? `${text} · ${dtype}` : text); // where the edge has a label of its own already
+    if (dtype && !e.local && !e.slice && !(e.label && !e.transpose)) { // its container's dtype beside the edge, in the gap next to the container's box
+      // (a read's below the box it leaves, a write's above the box it enters), never over a box
+      const ty = e.dir === "read" ? y1 + 16 : y2 - 7;
+      const tx = curveX(x1, y1, x2, y2, bend, ty);
+      const left = x2 < x1 - 4; // an edge going left: its label on its left side
+      const t = svgEl("text", { x: tx + (left ? -7 : 7), y: ty, "text-anchor": left ? "end" : "start", class: "edge-label dtype", "data-sel": e.data });
+      t.style.fontSize = pillFont;
+      t.textContent = dtype;
       out.push(t);
     }
     if (e.label && e.transpose) { // a marked read (mark_transpose, api.py): Aᵀ beside its edge, just above the reader's top-level map, at the container's font size
@@ -305,10 +319,12 @@ function drawEdges(canvas, svg, edges, k) {
       out.push(t);
     } else if (e.label) { // a fused nest's local value (its name, no box), a scalar's broadcast (alpha[0] · broadcast) or a fold's seed (q[m_t]), api.py
       // a local value's right of its edge, halfway down (clear of the line and its arrow); a
-      // broadcast's at its start, beside the hexagon, so no map bar it passes hides it
-      const [tx, ty] = e.local ? [Math.max(x1, x2) + 10, (y1 + y2) / 2 + 4] : [x1 + 6, y1 + 14];
-      const t = svgEl("text", { x: tx, y: ty, class: `edge-label${e.local ? "" : " at-start"}`, "data-sel": e.data });
-      t.textContent = e.label;
+      // broadcast's at its start, beside the hexagon, so no map bar it passes hides it, on the side the
+      // edge leans away from (the next edge's dtype is on the other)
+      const away = !e.local && x2 >= x1 - 4; // an edge going right: its label on its left side
+      const [tx, ty] = e.local ? [Math.max(x1, x2) + 10, (y1 + y2) / 2 + 4] : [away ? x1 - 6 : x1 + 6, y1 + 14];
+      const t = svgEl("text", { x: tx, y: ty, "text-anchor": away ? "end" : "start", class: `edge-label${e.local ? "" : " at-start"}`, "data-sel": e.data });
+      t.textContent = withType(e.label);
       out.push(t);
     }
   }
@@ -521,8 +537,9 @@ function drawOutlines(canvas, svg, v) {
     const want = room.get(row);
     if (!want) continue;
     const gap = parseFloat(getComputedStyle(row.parentElement).rowGap) || 0; // what the rows keep already
-    grow(row, "marginTop", Math.max(0, Math.ceil(want.up - gap + 22))); // a pill's height clear of it
-    grow(row, "marginBottom", Math.max(0, Math.ceil(want.down - gap + 22)));
+    // a pill's height clear of it, and a line more for the edges' dtype labels beside the pill
+    grow(row, "marginTop", Math.max(0, Math.ceil(want.up - gap + 36)));
+    grow(row, "marginBottom", Math.max(0, Math.ceil(want.down - gap + 36)));
   }
   return changed;
 }

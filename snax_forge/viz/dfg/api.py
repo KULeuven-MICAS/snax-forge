@@ -1301,11 +1301,12 @@ def container_text(g: Graph, name: str) -> str:
 
 
 def _container(g: Graph, name: str, placed: Any = None) -> dict[str, Any]:
-    """A container as the drawing shows it: its name and shape, its badge, whether it is
-    transient, and on a ``share_ports`` container its marker ``share_ports · <name>``."""
+    """A container as the drawing shows it: its name and shape, its dtype (in its box and
+    beside its edges), its badge, whether it is transient, and on a ``share_ports`` container
+    its marker ``share_ports · <name>``."""
     c = g.containers[name]
     shared = {"share": f"share_ports · {name}"} if SHARE_PORTS in c.attrs else {}
-    return {"name": name, "text": container_text(g, name), "badge": badge(placed),
+    return {"name": name, "text": container_text(g, name), "dtype": c.dtype, "badge": badge(placed),
             "transient": c.transient, "scalar": bool(c.attrs.get(SCALAR))} | shared  # fmt: skip
 
 

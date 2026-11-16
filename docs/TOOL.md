@@ -207,6 +207,7 @@ Three read-only viewers and the reports. Each viewer serves on 127.0.0.1 until C
 
 **`view-dfg`** on a recipe's sandbox folder shows its steps in order. Give it `--platform`: without one, the Estimate costs only the datapath and control, not the streamers, crossbar and memory.
 
+- Each container's box shows its dtype (`A[N] int8 L1 · 64 B`), and each edge its container's dtype beside it, below the box it leaves or above the box it enters; an accelerated port's packing (`int32 · num_slc 2 · d_out 2 · num_ch 1`) is in the edge's Details.
 - Details of each item (click a box, a container, an edge or an outline), and the Estimate: the accelerator's cycles, the unmapped work's (one cycle per iteration, an assumption), their total, and the cost per accelerator in µm² and nJ (CONTRACTS, "Cost model").
 - The left column lists the Symbols, the Containers (`A: N · L1 · 16 KiB`) and the Bindings as a tree, accelerator ▸ group ▸ unit, each param with what it configures.
 - To compare two designs, give both folders: `pixi run view-dfg out/sandbox/dot_4/ out/sandbox/dot_5/ --platform platforms/snax_forge.json`. Each step is then named `<folder>/<stem>`, and Compare lays Details and the Estimate out as two columns, the cost cells as `before → after`.

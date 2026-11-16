@@ -157,6 +157,7 @@ def test_vecadd_accelerated():
     assert v["containers"]["A"] == {
         "name": "A",
         "text": "A[N]",
+        "dtype": "int64",
         "badge": "L1 · 512 B",
         "transient": False,
         "scalar": False,
