@@ -23,15 +23,17 @@ The known limits (C§14):
 - An accumulator's isolated fire costs 25 to 30 % more than a back-to-back one (its inputs change at one edge and its accumulator at the next, so its adders settle twice); the model has back-to-back fires only (X34).
 - Comb energy is counted per fire only, so a unit fed by another unit is undercounted when its inputs change more often than it fires: dot 4's sum fires once but sees 256 new Mac outputs. The kernel stays within 4 % because such sums are small.
 - A TreeAccumulate alone keeps the logic for its `first` pin, which dot 4 ties and firtool folds, so the table's comb area is above the block inside dot 4 by about 370 µm² on nangate45 (82 % at W = 1, 4 % at W = 32).
-- The table holds int64 only, the Mac in its accumulating form only, and ElementwiseLanes (now SimdLanes, mapped by `DATAPATH_RENAMES`: the table was measured before the rename) `add` and `mul` only, two-input points (`streams` 2 and no slot from a CSR, `kCsr`, `k1Csr`, `k2Csr` false, `TABLE_DEFAULTS`, so a one-stream SimdLanes such as relu's, or axpy's axpby, is not characterized); anything else is "not characterized" (its comb counted as 0, its flops still counted) and the design note `char.missing` names it.
+- The table holds the Mac in its accumulating form only, SimdLanes `add` and `mul` only with two streams and no slot from a CSR (so relu's one-stream `max` and axpy's `axpby` are not characterized), LaneAccumulate not at all, and a packer with one lane in only; anything else is "not characterized" (its comb counted as 0, its flops still counted) and the design note `char.missing` names it.
+- At a narrow pair with $w_{in} < w_{out}$ a register's upper bits copy the sign and toggle less, so $e_{\mathit{load}}$ prices it high, by up to 2.2×; a narrow SerialAccumulate's lanes cost more energy than the slope rule says (32 % at 8/32 and W = 32, on 0.4 pJ a fire).
 
 ## Where the numbers come from
 
-Every number is measured by CHAR1 in [snax-forge-experiments](https://github.com/KULeuven-MICAS/snax-forge-experiments) (`results/char/`, X28 to X37; run notes `results/char/runs/2026-11-03_char1_r0.md` to `_r4.md`), synthesized again with clock gating (X83 · X85, `results/strm/runs/` of CG2), and `<tech>.json` here is a byte copy of its `results/char/<tech>/char.json`, which names the snax-forge and snax-forge-experiments commits it was made from.
+Every number is measured by CHAR1 and CHAR2 in [snax-forge-experiments](https://github.com/KULeuven-MICAS/snax-forge-experiments) (`results/char/`, X28 to X37, X89; run notes `results/char/runs/2026-11-03_char1_r0.md` to `_r4.md` and `2026-11-16_char2_r2.md` to `_r5.md`), synthesized with clock gating (X83 · X85), and `<tech>.json` here is a byte copy of its `results/char/<tech>/char.json`, which names the snax-forge and snax-forge-experiments commits it was made from.
 
-- **The blocks** (X28, X29): 27 points at int64, each one catalogue block at full params emitted alone by snax-forge's `gen-block` (`Emit --block`, C§10), the module an accelerator holds with its asynchronous reset: ElementwiseLanes add and mul at W = 1, 8, 32; the accumulating Mac at W = 1, 8, 32; TreeAccumulate at W = 1, 2, 4, 8, 16, 32; SerialAccumulate at W = 2, 4, 8, 16, 32; LinkBuffer at depth 1, 2, 4, 8, 16 at W = 1 and depth 1 at W = 8 and 32.
+- **The blocks** (X28, X29): 27 points at int64, each one catalogue block at full params emitted alone by snax-forge's `gen-block` (`Emit --block`, C§10), the module an accelerator holds with its asynchronous reset: SimdLanes add and mul at W = 1, 8, 32; the accumulating Mac at W = 1, 8, 32; TreeAccumulate at W = 1, 2, 4, 8, 16, 32; SerialAccumulate at W = 2, 4, 8, 16, 32; LinkBuffer at depth 1, 2, 4, 8, 16 at W = 1 and depth 1 at W = 8 and 32.
+- **The types** (X89, D176): every compute block at its 10 width pairs ($w_{in}$, $w_{out}$ in 8, 16, 32, 64, $w_{out} \ge w_{in}$, the op at $w_{out}$), at one lane count $W_0$: SimdLanes at 1, the Mac and the folds at 8; each input port driven at its own width. FifoPacker with one lane in and one word out at int32, int16 and int8 (d_out 2, 4, 8).
 - **Synthesis** (X30, X79): Synopsys Design Compiler on Nangate 45 nm, a 10 ns clock, the block as the top, `compile_ultra -no_autoungroup -gate_clock`, no wire-load model; a block alone has the area of the same module inside the accelerators within 0.05 % wherever the accelerator drives its pins.
-- **Activity** (X31, X32): a zero-delay Questa simulation of the mapped netlist with rand64 data (seed 0), inputs changing at the rising edge, through fixed 128-cycle windows after a lead-in: `busy` (a fire every cycle; SerialAccumulate a read every cycle) and `idle` (the enable at 0, every other input held) for ElementwiseLanes, Mac, TreeAccumulate and SerialAccumulate, and `stream` (a load every cycle at full occupancy) for LinkBuffer; the VCD is cut per window and turned into a SAIF.
+- **Activity** (X31, X32): a zero-delay Questa simulation of the mapped netlist with rand64 data (seed 0), inputs changing at the rising edge, through fixed 128-cycle windows after a lead-in: `busy` (a fire every cycle; SerialAccumulate a read every cycle; FifoPacker a push every cycle) and `idle` (the enable at 0, every other input held) for SimdLanes, Mac, TreeAccumulate, SerialAccumulate and FifoPacker, and `stream` (a load every cycle at full occupancy) for LinkBuffer; the VCD is cut per window and turned into a SAIF.
 - **Power** (X33): PrimePower on the same netlist, library and constraints, per window the energy per cycle of each power group: comb, and the flops' (clock, register and sequential, the clock gates among them) as e_flop; e_bit is e_flop over the block's flops.
 - **The table** (X37, X83 · X85): `report/char_export.py` (`pixi run char-export`) writes `char.json` from the gated rows; an integrated clock gate counts as a sequential cell, and the control factor is measured on the gated forge accelerators.
 
@@ -39,23 +41,28 @@ Every number is measured by CHAR1 in [snax-forge-experiments](https://github.com
 
 | Field | How | From |
 |---|---|---|
-| `flop.area_um2` | sequential area over sequential cells, the clock gates among them | the registered points: 5.296378 µm² |
+| `flop.area_um2` | sequential area over sequential cells, the clock gates among them | the registered int64 points: 5.296378 µm² |
 | `flop.e_load_fj` | the mean busy e_bit | the points whose flops all load every cycle: Mac, TreeAccumulate and SerialAccumulate busy, LinkBuffer depth 1 stream: 17.8153 fJ |
 | `flop.e_hold_fj` | the mean idle e_bit | the idle points of Mac, TreeAccumulate and SerialAccumulate: 0.0655 fJ, which gating leaves of a held bit; used only through $e_{\mathit{ctrl}}$ |
 | `ctrl.counter_factor` | a forge point's `ctrl/ctrl` energy per cycle over its sequential cells × e_hold, the mean over the points | the 41 tier-done forge points with gated power (49 to 147): 82.87, so $e_{\mathit{ctrl}}$ = 82.87 × 0.0655 fJ = 5.428 fJ |
 | a point's `comb_um2` | the block's comb area | `char_synth.csv` |
 | a point's `e_comb_pj` | the comb energy per cycle of the busy window, a fire every cycle, so per fire; LinkBuffer's stream window, per load (0 at depth 1: a register alone) | `char_power.csv` |
-| an entry's `lanes_rule` | `copy` where the block is lane copies (ElementwiseLanes, Mac, LinkBuffer: their W = 8 and 32 points are within 3 % of W × the lanes-1 point), `interpolate` where it is not (TreeAccumulate, SerialAccumulate) | X37 |
+| an entry's `lanes_rule` | `copy` where the block is lane copies (SimdLanes, Mac, LinkBuffer: their W = 8 and 32 points are within 3 % of W × the lanes-1 point), `interpolate` for the int64 TreeAccumulate and SerialAccumulate, `slope` for a narrow one, `none` for a packer | X37, X89 |
+| a narrow fold's `slope` | the int64 entry's cost per lane between W = 8 and 32, times $w_{in}$ / 64: a lane is a leaf or a mux input at the input's width, while the accumulator stays at the output's | X89 |
+| a packer's `flops`, `load_bits` | its held slots and counter, $(d_{out} - 1)\thinspace w + \lceil \log_2 d_{out} \rceil$; of them $(d_{out} - 1)/d_{out}$ of a slot and the counter load per push | X89 |
 
-A block's register bits are not in the table: they are the catalogue's `flops` on its params (`hw/chisel/blocks.json`, C§10), which CHAR1 checked against DC's sequential cells at every point.
+A block's register bits are not in the table: they are the catalogue's `flops` on its params (`hw/chisel/blocks.json`, C§10), which CHAR1 and CHAR2 checked against DC's sequential cells at every point (a packer's are `estimate/bits.py`'s, equal to its point's `flops`).
 
-**The lookup** (`lookup(table, datapath, params, lanes, depth)`, `__init__.py`) takes the entry whose params equal the block's (as the generator fills them, lanes and depth aside), then in order:
+**The lookup** (`lookup(table, datapath, params, lanes, depth)`, `__init__.py`) takes the entry whose params equal the block's at its width pair (`pair_params`, D176: lanes, depth and unset constants aside; a SimdLanes' and a Mac's inputs at their widest input, a SimdLanes' output at most its op's width, a Mac's at its output; unsigned as signed; a packer's `d_out`, `lanes` and `dtype` as its `inLanes`, `laneType` and `words`), then in order:
 
-1. a point at these lanes (and depth): used as is (`measured`);
-2. under `copy`: lanes × the lanes-1 point, a LinkBuffer's at the same depth (`copy`);
+1. a point at these lanes (and depth): used as is (`measured`; a packer's one point, with its `load_bits`);
+2. under `copy`: lanes / $W_0$ × the point at the smallest lanes $W_0$, a LinkBuffer's at the same depth (`copy`);
 3. under `interpolate`: linear between the two measured lanes around it (`interpolate`);
-4. a LinkBuffer depth no point has: linear between the two measured depths around it at lanes 1, then copied (`interpolate`);
-5. anything else: none (no entry with these params, or lanes or a depth outside the measured range: TreeAccumulate at lanes 64, SerialAccumulate at lanes 1, a LinkBuffer deeper than 16).
+4. under `slope`: the nearest measured point plus (lanes − its lanes) × the slope (`slope`);
+5. a LinkBuffer depth no point has: linear between the two measured depths around it, then copied (`interpolate`); a LinkBuffer at a dtype with no entry: the int64 entry's value × width / 64 (`width`);
+6. anything else: none (no entry with these params, or lanes or a depth outside the measured range: the int64 TreeAccumulate at lanes 64, the int64 SerialAccumulate at lanes 1, a LinkBuffer deeper than 16).
+
+Worked example, dot at i8 and W = 32: its Mac at (8, 32) is 32 / 8 × the W = 8 point, 4 × 3416.5 = 13 666 µm² and 4 × 4.132 = 16.528 pJ a fire; a TreeAccumulate sum at (32, 32) and W = 32 is 1084.5 + 24 × 267.06 × 32 / 64 = 4289.2 µm².
 
 ## The model
 
@@ -64,6 +71,8 @@ Per unit and per buffer link, over one run of the accelerator:
 $$E_{\mathit{unit}} = n_{\mathit{fire}}\thinspace(e_{\mathit{comb}} + n_{\mathit{bits}}\thinspace e_{\mathit{load}})$$
 
 $$A_{\mathit{unit}} = A_{\mathit{comb}} + n_{\mathit{bits}}\thinspace A_{\mathit{flop}}$$
+
+A packer's bits that load per push are its point's `load_bits` in place of $n_{\mathit{bits}}$ in $E$ (only one held slot loads a push, none on the push that sends).
 
 and per group its control unit, over the accelerator's $C_{\mathit{acc}}$ cycles:
 

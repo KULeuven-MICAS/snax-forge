@@ -1061,14 +1061,14 @@ What a design costs in area and energy before any synthesis, beside the estimate
 
 | File in `snax_forge/char/` | Holds | From |
 |---|---|---|
-| `<tech>.json` | `tech`, `clock_ns`, `units`, `source`; `flop` (`area_um2`, `e_load_fj`, `e_hold_fj`); `ctrl.counter_factor`; `blocks`, per datapath entries of `params`, `lanes_rule` (`copy`, `interpolate`) and `points` (`lanes`, `depth`, `comb_um2`, `e_comb_pj`); $e_{\mathit{ctrl}}$ is `counter_factor` × `e_hold_fj` | snax-forge-experiments' `results/char/<tech>/char.json`, X37, X83 · X85 |
+| `<tech>.json` | `tech`, `clock_ns`, `units`, `source`; `flop` (`area_um2`, `e_load_fj`, `e_hold_fj`); `ctrl.counter_factor`; `blocks`, per datapath (and `FifoPacker`) one entry per params, so per width pair: `params`, `lanes_rule` (`copy`, `interpolate`, `slope`, `none`), a narrow fold's `slope` (`comb_um2`, `e_comb_pj` per lane) and `points` (`lanes`, `depth`, `comb_um2`, `e_comb_pj`; a packer's `flops`, `load_bits`); $e_{\mathit{ctrl}}$ is `counter_factor` × `e_hold_fj` | snax-forge-experiments' `results/char/<tech>/char.json`, X37, X83 · X85, X89 |
 | `<tech>/streamer.csv` | one reader: FIFO depth 2–16 × loops 1–7 × channels 1–16, `area_um2`, `e_beat_pj` | X52 · X82, X83 · X85 |
 | `<tech>/xbar.csv` | the sparse interconnect: inputs 4–64 × banks 16, 32, 64, `area_um2`, `e_access_pj` where inputs ≤ banks | X53 · X54, X83 · X85 |
 | `<tech>/xbar_kinds.json` | the factor form's $f_{\mathit{ro}}$ and $f_{\mathit{wo}}$ (0.395299, 0.409746), the crosspoint form's coefficients | X71 |
 | `<tech>/ram_table.csv` | CACTI 7: depth 32–4096 × width 8–256, `area_um2`, `e_rd_pj`, `e_wr_pj` | X47, X48 |
 
 - `pixi run import-costs` copies the five files as they are, with `<tech>/SOURCE` naming the commit and each file's path and sha256; never run in CI. `tests/char/` checks every block entry against the catalogue and the tables against `SOURCE`.
-- **Block lookup** (`lookup(table, datapath, params, lanes, depth=None)`): the entry whose params equal the block's (lanes and depth aside), then a point at these lanes as is (`measured`); else under `copy` lanes × the lanes-1 point; under `interpolate` linear between the two measured lanes around it; a LinkBuffer depth linear between two measured depths. Anything else is None (a dtype other than int64, lanes outside the range): the comb part counts 0 and `char.missing` names it.
+- **Block lookup** (`lookup(table, datapath, params, lanes, depth=None)`, D176): the entry whose params equal the block's at its width pair (`pair_params`: lanes, depth and unset constants aside; the widest input, a SimdLanes' output at most its op's width, unsigned as signed; a packer by its lane type and d_out), then a point at these lanes as is (`measured`); else under `copy` lanes / W0 × the point at the smallest lanes W0; under `interpolate` linear between the two measured lanes around it; under `slope` the nearest point plus the entry's slope per lane; a LinkBuffer depth linear between two measured depths, a narrower dtype the int64 entry × width / 64 (`width`). Anything else is None (a form the table does not hold, lanes outside the range): the comb part counts 0 and `char.missing` names it.
 - **Table lookup** (`tables.py`'s `streamer_cost`, `xbar_cost`, `bank`): linear along one axis at a time between the two grid values around the query, the crossbar's energy in 1/inputs, and where inputs > banks its value at inputs = banks. Outside the grid, linear through the two nearest grid values, clamped at zero, with `cost.extrapolated`. The banks are a lookup, never interpolated: a bank off the grid costs 0 and is noted. A writer is priced as a reader.
 
 ### The model
@@ -1110,7 +1110,7 @@ Worked example, vecmul at W = 8 and N = 2048 (three ports of 8 channels and one 
 
 | Field | Holds |
 |---|---|
-| a group's `cost.units`, `cost.links` | per unit and buffer link (and a packed output's packer, `FifoPacker` by `<unit>.<port>`, a fire per result, not characterized until open item 134): `datapath`, `fires`, `found` (`measured`, `copy`, `interpolate`, or null), `area` (`comb`, `flops`, `total`, µm²), `energy` (`fire` in pJ, `task` in nJ) |
+| a group's `cost.units`, `cost.links` | per unit and buffer link (and a packed output's packer, `FifoPacker` by `<unit>.<port>`, a fire per result, its point's `load_bits` loading per push): `datapath`, `fires`, `found` (`measured`, `copy`, `interpolate`, `slope`, `width`, or null), `area` (`comb`, `flops`, `total`, µm²), `energy` (`fire` in pJ, `task` in nJ) |
 | a group's `cost.ctrl` | `bits`, `area` (`flops`, `comb`, `total`), `energy` |
 | a group's `cost.area`, `cost.energy` | its units', links' and control unit's added up |
 | an accelerator's `cost.streamers` | per port's streamer: its counts (`depth`, `loops`, `channels`, `words`, `beats`), `area`, `e_beat`, `energy`, `extrapolated` |
@@ -1132,5 +1132,5 @@ Worked example, vecmul at W = 8 and N = 2048 (three ports of 8 channels and one 
   - A streamer is priced per beat and a crossbar access at one price: a streamer's clock while it waits, the crossbar's per-cycle part and its conflicts are not counted, and a writer is priced as a reader.
   - An accumulator's isolated fire costs 25–30 % more than a back-to-back one.
   - Deep LinkBuffers come out about 1.4–1.8× high on nangate45 (X35).
-  - The blocks are measured on random 64-bit data, so a datapath on real data (dot's) is priced high: 1.6× in the gated cluster at W = 2 to 16.
+  - The blocks are measured on random data at each port's width, so a datapath on real data (dot's) is priced high: 1.6× in the gated cluster at W = 2 to 16. At a narrow pair with w_in < w_out a register's upper bits copy the sign, so e_load prices it high by up to 2.2×.
   - Comb energy is counted per fire, so a unit fed by another is undercounted when its inputs change more often than it fires: dot 4's tree sum comes out at 0.06–0.19 of SYN2, the kernel staying within 4 %.
