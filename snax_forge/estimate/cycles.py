@@ -21,6 +21,7 @@ from math import prod
 from types import ModuleType
 from typing import Any
 
+from snax_forge.brm import SEED
 from snax_forge.common import CodedError, repo_root
 from snax_forge.design.streamers import (
     group_links,
@@ -155,8 +156,9 @@ def _datapath_blocks(graph: Graph, insts: dict[str, Any], members: list[str],
     producer's ``gives``, a load per output), and per unit and link its register bits (CONTRACTS,
     "Estimate"): a wire 0 and no block; a unit the generator does not fill a block with no params
     and no bits. A packed outer output's ``FifoPacker`` joins the links by ``<unit>.<port>``, a
-    fire per result; a sliced outer input's ``FifoSlicer`` (``_slicers``) only the bits, its cost
-    not yet modelled. The generator is imported here: gen/rtl.py imports this package."""
+    fire per result; a sliced outer input's ``FifoSlicer`` (``_slicers``) too, a fire per pop: its
+    unit's firings, a seed's one per job (its unit's results). The generator is imported here:
+    gen/rtl.py imports this package."""
     from snax_forge.gen.accelerator import Unit
     from snax_forge.gen.blocks import DATAPATHS, GenError, fill_node
     from snax_forge.gen.rtl import buffer_params, catalogue, fill, flops
@@ -198,7 +200,9 @@ def _datapath_blocks(graph: Graph, insts: dict[str, Any], members: list[str],
                 params = {"d_out": d_out, "lanes": port.lanes, "dtype": port.dtype}
                 links[f"{u}.{p}"] = Block("FifoPacker", params, gives[u])
                 bits[f"{u}.{p}"] = packer_bits(d_out, port.lanes, port.dtype)
-    for k, b in _slicers(graph, insts, members, ends).items():
+    for k, b in _slicers(graph, insts, members, ends).items():  # a sliced outer input's (D180)
+        u, p = k.split(".", 1)
+        links[k] = Block("FifoSlicer", b.params, gives[u] if p == SEED else firings[u])
         bits[k] = slicer_bits(b.params["d_in"])
     return units, links, bits
 
@@ -206,7 +210,7 @@ def _datapath_blocks(graph: Graph, insts: dict[str, Any], members: list[str],
 def _slicers(graph: Graph, insts: dict[str, Any], members: list[str],
              ends: list[tuple[Node, str, str]]) -> dict[str, Block]:  # fmt: skip
     """Each sliced outer input's ``FifoSlicer`` (D180) by ``<unit>.<port>``: its ``d_in``, lanes
-    and dtype, no fires (its cost is not modelled yet; ``char.missing`` names it)."""
+    and dtype, no fires (``_datapath_blocks`` gives its pops)."""
     fed, nodes, out = {to for _, _, to in ends}, {}, {}
     for n, _ in graph.walk():
         if n.kind == "accelerated":
@@ -246,7 +250,7 @@ def datapath_blocks(graph: Graph) -> dict[str, Block]:
         ends = group_links(graph, members)
         zero = dict.fromkeys(members, 0)
         units, bufs, _ = _datapath_blocks(graph, insts, members, ends, zero, zero)
-        out |= units | bufs | _slicers(graph, insts, members, ends)
+        out |= units | bufs
     return out
 
 

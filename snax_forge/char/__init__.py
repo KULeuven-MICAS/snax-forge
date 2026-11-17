@@ -8,7 +8,8 @@
 The table, its lookup (``FOUND``) and what None means are in CONTRACTS, "Cost model". A block is
 looked up at its width pair (D176, ``pair_params``): its widest input and its output, a
 SimdLanes' output at most its op's width, an unsigned type as the signed one of its width; a
-packed output's packer by its lane type and d_out. A param the fill leaves None is not compared.
+packed output's packer by its lane type and d_out, a sliced input's slicer by its lane type, lanes
+and d_in. A param the fill leaves None is not compared.
 """
 
 from __future__ import annotations
@@ -44,7 +45,8 @@ class CharError(CodedError):
 class Table:
     """One technology's table (CONTRACTS, "Cost model"); energies in pJ, areas in µm².
     ``e_load_pj`` is a flop bit's energy in a cycle it loads; ``e_ctrl_pj`` a control unit's per
-    bit and cycle, the table's ``counter_factor`` × ``e_hold_fj``."""
+    bit and cycle, the table's ``counter_factor`` × ``e_hold_fj``; ``e_hold_pj`` a flop bit's in a
+    cycle it holds (a slicer's hold)."""
 
     tech: str
     clock_ns: float
@@ -53,12 +55,14 @@ class Table:
     e_load_pj: float
     e_ctrl_pj: float
     blocks: dict[str, list[dict[str, Any]]]
+    e_hold_pj: float = 0.0
 
 
 @dataclass(frozen=True)
 class Lookup:
     """A block's comb area and comb energy per fire, and how it was found (``FOUND``);
-    ``load_bits`` the bits that load on a fire where not all of them do (a packer's), else None."""
+    ``load_bits`` the bits that load on a fire where not all of them do (a packer's or a
+    slicer's), else None."""
 
     comb_um2: float
     e_comb_pj: float
@@ -75,7 +79,8 @@ def load(tech: str) -> Table:
     d = json.loads(path.read_text())
     return Table(d["tech"], d["clock_ns"], dict(d["source"]), d["flop"]["area_um2"],
                  d["flop"]["e_load_fj"] / 1000,
-                 d["ctrl"]["counter_factor"] * d["flop"]["e_hold_fj"] / 1000, d["blocks"])  # fmt: skip
+                 d["ctrl"]["counter_factor"] * d["flop"]["e_hold_fj"] / 1000, d["blocks"],
+                 d["flop"]["e_hold_fj"] / 1000)  # fmt: skip
 
 
 def _between(x: int, pts: list[tuple[int, Lookup]]) -> Lookup | None:
@@ -116,12 +121,17 @@ def pair_params(datapath: str, params: Mapping[str, Any]) -> dict[str, Any]:
     (a SimdLanes' the smaller of its op and output: the low bits of a sum or product need only
     the operands' low bits, a wider output only copies the sign); the folds' and a LinkBuffer's
     types signed; a packer's ``d_out``, ``lanes`` and ``dtype`` as its ``inLanes``,
-    ``laneType`` and ``words``."""
+    ``laneType`` and ``words``, a slicer's ``d_in``, ``lanes`` and ``dtype`` as its ``words``,
+    ``laneType`` and ``outLanes``."""
     p = {k: v for k, v in params.items() if k not in _IGNORED and v is not None}
     if datapath == "FifoPacker" and "d_out" in p:
         w = _width(p["dtype"])
         return {"inLanes": params["lanes"], "laneType": _signed(w),
                 "words": p["d_out"] * params["lanes"] * w // WORD_BITS}  # fmt: skip
+    if datapath == "FifoSlicer" and "d_in" in p:
+        w = _width(p["dtype"])
+        return {"words": p["d_in"] * params["lanes"] * w // WORD_BITS, "laneType": _signed(w),
+                "outLanes": params["lanes"]}  # fmt: skip
     if datapath in ("SimdLanes", "Mac") and "inTypes" in p and "outType" in p:
         ins = list(p["inTypes"])
         w_in, w_out = max(_width(t) for t in ins), _width(p["outType"])
@@ -176,7 +186,7 @@ def lookup(table: Table, datapath: str, params: Mapping[str, Any], lanes: int,
         return {k: v for k, v in e["params"].items() if v is not None}
 
     entry = next((e for e in entries if key(e) == want), None)
-    if datapath == "FifoPacker":
+    if datapath in ("FifoPacker", "FifoSlicer"):
         if entry is None:
             return None
         p = entry["points"][0]

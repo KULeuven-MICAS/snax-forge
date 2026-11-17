@@ -389,8 +389,9 @@ def test_a_packed_output_moves_words_and_its_packer_is_priced(tmp_path):
 def test_a_sliced_input_moves_words_and_takes_one_cycle_more(tmp_path):
     """vecadd_i32 at W = 1 (N = 64, D180): each reader's 64 pops come from 32 words, the group's
     run is one cycle longer than its 64 firings (the slicer's first word shows the cycle after it
-    is taken), and each FifoSlicer holds a word, a 1-bit count and its full flag (66 bits); its
-    cost is not modelled yet, so it is in no group's cost."""
+    is taken), and each FifoSlicer holds a word, a 1-bit count and its full flag (66 bits). It is
+    priced at its measured point by <unit>.<port>: a pop on each of its unit's 64 firings, each
+    its comb energy and 33 bits loading, and its 66 bits holding over the run's 65 cycles."""
     from snax_forge.design import DesignPoint
     from snax_forge.estimate.bits import slicer_bits
     from tests.gen.helpers import designed
@@ -404,6 +405,36 @@ def test_a_sliced_input_moves_words_and_takes_one_cycle_more(tmp_path):
         32,
     )
     (g,) = e.groups
-    assert g.cycles == 65
+    assert g.cycles == e.accelerator_cycles == 65
     assert g.bits["acc.a"] == g.bits["acc.b"] == slicer_bits(2) == 66
-    assert set(g.cost.links) == {"acc.out"}
+    assert set(g.cost.links) == {"acc.out", "acc.a", "acc.b"}
+    t = load("nangate45")
+    got = lookup(t, "FifoSlicer", {"d_in": 2, "lanes": 1, "dtype": "int32"}, 1)
+    assert got.load_bits == 33
+    for k in ("acc.a", "acc.b"):
+        s = g.cost.links[k]
+        assert (s.datapath, s.found, s.fires) == ("FifoSlicer", "measured", 64)
+        assert s.comb_um2 == got.comb_um2 and s.flops_um2 == pytest.approx(66 * t.flop_um2)
+        assert s.e_fire_pj == pytest.approx(got.e_comb_pj + 33 * t.e_load_pj)
+        assert s.e_hold_pj == pytest.approx(66 * t.e_hold_pj)
+        assert s.task_nj == pytest.approx((64 * s.e_fire_pj + 65 * s.e_hold_pj) / 1000)
+    assert e.missing == []
+
+
+@pytest.mark.parametrize("recipe, sets", [
+    ("vecadd_i32", ["W=1"]),  # int32, d_in 2
+    ("vecadd", ["types=i8", "W=1"]),  # int8, d_in 8
+    ("matvec_3", ["types=i8", "W=4"]),  # int8 at 4 lanes, d_in 2
+])  # fmt: skip
+def test_the_sliced_designs_are_characterized(tmp_path, capsys, recipe, sets):
+    """The three sliced designs of the forge sets: every slicer priced at a measured point, so the
+    design step prints no char.missing note and nothing is missing from the cost."""
+    from snax_forge.design import DesignPoint
+    from tests.gen.helpers import designed
+
+    point = DesignPoint.load(tmp_path / designed(tmp_path, recipe, "s", sets))
+    assert "char.missing" not in capsys.readouterr().out
+    e = estimate(point.graph, point.platform)
+    slicers = [b for g in e.groups for b in g.cost.links.values() if b.datapath == "FifoSlicer"]
+    assert slicers and all(b.found == "measured" and b.fires for b in slicers)
+    assert e.missing == []

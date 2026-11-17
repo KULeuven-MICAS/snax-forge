@@ -14,7 +14,7 @@ I64 = {"inType": "int64", "outType": "int64"}
 
 @pytest.mark.parametrize("tech", TECHS)
 def test_every_entry_is_a_catalogue_datapath_with_complete_params(tech):
-    """Each entry's datapath is the catalogue's (or the stream block FifoPacker), its params with
+    """Each entry's datapath is the catalogue's (or a stream block, FifoPacker or FifoSlicer), its params with
     each point's lanes (and depth) a valid and complete param set there, its rule known, its
     points unique, a narrow fold's slope given."""
     cat, t = catalogue(), load(tech)
@@ -172,6 +172,23 @@ def test_a_packer_by_its_lane_type_and_d_out():
     got = lookup(SMALL, "FifoPacker", {"d_out": 2, "lanes": 1, "dtype": "int32"}, 1)
     assert got == Lookup(100.0, 0.5, "measured", 17.0)
     assert lookup(SMALL, "FifoPacker", {"d_out": 2, "lanes": 2, "dtype": "int16"}, 2) is None
+
+
+@pytest.mark.parametrize("tech", TECHS)
+def test_a_slicer_by_its_lane_type_lanes_and_d_in(tech):
+    """A sliced input's FifoSlicer, one word in: one measured point per lane type and lanes (an
+    unsigned type as the signed one), with the bits that load a pop, 64 / d_in + log2 d_in; at one
+    d_in the same block whatever its lanes. Two words in are not in the table."""
+    t = load(tech)
+    got = {}
+    for dtype, lanes, d_in, bits in (("int32", 1, 2, 33), ("int16", 1, 4, 18), ("int16", 2, 2, 33),
+                                     ("int8", 1, 8, 11), ("uint8", 2, 4, 18), ("int8", 4, 2, 33)):  # fmt: skip
+        got[dtype, lanes] = lookup(t, "FifoSlicer", {"d_in": d_in, "lanes": lanes, "dtype": dtype},
+                                   lanes)  # fmt: skip
+        assert (got[dtype, lanes].found, got[dtype, lanes].load_bits) == ("measured", bits)
+    assert got["int32", 1] == got["int16", 2] == got["int8", 4]
+    assert got["int16", 1] == got["uint8", 2]
+    assert lookup(t, "FifoSlicer", {"d_in": 4, "lanes": 1, "dtype": "int32"}, 1) is None
 
 
 @pytest.mark.parametrize("tech", TECHS)
