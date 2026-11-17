@@ -133,14 +133,16 @@ def test_every_sets_recipe_is_found_in_its_folder():
 
 
 def test_the_mvt_set_is_its_own():
-    """mvt: mvt_1 and mvt_1_dot2 at W = 4 and 8, mvt_2 at W = 4 (at 8 the design
-    check refuses it: 85 crossbar inputs), each contiguous and padded_rows, then mvt_2_reuse at
-    its defaults (the twin check); in neither quick nor full."""
+    """mvt: mvt_1 and mvt_1_dot2 at W = 4 and 8, mvt_2 at W = 4, each contiguous and
+    padded_rows, then mvt_2_reuse at its defaults (the twin check), all at 40 x 40; mvt_4 (the
+    seed, at 64 x 64) at W = 8 and 4, contiguous and padded_rows; in neither quick nor full."""
     names = [d.name for d in fs.SETS["mvt"]]
     assert names == [
         "mvt_1", "mvt_1_W8", "mvt_1_passes.layoutpadded_rows", "mvt_1_W8_passes.layoutpadded_rows",
         "mvt_1_dot2", "mvt_1_dot2_W8", "mvt_1_dot2_passes.layoutpadded_rows",
         "mvt_1_dot2_W8_passes.layoutpadded_rows",
         "mvt_2", "mvt_2_passes.layoutpadded_rows", "mvt_2_reuse",
+        "mvt_4", "mvt_4_passes.layoutpadded_rows", "mvt_4_W_x1-4",
+        "mvt_4_W_x1-4_passes.layoutpadded_rows",
     ]  # fmt: skip
     assert not {d.recipe for d in fs.SETS["mvt"]} & {d.recipe for d in fs.SETS["full"]}

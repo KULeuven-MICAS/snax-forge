@@ -112,7 +112,9 @@ SETS = {
             Design("mvt_1_dot2"), Design("mvt_1_dot2", ("W=8",)), Design("mvt_1_dot2", (PADDED,)),
             Design("mvt_1_dot2", ("W=8", PADDED)),
             Design("mvt_2"), Design("mvt_2", (PADDED,)),
-            Design("mvt_2_reuse")],
+            Design("mvt_2_reuse"),
+            Design("mvt_4"), Design("mvt_4", (PADDED,)), Design("mvt_4", ("W_x1=4",)),
+            Design("mvt_4", ("W_x1=4", PADDED))],
     "pack": PACK,
 }  # fmt: skip
 
