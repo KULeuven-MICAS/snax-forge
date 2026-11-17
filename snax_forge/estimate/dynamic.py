@@ -16,7 +16,7 @@ reader's read-only, a writer's write-only, D178) and the banks the grants. With
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -151,14 +151,20 @@ def prices_of(graph: Graph, est: Estimate, movers: Sequence[MoverSpec]) -> Price
         bits += g.cost.ctrl_bits
         for u, b in g.cost.units.items():
             units[u] = (insts[u].span, b.e_fire_pj)
-        producer = {k.attrs["container"]: frm.split(".", 1)[0]
-                    for k, frm, _ in group_links(graph, g.units)}  # fmt: skip
+        src = _producers(graph, g.units)
         for k, b in g.cost.links.items():
-            links[k] = (producer.get(k, k.split(".", 1)[0]), b.e_fire_pj)
+            links[k] = (src(k), b.e_fire_pj)
     beat = {s.name: (s.write, s.channels, _streamer(costs, s.depth, s.loops, s.channels).energy_pj)
             for s in movers}  # fmt: skip
     return Prices(units, links, bits, load(est.tech or "").e_ctrl_pj, beat, x.e_ro_pj, x.e_wo_pj,
                   m.e_rd_pj, m.e_wr_pj)  # fmt: skip
+
+
+def _producers(graph: Graph, units: Sequence[str]) -> Callable[[str], str]:
+    """A group's link or packer key to the unit whose pushes it loads: a buffer link's container to
+    its producer, a packer's ``<unit>.<port>`` to its unit."""
+    by = {k.attrs["container"]: frm.split(".", 1)[0] for k, frm, _ in group_links(graph, units)}
+    return lambda key: by.get(key, key.split(".", 1)[0])
 
 
 def price(p: Prices, c: Counts) -> Energy:
@@ -207,9 +213,8 @@ def graph_counts(graph: Graph, est: Estimate) -> Counts:
         if g.cost is None:
             continue
         out.busy += g.cycles
-        producer = {k.attrs["container"]: frm.split(".", 1)[0]
-                    for k, frm, _ in group_links(graph, g.units)}  # fmt: skip
-        pushes = {producer.get(k, k.split(".", 1)[0]): b.fires for k, b in g.cost.links.items()}
+        src = _producers(graph, g.units)
+        pushes = {src(k): b.fires for k, b in g.cost.links.items()}
         for u, b in g.cost.units.items():
             out.units[u] = (b.fires // insts[u].span, pushes.get(u, 0))
     for s in est.streamer_counts:

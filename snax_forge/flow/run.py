@@ -81,7 +81,7 @@ STAGE_NAMES = (
 )
 REPORT = "report"
 ENERGY = "energy"  # the energy run's folder
-QUIET_ELF = "forge_quiet.elf"  # the forge app's quiet build, beside forge.elf
+QUIET_ELF = "forge_quiet.elf"  # snax-gvsoc's forge app's second ELF, -DFORGE_QUIET
 # SNAX-GVSoC: gvsoc/Makefile, the submodule and the build's folder (that Makefile's defaults)
 GVSOC_MAKE = ROOT / "gvsoc"
 SNAX_GVSOC = GVSOC_MAKE / "snax-gvsoc"
@@ -757,8 +757,8 @@ def _from_graph(
         except RunError as e:
             raise FlowError(f"gvsoc: {e}") from None
         opts = gvsoc_options(cluster, o.trace_level, sources, o.vcd, o.trace_sources is not None)
-        args = " ".join([f"--param hjson={(gen / manifest.cluster).resolve()}",
-                         *(f"'{a}'" for a in opts.args)])  # fmt: skip
+        cluster_arg = f"--param hjson={(gen / manifest.cluster).resolve()}"  # the energy run's too
+        args = " ".join([cluster_arg, *(f"'{a}'" for a in opts.args)])
         variables = {
             "TARGET": TARGET, "DESIGN": name, "ELF": str(elf.resolve()), "GVRUN_ARGS": args,
             "WORK_DIR": str((run / "work").resolve()),
@@ -833,17 +833,12 @@ def _from_graph(
     energy = None
     if o.energy and check["passed"]:  # a failing program's energy means nothing
         with _timed(times, "energy"):
-            energy = _energy(out, sw, gen, point, cluster, name, args_of(gen, manifest), o)
+            energy = _energy(out, sw, gen, point, cluster, name, cluster_arg, o)
     return Flow(
         name, out, None, [], point, tasks, manifest, c, build, sha, cycles, check,
         checks_that_ran(), trace_level=o.trace_level, trace=trace, trace_sources=sources, vcd=o.vcd,
         sim_error=sim_error, energy=energy,
     )  # fmt: skip
-
-
-def args_of(gen: Path, manifest: Manifest) -> str:
-    """GVRUN_ARGS of a run with no trace option: the cluster file."""
-    return f"--param hjson={(gen / manifest.cluster).resolve()}"
 
 
 def _energy(out: Path, sw: Path, gen: Path, point: DesignPoint, cluster: Any, name: str,

@@ -38,8 +38,7 @@ from snax_forge.sandbox import Recipe, SandboxError
 
 from . import __main__ as flow_cli
 from . import run as flow_run
-
-QUIET_ELF = "forge_quiet.elf"  # snax-gvsoc's forge app's second ELF, -DFORGE_QUIET
+from .run import QUIET_ELF
 
 OUT = flow_run.ROOT / "out" / "forge"
 PLATFORM = flow_run.ROOT / "platforms" / "snax_forge.json"
