@@ -9,7 +9,8 @@ place of the graph's, each priced at the instance's existing price.
 pushes, the groups' busy-flag cycles added up, per mover its crossbar requests (grants and
 stalls) and grants. A unit fires its firings times its span, a buffer link loads and a packer
 pushes its producer's pushes, the control units clock every group's busy cycle, a mover moves
-its requests over its channels, the crossbar serves every request and the banks the grants. With
+its requests over its channels, the crossbar serves every request at its mover's kind (a
+reader's read-only, a writer's write-only, D178) and the banks the grants. With
 ``graph_counts`` the parts are the static estimate's (``Estimate.parts``).
 """
 
@@ -48,14 +49,16 @@ class Prices:
     """One transaction of each instance, in pJ: per unit its span and energy per fire, per buffer
     link or packer (``<unit>.<port>``) its producer and energy per load or push, the control
     units' bits and e_ctrl, per mover whether it writes, its channels and its energy per beat,
-    the crossbar's per access, a bank's per read and per write."""
+    the crossbar's per request of a read-only and of a write-only input (D178), a bank's per read
+    and per write."""
 
     units: dict[str, tuple[int, float]]
     links: dict[str, tuple[str, float]]
     ctrl_bits: int
     e_ctrl_pj: float
     movers: dict[str, tuple[bool, int, float]]
-    e_access_pj: float
+    e_xro_pj: float
+    e_xwo_pj: float
     e_rd_pj: float
     e_wr_pj: float
 
@@ -65,7 +68,7 @@ class Prices:
                 "ctrl_bits": self.ctrl_bits, "e_ctrl": self.e_ctrl_pj,
                 "movers": {k: {"write": w, "channels": c, "e_beat": e}
                            for k, (w, c, e) in self.movers.items()},
-                "e_access": self.e_access_pj, "e_rd": self.e_rd_pj,
+                "e_xbar_ro": self.e_xro_pj, "e_xbar_wo": self.e_xwo_pj, "e_rd": self.e_rd_pj,
                 "e_wr": self.e_wr_pj}  # fmt: skip
 
     @classmethod
@@ -74,7 +77,7 @@ class Prices:
                    {k: (v["from"], v["e_fire"]) for k, v in d["links"].items()},
                    d["ctrl_bits"], d["e_ctrl"],
                    {k: (v["write"], v["channels"], v["e_beat"]) for k, v in d["movers"].items()},
-                   d["e_access"], d["e_rd"], d["e_wr"])  # fmt: skip
+                   d["e_xbar_ro"], d["e_xbar_wo"], d["e_rd"], d["e_wr"])  # fmt: skip
 
 
 @dataclass
@@ -154,7 +157,7 @@ def prices_of(graph: Graph, est: Estimate, movers: Sequence[MoverSpec]) -> Price
             links[k] = (producer.get(k, k.split(".", 1)[0]), b.e_fire_pj)
     beat = {s.name: (s.write, s.channels, _streamer(costs, s.depth, s.loops, s.channels).energy_pj)
             for s in movers}  # fmt: skip
-    return Prices(units, links, bits, load(est.tech or "").e_ctrl_pj, beat, x.e_access_pj,
+    return Prices(units, links, bits, load(est.tech or "").e_ctrl_pj, beat, x.e_ro_pj, x.e_wo_pj,
                   m.e_rd_pj, m.e_wr_pj)  # fmt: skip
 
 
@@ -169,13 +172,14 @@ def price(p: Prices, c: Counts) -> Energy:
     loads = {k: c.units.get(u, (0, 0))[1] for k, (u, _) in p.links.items()}
     dp = (sum(fires[u] * e for u, (_, e) in p.units.items())
           + sum(loads[k] * e for k, (_, e) in p.links.items()))  # fmt: skip
-    beats = strm = 0.0
+    beats = strm = xbar = 0.0
     requests = reads = writes = 0
     for name, (write, channels, e_beat) in p.movers.items():
         r, g = c.movers.get(name, (0, 0))
         beats += r / channels
         strm += r / channels * e_beat
         requests += r
+        xbar += r * (p.e_xwo_pj if write else p.e_xro_pj)
         if write:
             writes += g
         else:
@@ -184,7 +188,7 @@ def price(p: Prices, c: Counts) -> Energy:
         "datapath": dp / 1000,
         "control": p.e_ctrl_pj * p.ctrl_bits * c.busy / 1000,
         "streamers": strm / 1000,
-        "crossbar": requests * p.e_access_pj / 1000,
+        "crossbar": xbar / 1000,
         "memory": (reads * p.e_rd_pj + writes * p.e_wr_pj) / 1000,
     }
     assert tuple(parts) == PARTS

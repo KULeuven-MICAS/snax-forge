@@ -71,7 +71,7 @@ def test_refusals_cost_the_crossbar_and_the_streamers_and_the_windows_add_up():
     ((_, want),) = base.of_kind("run")
     assert got.requests == want.requests + 24 and got.reads == want.reads
     assert got.parts["crossbar"] == pytest.approx(
-        want.parts["crossbar"] + 24 * e.prices.e_access_pj / 1000
+        want.parts["crossbar"] + (16 * e.prices.e_xro_pj + 8 * e.prices.e_xwo_pj) / 1000
     )
     assert got.parts["memory"] == want.parts["memory"]
     assert sum(e.total.values()) == pytest.approx(sum(x.total for x in e.energies))

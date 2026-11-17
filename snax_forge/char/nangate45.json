@@ -8,7 +8,7 @@
  },
  "source": {
   "snax_forge": "04165576384c4f3031e3b2d27d0ee9c058498b51",
-  "snax_forge_experiments": "aa790f437294f1dc2597d5b7a7a76676670cd5f6",
+  "snax_forge_experiments": "508e1d000dbbf34835e768116463e59b2248aa65",
   "stimulus": "rand64 seed 0",
   "clk_gate": "1"
  },

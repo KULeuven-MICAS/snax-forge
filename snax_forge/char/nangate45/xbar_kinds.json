@@ -1,5 +1,5 @@
 {
- "_doc": "The sparse interconnect's read-only and write-only inputs (X71, report/xbar_kinds.py). factor is the default: A = A_table(n, b) * (1 - f_ro * n_ro / n - f_wo * n_wo / n), A_table from xbar.csv. crosspoint is the option: A = b * (c_rw * n_rw + c_ro * n_ro + c_wo * n_wo) + d * n + e * b + g. n = n_rw + n_ro + n_wo inputs, b banks; a reader's channel is read-only, a writer's write-only, the cores and the AXI port read-write. Areas in um2.",
+ "_doc": "The sparse interconnect's read-only and write-only inputs (X71, report/xbar_kinds.py). factor is the default: A = A_table(n, b) * (1 - f_ro * n_ro / n - f_wo * n_wo / n), A_table from xbar.csv. crosspoint is the option: A = b * (c_rw * n_rw + c_ro * n_ro + c_wo * n_wo) + d * n + e * b + g. n = n_rw + n_ro + n_wo inputs, b banks; a reader's channel is read-only, a writer's write-only, the cores and the AXI port read-write. Areas in um2. energy is the energy's factor form by bank count (X93): e_k(b) = e_access(b, b) * (1 - g_k(b)); energies in pJ per access.",
  "tech": "nangate45",
  "factor": {
   "f_ro": 0.395299,
@@ -79,10 +79,97 @@
    "crosspoint_err_pct": 7.63
   }
  ],
+ "energy": {
+  "by_banks": {
+   "16": {
+    "e_rw": 2.679686,
+    "e_ro": 1.680981,
+    "e_wo": 1.4365,
+    "g_ro": 0.372695,
+    "g_wo": 0.46393
+   },
+   "32": {
+    "e_rw": 2.840635,
+    "e_ro": 1.898134,
+    "e_wo": 1.501039,
+    "g_ro": 0.331792,
+    "g_wo": 0.471583
+   },
+   "64": {
+    "e_rw": 4.89724,
+    "e_ro": 3.656248,
+    "e_wo": 3.480373,
+    "g_ro": 0.253406,
+    "g_wo": 0.289319
+   }
+  },
+  "pairs": [
+   {
+    "inputs": 16,
+    "banks": 16,
+    "e_rw": 2.679686,
+    "e_ro": 1.680981,
+    "e_wo": 1.4365,
+    "g_ro": 0.372695,
+    "g_wo": 0.46393
+   },
+   {
+    "inputs": 16,
+    "banks": 32,
+    "e_rw": 3.302925,
+    "e_ro": 1.938871,
+    "e_wo": 2.362572,
+    "g_ro": 0.412984,
+    "g_wo": 0.284703
+   },
+   {
+    "inputs": 16,
+    "banks": 64,
+    "e_rw": 5.355579,
+    "e_ro": 2.511514,
+    "e_wo": 5.562232,
+    "g_ro": 0.531047,
+    "g_wo": -0.038586
+   },
+   {
+    "inputs": 32,
+    "banks": 32,
+    "e_rw": 2.840635,
+    "e_ro": 1.898134,
+    "e_wo": 1.501039,
+    "g_ro": 0.331792,
+    "g_wo": 0.471583
+   },
+   {
+    "inputs": 32,
+    "banks": 64,
+    "e_rw": 4.26303,
+    "e_ro": 2.194573,
+    "e_wo": 3.793397,
+    "g_ro": 0.485208,
+    "g_wo": 0.110164
+   },
+   {
+    "inputs": 64,
+    "banks": 64,
+    "e_rw": 4.89724,
+    "e_ro": 3.656248,
+    "e_wo": 3.480373,
+    "g_ro": 0.253406,
+    "g_wo": 0.289319
+   }
+  ],
+  "method": "per bank count b, 1 - e_access(all read-only or all write-only) / e_access(all read-write) on the xbar_mix points with inputs = banks, powered with the xbar stimulus by input kind; pairs: every powered (inputs, banks) pair's, for the trend, not priced",
+  "read": "e_k(b) = e_access(b, b) * (1 - g_k(b)), k = ro or wo (g_rw = 0), e_access from xbar.csv; g_k linear in b between the measured bank counts, the nearest one's outside them"
+ },
  "sources": {
   "xbar_mix": {
    "path": "results/xbar_mix/nangate45/synth_dc.csv",
    "sha256": "018dc06bb905bce0d6cd53a6a64b72e9a16146ee3f52741dd63e2559cee4d677"
+  },
+  "xbar_mix_power": {
+   "path": "results/xbar_mix/nangate45/power_pt.csv",
+   "sha256": "ed4c3808f51f74a7b90fed6f6c823ef94bb2b0305dfe35d131caeaa18ae64410"
   },
   "xbar": {
    "path": "results/strm/nangate45/xbar.csv",

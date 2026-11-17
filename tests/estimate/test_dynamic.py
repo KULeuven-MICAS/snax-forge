@@ -52,21 +52,22 @@ def test_a_packed_outputs_packer_pushes_its_owners_pushes(tmp_path):
 
 
 def test_dot_3_at_w8_counts_and_a_refusal_at_a_grants_price():
-    """dot 3 at W = 8, N = 2048: 4097 words through the crossbar; 100 refused requests on reader
-    A's lanes add 100 accesses and 100 / 8 of A's beats, and no bank access."""
+    """dot 3 at W = 8, N = 2048: 4097 words through the crossbar, 4096 read at a read-only input's
+    price and 1 written at a write-only one's (D178); 100 refused requests on reader A's lanes add
+    100 read-only accesses and 100 / 8 of A's beats, and no bank access."""
     graph = steps("dot_3", W=8, N=2048)[-1]
     est = estimated("dot_3", W=8, N=2048)
     p, c = _static(graph, est)
     base = price(p, c)
     assert (base.requests, base.reads, base.writes, base.cycles) == (4097, 4096, 1, 257)
+    assert base.parts["crossbar"] == pytest.approx((4096 * p.e_xro_pj + p.e_xwo_pj) / 1000)
+    assert (round(p.e_xro_pj, 6), round(p.e_xwo_pj, 6)) == (1.839299, 1.454513)
     a = next(m for m in c.movers if m.endswith("_a"))
     r, g = c.movers[a]
     c.movers[a] = (r + 100, g)
     got = price(p, c)
     _, channels, e_beat = p.movers[a]
-    assert got.parts["crossbar"] - base.parts["crossbar"] == pytest.approx(
-        100 * p.e_access_pj / 1000
-    )
+    assert got.parts["crossbar"] - base.parts["crossbar"] == pytest.approx(100 * p.e_xro_pj / 1000)
     assert got.parts["streamers"] - base.parts["streamers"] == pytest.approx(
         100 / channels * e_beat / 1000
     )

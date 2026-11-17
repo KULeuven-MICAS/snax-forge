@@ -759,7 +759,9 @@ def render_cost(e: EstimateTable) -> list[str]:
     x, m = e.xbar, e.memory
     if x is not None and m is not None:
         out += ["", (f"The crossbar: {x['inputs']} inputs on {x['banks']} banks, "
-                     f"{x['accesses']} accesses at {_energy(x['e_access'], ' pJ')} each. The L1: "
+                     f"{x['reads']} reads at {_energy(x['e_ro'], ' pJ')} and {x['writes']} writes "
+                     f"at {_energy(x['e_wo'], ' pJ')} (read-write {_energy(x['e_access'], ' pJ')}). "
+                     "The L1: "
                      f"{m['banks']} banks of {m['depth']} × {m['width']} bits, {m['reads']} reads "
                      f"at {_energy(m['e_rd'], ' pJ')} and {m['writes']} writes at "
                      f"{_energy(m['e_wr'], ' pJ')}.")]  # fmt: skip
