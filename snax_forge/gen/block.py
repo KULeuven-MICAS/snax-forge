@@ -3,8 +3,9 @@
 ``main`` (``pixi run gen-block LIST.json``) reads a JSON list of ``{"datapath", "params",
 "out"}``, ``out`` from the working directory. ``datapath`` names a datapath of the catalogue
 ``hw/chisel/blocks.json`` or a stream block of ``STREAM_BLOCKS`` (``FifoPacker``: ``inLanes``,
-``laneType``, ``words``), which is not in the catalogue: the flow places it on a port (a packed
-outer output, D142 · D174) rather than binding it to a unit. ``check_entry`` checks every entry
+``laneType``, ``words``; ``FifoSlicer``: ``words``, ``laneType``, ``outLanes``), which is not in
+the catalogue: the flow places it on a port (a packed outer output, a sliced outer input, D142 ·
+D174 · D180) rather than binding it to a unit. ``check_entry`` checks every entry
 against its params before any is built (``gen.block``, ``gen.catalogue``, ``gen.params``, each a
 ``GenError``); ``emit_blocks`` builds them all in one java call on rtl.py's cached classpath,
 ``Emit --block`` each. The output is CONTRACTS, "Accelerator RTL spec". What only the Chisel
@@ -32,25 +33,33 @@ KEYS = {"datapath", "params", "out"}
 DTYPES = ["int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64"]  # IntType's
 
 #: The stream blocks gen-block takes beside the catalogue's datapaths: their params, typed as
-#: blocks.json types a datapath's (Emit's ``streamBlocks``). ``FifoPacker``'s ``inLanes`` must
-#: also divide the beat's ``words`` * 64 / width elements (``check_stream``).
+#: blocks.json types a datapath's (Emit's ``streamBlocks``). ``FifoPacker``'s ``inLanes`` and
+#: ``FifoSlicer``'s ``outLanes`` must also divide the beat's ``words`` * 64 / width elements
+#: (``check_stream``).
 STREAM_BLOCKS: dict[str, dict[str, Any]] = {
     "FifoPacker": {
         "inLanes": {"type": "int", "min": 1},
         "laneType": {"type": "dtype", "values": DTYPES},
         "words": {"type": "int", "min": 1},
-    }
+    },
+    "FifoSlicer": {
+        "words": {"type": "int", "min": 1},
+        "laneType": {"type": "dtype", "values": DTYPES},
+        "outLanes": {"type": "int", "min": 1},
+    },
 }
 
 
 def check_stream(name: str, params: Mapping[str, Any]) -> None:
-    """What a stream block's params types leave: ``FifoPacker``'s ``inLanes`` dividing its beat."""
-    if name == "FifoPacker":
-        lanes, t, words = params["inLanes"], params["laneType"], params["words"]
+    """What a stream block's params types leave: its lanes (``FifoPacker``'s ``inLanes``,
+    ``FifoSlicer``'s ``outLanes``) dividing its beat."""
+    if name in STREAM_BLOCKS:
+        key = "inLanes" if name == "FifoPacker" else "outLanes"
+        lanes, t, words = params[key], params["laneType"], params["words"]
         total = words * 64 // int(t.removeprefix("u").removeprefix("int"))
         if total % lanes:
-            raise GenError("gen.params", f"FifoPacker: inLanes {lanes} does not divide the beat's "
-                           f"{total} elements ({words} word(s) of {t}); give an inLanes that "
+            raise GenError("gen.params", f"{name}: {key} {lanes} does not divide the beat's "
+                           f"{total} elements ({words} word(s) of {t}); give an {key} that "
                            f"divides {total}, or more words")  # fmt: skip
 
 
