@@ -112,6 +112,10 @@ def test_vecmul_at_w8_by_part():
     table = 123926.211252 + 2 / 8 * (164995.016077 - 123926.211252)
     assert x.area_um2 == pytest.approx(table * (1 - 0.395299 * 16 / 26 - 0.409746 * 8 / 26))
     assert x.e_access_pj == 2.752585  # xbar.csv's 32 inputs on 32 banks
+    # a read at a read-only input's price, a write at a write-only one's (D178), at 32 banks
+    assert x.e_ro_pj == pytest.approx(2.752585 * (1 - 0.331792))
+    assert x.e_wo_pj == pytest.approx(2.752585 * (1 - 0.471583))
+    assert x.energy_nj == pytest.approx((4096 * x.e_ro_pj + 2048 * x.e_wo_pj) / 1000)
     m = e.memory
     assert (m.n, m.depth, m.width, m.reads, m.writes) == (32, 512, 64, 4096, 2048)
     assert m.area_um2 == pytest.approx(32 * BANK[0])
@@ -119,9 +123,9 @@ def test_vecmul_at_w8_by_part():
     shown = {k: (sig3(v.area_um2), dec3(v.energy_nj)) for k, v in p.items()}
     # control 360 µm², 0.047 nJ: 34 bits
     assert shown == {"datapath": ("55 300", "23.137"), "control": ("360", "0.047"),
-                     "streamers": ("95 200", "17.279"), "crossbar": ("84 600", "16.912"),
+                     "streamers": ("95 200", "17.279"), "crossbar": ("84 600", "10.513"),
                      "memory": ("433 000", "27.738")}  # fmt: skip
-    assert (sig3(e.area), sig3(e.area_design), dec3(e.energy)) == ("668 000", "236 000", "85.114")
+    assert (sig3(e.area), sig3(e.area_design), dec3(e.energy)) == ("668 000", "236 000", "78.714")
     assert e.energy == pytest.approx(sum(v.energy_nj for v in p.values()))
     assert e.area_design == pytest.approx(e.area - m.area_um2)
     assert e.kernel_energy == pytest.approx(p["datapath"].energy_nj + p["control"].energy_nj)
@@ -241,7 +245,7 @@ def test_an_access_costs_the_same_whatever_the_inputs():
     assert (two.xbar.inputs, one.xbar.inputs) == (35, 19)
     assert two.xbar.e_access_pj == one.xbar.e_access_pj == 2.752585
     assert (two.xbar.accesses, one.xbar.accesses) == (4113, 4097)
-    assert (dec3(two.energy), dec3(one.energy)) == ("63.571", "63.399")
+    assert (dec3(two.energy), dec3(one.energy)) == ("59.811", "59.656")
 
 
 def test_the_cost_round_trips():

@@ -58,6 +58,7 @@ flowchart TD
 | `--trace LEVEL[:SOURCES]` | how much of the run is traced (the table below); the level is added to the folder name |
 | `--vcd` | also writes gtkwave's `run/all.vcd` and `run/view.gtkw` of the traced sources |
 | `--keep-work` | keeps gvrun's `run/work/` after a passing run (a failing run always keeps it) |
+| `--energy` | runs the quiet build `sw/forge_quiet.elf` again into `energy/` and prices each window between its marks (D177): `energy/energy.json` and `report/energy.md`, beside the static estimate's five parts (section "The energy run" below) |
 | `--graph G`, `--kernel K` | start from a bound `.snaxdfg` instead of the import; a recipe argument ending in `.snaxdfg` does the same and skips the sandbox |
 | `--name`, `--out`, `--seed`, `--memory` | the run's name and folder, the seed of the inputs, a memory working copy to start from |
 
@@ -94,6 +95,18 @@ What the run leaves in `out/flow/vecadd/`:
 - The folder is named after the recipe with each `--set` appended: `--set W=8` gives `out/flow/vecadd_W8/`, and a param whose name ends in a digit gets a `-` before its value (`--set W_acc_1=10` gives `..._W_acc_1-10`).
 
 Nothing is compiled per design point: SNAX-GVSoC's `snax_hjson` target reads the cluster file in `gen/` when it starts. A later flow prints `build up to date` until the submodule's commit changes or its tree is dirty. A passing run gzips `run/events.log` and deletes `run/work/`.
+
+### The energy run
+
+`--energy` prices what the run did with the static estimate's prices per transaction (D177; CONTRACTS, "Profile and trace", the energy run, and "Cost model", the dynamic energy). The quiet build marks each section of the program in CSR `0x7C5`; on each mark SNAX-GVSoC writes every SNAX counter as it stands, and each window between two marks is priced in the five parts. It reads the run's `summary` lines only, so it adds one quiet run's time to the flow.
+
+```bash
+pixi run flow recipes/dot/dot_3.json --platform platforms/snax_forge.json --set N=2048 --set W=8 --energy
+```
+
+- The flow's output gains a line `energy    sw/forge_quiet.elf, <n> windows; window <k> <E> nJ (static <E> nJ) -> energy/energy.json, report/energy.md`, one entry per window of kind `run`.
+- `report/energy.md` lists every window (index, kind, label as in `gen/obs_marks.json`, cycles) with its five parts in nJ, all windows added up, and the static estimate's one run of the accelerator; then the counts the `run` windows and the static estimate were priced on (fires, busy cycles, beats, crossbar requests, bank reads and writes).
+- The numbers are first-order and aimed at trends over a sweep: a refused request costs a granted one's price, and the tables were measured on random data.
 
 ### The trace levels
 

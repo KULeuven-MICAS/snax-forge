@@ -983,6 +983,24 @@ Names, ports and FIFO depths come from the hjson files and the design point.
 - **The schedule** has lanes accelerator ▸ group: per group its movers, then its unit.
 - **The cluster view at a cycle** (`viz/cluster.py`): `acc` is the unit whose task is open, `accelerator` the entry's name, `units` every unit's task, class, fire and push, `streamers` one per set, busy while a task of its movers is open; a shared mover's lanes name the user its mux serves.
 
+### The energy run
+
+With `--energy` (D177), the flow runs the quiet build (`sw/forge_quiet.elf`, D135) again on SNAX-GVSoC with only the `summary` traces on, into `energy/`, and prices its windows: `energy/energy.json` (`flow/energy.py`'s `EnergyRun`), `energy/events.log.gz` and `report/energy.md`. A failing program has no energy run.
+
+- **Snapshots** (`run/snapshots.py`): each core 0 write to CSR `0x7C5` and the end of the simulation (mark −1) make every SNAX component write its counters as running totals since boot, `snap` lines (snax-gvsoc's `docs/EVENTS.md`, Snapshots). Every component's k-th set of lines is snapshot k; components that took different marks, an input no `input` line names, a last snapshot that is not the end's or an end that is not the crossbar's whole run are each a `RunError` (`snapshots.<rule>`).
+- **Windows**: window k is snapshot k + 1 minus snapshot k, $n(k) = N(S_{k+1}) - N(S_k)$ for every counter N, boot's (all 0) first, so the windows add up to the end. Window k takes its kind and label from `gen/obs_marks.json`'s row of the mark that opens it (`boot` for window 0; `mark <m>` for a mark the file lacks); its `first` and `last` are the snapshots' cycles.
+- **Counters**, by the converter's names: per crossbar input by port (`acc_a.lane0`, `core0`, `axi`) `grants` and `stalls`; per bank `reads`, `writes`, `conflicts`; per group (its unit's trace name) its busy-flag classes; per unit (its instance) `firings` and `pushes`; per mover its classes.
+
+| `energy.json` field | Holds |
+|---|---|
+| `tech`, `source` | the table's technology and `SOURCE` |
+| `prices` | per unit its `span` and `e_fire`, per buffer link or packer its producer (`from`) and `e_fire`, the control units' `ctrl_bits` and `e_ctrl`, per mover `write`, `channels`, `e_beat`, then `e_xbar_ro`, `e_xbar_wo` (the crossbar's per request of a read-only and a write-only input), `e_rd`, `e_wr` (pJ) |
+| `windows` | per window `index`, `mark`, `kind`, `label`, `first`, `last`, `cycles`, `counters`, and `energy`: `parts` (nJ per part), `total`, `counts` (below) |
+| `total` | nJ per part over every window |
+| `static` | the estimate's five parts for one run of the accelerator, with the counts they were priced on |
+
+An energy's `counts` are what each part was priced on (section 14): `fires` (the units' fires, the links' loads, the packers' pushes), `cycles` (the busy-flag cycles), `beats` (the movers' requests over their channels), `requests` (the crossbar's), `reads` and `writes` (the banks').
+
 ## 13. Estimate
 
 The ideal estimate of a bound graph (D155, `estimate/`), with or without a platform: what a mapping buys before any run, for the viewers and `design.md`. `estimate(graph, platform, tech)` also costs it on a technology (section 14; default `nangate45`, None leaves the cost out). It assumes ideal streams: no bank conflicts, no streamer fill, no DMA and no core control.
@@ -1064,7 +1082,7 @@ What a design costs in area and energy before any synthesis, beside the estimate
 | `<tech>.json` | `tech`, `clock_ns`, `units`, `source`; `flop` (`area_um2`, `e_load_fj`, `e_hold_fj`); `ctrl.counter_factor`; `blocks`, per datapath (and `FifoPacker`) one entry per params, so per width pair: `params`, `lanes_rule` (`copy`, `interpolate`, `slope`, `none`), a narrow fold's `slope` (`comb_um2`, `e_comb_pj` per lane) and `points` (`lanes`, `depth`, `comb_um2`, `e_comb_pj`; a packer's `flops`, `load_bits`); $e_{\mathit{ctrl}}$ is `counter_factor` × `e_hold_fj` | snax-forge-experiments' `results/char/<tech>/char.json`, X37, X83 · X85, X89 |
 | `<tech>/streamer.csv` | one reader: FIFO depth 2–16 × loops 1–7 × channels 1–16, `area_um2`, `e_beat_pj` | X52 · X82, X83 · X85 |
 | `<tech>/xbar.csv` | the sparse interconnect: inputs 4–64 × banks 16, 32, 64, `area_um2`, `e_access_pj` where inputs ≤ banks | X53 · X54, X83 · X85 |
-| `<tech>/xbar_kinds.json` | the factor form's $f_{\mathit{ro}}$ and $f_{\mathit{wo}}$ (0.395299, 0.409746), the crosspoint form's coefficients | X71 |
+| `<tech>/xbar_kinds.json` | the area's factor form's $f_{\mathit{ro}}$ and $f_{\mathit{wo}}$ (0.395299, 0.409746), the crosspoint form's coefficients; the energy's $g_{\mathit{ro}}(b)$, $g_{\mathit{wo}}(b)$ at 16, 32 and 64 banks (`energy.by_banks`; 0.331792, 0.471583 at 32) | X71, X93 |
 | `<tech>/ram_table.csv` | CACTI 7: depth 32–4096 × width 8–256, `area_um2`, `e_rd_pj`, `e_wr_pj` | X47, X48 |
 
 - `pixi run import-costs` copies the five files as they are, with `<tech>/SOURCE` naming the commit and each file's path and sha256; never run in CI. `tests/char/` checks every block entry against the catalogue and the tables against `SOURCE`.
@@ -1085,10 +1103,11 @@ The whole design (D167), per port's streamer p with D_p its FIFO depth, L_p its 
 
 $$A = \sum_b A_b + \sum_g A_{\mathit{ctrl},g} + \sum_p A_{\mathit{strm}}(D_p, L_p, C_p) + A_{\mathit{xbar}}(n_{\mathit{in}}, n_{\mathit{banks}})\thinspace\Big(1 - f_{\mathit{ro}}\frac{n_{\mathit{ro}}}{n_{\mathit{in}}} - f_{\mathit{wo}}\frac{n_{\mathit{wo}}}{n_{\mathit{in}}}\Big) + n_{\mathit{banks}}\thinspace A_{\mathit{bank}}$$
 
-$$E = \sum_b E_b + \sum_g E_{\mathit{ctrl},g} + \sum_p \frac{W_p}{C_p}\thinspace e_{\mathit{beat}}(D_p, L_p, C_p) + \Big(\sum_p W_p\Big)\thinspace e_{\mathit{acc}}(n_{\mathit{banks}}, n_{\mathit{banks}}) + N_{\mathit{rd}}\thinspace e_{\mathit{rd}} + N_{\mathit{wr}}\thinspace e_{\mathit{wr}}$$
+$$E = \sum_b E_b + \sum_g E_{\mathit{ctrl},g} + \sum_p \frac{W_p}{C_p}\thinspace e_{\mathit{beat}}(D_p, L_p, C_p) + e_{\mathit{acc}}(n_{\mathit{banks}}, n_{\mathit{banks}})\thinspace\big(N_{\mathit{rd}}\thinspace(1 - g_{\mathit{ro}}) + N_{\mathit{wr}}\thinspace(1 - g_{\mathit{wo}})\big) + N_{\mathit{rd}}\thinspace e_{\mathit{rd}} + N_{\mathit{wr}}\thinspace e_{\mathit{wr}}$$
 
 - **The five parts** (`PARTS`): datapath (the units and buffer links, b), control (g), streamers, crossbar, memory (the banks). The csr, the cores, the I-cache and the DMA are not costed: the DMA's traffic is the same for every variant, and the cores' and AXI's ports enter only as crossbar inputs.
-- **The crossbar's energy** has one price per access for a bank count, a full crossbar's ($e_{\mathit{acc}}$ at inputs = banks, 2.752585 pJ on 32 banks), so it follows the accesses alone: dot 5 linked (19 inputs, 4097 accesses) costs 63.399 nJ against 63.571 nJ unlinked (35 inputs, 4113).
+- **The crossbar's energy** has one price per access for a bank count, a full crossbar's ($e_{\mathit{acc}}$ at inputs = banks, 2.752585 pJ on 32 banks), so it follows the accesses alone: dot 5 linked (19 inputs, 4097 accesses) costs 59.656 nJ against 59.811 nJ unlinked (35 inputs, 4113).
+- **By input kind** (D178, X93): a read is priced as a read-only input's and a write as a write-only one's, $e_{\mathit{acc}}(1 - g_k)$, with $g_k$ at the design's bank count (linear in it between 16, 32 and 64 banks, the nearest one's outside). On 32 banks a read costs 2.752585 × (1 − 0.331792) = 1.839299 pJ and a write 2.752585 × (1 − 0.471583) = 1.454513 pJ; `xbar` gives both as `e_ro` and `e_wo`.
 - **The crossbar's area** prices a reader's channel as a read-only input and a writer's as write-only, since synthesis removes what their constant bits make dead (X70, X71). The factor form above is the default; the crosspoint form, $b\thinspace(c_{\mathit{rw}}\thinspace n_{\mathit{rw}} + c_{\mathit{ro}}\thinspace n_{\mathit{ro}} + c_{\mathit{wo}}\thinspace n_{\mathit{wo}}) + d\thinspace n_{\mathit{in}} + e\thinspace b + g$, is an option (`Estimate.xbar_in("crosspoint")`). dot 3 at W = 16 on the one-core cluster (35 inputs, 32 read-only, 1 write-only): 113 891 µm², where every input read-write gives 182 006; the synthesized gated cluster has 103 257 µm².
 - **A shared set's movers** (D169) are priced once each: each user's beats at its own C_p, the area only at the mover's first user, at the mover's channels (`StreamerCounts`' `mover`, `mover_channels`, `area`). The port mux costs nothing.
 - Every count is read where it is made, so a change to it (the crossbar's inputs, a port's channels) changes the cost without touching the model.
@@ -1100,9 +1119,9 @@ Worked example, vecmul at W = 8 and N = 2048 (three ports of 8 channels and one 
 | datapath | 55 300 | 23.137 |
 | control | 360 | 0.047 |
 | streamers | 95 200 | 17.279 |
-| crossbar | 84 600 | 16.912 |
+| crossbar | 84 600 | 10.513 |
 | memory | 433 000 | 27.738 |
-| total (without the banks) | 668 000 (236 000) | 85.114 |
+| total (without the banks) | 668 000 (236 000) | 78.714 |
 
 ### The fields
 
@@ -1115,7 +1134,7 @@ Worked example, vecmul at W = 8 and N = 2048 (three ports of 8 channels and one 
 | a group's `cost.area`, `cost.energy` | its units', links' and control unit's added up |
 | an accelerator's `cost.streamers` | per port's streamer: its counts (`depth`, `loops`, `channels`, `words`, `beats`), `area`, `e_beat`, `energy`, `extrapolated` |
 | an accelerator's `cost.l1` | its words through the crossbar and banks: `reads`, `writes`, `xbar`, `banks`, `energy` |
-| the estimate's `cost` | `tech`, `source`, `area`, `area_design` (without the banks), `energy`, `kernel_energy` (datapath and control), `missing`, `parts`, `xbar` (`inputs`, `banks`, `accesses`, `area`, `e_access`, `energy`, `read_only`, `write_only`, `form`), `memory` (`banks`, `depth`, `width`, `reads`, `writes`, `area`, `e_rd`, `e_wr`, `energy`, `found`), `not_costed`, `extrapolated` |
+| the estimate's `cost` | `tech`, `source`, `area`, `area_design` (without the banks), `energy`, `kernel_energy` (datapath and control), `missing`, `parts`, `xbar` (`inputs`, `banks`, `accesses`, `reads`, `writes`, `area`, `e_access`, `e_ro`, `e_wo`, `energy`, `read_only`, `write_only`, `form`), `memory` (`banks`, `depth`, `width`, `reads`, `writes`, `area`, `e_rd`, `e_wr`, `energy`, `found`), `not_costed`, `extrapolated` |
 | the estimate's `hw_counts` | what HWCOST prices, so `from_dict` rebuilds the cost: `streamers`, `xbar_inputs`, `bank_shape` |
 
 ### What is shown
@@ -1124,12 +1143,75 @@ Worked example, vecmul at W = 8 and N = 2048 (three ports of 8 channels and one 
 - Every cost is shown under "Cost estimate (first-order) on <tech>" with one line, `CAVEAT`.
 - `design.md` (`pixi run report DIR --tech T`) shows each group's area and energy beside its cycles, how each unit, link and control unit is costed, each port's streamer, each accelerator's L1 words, the cost by part with its shares, and what is not characterized, not costed or extrapolated; the viewers show the same, the parts as two bars to scale.
 
+### The dynamic energy
+
+The dynamic energy prices what a run did rather than what the graph says (D177, `estimate/dynamic.py`). SNAX-GVSoC counts every transaction of each component; snax-forge multiplies each window's counts by the same prices per transaction the static estimate uses, part by part. Only the counts differ, so the two estimates differ only where the run differs from the graph.
+
+$$E_j = \sum_c \sum_k n_{c,k}(j)\thinspace e_{c,k} = E_{dp}(j) + E_{ctrl}(j) + E_{strm}(j) + E_{xbar}(j) + E_{mem}(j)$$
+
+| Symbol | Meaning | From | Unit |
+|---|---|---|---|
+| $j$ | a window: from one snapshot to the next (section 12, "The energy run") | `run/snapshots.py` | — |
+| $n_{c,k}(j)$, $e_{c,k}$ | the count of transactions of kind k in component c in window j, and the price of one | below | —, pJ |
+| $f_u(j)$, $p_u(j)$ | unit u's firings and pushes (results given to its link or outer output) | the group's `snap` lines | — |
+| $S_u$ | unit u's span: the cycles one firing reads lanes in place | the graph | — |
+| $e_{fire}$ | a block's energy per fire: its comb energy plus its bits loading, $e_{comb} + n_{bits}\thinspace e_{load}$ | `char.lookup` at its width pair (D176) | pJ |
+| $\ell$, $src(\ell)$ | a buffer link or a packed output's packer, and the unit whose pushes it loads | the group's links | — |
+| $b_h(j)$ | group h's busy-flag cycles: its `busy`, `stall_in`, `stall_out` and `flush` added | the group's `snap` line | cycles |
+| $n_h^{ctrl}$, $e_{ctrl}$ | group h's control-unit bits, and their energy per bit and cycle (D154 · D172) | the control model | —, pJ |
+| $m$, $I_m$, $C_m$ | a mover, its crossbar inputs (one per channel) and its channels | the cluster | — |
+| $a_i(j)$, $s_i(j)$ | crossbar input i's grants and stalls (refused requests); $r_i = a_i + s_i$ its requests | the crossbar's `snap` lines | — |
+| $e_{beat}(D_m, L_m, C_m)$ | a streamer's energy per beat at its FIFO depth, loops and channels | `streamer.csv` | pJ |
+| $e_{acc}(b, b)$ | the crossbar's energy per access of a read-write input, at b inputs on b banks | `xbar.csv` | pJ |
+| $g_{ro}(b)$, $g_{wo}(b)$ | the share a read-only or write-only input saves against a read-write one, at b banks (D178) | `xbar_kinds.json`'s `energy` | — |
+| $e_{rd}$, $e_{wr}$ | a bank's energy per read and per write | `ram_table.csv` | pJ |
+| $rd$, $wr$ | the movers that read and those that write | the cluster | — |
+
+The five parts:
+
+$$E_{dp}(j) = \sum_u f_u(j)\thinspace S_u\thinspace e_{fire,u} + \sum_{\ell} p_{src(\ell)}(j)\thinspace e_{fire,\ell}$$
+
+$$E_{ctrl}(j) = e_{ctrl}\thinspace\Big(\sum_h n_h^{ctrl}\Big) \sum_h b_h(j)$$
+
+$$E_{strm}(j) = \sum_m \frac{\sum_{i \in I_m} r_i(j)}{C_m}\thinspace e_{beat}(D_m, L_m, C_m)$$
+
+$$E_{xbar}(j) = e_{acc}(b, b) \Big((1 - g_{ro}) \sum_{m \in rd} \sum_{i \in I_m} r_i(j) + (1 - g_{wo}) \sum_{m \in wr} \sum_{i \in I_m} r_i(j)\Big)$$
+
+$$E_{mem}(j) = e_{rd} \sum_{m \in rd} \sum_{i \in I_m} a_i(j) + e_{wr} \sum_{m \in wr} \sum_{i \in I_m} a_i(j)$$
+
+How to read them:
+
+- **Datapath:** a unit fires its firings times its span; a buffer link loads, and a packer pushes, on each push of its producer. The count is fixed by the program, so it equals the static one.
+- **Control:** every group's control unit clocks on every busy-flag cycle of every group, as the static estimate's $C_{acc}$ adds every group's cycles.
+- **Streamers:** a mover moves its requests over its channels, one beat per C_m requests; a refused request costs a granted one's beat.
+- **Crossbar:** every request, granted or refused, costs one access at its input's kind: a reader's channel read-only, a writer's write-only (D178).
+- **Memory:** only a grant reaches a bank. The cores', AXI's and DMA's accesses are not priced (D167).
+- **Held and idle cycles cost nothing,** as under clock gating (D154 · D172).
+
+The static identity: `graph_counts` puts the graph's counts in this form (a unit's fires over its span, its links' loads as pushes, the groups' cycles, each port's words as requests and grants, none refused). Priced with each port's streamer as a mover, every part equals the static estimate's (`tests/estimate/test_dynamic.py`, to 1e-12).
+
+**Example 1, dot 3 at W = 8, N = 2048** (one group of `mul` and `sum`, 67 control bits, readers `mul_a` and `mul_b` of 8 channels, writer `sum_out` of 1, 32 banks). SNAX-GVSoC's `run` window: 256 firings of each unit, 260 busy-flag cycles (256 busy, 3 stall_in, 1 flush), `mul_a` 2048 requests, `mul_b` 2056 (8 refused), `sum_out` 1.
+
+| Part | Counts × prices | nJ (static) |
+|---|---|---|
+| datapath | 256 × 90.37756 + 256 × 4.03461 pJ | 24.170 (24.170) |
+| control | 5.4496 fJ × 67 × 260 | 0.095 (0.094, 257 cycles) |
+| streamers | (2048 + 2056) / 8 × 22.49923 + 1 / 1 × 3.229712 pJ | 11.545 (11.523) |
+| crossbar | 4104 × 2.752585 × (1 − 0.331792) + 1 × 2.752585 × (1 − 0.471583) pJ = 4104 × 1.839299 + 1.454513 pJ | 7.550 (7.535) |
+| memory | 4096 × 3.53819 + 1 × 6.4677 pJ | 14.499 (14.499) |
+| five parts | | 57.859 (57.820) |
+
+**Example 2, the same design at W = 32.** 32 channels a reader against 32 banks: `mul_a` is refused 63 times on each of its 32 lanes and `mul_b` 64, so the readers make 4064 + 4096 = 8160 requests for 4096 words, and the group stalls 66 cycles (131 busy-flag cycles against the static 65). The crossbar costs 8160 × 1.839299 + 1.454513 pJ = 15.010 nJ where the static estimate has 7.535, the streamers 22.619 nJ against 11.356, and the five parts 76.161 nJ against 57.398; the gated cluster's `run` window has 73.33 nJ (snax-forge-experiments' `ge-check`).
+
+- A shared mover (D169) is priced at its own channels, where the static estimate prices each user at its port's: the two agree when every user takes all the mover's channels.
+
 ### The checks and the known limits
 
 - `tests/estimate/test_cost.py` checks consistency, not accuracy: dot 3 at W = 2 to 32, N = 2048, each of the five parts within 1e-6 of snax-forge-experiments' own pricing on the same gated tables (`tests/estimate/fixtures/dot3_gated.json`). It also prices vecmul at W = 8, dot 4 and mvt_1_dot2 by hand from the tables' rows, and vecmul at W = 32 off the grid. `tests/char/test_tables.py` checks the lookup rule against `cost_tables.md`'s six worked examples.
 - **Limits**:
   - The control unit's comb area is only its 1 : 1 estimate.
-  - A streamer is priced per beat and a crossbar access at one price: a streamer's clock while it waits, the crossbar's per-cycle part and its conflicts are not counted, and a writer is priced as a reader.
+  - A streamer is priced per beat and a crossbar access at one price per input kind: a streamer's clock while it waits and the crossbar's per-cycle part are not counted, and a writer's streamer is priced as a reader. The static estimate does not see conflicts; the dynamic energy counts each refused request at a granted one's price.
+  - Every price was measured on random data: on a program's smaller values the datapath costs less than its price (dot 3: 1.6× high at W ≤ 16), a limit accepted (D177).
   - An accumulator's isolated fire costs 25–30 % more than a back-to-back one.
   - Deep LinkBuffers come out about 1.4–1.8× high on nangate45 (X35).
   - The blocks are measured on random data at each port's width, so a datapath on real data (dot's) is priced high: 1.6× in the gated cluster at W = 2 to 16. At a narrow pair with w_in < w_out a register's upper bits copy the sign, so e_load prices it high by up to 2.2×.

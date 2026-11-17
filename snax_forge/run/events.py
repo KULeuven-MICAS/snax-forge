@@ -54,6 +54,13 @@ GRAMMAR: dict[str, dict[str, list[tuple[Fields, Fields]]]] = {
         "input": forms(({"index", "name", "grants", "stalls", "stalls_dma", "whole_run"}, set())),
         "bank": forms(({"index", "reads", "writes", "conflicts"}, set())),
         "csrs": forms(({"writes", "reads"}, set())),
+        "snap": forms(
+            ({"mark", "input", "grants", "stalls"}, set()),
+            ({"mark", "bank", "reads", "writes", "conflicts"}, set()),
+            ({"mark", "busy", "stall_in", "stall_out", "flush"}, set()),
+            ({"mark", "unit", "firings", "pushes"}, set()),
+            ({"mark", "mover", "busy", "stall_xbar", "stall_fifo", "idle"}, set()),
+        ),
         "dma": forms(
             ({"transfers", "busy", "r_beats", "w_beats", "bytes_to_l1", "bytes_from_l1"}, set())
         ),
@@ -84,7 +91,7 @@ GRAMMAR: dict[str, dict[str, list[tuple[Fields, Fields]]]] = {
     },
     "insn": {"insn": forms(({"pc", "text"}, set()))},
 }
-NAMES = {"mover", "name", "op", "mode"}
+NAMES = {"mover", "name", "op", "mode", "unit"}
 # (trace, kind) -> its fields that are lists
 LISTS = {
     ("summary", "mover"): {"qmax"},

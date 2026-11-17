@@ -124,7 +124,7 @@ class Estimate(JsonFile):
         if ro + wo != self.xbar_inputs[0]:
             raise ValueError(f"the streamers' {ro} read and {wo} write channels are not the "
                              f"crossbar's {self.xbar_inputs[0]} (crossbar_inputs)")  # fmt: skip
-        return xbar_cost(c, sum(self.xbar_inputs), self.bank_shape[0], sum(self._rw()), ro, wo,
+        return xbar_cost(c, sum(self.xbar_inputs), self.bank_shape[0], *self._rw(), ro, wo,
                          form)  # fmt: skip
 
     @cached_property

@@ -229,26 +229,39 @@ def streamer_cost(costs: Costs, c: StreamerCounts) -> StreamerCost:
 
 @dataclass(frozen=True)
 class XbarCost:
-    """The TCDM crossbar priced: its ``inputs`` and ``banks``, the ``accesses`` it serves in one
-    run, its area (µm²), its energy per access (pJ) and per run (nJ), how many of its inputs
+    """The TCDM crossbar priced: its ``inputs`` and ``banks``, the streamers' ``reads`` and
+    ``writes`` it serves in one run, its area (µm²), its energy per access of a read-write input
+    and of a read-only and a write-only one (pJ, D178) and per run (nJ), how many of its inputs
     only read or only write, and the ``form`` its area was priced in (CONTRACTS, "Cost model")."""
 
     inputs: int
     banks: int
-    accesses: int
+    reads: int
+    writes: int
     area_um2: float
     e_access_pj: float
-    energy_nj: float
+    e_ro_pj: float
+    e_wo_pj: float
     extrapolated: tuple[str, ...] = ()
     read_only: int = 0
     write_only: int = 0
     form: str = "factor"
 
+    @property
+    def accesses(self) -> int:
+        return self.reads + self.writes
+
+    @property
+    def energy_nj(self) -> float:
+        return (self.reads * self.e_ro_pj + self.writes * self.e_wo_pj) / 1000
+
     def to_dict(self) -> dict[str, Any]:
         return {"inputs": self.inputs, "banks": self.banks, "accesses": self.accesses,
-                "area": self.area_um2, "e_access": self.e_access_pj, "energy": self.energy_nj,
-                "extrapolated": list(self.extrapolated), "read_only": self.read_only,
-                "write_only": self.write_only, "form": self.form}  # fmt: skip
+                "reads": self.reads, "writes": self.writes, "area": self.area_um2,
+                "e_access": self.e_access_pj, "e_ro": self.e_ro_pj, "e_wo": self.e_wo_pj,
+                "energy": self.energy_nj, "extrapolated": list(self.extrapolated),
+                "read_only": self.read_only, "write_only": self.write_only,
+                "form": self.form}  # fmt: skip
 
 
 def xbar_kinds(counts: list[StreamerCounts]) -> tuple[int, int]:
@@ -267,16 +280,19 @@ def xbar_kinds(counts: list[StreamerCounts]) -> tuple[int, int]:
     return ro, wo
 
 
-def xbar_cost(costs: Costs, inputs: int, banks: int, accesses: int, read_only: int = 0,
+def xbar_cost(costs: Costs, inputs: int, banks: int, reads: int, writes: int, read_only: int = 0,
               write_only: int = 0, form: str = "factor") -> XbarCost:  # fmt: skip
     """The crossbar's area and energy per run on ``costs`` (CONTRACTS, "Cost model"): its area at
-    its inputs, ``read_only`` and ``write_only`` of them priced as such in ``form``, its accesses at
-    one price per bank count, a full crossbar's (inputs = banks)."""
+    its inputs, ``read_only`` and ``write_only`` of them priced as such in ``form``; its accesses at
+    one price per bank count, a full crossbar's (inputs = banks), a read at a read-only input's
+    and a write at a write-only input's (D178)."""
     area = _xbar(costs, inputs, banks, read_only, write_only, form)
     price = _xbar(costs, banks, banks)
+    g_ro, g_wo = costs.kinds.energy_factors(banks)
     out = tuple(dict.fromkeys(area.extrapolated + price.extrapolated))
-    return XbarCost(inputs, banks, accesses, area.area_um2, price.energy_pj,
-                    accesses * price.energy_pj / 1000, out, read_only, write_only, form)  # fmt: skip
+    return XbarCost(inputs, banks, reads, writes, area.area_um2, price.energy_pj,
+                    price.energy_pj * (1 - g_ro), price.energy_pj * (1 - g_wo), out, read_only,
+                    write_only, form)  # fmt: skip
 
 
 @dataclass(frozen=True)
@@ -346,7 +362,7 @@ class L1Cost:
 
 def l1_cost(xbar: XbarCost, memory: MemoryCost, reads: int, writes: int) -> L1Cost:
     """An accelerator's words through the crossbar and the banks."""
-    x = (reads + writes) * xbar.e_access_pj / 1000
+    x = (reads * xbar.e_ro_pj + writes * xbar.e_wo_pj) / 1000
     b = (reads * memory.e_rd_pj + writes * memory.e_wr_pj) / 1000
     return L1Cost(reads + writes, x + b, reads, writes, x, b)
 
