@@ -622,10 +622,11 @@ def test_the_log_is_the_summary_the_checks_and_the_stage_times(tmp_path, monkeyp
     listed = [c for line in checks.splitlines()[1:] for c in line.split(None, 1)[1].split(", ")]
     assert listed == list(CHECKS)
     rows = [line.split() for line in times.splitlines()]
-    assert [r[0] for r in rows] == [*STAGE_NAMES, "total"] and all(r[2] == "s" for r in rows)
+    stages = [s for s in STAGE_NAMES if s != "energy"]  # the energy run only with --energy
+    assert [r[0] for r in rows] == [*stages, "total"] and all(r[2] == "s" for r in rows)
     secs = [float(r[1]) for r in rows]
     assert all(s >= 0 for s in secs) and abs(sum(secs[:-1]) - secs[-1]) < 0.01
-    assert list(f.times) == list(STAGE_NAMES)
+    assert list(f.times) == stages
     assert "gen" in f.times and "gvsoc" in f.times and "report" in f.times
 
 
