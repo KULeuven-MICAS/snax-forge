@@ -15,8 +15,9 @@ import org.scalatest.flatspec.AnyFlatSpec
   * (a Vec of the params' lanes), in its direction, and per live pin an input `io_<pin>`, but for a pin of no bits,
   * which firtool leaves out: `LinkBuffer`'s `wslot` and `rslot` at depth 1, `SerialAccumulate`'s `lane` at lanes 1. A
   * registered block (all but `SimdLanes` and the plain `Mac`) has every `always` block of its files on `posedge clock
-  * or posedge reset`, a flop with an asynchronous reset; the others none. The stream block FifoPacker at its three char
-  * configs, and at int32 the very module `ShellWrapper` holds on a packed output.
+  * or posedge reset`, a flop with an asynchronous reset; the others none. The stream blocks FifoPacker at its three
+  * char configs and FifoSlicer at one word of int32 (1 lane), int16 (1, 2) and int8 (1, 2, 4), and at int32 the very
+  * modules `ShellWrapper` holds on a packed output and a sliced input.
   */
 class BlockEmitSpec extends AnyFlatSpec {
 
@@ -221,6 +222,69 @@ class BlockEmitSpec extends AnyFlatSpec {
     val name = "FifoPacker_n1_i32_w1.sv"
     assert(Files.readString(packed("int32").resolve(s"sv/$name")) == Files.readString(inside.resolve(name)))
   }
+
+  /** The stream block FifoSlicer at one word of each narrow type and every lane count below the word's elements that
+    * divides them (d_in 2 to 8): its top `FifoSlicer_w1_<t>_n<lanes>` alone in its file, the full flag and the pop
+    * counter on the asynchronous reset and the held word on none.
+    */
+  private val slicers =
+    Seq(
+      ("int32", "i32", 1),
+      ("int16", "i16", 1),
+      ("int16", "i16", 2),
+      ("int8", "i8", 1),
+      ("int8", "i8", 2),
+      ("int8", "i8", 4)
+    )
+
+  private lazy val sliced: Map[(String, Int), Path] = {
+    val root = Files.createTempDirectory("emit-slicer")
+    val dirs = slicers.map { case (t, _, n) => (t, n) -> root.resolve(s"${t}_$n") }
+    Emit.main(dirs.flatMap { case ((t, n), d) =>
+      Seq("--block", "FifoSlicer", "--params", s"""{"words":1,"laneType":"$t","outLanes":$n}""", "--out", d.toString)
+    }.toArray)
+    dirs.toMap
+  }
+
+  for ((t, tag, n) <- slicers)
+    it should s"emit FifoSlicer at laneType $t, $n lane(s) alone as FifoSlicer_w1_${tag}_n$n" in {
+      val dir     = sliced(t -> n)
+      val top     = s"FifoSlicer_w1_${tag}_n$n"
+      val listing = ujson.read(Files.readString(dir.resolve("emitted.json")))
+      assert(listing("block").str == "FifoSlicer")
+      assert(ujson.write(listing("params")) == s"""{"words":1,"laneType":"$t","outLanes":$n}""")
+      assert(listing("top").str == top)
+      assert(listing("modules").arr.map(_.str).toSeq == Seq(top))
+      assert(listing("files").arr.map(_.str).toSeq == Seq(s"sv/$top.sv"))
+      val ports   = SvHeader.ports(dir.resolve(s"sv/$top.sv"), top)
+      assert(ports.filter(x => Set("clock", "reset")(x._1)) == Set(("clock", "input", 1), ("reset", "input", 1)))
+      assert(ports.exists(_._1 == "io_enable") && ports.exists(_._1 == "io_clear"), s"$top: $ports")
+      val always = Files.readAllLines(dir.resolve(s"sv/$top.sv")).asScala.map(_.trim).filter(_.startsWith("always"))
+      assert(
+        always.toSet == Set("always @(posedge clock) begin", "always @(posedge clock or posedge reset) begin"),
+        s"$top: $always"
+      )
+    }
+
+  it should "emit FifoSlicer as the module it is inside an accelerator, byte for byte" in {
+    // ShellSlicedSpec's accelerator: vsum's sum with its input at int32, d_in 2, its slicer FifoSlicer(1, int32, 1)
+    val base   = shell.RtlFixtures.all.find(_.name == "vsum").get.spec
+    val spec   = base.copy(groups = base.groups.map { g =>
+      g.copy(units = g.units.map { u =>
+        u.copy(ports = u.ports.map {
+          case ("a", p) => "a" -> p.copy(dtype = "int32", dIn = 2)
+          case other    => other
+        })
+      })
+    })
+    val inside = Files.createTempDirectory("emit-sliced-shell")
+    Emit.elaborate(new shell.ShellWrapper(spec), inside, split = true)
+    val name = "FifoSlicer_w1_i32_n1.sv"
+    assert(Files.readString(sliced("int32" -> 1).resolve(s"sv/$name")) == Files.readString(inside.resolve(name)))
+  }
+
+  it should "refuse FifoSlicer params whose outLanes does not divide the beat" in
+    assertThrows[IllegalArgumentException](Emit.block("FifoSlicer", """{"words":1,"laneType":"int8","outLanes":3}"""))
 
   it should "refuse FifoPacker params whose inLanes does not divide the beat" in
     assertThrows[IllegalArgumentException](Emit.block("FifoPacker", """{"inLanes":3,"laneType":"int32","words":1}"""))
