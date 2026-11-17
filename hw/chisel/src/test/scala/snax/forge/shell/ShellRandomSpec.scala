@@ -24,7 +24,10 @@ import snax.forge.elementwise.{ElementwiseModel, ElementwiseOp}
   * drawn and packed at its dtype's width): `ElementwiseModel.numpy` per lane for a SIMD unit, the lane sums of every T
   * inputs for a fold, each lane cast to the output type first; for a linked group (a dot product: a product per lane,
   * then the sum of a job's lanes and beats, T its JOB_BEATS) the sum over each job's T beats of a · b, wrapping at the
-  * output type.
+  * output type. A sliced input (D180) takes its run's beats d_in to a word, the run's last word short, and offers a
+  * run's words only once its START is taken, as `main.c` starts a run's streamer after the last one ended (a word
+  * offered in the run's last cycle would be taken and dropped at the next start); a packed output (D174) gives its
+  * run's results d_out to a word, the last short, zero above.
   */
 class ShellRandomSpec extends AnyFlatSpec with ForgeTester {
 
@@ -53,13 +56,15 @@ class ShellRandomSpec extends AnyFlatSpec with ForgeTester {
         val outType = IntType(outPort.dtype)
         val opType  = unit.opType.map(IntType(_)).getOrElse(outType)
         val op      = unit.params.get("op").map(v => ElementwiseOp.byName(v.str))
+        val dIn     = inPorts.map(_.dIn)
+        val sliced  = dIn.exists(_ > 1)
 
         val runs = Seq.tabulate(Runs) { i =>
-          val jobs = if (i > 0 && r.chance(0.125)) 0 else r.between(1, 32)
-          val t    = if (fold) r.between(1, 8) else 1
-          val n    = jobs * t
-          val ins  = inTypes.map(ty => Seq.fill(n)(Seq.fill(lanes)(r.word(ty.width))))
-          val outs =
+          val jobs  = if (i > 0 && r.chance(0.125)) 0 else r.between(1, 32)
+          val t     = if (fold) r.between(1, 8) else 1
+          val n     = jobs * t
+          val ins   = inTypes.map(ty => Seq.fill(n)(Seq.fill(lanes)(r.word(ty.width))))
+          val outs  =
             if (linked)
               (0 until n).grouped(t max 1).toSeq.map { job =>
                 def at(i: Int) = job.flatMap(k => ins(i)(k).map(ElementwiseModel.cast(_, inTypes(i), outType)))
@@ -80,14 +85,22 @@ class ShellRandomSpec extends AnyFlatSpec with ForgeTester {
                 .grouped(t max 1)
                 .map(_.sum & LaneBits.mask(outType.width))
                 .toSeq
-          Run(jobs, t, ins, outs)
+          // a packed output: d_out results (each its lanes) to a word, the last short
+          val bits  = outPort.lanes * outType.width
+          val words = outs.grouped(outPort.dOut).map(_.zipWithIndex.map { case (o, k) => o << (k * bits) }.sum).toSeq
+          Run(jobs, t, ins, words)
         }
 
-        var gap     = 0.0
-        var stall   = 0.0
-        val sources = inTypes.indices.map { k =>
-          val beats = runs.flatMap(_.ins(k)).map(LaneBits.pack(_, inTypes(k).width)).toIndexedSeq
-          new Source(beats.size, beats, _ => !r.chance(gap))
+        var gap   = 0.0
+        var stall = 0.0
+        // each run's words per input (d_in beats a word, the last short) and how many runs' are offered
+        def words(run: Run, k: Int): Seq[BigInt] =
+          run.ins(k).grouped(dIn(k)).map(g => LaneBits.pack(g.flatten, inTypes(k).width)).toSeq
+        var offered = 0
+        def allowed(k: Int) = runs.take(offered).map(words(_, k).size).sum
+        lazy val sources: Seq[Source] = inTypes.indices.map { k =>
+          val beats = runs.flatMap(words(_, k)).toIndexedSeq
+          new Source(beats.size, beats, _ => !r.chance(gap) && (!sliced || sources(k).taken < allowed(k)))
         }
         test(new ShellHarness(spec)) { dut =>
           val d                 = new ShellDriver(dut, sources, Seq(new Sink(_ => !r.chance(stall))))
@@ -102,6 +115,7 @@ class ShellRandomSpec extends AnyFlatSpec with ForgeTester {
             val taken = d.write(dut.csr("START"), 1)
             gap   = r.probability()
             stall = r.probability()
+            offered += 1
             taken
           }
 
