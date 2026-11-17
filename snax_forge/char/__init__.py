@@ -27,7 +27,7 @@ HERE = Path(__file__).parent
 # The technologies offered: nangate45 only (snax-forge-experiments synthesizes nothing else).
 TECHS = ("nangate45",)
 DEFAULT_TECH = "nangate45"
-FOUND = ("measured", "copy", "interpolate", "slope", "width")
+FOUND = ("measured", "copy", "interpolate", "slope", "width", "unseeded")
 # A control unit's comb area is CTRL_COMB_PER_FLOP × its flops' area, a rough early estimate (its
 # comb energy taken as negligible); not in the table, a byte copy of snax-forge-experiments'
 # char.json. The L1 side is tables.py's tables.
@@ -188,6 +188,13 @@ def lookup(table: Table, datapath: str, params: Mapping[str, Any], lanes: int,
         if base is None:
             return None
         return _scaled(_over_lanes(base, lanes, depth), _width(want["dtype"]) / 64, "width")
+    if entry is None and want.get("seed") is True:
+        # a seeded fold: the unseeded entry, the same adder and register, the first beat's mux
+        # choosing the seed for the register instead of 0 for the sum
+        base = next((e for e in entries if key(e) == {**want, "seed": False}), None)
+        if base is None:
+            return None
+        return _scaled(_over_lanes(base, lanes, depth), 1.0, "unseeded")
     if entry is None:
         return None
     return _over_lanes(entry, lanes, depth)

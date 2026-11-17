@@ -140,6 +140,17 @@ def test_a_narrow_linkbuffer_is_the_int64_one_by_its_width():
     assert (got.comb_um2, got.e_comb_pj, got.found) == (1.25, 0.125, "width")
 
 
+def test_a_seeded_fold_is_priced_as_its_unseeded_entry():
+    tree = {**I64, "op": "add"}
+    table = _table({"TreeAccumulate": [{**SMALL.blocks["TreeAccumulate"][0],
+                                        "params": {**tree, "seed": False}}]})  # fmt: skip
+    seeded = lookup(table, "TreeAccumulate", {**tree, "seed": True}, 4)
+    assert seeded == Lookup(40.0, 3.0, "unseeded")
+    got = lookup(table, "TreeAccumulate", {**tree, "seed": True}, 6)
+    assert (got.comb_um2, got.found) == (50.0, "unseeded")
+    assert lookup(SMALL, "TreeAccumulate", {**tree, "seed": True}, 4) is None  # no unseeded entry
+
+
 def test_simdlanes_is_priced_at_its_widest_input_and_its_op_or_output():
     """D176: inputs at the widest, the output at most the op's width, unsigned as signed, the
     constants left None ignored."""
@@ -208,4 +219,10 @@ def test_the_real_tables_on_chars_named_cases(tech):
     simd = {**i64, "streams": 2, "kCsr": False, "k1Csr": False, "k2Csr": False}
     assert {lookup(t, "SimdLanes", {**simd, "op": op}, 8).found
             for op in ("add", "mul")} == {"measured"}  # fmt: skip
-    assert set(FOUND) == {"measured", "copy", "interpolate", "slope", "width"}
+    tree = {**I64, "op": "add"}
+    seeded = lookup(t, "TreeAccumulate", {**tree, "seed": True}, 8)
+    plain = lookup(t, "TreeAccumulate", {**tree, "seed": False}, 8)
+    assert (seeded.comb_um2, seeded.e_comb_pj, seeded.found) == (
+        plain.comb_um2, plain.e_comb_pj, "unseeded"
+    )  # fmt: skip
+    assert set(FOUND) == {"measured", "copy", "interpolate", "slope", "width", "unseeded"}
