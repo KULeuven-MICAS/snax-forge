@@ -4,6 +4,7 @@
                               [--set platform.PATH=VALUE ...] [--set memory.PATH=VALUE ...]
                               [--memory M] [--graph FILE] [--name NAME] [--out DIR]
                               [--seed S] [--trace LEVEL[:SOURCES]] [--vcd] [--keep-work]
+                              [--energy]
     python -m snax_forge.flow GRAPH.snaxdfg --platform P [--kernel K]
                               [--set platform.PATH=VALUE ...] [--set memory.PATH=VALUE ...]
                               [--memory M] [--name NAME] [--out DIR] [--seed S] [--trace ...]
@@ -12,7 +13,7 @@ Runs run.py's ``run_flow`` on a recipe, or ``run_bound`` on a file ending in ``.
 ``out/flow/<name>/``. ``--set`` takes recipe params, platform fields and memory pins as the sandbox
 and design commands do. ``--trace`` picks the level (``off``, ``task``, ``beat``, ``stall``,
 ``finegrained``) and, after a colon, the sources (``run/sources.py``); ``--vcd`` adds gtkwave's
-VCD. With a graph, the kernel is its ``name`` unless ``--kernel`` names it, and a recipe param or
+VCD. ``--energy`` runs the quiet build again and prices its windows (``energy/``, D177). With a graph, the kernel is its ``name`` unless ``--kernel`` names it, and a recipe param or
 ``--graph`` is refused, as ``--kernel`` is with a recipe. Exit 0 when the program's check passed,
 1 when a stage or the check failed, 2 on bad arguments. pixi: ``flow``.
 """
@@ -69,6 +70,8 @@ def main(argv: list[str] | None = None) -> int:
                     help="also write gtkwave's VCD of the sources into run/")  # fmt: skip
     ap.add_argument("--keep-work", action="store_true",
                     help="keep gvrun's run/work/ after a passing run")  # fmt: skip
+    ap.add_argument("--energy", action="store_true",
+                    help="run forge_quiet.elf again and price its windows (energy/energy.json)")  # fmt: skip
     args = ap.parse_args(argv)
     try:
         level, sources = parse_trace(args.trace)
@@ -96,6 +99,7 @@ def main(argv: list[str] | None = None) -> int:
         "trace_sources": sources,
         "vcd": args.vcd,
         "keep_work": args.keep_work,
+        "energy": args.energy,
     }
     try:
         if bound:

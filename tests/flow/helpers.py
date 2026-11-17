@@ -141,8 +141,35 @@ def write_events(variables: dict[str, str]) -> None:
     tasks = TaskList.from_dict(json.loads((gen.parent / "tasks.json").read_text()))
     point = DesignPoint.load(gen.parent / "design" / "design_point.json")
     link = {c: a for c, (a, _) in point_symbols(point).items()}  # the ELF's, as the sw goal links
-    Path(variables["EVENTS"]).write_text("\n".join(synthetic(cluster, tasks, level_of(variables),
-                                                             link=link)) + "\n")  # fmt: skip
+    if variables["ELF"].endswith(QUIET_ELF):
+        lines = quiet_events(cluster, json.loads((gen / "obs_marks.json").read_text()))
+    else:
+        lines = synthetic(cluster, tasks, level_of(variables), link=link)
+    Path(variables["EVENTS"]).write_text("\n".join(lines) + "\n")
+
+
+QUIET_GRANTS = 16  # a lane's grants in the quiet build's run window: vecadd's 64 words on 4 lanes
+
+
+def quiet_events(cluster: Any, marks: list[dict[str, Any]]) -> list[str]:
+    """The quiet build's snapshots, one per mark 100 cycles apart and the end's: in the window of
+    the first ``run`` mark every mover lane ``QUIET_GRANTS`` grants, the unit as many firings and
+    pushes, the group as many busy cycles; nothing elsewhere (vecadd's static counts)."""
+    from tests.run.helpers import snap_lines
+
+    acc = cluster.accelerator
+    unit = acc.units[0].name
+    run = next(m["mark"] for m in marks if m["kind"] == "run")
+    lanes = [p for m in acc.movers for p in m.ports]
+
+    def totals(n: int) -> dict[str, Any]:
+        return {"inputs": dict.fromkeys(lanes, (n, 0)),
+                "group": {"busy": n, "stall_in": 0, "stall_out": 0, "flush": 0},
+                "units": {unit: (n, n)}}  # fmt: skip
+
+    snaps = [(m["mark"], 100 * (k + 1), totals(QUIET_GRANTS if m["mark"] > run else 0))
+             for k, m in enumerate(marks)]  # fmt: skip
+    return snap_lines(cluster, [*snaps, (-1, 100 * (len(marks) + 1), totals(QUIET_GRANTS))])
 
 
 def level_of(variables: dict[str, str]) -> str:

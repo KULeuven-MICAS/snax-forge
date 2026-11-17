@@ -7,7 +7,7 @@ Rules (D117):
 - An entry is a choice with a real alternative that someone may want to reverse: direction, ownership, the interfaces between components, the order of work. Implementation details live in the module's docstring and its tests.
 - An entry says what was decided, why, and where the detail lives, in a few short bullets; an edge case only when there is one. A change is written into the entry, not chained after it.
 - Entries merged into one keep all their numbers in its heading, so a cite of any of them still finds it. A number is never changed or reused; the text of a removed entry is in git history.
-- A new decision gets the next free number, under the area it belongs to. Next free number: **D177**.
+- A new decision gets the next free number, under the area it belongs to. Next free number: **D179**.
 
 Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29–D45, D47–D50, D53, D54, D56, D58–D63, D65–D67, D69, D74, D76–D78, D80, D81, D83, D88–D97, D100, D101, D103, D104, D106, D107, D109, D110, D114, D115, D119, D124, D127, D128, D132, D133, D138–D141, D151, D156, D159, D160.
 
@@ -283,6 +283,18 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 - **Decided:** a design's cost is reported in five parts (datapath, control, streamers, crossbar, memory), each with its share, beside the total and the total without the banks. Streamers, crossbar and banks are priced from snax-forge-experiments' clock-gated tables, copied as they are with the block table (`pixi run import-costs`) and interpolated, extrapolated with a note beyond them. A streamer is priced per beat and a crossbar access at one price per bank count, so the energy follows the accesses. The crossbar's area prices a reader's channels as read-only inputs and a writer's as write-only. The cores, I-cache, DMA and csr are not costed. nangate45 only.
 - **Why:** the parts a user can change are the parts the estimate shows.
 - **Where:** CONTRACTS, "Cost model"; `snax_forge/char/tables.py`, `estimate/cost.py`.
+
+### D177 — The dynamic energy: the model's counts at the static prices
+
+- **Decided:** a run's dynamic energy is D167's five parts with SNAX-GVSoC's counts in place of the graph's, each priced at the instance's existing price (D154 · D172, D176), per window between two snapshots of the counters (core 0's writes to CSR `0x7C5`, the quiet build's marks, D135; the end of the simulation). A unit costs its firings × span, a buffer link and a packer their producer's pushes, the control units every group's busy-flag cycle (the static estimate's $C_{acc}$), a mover its crossbar requests over its channels, the crossbar every request, the banks the streamers' grants. A refused request costs a granted one's price; held and idle cycles cost nothing. A shared mover is priced at its own channels; each request at its mover's kind (D178).
+- **Why:** the prices were measured at full rate, so a transaction is an active cycle there, and only granted ones were measured; with the counts the only change, the dynamic and static numbers differ only where the run differs from the graph (with the graph's counts they are equal). Aimed at trends over a sweep, not at an accurate number: the tables' random data stays.
+- **Where:** CONTRACTS, "Profile and trace" (the energy run) and "Cost model" (the dynamic energy); `estimate/dynamic.py`, `run/snapshots.py`, `flow/energy.py`.
+
+### D178 — The crossbar's energy by input kind
+
+- **Decided:** a crossbar access is priced at a full crossbar's $e_{access}(b, b)$ less its input kind's saving at the design's bank count, $e_{access}\thinspace(1 - g_k(b))$: a streamer's read as a read-only input's, its write as a write-only input's (`xbar_kinds.json`'s `energy`, snax-forge-experiments X93). The static estimate prices the words so, the dynamic energy (D177) each mover's requests. Amends D167's one price per access.
+- **Why:** the table's $e_{access}$ is a read-write input's (each input alternating reads and writes with random write data); a cluster's inputs are a reader's or a writer's channels, as the area already prices them (X71). The dot 3 cluster paid 0.67 to 0.81 of the read-write price; by kind its crossbar is 0.94 to 0.99 at W ≤ 8.
+- **Where:** CONTRACTS, "Cost model"; `estimate/cost.py`, `char/tables.py`, `estimate/dynamic.py`.
 
 ## Viewers, reports and docs
 

@@ -104,8 +104,9 @@ class Bank:
 
 @dataclass(frozen=True)
 class XbarKinds:
-    """``xbar_kinds.json``'s two forms (CONTRACTS, "Cost model"): the factor form's ``f_ro`` and
-    ``f_wo``, the crosspoint form's coefficients (µm²) and the grid they were fitted on."""
+    """``xbar_kinds.json``'s forms (CONTRACTS, "Cost model"): the area's factor form's ``f_ro`` and
+    ``f_wo``, its crosspoint form's coefficients (µm²) and the grid they were fitted on, and the
+    energy's factors per bank count, ``(banks, g_ro, g_wo)`` in order of banks."""
 
     f_ro: float
     f_wo: float
@@ -117,6 +118,17 @@ class XbarKinds:
     g: float
     inputs: tuple[int, ...]
     banks: tuple[int, ...]
+    energy: tuple[tuple[int, float, float], ...]
+
+    def energy_factors(self, banks: int) -> tuple[float, float]:
+        """``(g_ro, g_wo)`` at ``banks``: linear in banks between the measured bank counts, the
+        nearest one's outside them."""
+        bs = [b for b, _, _ in self.energy]
+        lo = max([i for i, b in enumerate(bs) if b <= banks], default=0)
+        hi = min([i for i, b in enumerate(bs) if b >= banks], default=len(bs) - 1)
+        (b0, r0, w0), (b1, r1, w1) = self.energy[lo], self.energy[hi]
+        t = 0.0 if b1 == b0 else (banks - b0) / (b1 - b0)
+        return r0 + t * (r1 - r0), w0 + t * (w1 - w0)
 
 
 @dataclass(frozen=True)
@@ -164,8 +176,11 @@ def read_kinds(path: Path) -> XbarKinds:
     """``xbar_kinds.json``, which snax-forge-experiments' report/xbar_kinds.py writes."""
     d = json.loads(path.read_text())
     f, c = d["factor"], d["crosspoint"]
+    energy = tuple(
+        sorted((int(b), e["g_ro"], e["g_wo"]) for b, e in d["energy"]["by_banks"].items())
+    )
     return XbarKinds(f["f_ro"], f["f_wo"], c["c_rw"], c["c_ro"], c["c_wo"], c["d"], c["e"], c["g"],
-                     tuple(c["grid"]["inputs"]), tuple(c["grid"]["banks"]))  # fmt: skip
+                     tuple(c["grid"]["inputs"]), tuple(c["grid"]["banks"]), energy)  # fmt: skip
 
 
 def read_source(path: Path) -> dict[str, str]:

@@ -80,14 +80,14 @@ flowchart TD
 | SNAX-BRM | `brm/` | C§3 | hand-written BRMs | instances |
 | SNAX-SANDBOX | `sandbox/` | C§4 | `.snaxdfg`, BRMs, recipe | a `.snaxdfg` per step |
 | Design step | `design/` | C§5–C§7 | bound graph, platform | design point |
-| Estimate | `estimate/` | C§13, C§14 | bound graph, platform and technology (both optional) | cycles, the expected BUSY_COUNTER (D155), the cost in five parts (D154, D167) |
+| Estimate | `estimate/` | C§13, C§14 | bound graph, platform and technology (both optional) | cycles, the expected BUSY_COUNTER (D155), the cost in five parts (D154, D167), a run's counts priced (D177) |
 | Cost tables | `char/` ([guide](../snax_forge/char/README.md)) | C§14 | snax-forge-experiments' tables (`pixi run import-costs`) | per block, streamer, crossbar and bank: area and energy |
 | SNAX-LOWER | `lower/` | C§8, C§9 | design point | task list, `main.c` |
 | Generator | `gen/gvsoc.py`, `gen/headers.py`, `gen/data.py` | C§9 | design point, the platform's source hjson | cluster and streamer hjson, `accelerator.json`, headers, `data.h`, `main.c` |
 | HW generator | `gen/rtl.py`, `hw/chisel/` | C§10 | design point, the datapath catalogue | the accelerator RTL |
 | Bundle | `gen/bundle.py` | C§11 | design point | snax_cluster's input |
 | SNAX-GVSoC | `gvsoc/snax-gvsoc` (submodule), `gvsoc/Makefile` | | hjson, program | the program's check and window, events (D137) |
-| Run | `run/` | C§12 | SNAX-GVSoC's events, the design point, the task list | profile, trace |
+| Run | `run/` | C§12 | SNAX-GVSoC's events, the design point, the task list | profile, trace, the snapshots' windows (D177) |
 | Flow, forge | `flow/` | C§12 | recipe or bound graph, platform | all of the above, checked |
 | Viewers | `viz/` | C§4, C§12 | run folders, `.snaxdfg` files | local HTML views |
 | Reports | `report/` | | a flow folder | `design.md`, `run.md` |
@@ -144,7 +144,7 @@ A GVSoC model of the SNAX cluster in its own repository: a detached copy of a ch
 - **the streamers**, one per streamer set (D157), and a `SnaxPortMux` where a set's groups share its movers (D169);
 - **the crossbar**, up to 128 inputs (D85), with the sparse interconnect's arbiter and the DMA on whole superbanks (D122);
 - **`SnaxGroup`**, one component per group of `accelerator.json`, and its **`SnaxShell`** (the group's CSRs): the control model is one C++ class (`SnaxGroupRule`) over a registry of datapath classes, one per catalogue datapath, so a new block is one class there (D129). Its group and shell cases are what the Chisel control unit and wrapper are checked against too (C§10);
-- **events**: `summary`, `events`, `beats` and `stalls` traces per component (its `docs/EVENTS.md`), which `run/` renames, never recounts (D137).
+- **events**: `summary`, `events`, `beats` and `stalls` traces per component (its `docs/EVENTS.md`), which `run/` renames, never recounts (D137); the `summary` traces also carry the counters' snapshots on each core 0 write to CSR `0x7C5` and at the end (D177).
 
 What it models is what snax_cluster's RTL does; where the two differ, the RTL wins (section 7).
 
