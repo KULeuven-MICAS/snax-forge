@@ -7,7 +7,7 @@ Rules (D117):
 - An entry is a choice with a real alternative that someone may want to reverse: direction, ownership, the interfaces between components, the order of work. Implementation details live in the module's docstring and its tests.
 - An entry says what was decided, why, and where the detail lives, in a few short bullets; an edge case only when there is one. A change is written into the entry, not chained after it.
 - Entries merged into one keep all their numbers in its heading, so a cite of any of them still finds it. A number is never changed or reused; the text of a removed entry is in git history.
-- A new decision gets the next free number, under the area it belongs to. Next free number: **D180**.
+- A new decision gets the next free number, under the area it belongs to. Next free number: **D181**.
 
 Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29–D45, D47–D50, D53, D54, D56, D58–D63, D65–D67, D69, D74, D76–D78, D80, D81, D83, D88–D97, D100, D101, D103, D104, D106, D107, D109, D110, D114, D115, D119, D124, D127, D128, D132, D133, D138–D141, D151, D156, D159, D160.
 
@@ -190,12 +190,12 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 - **Why:** a design is refused before a run would assert, and the note marks costs extrapolated beyond the tables.
 - **Where:** CONTRACTS, "Platform" and "Design checks".
 
-### D12 · D142 · D169 · D174 — Streamers: one per port, packed words, shared movers
+### D12 · D142 · D169 · D174 · D180 — Streamers: one per port, packed and sliced words, shared movers
 
-- **Decided:** one streamer per accelerator port, named after it; a bank word packs num_slc = 64 / b elements of the container's dtype, little-endian as NumPy. An input is wire-sliced: num_slc divides its lanes W, and the hjson's `num_channel` is num_ch = W / num_slc. An output is wired the same way, or packed when W divides num_slc: a packer between the unit and its writer collects d_out = num_slc / W results per word on num_ch = 1, cleared at START, the word sent when full or on the run's last push, the slices above the last one zero. The flow derives and places the packer; a recipe never names it. `share_ports` on an L1 container one accelerator writes and another reads puts both on one streamer set whose movers they share; a data-side mux picks the group by `PORT_MUX_SEL`, which the core writes before each `STREAMER_START`.
-- **Why:** the streamer matches snax_cluster's, the platform keeps only the word, a one-lane output keeps that word without being widened or byte-masked, and sharing movers saves crossbar inputs without new hardware between accelerators.
-- **Where:** `design/streamers.py`; `hw/chisel/`'s `FifoPacker`; CONTRACTS, "Platform", "Design checks" and "Accelerator RTL spec".
-- **Edge:** an input whose W is not a multiple of num_slc needs the FIFO slicer (parked, open item 93), so `connect.pack` refuses it; an output that neither divides is refused with the fix. With an outer loop, d_out divides the innermost count, since only the run's last word may be short. `share_ports` is off by default and the sets still run in series (D158).
+- **Decided:** one streamer per accelerator port, named after it; a bank word packs num_slc = 64 / b elements of the container's dtype, little-endian as NumPy. An input is wire-sliced: num_slc divides its lanes W, and the hjson's `num_channel` is num_ch = W / num_slc; or sliced when W divides num_slc: a slicer between its reader and the unit takes one word on num_ch = 1 and gives d_in = num_slc / W pops of W lanes, low slice first; it takes words only while its group is busy, and the group's start drops what it holds. An output is wired the same way, or packed when W divides num_slc: a packer between the unit and its writer collects d_out = num_slc / W results per word on num_ch = 1, cleared at START, the word sent when full or on the run's last push, the slices above the last one zero. The flow derives d_in and d_out from the port's dtype, lanes and direction and places the slicer and the packer; a recipe never names them. `share_ports` on an L1 container one accelerator writes and another reads puts both on one streamer set whose movers they share; a data-side mux picks the group by `PORT_MUX_SEL`, which the core writes before each `STREAMER_START`.
+- **Why:** the streamer matches snax_cluster's, the platform keeps only the word, a one-lane output keeps that word without being widened or byte-masked, the slicer's gate and drop make it safe whatever the order of `STREAMER_START` and `START`, its registered output costs one cycle a run and keeps the reader's FIFO off the unit's path, and sharing movers saves crossbar inputs without new hardware between accelerators.
+- **Where:** `design/streamers.py`; `hw/chisel/`'s `FifoSlicer` and `FifoPacker`; snax-gvsoc's `SnaxSlicer` and `SnaxPacker`; CONTRACTS, "Platform", "Design checks" and "Accelerator RTL spec".
+- **Edge:** a port whose W neither divides nor is a multiple of num_slc is refused with the fix, on either side. With an outer loop, d_in or d_out divides the innermost count, since only the run's last word may be short. `share_ports` is off by default and the sets still run in series (D158).
 
 ### D86 · D105 · D144 — Memory: planned by passes, chained through L1, padded in the data
 

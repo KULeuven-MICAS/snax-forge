@@ -366,7 +366,7 @@ One streamer per port of every accelerated instance, `<instance>_<port>`, but a 
 
 - **From the port**: `write`, `n_ports` (its lanes) and, unless an entry gives them, `spatial_bounds` (fastest first: an `affine` nest's spatial loops, a `stream` port's memlet ranges).
 - **From the graph**: `temporal_dims`, the firing loops the port's memlet runs over (at least 1, the most over an instance's nodes), recorded per streamer in the design point.
-- **From the platform**: `default.fifo_depth` (≥ 1); an entry named after a streamer overrides it and `spatial_bounds` for that streamer, and may give `num_ch` (never in `default`), the TCDM channels it uses, else W / num_slc, or 1 for an output packed d_out = num_slc / W results to a word (D142 · D174).
+- **From the platform**: `default.fifo_depth` (≥ 1); an entry named after a streamer overrides it and `spatial_bounds` for that streamer, and may give `num_ch` (never in `default`), the TCDM channels it uses, else W / num_slc, or 1 for an output packed d_out = num_slc / W results to a word or an input sliced d_in = num_slc / W pops from one (D142 · D174 · D180).
 
 ### Working copies and cluster files
 
@@ -410,9 +410,9 @@ The `platform` and `graph` stages run independently, `connect` when both passed,
 | `connect.derived` | a streamer entry that sets `write` or `n_ports` |
 | `connect.lanes` | an entry's `spatial_bounds` that are not the port's lanes |
 | `connect.dtype` | containers that break the BRM's dtype rule (`brm/dtypes.py`, D143: each port's dtype allowed, every output at least as wide as every input, no signed input with a `uint64` one), or two dtypes on one port of an instance |
-| `connect.pack` | an input whose elements do not fill whole words, an output neither wired nor packed (D142 · D174), below |
+| `connect.pack` | a port neither wired nor sliced (an input) or packed (an output) (D142 · D174 · D180), below |
 | `connect.pad` | a fold reading through a tail what an accelerator wrote, unless the producer's tasklet on its pad values gives the fold's identity (D144), below |
-| `connect.num_ch` | a `num_ch` other than the derived one (W / num_slc, or 1 for a packed output; D142 · D174); the message lists the values that would fit |
+| `connect.num_ch` | a `num_ch` other than the derived one (W / num_slc, or 1 for a packed output or a sliced input; D142 · D174 · D180); the message lists the values that would fit |
 | `connect.xbar_inputs` | more crossbar inputs than `l1.max_xbar_inputs`, below |
 | `share.shape` | a shared set's user whose spatial bounds do not fit in its mover's first channels (D169, `design/streamers.py`'s `shared_movers`) |
 | `connect.temporal` | a map around an accelerated node that is not `temporal`, or a subset not affine in the firing loops |
@@ -428,7 +428,7 @@ The `platform` and `graph` stages run independently, `connect` when both passed,
 
 The three checks that need the most explaining:
 
-- **`connect.pack`**: a word holds num_slc elements of the container's dtype. An input is wired: its fastest spatial bound must be a multiple of num_slc (W < num_slc needs the parked FIFO slicer: make the container 64-bit or give the port num_slc lanes), its fastest spatial loop must step 1 element (not a column), and every other step and the start must be multiples of num_slc (the fix pads the leading dimension). Row strides are over the padded shape: a 3 × 7 int32 matrix split by 4 has row stride 8. An output is wired the same way, or packed when W divides num_slc, d_out = num_slc / W: its pushes must be contiguous (innermost stride W · b / 8 bytes), its start and every outer stride whole words, and with an outer loop d_out must divide the innermost count, since only the run's last word may be short (a 4 × 5 int32 output at W = 1 is refused: pad the row to 6). At num_slc = 1 every port passes.
+- **`connect.pack`**: a word holds num_slc elements of the container's dtype. A port is wired: its fastest spatial bound must be a multiple of num_slc, its fastest spatial loop must step 1 element (not a column), and every other step and the start must be multiples of num_slc (the fix pads the leading dimension). Row strides are over the padded shape: a 3 × 7 int32 matrix split by 4 has row stride 8. Or, when W divides num_slc, an input is sliced (d_in = num_slc / W) and an output packed (d_out = num_slc / W): its pops or pushes must be contiguous (innermost stride W · b / 8 bytes), its start and every outer stride whole words (a stride of 0, an input read again, passes), and with an outer loop d_in or d_out must divide the innermost count, since only the run's last word may be short (a 4 × 5 int32 output at W = 1 is refused: pad the row to 6). A W that neither divides nor is a multiple of num_slc is refused on either side, the fix listing the sliced or packed W and the wired ones (vecadd at i8, W = 3). At num_slc = 1 every port passes.
 - **`connect.pad`**: the hardware masks nothing, so a producer's pad lanes reach the fold. dot 1 at W_mul = W_sum = 10 passes (0 × 0 = 0, add's identity); at W_mul = 8, W_sum = 10 the producer never writes the pad words and is refused (open item 106). The fix: a size that W divides, or a factor that divides n.
 - **`connect.xbar_inputs`**: the inputs as the generated cluster file gives them to SNAX-GVSoC: every streamer's num_ch, a shared set's movers' channels once (D169), one per core and one for AXI. vecmul at W = 64: `acc: 194 TCDM crossbar inputs, the platform takes at most 128 (192 streamer channels, 2 for the core and AXI; …)`; W = 32 has 98, which passes with a note. The fix: fewer lanes, or `share_ports`.
 
@@ -471,7 +471,7 @@ A note is registered (`register_note(code, fn)`) and runs once the checks passed
 | `graph_from` | the `.snaxdfg` it was made from (D108) |
 | `graph` | that graph as read |
 | `platform` | the platform working copy (section 5) |
-| `streamers` | the resolved shell, `<instance>_<port>` → `instance`, `port`, `write`, `n_ports`, `spatial_bounds`, `temporal_dims`, `dtype`, `num_slc`, `num_ch`, `d_out` (1 unless packed), `fifo_depth` |
+| `streamers` | the resolved shell, `<instance>_<port>` → `instance`, `port`, `write`, `n_ports`, `spatial_bounds`, `temporal_dims`, `dtype`, `num_slc`, `num_ch`, `d_out` (1 unless packed), `d_in` (1 unless sliced), `fifo_depth` |
 | `memory` | the plan: `passes`, `changes`, `layouts` (container → memory → layout) |
 | `schedule` | how LOWER orders the accelerators (D179, section 8): `serial` (the default; a file without the field), `pipeline` or `pipeline_compute`, from `--set design.schedule=` |
 
@@ -534,7 +534,7 @@ flowchart TD
 - **A linked group** is one task at its first unit's node, `<node>_<group>`, on the group as its component: streamers only on the ports on no link (a link's container is never loaded or stored), and one accelerator task whose `values` are each unit's, by unit. Dot 6's `mult_dot`: `{"mac": {"n": 128, "T": 128}, "sum": {"n": 1, "T": 1}}`. The program writes the group's JOBS = n_u / ∏ T_v over its first unit u and its folds v, then each fold's JOB_BEATS (section 10).
 - **Chains through L1** (D105): `after` holds data dependences only, so two groups chain with one wait, on the first's writer.
 - **In place**: a writer never waits for a reader it starts with. That is an in-place update, allowed only when the reader is a port of its own unit visiting the same addresses in the same order (axpy's `y`, a fold's seed), and refused by name otherwise.
-- **A packed output** (D174): its writer's innermost loop of n pushes at stride s = W · b / 8 bytes becomes $(\lceil n / d_{out} \rceil, d_{out}\thinspace s)$, one write per 8-byte word, its spatial bounds `[1]`, the outer loops and the base unchanged. matvec at i8, M = 10 int32 outputs at W = 1: (10, 4 B) becomes (5, 8 B).
+- **A packed output** (D174): its writer's innermost loop of n pushes at stride s = W · b / 8 bytes becomes $(\lceil n / d_{out} \rceil, d_{out}\thinspace s)$, one write per 8-byte word, its spatial bounds `[1]`, the outer loops and the base unchanged. matvec at i8, M = 10 int32 outputs at W = 1: (10, 4 B) becomes (5, 8 B). A sliced input's reader (D180) the same with d_in: vecadd_i32 at W = 1, N = 64: (64, 4 B) becomes (32, 8 B).
 - **In series** (D158, the `serial` schedule): before each accelerator's `start`, one `sync` on the previous accelerator's task, its own configures placed before it, so it is set up while the previous one runs. None when an `after` already holds that task, and none between the groups of one encapsulated accelerator. dot_serial: `sum_sum`'s configures, `sync mult_mul`, its start.
 - **Pipelined** (D179): `pipeline` adds no serial sync, so a start waits only for its tasks' `after` and its components' previous tasks. Each store (its configure and start) moves down past the later blocks of other accelerators (a block: the loads, configures and start of one accelerator task), stopping before a block of its own accelerator, else going to before the final syncs. `pipeline_compute` also gathers consecutive blocks whose tasks' `after` are DMA tasks only and that share no component (the first may open with stores): their loads, then their configures, then their starts back to back. A shared form (mvt_3) gives one list under all three schedules. mvt_3_split, its halves `mvt` and `mvt_1`:
 
@@ -662,7 +662,7 @@ A unit:
 | Key | Holds |
 |---|---|
 | `name`, `brm`, `datapath` | the bind's instance, its BRM, a catalogue datapath |
-| `ports` | per BRM port, in its order: `port` (the datapath's), `dir`, `dtype`, `lanes`; an outer output that a packer feeds also `d_out` (absent at 1, D174) |
+| `ports` | per BRM port, in its order: `port` (the datapath's), `dir`, `dtype`, `lanes`; an outer output that a packer feeds also `d_out`, an outer input that a slicer feeds `d_in` (each absent at 1, D174 · D180) |
 | `opType` | a SIMD or `Mac` unit's op type, NumPy's result type of its inputs or of the kernel's casts (D143 · D175) |
 | `params` | only what the ports do not give: `op`, a baked slot (relu's `k`), a `Mac`'s `accumulate` and `regOut`, `T` when fixed at design time (then no JOB_BEATS) |
 | `scalars` | each slot read from a scalar and its type (axpy's `{"k1": "int32"}`), each an R/W CSR with its datapath `pin` |
@@ -673,7 +673,7 @@ A CSR is `name`, `access` (`rw`, `ro`), `offset` from the shell's first CSR, `wi
 
 - **`movers`**, with `share_ports`: per mover in the streamer's order `{name (reader<k>, writer<k>), role, num_channel, masked, users}`, each user `{group, port, num_channel}`.
 - **`port_mux`**: `{groups (in PORT_MUX_SEL's order), csr}`; PORT_MUX_SEL is the accelerator's last CSR, R/W, as wide as a group's index.
-- **Derived, never stored**: each port's num_slc and num_ch (D142; 1 for a packed output, whose `d_out` a reader checks against num_slc / W), each link's kind and `to_input` (the fed port's place among its unit's inputs), every unit's firings.
+- **Derived, never stored**: each port's num_slc and num_ch (D142; 1 for a packed output or a sliced input, whose `d_out` or `d_in` a reader checks against num_slc / W), each link's kind and `to_input` (the fed port's place among its unit's inputs), every unit's firings.
 
 dot 4's file, one accelerator `dot` of one group `dot`, the MAC's lane partials wired into the tree:
 
@@ -735,7 +735,7 @@ dot 4's file, one accelerator `dot` of one group `dot`, the MAC's lane partials 
 ### What reads it
 
 - **`pixi run gen-rtl DP`** (`gen/rtl.py`) writes the same bytes, checks every unit against the catalogue (`gen.catalogue`, `gen.params`, `gen.port_map`, `gen.timing`) and every buffer link against `LinkBuffer`, and runs `Emit --spec accelerator.json --out DIR/`, which lists what it wrote in `emitted.json`. Its java runs on a classpath sbt exports once per environment into `hw/chisel/target/emit-classpath-<hash>.txt`, again when `hw/chisel/src/main/` or `build.sbt` is newer.
-- **`Emit --block NAME --params JSON --out DIR`** builds one catalogue datapath alone, as an accelerator holds it, for snax-forge-experiments: the full params as the catalogue lists them (`{"inType":"int64","outType":"int64","lanes":8,"op":"add","seed":false}`), its ports as they are, into `DIR/sv/` with `emitted.json` (`block`, `params`, `top`, `modules`, `files`). It differs from the accelerator's module only where the accelerator ties a pin to a constant, which firtool folds in. `NAME` may also be the stream block `FifoPacker`, which the flow places on a packed output (D174) and the catalogue does not list: params `inLanes` and `words` (ints ≥ 1) and `laneType` (an int dtype), `inLanes` dividing the beat's `words` × 64 / width elements (`{"inLanes":1,"laneType":"int32","words":1}` gives `FifoPacker_n1_i32_w1`, d_out 2), with the clock and asynchronous reset it has in the wrapper. `pixi run gen-block LIST.json` (`gen/block.py`) runs a list of them in one java call.
+- **`Emit --block NAME --params JSON --out DIR`** builds one catalogue datapath alone, as an accelerator holds it, for snax-forge-experiments: the full params as the catalogue lists them (`{"inType":"int64","outType":"int64","lanes":8,"op":"add","seed":false}`), its ports as they are, into `DIR/sv/` with `emitted.json` (`block`, `params`, `top`, `modules`, `files`). It differs from the accelerator's module only where the accelerator ties a pin to a constant, which firtool folds in. `NAME` may also be a stream block the flow places and the catalogue does not list: `FifoPacker` on a packed output (D174), params `inLanes` and `words` (ints ≥ 1) and `laneType` (an int dtype), `inLanes` dividing the beat's `words` × 64 / width elements (`{"inLanes":1,"laneType":"int32","words":1}` gives `FifoPacker_n1_i32_w1`, d_out 2); `FifoSlicer` on a sliced input (D180), params `words`, `laneType` and `outLanes`, `outLanes` dividing the same (`{"words":1,"laneType":"int32","outLanes":1}` gives `FifoSlicer_w1_i32_n1`, d_in 2); each with the clock and asynchronous reset it has in the wrapper. `pixi run gen-block LIST.json` (`gen/block.py`) runs a list of them in one java call.
 - **The Chisel specs' fixtures** (`hw/chisel/src/test/resources/rtl/<design>/vectors.json`, `gen-rtl --fixture`) read their `accelerator.json` from snax-gvsoc's `forge/`.
 
 ### Refused
@@ -743,8 +743,8 @@ dot 4's file, one accelerator `dot` of one group `dot`, the MAC's lane partials 
 Each a `GenError`, before anything is written:
 
 - **The entry**: a tag that is not an identifier, or a platform without an `accelerator_slot` (`gen.tag`: a design named `dot-1`).
-- **A unit**: a null binding (`gen.binding`), an unregistered datapath (`gen.datapath`), a controller other than `counted` (`gen.controller`), a drain other than 0 (`gen.drain`), timing other than the catalogue's (`gen.timing`), and what the datapath refuses: args (`gen.args`), op (`gen.op`), ports (`gen.ports`), rates (`gen.rate`), an input's lanes not whole 64-bit channels or an output's neither whole channels nor packed (`gen.lanes`), a dtype not intN or uintN (`gen.dtype`).
-- **Links and groups**: a link not from an `out` to an `in` of the same dtype and lanes (`gen.link`), a port on two links (`gen.link_port`), `inputs` or `outputs` not exactly the unlinked ports (`gen.outer`), a group not connected (`gen.group`), a shared accelerator not as `movers` and `port_mux` say (`gen.share`).
+- **A unit**: a null binding (`gen.binding`), an unregistered datapath (`gen.datapath`), a controller other than `counted` (`gen.controller`), a drain other than 0 (`gen.drain`), timing other than the catalogue's (`gen.timing`), and what the datapath refuses: args (`gen.args`), op (`gen.op`), ports (`gen.ports`), rates (`gen.rate`), a port's lanes neither whole 64-bit channels nor sliced (an input) or packed (an output) (`gen.lanes`), a dtype not intN or uintN (`gen.dtype`).
+- **Links and groups**: a link not from an `out` to an `in` of the same dtype and lanes, or an end with `d_in` or `d_out` (`gen.link`), a port on two links (`gen.link_port`), `inputs` or `outputs` not exactly the unlinked ports (`gen.outer`), a group not connected (`gen.group`), a shared accelerator not as `movers` and `port_mux` say (`gen.share`).
 - **Until the phase that lifts it**: a group that is not a chain in unit order, only the last unit's output outer (`gen.chain`, until tier A), and a unit of span > 1 on an outer input (`gen.span`, until B2).
 
 ### Types, groups and firings
@@ -845,6 +845,7 @@ $$C_2 = JT + 2, \quad C_3 = JT + 1, \quad C_4 = JT + 2, \quad C_5 = J(T + W - 1)
 - `clk_i`, `rst_ni` (active low); `csr_req_addr_i`, `csr_req_data_i` (32 bits), `csr_req_write_i`, `csr_req_valid_i`, `csr_req_ready_o`, `csr_rsp_data_o` (32 bits), `csr_rsp_valid_o`, `csr_rsp_ready_i`.
 - Per input port k, numbered across the sets in set order, `stream2acc_<k>_data_i`, `_valid_i`, `_ready_o`; per output port `acc2stream_<k>_data_o`, `_valid_o`, `_ready_i`, in the order of `inputs` and `outputs`. Data is `num_channel × 64` bits, lane i at bits `[w(i+1)-1 : wi]` (D142).
 - **A packed output** (D174): a `FifoPacker` of depth d_out (`<unit>_<port>_packer`) sits between the unit's output and `acc2stream_<k>`, on the group's side of a shared set's port mux; the port is one 64-bit word. Its slice pointer clears when the group's START is accepted; each push fills the next slice, and the word goes to the writer when the slice is d_out − 1 or the push is the run's last (the control unit's `last`: the done condition without the push, from the counters only), the slices above zero; only a sending push waits for the writer's ready, so no cycle is added.
+- **A sliced input** (D180): a `FifoSlicer` of d_in pops a word (`<unit>_<port>_slicer`) sits between `stream2acc_<k>` and the unit's input, on the group's side of a shared set's port mux; the port is one 64-bit word. The unit's input handshake is its pops, slice `count` at the low bits, low slice first; it takes the reader's word when empty or on its last pop, only while the group is busy (`enable`), and drops what it holds when the group's START is accepted (`clear`). Its output is registered, so a run takes one cycle more.
 - Per group `<group>_busy_o` and `<group>_done_o`.
 - **A shared accelerator** (D169) has its movers at the wrapper instead, readers then writers, and its port mux between them and its groups' ports, pure wires selected by PORT_MUX_SEL (reset 0, never held): a reader's data to each user, its valid and ready the selected group's only; a writer the selected user's data, zero-padded. snax-gvsoc's `SnaxPortMuxRule` without its fatal cases.
 
@@ -1038,7 +1039,7 @@ A group's fields:
 | Field | Holds |
 |---|---|
 | `name`, `units`, `links` | the group (one unit, or linked units, D146) |
-| `cycles` | snax-gvsoc's group rule (`snax_group_rule.py`) stepped by `estimate/cycles.py`'s `group_cycles`, every input valid and the output ready, JOBS and each T as the program writes them |
+| `cycles` | snax-gvsoc's group rule (`snax_group_rule.py`) stepped by `estimate/cycles.py`'s `group_cycles`, every input valid and the output ready, JOBS and each T as the program writes them, a sliced input through its slicer (one cycle more a run, D180) |
 | `bottleneck` | the max over its units of n · max(II, span), summed over the runs when several nests share the group (D165) |
 | `ramp` | the sum over its units of L + span − 1, plus 1 per buffer link, once per run |
 | `stall` | `cycles` − `bottleneck` − `ramp` |
@@ -1046,7 +1047,7 @@ A group's fields:
 | `counter` | `cycles` + `fill`: the expected BUSY_COUNTER (below) |
 | `bank_bound` | ⌈Σ over its outer ports of beats × num_ch / `l1.n_banks`⌉, the fewest cycles of L1 time its streams take (null without a platform) |
 | `channels`, `words_per_cycle` | the sum of num_ch over its outer ports; the 64-bit words they move per cycle |
-| `bits`, `ctrl_bits` | per unit and buffer link its datapath's register bits (the catalogue's `flops`), a packed output's `FifoPacker` by `<unit>.<port>` ((d_out − 1) · W · b held, ⌈log₂ d_out⌉ count; D174), and its control unit's (`estimate/bits.py`): the cost model's counts (D154) |
+| `bits`, `ctrl_bits` | per unit and buffer link its datapath's register bits (the catalogue's `flops`), a packed output's `FifoPacker` by `<unit>.<port>` ((d_out − 1) · W · b held, ⌈log₂ d_out⌉ count; D174), a sliced input's `FifoSlicer` by `<unit>.<port>` (64 held, ⌈log₂ d_in⌉ count, 1 full; D180, not costed yet), and its control unit's (`estimate/bits.py`): the cost model's counts (D154) |
 | `cost` | on a technology, its units', links' and control unit's area and energy, and the totals (section 14) |
 
 How the cycles grow along dot's recipe at N = 512:

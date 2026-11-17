@@ -169,7 +169,7 @@ The flow's stages are commands of their own. Each reads the previous one's outpu
 | `pixi run gen-gvsoc DP` | a design point | `out/gvsoc/<design>/`: the cluster and streamer hjson, `accelerator.json`, headers, `data.h`, `main.c`, `manifest.json` | `--out DIR` |
 | `pixi run gen-rtl DP` | a design point | `out/rtl/<design>/`: `accelerator.json`, `sv/`, `emitted.json` | `--fixture DIR` (a fixture for the Chisel specs) |
 | `pixi run bundle DP` | a design point | `out/bundle/<design>/`: gen-gvsoc's files, `rtl/` with `files.f`, `bundle.json` | `--out DIR` |
-| `pixi run gen-block LIST` | a JSON list of `{"datapath", "params", "out"}`, `datapath` a catalogue datapath or the stream block `FifoPacker` | each block alone, as an accelerator holds it, into its `out/sv/` | |
+| `pixi run gen-block LIST` | a JSON list of `{"datapath", "params", "out"}`, `datapath` a catalogue datapath or a stream block, `FifoPacker` or `FifoSlicer` | each block alone, as an accelerator holds it, into its `out/sv/` | |
 
 Example: vecadd by hand, then its program and run with `gvsoc/Makefile` (section 7), which prints the same four `forge` lines as the flow:
 
@@ -191,7 +191,7 @@ The RTL commands need sbt; the flow calls none of them:
 - `gen-rtl` checks `accelerator.json` against the datapath catalogue (`hw/chisel/blocks.json`), then runs `hw/chisel/`'s `Emit --spec` on a classpath sbt exports once into `hw/chisel/target/emit-classpath-<hash>.txt` (again after a change under `hw/chisel/src/main/` or to `build.sbt`).
 - The modules are named after the entry's tag, `<accelerator_slot>_<design>`: `snax_forge_vecadd_shell_wrapper` is what snax_cluster's `snax_acc_wrapper.sv.tpl` connects, and it holds `snax_forge_vecadd_csr`, `snax_forge_vecadd_ctrl` and `snax_forge_vecadd_datapath`.
 - `bundle` writes no `forge_expected.txt` (a bundle alone has no SNAX-GVSoC run); `pixi run forge` does (section 6).
-- `gen-block` is for snax-forge-experiments, which synthesizes and simulates a block alone. Beside the catalogue's datapaths it takes the stream block `FifoPacker` (a packed output's packer, D174), params `inLanes`, `laneType`, `words`, `inLanes` dividing the beat's `words` × 64 / width elements:
+- `gen-block` is for snax-forge-experiments, which synthesizes and simulates a block alone. Beside the catalogue's datapaths it takes the stream blocks `FifoPacker` (a packed output's packer, D174), params `inLanes`, `laneType`, `words`, and `FifoSlicer` (a sliced input's slicer, D180), params `words`, `laneType`, `outLanes`, the lanes dividing the beat's `words` × 64 / width elements:
 
 ```bash
 echo '[{"datapath": "TreeAccumulate", "params": {"inType": "int64", "outType": "int64", "lanes": 8, "op": "add", "seed": false}, "out": "out/block/tree"},
@@ -222,7 +222,7 @@ Three read-only viewers and the reports. Each viewer serves on 127.0.0.1 until C
 
 **`view-dfg`** on a recipe's sandbox folder shows its steps in order. Give it `--platform`: without one, the Estimate costs only the datapath and control, not the streamers, crossbar and memory.
 
-- Each container's box shows its dtype (`A[N] int8 L1 · 64 B`), and each edge its container's dtype beside it, below the box it leaves or above the box it enters; an accelerated port's packing (`int32 · num_slc 2 · d_out 2 · num_ch 1`) is in the edge's Details. A packed output's `FifoPacker · d_out 2` is a box before its container, inside its group's outline, with its sizes, register bits and cost in its Details.
+- Each container's box shows its dtype (`A[N] int8 L1 · 64 B`), and each edge its container's dtype beside it, below the box it leaves or above the box it enters; an accelerated port's packing (`int32 · num_slc 2 · d_out 2 · num_ch 1`) is in the edge's Details. A packed output's `FifoPacker · d_out 2` is a box before its container, inside its group's outline, with its sizes, register bits and cost in its Details; a sliced input's `FifoSlicer · d_in 2` likewise, between its container and the unit (`d_in 2` in the port's packing), its cost not modelled yet.
 - Details of each item (click a box, a container, an edge or an outline), and the Estimate: the accelerator's cycles, the unmapped work's (one cycle per iteration, an assumption), their total, and the cost per accelerator in µm² and nJ (CONTRACTS, "Cost model").
 - The left column lists the Symbols, the Containers (`A: N · L1 · 16 KiB`) and the Bindings as a tree, accelerator ▸ group ▸ unit, each param with what it configures.
 - To compare two designs, give both folders: `pixi run view-dfg out/sandbox/dot_4/ out/sandbox/dot_5/ --platform platforms/snax_forge.json`. Each step is then named `<folder>/<stem>`, and Compare lays Details and the Estimate out as two columns, the cost cells as `before → after`.
