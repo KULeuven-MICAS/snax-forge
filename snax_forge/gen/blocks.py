@@ -11,8 +11,9 @@ The args each adapter reads: ``simd_lanes`` lanes, op, streams (2 by default) an
 k2 for axpby, each baked (an int that fits opType, else ``gen.k``) or read from a container (a
 CSR); ``tree_accumulate`` and ``serial_accumulate`` lanes, op add only, a seed port when the
 BRM's design param ``seed`` is 1; ``mac`` lanes, ``accumulate`` and ``regOut``;
-``lane_accumulate`` lanes. Every port is whole 64-bit channels. An instance judged without a
-graph (brm/instance.py's check) has no dtypes: its adapter checks all but the widths.
+``lane_accumulate`` lanes. Every port is whole 64-bit channels, a packed output (D174) or a
+sliced input (D180). An instance judged without a graph (brm/instance.py's check) has no
+dtypes: its adapter checks all but the widths.
 """
 
 from __future__ import annotations

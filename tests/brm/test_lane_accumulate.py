@@ -55,6 +55,9 @@ def test_the_datapath_takes_the_instance():
     }
     assert (fill.op_type, fill.params) == (None, {})
     assert DATAPATHS["LaneAccumulate"].timing(fill) == (1, 1)
-    one = load_brm("lane_accumulate").resolve(IMPL, {"W": 1})
-    with pytest.raises(GenError, match="1 lanes of 32 bits are not whole 64-bit channels"):
-        DATAPATHS["LaneAccumulate"].fill(one, {"a": "int32", "out": "int32"})
+    one = load_brm("lane_accumulate").resolve(IMPL, {"W": 1})  # sliced in, packed out (D180)
+    fill = DATAPATHS["LaneAccumulate"].fill(one, {"a": "int32", "out": "int32"})
+    assert [p.lanes for p in fill.ports.values()] == [1, 1]
+    three = load_brm("lane_accumulate").resolve(IMPL, {"W": 3})
+    with pytest.raises(GenError, match="3 lanes of 32 bits are not whole 64-bit channels"):
+        DATAPATHS["LaneAccumulate"].fill(three, {"a": "int32", "out": "int32"})
