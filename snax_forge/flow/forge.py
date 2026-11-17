@@ -128,9 +128,8 @@ def forge(recipe: Path, platform: Path, sets: list[tuple[str, tuple[str, str, An
     recipe_sets = dict(by_head["recipe"])
     level, _ = parse_trace(trace)
     r = Recipe.load(recipe).with_params(recipe_sets)
-    name = flow_run.with_level(
-        flow_run.default_name(r, recipe_sets, by_head["platform"], by_head["memory"]), level
-    )
+    name = flow_run.with_level(flow_run.default_name(
+        r, recipe_sets, by_head["platform"], by_head["memory"], by_head["design"]), level)  # fmt: skip
     flow_dir, bundle_dir, forge_dir = flow_run.OUT / name, bundle.OUT / name, OUT / name
     shutil.rmtree(forge_dir, ignore_errors=True)
     forge_dir.mkdir(parents=True)

@@ -106,14 +106,15 @@ class FlowError(ValueError):
 
 @dataclass(frozen=True)
 class FlowOptions:
-    """What ``run_flow`` and ``run_bound`` share, their keyword arguments: the ``--set`` platform
-    and memory paths, the memory working copy to start from, the flow's name and folder (by
+    """What ``run_flow`` and ``run_bound`` share, their keyword arguments: the ``--set`` platform,
+    memory and design paths, the memory working copy to start from, the flow's name and folder (by
     default from the recipe or graph and every ``--set``), the seed of ``make_inputs``, and
     the trace level, its sources and the VCD."""
 
     platform_sets: Sequence[tuple[str, Any]] = ()
     memory_path: str | Path | None = None
     memory_sets: Sequence[tuple[str, Any]] = ()
+    design_sets: Sequence[tuple[str, Any]] = ()  # the design point's schedule
     name: str | None = None
     out: str | Path | None = None
     seed: int = 0
@@ -126,8 +127,9 @@ class FlowOptions:
 
 def split_sets(sets: Sequence[tuple[str, str, Any]]) -> dict[str, list[tuple[str, Any]]]:
     """``--set`` readings (``flow.__main__.setting``'s) by what they set: ``recipe``,
-    ``platform`` and ``memory``, each ``(path, value)`` in the order given."""
-    out: dict[str, list[tuple[str, Any]]] = {"recipe": [], "platform": [], "memory": []}
+    ``platform``, ``memory`` and ``design``, each ``(path, value)`` in the order given."""
+    out: dict[str, list[tuple[str, Any]]] = {"recipe": [], "platform": [], "memory": [],
+                                             "design": []}  # fmt: skip
     for head, path, value in sets:
         out[head].append((path, value))
     return out
@@ -196,11 +198,13 @@ def default_name(
     recipe_sets: Mapping[str, Any],
     platform_sets: Sequence[tuple[str, Any]] = (),
     memory_sets: Sequence[tuple[str, Any]] = (),
+    design_sets: Sequence[tuple[str, Any]] = (),
 ) -> str:
-    """The recipe's name with every ``--set`` appended: recipe params, then platform and
-    memory paths without their ``platform.`` / ``memory.`` prefix, each in the order given
-    (``vecadd_W8``, ``vecadd_l1.n_banks32``, ``vecadd_B.l1.base576``)."""
-    sets = [*recipe_sets.items(), *platform_sets, *memory_sets]
+    """The recipe's name with every ``--set`` appended: recipe params, then platform, memory
+    and design paths without their ``platform.`` / ``memory.`` / ``design.`` prefix, each in the
+    order given (``vecadd_W8``, ``vecadd_l1.n_banks32``, ``vecadd_B.l1.base576``,
+    ``mvt_3_split_schedulepipeline``)."""
+    sets = [*recipe_sets.items(), *platform_sets, *memory_sets, *design_sets]
     return "_".join([recipe.name, *(_name_part(k, v) for k, v in sets)])
 
 
@@ -213,6 +217,7 @@ def bound_name(
     graph_path: str | Path,
     platform_sets: Sequence[tuple[str, Any]] = (),
     memory_sets: Sequence[tuple[str, Any]] = (),
+    design_sets: Sequence[tuple[str, Any]] = (),
 ) -> str:
     """The default name of a flow from a bound graph: the design step's name for the
     graph (its sandbox folder, else the file's stem; for a flow's own ``sandbox/`` the flow
@@ -221,7 +226,8 @@ def bound_name(
     base = design_name(p)
     if p.parent.name == "sandbox" and base != p.stem:  # a step in a flow's own sandbox/
         base = p.parent.parent.name
-    return "_".join([base, *(_name_part(k, v) for k, v in [*platform_sets, *memory_sets])])
+    sets = [*platform_sets, *memory_sets, *design_sets]
+    return "_".join([base, *(_name_part(k, v) for k, v in sets)])
 
 
 def checks_that_ran() -> dict[str, list[str]]:
@@ -603,8 +609,8 @@ def run_flow(
     # The design point, and with it the task list and the generated entry's tag, is named after
     # the design, the recipe's name; the folder carries every --set.
     point_name = recipe.name
-    name = o.name or with_level(default_name(recipe, recipe_sets, o.platform_sets, o.memory_sets),
-                                o.trace_level)  # fmt: skip
+    name = o.name or with_level(default_name(recipe, recipe_sets, o.platform_sets, o.memory_sets,
+                                             o.design_sets), o.trace_level)  # fmt: skip
     out = _folder(name, o.out)
     times: dict[str, float] = {}
 
@@ -642,8 +648,8 @@ def run_bound(
     graph_path = Path(graph_path)
     # As in run_flow: the design point keeps the design's name, the folder carries every --set.
     point_name = design_of(graph_path)
-    name = o.name or with_level(bound_name(graph_path, o.platform_sets, o.memory_sets),
-                                o.trace_level)  # fmt: skip
+    name = o.name or with_level(bound_name(graph_path, o.platform_sets, o.memory_sets,
+                                           o.design_sets), o.trace_level)  # fmt: skip
     out = _folder(name, o.out)
     _clear_sandbox(out, graph_path)
     times: dict[str, float] = {}
@@ -684,7 +690,8 @@ def _from_graph(
 
     # SNAX-DESIGN
     with _timed(times, "design"):
-        design = load(graph_path, platform_path, o.platform_sets, o.memory_path, o.memory_sets)
+        design = load(graph_path, platform_path, o.platform_sets, o.memory_path, o.memory_sets,
+                      o.design_sets)  # fmt: skip
         problems = run_checks(design)
         if problems:
             raise DesignError(problems, f"design check of {graph_path} on {platform_path}")
@@ -866,7 +873,7 @@ def _energy(out: Path, sw: Path, gen: Path, point: DesignPoint, cluster: Any, na
                         + (f"; SNAX-GVSoC: {why}" if why else ""))  # fmt: skip
     try:
         run = energy_of(read_events(folder / EVENTS_FILE), cluster, json.loads(marks.read_text()),
-                        point.graph, estimate(point.graph, point.platform))  # fmt: skip
+                        point.graph, estimate(point.graph, point.platform, schedule=point.schedule))  # fmt: skip
     except (RunError, ValueError) as e:
         raise FlowError(f"energy: {e}") from None
     run.save(folder / ENERGY_JSON)

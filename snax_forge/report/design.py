@@ -223,6 +223,7 @@ class EstimateTable(Record):
     streamer_cost: list[StreamerCostRow] = field(default_factory=list)
     xbar: dict[str, Any] | None = None  # its inputs, banks, accesses, area and energy
     memory: dict[str, Any] | None = None  # its banks, shape, reads, writes, area and energy
+    schedule: str = "serial"  # the design point's (D179): pipelined, the longest path
     not_costed: list[str] = field(default_factory=list)
     extrapolated: list[str] = field(default_factory=list)
 
@@ -470,7 +471,7 @@ def estimate_table(point: Any, tech: str | None = DEFAULT_TECH) -> EstimateTable
     """The design point's ideal estimate as the report shows it, costed on ``tech``."""
     from snax_forge.estimate import estimate
 
-    e = estimate(point.graph, point.platform, tech)
+    e = estimate(point.graph, point.platform, tech, point.schedule)
     rows = [EstimateRow(g.name, g.cycles, g.bottleneck, g.ramp, g.stall, g.counter,
                         g.cost.area if g.cost else None, g.cost.energy if g.cost else None)
             for g in e.groups]  # fmt: skip
@@ -485,6 +486,7 @@ def estimate_table(point: Any, tech: str | None = DEFAULT_TECH) -> EstimateTable
         cost.append(CostRow(g.name, "ctrl", "group control unit", None, None, c.ctrl_bits,
                             c.ctrl_comb_um2, c.ctrl_flops_um2, None, c.ctrl_nj))  # fmt: skip
     notes = [g.bank_bound_note for g in e.groups if g.bank_bound_note]
+    notes += [e.overlap_note] if e.overlap_note else []
     got = e.parts
     share = shares(got) if got else {}
     parts = [PartRow(k, got[k].area_um2, got[k].energy_nj, *share[k]) for k in PARTS] if got else []
@@ -492,7 +494,7 @@ def estimate_table(point: Any, tech: str | None = DEFAULT_TECH) -> EstimateTable
                          e.tech, dict(e.char_source or {}), e.area, e.energy, e.missing, cost,
                          notes, unmapped_cycles=e.unmapped_cycles,
                          unmapped_iterations=e.unmapped_iterations,
-                         total_cycles=e.total_cycles,
+                         total_cycles=e.total_cycles, schedule=e.schedule,
                          l1=[L1Row(a, x.words, x.bits, x.energy_nj, x.reads, x.writes, x.xbar_nj,
                                    x.banks_nj) for a, x in e.l1.items()],
                          streamers=e.streamers, csrs=e.csrs, parts=parts,
@@ -644,7 +646,8 @@ def cycles_line(e: EstimateTable) -> str:
         each = f"{PER} cycle{'' if PER == 1 else 's'} each"
         unmapped = (f" Unmapped: {e.unmapped_cycles} cycles ({e.unmapped_iterations} iterations at "
                     f"{each}, an assumption).")  # fmt: skip
-    return f"Accelerator cycles: {e.accelerator_cycles}.{unmapped} Total: {e.total_cycles}."
+    how = "" if e.schedule == "serial" else f" ({e.schedule}: the longest path through the runs)"
+    return f"Accelerator cycles: {e.accelerator_cycles}{how}.{unmapped} Total: {e.total_cycles}."
 
 
 def render_sets(rows: list[SetRow]) -> list[str]:

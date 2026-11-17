@@ -92,6 +92,8 @@ class GroupEstimate:
     cost: GroupCost | None = None
     bank_bound: int | None = None  # ceil(words / l1.n_banks); None without a platform
     n_banks: int | None = None  # the platform's, which bank_bound divides by
+    # per run, its nodes and its cycles (schedule.py's runs); not written, derived again
+    run_cycles: list[tuple[list[str], int]] = field(default_factory=list, compare=False)
 
     @property
     def counter(self) -> int:
@@ -250,6 +252,7 @@ def group_blocks(graph: Graph, job_width: int = 32,
             runs[name] if len(members) > 1 else [{members[0]: n} for n in nodes[members[0]]]
         )
         cycles = bottleneck = 0
+        run_cycles: list[tuple[list[str], int]] = []
         firings, gives = dict.fromkeys(members, 0), dict.fromkeys(members, 0)
         for task in tasks:
             values = {u: unit_firings(graph, n, insts[u])[0] for u, n in task.items()}
@@ -262,6 +265,7 @@ def group_blocks(graph: Graph, job_width: int = 32,
                 raise EstimateError("estimate.counter", f"group {name}: the group rule does not "
                                     "end")  # fmt: skip
             cycles += end
+            run_cycles.append(([n.id for n in task.values()], end))
             for u in task:
                 firings[u] += values[u]["n"]
                 t = ts[members.index(u)]
@@ -279,6 +283,7 @@ def group_blocks(graph: Graph, job_width: int = 32,
                           [k.attrs["container"] for k, _, _ in ends], bits=bits,
                           ctrl_bits=ctrl_bits(rule_units, rule_links, owner,
                                               _fixed_ts(graph, insts, members), job_width))  # fmt: skip
+        g.run_cycles = run_cycles
         out.append((g, units, bufs))
     return out
 

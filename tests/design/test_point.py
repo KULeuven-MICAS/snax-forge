@@ -24,7 +24,9 @@ def point(memory=(), **kw) -> DesignPoint:
 def test_vecadd_design_point_holds_every_part():
     p = point([("B.l1.base", 576), ("C.l1.base", 1152)])
     d = p.to_dict()
-    assert list(d) == ["name", "graph_from", "graph", "platform", "streamers", "memory"]
+    assert list(d) == ["name", "graph_from", "graph", "platform", "streamers", "memory",
+                       "schedule"]  # fmt: skip
+    assert d["schedule"] == "serial"
     assert d["graph"] == json.loads(BOUND.read_text())  # carried unchanged: code, replaced, split
     assert d["platform"]["name"] == "small16" and d["platform"]["base"] == "small16"
     assert d["streamers"] == VECADD_STREAMERS

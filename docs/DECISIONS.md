@@ -7,7 +7,7 @@ Rules (D117):
 - An entry is a choice with a real alternative that someone may want to reverse: direction, ownership, the interfaces between components, the order of work. Implementation details live in the module's docstring and its tests.
 - An entry says what was decided, why, and where the detail lives, in a few short bullets; an edge case only when there is one. A change is written into the entry, not chained after it.
 - Entries merged into one keep all their numbers in its heading, so a cite of any of them still finds it. A number is never changed or reused; the text of a removed entry is in git history.
-- A new decision gets the next free number, under the area it belongs to. Next free number: **D179**.
+- A new decision gets the next free number, under the area it belongs to. Next free number: **D180**.
 
 Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29–D45, D47–D50, D53, D54, D56, D58–D63, D65–D67, D69, D74, D76–D78, D80, D81, D83, D88–D97, D100, D101, D103, D104, D106, D107, D109, D110, D114, D115, D119, D124, D127, D128, D132, D133, D138–D141, D151, D156, D159, D160.
 
@@ -214,10 +214,17 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 
 ### D64 · D75 · D158 — The task list is derived, accelerators run in series
 
-- **Decided:** the task list is derived from a design point: per accelerated node `configure`, `start` and `sync` steps, loads and stores from the memory plan, `after` for data dependences only, one wait per component. Names are derived, never stated: streamer `<instance>_<port>`, task `<node>_<component>`, DMA task `load_<container>` or `store_<container>`. Accelerators run in series: before each one's start, a `sync` on the previous one's task, its configures before that sync.
+- **Decided:** the task list is derived from a design point: per accelerated node `configure`, `start` and `sync` steps, loads and stores from the memory plan, `after` for data dependences only, one wait per component. Names are derived, never stated: streamer `<instance>_<port>`, task `<node>_<component>`, DMA task `load_<container>` or `store_<container>`. Under the `serial` schedule (the default, D179) accelerators run in series: before each one's start, a `sync` on the previous one's task, its configures before that sync.
 - **Why:** lowering adds only the waits correctness needs, and the next accelerator is set up while the current one runs.
 - **Where:** CONTRACTS, "Task list".
-- **Edge:** overlap of independent accelerators is open item 109.
+- **Edge:** overlap of independent accelerators is D179's schedules.
+
+### D179 — The schedule: independent accelerators may overlap
+
+- **Decided:** a design point holds a `schedule` (`--set design.schedule=`), amending D158. `serial`: D158's. `pipeline`, from configuration: no serial sync, so a start waits only for its tasks' `after`; the next accelerator is configured while the previous one runs and started at once. `pipeline_compute`, from compute: consecutive starts with only loads to wait for, sharing no component, are gathered: their loads, then their configures, then the starts back to back. Under both, a store moves past the later starts of other accelerators, to before its own accelerator's next block or to the end, since its wait on its writer would otherwise hold the next start. Whatever the schedule, a group never runs two tasks at once (the program polls a busy component before starting it again), so a shared form's task list is the same under all three; the DMA's waits stay D135's.
+- **Why:** mvt's halves share no data, yet D158 runs them one after the other. With c the core's configuration and r a run: serial $c_1 + r_1 + r_2$, pipeline $c_1 + \max(r_1, c_2 + r_2)$, pipeline_compute $c_1 + c_2 + \max(r_1, r_2)$, the last with both chains on the banks at once. The store's move keeps those true: left in place, the store's wait on the first half would come before the second half's start.
+- **Where:** CONTRACTS, "Task list" (its "Derived" part) and "Estimate"; `lower/derive.py`, `estimate/schedule.py`.
+- **Edge:** the estimate's `accelerator_cycles` becomes the longest path through the runs (their waits on data, their group and their accelerator), still ideal (D155), with a note when overlapping accelerators move more words a cycle than there are banks. It holds no core configuration, so it gives both pipelined schedules the same cycles. The quiet build still waits on every start at once, so it runs a pipelined program serially (open item 140).
 
 ### D135 — The task list becomes C on snRuntime
 

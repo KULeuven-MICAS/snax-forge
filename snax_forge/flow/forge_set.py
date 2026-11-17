@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from snax_forge.common import cwd_relative
+from snax_forge.design.check import SCHEDULES
 from snax_forge.gen import bundle
 from snax_forge.gen.rtl import warm_emit
 from snax_forge.sandbox.recipe import Recipe, find_recipe
@@ -53,7 +54,9 @@ class Design:
         by_head = flow_run.split_sets([setting(t) for t in self.sets])
         recipe_sets = dict(by_head["recipe"])
         r = Recipe.load(find_recipe(self.recipe)).with_params(recipe_sets)
-        return flow_run.default_name(r, recipe_sets, by_head["platform"], by_head["memory"])
+        return flow_run.default_name(
+            r, recipe_sets, by_head["platform"], by_head["memory"], by_head["design"]
+        )
 
 
 def designs(*recipes: str | Design) -> list[Design]:
@@ -115,6 +118,8 @@ SETS = {
         Design("mvt_2_reuse"),
         Design("mvt_3"),
         *(Design("mvt_4", w + lay) for w in ((), ("W_x1=4",)) for lay in ((), (PADDED,))),
+        *(Design("mvt_3_split", lay + (f"design.schedule={s}",)) for lay in ((), (PADDED,))
+          for s in SCHEDULES),
     ],
     "pack": PACK,
 }  # fmt: skip

@@ -54,7 +54,7 @@ flowchart TD
 | Flag | What it does |
 |---|---|
 | `--platform P` | the platform the design point is on; `platforms/snax_forge.json` is snax_cluster's base cluster |
-| `--set NAME=VALUE` | a recipe param (`--set W=8`), the kernel's type preset (`--set types=i8`) or one dtype (`--set dtypes.C=int16`), or a design one with `platform.` or `memory.` in front (`--set memory.passes.layout=padded_rows`); each is added to the run's folder name |
+| `--set NAME=VALUE` | a recipe param (`--set W=8`), the kernel's type preset (`--set types=i8`) or one dtype (`--set dtypes.C=int16`), or a design one with `platform.` or `memory.` in front (`--set memory.passes.layout=padded_rows`), or the design point's schedule (`--set design.schedule=serial|pipeline|pipeline_compute`, D179; default `serial`); each is added to the run's folder name |
 | `--trace LEVEL[:SOURCES]` | how much of the run is traced (the table below); the level is added to the folder name |
 | `--vcd` | also writes gtkwave's `run/all.vcd` and `run/view.gtkw` of the traced sources |
 | `--keep-work` | keeps gvrun's `run/work/` after a passing run (a failing run always keeps it) |
@@ -161,7 +161,7 @@ The flow's stages are commands of their own. Each reads the previous one's outpu
 | `pixi run import-dfg K` | the kernel's SDFG | `out/dfg/K.snaxdfg` | |
 | `pixi run check-dfg G --kernel K` | a graph | nothing; runs it against the kernel's reference | |
 | `pixi run sandbox RECIPE` | a recipe | `out/sandbox/<name>/<i>_<transform>.snaxdfg`, each step checked against the reference | `--set`, `--graph G` (start from a graph), `--out`, `--seed` |
-| `pixi run design G --platform P` | a bound graph | `out/design/<name>/`: `platform.json`, `memory.json`, `design_point.json` | `--set platform.PATH=V`, `--set memory.PATH=V`, `--memory`, `--out` |
+| `pixi run design G --platform P` | a bound graph | `out/design/<name>/`: `platform.json`, `memory.json`, `design_point.json` | `--set platform.PATH=V`, `--set memory.PATH=V`, `--set design.schedule=S`, `--memory`, `--out` |
 | `pixi run design check G --platform P` | a bound graph | nothing; the design checks only | |
 | `pixi run design save SRC NAME` | a platform working copy | `platforms/NAME.json` | |
 | `pixi run design from-hjson HJSON NAME` | snax_cluster's cluster file | `platforms/NAME.json` (`--force` to replace) | |
@@ -266,7 +266,7 @@ One ELF, snax-forge's, runs on SNAX-GVSoC and on snax_cluster's RTL. The RTL run
 - `forge` takes `--platform` (default `platforms/snax_forge.json`), `--set` and `--trace`, passed to the flow. `forge-set` takes `--sim vsim|vlt` and `-j N`.
 - `forge_expected.txt` holds the run's counter and data lines, then each counter's `forge fill`, its group's streamer fill from the estimate.
 - Beside `forge.elf`, forge leaves `forge_quiet.elf` (the same `main.c` with `-DFORGE_QUIET`: every start waited on at once, each section marked in CSR `0x7c5`, no prints) and its legend `obs_marks.json`, for a power run on the netlist.
-- The sets: `quick` is vecadd_i32, vsum_tree_i8, dot_1, dot_1_enc, dot_4, axpy, and vsum_tree and matvec_3 at `types=i8`, W = 8 (packed outputs, D174). `full` adds seventeen more (the list in `snax_forge/flow/forge_set.py`), among them matvec_1, matvec_seed, matvec_seed_serial and rowsum_2 twice. `mvt` is 26 bundles at M = N = 64, the recipes' defaults: mvt_1, mvt_1_dot2, mvt_1_dot2_shared, mvt_2, mvt_2_shared and mvt_4 at W = 4 and 8, contiguous and `padded_rows`, mvt_2_reuse and mvt_3 (W = 8) at their defaults; not in the other two. `pack` is 28 narrow designs: every recipe with narrow types at i8 and W = 8, dot_serial at i32, and dot_3 and matvec_3 at W = 32, dot_3 at i16 and i32.
+- The sets: `quick` is vecadd_i32, vsum_tree_i8, dot_1, dot_1_enc, dot_4, axpy, and vsum_tree and matvec_3 at `types=i8`, W = 8 (packed outputs, D174). `full` adds seventeen more (the list in `snax_forge/flow/forge_set.py`), among them matvec_1, matvec_seed, matvec_seed_serial and rowsum_2 twice. `mvt` is 32 bundles at M = N = 64, the recipes' defaults: mvt_1, mvt_1_dot2, mvt_1_dot2_shared, mvt_2, mvt_2_shared and mvt_4 at W = 4 and 8, contiguous and `padded_rows`, mvt_2_reuse and mvt_3 (W = 8) at their defaults, mvt_3_split (W = 8) contiguous and `padded_rows` under each `design.schedule` (D179); not in the other two. `pack` is 28 narrow designs: every recipe with narrow types at i8 and W = 8, dot_serial at i32, and dot_3 and matvec_3 at W = 32, dot_3 at i16 and i32.
 - When each set is due is CLAUDE.md's rule: the quick set on vsim before a PR that changes the emitted RTL or `main.c` merges, the full set at a phase's close, the numbers into open item 95.
 
 Example:

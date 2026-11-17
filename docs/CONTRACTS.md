@@ -400,6 +400,7 @@ The `platform` and `graph` stages run independently, `connect` when both passed,
 | `platform.streamer` | a streamer value below 1, spatial bounds not a non-empty list of ints ≥ 1, a `num_ch` not an int ≥ 1 |
 | `platform.l2` | L2 and L1 disagree on the beat or the word |
 | `platform.banks` | with an L2, `n_banks` not a multiple of `wide_bits / width_bits` |
+| `design.schedule` | a schedule other than `serial`, `pipeline` and `pipeline_compute` (the message names them), or a `--set design.` path other than `schedule`; checked in the `platform` stage |
 | `graph.load` | the graph does not load (section 2) |
 | `graph.symbols` | a symbol still null: bind it in the recipe |
 | `graph.unbound` | work outside every accelerated node, or no accelerated node: the program drives accelerators only |
@@ -472,6 +473,7 @@ A note is registered (`register_note(code, fn)`) and runs once the checks passed
 | `platform` | the platform working copy (section 5) |
 | `streamers` | the resolved shell, `<instance>_<port>` → `instance`, `port`, `write`, `n_ports`, `spatial_bounds`, `temporal_dims`, `dtype`, `num_slc`, `num_ch`, `d_out` (1 unless packed), `fifo_depth` |
 | `memory` | the plan: `passes`, `changes`, `layouts` (container → memory → layout) |
+| `schedule` | how LOWER orders the accelerators (D179, section 8): `serial` (the default; a file without the field), `pipeline` or `pipeline_compute`, from `--set design.schedule=` |
 
 ## 8. Task list
 
@@ -533,7 +535,14 @@ flowchart TD
 - **Chains through L1** (D105): `after` holds data dependences only, so two groups chain with one wait, on the first's writer.
 - **In place**: a writer never waits for a reader it starts with. That is an in-place update, allowed only when the reader is a port of its own unit visiting the same addresses in the same order (axpy's `y`, a fold's seed), and refused by name otherwise.
 - **A packed output** (D174): its writer's innermost loop of n pushes at stride s = W · b / 8 bytes becomes $(\lceil n / d_{out} \rceil, d_{out}\thinspace s)$, one write per 8-byte word, its spatial bounds `[1]`, the outer loops and the base unchanged. matvec at i8, M = 10 int32 outputs at W = 1: (10, 4 B) becomes (5, 8 B).
-- **In series** (D158): before each accelerator's `start`, one `sync` on the previous accelerator's task, its own configures placed before it, so it is set up while the previous one runs. None when an `after` already holds that task, and none between the groups of one encapsulated accelerator. dot_serial: `sum_sum`'s configures, `sync mult_mul`, its start.
+- **In series** (D158, the `serial` schedule): before each accelerator's `start`, one `sync` on the previous accelerator's task, its own configures placed before it, so it is set up while the previous one runs. None when an `after` already holds that task, and none between the groups of one encapsulated accelerator. dot_serial: `sum_sum`'s configures, `sync mult_mul`, its start.
+- **Pipelined** (D179): `pipeline` adds no serial sync, so a start waits only for its tasks' `after` and its components' previous tasks. Each store (its configure and start) moves down past the later blocks of other accelerators (a block: the loads, configures and start of one accelerator task), stopping before a block of its own accelerator, else going to before the final syncs. `pipeline_compute` also gathers consecutive blocks whose tasks' `after` are DMA tasks only and that share no component (the first may open with stores): their loads, then their configures, then their starts back to back. A shared form (mvt_3) gives one list under all three schedules. mvt_3_split, its halves `mvt` and `mvt_1`:
+
+| Schedule | Order |
+|---|---|
+| `serial` | loads of half 1, conf `mvt`, start, `store_x1`, loads of half 2, conf `mvt_1`, `sync tmp0_mult_mvt`, start, `store_x2`, syncs |
+| `pipeline` | loads of half 1, conf `mvt`, start, loads of half 2, conf `mvt_1`, start, `store_x1`, `store_x2`, syncs |
+| `pipeline_compute` | loads of both halves, conf `mvt`, conf `mvt_1`, start `mvt`, start `mvt_1`, `store_x1`, `store_x2`, syncs |
 
 vecadd's design point on `platforms/snax_forge.json` gives `tests/run/fixtures/vecadd/tasks.json` exactly; its end:
 
@@ -1011,7 +1020,8 @@ An `Estimate` is a dataclass with `to_dict` / `from_dict`; the totals are writte
 |---|---|
 | `groups` | per group in graph order (below) |
 | `accelerators` | per accelerator in CSR order: `name`, `groups`, `own_csrs`, `csrs` (its first and last, its streamer's then its own, section 9), `streamer` (`movers`, `channels`, `temporal_dims` per mover, `csrs`), `cost` (its streamers and L1 accesses, section 14); without a platform both `csrs` are null |
-| `accelerator_cycles` | the sum of the groups' `cycles`: groups add up through L1 (D105) |
+| `accelerator_cycles` | under `serial`, the sum of the groups' `cycles`: groups add up through L1 (D105); under a pipelined `schedule` (D179), the longest path through `runs` |
+| `schedule`, `runs` | the design point's schedule (`serial` without one); per run of a group in start order (`estimate/schedule.py`) its `name` (its first node), `group`, `accelerator`, `cycles`, `words` through L1 and `after`: the earlier runs of its group or accelerator and those that write what it reads or writes, or read what it writes, in L1 |
 | `not_mapped` | the iterations of each nest no unit runs, over every map around it but the spatial ones |
 | `unmapped_iterations` | the same over every map, spatial ones included: lanes only exist once a unit runs them |
 | `unmapped_cycles` | `unmapped_iterations` × `UNMAPPED_CYCLES_PER_ITERATION` (1, a labelled assumption: a core takes several cycles per iteration) |
@@ -1053,6 +1063,7 @@ A run's BUSY_COUNTER counts from its group's START every cycle until busy drops 
 
 - dot 1 at N = 2048, W = 8: `dot_1_enc`'s vmul 256 against 259 (its START 10 cycles after the shared streamer's), `dot_1`'s vmul and vsum 259 against 259; vecmul at W = 1: 2048 against 2051.
 - `tests/estimate/` holds it equal to the SNAX-GVSoC counter of the designs in open item 95 it matches (`COUNTERS`). It does not match rowsum_2's contiguous layout (131 against 134, bank conflicts), the seeded sums (matvec_seed's 1028 against 1027) and rowsum_serial (67 against 65).
+- Pipelined, `design.md` notes when runs of different accelerators, each started as soon as its `after` allow, move more words a cycle at once than there are banks: `mvt and mvt_1 run at once under pipeline: their streams move 32.3 words a cycle over 32 banks, so bank conflicts stretch them beyond the ideal` (mvt_3_split at W = 8). The longest path holds no core configuration, so both pipelined schedules give it the same cycles.
 - `bank_bound` is noted in the page, `design.md` and `run.md` when it exceeds `cycles`, over one group's streamers: `mul: the streams move 6144 words over 32 banks, at least 192 cycles of L1 time against the ideal 128` (dot 1 at W_mul = 16, whose streams took 211 cycles and BUSY_COUNTER 186).
 - Against SYN2's 48 synthesized points (`tests/estimate/fixtures/syn2_flops.json`), each datapath's `bits` matches the flops DC kept and `ctrl_bits` is held within 10 %: a check of the counts, not of the cost's accuracy (section 14).
 

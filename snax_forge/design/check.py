@@ -65,6 +65,8 @@ STAGES: dict[str, tuple[str, ...]] = {
     "connect": ("platform", "graph"),
     "memory": ("connect",),
 }
+# The design point's ``schedule`` (CONTRACTS, "Task list"): how LOWER orders the accelerators.
+SCHEDULES = ("serial", "pipeline", "pipeline_compute")
 # Component names besides the shell and the accelerators: the DMA's (lower/derive.py).
 FIXED = ("dma",)
 # snRuntime's top of L1 (snax-gvsoc sw/snRuntime/src/start.S): a stack of
@@ -86,6 +88,7 @@ class Design:
     instances: dict[str, Instance] = field(default_factory=dict)  # filled by graph.brm
     memory_spec: MemorySpec | None = field(default_factory=MemorySpec)
     memory: MemoryPlan | None = None  # made by the memory.pin check, or given (a design point)
+    schedule: str = "serial"  # one of SCHEDULES, checked by design.schedule
 
     def context(self) -> MemoryContext:
         return MemoryContext(self.graph, self.platform)
@@ -119,15 +122,25 @@ def load(
     sets: Sequence[tuple[str, Any]] = (),
     memory_path: str | Path | None = None,
     memory_sets: Sequence[tuple[str, Any]] = (),
+    design_sets: Sequence[tuple[str, Any]] = (),
 ) -> Design:
     """Load the inputs; what fails to load becomes a problem, never an exception.
 
     The platform is the working copy (``Platform.with_changes``), with ``sets``
     applied when they are given. The memory spec starts from ``memory_path``
     (a memory working copy) or the default passes, with ``memory_sets``
-    applied; the plan itself is made by the memory checks.
+    applied; the plan itself is made by the memory checks. ``design_sets`` set the
+    design point's own fields (``schedule``), checked by design.schedule.
     """
     problems: list[Problem] = []
+    schedule = "serial"
+    for path, value in design_sets:
+        if path == "schedule":
+            schedule = value
+        else:
+            problems.append(Problem("design.schedule", f"design.{path}",
+                                    "no such field; the design point's own field is schedule",
+                                    f"--set design.schedule={SCHEDULES[0]}"))  # fmt: skip
     platform = None
     try:
         platform = Platform.load(platform_path).with_changes(sets)
@@ -144,7 +157,7 @@ def load(
         spec = start.with_changes(memory_sets)
     except DesignError as e:
         problems += e.problems
-    return Design(platform, graph, problems, str(graph_path), memory_spec=spec)
+    return Design(platform, graph, problems, str(graph_path), memory_spec=spec, schedule=schedule)
 
 
 NOTES: dict[str, Check] = {}
@@ -228,6 +241,15 @@ def _streamers(design: Design) -> dict[str, tuple[str, str]]:
 
 def _platform_load(design: Design) -> Iterable[Problem]:
     return [p for p in design.load_problems if p.code.startswith("platform.")]
+
+
+def _design_schedule(design: Design) -> Iterable[Problem]:
+    """The schedule is one of ``SCHEDULES``; a ``--set design.`` path is ``schedule``."""
+    yield from (p for p in design.load_problems if p.code == "design.schedule")
+    if design.schedule not in SCHEDULES:
+        yield Problem("design.schedule", "design.schedule",
+                      f"{design.schedule!r} is no schedule; give one of {', '.join(SCHEDULES)}",
+                      f"--set design.schedule={SCHEDULES[0]}")  # fmt: skip
 
 
 def _platform_l2(design: Design) -> Iterable[Problem]:
@@ -1209,6 +1231,7 @@ for _code, _stage, _fn in (
     ("platform.load", "platform", _platform_load),
     ("platform.l2", "platform", _platform_l2),
     ("platform.banks", "platform", _platform_banks),
+    ("design.schedule", "platform", _design_schedule),
     ("graph.load", "graph", _graph_load),
     ("graph.symbols", "graph", _graph_symbols),
     ("graph.unbound", "graph", _graph_unbound),
