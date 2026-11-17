@@ -151,7 +151,7 @@ class DesignPoint(JsonFile):
 def _streamer(name: str, d: Any) -> Streamer:
     what = f"streamers.{name}"
     keys = ("instance", "port", "write", "n_ports", "spatial_bounds", "temporal_dims", "dtype",
-            "num_slc", "num_ch", "d_out", *OPTIONS)  # fmt: skip
+            "num_slc", "num_ch", "d_out", "d_in", *OPTIONS)  # fmt: skip
     try:
         check_keys(d, keys, what)
         opts = StreamerOptions.from_dict({k: d[k] for k in OPTIONS})
@@ -159,6 +159,7 @@ def _streamer(name: str, d: Any) -> Streamer:
             name, str(d["instance"]), str(d["port"]), bool(d["write"]),
             tuple(int(x) for x in d["spatial_bounds"]), int(d["temporal_dims"]), opts,
             str(d["dtype"]), int(d["num_slc"]), int(d["num_ch"]), int(d.get("d_out", 1)),
+            int(d.get("d_in", 1)),
         )  # fmt: skip
     except (KeyError, TypeError, ValueError) as e:
         raise DesignError([Problem("point.keys", what, f"{type(e).__name__}: {e}")]) from None

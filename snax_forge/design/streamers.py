@@ -3,7 +3,8 @@
 ``resolve`` builds one ``Streamer`` per outer port of every accelerated instance, in the order
 the graph first uses them and the BRM's port order, as CONTRACTS, "Platform" (the streamer
 shell) and "Memory plan and design point" (the design point's ``streamers``) define them; a
-port on a link has none, an outer output narrower than a word is packed (``packed``, D174).
+port on a link has none, an outer port narrower than a word is packed (an output, ``packed``,
+D174) or sliced (an input, ``sliced``, D180), one rule (``per_word``).
 ``instances``, ``groups`` and ``accelerators`` read the instances off the graph and put them
 into groups and accelerators; ``links``, ``linked_ports``, ``unplaced`` and ``slot_containers``
 read the links, the containers with no L1 space and those read only through a slot connector. Nothing here checks the pairing: check.py runs first and reports
@@ -48,6 +49,7 @@ class Streamer:
     num_slc: int
     num_ch: int
     d_out: int = 1  # results per word through the output's packer (D174), 1 for a wire
+    d_in: int = 1  # pops per word through the input's slicer (D180), 1 for a wire
 
     @property
     def n_ports(self) -> int:
@@ -65,6 +67,7 @@ class Streamer:
             "num_slc": self.num_slc,
             "num_ch": self.num_ch,
             "d_out": self.d_out,
+            "d_in": self.d_in,
             **self.options.to_dict(),
         }
 
@@ -75,13 +78,23 @@ def slices_per_word(dtype: str, width_bits: int) -> int:
     return max(1, width_bits // (np.dtype(dtype).itemsize * 8))
 
 
-def packed(dtype: str, lanes: int, write: bool, width_bits: int) -> int:
-    """d_out of a port of ``lanes`` lanes of ``dtype``: num_slc / W for an output whose lanes
-    fill less than a word and divide num_slc (its packer, D174), else 1."""
+def per_word(dtype: str, lanes: int, width_bits: int) -> int:
+    """A port's W-lane beats per word, either side: num_slc / W when its ``lanes`` lanes of
+    ``dtype`` fill less than a word and divide num_slc, else 1 (a wire)."""
     num_slc = slices_per_word(dtype, width_bits)
-    if write and lanes < num_slc and num_slc % lanes == 0:
+    if lanes < num_slc and num_slc % lanes == 0:
         return num_slc // lanes
     return 1
+
+
+def packed(dtype: str, lanes: int, write: bool, width_bits: int) -> int:
+    """d_out of a port: ``per_word`` for an output (its packer, D174), 1 for an input."""
+    return per_word(dtype, lanes, width_bits) if write else 1
+
+
+def sliced(dtype: str, lanes: int, write: bool, width_bits: int) -> int:
+    """d_in of a port: ``per_word`` for an input (its slicer, D180), 1 for an output."""
+    return 1 if write else per_word(dtype, lanes, width_bits)
 
 
 def port_dtype(graph: Graph, nodes: list[Node], port: str) -> str:
@@ -295,9 +308,10 @@ class SharedMover:
 # streamer RTL and SNAX-GVSoC read them in the same order.
 def word_bounds(s: Streamer) -> tuple[int, ...]:
     """A streamer's spatial bounds in words, fastest first: the fastest over num_slc (gen.lanes
-    refuses a fastest bound that is not whole words), one word for a packed output."""
+    refuses a fastest bound that is not whole words), one word for a packed output or a sliced
+    input."""
     s0, *rest = s.spatial_bounds
-    return (1 if s.d_out > 1 else s0 // s.num_slc, *rest)
+    return (1 if s.d_out > 1 or s.d_in > 1 else s0 // s.num_slc, *rest)
 
 
 def shared_containers(graph: Graph) -> list[str]:
@@ -506,8 +520,10 @@ def resolve(platform: Platform, graph: Graph, insts: dict[str, Instance]) -> dic
             dtype = port_dtype(graph, mine, p.name)
             num_slc = slices_per_word(dtype, platform.l1.width_bits)
             num_ch = platform.num_ch(s)
-            d_out = packed(dtype, prod(sb), p.direction == "out", platform.l1.width_bits)
-            if num_ch is None and d_out > 1:
+            write = p.direction == "out"
+            d_out = packed(dtype, prod(sb), write, platform.l1.width_bits)
+            d_in = sliced(dtype, prod(sb), write, platform.l1.width_bits)
+            if num_ch is None and max(d_out, d_in) > 1:
                 num_ch = 1
             if num_ch is None:
                 if prod(sb) % num_slc:
@@ -518,6 +534,6 @@ def resolve(platform: Platform, graph: Graph, insts: dict[str, Instance]) -> dic
                 num_ch = prod(sb) // num_slc
             out[s] = Streamer(
                 s, name, p.name, p.direction == "out", tuple(sb), max([1, *dims]),
-                platform.options(s), dtype, num_slc, num_ch, d_out,
+                platform.options(s), dtype, num_slc, num_ch, d_out, d_in,
             )  # fmt: skip
     return out

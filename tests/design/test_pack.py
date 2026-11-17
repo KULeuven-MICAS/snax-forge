@@ -1,5 +1,5 @@
-"""Packing narrow elements into words: the streamers' dtype, num_slc, num_ch and d_out, and
-the checks connect.pack and connect.num_ch, on small hand-built graphs."""
+"""Packing narrow elements into words: the streamers' dtype, num_slc, num_ch, d_out and d_in,
+and the checks connect.pack and connect.num_ch, on small hand-built graphs and recipes."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from snax_forge.design import Platform, instances, resolve
 from snax_forge.dfg import Graph
 from snax_forge.dfg.import_sdfg import import_kernel
 from snax_forge.sandbox import Recipe, apply_recipe
-from tests.helpers import graph_dict, recipe_path
+from tests.helpers import graph_dict, imported, recipe_path
 
 from .helpers import SMALL16, accel_node, problems
 from .helpers import design as paired
@@ -73,6 +73,16 @@ def _d_out(g: Graph) -> dict[str, int]:
     return {k: s.d_out for k, s in resolve(Platform.load(SMALL16), g, instances(g)).items()}
 
 
+def _d_in(g: Graph) -> dict[str, int]:
+    return {k: s.d_in for k, s in resolve(Platform.load(SMALL16), g, instances(g)).items()}
+
+
+def _recipe(name: str, **params: int | str) -> Graph:
+    """Recipe ``name`` at ``params`` (``types`` a type preset), its last graph."""
+    r = Recipe.load(recipe_path(name)).with_params(params)
+    return apply_recipe(r, imported(r.kernel, r.dtypes, r.types))[-1].graph
+
+
 def _pack(g: Graph) -> list:
     return [p for p in problems(paired(g)) if p.code == "connect.pack"]
 
@@ -115,6 +125,30 @@ def test_a_4x6_int32_output_at_w_1_is_packed():
     g = Graph.from_dict(_narrow_out(g.to_dict()))
     assert _pack(g) == []  # connect.dtype refuses an output narrower than its inputs: a fold's
     assert _d_out(g)["acc_out"] == 2
+
+
+def test_vecadd_i32_at_w_1_slices_its_inputs_and_packs_its_output():
+    """One int32 lane a beat: a and b sliced 2 from a word, out packed 2 to one, num_ch 1."""
+    g = _recipe("vecadd_i32", W=1)
+    assert problems(paired(g)) == []
+    assert _shell(g) == {p: ("int32", 2, 1) for p in ("acc_a", "acc_b", "acc_out")}
+    assert _d_in(g) == {"acc_a": 2, "acc_b": 2, "acc_out": 1}
+    assert _d_out(g) == {"acc_a": 1, "acc_b": 1, "acc_out": 2}
+
+
+def test_a_narrow_input_is_sliced():
+    """vsum_tree at int8, W = 4: its input sliced 2 from a word, its int32 sum packed 2."""
+    g = _vsum({"A": "int8", "out": "int32"})
+    assert _pack(g) == []
+    assert _d_in(g) == {"acc_a": 2, "acc_out": 1}
+    assert _d_out(g) == {"acc_a": 1, "acc_out": 2}
+
+
+def test_an_input_re_read_by_an_outer_loop_is_sliced():
+    """A 6-element int32 row read again on every pass of i (a step of 0): whole words."""
+    g = _grid([6], [("i", "0:4"), ("j", "0:6")], ["j:j + 1"])
+    assert _pack(g) == []
+    assert _d_in(g) == {"acc_a": 2, "acc_b": 2, "acc_out": 1}
 
 
 def test_matadd_int32_4x6_in_2x2_tiles():
@@ -174,16 +208,22 @@ def test_a_column_does_not_run_along_contiguous_elements():
     )
 
 
-def test_a_narrow_input_needs_the_parked_slicer():
-    got = _pack(_vsum({"A": "int8", "out": "int32"}))
-    assert [(p.code, p.where) for p in got] == [("connect.pack", "node sum.a")]
+def test_vecadd_i8_at_w_3_is_neither_sliced_nor_packed():
+    """W = 3 neither divides nor is a multiple of num_slc: int8 inputs (8 a word) and the int32
+    output (2 a word) are refused, with the fix."""
+    got = _pack(_recipe("vecadd", types="i8", W=3))
+    assert [p.where for p in got] == ["node add.a", "node add.b", "node add.out"]
     assert got[0].message == (
-        "W = 4 lanes < num_slc = 8 (int8, num_slc = 8 slices per word): a beat would fill part of "
-        "a word, and an input's slicer is parked"
+        "W = 3 lanes < num_slc = 8 (int8, num_slc = 8 slices per word) and does not divide it: a "
+        "beat would fill part of a word, and only a W dividing num_slc is sliced"
     )
     assert got[0].fix == (
-        "make the container A int64 or uint64 (one element per word), or give the port num_slc = "
-        "8 lanes"
+        "give the port W = 1, 2, 4 (sliced) or a multiple of 8 (wired), or make the container A "
+        "int64 or uint64 (one element per word)"
+    )
+    # out is int32 (num_slc = 2): W = 3 is above it, not a multiple, so S_0's rule refuses it
+    assert got[2].message.startswith(
+        "the fastest spatial bound S_0 = 3 is not a multiple of num_slc"
     )
 
 
