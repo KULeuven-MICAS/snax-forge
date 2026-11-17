@@ -478,3 +478,47 @@ def synthetic_regions(tasks: Any) -> list[Any]:
         out += [Region(name, "l1", s.values[l1]["base"], (n,), (8,), "int64"),
                 Region(name, "l2", link[name], (n,), (8,), "int64", size)]  # fmt: skip
     return out
+
+
+def snap_lines(cluster: Any, snaps: list[tuple[int, int, dict[str, Any]]],
+               banks: int = 2) -> list[str]:  # fmt: skip
+    """A run's ``snap`` lines (snax-gvsoc's EVENTS.md, Snapshots) and its crossbar's whole-run
+    ``input`` lines, for snapshots ``(mark, cycle, counters)`` taken in order, the last at the
+    end (mark -1). ``counters`` are running totals: ``inputs`` by port (a mover's lane or
+    ``core<i>``, ``(grants, stalls)``), ``group`` (the unit's classes), ``units`` (``(firings,
+    pushes)`` by instance), ``movers`` (classes by mover name), ``banks`` (``(reads, writes,
+    conflicts)`` per bank, ``banks`` of them at 0 by default). Each component writes in its own
+    order, as SNAX-GVSoC does."""
+    acc = cluster.accelerator
+    unit, streamer = f"snax_acc{acc.core}/{acc.units[0].path}", acc.csrs.sets[0].trace
+    names = {p: f"snax_acc{acc.core}.streamer_{m.set}.{m.gvsoc}.lane{k}"
+             for m in acc.movers for k, p in enumerate(m.ports)}  # fmt: skip
+    index = {p: input_index(cluster, p) for p in names}
+    names |= {c: c for c in cluster.cores}
+    index |= {c: 1000 + i for i, c in enumerate(cluster.cores)}
+    out = []
+    for mark, cycle, c in snaps:
+        ins = c.get("inputs", {})
+        g = c.get("group", dict.fromkeys(("busy", "stall_in", "stall_out", "flush"), 0))
+        out.append(line(unit, "summary", f"{cycle} snap mark={mark} " + " ".join(
+            f"{k}={v}" for k, v in g.items()), cycle))  # fmt: skip
+        for u, (f, p) in c.get("units", {}).items():
+            out.append(line(unit, "summary", f"{cycle} snap mark={mark} unit={u} firings={f} "
+                            f"pushes={p}", cycle))  # fmt: skip
+        if mark == -1:
+            for p, (gr, st) in ins.items():
+                out.append(line("tcdm/snax_xbar", "summary", f"{cycle} input index={index[p]} "
+                                f"name={names[p]} grants={gr} stalls={st} stalls_dma=0 "
+                                f"whole_run={int(p in cluster.cores)}", cycle))  # fmt: skip
+        for p, (gr, st) in ins.items():
+            out.append(line("tcdm/snax_xbar", "summary", f"{cycle} snap mark={mark} "
+                            f"input={index[p]} grants={gr} stalls={st}", cycle))  # fmt: skip
+        for b, (r, w, k) in enumerate(c.get("banks", [(0, 0, 0)] * banks)):
+            out.append(line("tcdm/snax_xbar", "summary", f"{cycle} snap mark={mark} bank={b} "
+                            f"reads={r} writes={w} conflicts={k}", cycle))  # fmt: skip
+        for m in acc.movers:
+            k = c.get("movers", {}).get(m.name, dict.fromkeys(
+                ("busy", "stall_xbar", "stall_fifo", "idle"), 0))  # fmt: skip
+            out.append(line(streamer, "summary", f"{cycle} snap mark={mark} mover={m.gvsoc} "
+                            + " ".join(f"{x}={v}" for x, v in k.items()), cycle))  # fmt: skip
+    return out
