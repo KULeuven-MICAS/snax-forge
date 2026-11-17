@@ -1047,7 +1047,7 @@ A group's fields:
 | `counter` | `cycles` + `fill`: the expected BUSY_COUNTER (below) |
 | `bank_bound` | ⌈Σ over its outer ports of beats × num_ch / `l1.n_banks`⌉, the fewest cycles of L1 time its streams take (null without a platform) |
 | `channels`, `words_per_cycle` | the sum of num_ch over its outer ports; the 64-bit words they move per cycle |
-| `bits`, `ctrl_bits` | per unit and buffer link its datapath's register bits (the catalogue's `flops`), a packed output's `FifoPacker` by `<unit>.<port>` ((d_out − 1) · W · b held, ⌈log₂ d_out⌉ count; D174), a sliced input's `FifoSlicer` by `<unit>.<port>` (64 held, ⌈log₂ d_in⌉ count, 1 full; D180, not costed yet), and its control unit's (`estimate/bits.py`): the cost model's counts (D154) |
+| `bits`, `ctrl_bits` | per unit and buffer link its datapath's register bits (the catalogue's `flops`), a packed output's `FifoPacker` by `<unit>.<port>` ((d_out − 1) · W · b held, ⌈log₂ d_out⌉ count; D174), a sliced input's `FifoSlicer` by `<unit>.<port>` (64 held, ⌈log₂ d_in⌉ count, 1 full; D180, D181), and its control unit's (`estimate/bits.py`): the cost model's counts (D154) |
 | `cost` | on a technology, its units', links' and control unit's area and energy, and the totals (section 14) |
 
 How the cycles grow along dot's recipe at N = 512:
@@ -1091,19 +1091,19 @@ What a design costs in area and energy before any synthesis, beside the estimate
 
 | File in `snax_forge/char/` | Holds | From |
 |---|---|---|
-| `<tech>.json` | `tech`, `clock_ns`, `units`, `source`; `flop` (`area_um2`, `e_load_fj`, `e_hold_fj`); `ctrl.counter_factor`; `blocks`, per datapath (and `FifoPacker`) one entry per params, so per width pair: `params`, `lanes_rule` (`copy`, `interpolate`, `slope`, `none`), a narrow fold's `slope` (`comb_um2`, `e_comb_pj` per lane) and `points` (`lanes`, `depth`, `comb_um2`, `e_comb_pj`; a packer's `flops`, `load_bits`); $e_{\mathit{ctrl}}$ is `counter_factor` × `e_hold_fj` | snax-forge-experiments' `results/char/<tech>/char.json`, X37, X83 · X85, X89 |
+| `<tech>.json` | `tech`, `clock_ns`, `units`, `source`; `flop` (`area_um2`, `e_load_fj`, `e_hold_fj`); `ctrl.counter_factor`; `blocks`, per datapath (and `FifoPacker`, `FifoSlicer`) one entry per params, so per width pair: `params`, `lanes_rule` (`copy`, `interpolate`, `slope`, `none`), a narrow fold's `slope` (`comb_um2`, `e_comb_pj` per lane) and `points` (`lanes`, `depth`, `comb_um2`, `e_comb_pj`; a packer's and a slicer's `flops`, `load_bits`); $e_{\mathit{ctrl}}$ is `counter_factor` × `e_hold_fj` | snax-forge-experiments' `results/char/<tech>/char.json`, X37, X83 · X85, X89, X94 |
 | `<tech>/streamer.csv` | one reader: FIFO depth 2–16 × loops 1–7 × channels 1–16, `area_um2`, `e_beat_pj` | X52 · X82, X83 · X85 |
 | `<tech>/xbar.csv` | the sparse interconnect: inputs 4–64 × banks 16, 32, 64, `area_um2`, `e_access_pj` where inputs ≤ banks | X53 · X54, X83 · X85 |
 | `<tech>/xbar_kinds.json` | the area's factor form's $f_{\mathit{ro}}$ and $f_{\mathit{wo}}$ (0.395299, 0.409746), the crosspoint form's coefficients; the energy's $g_{\mathit{ro}}(b)$, $g_{\mathit{wo}}(b)$ at 16, 32 and 64 banks (`energy.by_banks`; 0.331792, 0.471583 at 32) | X71, X93 |
 | `<tech>/ram_table.csv` | CACTI 7: depth 32–4096 × width 8–256, `area_um2`, `e_rd_pj`, `e_wr_pj` | X47, X48 |
 
 - `pixi run import-costs` copies the five files as they are, with `<tech>/SOURCE` naming the commit and each file's path and sha256; never run in CI. `tests/char/` checks every block entry against the catalogue and the tables against `SOURCE`.
-- **Block lookup** (`lookup(table, datapath, params, lanes, depth=None)`, D176): the entry whose params equal the block's at its width pair (`pair_params`: lanes, depth and unset constants aside; the widest input, a SimdLanes' output at most its op's width, unsigned as signed; a packer by its lane type and d_out), then a point at these lanes as is (`measured`); else under `copy` lanes / W0 × the point at the smallest lanes W0; under `interpolate` linear between the two measured lanes around it; under `slope` the nearest point plus the entry's slope per lane; a LinkBuffer depth linear between two measured depths, a narrower dtype the int64 entry × width / 64 (`width`); a seeded fold its unseeded entry (`unseeded`). Anything else is None (a form the table does not hold, lanes outside the range): the comb part counts 0 and `char.missing` names it.
+- **Block lookup** (`lookup(table, datapath, params, lanes, depth=None)`, D176): the entry whose params equal the block's at its width pair (`pair_params`: lanes, depth and unset constants aside; the widest input, a SimdLanes' output at most its op's width, unsigned as signed; a packer by its lane type and d_out, a slicer by its lane type, lanes and d_in), then a point at these lanes as is (`measured`); else under `copy` lanes / W0 × the point at the smallest lanes W0; under `interpolate` linear between the two measured lanes around it; under `slope` the nearest point plus the entry's slope per lane; a LinkBuffer depth linear between two measured depths, a narrower dtype the int64 entry × width / 64 (`width`); a seeded fold its unseeded entry (`unseeded`). Anything else is None (a form the table does not hold, lanes outside the range): the comb part counts 0 and `char.missing` names it.
 - **Table lookup** (`tables.py`'s `streamer_cost`, `xbar_cost`, `bank`): linear along one axis at a time between the two grid values around the query, the crossbar's energy in 1/inputs, and where inputs > banks its value at inputs = banks. Outside the grid, linear through the two nearest grid values, clamped at zero, with `cost.extrapolated`. The banks are a lookup, never interpolated: a bank off the grid costs 0 and is noted. A writer is priced as a reader.
 
 ### The model
 
-Per unit and per buffer link over one run of the accelerator: n_fire its fires (a unit's firings times its span; a buffer's loads), n_bits its `bits` (section 13); per group n_bits^ctrl its `ctrl_bits` and C_acc the `accelerator_cycles`. A flop that holds costs nothing (clock-gated, D154 · D172):
+Per unit and per buffer link over one run of the accelerator: n_fire its fires (a unit's firings times its span; a buffer's loads), n_bits its `bits` (section 13); per group n_bits^ctrl its `ctrl_bits` and C_acc the `accelerator_cycles`. A flop that holds costs nothing (clock-gated, D154 · D172), but a slicer's, n_bits e_hold every cycle of C_acc (D181):
 
 $$E_{\mathit{unit}} = n_{\mathit{fire}}\thinspace(e_{\mathit{comb}} + n_{\mathit{bits}}\thinspace e_{\mathit{load}}), \qquad E_{\mathit{ctrl}} = e_{\mathit{ctrl}}\thinspace n_{\mathit{bits}}^{\mathit{ctrl}}\thinspace C_{\mathit{acc}}$$
 
@@ -1141,7 +1141,7 @@ Worked example, vecmul at W = 8 and N = 2048 (three ports of 8 channels and one 
 
 | Field | Holds |
 |---|---|
-| a group's `cost.units`, `cost.links` | per unit and buffer link (and a packed output's packer, `FifoPacker` by `<unit>.<port>`, a fire per result, its point's `load_bits` loading per push): `datapath`, `fires`, `found` (`measured`, `copy`, `interpolate`, `slope`, `width`, `unseeded`, or null), `area` (`comb`, `flops`, `total`, µm²), `energy` (`fire` in pJ, `task` in nJ) |
+| a group's `cost.units`, `cost.links` | per unit and buffer link (and a packed output's packer, `FifoPacker` by `<unit>.<port>`, a fire per result, its point's `load_bits` loading per push; a sliced input's slicer, `FifoSlicer` by `<unit>.<port>`, a fire per pop (its unit's firings, a seed's once a job), its point's `load_bits` loading per pop and its bits holding, `energy.hold` pJ a cycle, D181): `datapath`, `fires`, `found` (`measured`, `copy`, `interpolate`, `slope`, `width`, `unseeded`, or null), `area` (`comb`, `flops`, `total`, µm²), `energy` (`fire` in pJ, `task` in nJ) |
 | a group's `cost.ctrl` | `bits`, `area` (`flops`, `comb`, `total`), `energy` |
 | a group's `cost.area`, `cost.energy` | its units', links' and control unit's added up |
 | an accelerator's `cost.streamers` | per port's streamer: its counts (`depth`, `loops`, `channels`, `words`, `beats`), `area`, `e_beat`, `energy`, `extrapolated` |
@@ -1181,7 +1181,7 @@ $$E_j = \sum_c \sum_k n_{c,k}(j)\thinspace e_{c,k} = E_{dp}(j) + E_{ctrl}(j) + E
 
 The five parts:
 
-$$E_{dp}(j) = \sum_u f_u(j)\thinspace S_u\thinspace e_{fire,u} + \sum_{\ell} p_{src(\ell)}(j)\thinspace e_{fire,\ell}$$
+$$E_{dp}(j) = \sum_u f_u(j)\thinspace S_u\thinspace e_{fire,u} + \sum_{\ell} p_{src(\ell)}(j)\thinspace e_{fire,\ell} + \sum_{s} \big(f_{u(s)}(j)\thinspace e_{fire,s} + e_{hold,s} \sum_h b_h(j)\big)$$
 
 $$E_{ctrl}(j) = e_{ctrl}\thinspace\Big(\sum_h n_h^{ctrl}\Big) \sum_h b_h(j)$$
 
@@ -1193,12 +1193,12 @@ $$E_{mem}(j) = e_{rd} \sum_{m \in rd} \sum_{i \in I_m} a_i(j) + e_{wr} \sum_{m \
 
 How to read them:
 
-- **Datapath:** a unit fires its firings times its span; a buffer link loads, and a packer pushes, on each push of its producer. The count is fixed by the program, so it equals the static one.
+- **Datapath:** a unit fires its firings times its span; a buffer link loads, and a packer pushes, on each push of its producer; a slicer s pops on each firing of its unit u(s) (a seed's on each push, one a job) and holds on every busy-flag cycle (D181). The count is fixed by the program, so it equals the static one.
 - **Control:** every group's control unit clocks on every busy-flag cycle of every group, as the static estimate's $C_{acc}$ adds every group's cycles.
 - **Streamers:** a mover moves its requests over its channels, one beat per C_m requests; a refused request costs a granted one's beat.
 - **Crossbar:** every request, granted or refused, costs one access at its input's kind: a reader's channel read-only, a writer's write-only (D178).
 - **Memory:** only a grant reaches a bank. The cores', AXI's and DMA's accesses are not priced (D167).
-- **Held and idle cycles cost nothing,** as under clock gating (D154 · D172).
+- **Held and idle cycles cost nothing,** as under clock gating (D154 · D172), but a slicer's hold.
 
 The static identity: `graph_counts` puts the graph's counts in this form (a unit's fires over its span, its links' loads as pushes, the groups' cycles, each port's words as requests and grants, none refused). Priced with each port's streamer as a mover, every part equals the static estimate's (`tests/estimate/test_dynamic.py`, to 1e-12).
 
