@@ -48,6 +48,9 @@
   "vecadd_i32": {
     "snax_forge_vecadd_i32_acc_ctrl": [["busy", 1], ["acc_jobs_counter", 32], ["done", 1]]
   },
+  "vecadd_i32_w1": {
+    "snax_forge_vecadd_i32_acc_ctrl": [["busy", 1], ["acc_jobs_counter", 32], ["done", 1]]
+  },
   "vecadd_i8": {
     "snax_forge_vecadd_i8_acc_ctrl": [["busy", 1], ["acc_jobs_counter", 32], ["done", 1]]
   },

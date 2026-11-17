@@ -59,7 +59,7 @@ pixi run design out/sandbox/vsum_tree_w8/2_bind.snaxdfg --platform platforms/sna
 pixi run gen-rtl out/design/vsum_tree_w8/design_point.json --fixture hw/chisel/src/test/resources/rtl/vsum_tree_w8
 ```
 
-The others come from their recipe as it is, named after it; dot_2 to dot_6 with `--set N=16`, matvec_4 to matvec_6 with `--set M=2 --set N=16`.
+The others come from their recipe as it is, named after it; dot_2 to dot_6 with `--set N=16`, matvec_4 to matvec_6 with `--set M=2 --set N=16`, and vecadd_i32_w1 from vecadd_i32 with `--set W=1`.
 
 The specs on the fixtures:
 
@@ -71,7 +71,7 @@ The specs on the fixtures:
 | `CtrlRegistersSpec` | every `<tag>_<group>_ctrl`'s registers, by name and bits, equal to `ctrl_registers.json` (from `util/ctrl_regs.py --json`, which `tests/estimate/test_bits.py` keeps current) |
 | `TwoGroupsSpec` | each of dot 1's groups (`mul`, `sum`) on its own |
 | `ShellPackedSpec` | a packed outer output (D174): vsum_tree_i32's sum changed by hand to int32 at d_out 2, its 64-bit writer and its words over 3 jobs, the last short |
-| `ShellSlicedSpec` | a sliced outer input (D180): vsum's input changed by hand to int32 at d_in 2, its 64-bit reader and 9 elements over 3 jobs from 5 words, the last short |
+| `ShellSlicedSpec` | a sliced outer input (D180): the fixture vecadd_i32_w1 (a and b at int32 d_in 2, out d_out 2), its 64-bit readers and 3 jobs from 2 words each, the last short, into 2 words |
 
 ### One block alone
 
