@@ -113,6 +113,7 @@ SETS = {
         *(Design(r, w + lay) for r in ("mvt_2", "mvt_2_shared")
           for w in ((), ("W_x1=8", "W_x2=8")) for lay in ((), (PADDED,))),
         Design("mvt_2_reuse"),
+        Design("mvt_3"),
         *(Design("mvt_4", w + lay) for w in ((), ("W_x1=4",)) for lay in ((), (PADDED,))),
     ],
     "pack": PACK,
