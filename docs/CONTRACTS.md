@@ -983,6 +983,24 @@ Names, ports and FIFO depths come from the hjson files and the design point.
 - **The schedule** has lanes accelerator ▸ group: per group its movers, then its unit.
 - **The cluster view at a cycle** (`viz/cluster.py`): `acc` is the unit whose task is open, `accelerator` the entry's name, `units` every unit's task, class, fire and push, `streamers` one per set, busy while a task of its movers is open; a shared mover's lanes name the user its mux serves.
 
+### The energy run
+
+With `--energy` (D177), the flow runs the quiet build (`sw/forge_quiet.elf`, D135) again on SNAX-GVSoC with only the `summary` traces on, into `energy/`, and prices its windows: `energy/energy.json` (`flow/energy.py`'s `EnergyRun`), `energy/events.log.gz` and `report/energy.md`. A failing program has no energy run.
+
+- **Snapshots** (`run/snapshots.py`): each core 0 write to CSR `0x7C5` and the end of the simulation (mark −1) make every SNAX component write its counters as running totals since boot, `snap` lines (snax-gvsoc's `docs/EVENTS.md`, Snapshots). Every component's k-th set of lines is snapshot k; components that took different marks, an input no `input` line names, a last snapshot that is not the end's or an end that is not the crossbar's whole run are each a `RunError` (`snapshots.<rule>`).
+- **Windows**: window k is snapshot k + 1 minus snapshot k, boot's (all 0) first, so the windows add up to the end. Window k takes its kind and label from `gen/obs_marks.json`'s row of the mark that opens it (`boot` for window 0; `mark <m>` for a mark the file lacks); its `first` and `last` are the snapshots' cycles.
+- **Counters**, by the converter's names: per crossbar input by port (`acc_a.lane0`, `core0`, `axi`) `grants` and `stalls`; per bank `reads`, `writes`, `conflicts`; per group (its unit's trace name) its busy-flag classes; per unit (its instance) `firings` and `pushes`; per mover its classes.
+
+| `energy.json` field | Holds |
+|---|---|
+| `tech`, `source` | the table's technology and `SOURCE` |
+| `prices` | per unit its `span` and `e_fire`, per buffer link or packer its producer (`from`) and `e_fire`, the control units' `ctrl_bits` and `e_ctrl`, per mover `write`, `channels`, `e_beat`, then `e_access`, `e_rd`, `e_wr` (pJ) |
+| `windows` | per window `index`, `mark`, `kind`, `label`, `first`, `last`, `cycles`, `counters`, and `energy`: `parts` (nJ per part), `total`, `counts` (below) |
+| `total` | nJ per part over every window |
+| `static` | the estimate's five parts for one run of the accelerator, with the counts they were priced on |
+
+An energy's `counts` are what each part was priced on (section 14): `fires` (the units' fires, the links' loads, the packers' pushes), `cycles` (the busy-flag cycles), `beats` (the movers' requests over their channels), `requests` (the crossbar's), `reads` and `writes` (the banks').
+
 ## 13. Estimate
 
 The ideal estimate of a bound graph (D155, `estimate/`), with or without a platform: what a mapping buys before any run, for the viewers and `design.md`. `estimate(graph, platform, tech)` also costs it on a technology (section 14; default `nangate45`, None leaves the cost out). It assumes ideal streams: no bank conflicts, no streamer fill, no DMA and no core control.
@@ -1123,6 +1141,22 @@ Worked example, vecmul at W = 8 and N = 2048 (three ports of 8 channels and one 
 - The fields keep full precision. A reader sees an area to 3 significant figures (`sig3`: 63 200 µm²) and an energy to 3 decimals in its unit (`dec3`: 26.285 nJ per run, 97.259 pJ per fire), so two close designs can be told apart (dot 4 and dot 5 at W = 8: 26.133 and 26.158 nJ). The decimals are display precision, not accuracy.
 - Every cost is shown under "Cost estimate (first-order) on <tech>" with one line, `CAVEAT`.
 - `design.md` (`pixi run report DIR --tech T`) shows each group's area and energy beside its cycles, how each unit, link and control unit is costed, each port's streamer, each accelerator's L1 words, the cost by part with its shares, and what is not characterized, not costed or extrapolated; the viewers show the same, the parts as two bars to scale.
+
+### The dynamic energy
+
+A run's counts in place of the graph's (D177, `estimate/dynamic.py`), per window j between two snapshots (section 12, "The energy run"); every price is the instance's above. A unit u has f_u firings, p_u pushes (results given to its link or outer output) and span S_u; a crossbar input i has g_i grants and s_i stalls; a mover m has C_m channels, D_m its FIFO depth, L_m its loops and I_m its inputs; a group has b its busy-flag cycles (its run line's four classes):
+
+$$E_{dp}(j) = \sum_u f_u(j)\thinspace S_u\thinspace e_{fire,u} + \sum_{\ell} p_{src(\ell)}(j)\thinspace e_{fire,\ell}, \qquad E_{ctrl}(j) = e_{ctrl}\thinspace\Big(\sum_g n_g^{ctrl}\Big) \sum_g b_g(j)$$
+
+$$E_{strm}(j) = \sum_m \frac{\sum_{i \in I_m} (g_i + s_i)(j)}{C_m}\thinspace e_{beat}(D_m, L_m, C_m), \qquad E_{xbar}(j) = e_{acc} \sum_m \sum_{i \in I_m} (g_i + s_i)(j)$$
+
+$$E_{mem}(j) = e_{rd} \sum_{m \in rd} \sum_{i \in I_m} g_i(j) + e_{wr} \sum_{m \in wr} \sum_{i \in I_m} g_i(j)$$
+
+- $rd$ and $wr$ are the readers and the writers; $\ell$ runs over the buffer links and packers, each loading or pushing on its producer's push. e_fire is the block's per fire (its comb energy and its bits loading), e_ctrl and $n_g^{ctrl}$ the control model's, e_beat the streamer table's at the mover's own channels, e_acc the crossbar's per access, e_rd and e_wr a bank's.
+- A refused request costs the crossbar and its streamer a granted one's price and reaches no bank. The cores', AXI's and DMA's accesses are not priced (D167).
+- `graph_counts` gives the static estimate's counts in this form (a unit's fires over its span, its links' loads as pushes, the groups' cycles, each port's words as requests and grants); priced with each port's streamer as a mover, every part equals the estimate's (`tests/estimate/test_dynamic.py`).
+- Worked example, dot 3 at W = 8, N = 2048: the crossbar's 4097 words (2048 + 2048 read, 1 written) cost 4097 × 2.752585 pJ = 11.277 nJ; a run with 100 refusals on reader A's 8 lanes costs 100 × 2.752585 pJ = 0.275 nJ more there, 100 / 8 of A's beats more in the streamers, and the same in the banks.
+- A shared mover (D169) is priced at its own channels, where the static estimate prices each user at its port's: the two agree when every user takes all the mover's channels.
 
 ### The checks and the known limits
 
