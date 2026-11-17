@@ -173,7 +173,7 @@ def _movers(point: DesignPoint, name: str, inst: Instance,
             continue
         port_dtype(dtypes[p.name], f"port {p.name}")  # intN or uintN (gen.dtype)
         s0 = s.spatial_bounds[0]
-        if s0 % s.num_slc and s.d_out == 1:
+        if s0 % s.num_slc and max(s.d_out, s.d_in) == 1:
             raise GenError(
                 "gen.lanes", f"streamer {s.name}: its fastest spatial bound {s0} is not whole "
                 f"words of num_slc = {s.num_slc} {dtypes[p.name]} slices",

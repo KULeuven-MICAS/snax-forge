@@ -12,7 +12,7 @@ base ``layout.base + sum_d (c_d + sum_k a_dk * b_k) * strides[d]`` for firing lo
 ``sum_d a_dk * s_k * strides[d]``; one spatial loop per range dimension, the last range first.
 The spatial bounds must be the streamer's, and for an ``affine`` BRM the addresses visited beat
 by beat (``addresses``) must be the nest's through the same layout (streams.py). A packed
-output's writer moves words (``packed_values``, D174). The design point's ``schedule`` (D179)
+output's writer and a sliced input's reader move words (``packed_values``, D174 · D180). The design point's ``schedule`` (D179)
 orders the accelerators: ``serial`` adds ``serial_syncs``; ``pipeline`` moves the stores past
 other accelerators' starts (``later_stores``), and ``pipeline_compute`` also gathers the starts
 with only loads to wait for (``gathered``). A ``LowerError`` names what does not fit.
@@ -97,14 +97,15 @@ def memlet_values(
     return values, [b for b, _ in fastest]
 
 
-def packed_values(values: dict[str, Any], d_out: int) -> dict[str, Any]:
-    """A packed output's writer values (CONTRACTS, "Task list"): its innermost loop of more
-    than one push, (n, s), becomes (ceil(n / d_out), d_out * s), one write per word; the outer
-    loops and the base stay (connect.pack checked that they are whole words)."""
+def packed_values(values: dict[str, Any], d: int) -> dict[str, Any]:
+    """A packed output's writer values, or a sliced input's reader values (CONTRACTS, "Task
+    list"): its innermost loop of more than one beat, (n, s), becomes (ceil(n / d), d * s), one
+    word per d beats (d_out pushes, d_in pops); the outer loops and the base stay (connect.pack
+    checked that they are whole words)."""
     bounds, strides = list(values["temporal_bounds"]), list(values["temporal_strides"])
     k = next((i for i, n in enumerate(bounds) if n > 1), None)  # innermost first
     if k is not None:
-        bounds[k], strides[k] = -(-bounds[k] // d_out), strides[k] * d_out
+        bounds[k], strides[k] = -(-bounds[k] // d), strides[k] * d
     return {**values, "temporal_bounds": bounds, "temporal_strides": strides}
 
 
@@ -466,8 +467,8 @@ class _Derivation:
                             f"{what}.{p}: the memlet gives {values}, the BRM's nest gives {want}: "
                             "they take the elements in different orders"
                         )
-                if s.d_out > 1:  # words, on one channel
-                    values, sb = packed_values(values, s.d_out), [1, *sb[1:]]
+                if max(s.d_out, s.d_in) > 1:  # words, on one channel
+                    values, sb = packed_values(values, max(s.d_out, s.d_in)), [1, *sb[1:]]
                 task = f"{un.id}_{s.name}"
                 c = m.data
                 if p in un.inputs:

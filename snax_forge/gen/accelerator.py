@@ -424,6 +424,11 @@ def _check_links(acc: Accelerator) -> None:
                                f"{k.to} {b.lanes} of {b.dtype}; both ends are the same")  # fmt: skip
             if type(k.depth) is not int or k.depth < 0:
                 raise GenError("gen.link", f"{what}: depth {k.depth!r}; 0 is a wire, >= 1 a buffer")
+            for end, p in ((k.from_, a), (k.to, b)):
+                if p.d_in > 1 or p.d_out > 1:
+                    raise GenError("gen.link", f"{what}: {end} has d_in {p.d_in} and d_out "
+                                   f"{p.d_out}; a linked port has no slicer or packer, so both "
+                                   "are 1 (absent)")  # fmt: skip
             for end in (k.from_, k.to):
                 if end in linked:
                     raise GenError("gen.link_port", f"{what}: port {end} is on another link too")
@@ -620,10 +625,10 @@ def _unit(point: DesignPoint, name: str, inst: Instance, offsets: Iterator[int])
             f"{inst.span}; {datapath} here is latency {latency}, II 1, span {span}",
         )  # fmt: skip
     ports = dict(fill.ports)
-    for p, port in ports.items():  # a packed outer output (D174)
+    for p, port in ports.items():  # a packed outer output (D174), a sliced outer input (D180)
         s = point.streamers.get(streamer_name(name, p))
-        if s is not None and s.d_out > 1:
-            ports[p] = replace(port, d_out=s.d_out)
+        if s is not None and max(s.d_out, s.d_in) > 1:
+            ports[p] = replace(port, d_out=s.d_out, d_in=s.d_in)
     fixed = fixed_fold(point.graph, instance_nodes(point.graph)[name], inst)
     params = dict(fill.params) | ({} if fixed is None else {"T": fixed})
     unit_rw = ["JOB_BEATS"] if fold_rate(inst) is not None and fixed is None else []

@@ -245,6 +245,8 @@ def _edit(links=None, inputs=None, outputs=None, ports=None) -> None:
          "gen.link"),  # dtypes differ
         ({"ports": {"a": Port("in", "in", "int64", 2), "out": Port("out", "out", "int64", 1)}},
          "gen.link"),  # lanes differ
+        ({"ports": {"a": Port("in", "in", "int64", 4, d_in=2),
+                    "out": Port("out", "out", "int64", 1)}}, "gen.link"),  # a linked port sliced
         ({"links": [Link("x", "mac.out", "sum.a", 0), Link("y", "mac.out", "sum.a", 1)]},
          "gen.link_port"),
         ({"inputs": ["mac.a", "mac.b", "sum.a"]}, "gen.outer"),
@@ -253,8 +255,8 @@ def _edit(links=None, inputs=None, outputs=None, ports=None) -> None:
         ({"links": [], "inputs": ["mac.a", "mac.b", "sum.a"], "outputs": ["mac.out", "sum.out"]},
          "gen.group"),
     ],
-    ids=["in-in", "out-out", "unit", "depth", "dtype", "lanes", "port", "outer-in", "outer-out",
-         "outer-order", "group"],
+    ids=["in-in", "out-out", "unit", "depth", "dtype", "lanes", "sliced", "port", "outer-in",
+         "outer-out", "outer-order", "group"],
 )  # fmt: skip
 def test_a_reader_checks_the_links(edit, code):
     """the refusals of links and groups, on construction as on from_dict."""
