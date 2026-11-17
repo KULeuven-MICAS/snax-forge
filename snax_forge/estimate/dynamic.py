@@ -9,7 +9,7 @@ place of the graph's, each priced at the instance's existing price.
 pushes, the groups' busy-flag cycles added up, per mover its crossbar requests (grants and
 stalls) and grants. A unit fires its firings times its span, a buffer link loads and a packer
 pushes its producer's pushes, a slicer pops on its unit's firings (a seed's on its pushes, one a
-job) and holds every busy cycle, the control units clock every group's busy cycle, a mover moves
+job), the control units clock every group's busy cycle, a mover moves
 its requests over its channels, the crossbar serves every request at its mover's kind (a
 reader's read-only, a writer's write-only, D178) and the banks the grants. With
 ``graph_counts`` the parts are the static estimate's (``Estimate.parts``).
@@ -53,7 +53,7 @@ class Prices:
     units' bits and e_ctrl, per mover whether it writes, its channels and its energy per beat,
     the crossbar's per request of a read-only and of a write-only input (D178), a bank's per read
     and per write; per slicer (``<unit>.<port>``) its unit, the count it pops on (``firings``, a
-    seed's ``pushes``), its energy per pop and per busy cycle (its held bits)."""
+    seed's ``pushes``) and its energy per pop."""
 
     units: dict[str, tuple[int, float]]
     links: dict[str, tuple[str, float]]
@@ -64,13 +64,13 @@ class Prices:
     e_xwo_pj: float
     e_rd_pj: float
     e_wr_pj: float
-    slicers: dict[str, tuple[str, str, float, float]] = field(default_factory=dict)
+    slicers: dict[str, tuple[str, str, float]] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {"units": {k: {"span": s, "e_fire": e} for k, (s, e) in self.units.items()},
                 "links": {k: {"from": u, "e_fire": e} for k, (u, e) in self.links.items()},
-                "slicers": {k: {"from": u, "count": n, "e_fire": e, "e_hold": h}
-                            for k, (u, n, e, h) in self.slicers.items()},
+                "slicers": {k: {"from": u, "count": n, "e_fire": e}
+                            for k, (u, n, e) in self.slicers.items()},
                 "ctrl_bits": self.ctrl_bits, "e_ctrl": self.e_ctrl_pj,
                 "movers": {k: {"write": w, "channels": c, "e_beat": e}
                            for k, (w, c, e) in self.movers.items()},
@@ -84,7 +84,7 @@ class Prices:
                    d["ctrl_bits"], d["e_ctrl"],
                    {k: (v["write"], v["channels"], v["e_beat"]) for k, v in d["movers"].items()},
                    d["e_xbar_ro"], d["e_xbar_wo"], d["e_rd"], d["e_wr"],
-                   {k: (v["from"], v["count"], v["e_fire"], v["e_hold"])
+                   {k: (v["from"], v["count"], v["e_fire"])
                     for k, v in d.get("slicers", {}).items()})  # fmt: skip
 
 
@@ -152,7 +152,7 @@ def prices_of(graph: Graph, est: Estimate, movers: Sequence[MoverSpec]) -> Price
     insts = instances(graph)
     units: dict[str, tuple[int, float]] = {}
     links: dict[str, tuple[str, float]] = {}
-    slicers: dict[str, tuple[str, str, float, float]] = {}
+    slicers: dict[str, tuple[str, str, float]] = {}
     bits = 0
     for g in est.groups:
         if g.cost is None:
@@ -164,7 +164,7 @@ def prices_of(graph: Graph, est: Estimate, movers: Sequence[MoverSpec]) -> Price
         for k, b in g.cost.links.items():
             if b.datapath == "FifoSlicer":
                 u, port = k.split(".", 1)
-                slicers[k] = (u, "pushes" if port == SEED else "firings", b.e_fire_pj, b.e_hold_pj)
+                slicers[k] = (u, "pushes" if port == SEED else "firings", b.e_fire_pj)
             else:
                 links[k] = (src(k), b.e_fire_pj)
     beat = {s.name: (s.write, s.channels, _streamer(costs, s.depth, s.loops, s.channels).energy_pj)
@@ -189,10 +189,10 @@ def price(p: Prices, c: Counts) -> Energy:
             raise ValueError(f"{what}s {unknown} have counts and no price")
     fires = {u: c.units.get(u, (0, 0))[0] * span for u, (span, _) in p.units.items()}
     loads = {k: c.units.get(u, (0, 0))[1] for k, (u, _) in p.links.items()}
-    pops = {k: c.units.get(u, (0, 0))[n == "pushes"] for k, (u, n, _, _) in p.slicers.items()}
+    pops = {k: c.units.get(u, (0, 0))[n == "pushes"] for k, (u, n, _) in p.slicers.items()}
     dp = (sum(fires[u] * e for u, (_, e) in p.units.items())
           + sum(loads[k] * e for k, (_, e) in p.links.items())
-          + sum(pops[k] * e + c.busy * h for k, (_, _, e, h) in p.slicers.items()))  # fmt: skip
+          + sum(pops[k] * e for k, (_, _, e) in p.slicers.items()))  # fmt: skip
     beats = strm = xbar = 0.0
     requests = reads = writes = 0
     for name, (write, channels, e_beat) in p.movers.items():

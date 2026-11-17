@@ -45,8 +45,7 @@ class CharError(CodedError):
 class Table:
     """One technology's table (CONTRACTS, "Cost model"); energies in pJ, areas in µm².
     ``e_load_pj`` is a flop bit's energy in a cycle it loads; ``e_ctrl_pj`` a control unit's per
-    bit and cycle, the table's ``counter_factor`` × ``e_hold_fj``; ``e_hold_pj`` a flop bit's in a
-    cycle it holds (a slicer's hold)."""
+    bit and cycle, the table's ``counter_factor`` × ``e_hold_fj``."""
 
     tech: str
     clock_ns: float
@@ -55,7 +54,6 @@ class Table:
     e_load_pj: float
     e_ctrl_pj: float
     blocks: dict[str, list[dict[str, Any]]]
-    e_hold_pj: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -79,8 +77,7 @@ def load(tech: str) -> Table:
     d = json.loads(path.read_text())
     return Table(d["tech"], d["clock_ns"], dict(d["source"]), d["flop"]["area_um2"],
                  d["flop"]["e_load_fj"] / 1000,
-                 d["ctrl"]["counter_factor"] * d["flop"]["e_hold_fj"] / 1000, d["blocks"],
-                 d["flop"]["e_hold_fj"] / 1000)  # fmt: skip
+                 d["ctrl"]["counter_factor"] * d["flop"]["e_hold_fj"] / 1000, d["blocks"])  # fmt: skip
 
 
 def _between(x: int, pts: list[tuple[int, Lookup]]) -> Lookup | None:

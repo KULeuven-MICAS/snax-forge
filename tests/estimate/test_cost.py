@@ -390,8 +390,8 @@ def test_a_sliced_input_moves_words_and_takes_one_cycle_more(tmp_path):
     """vecadd_i32 at W = 1 (N = 64, D180): each reader's 64 pops come from 32 words, the group's
     run is one cycle longer than its 64 firings (the slicer's first word shows the cycle after it
     is taken), and each FifoSlicer holds a word, a 1-bit count and its full flag (66 bits). It is
-    priced at its measured point by <unit>.<port>: a pop on each of its unit's 64 firings, each
-    its comb energy and 33 bits loading, and its 66 bits holding over the run's 65 cycles."""
+    priced at its measured point by <unit>.<port>, as a packer: a pop on each of its unit's 64
+    firings, each its comb energy and 33 bits loading; its held bits cost nothing."""
     from snax_forge.design import DesignPoint
     from snax_forge.estimate.bits import slicer_bits
     from tests.gen.helpers import designed
@@ -416,8 +416,7 @@ def test_a_sliced_input_moves_words_and_takes_one_cycle_more(tmp_path):
         assert (s.datapath, s.found, s.fires) == ("FifoSlicer", "measured", 64)
         assert s.comb_um2 == got.comb_um2 and s.flops_um2 == pytest.approx(66 * t.flop_um2)
         assert s.e_fire_pj == pytest.approx(got.e_comb_pj + 33 * t.e_load_pj)
-        assert s.e_hold_pj == pytest.approx(66 * t.e_hold_pj)
-        assert s.task_nj == pytest.approx((64 * s.e_fire_pj + 65 * s.e_hold_pj) / 1000)
+        assert s.task_nj == pytest.approx(64 * s.e_fire_pj / 1000)
     assert e.missing == []
 
 

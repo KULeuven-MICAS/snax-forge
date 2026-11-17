@@ -79,8 +79,7 @@ class Block:
 @dataclass
 class BlockCost:
     """One unit's or buffer link's cost (CONTRACTS, "Cost model"); areas µm², energies pJ,
-    ``task_nj`` nJ; ``e_hold_pj`` what it costs a cycle on top of its fires (a slicer's held
-    bits, else 0)."""
+    ``task_nj`` nJ."""
 
     datapath: str | None
     fires: int
@@ -89,23 +88,21 @@ class BlockCost:
     flops_um2: float
     e_fire_pj: float
     task_nj: float
-    e_hold_pj: float = 0.0
 
     @property
     def total_um2(self) -> float:
         return self.comb_um2 + self.flops_um2
 
     def to_dict(self) -> dict[str, Any]:
-        hold = {"hold": self.e_hold_pj} if self.e_hold_pj else {}
         return {"datapath": self.datapath, "fires": self.fires, "found": self.found,
                 "area": {"comb": self.comb_um2, "flops": self.flops_um2, "total": self.total_um2},
-                "energy": {"fire": self.e_fire_pj, **hold, "task": self.task_nj}}  # fmt: skip
+                "energy": {"fire": self.e_fire_pj, "task": self.task_nj}}  # fmt: skip
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> BlockCost:
         a, e = d["area"], d["energy"]
         return cls(d["datapath"], d["fires"], d["found"], a["comb"], a["flops"], e["fire"],
-                   e["task"], e.get("hold", 0.0))  # fmt: skip
+                   e["task"])  # fmt: skip
 
 
 @dataclass
@@ -397,8 +394,7 @@ def shares(parts: Mapping[str, Part]) -> dict[str, tuple[float | None, float | N
 def block_cost(table: Table, block: Block, bits: int, c_acc: int) -> BlockCost:
     """One block's cost on ``table`` (CONTRACTS, "Cost model"): its fires, each its comb energy
     and its bits loading (a packer's or a slicer's, the bits its table point says load per push or
-    pop); a held flop costs nothing, but a slicer's bits hold at ``e_hold`` over ``c_acc``
-    cycles."""
+    pop); ``c_acc`` is not used, a held flop costing nothing."""
     p = block.params
     got = None
     if block.datapath is not None:
@@ -406,10 +402,8 @@ def block_cost(table: Table, block: Block, bits: int, c_acc: int) -> BlockCost:
     comb, e_comb = (got.comb_um2, got.e_comb_pj) if got is not None else (0.0, 0.0)
     loading = got.load_bits if got is not None and got.load_bits is not None else bits
     e_fire = e_comb + loading * table.e_load_pj
-    e_hold = bits * table.e_hold_pj if block.datapath == "FifoSlicer" else 0.0
     return BlockCost(block.datapath, block.fires, got.found if got is not None else None, comb,
-                     bits * table.flop_um2, e_fire, (block.fires * e_fire + c_acc * e_hold) / 1000,
-                     e_hold)  # fmt: skip
+                     bits * table.flop_um2, e_fire, block.fires * e_fire / 1000)  # fmt: skip
 
 
 def group_cost(table: Table, units: Mapping[str, Block], links: Mapping[str, Block],

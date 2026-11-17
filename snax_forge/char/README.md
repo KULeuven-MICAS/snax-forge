@@ -44,14 +44,14 @@ Every number is measured by CHAR1 and CHAR2 in [snax-forge-experiments](https://
 |---|---|---|
 | `flop.area_um2` | sequential area over sequential cells, the clock gates among them | the registered int64 points: 5.296378 µm² |
 | `flop.e_load_fj` | the mean busy e_bit | the points whose flops all load every cycle: Mac, TreeAccumulate and SerialAccumulate busy, LinkBuffer depth 1 stream: 17.8153 fJ |
-| `flop.e_hold_fj` | the mean idle e_bit | the idle points of Mac, TreeAccumulate and SerialAccumulate: 0.0655 fJ, which gating leaves of a held bit; used through $e_{\mathit{ctrl}}$ and a slicer's hold |
+| `flop.e_hold_fj` | the mean idle e_bit | the idle points of Mac, TreeAccumulate and SerialAccumulate: 0.0655 fJ, which gating leaves of a held bit; used only through $e_{\mathit{ctrl}}$ |
 | `ctrl.counter_factor` | a forge point's `ctrl/ctrl` energy per cycle over its sequential cells × e_hold, the mean over the points | the 48 int64 tier-done forge points (43 to 148): 83.20, so $e_{\mathit{ctrl}}$ = 83.20 × 0.0655 fJ = 5.450 fJ |
 | a point's `comb_um2` | the block's comb area | `char_synth.csv` |
 | a point's `e_comb_pj` | the comb energy per cycle of the busy window, a fire every cycle, so per fire; LinkBuffer's stream window, per load (0 at depth 1: a register alone) | `char_power.csv` |
 | an entry's `lanes_rule` | `copy` where the block is lane copies (SimdLanes, Mac, LinkBuffer: their W = 8 and 32 points are within 3 % of W × the lanes-1 point), `interpolate` for the int64 TreeAccumulate and SerialAccumulate, `slope` for a narrow one, `none` for a packer | X37, X89 |
 | a narrow fold's `slope` | the int64 entry's cost per lane between W = 8 and 32, times $w_{in}$ / 64: a lane is a leaf or a mux input at the input's width, while the accumulator stays at the output's | X89 |
 | a packer's `flops`, `load_bits` | its held slots and counter, $(d_{out} - 1)\thinspace w + \lceil \log_2 d_{out} \rceil$; of them $(d_{out} - 1)/d_{out}$ of a slot and the counter load per push | X89 |
-| a slicer's `flops`, `load_bits` | its word, counter and full flag, $64 + \lceil \log_2 d_{in} \rceil + 1$; of them $64/d_{in}$ of the word and the counter load per pop; the estimate adds its bits × e_hold a cycle (D181) | X94 |
+| a slicer's `flops`, `load_bits` | its word, counter and full flag, $64 + \lceil \log_2 d_{in} \rceil + 1$; of them $64/d_{in}$ of the word and the counter load per pop | X94 |
 
 A block's register bits are not in the table: they are the catalogue's `flops` on its params (`hw/chisel/blocks.json`, C§10), which CHAR1 and CHAR2 checked against DC's sequential cells at every point (a packer's and a slicer's are `estimate/bits.py`'s, equal to its point's `flops`).
 

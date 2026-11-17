@@ -9,7 +9,7 @@ Rules (D117):
 - Entries merged into one keep all their numbers in its heading, so a cite of any of them still finds it. A number is never changed or reused; the text of a removed entry is in git history.
 - A new decision gets the next free number, under the area it belongs to. Next free number: **D182**.
 
-Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29–D45, D47–D50, D53, D54, D56, D58–D63, D65–D67, D69, D74, D76–D78, D80, D81, D83, D88–D97, D100, D101, D103, D104, D106, D107, D109, D110, D114, D115, D119, D124, D127, D128, D132, D133, D138–D141, D151, D156, D159, D160.
+Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29–D45, D47–D50, D53, D54, D56, D58–D63, D65–D67, D69, D74, D76–D78, D80, D81, D83, D88–D97, D100, D101, D103, D104, D106, D107, D109, D110, D114, D115, D119, D124, D127, D128, D132, D133, D138–D141, D151, D156, D159, D160, D181.
 
 ## Scope
 
@@ -281,7 +281,7 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 
 ### D176 — A block priced at its width pair
 
-- **Decided:** the block table holds each block at its width pairs (snax-forge-experiments X89), and a unit is looked up at its pair: its widest input and its output, a SimdLanes' output at most its op's width (the low bits of a sum or product need only its operands' low bits, a wider output only copies the sign), a Mac's at its output, an unsigned type as the signed one of its width. Over lanes: `copy` from the pair's point, a narrow fold's `slope` (the int64 cost per lane × w_in / 64), a narrow LinkBuffer the int64 one × w / 64. A packed output's FifoPacker is looked up by its lane type and d_out, a sliced input's FifoSlicer by its lane type, lanes and d_in (D181), each point naming the bits that load per push or pop. A seeded fold (D163) is priced as its unseeded entry (`unseeded`): the same adder and register, its first beat's mux choosing the seed for the register instead of 0 for the sum, until a seeded point is measured. The table is keyed by the catalogue's names and full params.
+- **Decided:** the block table holds each block at its width pairs (snax-forge-experiments X89), and a unit is looked up at its pair: its widest input and its output, a SimdLanes' output at most its op's width (the low bits of a sum or product need only its operands' low bits, a wider output only copies the sign), a Mac's at its output, an unsigned type as the signed one of its width. Over lanes: `copy` from the pair's point, a narrow fold's `slope` (the int64 cost per lane × w_in / 64), a narrow LinkBuffer the int64 one × w / 64. A packed output's FifoPacker is looked up by its lane type and d_out, a sliced input's FifoSlicer by its lane type, lanes and d_in (D180), each point naming the bits that load per push or pop. A seeded fold (D163) is priced as its unseeded entry (`unseeded`): the same adder and register, its first beat's mux choosing the seed for the register instead of 0 for the sum, until a seeded point is measured. The table is keyed by the catalogue's names and full params.
 - **Why:** synthesis removes the logic on copied sign bits, so a narrow block costs what it computes; one measured point per pair and one rule over lanes keep the table small and every block priced the same way.
 - **Where:** CONTRACTS, "Cost model"; `snax_forge/char/README.md`.
 
@@ -293,15 +293,9 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 
 ### D177 — The dynamic energy: the model's counts at the static prices
 
-- **Decided:** a run's dynamic energy is D167's five parts with SNAX-GVSoC's counts in place of the graph's, each priced at the instance's existing price (D154 · D172, D176), per window between two snapshots of the counters (core 0's writes to CSR `0x7C5`, the quiet build's marks, D135; the end of the simulation). A unit costs its firings × span, a buffer link and a packer their producer's pushes, a slicer its pops and a hold every busy-flag cycle (D181), the control units every group's busy-flag cycle (the static estimate's $C_{acc}$), a mover its crossbar requests over its channels, the crossbar every request, the banks the streamers' grants. A refused request costs a granted one's price; held and idle cycles cost nothing. A shared mover is priced at its own channels; each request at its mover's kind (D178).
+- **Decided:** a run's dynamic energy is D167's five parts with SNAX-GVSoC's counts in place of the graph's, each priced at the instance's existing price (D154 · D172, D176), per window between two snapshots of the counters (core 0's writes to CSR `0x7C5`, the quiet build's marks, D135; the end of the simulation). A unit costs its firings × span, a buffer link and a packer their producer's pushes, a slicer its pops, the control units every group's busy-flag cycle (the static estimate's $C_{acc}$), a mover its crossbar requests over its channels, the crossbar every request, the banks the streamers' grants. A refused request costs a granted one's price; held and idle cycles cost nothing. A shared mover is priced at its own channels; each request at its mover's kind (D178).
 - **Why:** the prices were measured at full rate, so a transaction is an active cycle there, and only granted ones were measured; with the counts the only change, the dynamic and static numbers differ only where the run differs from the graph (with the graph's counts they are equal). Aimed at trends over a sweep, not at an accurate number: the tables' random data stays.
 - **Where:** CONTRACTS, "Profile and trace" (the energy run) and "Cost model" (the dynamic energy); `estimate/dynamic.py`, `run/snapshots.py`, `flow/energy.py`.
-
-### D181 — A sliced input's slicer: priced per pop, and a hold per cycle
-
-- **Decided:** a sliced input's `FifoSlicer` (D180) is costed as a link by `<unit>.<port>`, in the datapath's part as the packer: its measured point (snax-forge-experiments X94, by lane type, lanes and d_in), a fire per pop, each its comb energy and its point's `load_bits` (64 / d_in + ⌈log₂ d_in⌉) loading; a plain input pops on each firing of its unit, a seed once a job (its unit's results). Its bits (64 + ⌈log₂ d_in⌉ + 1) also hold at e_hold every cycle of C_acc, the one held flop the model prices (D154 · D172 drop the others); the dynamic energy prices the same from SNAX-GVSoC's counters: the unit's firings (a seed's pushes) and the busy-flag cycles.
-- **Why:** HWCOST left the slicer out (`char.missing`). It holds a word across the pops of the next, which its hold term keeps visible beside the pops though small (0.004 pJ a cycle on nangate45 against 0.36 to 0.95 pJ a pop).
-- **Where:** CONTRACTS, "Cost model"; `snax_forge/char/README.md`; `estimate/cycles.py`, `estimate/cost.py`, `estimate/dynamic.py`.
 
 ### D178 — The crossbar's energy by input kind
 
