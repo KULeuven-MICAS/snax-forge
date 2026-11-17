@@ -862,7 +862,7 @@ What `pixi run bundle DP [--out DIR]` writes per design point (D111, D130, `gen/
 | the root | section 9's files, the cluster file and `accelerator.json` among them |
 | `rtl/sv/`, `rtl/emitted.json` | what `Emit --spec` wrote (section 10) |
 | `rtl/files.f` | the RTL's file list, one path per line relative to `rtl/`, in `emitted.json`'s order |
-| `bundle.json` | `design_point`, `tag`, `snax_forge_commit` (null outside git), `dirty` (uncommitted changes, untracked files included), `top` (`<tag>_shell_wrapper`), `modules` (each of the wrapper's modules with its submodules, from `accelerator.json`, section 10's names), `expected` (`forge_expected.txt` or null) |
+| `bundle.json` | `design_point`, `tag`, `snax_forge_commit` (null outside git), `dirty` (uncommitted changes, untracked files included), `top` (`<tag>_shell_wrapper`), `modules` (each of the wrapper's modules with its submodules, from `accelerator.json`, section 10's names, then each stream block module once: a sliced input's `FifoSlicer`, a packed output's `FifoPacker`), `expected` (`forge_expected.txt` or null) |
 | `forge_expected.txt` | written by `pixi run forge` only, from the bundle's SNAX-GVSoC run: its `forge counter` lines, then its `forge data: 0 errors` line, then per counter `forge fill <task>: <n>`, the fill of the task's group (section 13's `fill`) |
 
 Refused: what sections 9 and 10 refuse (`gen.elaborate` among them), then `bundle.empty` (`emitted.json` lists no file).

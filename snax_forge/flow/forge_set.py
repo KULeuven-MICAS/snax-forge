@@ -67,7 +67,8 @@ def designs(*recipes: str | Design) -> list[Design]:
 PADDED = "memory.passes.layout=padded_rows"  # each row a word longer
 I8 = ("types=i8", "W=8")  # int8 in, int32 out and accumulate, at its smallest W (D173)
 QUICK = designs("vecadd_i32", "vsum_tree_i8", "dot_1", "dot_1_enc", "dot_4", "axpy",
-                Design("vsum_tree", I8), Design("matvec_3", I8))  # fmt: skip
+                Design("vsum_tree", I8), Design("matvec_3", I8),
+                Design("vecadd_i32", ("W=1",)))  # sliced inputs (D180)  # fmt: skip
 # Every recipe with narrow types at i8 (int32 outputs packed, D174), a few at W = 32, i16, i32
 PACK = [
     *(
@@ -103,6 +104,8 @@ PACK = [
     Design("matvec_3", ("types=i8", "W=32")),
     Design("dot_3", ("types=i16", "W=4")),
     Design("dot_3", ("types=i32", "W=2")),
+    Design("vecadd", ("types=i8", "W=1")),  # sliced inputs (D180)
+    Design("matvec_3", ("types=i8", "W=4")),
 ]
 SETS = {
     "quick": QUICK,
