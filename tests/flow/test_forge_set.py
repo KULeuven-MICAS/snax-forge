@@ -133,16 +133,18 @@ def test_every_sets_recipe_is_found_in_its_folder():
 
 
 def test_the_mvt_set_is_its_own():
-    """mvt: mvt_1 and mvt_1_dot2 at W = 4 and 8, mvt_2 at W = 4, each contiguous and
-    padded_rows, then mvt_2_reuse at its defaults (the twin check), all at 40 x 40; mvt_4 (the
-    seed, at 64 x 64) at W = 8 and 4, contiguous and padded_rows; in neither quick nor full."""
+    """mvt at its defaults, 64 x 64: mvt_1, mvt_1_dot2 and mvt_1_dot2_shared, then mvt_2 and
+    mvt_2_shared, each at W = 4 and 8, contiguous and padded_rows (mvt_2 at 8 has 84 crossbar
+    inputs, above 64: a note), mvt_2_reuse at its defaults (the twin check), mvt_4 at W = 8 and 4;
+    in neither quick nor full."""
     names = [d.name for d in fs.SETS["mvt"]]
+    pad = "_passes.layoutpadded_rows"
+    two = ["mvt_2", "mvt_2_shared"]
     assert names == [
-        "mvt_1", "mvt_1_W8", "mvt_1_passes.layoutpadded_rows", "mvt_1_W8_passes.layoutpadded_rows",
-        "mvt_1_dot2", "mvt_1_dot2_W8", "mvt_1_dot2_passes.layoutpadded_rows",
-        "mvt_1_dot2_W8_passes.layoutpadded_rows",
-        "mvt_2", "mvt_2_passes.layoutpadded_rows", "mvt_2_reuse",
-        "mvt_4", "mvt_4_passes.layoutpadded_rows", "mvt_4_W_x1-4",
-        "mvt_4_W_x1-4_passes.layoutpadded_rows",
+        *(f"{r}{w}{p}" for r in ("mvt_1", "mvt_1_dot2", "mvt_1_dot2_shared")
+          for w in ("", "_W8") for p in ("", pad)),
+        *(f"{r}{w}{p}" for r in two for w in ("", "_W_x1-8_W_x2-8") for p in ("", pad)),
+        "mvt_2_reuse",
+        *(f"mvt_4{w}{p}" for w in ("", "_W_x1-4") for p in ("", pad)),
     ]  # fmt: skip
     assert not {d.recipe for d in fs.SETS["mvt"]} & {d.recipe for d in fs.SETS["full"]}

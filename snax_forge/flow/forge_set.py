@@ -107,14 +107,14 @@ SETS = {
                               "dot_3", "dot_5", "dot_6", "dot_serial", "matvec_1", "matvec_5",
                               "matvec_6", "matvec_seed", "matvec_seed_serial", "relu", "rowsum_2",
                               Design("rowsum_2", (PADDED,)))],
-    "mvt": [Design("mvt_1"), Design("mvt_1", ("W=8",)), Design("mvt_1", (PADDED,)),
-            Design("mvt_1", ("W=8", PADDED)),
-            Design("mvt_1_dot2"), Design("mvt_1_dot2", ("W=8",)), Design("mvt_1_dot2", (PADDED,)),
-            Design("mvt_1_dot2", ("W=8", PADDED)),
-            Design("mvt_2"), Design("mvt_2", (PADDED,)),
-            Design("mvt_2_reuse"),
-            Design("mvt_4"), Design("mvt_4", (PADDED,)), Design("mvt_4", ("W_x1=4",)),
-            Design("mvt_4", ("W_x1=4", PADDED))],
+    "mvt": [
+        *(Design(r, w + lay) for r in ("mvt_1", "mvt_1_dot2", "mvt_1_dot2_shared")
+          for w in ((), ("W=8",)) for lay in ((), (PADDED,))),
+        *(Design(r, w + lay) for r in ("mvt_2", "mvt_2_shared")
+          for w in ((), ("W_x1=8", "W_x2=8")) for lay in ((), (PADDED,))),
+        Design("mvt_2_reuse"),
+        *(Design("mvt_4", w + lay) for w in ((), ("W_x1=4",)) for lay in ((), (PADDED,))),
+    ],
     "pack": PACK,
 }  # fmt: skip
 

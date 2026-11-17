@@ -158,7 +158,7 @@ def test_dot_4_by_part():
 
 def test_mvt_1_dot2_counts_a_shared_set_once_and_its_words_twice():
     """mvt 1 with dot 2: one vmul → link → vsum group run for both halves, so its
-    streamers are priced once and move both halves' words (A twice, 2 × 40 × 40 words over 4
+    streamers are priced once and move both halves' words (A twice, 2 × 64 × 64 words over 4
     channels and 2 loops); the vadd's set is its own accelerator; 23 inputs (t = 7/8 between 16 and
     24;
     24, a grid value, until the second core went), 16 of them read-only (both sets' readers) and 5
@@ -167,7 +167,7 @@ def test_mvt_1_dot2_counts_a_shared_set_once_and_its_words_twice():
     s = {c.counts.name: c for c in e.streamer_costs}
     assert list(s) == ["vmul_x1_a", "vmul_x1_b", "vsum_x1_out", "vadd_a", "vadd_b", "vadd_out"]
     a = s["vmul_x1_a"]
-    assert (a.counts.loops, a.counts.channels, a.counts.words, a.counts.beats) == (2, 4, 3200, 800)
+    assert (a.counts.loops, a.counts.channels, a.counts.words, a.counts.beats) == (2, 4, 8192, 2048)
     assert (a.area_um2, a.e_beat_pj) == READER_8_2_4
     assert (e.xbar.inputs, e.xbar.read_only, e.xbar.write_only) == (23, 16, 5)
     assert e.xbar.area_um2 == pytest.approx(
