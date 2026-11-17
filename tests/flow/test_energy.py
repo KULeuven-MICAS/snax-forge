@@ -1,23 +1,37 @@
 """The energy run (flow/energy.py, D177) and its report (report/energy.py): vecadd's quiet build
-written by hand, its snapshots priced by window."""
+written by hand, its snapshots priced by window.
+
+On SNAX-GVSoC (marker ``gvsoc``: in the image), vecadd and dot_3 at N = 2048, W = 8 run with
+``energy``: the counts of the ``run`` window that the program fixes are the static estimate's
+(each mover's grants its words, each unit's firings times its span its fires), every mover's
+requests are at least its grants, and the windows' energies add up to the run's total.
+"""
 
 from __future__ import annotations
+
+import json
+from itertools import pairwise
 
 import pytest
 
 from snax_forge.design import Platform
 from snax_forge.estimate import estimate
-from snax_forge.flow.energy import EnergyRun, energy_of
+from snax_forge.estimate.dynamic import graph_counts
+from snax_forge.flow import run_flow
+from snax_forge.flow.energy import EnergyRun, counts_of, energy_of
 from snax_forge.report.energy import render_energy
-from snax_forge.run import RunError, cluster_from, parse_line
+from snax_forge.run import RunError, cluster_from, load_cluster, parse_line
 from tests.estimate.helpers import SNAX_FORGE
-from tests.helpers import steps
+from tests.helpers import recipe_path, steps
 from tests.run.helpers import files, snap_lines
+
+from .helpers import needs_gvsoc
 
 MARKS = [{"mark": 1, "kind": "acc_config", "label": "acc config acc"},
          {"mark": 2, "kind": "run", "label": "run acc"},
          {"mark": 3, "kind": "dma_out", "label": "dma store_out"}]  # fmt: skip
 MOVERS = ("acc_a", "acc_b", "acc_out")
+REAL = {"vecadd": {}, "dot_3": {"N": 2048, "W": 8}}  # the recipes run on SNAX-GVSoC, their --set
 
 
 def totals(grants: int, stalls: int, firings: int, busy: int) -> dict:
@@ -104,3 +118,46 @@ def test_the_flow_runs_the_quiet_build_again_and_prices_it(tmp_path, monkeypatch
         summary(f)
     )
     assert "energy" in f.times
+
+
+@pytest.fixture(scope="module", params=sorted(REAL))
+def real(request, tmp_path_factory):
+    """A recipe of ``REAL`` through the flow on SNAX-GVSoC with ``energy``."""
+    name = request.param
+    return run_flow(recipe_path(name), SNAX_FORGE, recipe_sets=REAL[name],
+                    out=tmp_path_factory.mktemp(name) / "flow", energy=True)  # fmt: skip
+
+
+@pytest.mark.gvsoc
+@needs_gvsoc
+def test_a_real_run_window_has_the_static_grants_and_fires(real):
+    f, e = real, real.energy
+    assert f.passed and e is not None
+    point = f.point
+    cluster = load_cluster(f.out / "gen" / "snax_forge.hjson",
+                           f.out / "design" / "design_point.json")  # fmt: skip
+    est = estimate(point.graph, point.platform)
+    static = graph_counts(point.graph, est)
+    ((w, _),) = e.of_kind("run")
+    got = counts_of(w, cluster)
+    assert sorted(got.movers) == sorted(static.movers)
+    for m, (requests, grants) in got.movers.items():
+        assert grants == static.movers[m][1], m
+        assert requests >= grants, m
+    fires = {u: b.fires for g in est.groups if g.cost for u, b in g.cost.units.items()}
+    assert sorted(got.units) == sorted(fires)
+    for u, (firings, _) in got.units.items():
+        assert firings * e.prices.units[u][0] == fires[u], u
+
+
+@pytest.mark.gvsoc
+@needs_gvsoc
+def test_a_real_runs_windows_add_up_to_its_total(real):
+    """energy.json as written: its windows follow one another from boot, and per part their
+    energies add up to its total."""
+    d = json.loads((real.out / "energy" / "energy.json").read_text())
+    ws = d["windows"]
+    assert ws[0]["first"] == 0 and all(a["last"] == b["first"] for a, b in pairwise(ws))
+    for part, total in d["total"].items():
+        assert sum(w["energy"]["parts"][part] for w in ws) == pytest.approx(total), part
+    assert d["total"]["memory"] > 0
