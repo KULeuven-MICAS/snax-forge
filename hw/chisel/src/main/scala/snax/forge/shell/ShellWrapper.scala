@@ -4,7 +4,7 @@ import scala.collection.immutable.SeqMap
 
 import chisel3._
 
-import snax.forge.stream.FifoPacker
+import snax.forge.stream.{FifoPacker, FifoSlicer}
 
 /** The wrapper's ports but the clock and reset, named as `snax_acc_wrapper.sv.tpl` connects `<tag>_shell_wrapper` with
   * `snax_disable_csr_manager`: the CSR request and response after `snax_csr_mux_demux`, then per input port k
@@ -70,6 +70,11 @@ class ShellPorts(val readers: Seq[Int], val writers: Seq[Int], val groups: Seq[S
   * is the packer's input, the writer's data and valid its output, its slice pointer cleared when the group's start is
   * accepted, `last` the group's `last` (its next push is the run's last result, from the counters). A filling push
   * needs no room at the writer; the port is one 64-bit word.
+  *
+  * A sliced outer input (`d_in` > 1 in its port, D180) has a `FifoSlicer(1, dtype, lanes)`, `<unit>_<port>_slicer`,
+  * between its reader and its datapath's port, on the group's side of a shared set's mux: the reader's data and valid
+  * are its input, its pops the group's outer handshake and the datapath's data. It takes a word only while the group is
+  * busy and drops what it holds when the group's start is accepted; the port is one 64-bit word.
   *
   * Clock `clk_i`, reset `rst_ni` active low and asynchronous, as snax_cluster's (`RequireAsyncReset` in ReqRspManager).
   */
@@ -206,9 +211,23 @@ class ShellWrapper(spec: AcceleratorSpec) extends RawModule {
         val d = dp.io.units(spec.units.indexOf(u))
         for ((j, brm)    <- spec.ins(u.name)) {
           val (data, valid, ready) = inPort(j)
-          d(brm)         := data.asTypeOf(d(brm))
-          c.in(at).valid := valid
-          ready          := c.in(at).ready
+          val p                    = u.port(brm)
+          if (p.dIn == 1) {
+            d(brm)         := data.asTypeOf(d(brm))
+            c.in(at).valid := valid
+            ready          := c.in(at).ready
+          } else { // sliced (D180): the slicer between the reader and the unit, after a shared set's mux
+            val slicer = Module(new FifoSlicer(1, p.dtype, p.lanes)).suggestName(s"${u.name}_${brm}_slicer")
+            require(slicer.r == p.dIn, s"${u.name}.$brm: d_in ${p.dIn}, its slicer's r ${slicer.r}")
+            slicer.io.in.bits   := data.asTypeOf(slicer.io.in.bits)
+            slicer.io.in.valid  := valid
+            ready               := slicer.io.in.ready
+            d(brm)              := slicer.io.out.bits.asTypeOf(d(brm))
+            c.in(at).valid      := slicer.io.out.valid
+            slicer.io.out.ready := c.in(at).ready
+            slicer.io.enable    := c.busy
+            slicer.io.clear     := c.start.fire
+          }
           at += 1
         }
         for ((j, brm)    <- spec.outs(u.name)) {

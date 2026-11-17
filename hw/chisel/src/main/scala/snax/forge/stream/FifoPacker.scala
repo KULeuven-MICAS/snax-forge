@@ -10,7 +10,7 @@ import snax.forge.IntType
   *
   * Placed by `shell.ShellWrapper` on a packed outer output (D174): a one-lane result, `FifoPacker(lanes, dtype, 1)`,
   * between the unit's output and its writer, r = d_out results to a word. snax-gvsoc's `SnaxPacker` is its model, cycle
-  * for cycle. Only the slicer stays parked (open item 93).
+  * for cycle.
   *
   * A beat is `words` * num_slc elements (num_slc = 64 / width), element e at bits `[w(e+1)-1 : we]` of the beat. r =
   * `words` * num_slc / `inLanes` in-beats fill one out-beat, lane l of in-beat u element u * `inLanes` + l. The
