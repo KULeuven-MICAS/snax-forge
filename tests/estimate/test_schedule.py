@@ -54,3 +54,14 @@ def test_the_runs_round_trip_and_a_chain_is_its_sum():
     chain = [RunEstimate("a", "g", "x", 3, 0), RunEstimate("b", "h", "y", 4, 0, ["a"]),
              RunEstimate("c", "k", "z", 5, 0)]  # fmt: skip
     assert longest_path(chain) == 7
+
+
+@pytest.mark.parametrize("schedule", SCHEDULES)
+def test_the_graphs_counts_still_give_the_static_estimate(schedule):
+    """D177's check under each schedule: pipelined, the control units clock the longest path."""
+    from snax_forge.estimate.dynamic import graph_counts, port_movers, price, prices_of
+
+    graph, e = steps("mvt_3_split", W=8)[-1], at("mvt_3_split", schedule)
+    got = price(prices_of(graph, e, port_movers(e)), graph_counts(graph, e))
+    for part, want in e.parts.items():
+        assert got.parts[part] == pytest.approx(want.energy_nj, rel=1e-12), part

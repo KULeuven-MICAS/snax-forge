@@ -204,7 +204,8 @@ def price(p: Prices, c: Counts) -> Energy:
 
 def graph_counts(graph: Graph, est: Estimate) -> Counts:
     """The static estimate's counts in ``Counts``' form: a unit's firings (its fires over its
-    span) and its pushes (its links' and packer's loads), the groups' cycles, per port's
+    span) and its pushes (its links' and packer's loads), the groups' cycles (pipelined, the
+    accelerator's: the longest path, D179), per port's
     streamer its words as requests and grants (none refused). Priced at ``prices_of`` with the
     ports' streamers as movers, the parts are ``est.parts``' energies."""
     insts = instances(graph)
@@ -217,6 +218,8 @@ def graph_counts(graph: Graph, est: Estimate) -> Counts:
         pushes = {src(k): b.fires for k, b in g.cost.links.items()}
         for u, b in g.cost.units.items():
             out.units[u] = (b.fires // insts[u].span, pushes.get(u, 0))
+    if est.schedule != "serial":  # pipelined, the control units clock the overlapped cycles (D179)
+        out.busy = est.accelerator_cycles
     for s in est.streamer_counts:
         out.movers[s.name] = (s.words, s.words)
     return out
