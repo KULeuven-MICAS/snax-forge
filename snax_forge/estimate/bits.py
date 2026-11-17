@@ -12,7 +12,8 @@ per unit its T when fixed at design time, None when a JOB_BEATS CSR sets it. A c
 reads each group's description from an ``accelerator.json``, and ``registers_json`` gives the
 text of ``ctrl_registers.json``, which ``util/ctrl_regs.py --json`` writes beside the RTL
 fixtures and hw/chisel's ``CtrlRegistersSpec`` compares with the emitted RTL.
-``packer_bits`` gives a packed output's ``FifoPacker`` registers (D174).
+``packer_bits`` gives a packed output's ``FifoPacker`` registers (D174), ``slicer_bits`` a sliced
+input's ``FifoSlicer`` (D180).
 """
 
 from __future__ import annotations
@@ -32,6 +33,12 @@ def packer_bits(d_out: int, lanes: int, dtype: str) -> int:
     and its slice count, ⌈log₂ d_out⌉ bits."""
     width = int(dtype.lstrip("uint") or 0)
     return (d_out - 1) * lanes * width + _log2_ceil(d_out)
+
+
+def slicer_bits(d_in: int) -> int:
+    """A ``FifoSlicer``'s register bits at one word in: the held word, its pop count,
+    ⌈log₂ d_in⌉ bits, and its full flag."""
+    return 64 + _log2_ceil(d_in) + 1
 
 
 def ctrl_registers(units: Sequence[Mapping[str, Any]], links: Sequence[Mapping[str, Any]],

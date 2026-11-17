@@ -3,7 +3,8 @@
 ``groups(graph)`` gives a ``GroupEstimate`` per group (the units of one ``group``, else of one
 instance, and its links) with the fields CONTRACTS lists; ``cost`` is set later by
 ``estimate``. ``group_cycles`` steps snax-gvsoc's group rule with every outer input valid and the
-outer output ready, the one place this is done (gen/rtl.py's ``group_counter`` calls it);
+outer output ready, a sliced input through its slicer (one cycle a run, D180), the one place
+this is done (gen/rtl.py's ``group_counter`` calls it);
 ``group_rule`` loads ``snax/snax_group_rule.py`` from the submodule once, and without it
 ``estimate.submodule`` names the fix. A unit's L, II and span are its implementation's timing
 at its params, its firings and named rates SNAX-LOWER's (``unit_firings``), JOBS and each T what
@@ -21,14 +22,22 @@ from types import ModuleType
 from typing import Any
 
 from snax_forge.common import CodedError, repo_root
-from snax_forge.design.streamers import group_links, group_runs, instance_nodes, instances, packed
+from snax_forge.design.streamers import (
+    group_links,
+    group_runs,
+    instance_nodes,
+    instances,
+    packed,
+    port_dtype,
+    sliced,
+)
 from snax_forge.design.streamers import groups as graph_groups
 from snax_forge.dfg import Graph, Node
 from snax_forge.dfg.subset import map_range
 from snax_forge.lower.c import fold_rate, job_writes
 from snax_forge.lower.derive import unit_firings
 
-from .bits import ctrl_bits, packer_bits
+from .bits import ctrl_bits, packer_bits, slicer_bits
 from .cost import Block, GroupCost
 from .data import WORD_BITS
 
@@ -58,16 +67,18 @@ def group_rule() -> ModuleType:
 def group_cycles(units: list[dict[str, Any]], links: list[dict[str, Any]], owner: str,
                  jobs: int, ts: list[int]) -> int | None:  # fmt: skip
     """The busy cycles of one run of a group, E - s: the group rule (``units`` with ``name``,
-    ``L``, ``ii``, ``span`` and ``inputs``, its outer inputs; ``links`` ``{from, to, to_input,
-    depth}``; ``owner`` the unit with the outer output) stepped with every input valid and the
-    output ready, JOBS ``jobs`` and each unit's T ``ts``; 0 for the empty run (JOBS or a T 0),
-    None for a run that does not end."""
+    ``L``, ``ii``, ``span`` and ``inputs``, its outer inputs, and optionally ``d_in``, their pops
+    per word in port order, absent all 1; ``links`` ``{from, to, to_input, depth}``; ``owner``
+    the unit with the outer output) stepped with every input valid and the output ready, JOBS
+    ``jobs`` and each unit's T ``ts``; 0 for the empty run (JOBS or a T 0), None for a run that
+    does not end."""
     if jobs == 0 or 0 in ts:
         return 0
     rule = group_rule().GroupRule(units, links, owner)
     n = rule.firings_per_run(jobs, ts)
+    d_in = [d for u in units for d in u.get("d_in", [1] * u["inputs"])]
     bound = sum(n) * max(u["ii"] * u["span"] for u in units) + sum(u["L"] for u in units) + 16
-    _, end = rule.run(jobs, ts, lambda c: [True], lambda c: True, bound)
+    _, end = rule.run(jobs, ts, lambda c: [True] * len(d_in), lambda c: True, bound, 1, d_in)
     return end
 
 
@@ -144,7 +155,8 @@ def _datapath_blocks(graph: Graph, insts: dict[str, Any], members: list[str],
     producer's ``gives``, a load per output), and per unit and link its register bits (CONTRACTS,
     "Estimate"): a wire 0 and no block; a unit the generator does not fill a block with no params
     and no bits. A packed outer output's ``FifoPacker`` joins the links by ``<unit>.<port>``, a
-    fire per result. The generator is imported here: gen/rtl.py imports this package."""
+    fire per result; a sliced outer input's ``FifoSlicer`` (``_slicers``) only the bits, its cost
+    not yet modelled. The generator is imported here: gen/rtl.py imports this package."""
     from snax_forge.gen.accelerator import Unit
     from snax_forge.gen.blocks import DATAPATHS, GenError, fill_node
     from snax_forge.gen.rtl import buffer_params, catalogue, fill, flops
@@ -186,7 +198,29 @@ def _datapath_blocks(graph: Graph, insts: dict[str, Any], members: list[str],
                 params = {"d_out": d_out, "lanes": port.lanes, "dtype": port.dtype}
                 links[f"{u}.{p}"] = Block("FifoPacker", params, gives[u])
                 bits[f"{u}.{p}"] = packer_bits(d_out, port.lanes, port.dtype)
+    for k, b in _slicers(graph, insts, members, ends).items():
+        bits[k] = slicer_bits(b.params["d_in"])
     return units, links, bits
+
+
+def _slicers(graph: Graph, insts: dict[str, Any], members: list[str],
+             ends: list[tuple[Node, str, str]]) -> dict[str, Block]:  # fmt: skip
+    """Each sliced outer input's ``FifoSlicer`` (D180) by ``<unit>.<port>``: its ``d_in``, lanes
+    and dtype, no fires (its cost is not modelled yet; ``char.missing`` names it)."""
+    fed, nodes, out = {to for _, _, to in ends}, {}, {}
+    for n, _ in graph.walk():
+        if n.kind == "accelerated":
+            nodes.setdefault(n.attrs["instance"], []).append(n)
+    for u in members:
+        for p in _ins(insts[u]):
+            if f"{u}.{p}" in fed:
+                continue
+            dtype, lanes = port_dtype(graph, nodes[u], p), insts[u].lanes(p)
+            d_in = sliced(dtype, lanes, False, WORD_BITS)
+            if d_in > 1:
+                out[f"{u}.{p}"] = Block("FifoSlicer", {"d_in": d_in, "lanes": lanes,
+                                                       "dtype": dtype}, 0)  # fmt: skip
+    return out
 
 
 def _fixed_ts(graph: Graph, insts: dict[str, Any], members: list[str]) -> dict[str, int | None]:
@@ -212,7 +246,7 @@ def datapath_blocks(graph: Graph) -> dict[str, Block]:
         ends = group_links(graph, members)
         zero = dict.fromkeys(members, 0)
         units, bufs, _ = _datapath_blocks(graph, insts, members, ends, zero, zero)
-        out |= units | bufs
+        out |= units | bufs | _slicers(graph, insts, members, ends)
     return out
 
 
@@ -239,9 +273,12 @@ def group_blocks(graph: Graph, job_width: int = 32,
         ends = group_links(graph, members)  # one per pair of ports
         fed = {to for _, _, to in ends}
         taken = {frm for _, frm, _ in ends}
+        slicers = _slicers(graph, insts, members, ends)
         rule_units = [{"name": u, "L": insts[u].latency, "ii": insts[u].initiation_interval,
                        "span": insts[u].span,
-                       "inputs": sum(f"{u}.{p}" not in fed for p in _ins(insts[u]))}
+                       "inputs": sum(f"{u}.{p}" not in fed for p in _ins(insts[u])),
+                       "d_in": [slicers[k].params["d_in"] if k in slicers else 1
+                                for p in _ins(insts[u]) if (k := f"{u}.{p}") not in fed]}
                       for u in members]  # fmt: skip
         rule_links = [{"from": frm.split(".")[0], "to": to.split(".")[0],
                        "to_input": _ins(insts[to.split(".")[0]]).index(to.split(".")[1]),

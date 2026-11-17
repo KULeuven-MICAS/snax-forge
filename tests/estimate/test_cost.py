@@ -384,3 +384,26 @@ def test_a_packed_output_moves_words_and_its_packer_is_priced(tmp_path):
     assert got.load_bits == 17
     assert packer.e_fire_pj == pytest.approx(got.e_comb_pj + 17 * load("nangate45").e_load_pj)
     assert "sum.out" not in e.missing
+
+
+def test_a_sliced_input_moves_words_and_takes_one_cycle_more(tmp_path):
+    """vecadd_i32 at W = 1 (N = 64, D180): each reader's 64 pops come from 32 words, the group's
+    run is one cycle longer than its 64 firings (the slicer's first word shows the cycle after it
+    is taken), and each FifoSlicer holds a word, a 1-bit count and its full flag (66 bits); its
+    cost is not modelled yet, so it is in no group's cost."""
+    from snax_forge.design import DesignPoint
+    from snax_forge.estimate.bits import slicer_bits
+    from tests.gen.helpers import designed
+
+    point = DesignPoint.load(tmp_path / designed(tmp_path, "vecadd_i32", "v", ["W=1"]))
+    assert (point.streamers["acc_a"].d_in, point.streamers["acc_a"].num_ch) == (2, 1)
+    e = estimate(point.graph, point.platform)
+    assert (e.ports["acc.a"].beats, e.ports["acc.b"].beats, e.ports["acc.out"].beats) == (
+        32,
+        32,
+        32,
+    )
+    (g,) = e.groups
+    assert g.cycles == 65
+    assert g.bits["acc.a"] == g.bits["acc.b"] == slicer_bits(2) == 66
+    assert set(g.cost.links) == {"acc.out"}
