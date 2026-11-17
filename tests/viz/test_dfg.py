@@ -236,6 +236,28 @@ def test_a_packed_output_draws_its_packer(tmp_path):
     assert recipe_view(tmp_path, "vsum_tree")["packers"] == []
 
 
+def test_a_sliced_input_draws_its_slicer(tmp_path):
+    """vecadd_i32 at W = 1: a FifoSlicer box between A and the unit's a, and one for B (D180), the
+    edge into each d_in 2 a word, the edge out of it the port's packing; the packer below."""
+    v = recipe_view(tmp_path, "vecadd_i32", {"W": 1})
+    sa, sb, pk = sorted(v["packers"], key=lambda x: x["id"])
+    assert (sa["id"], sa["text"], sa["d_in"]) == ("acc_a_slicer", "FifoSlicer · d_in 2", 2)
+    assert (sb["id"], pk["id"]) == ("acc_b_slicer", "acc_out_packer")
+    assert {"kind": "packers", "column": 0, "nodes": [sa, sb]} in v["rows"]
+    rows = [r["kind"] for r in v["rows"]]
+    assert rows.index("packers") < rows.index("node")  # the slicers above the node
+    ends = {(e["from"], e["to"]): e.get("per_word") for e in v["edges"] if e["data"] == "A"}
+    assert ends == {("A@0", "acc_a_slicer.in"): 2, ("acc_a_slicer.out", "add.a"): None}
+    edge = v["details"]["edge:acc_a_slicer.out->add.a"]
+    assert edge["packing"] == "int32 · num_slc 2 · d_in 2 · num_ch 1"
+    d = v["details"]["node:acc_a_slicer"]
+    assert (d["kind"], d["unit"], d["port"], d["lanes"], d["d_in"], d["bits"]) == (
+        "slicer", "acc", "a", 1, 2, 66
+    )  # fmt: skip
+    assert "placed by the flow" in d["what"]
+    assert recipe_view(tmp_path, "vecadd_i32")["packers"] == []
+
+
 def test_a_packed_output_edge_shows_its_d_out(tmp_path):
     """vsum at i8, W = 8: the int32 sum packed 2 to a word on one channel (D174)."""
     v = recipe_view(tmp_path, "vsum_tree", {"types": "i8", "W": 8})
