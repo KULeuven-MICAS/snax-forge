@@ -116,6 +116,10 @@ def test_a_cast_sets_the_op_type_and_is_stripped_at_bind():
                and n.attrs["brm"] == "mac")  # fmt: skip
     assert (mac.attrs["opType"], mac.attrs["code"]) == ("int32", "out = a * b")
     assert "int32(in1) * int32(in2)" in json.dumps(mac.attrs["replaced"])
+    from snax_forge.viz.dfg.api import _node_details, compact_text  # the editor shows it
+
+    assert " · a * b @ int32 · " in compact_text(results[-1].graph, mac)
+    assert _node_details(mac)["opType"] == "int32"
     bound = next(r.graph for r in results if any(n.kind == "accelerated"
                                                   for n, _ in r.graph.walk()))  # fmt: skip
     node = next(n for n, _ in bound.walk() if n.kind == "accelerated")
