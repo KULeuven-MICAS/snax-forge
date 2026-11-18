@@ -8,8 +8,8 @@ stored form) and ``check`` (everything else about one node, given its ``Scope``)
 attrs have no namespace; an unknown one without a namespace is an error, and a namespaced one
 (``loop.*``, ``mem.*``, ``hw.*``, ``user.*``) passes through for its owner to check.
 
-The built-in kinds, ``map``, ``tasklet``, ``accelerated`` and ``link``, and their attrs are
-CONTRACTS, "SNAX-DFG". ``loop`` and ``branch`` come with the kernels that need them.
+The built-in kinds, ``map``, ``tasklet``, ``accelerated``, ``link`` and ``transpose``, and their
+attrs are CONTRACTS, "SNAX-DFG". ``loop`` and ``branch`` come with the kernels that need them.
 """
 
 from __future__ import annotations
@@ -285,3 +285,46 @@ def _check_link(node: Node, scope: Scope, what: str) -> None:
 
 
 register_kind("link", required=("container", "depth", "from", "to"), check=_check_link)
+
+
+# =============================================================================
+# transpose
+# =============================================================================
+
+TRANSPOSE_BY = ("dma", "core")  # values of a transpose's ``by``: what makes the copy
+
+
+def whole(subset: list[Any], c: Container) -> bool:
+    """``subset`` covers the whole of ``c``: ``0:<extent>`` in every dimension."""
+    return [canonical_dim(d, "subset") for d in subset] == [
+        canonical_dim(f"0:{s}", "subset") for s in c.shape
+    ]
+
+
+def _check_transpose(node: Node, scope: Scope, what: str) -> None:
+    a = node.attrs
+    if len(node.inputs) != 1 or len(node.outputs) != 1:
+        raise DfgError(f"{what}: a transpose has one input and one output, got "
+                       f"{len(node.inputs)} and {len(node.outputs)}")  # fmt: skip
+    (c_in, m_in), (c_out, m_out) = *node.inputs.items(), *node.outputs.items()
+    src, dst = scope.containers[m_in.data], scope.containers[m_out.data]
+    for c, m, cont in ((c_in, m_in, src), (c_out, m_out, dst)):
+        if not _wrap(lambda m=m, cont=cont: whole(m.subset, cont)):
+            raise DfgError(f"{what}.{c}: a transpose moves the whole of {m.data!r}, "
+                           f"0:<extent> in every dimension, got {list(m.subset)}")  # fmt: skip
+    perm = a["perm"]
+    rank = len(src.shape)
+    if (not isinstance(perm, list) or any(type(p) is not int for p in perm)
+            or sorted(perm) != list(range(rank))):  # fmt: skip
+        raise DfgError(f"{what}.attrs.perm: {perm!r} is not a permutation of {m_in.data!r}'s "
+                       f"{rank} dimensions")  # fmt: skip
+    if list(dst.shape) != [src.shape[p] for p in perm]:
+        raise DfgError(f"{what}: {m_out.data!r} is {list(dst.shape)}, {m_in.data!r} permuted by "
+                       f"{perm} is {[src.shape[p] for p in perm]}")  # fmt: skip
+    if dst.dtype != src.dtype:
+        raise DfgError(f"{what}: {m_out.data!r} is {dst.dtype}, {m_in.data!r} {src.dtype}")
+    if a["by"] not in TRANSPOSE_BY:
+        raise DfgError(f"{what}.attrs.by: {a['by']!r} is not one of {list(TRANSPOSE_BY)}")
+
+
+register_kind("transpose", required=("perm", "by"), check=_check_transpose)

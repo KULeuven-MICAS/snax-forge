@@ -9,7 +9,8 @@ input shapes. Only integer containers are run. Each kind's executor is registere
 tasklet gathers, evaluates and writes back, all reads before all writes, a fold through
 ``ufunc.at``; an accelerated node runs firing by firing through its BRM's function
 (``brm.function_of``), the temporal maps around it its firing loop and every map further out a
-task per iteration; a link runs as the container it replaced. Pad lanes (dfg/pad.py) are read as
+task per iteration; a link runs as the container it replaced; a transpose copies its input,
+permuted (``np.transpose``), into its output. Pad lanes (dfg/pad.py) are read as
 ``pad_value`` and never written. ``named_rates`` gives a named rate's value, the product of the
 innermost firing loops its port's memlet does not depend on (dot's T = N / W); bind and
 SNAX-LOWER use it too. An index outside its container, two iterations writing one element
@@ -512,3 +513,12 @@ register_executor("tasklet", _run_tasklet)
 register_executor("accelerated", _run_accelerated)
 # A link runs as the transient it replaced: its writer and reader still name it
 register_executor("link", lambda node, ctx: None)
+
+
+def _run_transpose(node: Node, ctx: Context) -> None:
+    """A transpose: its input's whole container, permuted by ``perm``, into its output's."""
+    (src,), (dst,) = node.inputs.values(), node.outputs.values()
+    ctx.data[dst.data][...] = np.transpose(ctx.data[src.data], node.attrs["perm"])
+
+
+register_executor("transpose", _run_transpose)
