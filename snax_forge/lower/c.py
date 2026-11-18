@@ -8,10 +8,10 @@ file's cores (``cores``), the accelerators' ``Description`` and data.h's arrays.
 Each core runs ``forge_core_<n>``, its steps in task-list order, or ``forge_core_idle``, the
 barriers only, picked by ``snrt_cluster_core_idx()``. A streamer task is ``csrw_ss`` writes padded
 to its ``temporal_dim``; an accelerator task writes JOBS, JOB_BEATS and its scalars before START
-(``job_values``, ``job_writes``); a DMA task is ``snrt_dma_start_1d`` or ``_2d``, and
-``snrt_dma_wait_all()`` comes only where a DMA task is needed. A wait for another core is followed
-by ``snrt_cluster_hw_barrier()`` on every core. Each refusal is a ``CError`` (``c.<rule>``).
-Same design point, same text.
+(``job_values``, ``job_writes``); a DMA task is ``snrt_dma_start_1d`` or ``_2d``, with a ``size``
+one ``_2d`` per step of its outer loops (``dma``), and ``snrt_dma_wait_all()`` comes only where a
+DMA task is needed. A wait for another core is followed by ``snrt_cluster_hw_barrier()`` on every
+core. Each refusal is a ``CError`` (``c.<rule>``). Same design point, same text.
 """
 
 from __future__ import annotations
@@ -38,6 +38,8 @@ if TYPE_CHECKING:  # design imports lower, gen imports lower
     from snax_forge.gen.data import Array
 
 MAIN_C = "main.c"
+# The quiet build's mark of a DMA task, by direction (CONTRACTS, "Generated hjson files")
+DMA_MARKS = {"l2_to_l1": "dma_in", "l1_to_l2": "dma_out", "l1_to_l1": "dma_copy"}
 OBS_MARKS = "obs_marks.json"
 INDENT = "    "
 QUIET = "FORGE_QUIET"  # the quiet build's define
@@ -407,9 +409,8 @@ class _Program:
             c = self.conf[t]
             core = self.core_of(c.component)
             if c.type == "dma":
-                kind = "dma_in" if c.values["direction"] == "l2_to_l1" else "dma_out"
-                self.mark(core, kind, f"dma {t}")
-                self.emit(core, self.dma(c, where))
+                self.mark(core, DMA_MARKS[c.values["direction"]], f"dma {t}")
+                self.emit(core, *self.dma(c, where))
                 self.quiet(core, "snrt_dma_wait_all();")
                 continue
             if not run_marked:  # the run: its streamers' start to the end of its tasks
@@ -450,22 +451,43 @@ class _Program:
         self.emit(core, f"csrw_ss({sel}, {index});")
         self.sel[acc] = index
 
-    def dma(self, c: Configure, where: str) -> str:
+    def dma(self, c: Configure, where: str) -> list[str]:
+        """A DMA task's lines. Without a ``size``, whole beats: one ``_1d``, or one ``_2d`` over a
+        second loop. With one, each step of the innermost loop is a burst of ``size`` bytes: that
+        loop is one ``_2d``'s repeat, each outer loop a C ``for`` (``k``, ``k1``, ...)."""
         src, dst = c.values["src"], c.values["dst"]
-        to_l1 = c.values["direction"] == "l2_to_l1"
-        l2, l1 = (src, dst) if to_l1 else (dst, src)
-        sym = self.l2_symbol(l2["symbol"], c.task_name)
-        l1p = f"(void *){_hex(l1['base'])}"
-        d, s_ = (l1p, sym) if to_l1 else (sym, l1p)
+        d, s_ = self.pointer(dst, c.task_name), self.pointer(src, c.task_name)
         sb, ss, db, ds = src["bounds"], src["strides"], dst["bounds"], dst["strides"]
+        if "size" in c.values:
+            outer = range(len(sb) - 1, 0, -1)  # outermost first
+            names = {j: "k" if len(sb) == 2 else f"k{len(sb) - 1 - j}" for j in outer}
+            d = self.pointer(dst, c.task_name, [(ds[j], names[j]) for j in outer])
+            s_ = self.pointer(src, c.task_name, [(ss[j], names[j]) for j in outer])
+            line = f"snrt_dma_start_2d({d}, {s_}, {c.values['size']}, {ds[0]}, {ss[0]}, {sb[0]});"
+            heads = [f"for (uint32_t {names[j]} = 0; {names[j]} < {sb[j]}; {names[j]}++) {{"
+                     for j in outer]  # fmt: skip
+            n = len(heads)
+            return [*(INDENT * i + h for i, h in enumerate(heads)), INDENT * n + line,
+                    *(INDENT * i + "}" for i in range(n - 1, -1, -1))]  # fmt: skip
         if sb != db or len(sb) not in (1, 2) or ss[0] != self.beat or ds[0] != self.beat:
             raise CError("c.dma", f"{where}: {c.task_name} moves {sb} x {ss} to {db} x {ds}; snRuntime's "
                 f"1-D or 2-D copy needs whole {self.beat}-byte beats inside",
             )  # fmt: skip
         size = sb[0] * self.beat
         if len(sb) == 1:
-            return f"snrt_dma_start_1d({d}, {s_}, {size});"
-        return f"snrt_dma_start_2d({d}, {s_}, {size}, {ds[1]}, {ss[1]}, {sb[1]});"
+            return [f"snrt_dma_start_1d({d}, {s_}, {size});"]
+        return [f"snrt_dma_start_2d({d}, {s_}, {size}, {ds[1]}, {ss[1]}, {sb[1]});"]
+
+    def pointer(self, side: Mapping[str, Any], task: str,
+                offsets: Sequence[tuple[int, str]] = ()) -> str:  # fmt: skip
+        """A DMA side's address in C: its L2 array (``symbol``) or its L1 ``base``, plus each
+        ``stride * k`` of ``offsets``, in bytes."""
+        terms = [f"{st} * {k}" for st, k in offsets if st]
+        if "symbol" in side:
+            sym = self.l2_symbol(side["symbol"], task)
+            return " + ".join([f"(uint8_t *){sym}", *terms]) if terms else sym
+        base = _hex(side["base"])
+        return f"(void *)({' + '.join([base, *terms])})" if terms else f"(void *){base}"
 
     def l2_symbol(self, symbol: str, task: str) -> str:
         """The data.h array (not a golden) of container ``symbol``, the task list's name for

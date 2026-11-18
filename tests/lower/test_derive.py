@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from snax_forge.design import Design, DesignPoint, MemorySpec, Platform, run_checks, streamers
@@ -548,18 +550,20 @@ def test_a_sliced_reader_moves_words():
         assert (v["temporal_bounds"], v["temporal_strides"]) == ([32], [8]), t
 
 
-def test_a_transpose_node_is_refused_until_its_copy_has_a_task():
-    """data_transpose's copy has no DMA task yet: lower refuses it by name, with the fix,
-    rather than a program whose readers read an empty container."""
+@pytest.mark.parametrize(("attrs", "message"), [
+    ({"perm": [0], "by": "dma"}, "a copy of rank 1; a transpose lowers at rank 2 only for now"),
+    ({"perm": [0], "by": "core"}, "a copy by core has no task; use by=dma"),
+])  # fmt: skip
+def test_a_copy_lowers_by_dma_at_rank_2_only(attrs, message):
+    """vecadd reading A through a copy A_T of rank 1: refused by name, with the fix."""
     d = bound_vecadd(4).to_dict()
     d["containers"]["A_T"] = dict(d["containers"]["A"], transient=True)
+    d["body"] = json.loads(json.dumps(d["body"]).replace('"data": "A"', '"data": "A_T"'))
     d["body"].insert(0, {"id": "transpose_A", "kind": "transpose",
                          "inputs": {"src": {"data": "A", "subset": ["0:N"]}},
                          "outputs": {"dst": {"data": "A_T", "subset": ["0:N"]}},
-                         "attrs": {"perm": [0], "by": "dma"}})  # fmt: skip
+                         "attrs": attrs})  # fmt: skip
     dp = Design(Platform.load(SNAX_FORGE), Graph.from_dict(d))
     assert run_checks(dp) == []
-    with pytest.raises(LowerError, match=r"^transpose_A: the copy of A into A_T \(data_transpose, "
-                                         r"by dma\) has no task yet; read A by strides with "
-                                         r"mark_transpose instead$"):  # fmt: skip
+    with pytest.raises(LowerError, match=rf"^transpose_A: {message}$"):
         task_list(DesignPoint.of(dp, "vecadd"))
