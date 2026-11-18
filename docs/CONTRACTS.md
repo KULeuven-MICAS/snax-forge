@@ -69,6 +69,7 @@ Every node has `id` (unique: task names are built from it, D75), `kind`, `inputs
 | `map` | `var`, `range`; `loop.kind` (absent, `tile`, `temporal`, `spatial`); `loop.dim`, `loop.piece` (D162); `loop.split` (the `var` and `range` before a split, and `valid`, the iteration count, when it is not a multiple of the factor: the lanes past it are padding, D144) | runs once per value of `var` |
 | `tasklet` | `code`: one `output = expression` per output connector; its connectors are single elements | none |
 | `link` | `container` (the transient it replaced, which writer and reader still name), `depth` (0 a wire, ≥ 1 a buffer), `from`, `to` (the units' instances) | none |
+| `transpose` | `perm` (a permutation of its input's dimensions), `by` (`dma` or `core`: what makes the copy); one input `src` and one output `dst`, each its whole container (`0:<extent>` in every dimension), the output's shape the input's permuted by `perm`, the same dtype; the reference executor copies `np.transpose(src, perm)` into it | none |
 | `accelerated` | `instance`, `brm`, `implementation`, `code` (the BRM's matched entry), `params` (design params), `replaced` (the subtree `bind` replaced), `locals`, `accelerator`, `group`, `opType` (the last four only when set; `opType` the op's type where the tasklet's casts set it, D143 · D175) | empty for a leaf block |
 
 - An accelerated node's connectors are the BRM's ports, each port's lanes as a range: one beat.
@@ -102,7 +103,10 @@ A bound graph nests accelerator ⊃ groups ⊃ units and links (D146, D148):
 
 ### A transposed read
 
-`mark_transpose` (D164, `sandbox/transpose.py`) records on a tasklet `sandbox.transpose`, `{connector: π}`, for an input whose dimensions it reads across its loop order: π orders the container's dimensions by the depth of their outermost map. mvt's half 2 reads `A[m, n]` under the loops (n, m): π = (1, 0). No memlet changes; `bind` carries the mark onto the accelerated node, keyed by port.
+A read across the loop order is served in one of two ways (D182, `sandbox/transpose.py`):
+
+- `mark_transpose` (D164) records on a tasklet `sandbox.transpose`, `{connector: π}`, for an input whose dimensions it reads across its loop order: π orders the container's dimensions by the depth of their outermost map. mvt's half 2 reads `A[m, n]` under the loops (n, m): π = (1, 0). No memlet changes; `bind` carries the mark onto the accelerated node, keyed by port. A container whose element is narrower than the bank word (8 bytes) is refused: a packed input's lanes are contiguous elements of one word (`A is int8: a packed read cannot cross the loop order; use data_transpose`).
+- `data_transpose` adds a transient `<container>_T`, the container's shape permuted by π and its dtype, and a `transpose` node (perm π) reading the whole container and writing the whole copy, at the top level just before the nest's outermost map. Every memlet of the container in the nest, at every level, has its dimensions permuted by π and names the copy, so a split index moves with its dimension; mvt's half 2 then reads `A_T[n, m]` under (n, m), π the identity. Only `by` `dma` is built.
 
 ### Names and expressions
 
@@ -260,7 +264,8 @@ Each has an inverse, and each refuses with the fix named. The loop names follow 
 | `fuse_seed` / `unfuse_seed` | `first`, `second` | a fold writing t with ⊕, read only by a nest computing `t ⊕ x` in place over t: the nest and t go and the fold starts from x (`reduce.seed`, D163; matvec_acc's q += A p). Refused for another reader, op, subset, a float or a bound fold |
 | `bake_scalar` / `unbake_scalar` | `container`, `value` (an int or `csr`) | at an int the scalar becomes a literal and the container goes (axpy's alpha 3: `bind` bakes `k1 = 3`); at `csr` the tasklet names the container, read at run time (D161) |
 | `interchange_map` | `map`, `with` | two maps of one perfect nest trade places, each keeping id, variable, range and tag; its own inverse. Refused when a range would name an inner variable or the swap reorders an order-dependent fold (rowsum 2: `sum_map_s` with `sum_map_1`) |
-| `mark_transpose` / `unmark_transpose` | `node`, `container` | marks a read across the loop order (section 2, D164); nothing else changes |
+| `mark_transpose` / `unmark_transpose` | `node`, `container` | marks a read across the loop order (section 2, D164); nothing else changes. Refused for an element narrower than a bank word |
+| `data_transpose` | `node`, `container`, `by` (`dma`; `core` refused, not built yet) | the container copied transposed into `<container>_T` by a `transpose` node before the nest, which reads the copy in loop order (section 2, D182). Its sites are `mark_transpose`'s. Refused: an existing `<container>_T`, a nest reading the container in two orders. No inverse yet: the step is undone by removing it |
 | `share` / `unshare` | `group`, `with` | `group` runs on `with`'s units: the same shape unit by unit (BRM, implementation, params, links and depths), its nodes renamed to `with`'s (D165). Refused naming what differs (`vmul_x2 and vmul_x1 differ: W = 4 against 8`) |
 | `share_ports` / `unshare_ports` | `container`, `accelerator` | the container's writer's and reader's groups go on one accelerator whose movers they share, the k-th widest port of each on mover k (D169); the container is marked `hw.share_ports` |
 | `link` / `unlink` | `container`, `depth`, `group` | a transient between two bound units becomes a link node, their groups merge under `group`, and the transient leaves L1. Refused: not one writer and one reader (`link.container`), an end not bound (`link.unbound`), the beats not in the same order (`link.order`), a clashing name (`link.group`) |
@@ -1013,7 +1018,7 @@ An energy's `counts` are what each part was priced on (section 14): `fires` (the
 
 ## 13. Estimate
 
-The ideal estimate of a bound graph (D155, `estimate/`), with or without a platform: what a mapping buys before any run, for the viewers and `design.md`. `estimate(graph, platform, tech)` also costs it on a technology (section 14; default `nangate45`, None leaves the cost out). It assumes ideal streams: no bank conflicts, no streamer fill, no DMA and no core control.
+The ideal estimate of a bound graph (D155, `estimate/`), with or without a platform: what a mapping buys before any run, for the viewers and `design.md`. `estimate(graph, platform, tech)` also costs it on a technology (section 14; default `nangate45`, None leaves the cost out). It assumes ideal streams: no bank conflicts, no streamer fill, no core control, and no DMA but for a `transpose` node's copy (`copies`).
 
 An `Estimate` is a dataclass with `to_dict` / `from_dict`; the totals are written and derived again when read.
 
@@ -1026,7 +1031,9 @@ An `Estimate` is a dataclass with `to_dict` / `from_dict`; the totals are writte
 | `not_mapped` | the iterations of each nest no unit runs, over every map around it but the spatial ones |
 | `unmapped_iterations` | the same over every map, spatial ones included: lanes only exist once a unit runs them |
 | `unmapped_cycles` | `unmapped_iterations` × `UNMAPPED_CYCLES_PER_ITERATION` (1, a labelled assumption: a core takes several cycles per iteration) |
-| `total_cycles` | `accelerator_cycles` + `unmapped_cycles`, so a step before any bind compares with a bound one |
+| `copies` | per `transpose` node (D182, `estimate/copies.py`): `name`, `by`, `bursts` (the product of its input's shape: one burst per element), `size` (an element's bytes) and `cycles` = bursts × `DMA_CYCLES_PER_BURST` (8/3, measured on the RTL for short bursts inside L1: busy = 8/3 · bursts + 2) |
+| `copy_cycles` | the copies' cycles added up and rounded; under a pipelined schedule added too, for now |
+| `total_cycles` | `accelerator_cycles` + `unmapped_cycles` + `copy_cycles`, so a step before any bind compares with a bound one |
 | `containers` | per container: `placement` (`l1`, `local`, `link` with its `depth`), `bytes` (the padded shape, D144), `reads` and `writes` in 64-bit words (a link's and a local value's traffic is not L1's) |
 | `l1_footprint`, `l1_size` | the bytes placed in L1, and the platform's L1 size |
 | `ports` | per outer port `<instance>.<port>`: `container`, its streamer's `loops`, `beats`, `num_ch` |
@@ -1117,7 +1124,8 @@ $$A = \sum_b A_b + \sum_g A_{\mathit{ctrl},g} + \sum_p A_{\mathit{strm}}(D_p, L_
 
 $$E = \sum_b E_b + \sum_g E_{\mathit{ctrl},g} + \sum_p \frac{W_p}{C_p}\thinspace e_{\mathit{beat}}(D_p, L_p, C_p) + e_{\mathit{acc}}(n_{\mathit{banks}}, n_{\mathit{banks}})\thinspace\big(N_{\mathit{rd}}\thinspace(1 - g_{\mathit{ro}}) + N_{\mathit{wr}}\thinspace(1 - g_{\mathit{wo}})\big) + N_{\mathit{rd}}\thinspace e_{\mathit{rd}} + N_{\mathit{wr}}\thinspace e_{\mathit{wr}}$$
 
-- **The five parts** (`PARTS`): datapath (the units and buffer links, b), control (g), streamers, crossbar, memory (the banks). The csr, the cores, the I-cache and the DMA are not costed: the DMA's traffic is the same for every variant, and the cores' and AXI's ports enter only as crossbar inputs.
+- **The five parts** (`PARTS`): datapath (the units and buffer links, b), control (g), streamers, crossbar, memory (the banks). The csr, the cores, the I-cache and the DMA are not costed: the DMA's loads and stores are the same for every variant, and the cores' and AXI's ports enter only as crossbar inputs.
+- **A copy** (section 13's `copies`) adds two bank accesses per burst, one read and one write, to N_rd and N_wr in the memory part only, one access per burst whatever its size; the DMA engine and its crossbar port are not priced.
 - **The crossbar's energy** has one price per access for a bank count, a full crossbar's ($e_{\mathit{acc}}$ at inputs = banks, 2.752585 pJ on 32 banks), so it follows the accesses alone: dot 5 linked (19 inputs, 4097 accesses) costs 59.656 nJ against 59.811 nJ unlinked (35 inputs, 4113).
 - **By input kind** (D178, X93): a read is priced as a read-only input's and a write as a write-only one's, $e_{\mathit{acc}}(1 - g_k)$, with $g_k$ at the design's bank count (linear in it between 16, 32 and 64 banks, the nearest one's outside). On 32 banks a read costs 2.752585 × (1 − 0.331792) = 1.839299 pJ and a write 2.752585 × (1 − 0.471583) = 1.454513 pJ; `xbar` gives both as `e_ro` and `e_wo`.
 - **The crossbar's area** prices a reader's channel as a read-only input and a writer's as write-only, since synthesis removes what their constant bits make dead (X70, X71). The factor form above is the default; the crosspoint form, $b\thinspace(c_{\mathit{rw}}\thinspace n_{\mathit{rw}} + c_{\mathit{ro}}\thinspace n_{\mathit{ro}} + c_{\mathit{wo}}\thinspace n_{\mathit{wo}}) + d\thinspace n_{\mathit{in}} + e\thinspace b + g$, is an option (`Estimate.xbar_in("crosspoint")`). dot 3 at W = 16 on the one-core cluster (35 inputs, 32 read-only, 1 write-only): 113 891 µm², where every input read-write gives 182 006; the synthesized gated cluster has 103 257 µm².

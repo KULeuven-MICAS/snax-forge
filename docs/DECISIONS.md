@@ -7,7 +7,7 @@ Rules (D117):
 - An entry is a choice with a real alternative that someone may want to reverse: direction, ownership, the interfaces between components, the order of work. Implementation details live in the module's docstring and its tests.
 - An entry says what was decided, why, and where the detail lives, in a few short bullets; an edge case only when there is one. A change is written into the entry, not chained after it.
 - Entries merged into one keep all their numbers in its heading, so a cite of any of them still finds it. A number is never changed or reused; the text of a removed entry is in git history.
-- A new decision gets the next free number, under the area it belongs to. Next free number: **D182**.
+- A new decision gets the next free number, under the area it belongs to. Next free number: **D183**.
 
 Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29–D45, D47–D50, D53, D54, D56, D58–D63, D65–D67, D69, D74, D76–D78, D80, D81, D83, D88–D97, D100, D101, D103, D104, D106, D107, D109, D110, D114, D115, D119, D124, D127, D128, D132, D133, D138–D141, D151, D156, D159, D160, D181.
 
@@ -80,6 +80,13 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 - **Decided:** a read across the loop order (mvt's `A[m, n]` under the loops (n, m)) is marked by a step, `mark_transpose`, as an annotation on the reader, not as a view container as DaCe's Transpose makes. The memlets keep the read order and LOWER derives the strides from them.
 - **Why:** the mark is what a recipe's match and a later DMA-transpose variant read; the viewer draws the container once with `Aᵀ` on the edge.
 - **Where:** CONTRACTS, "SNAX-DFG" and "Recipe".
+- **Edge:** the mark is a strided read, so it serves only an element of a bank word or wider; below it, the read is a copy (D182).
+
+### D182 — A read across the loop order: a mark or a copy
+
+- **Decided:** a read across the loop order is served by `mark_transpose` (D164: a strided read, no copy) or by `data_transpose`: a `transpose` node, a kind of its own, copies the container transposed into a new L1 container, which the nest then reads in loop order. The copy is made `by` the DMA (later the core); `mark_transpose` refuses an element narrower than the bank word, whose packed lanes are contiguous elements of one word (D142 · D174 · D180). The estimate prices the copy at the DMA's rate measured on the RTL, 8/3 cycles a burst, one burst per element, and two L1 accesses a burst (D155).
+- **Why:** int8 mvt's half 2 cannot be read by strides; an explicit node keeps the reference check exact (D28 · D79), draws as a block, and gives LOWER one place to emit the DMA's L1-to-L1 task.
+- **Where:** CONTRACTS, "SNAX-DFG", "Recipe" and "Estimate"; `sandbox/transpose.py`, `estimate/copies.py`. The DMA task (`l1_to_l1` and its size) comes with the lowering; until then LOWER refuses a `transpose` node by name.
 
 ### D28 · D79 — The reference executor is exact
 
@@ -269,7 +276,7 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 
 ### D155 — An ideal estimate, and what it is not
 
-- **Decided:** per group, snax-gvsoc's group rule on ideal streams, groups adding through L1; unmapped work at one cycle per iteration, a labelled assumption in one constant; the total adds both. The expected BUSY_COUNTER (cycles + fill) is a guide, not a check. `bank_bound`, ⌈Σ beats × num_ch / n_banks⌉, bounds the streams' L1 time, not the BUSY_COUNTER.
+- **Decided:** per group, snax-gvsoc's group rule on ideal streams, groups adding through L1; unmapped work at one cycle per iteration, a labelled assumption in one constant; a copy (D182) at the DMA's measured rate, another constant; the total adds all three. The expected BUSY_COUNTER (cycles + fill) is a guide, not a check. `bank_bound`, ⌈Σ beats × num_ch / n_banks⌉, bounds the streams' L1 time, not the BUSY_COUNTER.
 - **Why:** a quick number before any run. A run's BUSY_COUNTER counts from START until busy drops, so it includes bank conflicts and is shortened by the streamers' head start.
 - **Where:** CONTRACTS, "Estimate".
 
