@@ -58,7 +58,7 @@ The workload as one `.snaxdfg` JSON file (D71), written by an importer and rewri
 | `symbols` | name → int or `null`: `null` as imported, the value once a recipe binds it |
 | `containers` | name → `shape` (ints or expressions over symbols), `dtype` (a NumPy dtype name), `transient`, `attrs` (namespaced; `sdfg.scalar: true` marks a scalar argument of shape `[1]`) |
 | `body` | the nodes, in execution order |
-| `type_params` | optional, the kernel's type parameters it was imported at where not their default (`{"ACC": "int32"}`), so its reference runs at them too |
+| `type_params` | optional, the kernel's type parameters it was imported at where not their default (`{"OP_TYPE": "int32"}`), so its reference runs at them too |
 
 ### Nodes
 
@@ -226,9 +226,9 @@ SNAX-SANDBOX's ordered list of transforms (D72): a JSON file in a category folde
 | `name` | the recipe; its steps are written to `out/sandbox/<name>/` |
 | `kernel` | the kernel whose import it starts from |
 | `params` | recipe params, each an int or a string; `--set NAME=VALUE` overrides one |
-| `types` | optional, one of the kernel's type presets (its `SPEC.presets`: `i8`, `i16`, `i32`), the dtypes of its containers and type parameters (`ACC`) at once (D113 · D173); `--set types=i8` |
+| `types` | optional, one of the kernel's type presets (its `SPEC.presets`: `i8`, `i16`, `i32`), the dtypes of its containers and type parameters (`OP_TYPE`) at once (D113 · D173); `--set types=i8` |
 | `symbols` | a value per graph symbol: an int or an expression over the params |
-| `dtypes` | optional, container or type parameter → NumPy integer dtype in place of the kernel's, on top of `types` (D113): applied before DaCe builds the SDFG, the inputs cast to it (`vecadd_i32`: A, B, C and ACC `int32`); `--set dtypes.C=int16` |
+| `dtypes` | optional, container or type parameter → NumPy integer dtype in place of the kernel's, on top of `types` (D113): applied before DaCe builds the SDFG, the inputs cast to it (`vecadd_i32`: A, B, C and OP_TYPE `int32`); `--set dtypes.C=int16` |
 | `steps` | in order: `transform` (a registered name) and its `params`; an int param takes an int or an expression over the recipe params (`"factor": "W"`) |
 
 Running a recipe binds the symbols (step 0), applies the steps and checks each against the reference executor on the same seeded inputs, writing `<i>_<transform>.snaxdfg` and `recipe.json`. vecadd's, `recipes/elementwise/vecadd.json`:
@@ -1127,7 +1127,7 @@ $$A = \sum_b A_b + \sum_g A_{\mathit{ctrl},g} + \sum_p A_{\mathit{strm}}(D_p, L_
 $$E = \sum_b E_b + \sum_g E_{\mathit{ctrl},g} + \sum_p \frac{W_p}{C_p}\thinspace e_{\mathit{beat}}(D_p, L_p, C_p) + e_{\mathit{acc}}(n_{\mathit{banks}}, n_{\mathit{banks}})\thinspace\big(N_{\mathit{rd}}\thinspace(1 - g_{\mathit{ro}}) + N_{\mathit{wr}}\thinspace(1 - g_{\mathit{wo}})\big) + N_{\mathit{rd}}\thinspace e_{\mathit{rd}} + N_{\mathit{wr}}\thinspace e_{\mathit{wr}}$$
 
 - **The five parts** (`PARTS`): datapath (the units and buffer links, b), control (g), streamers, crossbar, memory (the banks). The csr, the cores, the I-cache and the DMA are not costed: the DMA's loads and stores are the same for every variant, and the cores' and AXI's ports enter only as crossbar inputs.
-- **A copy** (section 13's `copies`) adds two bank accesses per burst, one read and one write, to N_rd and N_wr in the memory part only, one access per burst whatever its size; the DMA engine and its crossbar port are not priced.
+- **A copy** (section 13's `copies`, D184) adds its L1 accesses as a streamer's: per burst one read and one write, to N_rd and N_wr in the memory part and in the crossbar part (the read at a read-only input's price, the write at a write-only one's), one access per burst whatever its size (`Estimate.copy_bursts`). The DMA engine is not priced. mvt_4 at 64 × 64 on 32 banks: 4096 × (3.538 + 6.468) pJ = 40.98 nJ in the banks and 4096 × (1.839 + 1.455) pJ = 13.49 nJ in the crossbar.
 - **The crossbar's energy** has one price per access for a bank count, a full crossbar's ($e_{\mathit{acc}}$ at inputs = banks, 2.752585 pJ on 32 banks), so it follows the accesses alone: dot 5 linked (19 inputs, 4097 accesses) costs 59.656 nJ against 59.811 nJ unlinked (35 inputs, 4113).
 - **By input kind** (D178, X93): a read is priced as a read-only input's and a write as a write-only one's, $e_{\mathit{acc}}(1 - g_k)$, with $g_k$ at the design's bank count (linear in it between 16, 32 and 64 banks, the nearest one's outside). On 32 banks a read costs 2.752585 × (1 − 0.331792) = 1.839299 pJ and a write 2.752585 × (1 − 0.471583) = 1.454513 pJ; `xbar` gives both as `e_ro` and `e_wo`.
 - **The crossbar's area** prices a reader's channel as a read-only input and a writer's as write-only, since synthesis removes what their constant bits make dead (X70, X71). The factor form above is the default; the crosspoint form, $b\thinspace(c_{\mathit{rw}}\thinspace n_{\mathit{rw}} + c_{\mathit{ro}}\thinspace n_{\mathit{ro}} + c_{\mathit{wo}}\thinspace n_{\mathit{wo}}) + d\thinspace n_{\mathit{in}} + e\thinspace b + g$, is an option (`Estimate.xbar_in("crosspoint")`). dot 3 at W = 16 on the one-core cluster (35 inputs, 32 read-only, 1 write-only): 113 891 µm², where every input read-write gives 182 006; the synthesized gated cluster has 103 257 µm².
@@ -1207,10 +1207,11 @@ How to read them:
 - **Control:** every group's control unit clocks on every busy-flag cycle of every group, as the static estimate's $C_{acc}$ adds every group's cycles.
 - **Streamers:** a mover moves its requests over its channels, one beat per C_m requests; a refused request costs a granted one's beat.
 - **Crossbar:** every request, granted or refused, costs one access at its input's kind: a reader's channel read-only, a writer's write-only (D178).
-- **Memory:** only a grant reaches a bank. The cores', AXI's and DMA's accesses are not priced (D167).
+- **Memory:** only a grant reaches a bank. The cores', AXI's and the DMA's loads and stores are not priced (D167).
+- **A copy** (D184): the DMA's L1 → L1 reads $c_{rd}(j)$ and writes $c_{wr}(j)$ in the window (`Counts.copies`) add $c_{rd}\thinspace(e_{acc}(1 - g_{ro}) + e_{rd}) + c_{wr}\thinspace(e_{acc}(1 - g_{wo}) + e_{wr})$ to the crossbar and memory parts, as a reader's and a writer's grants; the DMA engine costs nothing.
 - **Held and idle cycles cost nothing,** as under clock gating (D154 · D172).
 
-The static identity: `graph_counts` puts the graph's counts in this form (a unit's fires over its span, its links' loads as pushes, the groups' cycles, each port's words as requests and grants, none refused). Priced with each port's streamer as a mover, every part equals the static estimate's (`tests/estimate/test_dynamic.py`, to 1e-12).
+The static identity: `graph_counts` puts the graph's counts in this form (a unit's fires over its span, its links' loads as pushes, the groups' cycles, each port's words as requests and grants, none refused, the copies' bursts as their reads and writes). Priced with each port's streamer as a mover, every part equals the static estimate's (`tests/estimate/test_dynamic.py`, to 1e-12).
 
 **Example 1, dot 3 at W = 8, N = 2048** (one group of `mul` and `sum`, 67 control bits, readers `mul_a` and `mul_b` of 8 channels, writer `sum_out` of 1, 32 banks). SNAX-GVSoC's `run` window: 256 firings of each unit, 260 busy-flag cycles (256 busy, 3 stall_in, 1 flush), `mul_a` 2048 requests, `mul_b` 2056 (8 refused), `sum_out` 1.
 

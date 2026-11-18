@@ -2,7 +2,7 @@
 Elementwise vector add.
 
 int64 by default, one element per 64-bit L1 word; jacobi1d stays int32 until its stencil BRM.
-The sum runs at ``ACC``; the type
+The sum runs at ``OP_TYPE``; the type
 presets ``i8``, ``i16`` and ``i32`` are in ``SPEC`` (kernels/README.md).
 
 Tier done (PAPER §6.1).
@@ -14,11 +14,11 @@ import numpy as np
 from snax_forge.sdfg.spec import KernelSpec
 
 N = dace.symbol("N")
-ACC = np.int64
+OP_TYPE = np.int64
 
 
 def vecadd(A, B, C):
-    C[:] = A.astype(ACC) + B.astype(ACC)
+    C[:] = A.astype(OP_TYPE) + B.astype(OP_TYPE)
 
 
 def make_inputs(rng, n=1024):
@@ -40,10 +40,10 @@ SPEC = KernelSpec(
     flops=lambda n=1024: n,
     bytes_moved=lambda n=1024: 3 * 8 * n,
     sweep_sizes=(1 << 10, 1 << 12, 1 << 14, 1 << 16, 1 << 18),
-    types={"ACC": "int64"},
+    types={"OP_TYPE": "int64"},
     presets={
-        "i8": {"A": "int8", "B": "int8", "C": "int32", "ACC": "int32"},
-        "i16": {"A": "int16", "B": "int16", "C": "int32", "ACC": "int32"},
-        "i32": {"A": "int32", "B": "int32", "C": "int64", "ACC": "int64"},
+        "i8": {"A": "int8", "B": "int8", "C": "int32", "OP_TYPE": "int32"},
+        "i16": {"A": "int16", "B": "int16", "C": "int32", "OP_TYPE": "int32"},
+        "i32": {"A": "int32", "B": "int32", "C": "int64", "OP_TYPE": "int64"},
     },
 )

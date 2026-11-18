@@ -29,7 +29,7 @@ NARROW = {
 @pytest.mark.parametrize("name", list(NARROW))
 def test_a_narrow_recipe_imports_at_its_dtypes_and_passes_the_reference(name):
     recipe = Recipe.load(recipe_path(name))
-    assert {c: d for c, d in recipe.dtypes.items() if c != "ACC"} == NARROW[name]
+    assert {c: d for c, d in recipe.dtypes.items() if c != "OP_TYPE"} == NARROW[name]
     graph = import_kernel(recipe.kernel, recipe.dtypes)
     assert {c: graph.containers[c].dtype for c in NARROW[name]} == NARROW[name]
     results = apply_recipe(recipe, graph)  # each step against the reference executor
@@ -100,7 +100,7 @@ def test_types_and_dtypes_are_set_like_params():
     g = import_kernel(recipe.kernel, recipe.dtypes, recipe.types)
     assert {c: x.dtype for c, x in g.containers.items()} == {
         "A": "int8", "B": "int8", "C": "int16"}  # fmt: skip
-    assert g.type_params == {"ACC": "int32"}
+    assert g.type_params == {"OP_TYPE": "int32"}
     assert g.node("mult").attrs["code"] == "out = int32(in1) * int32(in2)"
 
 
@@ -116,6 +116,10 @@ def test_a_cast_sets_the_op_type_and_is_stripped_at_bind():
                and n.attrs["brm"] == "mac")  # fmt: skip
     assert (mac.attrs["opType"], mac.attrs["code"]) == ("int32", "out = a * b")
     assert "int32(in1) * int32(in2)" in json.dumps(mac.attrs["replaced"])
+    from snax_forge.viz.dfg.api import _node_details, compact_text  # the editor shows it
+
+    assert " · a * b @ int32 · " in compact_text(results[-1].graph, mac)
+    assert _node_details(mac)["opType"] == "int32"
     bound = next(r.graph for r in results if any(n.kind == "accelerated"
                                                   for n, _ in r.graph.walk()))  # fmt: skip
     node = next(n for n, _ in bound.walk() if n.kind == "accelerated")
@@ -123,18 +127,18 @@ def test_a_cast_sets_the_op_type_and_is_stripped_at_bind():
 
 
 def test_the_plain_form_has_no_op_type():
-    """vecmul with A, B int8 and ACC int8 (NumPy's wrapped product): no cast, no opType."""
+    """vecmul with A, B int8 and OP_TYPE int8 (NumPy's wrapped product): no cast, no opType."""
     recipe = Recipe.load(recipe_path("vecmul")).with_params(
-        {"types": "i8", "dtypes.ACC": "int8", "W": 8}
+        {"types": "i8", "dtypes.OP_TYPE": "int8", "W": 8}
     )
     g = apply_recipe(recipe, import_kernel(recipe.kernel, recipe.dtypes, recipe.types))[-1].graph
     (acc,) = [n for n, _ in g.walk() if n.kind == "accelerated"]
-    assert "opType" not in acc.attrs and g.type_params == {"ACC": "int8"}
+    assert "opType" not in acc.attrs and g.type_params == {"OP_TYPE": "int8"}
 
 
 def test_a_narrowing_cast_is_refused_at_bind():
     recipe = Recipe.load(recipe_path("vecmul")).with_params(
-        {"dtypes.A": "int32", "dtypes.B": "int32", "dtypes.C": "int32", "dtypes.ACC": "int8"}
+        {"dtypes.A": "int32", "dtypes.B": "int32", "dtypes.C": "int32", "dtypes.OP_TYPE": "int8"}
     )
     g = import_kernel(recipe.kernel, recipe.dtypes)
     assert g.node("mult").attrs["code"] == "out = int8(in1) * int8(in2)"

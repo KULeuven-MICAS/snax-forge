@@ -1096,8 +1096,9 @@ def compact_text(g: Graph, n: Node, param: str | None = None) -> str:
         )
     if n.kind == "tasklet":
         return f"{n.id} · {_operation(n, a['code'], list(n.inputs))}"
-    if n.kind == "accelerated":
-        text = f"{a['instance']} · {_operation(n, a['code'], list(n.inputs))}"
+    if n.kind == "accelerated":  # the type it runs at when a cast set one (D143): ``a * b @ int32``
+        at = f" @ {a['opType']}" if a.get("opType") else ""
+        text = f"{a['instance']} · {_operation(n, a['code'], list(n.inputs))}{at}"
         try:
             inst = instance_of(n)
             first = next(p.name for p in inst.ports if p.direction == "in")  # a port, not a slot
@@ -1302,7 +1303,8 @@ def _node_details(n: Node) -> dict[str, Any]:
     if n.kind == "accelerated":
         d = {"kind": "unit", "instance": a["instance"], "brm": a["brm"],
              "implementation": a["implementation"], "params": dict(a["params"]),
-             "code": a["code"], "replaced": _replaced_text(a.get("replaced")),
+             "code": a["code"], **({"opType": a["opType"]} if a.get("opType") else {}),
+             "replaced": _replaced_text(a.get("replaced")),
              "group": group_of(n), "accelerator": accelerator_of(n), **io}  # fmt: skip
         try:
             inst = instance_of(n)

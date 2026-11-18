@@ -233,7 +233,7 @@ class Node:
 @dataclass
 class Graph(JsonFile):
     """A ``.snaxdfg``: symbols, containers and an ordered body of nodes; ``type_params`` the
-    kernel's type parameters it was imported at, where not their default (``{"ACC": "int32"}``),
+    kernel's type parameters it was imported at, where not their default (``{"OP_TYPE": "int32"}``),
     so its reference runs at them too."""
 
     name: str

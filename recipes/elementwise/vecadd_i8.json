@@ -3,7 +3,7 @@
  "kernel": "vecadd",
  "params": {"W": 8, "N": 64},
  "symbols": {"N": "N"},
- "dtypes": {"A": "int8", "B": "int8", "C": "int8", "ACC": "int8"},
+ "dtypes": {"A": "int8", "B": "int8", "C": "int8", "OP_TYPE": "int8"},
  "steps": [
   {"transform": "split_map", "params": {"map": "add_map", "factor": "W"}},
   {

@@ -292,14 +292,19 @@ def test_a_value_cast_is_kept():
 @pytest.mark.parametrize(
     ("types", "dtypes", "code", "params"),
     [
-        (None, None, "out = in1 * in2", {}),  # ACC int64 on int64: the converts are copies
-        ("i8", None, "out = int32(in1) * int32(in2)", {"ACC": "int32"}),
-        ("i8", {"ACC": "int8"}, "out = in1 * in2", {"ACC": "int8"}),  # NumPy's wrapped product
-        ("i32", None, "out = int64(in1) * int64(in2)", {}),  # ACC int64 is its default
+        (None, None, "out = in1 * in2", {}),  # OP_TYPE int64 on int64: the converts are copies
+        ("i8", None, "out = int32(in1) * int32(in2)", {"OP_TYPE": "int32"}),
+        (
+            "i8",
+            {"OP_TYPE": "int8"},
+            "out = in1 * in2",
+            {"OP_TYPE": "int8"},
+        ),  # NumPy's wrapped product
+        ("i32", None, "out = int64(in1) * int64(in2)", {}),  # OP_TYPE int64 is its default
     ],
 )
 def test_converts_fold_into_their_reader(types, dtypes, code, params):
-    """dot's ``A.astype(ACC) * B.astype(ACC)``: DaCe's two convert maps into transients fold
+    """dot's ``A.astype(OP_TYPE) * B.astype(OP_TYPE)``: DaCe's two convert maps into transients fold
     into the multiply, which reads A and B through the casts (none where they are no-ops), and
     the product keeps its name tmp0, as without the casts."""
     g = import_kernel("dot", dtypes, types)
@@ -313,8 +318,8 @@ def test_converts_fold_into_their_reader(types, dtypes, code, params):
 
 def test_type_params_are_written_only_when_set_and_checked():
     d = import_kernel("dot", None, "i8").to_dict()
-    assert d["type_params"] == {"ACC": "int32"}
+    assert d["type_params"] == {"OP_TYPE": "int32"}
     assert "type_params" not in import_kernel("dot").to_dict()
-    d["type_params"] = {"ACC": "float32"}
-    with pytest.raises(DfgError, match="type_params.ACC: must be an integer dtype"):
+    d["type_params"] = {"OP_TYPE": "float32"}
+    with pytest.raises(DfgError, match="type_params.OP_TYPE: must be an integer dtype"):
         Graph.from_dict(d)

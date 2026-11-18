@@ -27,7 +27,7 @@ class KernelSpec:
     bytes_moved: Callable | None = None  # **sizes -> compulsory traffic
     tags: tuple[str, ...] = ()
     sweep_sizes: tuple = ()  # entries: int (n=) or dict of size kwargs
-    # type parameters the function reads as globals (ACC in ``A.astype(ACC)``) -> their default
+    # type parameters the function reads as globals (OP_TYPE in ``A.astype(OP_TYPE)``) -> their default
     types: Mapping[str, str] = field(default_factory=dict)
     # preset name -> {container or type parameter: dtype}, chosen with ``--set types=<name>``
     presets: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
@@ -68,7 +68,7 @@ class KernelSpec:
 
     def with_types(self, dtypes: Mapping[str, str], what: str = "dtypes") -> KernelSpec:
         """The spec with some containers' dtypes (``with_dtypes``) and type parameters
-        replaced: the function's globals rebound (``ACC = np.int32``), so both DaCe and the
+        replaced: the function's globals rebound (``OP_TYPE = np.int32``), so both DaCe and the
         reference compute at them."""
         if unknown := sorted(set(dtypes) - set(self.descriptors) - set(self.types)):
             raise ValueError(f"{what}: {unknown[0]!r} is not a container of {self.name} "

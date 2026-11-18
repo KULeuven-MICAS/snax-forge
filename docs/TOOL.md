@@ -234,6 +234,7 @@ The editor builds a recipe one transform at a time on the drawn graph, each step
 | Start | Command |
 |---|---|
 | a kernel, its symbols given | `pixi run edit-dfg --kernel vecadd --set N=64` |
+| a kernel at a type preset (`types`, `dtypes.<name>` as for a recipe's `--set`) | `pixi run edit-dfg --kernel mvt_types --set M=64 --set N=64 --set types=i8` |
 | a recipe | `pixi run edit-dfg --recipe recipes/elementwise/vecadd.json` |
 | an earlier session | `pixi run edit-dfg --session out/sessions/vecadd` |
 
