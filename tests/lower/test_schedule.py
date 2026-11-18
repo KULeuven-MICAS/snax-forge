@@ -1,6 +1,7 @@
 """The design point's schedule (D179): mvt_3_split at W = 8, its two halves two accelerators
 (``mvt`` and ``mvt_1``) that share no data, under serial, pipeline and pipeline_compute; mvt_3,
-the same halves on one shared group, gives one task list under all three."""
+the same halves on one shared group, gives one task list under all three; sequential syncs after
+every start."""
 
 from __future__ import annotations
 
@@ -13,6 +14,7 @@ import pytest
 from snax_forge.design import Design, DesignPoint, Platform, run_checks
 from snax_forge.design.check import SCHEDULES
 from snax_forge.lower import placed_waits, task_list
+from snax_forge.lower.derive import sequential
 from snax_forge.lower.tasks import Configure, Start, Sync
 from tests.design.helpers import SNAX_FORGE
 from tests.helpers import steps
@@ -79,19 +81,39 @@ def test_pipeline_compute_configures_both_then_starts_them_back_to_back():
 @pytest.mark.parametrize("schedule", SCHEDULES)
 def test_every_schedule_keeps_the_tasks_and_their_after(schedule):
     """The same tasks, each configured with the same values and after, each started after its
-    after (TaskList's checks) and synced the same; only the order and the serial sync differ."""
+    after (TaskList's checks) and synced the same; only the order and the syncs of serial
+    (on half 1, before half 2) and sequential (after every start) differ."""
     serial, tl = task_list(at("serial")), task_list(at(schedule))
     assert tl.configured() == serial.configured()
     started = {t: i for i, s in enumerate(tl.steps) if isinstance(s, Start) for t in s.tasks}
     for t, c in tl.configured().items():
         assert all(started[a] < started[t] for a in c.after), t
     syncs = [s.task for s in tl.steps if isinstance(s, Sync)]
-    assert syncs == (["tmp0_mult_mvt"] if schedule == "serial" else []) + ["store_x1", "store_x2"]
+    if schedule == "sequential":
+        assert syncs == [s.tasks[-1] for s in tl.steps if isinstance(s, Start)]
+    else:
+        assert syncs == (["tmp0_mult_mvt"] if schedule == "serial" else []) + ["store_x1",
+                                                                               "store_x2"]  # fmt: skip
 
 
 @pytest.mark.parametrize("schedule", SCHEDULES)
 def test_the_shared_form_gives_one_task_list_under_every_schedule(schedule):
-    assert task_list(at(schedule, "mvt_3")) == task_list(at("serial", "mvt_3"))
+    """The halves on one group: one list, sequential's with a sync after every start."""
+    want = task_list(at("serial", "mvt_3"))
+    if schedule == "sequential":
+        want = sequential(want)
+    assert task_list(at(schedule, "mvt_3")) == want
+
+
+def test_sequential_syncs_after_every_start():
+    assert order("sequential") == [
+        "load_A", "start load_A", "sync load_A", "load_y1", "start load_y1", "sync load_y1",
+        "load_x1", "start load_x1", "sync load_x1", "conf mvt", "start tmp0_mult_mvt",
+        "sync tmp0_mult_mvt", "store_x1", "start store_x1", "sync store_x1", "load_y2",
+        "start load_y2", "sync load_y2", "load_x2", "start load_x2", "sync load_x2", "conf mvt_1",
+        "start tmp2_mult_mvt_1", "sync tmp2_mult_mvt_1", "store_x2", "start store_x2",
+        "sync store_x2",
+    ]  # fmt: skip
 
 
 def test_pipelined_waits_end_on_each_half_once():

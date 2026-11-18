@@ -8,8 +8,10 @@ bits.py), per accelerator its streamer set and CSRs (accelerators.py), the data 
 and, on a technology, the cost (cost.py; ``tech=None`` leaves it out). The work no unit runs is
 ``unmapped_iterations`` at ``UNMAPPED_CYCLES_PER_ITERATION`` cycles each, an assumption held in
 this one constant so a measured value can replace it; a copy (data_transpose's) at the DMA's
-measured rate (copies.py); ``total_cycles`` adds both to the accelerator's. Under a pipelined ``schedule`` (D179) the accelerator's cycles are the longest
-path through the runs (schedule.py), not their sum. The viewers and ``design.md`` read it (report/design.py).
+measured rate (copies.py); ``total_cycles`` adds both to the accelerator's. Under a pipelined
+``schedule`` (D179) the accelerator's cycles are the longest path through the runs (schedule.py),
+not their sum; ``serial`` and ``sequential`` (D183) add them. The viewers and ``design.md`` read
+it (report/design.py).
 """
 
 from __future__ import annotations
@@ -21,6 +23,7 @@ from typing import TYPE_CHECKING, Any
 from snax_forge.char import DEFAULT_TECH, load
 from snax_forge.char.tables import Costs, load_costs
 from snax_forge.common import JsonFile
+from snax_forge.design.check import IN_SERIES
 from snax_forge.design.streamers import accelerator_of, instances, resolve, shared_movers
 from snax_forge.design.streamers import accelerators as graph_accelerators
 
@@ -228,9 +231,9 @@ class Estimate(JsonFile):
 
     @property
     def accelerator_cycles(self) -> int:
-        """The groups' cycles added up, serial: they run one after another through L1; under a
-        pipelined schedule, the longest path through the runs (schedule.py)."""
-        if self.schedule == "serial" or not self.runs:
+        """The groups' cycles added up, serial or sequential: they run one after another through
+        L1; under a pipelined schedule, the longest path through the runs (schedule.py)."""
+        if self.schedule in IN_SERIES or not self.runs:
             return sum(g.cycles for g in self.groups)
         return longest_path(self.runs)
 
@@ -239,7 +242,7 @@ class Estimate(JsonFile):
         """One line when, pipelined, runs of different accelerators at once move more L1 words a
         cycle than there are banks (design.md, run.md): a bound on the streams, not a cycle
         count."""
-        if self.schedule == "serial" or self.bank_shape is None:
+        if self.schedule in IN_SERIES or self.bank_shape is None:
             return None
         rate, accs = overlap(self.runs)
         if rate <= self.bank_shape[0]:

@@ -20,6 +20,7 @@ from typing import Any
 import numpy as np
 
 from snax_forge.char import DEFAULT_TECH
+from snax_forge.design.check import IN_SERIES
 from snax_forge.estimate.cost import L1_LABEL, PARTS, caveat, dec3, heading, shares, sig3
 from snax_forge.lower.layout import Layout, round_up
 from snax_forge.run import Cluster, Region, padding_of, regions_of
@@ -650,7 +651,7 @@ def cycles_line(e: EstimateTable) -> str:
         each = f"{PER} cycle{'' if PER == 1 else 's'} each"
         unmapped = (f" Unmapped: {e.unmapped_cycles} cycles ({e.unmapped_iterations} iterations at "
                     f"{each}, an assumption).")  # fmt: skip
-    how = "" if e.schedule == "serial" else f" ({e.schedule}: the longest path through the runs)"
+    how = "" if e.schedule in IN_SERIES else f" ({e.schedule}: the longest path through the runs)"
     return f"Accelerator cycles: {e.accelerator_cycles}{how}.{unmapped} Total: {e.total_cycles}."
 
 

@@ -1,7 +1,8 @@
 """data_transpose's copy in LOWER: mvt_4_i64_dma_AT at 64 × 64 on snax_forge, its
 transpose_A_T one L1-to-L1 burst per element where half 2's loads are, contiguous and
 ``padded_rows`` at int64 and contiguous at int8; half 2's reader of A_T waits on it through the
-DMA wait (c.py's ``dma_wait``). Every recipe is imported (DaCe), hence slow."""
+DMA wait (c.py's ``dma_wait``); and the task list under ``sequential``. Every recipe is imported
+(DaCe), hence slow."""
 
 from __future__ import annotations
 
@@ -87,6 +88,17 @@ def test_the_copy_sits_where_half_2s_loads_are_and_its_reader_waits_on_it():
         "start tmp2_mult_mvt_1", "store_x2", "start store_x2", "sync store_x1", "sync store_x2",
     ]  # fmt: skip
     assert tl.configured()["tmp2_mult_vmul_x2_a"].after == ["transpose_A_T"]
+
+
+def test_sequential_syncs_after_every_start_the_copy_included():
+    assert order(point(schedule="sequential")) == [
+        "load_A", "start load_A", "sync load_A", "load_y1", "start load_y1", "sync load_y1",
+        "load_x1", "start load_x1", "sync load_x1", "conf half 1", "start tmp0_mult_mvt_1",
+        "sync tmp0_mult_mvt_1", "store_x1", "start store_x1", "sync store_x1", "transpose_A_T",
+        "start transpose_A_T", "sync transpose_A_T", "load_y2", "start load_y2", "sync load_y2",
+        "load_x2", "start load_x2", "sync load_x2", "conf half 2", "start tmp2_mult_mvt_1",
+        "sync tmp2_mult_mvt_1", "store_x2", "start store_x2", "sync store_x2",
+    ]  # fmt: skip
 
 
 @pytest.mark.parametrize(("dtype", "line"), [

@@ -15,9 +15,10 @@ base ``layout.base + sum_d (c_d + sum_k a_dk * b_k) * strides[d]`` for firing lo
 The spatial bounds must be the streamer's, and for an ``affine`` BRM the addresses visited beat
 by beat (``addresses``) must be the nest's through the same layout (streams.py). A packed
 output's writer and a sliced input's reader move words (``packed_values``, D174 · D180). The design point's ``schedule`` (D179)
-orders the accelerators: ``serial`` adds ``serial_syncs``; ``pipeline`` moves the stores past
-other accelerators' starts (``later_stores``), and ``pipeline_compute`` also gathers the starts
-with only loads to wait for (``gathered``). A ``LowerError`` names what does not fit.
+orders the accelerators: ``serial`` adds ``serial_syncs``, ``sequential`` a sync after every
+start (``sequential``); ``pipeline`` moves the stores past other accelerators' starts
+(``later_stores``), and ``pipeline_compute`` also gathers the starts with only loads to wait for
+(``gathered``). A ``LowerError`` names what does not fit.
 """
 
 from __future__ import annotations
@@ -131,6 +132,8 @@ def task_list(point: DesignPoint) -> TaskList:
     tasks = _Derivation(point).run()
     if point.schedule == "serial":
         return serial_syncs(tasks, point)
+    if point.schedule == "sequential":
+        return sequential(tasks)
     tasks = later_stores(tasks, point)
     return gathered(tasks, point) if point.schedule == "pipeline_compute" else tasks
 
@@ -171,6 +174,24 @@ def serial_syncs(tasks: TaskList, point: DesignPoint) -> TaskList:
                     synced.add(prev[1])
                 prev = (acc, accel[0])
         steps.append(step)
+    return TaskList(tasks.name, steps)
+
+
+def sequential(tasks: TaskList) -> TaskList:
+    """``tasks`` with a sync right after every start (CONTRACTS, "Task list"): on its
+    accelerator task, else its last task (a DMA's), so each step, configures included, begins
+    after the previous one has ended. A later sync on a task already synced is left out."""
+    conf = tasks.configured()
+    steps: list[Any] = []
+    synced: set[str] = set()
+    for step in tasks.steps:
+        if isinstance(step, Sync) and step.task in synced:
+            continue
+        steps.append(step)
+        if isinstance(step, Start):
+            t = next((t for t in step.tasks if conf[t].type == "accel"), step.tasks[-1])
+            steps.append(Sync(t, conf[t].wait_mode))
+            synced.update(step.tasks)
     return TaskList(tasks.name, steps)
 
 
