@@ -134,7 +134,9 @@ class Estimate(JsonFile):
         if ro + wo != self.xbar_inputs[0]:
             raise ValueError(f"the streamers' {ro} read and {wo} write channels are not the "
                              f"crossbar's {self.xbar_inputs[0]} (crossbar_inputs)")  # fmt: skip
-        return xbar_cost(c, sum(self.xbar_inputs), self.bank_shape[0], *self._rw(), ro, wo,
+        reads, writes = self._rw()
+        k = self.copy_bursts
+        return xbar_cost(c, sum(self.xbar_inputs), self.bank_shape[0], reads + k, writes + k, ro, wo,
                          form)  # fmt: skip
 
     @cached_property
@@ -145,8 +147,14 @@ class Estimate(JsonFile):
         if c is None or self.bank_shape is None:
             return None
         reads, writes = self._rw()
-        k = sum(x.bursts for x in self.copies)  # a copy reads and writes once per burst
+        k = self.copy_bursts
         return memory_cost(c, *self.bank_shape, reads + k, writes + k)
+
+    @property
+    def copy_bursts(self) -> int:
+        """The copies' bursts: each one L1 read and one L1 write, a byte priced as a word, each
+        also a crossbar access (D184); the DMA engine is not costed."""
+        return sum(x.bursts for x in self.copies)
 
     @property
     def l1(self) -> dict[str, L1Cost]:

@@ -102,6 +102,7 @@ To do, in four tracks, each task in its own thread, branch and PR (the ROAD1 pla
      - TIERA1 R6d: the DMA makes the copy (D182): the `dma` task's `l1_to_l1` and `size`, `transpose_A_T` one element a burst (one `snrt_dma_start_2d` of 64 bursts per row of A_T), where a load of A_T would be, half 2's reader after it through D135's DMA wait; and the `sequential` schedule (D183), a sync after every start. `forge-set mvt` gains mvt_4 and mvt_4_i64_dma_AT at W = 8, contiguous and `padded_rows`, sequential (36 bundles), and snax-gvsoc the fixture `mvt_4_i64_dma_AT_sequential`; every existing fixture and bundle of quick, mvt and pack keeps its main.c, tasks and hjson byte for byte. On SNAX-GVSoC, 0 data errors: half 2's BUSY_COUNTER 3248 strided contiguous, 521 strided `padded_rows`, 518 and 521 reading A_T (the estimate 517); the copy 10 925 cycles in both layouts, from its first issue to its last done (the estimate's 10 923); windows 4792, 2021, 12 987 and 13 003 cycles (open items 38, 144, 145).
      - TIERA1 R6e (done): R6d's four sequential points on vsim, data exact, 3 PERFECT and 1 NEAR (mvt_4_i64_dma_AT contiguous, half 1 518 against 514; open items 95, 138); the DMA's copy 10 924 cycles on the RTL against 10 925 on SNAX-GVSoC.
      - TIERA1 R7a: the kernels' type parameter is `OP_TYPE` (was `ACC`: the type an op runs at, its `opType`), and `kernels/polybench/mvt_types.py` is mvt with y cast to it, presets `i8`, `i16`, `i32` (the products `tmp1_*` and `tmp4_*`, the `+=` maps mvt's); `edit-dfg --kernel` takes `--set types=` and `--set dtypes.<name>=`.
+     - TIERA1 R7c: a copy is costed by its L1 accesses (D184), the banks and the crossbar as a streamer's, in the estimate (`copy_bursts`; mvt_4 at 64 × 64 with the copy +40.98 nJ banks, +13.49 nJ crossbar) and in the dynamic energy's counts (`Counts.copies`, open item 145).
      - `recipes/mvt/mvt_3_split.json`: mvt_3 without `share`, so the halves are two accelerators, `mvt` and `mvt_1` (38 crossbar inputs at W = 8), run under each schedule of D179 (`--set design.schedule=`): `serial`, `pipeline`, `pipeline_compute`; in `forge-set mvt` at W = 8, contiguous and `padded_rows`, under each (TIERA1 R4).
      - `recipes/mvt/mvt_4.json`, v4: per half a dot group whose `vsum` starts from x (`fuse_seed`, D163), the halves sharing one group (D165), at 64 × 64; in `forge-set mvt` at W = 8 and 4, contiguous and `padded_rows`.
      - v4's seeded `vsum` is priced as the unseeded TreeAccumulate (D176, `unseeded`), so its estimate has no `char.missing`.
@@ -138,7 +139,7 @@ Dates: 20 Nov, track A's target (fine if it slips); 27 Nov, the softmax gate (so
 
 ## Open Items
 
-Questions not decided yet. Numbers are never reused; a closed item is removed, and where it closed is in git history. Next free number: 147.
+Questions not decided yet. Numbers are never reused; a closed item is removed, and where it closed is in git history. Next free number: 148.
 
 1. BRM dataflow notation: `affine` and `stream` (D70), frozen in M6.
 2. What automated search reads and how a sweep is configured (DSE1, M8).
@@ -329,8 +330,9 @@ Questions not decided yet. Numbers are never reused; a closed item is removed, a
 142. The slicer and the packer in synthesized designs: cluster synthesis of `vecadd_i32` at W = 1 and the in-design check against HWCOST, later.
 143. The core transpose, `data_transpose` by `core` (D182, refused today): 4 × 4 byte tiles transposed in RV32 registers, about 10 000–11 000 cycles at 64 × 64, against the DMA's 10 923; extra information for the paper.
 144. A copy under the schedules (D179): under `serial` and the pipelined schedules, the copy sits where a load of its destination would and its reader waits on it, but the core is held by the DMA's 3-deep request FIFO while it issues the copy's 64 two-dimensional copies (the fourth issues when the first ends, about 170 cycles each), so what overlaps the copy is not measured; the estimate adds `copy_cycles` to every schedule for now. Under `sequential` (D183) the copy is a step of its own.
-145. The DMA engine's energy: a copy is priced at two bank accesses per burst, one access per burst whatever its size (a burst shorter than a beat included), and the engine itself not at all (CONTRACTS, "Cost model"). GE1's dynamic energy has no DMA traffic at all, so a run with a copy shows the same nJ as one without (`mvt_4_i64_dma_AT` 244.6 against `mvt_4` padded 244.8, the estimate +41.0 nJ for the copy); and the run's DMA summary counts an L1 → L1 copy in `bytes_l2_to_l1` (32 768 B that never touch L2). Both before R8's copy-against-buffer comparison.
+145. A copy on SNAX-GVSoC: D184 prices a copy's L1 reads and writes in the estimate and in the dynamic energy (`Counts.copies`), but SNAX-GVSoC's windows do not count the DMA's L1 → L1 reads and writes yet, so a run with a copy still shows the nJ of one without (`mvt_4_i64_dma_AT` 244.6 against `mvt_4` padded 244.8); and the run's DMA summary counts an L1 → L1 copy in `bytes_l2_to_l1` (32 768 B that never touch L2). Closes with TIERA1 R7d.
 146. Short bursts from L1 into DRAM are paced by the testbench's DRAM: B returns 2 per 7 cycles and at most 8 writes wait for theirs, `s-l1l2 64x1 B p64` busy 211 on the RTL against 155 on SNAX-GVSoC (snax-gvsoc NOTES, "The DMA").
+147. `mvt_4_i8_dma_AT` through the forge cluster flow (synthesis, gate level, power, snax-forge-experiments), once its design is settled; the copy alone is measured on the baseline netlist (X95).
 
 ## Sync Reminders
 

@@ -11,8 +11,10 @@ stalls) and grants. A unit fires its firings times its span, a buffer link loads
 pushes its producer's pushes, a slicer pops on its unit's firings (a seed's on its pushes, one a
 job), the control units clock every group's busy cycle, a mover moves
 its requests over its channels, the crossbar serves every request at its mover's kind (a
-reader's read-only, a writer's write-only, D178) and the banks the grants. With
-``graph_counts`` the parts are the static estimate's (``Estimate.parts``).
+reader's read-only, a writer's write-only, D178) and the banks the grants. A copy's L1 reads
+and writes (the DMA's L1 → L1 transfers, D184) cost the banks and the crossbar as a reader's and
+a writer's; the DMA engine nothing. With ``graph_counts`` the parts are the static estimate's
+(``Estimate.parts``).
 """
 
 from __future__ import annotations
@@ -92,22 +94,26 @@ class Prices:
 @dataclass
 class Counts:
     """A window's counts (module doc): per unit ``(firings, pushes)``, the groups' busy-flag cycles
-    added up, per mover ``(requests, grants)``."""
+    added up, per mover ``(requests, grants)``, and the copies' L1 ``(reads, writes)`` (D184)."""
 
     units: dict[str, tuple[int, int]] = field(default_factory=dict)
     busy: int = 0
     movers: dict[str, tuple[int, int]] = field(default_factory=dict)
+    copies: tuple[int, int] = (0, 0)
 
     def to_dict(self) -> dict[str, Any]:
         return {"units": {k: {"firings": f, "pushes": p} for k, (f, p) in self.units.items()},
                 "busy": self.busy,
                 "movers": {k: {"requests": r, "grants": g}
-                           for k, (r, g) in self.movers.items()}}  # fmt: skip
+                           for k, (r, g) in self.movers.items()},
+                "copies": {"reads": self.copies[0], "writes": self.copies[1]}}  # fmt: skip
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> Counts:
+        cp = d.get("copies", {"reads": 0, "writes": 0})  # none in a window written before D184
         return cls({k: (v["firings"], v["pushes"]) for k, v in d["units"].items()}, d["busy"],
-                   {k: (v["requests"], v["grants"]) for k, v in d["movers"].items()})  # fmt: skip
+                   {k: (v["requests"], v["grants"]) for k, v in d["movers"].items()},
+                   (cp["reads"], cp["writes"]))  # fmt: skip
 
 
 @dataclass(frozen=True)
@@ -206,6 +212,13 @@ def price(p: Prices, c: Counts) -> Energy:
             writes += g
         else:
             reads += g
+    cr, cw = (
+        c.copies
+    )  # a copy's L1 accesses: the banks and the crossbar, as a reader's and a writer's
+    requests += cr + cw
+    xbar += cr * p.e_xro_pj + cw * p.e_xwo_pj
+    reads += cr
+    writes += cw
     parts = {
         "datapath": dp / 1000,
         "control": p.e_ctrl_pj * p.ctrl_bits * c.busy / 1000,
@@ -222,7 +235,8 @@ def graph_counts(graph: Graph, est: Estimate) -> Counts:
     """The static estimate's counts in ``Counts``' form: a unit's firings (its fires over its
     span) and its pushes (its links' and packer's loads, a seeded unit's seed pops), the groups' cycles (pipelined, the
     accelerator's: the longest path, D179), per port's
-    streamer its words as requests and grants (none refused). Priced at ``prices_of`` with the
+    streamer its words as requests and grants (none refused), the copies' bursts as their L1 reads
+    and writes. Priced at ``prices_of`` with the
     ports' streamers as movers, the parts are ``est.parts``' energies."""
     insts = instances(graph)
     out = Counts()
@@ -243,6 +257,7 @@ def graph_counts(graph: Graph, est: Estimate) -> Counts:
         out.busy = est.accelerator_cycles
     for s in est.streamer_counts:
         out.movers[s.name] = (s.words, s.words)
+    out.copies = (est.copy_bursts, est.copy_bursts)
     return out
 
 

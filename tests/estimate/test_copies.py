@@ -1,6 +1,7 @@
 """A copy in the estimate (copies.py): mvt_4 (int64, 64 × 64) with data_transpose on half 2
-instead of the mark, one burst per element at the DMA's measured rate, two L1 accesses per
-burst in the memory part."""
+instead of the mark, one burst per element at the DMA's measured rate, each burst one bank read
+and one bank write and as many crossbar accesses (D184), in the estimate and in the dynamic
+energy's graph counts."""
 
 from __future__ import annotations
 
@@ -51,6 +52,36 @@ def test_the_banks_price_two_accesses_per_burst():
     assert (copy.reads - mark.reads, copy.writes - mark.writes) == (4096, 4096)
     assert copy.energy_nj - mark.energy_nj == pytest.approx(4096 * (copy.e_rd_pj + copy.e_wr_pj)
                                                             / 1000)  # fmt: skip
+
+
+def test_the_crossbar_prices_each_access_at_its_kind():
+    """A copy's read at a read-only input's price, its write at a write-only input's (D184)."""
+    mark, copy = mvt_4(False).xbar, mvt_4(True).xbar
+    assert (copy.reads - mark.reads, copy.writes - mark.writes) == (4096, 4096)
+    assert copy.energy_nj - mark.energy_nj == pytest.approx(4096 * (copy.e_ro_pj + copy.e_wo_pj)
+                                                            / 1000)  # fmt: skip
+
+
+def test_the_dynamic_energy_on_the_graph_counts_prices_the_copy_as_the_estimate():
+    """D177's identity with a copy: the graph's counts carry the copy's L1 reads and writes, and
+    priced they give the estimate's five parts."""
+    from snax_forge.estimate.dynamic import graph_counts, port_movers, price, prices_of
+
+    e = mvt_4(True)
+    g = apply_recipe(*_copy_recipe())[-1].graph
+    c = graph_counts(g, e)
+    assert c.copies == (4096, 4096)
+    got = price(prices_of(g, e, port_movers(e)), c).parts
+    assert got == pytest.approx({k: p.energy_nj for k, p in e.parts.items()})
+
+
+def _copy_recipe():
+    d = Recipe.load(recipe_path("mvt_4")).to_dict()
+    (st,) = [st for st in d["steps"] if st["transform"] == "mark_transpose"]
+    st |= {"transform": "data_transpose",
+           "params": {"node": "tmp2_mult_map", "container": "A", "by": "dma"}}  # fmt: skip
+    r = Recipe.from_dict(d)
+    return r, imported(r.kernel, r.dtypes)
 
 
 def test_the_copies_round_trip():
