@@ -7,8 +7,9 @@
 design point's (regions.py), ``filter`` the sources whose beat lines the run wrote (sources.py).
 The result, its names, window and fields, is CONTRACTS, "Profile and trace". Nothing is
 recounted: the profile is the ``summary`` lines renamed (``profile_of``), the trace the
-``events`` lines renamed, matched in order to the task list's tasks and cut to the ``window``,
-and above ``task`` the beat lines too (beats.py). A DMA issue's ``direction`` comes from its
+``events`` lines renamed, matched in order to the task list's tasks (a DMA task with a ``size``
+one issue per step of its outer loops) and cut to the ``window``, and above ``task`` the beat
+lines too (beats.py). A DMA issue's ``direction`` comes from its
 addresses: ``l2_to_l1``, ``l1_to_l2``, ``l1_to_l1`` or ``l2_to_l2``. ``invariants`` hold on every
 conversion: every start and DMA issue has a done in the window, a core's classes add up to it,
 the accelerator's firings are its summary's, and each container's L2 copies touch its array's
@@ -20,6 +21,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Sequence
+from math import prod
 from typing import Any
 
 from snax_forge.lower.tasks import TaskList
@@ -136,7 +138,13 @@ def _tasks(tasks: TaskList, kind: str, component: str) -> list[str]:
 
 
 def _dma_tasks(tasks: TaskList) -> list[tuple[str, str]]:
-    return [(s.task_name, str(s.values.get("direction"))) for s in tasks.of_type("dma")]
+    """Each DMA issue's task and direction, in order: one issue per task, or with a ``size``
+    one per step of its outer loops (c.py's ``dma``)."""
+    out = []
+    for s in tasks.of_type("dma"):
+        issues = prod(s.values["src"]["bounds"][1:]) if "size" in s.values else 1
+        out += [(s.task_name, str(s.values.get("direction")))] * issues
+    return out
 
 
 def _need(names: list[str], k: int, what: str) -> str:

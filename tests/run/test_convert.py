@@ -190,3 +190,23 @@ def test_off_is_the_summary_lines_alone(cluster, tasks):
     for c in full.cores.values():
         c.cycles, c.waits = None, []
     assert full == profile
+
+
+def test_a_dma_task_with_a_size_is_one_issue_per_step_of_its_outer_loops():
+    """transpose_A_T at 64 x 64: 64 two-dimensional copies, then the next task's one."""
+    from snax_forge.lower.tasks import TaskList
+    from snax_forge.run.convert import _dma_tasks
+
+    side = {"bounds": [64, 64], "strides": [8, 512]}
+    steps = [
+        {"op": "configure", "task_name": "transpose_A_T", "type": "dma", "component": "dma",
+         "values": {"direction": "l1_to_l1", "size": 8, "src": {"base": 0, **side},
+                    "dst": {"base": 32768, **side}}},
+        {"op": "start", "tasks": ["transpose_A_T"]},
+        {"op": "configure", "task_name": "load_y2", "type": "dma", "component": "dma",
+         "values": {"direction": "l2_to_l1", "src": {"symbol": "y2", "bounds": [8], "strides": [64]},
+                    "dst": {"base": 65536, "bounds": [8], "strides": [64]}}},
+        {"op": "start", "tasks": ["load_y2"]},
+    ]  # fmt: skip
+    got = _dma_tasks(TaskList.from_dict({"name": "t", "steps": steps}))
+    assert got == [("transpose_A_T", "l1_to_l1")] * 64 + [("load_y2", "l2_to_l1")]
