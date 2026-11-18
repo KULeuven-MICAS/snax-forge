@@ -7,7 +7,7 @@ Rules (D117):
 - An entry is a choice with a real alternative that someone may want to reverse: direction, ownership, the interfaces between components, the order of work. Implementation details live in the module's docstring and its tests.
 - An entry says what was decided, why, and where the detail lives, in a few short bullets; an edge case only when there is one. A change is written into the entry, not chained after it.
 - Entries merged into one keep all their numbers in its heading, so a cite of any of them still finds it. A number is never changed or reused; the text of a removed entry is in git history.
-- A new decision gets the next free number, under the area it belongs to. Next free number: **D182**.
+- A new decision gets the next free number, under the area it belongs to. Next free number: **D184**.
 
 Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29–D45, D47–D50, D53, D54, D56, D58–D63, D65–D67, D69, D74, D76–D78, D80, D81, D83, D88–D97, D100, D101, D103, D104, D106, D107, D109, D110, D114, D115, D119, D124, D127, D128, D132, D133, D138–D141, D151, D156, D159, D160, D181.
 
@@ -80,6 +80,14 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 - **Decided:** a read across the loop order (mvt's `A[m, n]` under the loops (n, m)) is marked by a step, `mark_transpose`, as an annotation on the reader, not as a view container as DaCe's Transpose makes. The memlets keep the read order and LOWER derives the strides from them.
 - **Why:** the mark is what a recipe's match and a later DMA-transpose variant read; the viewer draws the container once with `Aᵀ` on the edge.
 - **Where:** CONTRACTS, "SNAX-DFG" and "Recipe".
+- **Edge:** the mark is a strided read, so it serves only an element of a bank word or wider; below it, the read is a copy (D182).
+
+### D182 — A read across the loop order: a mark or a copy
+
+- **Decided:** a read across the loop order is served by `mark_transpose` (D164: a strided read, no copy) or by `data_transpose`: a `transpose` node, a kind of its own, copies the container transposed into a new L1 container, which the nest then reads in loop order. The copy is made `by` the DMA (later the core); `mark_transpose` refuses an element narrower than the bank word, whose packed lanes are contiguous elements of one word (D142 · D174 · D180). LOWER makes the DMA's copy `transpose_<dst>` (`l1_to_l1`), one burst of an element per step, the innermost loop one 2-D copy's repeat, where a load of the destination would be. The estimate prices the copy at the DMA's rate measured on the RTL, 8/3 cycles a burst, one burst per element, and two L1 accesses a burst (D155).
+- **Why:** int8 mvt's half 2 cannot be read by strides; an explicit node keeps the reference check exact (D28 · D79), draws as a block, and gives LOWER one place to emit the DMA's L1-to-L1 task.
+- **Where:** CONTRACTS, "SNAX-DFG", "Recipe", "Task list" and "Estimate"; `sandbox/transpose.py`, `lower/derive.py`, `estimate/copies.py`.
+- **Edge:** an element a burst is the DMA's slowest form; a copy whose rows are whole beats in both layouts could move beats, which no recipe needs yet. Rank 2 only.
 
 ### D28 · D79 — The reference executor is exact
 
@@ -203,6 +211,7 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 - **Why:** each pass is one choice; the only wait between accelerators is a real dependence; masks would cost hardware in every block.
 - **Where:** CONTRACTS, "Memory plan and design point"; `lower/layout.py`, `dfg/pad.py`, `gen/data.py`.
 - **Edge:** a fold may read through a tail a container another unit wrote only when the producer's tasklet on its pad values gives the fold's identity (dot 1 at W_mul = W_sum = 10); otherwise `connect.pad` refuses (open item 106).
+- **Edge:** the DMA moves whole beats, but a `transpose` node's copy moves one element a burst (D182).
 
 ### D87 — The design point is LOWER's only input
 
@@ -221,10 +230,17 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 
 ### D179 — The schedule: independent accelerators may overlap
 
-- **Decided:** a design point holds a `schedule` (`--set design.schedule=`), amending D158. `serial`: D158's. `pipeline`, from configuration: no serial sync, so a start waits only for its tasks' `after`; the next accelerator is configured while the previous one runs and started at once. `pipeline_compute`, from compute: consecutive starts with only loads to wait for, sharing no component, are gathered: their loads, then their configures, then the starts back to back. Under both, a store moves past the later starts of other accelerators, to before its own accelerator's next block or to the end, since its wait on its writer would otherwise hold the next start. Whatever the schedule, a group never runs two tasks at once (the program polls a busy component before starting it again), so a shared form's task list is the same under all three; the DMA's waits stay D135's.
+- **Decided:** a design point holds a `schedule` (`--set design.schedule=`), amending D158. `serial`: D158's. `sequential`: D183's. `pipeline`, from configuration: no serial sync, so a start waits only for its tasks' `after`; the next accelerator is configured while the previous one runs and started at once. `pipeline_compute`, from compute: consecutive starts with only loads to wait for, sharing no component, are gathered: their loads, then their configures, then the starts back to back. Under both, a store moves past the later starts of other accelerators, to before its own accelerator's next block or to the end, since its wait on its writer would otherwise hold the next start. Whatever the schedule, a group never runs two tasks at once (the program polls a busy component before starting it again), so a shared form's task list is the same under all three; the DMA's waits stay D135's.
 - **Why:** mvt's halves share no data, yet D158 runs them one after the other. With c the core's configuration and r a run: serial $c_1 + r_1 + r_2$, pipeline $c_1 + \max(r_1, c_2 + r_2)$, pipeline_compute $c_1 + c_2 + \max(r_1, r_2)$, the last with both chains on the banks at once. The store's move keeps those true: left in place, the store's wait on the first half would come before the second half's start.
 - **Where:** CONTRACTS, "Task list" (its "Derived" part) and "Estimate"; `lower/derive.py`, `estimate/schedule.py`.
 - **Edge:** the estimate's `accelerator_cycles` becomes the longest path through the runs (their waits on data, their group and their accelerator), and C_acc with it (the static cost's control and D177's graph counts), still ideal (D155), with a note when overlapping accelerators move more words a cycle than there are banks. It holds no core configuration, so it gives both pipelined schedules the same cycles. The quiet build still waits on every start at once, so it runs a pipelined program serially (open item 140).
+
+### D183 — The sequential schedule: one step at a time
+
+- **Decided:** a fourth schedule, `sequential`, amending D179: every start is followed at once by its sync (an accelerator wait or a DMA wait), so each step, configures included, begins after the previous one has ended. The estimate adds up as under `serial`, the copies' cycles included.
+- **Why:** a copy before its reader (D182) and an accelerator run without the copy are compared step by step only when nothing overlaps: each step's cycles are then its own, on SNAX-GVSoC and the RTL alike.
+- **Where:** CONTRACTS, "Task list" (its "Derived" part); `lower/derive.py`'s `sequential`.
+- **Edge:** the configures no longer hide under the previous run, so the window is longer than `serial`'s.
 
 ### D135 — The task list becomes C on snRuntime
 
@@ -269,7 +285,7 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 
 ### D155 — An ideal estimate, and what it is not
 
-- **Decided:** per group, snax-gvsoc's group rule on ideal streams, groups adding through L1; unmapped work at one cycle per iteration, a labelled assumption in one constant; the total adds both. The expected BUSY_COUNTER (cycles + fill) is a guide, not a check. `bank_bound`, ⌈Σ beats × num_ch / n_banks⌉, bounds the streams' L1 time, not the BUSY_COUNTER.
+- **Decided:** per group, snax-gvsoc's group rule on ideal streams, groups adding through L1; unmapped work at one cycle per iteration, a labelled assumption in one constant; a copy (D182) at the DMA's measured rate, another constant; the total adds all three. The expected BUSY_COUNTER (cycles + fill) is a guide, not a check. `bank_bound`, ⌈Σ beats × num_ch / n_banks⌉, bounds the streams' L1 time, not the BUSY_COUNTER.
 - **Why:** a quick number before any run. A run's BUSY_COUNTER counts from START until busy drops, so it includes bank conflicts and is shortened by the streamers' head start.
 - **Where:** CONTRACTS, "Estimate".
 

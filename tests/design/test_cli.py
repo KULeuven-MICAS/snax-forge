@@ -96,7 +96,7 @@ def test_the_schedule_is_set_kept_and_checked(tmp_path, capsys):
     assert run(BOUND, "--platform", SMALL16, "--set", "design.schedule=overlap") == 1
     err = capsys.readouterr().err
     assert "[design.schedule] design.schedule: 'overlap' is no schedule; give one of serial, " \
-        "pipeline, pipeline_compute" in err  # fmt: skip
+        "pipeline, pipeline_compute, sequential" in err  # fmt: skip
     assert run(BOUND, "--platform", SMALL16, "--set", "design.order=pipeline") == 1
     assert "[design.schedule] design.order: no such field" in capsys.readouterr().err
 

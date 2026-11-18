@@ -131,6 +131,7 @@ function legend() {
     h("li", {}, h("i", { class: "key c-fold" }), "fold"),
     h("li", {}, h("i", { class: "key c-link" }), "link"),
     h("li", {}, h("i", { class: "key c-packer" }), "packer, slicer"),
+    h("li", {}, h("i", { class: "key c-copy" }), "copy (transpose)"),
     h("li", {}, h("i", { class: "key c-pill" }), "container"),
     h("li", {}, h("i", { class: "key c-pill transient" }), "transient"),
     h("li", {}, h("i", { class: "key c-pill scalar" }), "scalar"),
@@ -156,7 +157,7 @@ function nodeEl(n) {
       h("div", { class: "c-bar" }, n.text),
       h("div", { class: "c-body" }, n.body.map(nodeEl)));
   }
-  const cls = { tasklet: "c-tasklet", accelerated: "c-unit", link: "c-link", packer: "c-packer", slicer: "c-packer" }[n.kind] || "c-tasklet";
+  const cls = { tasklet: "c-tasklet", accelerated: "c-unit", link: "c-link", packer: "c-packer", slicer: "c-packer", transpose: "c-copy" }[n.kind] || "c-tasklet";
   // a fold (api.py's ``fold``): an upside-down trapezoid, its fill a layer of its own under
   // the text (style.css), the output connectors inside its narrow bottom
   return h("div", { class: `c-node ${cls}${n.fold ? " c-fold" : ""}`, "data-sel": n.id },

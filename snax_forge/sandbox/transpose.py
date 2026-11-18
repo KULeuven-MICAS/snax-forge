@@ -1,7 +1,7 @@
-"""The transpose marker: a tasklet's input read across its loop order, marked as such.
+"""A tasklet's input read across its loop order: marked, or copied transposed.
 
-``mark_transpose(node, container)`` and ``unmark_transpose(node, container)``, as CONTRACTS,
-"Recipe" defines them. ``node`` is any map of a nest or its tasklet (``nest_tasklet``).
+``mark_transpose(node, container)``, ``unmark_transpose(node, container)`` and
+``data_transpose(node, container, by)``, as CONTRACTS, "Recipe" defines them. ``node`` is any map of a nest or its tasklet (``nest_tasklet``).
 ``loop_orders`` gives each input's π: each container dimension's index names one loop
 dimension (a map's ``loop.dim``), and π orders the container's dimensions by the depth of the
 outermost map of theirs (mvt's ``A[m, n]`` under the loops (n, m): π = (1, 0)). An index naming
@@ -9,13 +9,20 @@ two loop dimensions or none has no π. ``mark_transpose`` takes the inputs whose
 identity (``transpose_choices``) and marks one container: ``sandbox.transpose``,
 ``{connector: π}``. No memlet, map or range changes, so the reference check is unchanged; the
 loop transforms keep the mark, ``bind`` carries it onto the accelerated node keyed by port.
+``data_transpose`` takes the same choices and instead adds a transient ``<container>_T`` and a
+``transpose`` node (dfg/kinds.py) filling it, just before the nest; the nest's memlets of the
+container, their dimensions permuted by π, read the copy in loop order. A packed read cannot
+cross the loop order, so ``mark_transpose`` refuses an element narrower than a bank word.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from snax_forge.dfg import Graph, Node, loops
+import numpy as np
+
+from snax_forge.common import fresh
+from snax_forge.dfg import Container, Graph, Memlet, Node, loops
 from snax_forge.dfg.graph import TRANSPOSE
 from snax_forge.dfg.subset import dim_names
 
@@ -83,10 +90,11 @@ def transpose_choices(g: Graph, node: str, mark: bool = True) -> list[dict[str, 
     return [{"container": c, "transpose": p} for c, p in out.items()]
 
 
-def _mark_site(g: Graph, selected: str) -> dict[str, Any]:
+def _mark_site(g: Graph, selected: str, name: str = "mark_transpose") -> dict[str, Any]:
     """A map of a nest or its tasklet reading a container across its loop order, not marked
-    yet; ``container`` filled when it is the only one."""
-    what = f"mark_transpose {selected!r}"
+    yet; ``container`` filled when it is the only one. ``name`` the transform asking
+    (``data_transpose`` takes the same sites)."""
+    what = f"{name} {selected!r}"
     t = nest_tasklet(g, selected, what)
     found = transpose_choices(g, selected)
     if not found:
@@ -111,10 +119,19 @@ def _pick(found: list[dict[str, Any]], container: str | None, what: str) -> str:
     return container
 
 
+# The bank word, bytes: a packed input's lanes are contiguous elements of one word, so an
+# element narrower than it cannot be read across the loop order by strides
+WORD_BYTES = 8
+
+
 def mark_transpose(g: Graph, node: str, container: str | None = None) -> Graph:
     what = f"mark_transpose {node!r}"
     _mark_site(g, node)
     container = _pick(transpose_choices(g, node), container, what)
+    dtype = g.containers[container].dtype
+    if np.dtype(dtype).itemsize < WORD_BYTES:
+        raise SandboxError(f"{what}: {container} is {dtype}: a packed read cannot cross the "
+                           "loop order; use data_transpose")  # fmt: skip
     g = _copy(g)
     t = nest_tasklet(g, node, what)
     marks = dict(t.attrs.get(TRANSPOSE, {}))
@@ -152,5 +169,72 @@ def unmark_transpose(g: Graph, node: str, container: str | None = None) -> Graph
     return _result(g)
 
 
+DATA_TRANSPOSE_BY = ("dma", "core")  # what makes the copy; only dma is built
+NOT_BUILT = {"core": "data_transpose by core is not built yet; use by=dma"}
+
+
+def _data_site(g: Graph, selected: str) -> dict[str, Any]:
+    """mark_transpose's sites: a map of a nest or its tasklet reading a container across its
+    loop order; ``by`` dma."""
+    return _mark_site(g, selected, "data_transpose") | {"by": "dma"}
+
+
+def _top(g: Graph, node: str) -> Node:
+    """The top-level node holding ``node``: its nest's outermost map."""
+    _, i, outer = _locate(g, node)
+    return outer[0] if outer else _locate(g, node)[0][i]
+
+
+def _nest(n: Node) -> list[Node]:
+    out = [n]
+    for k in n.body or []:
+        out += _nest(k)
+    return out
+
+
+def data_transpose(g: Graph, node: str, container: str | None = None, by: str = "dma") -> Graph:
+    """``container``, read across the loop order in ``node``'s nest, copied transposed into a
+    transient ``<container>_T`` by a ``transpose`` node just before the nest, which reads the
+    copy in loop order (module doc)."""
+    what = f"data_transpose {node!r}"
+    if by in NOT_BUILT:
+        raise SandboxError(NOT_BUILT[by])
+    if by not in DATA_TRANSPOSE_BY:
+        raise SandboxError(f"{what}: by {by!r} is not one of {', '.join(DATA_TRANSPOSE_BY)}")
+    _data_site(g, node)
+    found = transpose_choices(g, node)
+    container = _pick(found, container, what)
+    perm = next(x["transpose"] for x in found if x["container"] == container)
+    name = f"{container}_T"
+    if name in g.containers:
+        raise SandboxError(f"{what}: a container {name} exists already; rename it, or undo the "
+                           f"data_transpose that made it")  # fmt: skip
+    t = nest_tasklet(g, node, what)
+    orders = {c: p for c, data, p in loop_orders(g, t.id) if data == container}
+    if any(p != perm for p in orders.values()) or container in {m.data for m in t.outputs.values()}:
+        raise SandboxError(f"{what}: {t.id} reads or writes {container} in more than one order; "
+                           "mark_transpose marks one connector")  # fmt: skip
+    g = _copy(g)
+    top = _top(g, node)
+    for n in _nest(top):
+        for m in n.memlets():
+            if m.data == container:
+                m.data, m.subset = name, [m.subset[p] for p in perm]
+    src = g.containers[container]
+    copy = Container([src.shape[p] for p in perm], src.dtype, transient=True)
+    order = list(g.containers)
+    g.containers = {k: g.containers[k] if k != name else copy
+                    for k in [*order[: order.index(container) + 1], name,
+                              *order[order.index(container) + 1:]]}  # fmt: skip
+    taken = {n.id for n, _ in g.walk()}
+    node_t = Node(fresh(f"transpose_{container}", taken), "transpose",
+                  {"src": Memlet(container, [f"0:{s}" for s in src.shape])},
+                  {"dst": Memlet(name, [f"0:{s}" for s in copy.shape])},
+                  {"perm": list(perm), "by": by})  # fmt: skip
+    g.body.insert(g.body.index(top), node_t)
+    return _result(g)
+
+
 register_transform("mark_transpose", mark_transpose, site=_mark_site)
+register_transform("data_transpose", data_transpose, site=_data_site)
 register_transform("unmark_transpose", unmark_transpose, site=_unmark_site)

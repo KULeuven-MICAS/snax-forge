@@ -69,6 +69,7 @@ Every node has `id` (unique: task names are built from it, D75), `kind`, `inputs
 | `map` | `var`, `range`; `loop.kind` (absent, `tile`, `temporal`, `spatial`); `loop.dim`, `loop.piece` (D162); `loop.split` (the `var` and `range` before a split, and `valid`, the iteration count, when it is not a multiple of the factor: the lanes past it are padding, D144) | runs once per value of `var` |
 | `tasklet` | `code`: one `output = expression` per output connector; its connectors are single elements | none |
 | `link` | `container` (the transient it replaced, which writer and reader still name), `depth` (0 a wire, ≥ 1 a buffer), `from`, `to` (the units' instances) | none |
+| `transpose` | `perm` (a permutation of its input's dimensions), `by` (`dma` or `core`: what makes the copy); one input `src` and one output `dst`, each its whole container (`0:<extent>` in every dimension), the output's shape the input's permuted by `perm`, the same dtype; the reference executor copies `np.transpose(src, perm)` into it | none |
 | `accelerated` | `instance`, `brm`, `implementation`, `code` (the BRM's matched entry), `params` (design params), `replaced` (the subtree `bind` replaced), `locals`, `accelerator`, `group`, `opType` (the last four only when set; `opType` the op's type where the tasklet's casts set it, D143 · D175) | empty for a leaf block |
 
 - An accelerated node's connectors are the BRM's ports, each port's lanes as a range: one beat.
@@ -102,7 +103,10 @@ A bound graph nests accelerator ⊃ groups ⊃ units and links (D146, D148):
 
 ### A transposed read
 
-`mark_transpose` (D164, `sandbox/transpose.py`) records on a tasklet `sandbox.transpose`, `{connector: π}`, for an input whose dimensions it reads across its loop order: π orders the container's dimensions by the depth of their outermost map. mvt's half 2 reads `A[m, n]` under the loops (n, m): π = (1, 0). No memlet changes; `bind` carries the mark onto the accelerated node, keyed by port.
+A read across the loop order is served in one of two ways (D182, `sandbox/transpose.py`):
+
+- `mark_transpose` (D164) records on a tasklet `sandbox.transpose`, `{connector: π}`, for an input whose dimensions it reads across its loop order: π orders the container's dimensions by the depth of their outermost map. mvt's half 2 reads `A[m, n]` under the loops (n, m): π = (1, 0). No memlet changes; `bind` carries the mark onto the accelerated node, keyed by port. A container whose element is narrower than the bank word (8 bytes) is refused: a packed input's lanes are contiguous elements of one word (`A is int8: a packed read cannot cross the loop order; use data_transpose`).
+- `data_transpose` adds a transient `<container>_T`, the container's shape permuted by π and its dtype, and a `transpose` node (perm π) reading the whole container and writing the whole copy, at the top level just before the nest's outermost map. Every memlet of the container in the nest, at every level, has its dimensions permuted by π and names the copy, so a split index moves with its dimension; mvt's half 2 then reads `A_T[n, m]` under (n, m), π the identity. Only `by` `dma` is built.
 
 ### Names and expressions
 
@@ -260,7 +264,8 @@ Each has an inverse, and each refuses with the fix named. The loop names follow 
 | `fuse_seed` / `unfuse_seed` | `first`, `second` | a fold writing t with ⊕, read only by a nest computing `t ⊕ x` in place over t: the nest and t go and the fold starts from x (`reduce.seed`, D163; matvec_acc's q += A p). Refused for another reader, op, subset, a float or a bound fold |
 | `bake_scalar` / `unbake_scalar` | `container`, `value` (an int or `csr`) | at an int the scalar becomes a literal and the container goes (axpy's alpha 3: `bind` bakes `k1 = 3`); at `csr` the tasklet names the container, read at run time (D161) |
 | `interchange_map` | `map`, `with` | two maps of one perfect nest trade places, each keeping id, variable, range and tag; its own inverse. Refused when a range would name an inner variable or the swap reorders an order-dependent fold (rowsum 2: `sum_map_s` with `sum_map_1`) |
-| `mark_transpose` / `unmark_transpose` | `node`, `container` | marks a read across the loop order (section 2, D164); nothing else changes |
+| `mark_transpose` / `unmark_transpose` | `node`, `container` | marks a read across the loop order (section 2, D164); nothing else changes. Refused for an element narrower than a bank word |
+| `data_transpose` | `node`, `container`, `by` (`dma`; `core` refused, not built yet) | the container copied transposed into `<container>_T` by a `transpose` node before the nest, which reads the copy in loop order (section 2, D182). Its sites are `mark_transpose`'s. Refused: an existing `<container>_T`, a nest reading the container in two orders. No inverse yet: the step is undone by removing it |
 | `share` / `unshare` | `group`, `with` | `group` runs on `with`'s units: the same shape unit by unit (BRM, implementation, params, links and depths), its nodes renamed to `with`'s (D165). Refused naming what differs (`vmul_x2 and vmul_x1 differ: W = 4 against 8`) |
 | `share_ports` / `unshare_ports` | `container`, `accelerator` | the container's writer's and reader's groups go on one accelerator whose movers they share, the k-th widest port of each on mover k (D169); the container is marked `hw.share_ports` |
 | `link` / `unlink` | `container`, `depth`, `group` | a transient between two bound units becomes a link node, their groups merge under `group`, and the transient leaves L1. Refused: not one writer and one reader (`link.container`), an end not bound (`link.unbound`), the beats not in the same order (`link.order`), a clashing name (`link.group`) |
@@ -400,7 +405,7 @@ The `platform` and `graph` stages run independently, `connect` when both passed,
 | `platform.streamer` | a streamer value below 1, spatial bounds not a non-empty list of ints ≥ 1, a `num_ch` not an int ≥ 1 |
 | `platform.l2` | L2 and L1 disagree on the beat or the word |
 | `platform.banks` | with an L2, `n_banks` not a multiple of `wide_bits / width_bits` |
-| `design.schedule` | a schedule other than `serial`, `pipeline` and `pipeline_compute` (the message names them), or a `--set design.` path other than `schedule`; checked in the `platform` stage |
+| `design.schedule` | a schedule other than `serial`, `pipeline`, `pipeline_compute` and `sequential` (the message names them), or a `--set design.` path other than `schedule`; checked in the `platform` stage |
 | `graph.load` | the graph does not load (section 2) |
 | `graph.symbols` | a symbol still null: bind it in the recipe |
 | `graph.unbound` | work outside every accelerated node, or no accelerated node: the program drives accelerators only |
@@ -473,7 +478,7 @@ A note is registered (`register_note(code, fn)`) and runs once the checks passed
 | `platform` | the platform working copy (section 5) |
 | `streamers` | the resolved shell, `<instance>_<port>` → `instance`, `port`, `write`, `n_ports`, `spatial_bounds`, `temporal_dims`, `dtype`, `num_slc`, `num_ch`, `d_out` (1 unless packed), `d_in` (1 unless sliced), `fifo_depth` |
 | `memory` | the plan: `passes`, `changes`, `layouts` (container → memory → layout) |
-| `schedule` | how LOWER orders the accelerators (D179, section 8): `serial` (the default; a file without the field), `pipeline` or `pipeline_compute`, from `--set design.schedule=` |
+| `schedule` | how LOWER orders the accelerators (D179, section 8): `serial` (the default; a file without the field), `pipeline`, `pipeline_compute` or `sequential` (D183), from `--set design.schedule=` |
 
 ## 8. Task list
 
@@ -496,18 +501,18 @@ A task list is `name` and `steps`, each with an `op`:
 | `type` | `values` |
 |---|---|
 | `streamer` | `base`, `temporal_bounds`, `temporal_strides`, `spatial_strides`, in bytes and bank words (D142) |
-| `dma` | `direction` (`l2_to_l1`, `l1_to_l2`); `src` and `dst`, each with bounds and strides (one wide beat per step), the L1 side with `base`, the L2 side with `symbol` (its container's `data.h` array) |
+| `dma` | `direction` (`l2_to_l1`, `l1_to_l2`, `l1_to_l1`); `src` and `dst`, each with bounds and strides, innermost first, the same bounds on both, an L1 side with `base`, an L2 side with `symbol` (its container's `data.h` array); `size`, optional, a burst's bytes (D182). Without it each step moves a wide beat, one `snrt_dma_start_1d` or `_2d`; with it each step of the innermost loop is one burst of `size` bytes, that loop one `snrt_dma_start_2d`'s repeat and every outer loop a C `for` |
 | `accel` | `n`, then each named rate (`T`), then each slot read from a scalar as `{"from": <container>}` (axpy's `k1: {"from": "alpha"}`), written to the slot's CSR before START |
 
 - **A streamer's strides**: a channel moves one bank word of num_slc elements. The fastest spatial loop runs S_0 / num_slc channels, its stride num_slc × the element stride × the itemsize; every other stride is the element stride × the itemsize; `base` is the layout's base plus the offset's bytes. Spatial bounds are design-time, in elements, from the design point's streamers.
 - **An idle mover** (another group's in the same encapsulated set, D148): every temporal bound 0, so it never starts, and every temporal stride a bank word, never 0 (a reader whose first loop has stride 0 runs that loop once whatever its bound, as snax_cluster's `Reader.scala` does).
 - **A shared set's movers** (D169) keep a task per port; the program writes each mover once per start.
-- **Names** (D75): streamer `<instance>_<port>` (`acc_a`), task `<node>_<component>` (`add_acc`), DMA task `load_<container>` or `store_<container>`, `_<k>` added for tile `k`.
+- **Names** (D75): streamer `<instance>_<port>` (`acc_a`), task `<node>_<component>` (`add_acc`), DMA task `load_<container>`, `store_<container>` or `transpose_<dst>` (a `transpose` node's copy), `_<k>` added for tile `k`.
 
 ### Checks
 
 - When a list is made: task names are unique; `after`, `start` and `sync` name tasks configured earlier; a component has at most one configured task not yet started; a task starts once, after its `after` tasks; every configured task is started.
-- Against the design point (`check_values`): the component exists with the task's type, the values have exactly the type's keys, a streamer's loops fit it, a DMA's direction is valid, every bound is at least 1 (an idle mover's all 0).
+- Against the design point (`check_values`): the component exists with the task's type, the values have exactly the type's keys (a DMA's `size` optional), a streamer's loops fit it, a DMA's direction is valid, its sides have the same bounds (an `l1_to_l1` both a `base`), its `size` divides the beat and is whole elements of both sides' containers, every bound is at least 1 (an idle mover's all 0).
 - JOBS and every JOB_BEATS fit `acc_csr.job_width`, and a group's head firings (JOBS × every T) are below 2^32.
 
 ### Waits
@@ -518,7 +523,7 @@ A task list is `name` and `steps`, each with an `op`:
 
 `lower/derive.py`, per accelerated node in execution order:
 
-1. `load_<C>` for each input not yet in L1.
+1. `load_<C>` for each input not yet in L1, or `transpose_<C>` for one a `transpose` node makes.
 2. A task per streamer, then the accelerator task (`n` the firings, each named rate from `named_rates`, D102).
 3. One `start` of them all.
 4. `store_<C>` for each output written for the last time; at the end one `sync` per non-transient output.
@@ -535,7 +540,9 @@ flowchart TD
 - **Chains through L1** (D105): `after` holds data dependences only, so two groups chain with one wait, on the first's writer.
 - **In place**: a writer never waits for a reader it starts with. That is an in-place update, allowed only when the reader is a port of its own unit visiting the same addresses in the same order (axpy's `y`, a fold's seed), and refused by name otherwise.
 - **A packed output** (D174): its writer's innermost loop of n pushes at stride s = W · b / 8 bytes becomes $(\lceil n / d_{out} \rceil, d_{out}\thinspace s)$, one write per 8-byte word, its spatial bounds `[1]`, the outer loops and the base unchanged. matvec at i8, M = 10 int32 outputs at W = 1: (10, 4 B) becomes (5, 8 B). A sliced input's reader (D180) the same with d_in: vecadd_i32 at W = 1, N = 64: (64, 4 B) becomes (32, 8 B).
+- **A copy** (D182): a `transpose` node is the DMA task `transpose_<dst>`, `l1_to_l1`, where a load of its destination would be (with the loads of the first node that reads it), `after` what put the source in L1 (its load, made first if none did). Its loops are the destination's dimensions, the last innermost, each moving the source along the dimension `perm` maps there, one burst of an element a step (`size`); the strides come from both L1 layouts, so `padded_rows` needs nothing of its own. The reader's `after` holds it, so the DMA wait (D135) comes before the reader's start. Rank 2 only; another rank, or `by` other than `dma`, is refused by name. A 64 × 64 int8 A, contiguous: `size` 1, `src` strides [64, 1], `dst` [1, 64], so `for k: snrt_dma_start_2d(A_T + 64·k, A + k, 1, 1, 64, 64)`; at int64 `size` 8 and strides of 512 (520 under `padded_rows`).
 - **In series** (D158, the `serial` schedule): before each accelerator's `start`, one `sync` on the previous accelerator's task, its own configures placed before it, so it is set up while the previous one runs. None when an `after` already holds that task, and none between the groups of one encapsulated accelerator. dot_serial: `sum_sum`'s configures, `sync mult_mul`, its start.
+- **Sequential** (D183, `sequential`): a `sync` right after every start, on its accelerator task, else its DMA task, so each step, configures included, begins after the previous one has ended; a later `sync` on a task already synced is left out. mvt_4_i64_dma_AT: each load and its sync, conf half 1, start, sync, `store_x1` and its sync, `transpose_A_T` and its sync, the loads of half 2 each with its sync, conf half 2, start, sync, `store_x2` and its sync.
 - **Pipelined** (D179): `pipeline` adds no serial sync, so a start waits only for its tasks' `after` and its components' previous tasks. Each store (its configure and start) moves down past the later blocks of other accelerators (a block: the loads, configures and start of one accelerator task), stopping before a block of its own accelerator, else going to before the final syncs. `pipeline_compute` also gathers consecutive blocks whose tasks' `after` are DMA tasks only and that share no component (the first may open with stores): their loads, then their configures, then their starts back to back. A shared form (mvt_3) gives one list under all three schedules. mvt_3_split, its halves `mvt` and `mvt_1`:
 
 | Schedule | Order |
@@ -626,7 +633,7 @@ streamer $k$ at $[b_k, b_k + s_k)$, its own at $[b_k + s_k, b_{k+1})$, and $b_K 
 2. A shared set's task (D169) writes every mover once (its group's port, a masked mover's `ENABLED_CHANNEL` = (1 << num_ch) − 1, the rest idle), then `PORT_MUX_SEL` when it changes, after the wait on the set's previous task (`c.port_mux`), then `STREAMER_START`, then the group's `START`.
 3. `forge_check()` reads `mcycle` and prints `forge cycles: <n>`, then checks the outputs' valid elements against their goldens (`forge data:`), each task's counter against its beats (`forge counter <task>:`), and prints `forge errors:`; `main` returns the error count.
 
-The quiet build (`-DFORGE_QUIET`): every start waited on right after it, each section marked by the next value written to CSR `0x7c5` (core 0's `obs_o`), no `printf`. Its parts are `#ifdef FORGE_QUIET` blocks, so the default build compiles without them (`strip_quiet`). Each build waits on a start once: a wait the task list places right after the start is one wait for both builds, and one placed later, which the quiet build has already waited for, is an `#ifndef FORGE_QUIET` block. `obs_marks.json` lists the sections: `mark` 1 up (0 from reset to the first, at most 255, `c.obs`), `kind` (`dma_in`, `dma_out`, `streamer_config`, `acc_config`, `run`, `check`), `label` (`dma load_A`, `run dot`).
+The quiet build (`-DFORGE_QUIET`): every start waited on right after it, each section marked by the next value written to CSR `0x7c5` (core 0's `obs_o`), no `printf`. Its parts are `#ifdef FORGE_QUIET` blocks, so the default build compiles without them (`strip_quiet`). Each build waits on a start once: a wait the task list places right after the start is one wait for both builds, and one placed later, which the quiet build has already waited for, is an `#ifndef FORGE_QUIET` block. `obs_marks.json` lists the sections: `mark` 1 up (0 from reset to the first, at most 255, `c.obs`), `kind` (`dma_in`, `dma_out`, `dma_copy`, `streamer_config`, `acc_config`, `run`, `check`), `label` (`dma load_A`, `run dot`).
 
 ### The manifest
 
@@ -1013,7 +1020,7 @@ An energy's `counts` are what each part was priced on (section 14): `fires` (the
 
 ## 13. Estimate
 
-The ideal estimate of a bound graph (D155, `estimate/`), with or without a platform: what a mapping buys before any run, for the viewers and `design.md`. `estimate(graph, platform, tech)` also costs it on a technology (section 14; default `nangate45`, None leaves the cost out). It assumes ideal streams: no bank conflicts, no streamer fill, no DMA and no core control.
+The ideal estimate of a bound graph (D155, `estimate/`), with or without a platform: what a mapping buys before any run, for the viewers and `design.md`. `estimate(graph, platform, tech)` also costs it on a technology (section 14; default `nangate45`, None leaves the cost out). It assumes ideal streams: no bank conflicts, no streamer fill, no core control, and no DMA but for a `transpose` node's copy (`copies`).
 
 An `Estimate` is a dataclass with `to_dict` / `from_dict`; the totals are written and derived again when read.
 
@@ -1021,12 +1028,14 @@ An `Estimate` is a dataclass with `to_dict` / `from_dict`; the totals are writte
 |---|---|
 | `groups` | per group in graph order (below) |
 | `accelerators` | per accelerator in CSR order: `name`, `groups`, `own_csrs`, `csrs` (its first and last, its streamer's then its own, section 9), `streamer` (`movers`, `channels`, `temporal_dims` per mover, `csrs`), `cost` (its streamers and L1 accesses, section 14); without a platform both `csrs` are null |
-| `accelerator_cycles` | under `serial`, the sum of the groups' `cycles`: groups add up through L1 (D105); under a pipelined `schedule` (D179), the longest path through `runs` |
+| `accelerator_cycles` | under `serial` and `sequential`, the sum of the groups' `cycles`: groups add up through L1 (D105); under a pipelined `schedule` (D179), the longest path through `runs` |
 | `schedule`, `runs` | the design point's schedule (`serial` without one); per run of a group in start order (`estimate/schedule.py`) its `name` (its first node), `group`, `accelerator`, `cycles`, `words` through L1 and `after`: the earlier runs of its group or accelerator and those that write what it reads or writes, or read what it writes, in L1 |
 | `not_mapped` | the iterations of each nest no unit runs, over every map around it but the spatial ones |
 | `unmapped_iterations` | the same over every map, spatial ones included: lanes only exist once a unit runs them |
 | `unmapped_cycles` | `unmapped_iterations` × `UNMAPPED_CYCLES_PER_ITERATION` (1, a labelled assumption: a core takes several cycles per iteration) |
-| `total_cycles` | `accelerator_cycles` + `unmapped_cycles`, so a step before any bind compares with a bound one |
+| `copies` | per `transpose` node (D182, `estimate/copies.py`): `name`, `by`, `bursts` (the product of its input's shape: one burst per element), `size` (an element's bytes) and `cycles` = bursts × `DMA_CYCLES_PER_BURST` (8/3, measured on the RTL for short bursts inside L1: busy = 8/3 · bursts + 2) |
+| `copy_cycles` | the copies' cycles added up and rounded; under a pipelined schedule added too, for now |
+| `total_cycles` | `accelerator_cycles` + `unmapped_cycles` + `copy_cycles`, so a step before any bind compares with a bound one |
 | `containers` | per container: `placement` (`l1`, `local`, `link` with its `depth`), `bytes` (the padded shape, D144), `reads` and `writes` in 64-bit words (a link's and a local value's traffic is not L1's) |
 | `l1_footprint`, `l1_size` | the bytes placed in L1, and the platform's L1 size |
 | `ports` | per outer port `<instance>.<port>`: `container`, its streamer's `loops`, `beats`, `num_ch` |
@@ -1117,7 +1126,8 @@ $$A = \sum_b A_b + \sum_g A_{\mathit{ctrl},g} + \sum_p A_{\mathit{strm}}(D_p, L_
 
 $$E = \sum_b E_b + \sum_g E_{\mathit{ctrl},g} + \sum_p \frac{W_p}{C_p}\thinspace e_{\mathit{beat}}(D_p, L_p, C_p) + e_{\mathit{acc}}(n_{\mathit{banks}}, n_{\mathit{banks}})\thinspace\big(N_{\mathit{rd}}\thinspace(1 - g_{\mathit{ro}}) + N_{\mathit{wr}}\thinspace(1 - g_{\mathit{wo}})\big) + N_{\mathit{rd}}\thinspace e_{\mathit{rd}} + N_{\mathit{wr}}\thinspace e_{\mathit{wr}}$$
 
-- **The five parts** (`PARTS`): datapath (the units and buffer links, b), control (g), streamers, crossbar, memory (the banks). The csr, the cores, the I-cache and the DMA are not costed: the DMA's traffic is the same for every variant, and the cores' and AXI's ports enter only as crossbar inputs.
+- **The five parts** (`PARTS`): datapath (the units and buffer links, b), control (g), streamers, crossbar, memory (the banks). The csr, the cores, the I-cache and the DMA are not costed: the DMA's loads and stores are the same for every variant, and the cores' and AXI's ports enter only as crossbar inputs.
+- **A copy** (section 13's `copies`) adds two bank accesses per burst, one read and one write, to N_rd and N_wr in the memory part only, one access per burst whatever its size; the DMA engine and its crossbar port are not priced.
 - **The crossbar's energy** has one price per access for a bank count, a full crossbar's ($e_{\mathit{acc}}$ at inputs = banks, 2.752585 pJ on 32 banks), so it follows the accesses alone: dot 5 linked (19 inputs, 4097 accesses) costs 59.656 nJ against 59.811 nJ unlinked (35 inputs, 4113).
 - **By input kind** (D178, X93): a read is priced as a read-only input's and a write as a write-only one's, $e_{\mathit{acc}}(1 - g_k)$, with $g_k$ at the design's bank count (linear in it between 16, 32 and 64 banks, the nearest one's outside). On 32 banks a read costs 2.752585 × (1 − 0.331792) = 1.839299 pJ and a write 2.752585 × (1 − 0.471583) = 1.454513 pJ; `xbar` gives both as `e_ro` and `e_wo`.
 - **The crossbar's area** prices a reader's channel as a read-only input and a writer's as write-only, since synthesis removes what their constant bits make dead (X70, X71). The factor form above is the default; the crosspoint form, $b\thinspace(c_{\mathit{rw}}\thinspace n_{\mathit{rw}} + c_{\mathit{ro}}\thinspace n_{\mathit{ro}} + c_{\mathit{wo}}\thinspace n_{\mathit{wo}}) + d\thinspace n_{\mathit{in}} + e\thinspace b + g$, is an option (`Estimate.xbar_in("crosspoint")`). dot 3 at W = 16 on the one-core cluster (35 inputs, 32 read-only, 1 write-only): 113 891 µm², where every input read-write gives 182 006; the synthesized gated cluster has 103 257 µm².

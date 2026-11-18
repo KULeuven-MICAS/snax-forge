@@ -141,8 +141,9 @@ def test_the_mvt_set_is_its_own():
     """mvt at its defaults, 64 x 64: mvt_1, mvt_1_dot2 and mvt_1_dot2_shared, then mvt_2 and
     mvt_2_shared, each at W = 4 and 8, contiguous and padded_rows (mvt_2 at 8 has 84 crossbar
     inputs, above 64: a note), mvt_2_reuse at its defaults (the twin check), mvt_3 at its defaults (W = 8, contiguous), mvt_4 at W = 8 and 4,
-    mvt_3_split at W = 8, contiguous and padded_rows, under each schedule (D179); in neither
-    quick nor full."""
+    mvt_3_split at W = 8, contiguous and padded_rows, under each schedule of D179, and mvt_4 and
+    mvt_4_i64_dma_AT at W = 8, contiguous and padded_rows, sequential (D183); in neither quick
+    nor full."""
     names = [d.name for d in fs.SETS["mvt"]]
     pad = "_passes.layoutpadded_rows"
     two = ["mvt_2", "mvt_2_shared"]
@@ -155,6 +156,7 @@ def test_the_mvt_set_is_its_own():
         *(f"mvt_4{w}{p}" for w in ("", "_W_x1-4") for p in ("", pad)),
         *(f"mvt_3_split{p}_schedule{s}" for p in ("", pad)
           for s in ("serial", "pipeline", "pipeline_compute")),
+        *(f"{r}{p}_schedulesequential" for r in ("mvt_4", "mvt_4_i64_dma_AT") for p in ("", pad)),
     ]  # fmt: skip
-    assert len(names) == 32
+    assert len(names) == 36
     assert not {d.recipe for d in fs.SETS["mvt"]} & {d.recipe for d in fs.SETS["full"]}

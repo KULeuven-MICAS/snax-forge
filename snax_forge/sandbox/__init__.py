@@ -5,7 +5,7 @@ A recipe (recipe.py) is an ordered list of registered transforms with their para
 to an imported graph (CONTRACTS, "Recipe"). Each transform has its inverse and a site, the
 graph-shape test of where it applies: split, tag, bind, interchange and encapsulate
 (transforms.py); split_reduce, fuse_map and link (compose.py); bake_scalar (scalar.py);
-fuse_seed (seed.py); mark_transpose (transpose.py); share (share.py); share_ports
+fuse_seed (seed.py); mark_transpose and data_transpose (transpose.py); share (share.py); share_ports
 (share_ports.py); lift and apply_recipe (blocks.py). ``bind`` recognises a BRM's pattern
 through the matchers of patterns.py. The runner (run.py) binds the recipe's symbols, applies
 every step, checks each against the reference executor and writes every step's graph. The
@@ -34,7 +34,7 @@ from .transforms import (
     unbind,
     unencapsulate,
 )
-from .transpose import mark_transpose, unmark_transpose
+from .transpose import data_transpose, mark_transpose, unmark_transpose
 
 __all__ = [
     "PATTERNS",
@@ -47,6 +47,7 @@ __all__ = [
     "bake_scalar",
     "bind",
     "bind_recipe_symbols",
+    "data_transpose",
     "encapsulate",
     "fuse_map",
     "fuse_seed",

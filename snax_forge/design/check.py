@@ -66,7 +66,9 @@ STAGES: dict[str, tuple[str, ...]] = {
     "memory": ("connect",),
 }
 # The design point's ``schedule`` (CONTRACTS, "Task list"): how LOWER orders the accelerators.
-SCHEDULES = ("serial", "pipeline", "pipeline_compute")
+SCHEDULES = ("serial", "pipeline", "pipeline_compute", "sequential")
+# The schedules that run the accelerators one after another; the others are pipelined
+IN_SERIES = ("serial", "sequential")
 # Component names besides the shell and the accelerators: the DMA's (lower/derive.py).
 FIXED = ("dma",)
 # snRuntime's top of L1 (snax-gvsoc sw/snRuntime/src/start.S): a stack of

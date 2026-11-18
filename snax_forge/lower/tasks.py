@@ -9,7 +9,8 @@ its waits. A ``TaskList`` checks the structural rules when made, without a clust
 run a task: the DMA when the platform has an L2, every streamer, every accelerated instance on
 its own, every linked group), and also that an accelerator task's CSR writes fit: JOBS and every
 JOB_BEATS (c.py's ``job_writes``) at most 2^``acc_csr.job_width`` - 1, and its head firings, JOBS
-times every T of the group, below 2^32, SNAX-GVSoC's limit. A ``TaskListError`` names what fails.
+times every T of the group, below 2^32, SNAX-GVSoC's limit; a DMA task's ``size`` divides the
+beat and is whole elements of the containers it moves. A ``TaskListError`` names what fails.
 """
 
 from __future__ import annotations
@@ -17,6 +18,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, ClassVar
+
+import numpy as np
 
 from snax_forge.common import JsonFile, check_keys, plain
 from snax_forge.design.platform import WAIT_MODES
@@ -227,8 +230,11 @@ class TaskList(JsonFile):
 
 STREAMER = ("base", "temporal_bounds", "temporal_strides", "spatial_strides")
 DMA = ("direction", "src", "dst")
+DMA_OPTIONAL = ("size",)  # a burst's bytes; left out, a beat (CONTRACTS, "Task list")
 DMA_SIDE = {"l1": ("base", "bounds", "strides"), "l2": ("symbol", "bounds", "strides")}
-DIRECTIONS = ("l2_to_l1", "l1_to_l2")
+DIRECTIONS = ("l2_to_l1", "l1_to_l2", "l1_to_l1")
+# The side of each direction that is in L2, named by its array's symbol; the others have a base
+L2_SIDE = {"l2_to_l1": "src", "l1_to_l2": "dst", "l1_to_l1": None}
 
 
 def _exact(v: Any, keys: list[str] | tuple[str, ...], what: str) -> None:
@@ -285,12 +291,13 @@ def _check(s: Configure, point: DesignPoint) -> None:
         if any(b < 1 for b in tb) and any(tb):
             raise ValueError("temporal bounds must be >= 1, or all 0 (an idle mover)")
     elif s.type == "dma":
-        _exact(v, DMA, "dma values")
+        check_keys(v, [*DMA, *DMA_OPTIONAL], "dma values", DMA)
         if v["direction"] not in DIRECTIONS:
             raise ValueError(f"direction must be one of {DIRECTIONS}, got {v['direction']!r}")
-        l2 = "src" if v["direction"] == "l2_to_l1" else "dst"
+        l2 = L2_SIDE[v["direction"]]
+        bounds = {}
         for side in ("src", "dst"):
-            _exact(v[side], DMA_SIDE["l2" if side == l2 else "l1"], side)
+            _exact(v[side], DMA_SIDE["l2" if side == l2 else "l1"], f"{v['direction']} {side}")
             b, st = (
                 _ints(v[side]["bounds"], f"{side} bounds"),
                 _ints(v[side]["strides"], f"{side} strides"),
@@ -299,9 +306,16 @@ def _check(s: Configure, point: DesignPoint) -> None:
                 raise ValueError(f"{len(b)} bounds but {len(st)} strides")
             if any(x < 1 for x in b):
                 raise ValueError("bounds must be >= 1")
-        sym = v[l2]["symbol"]
-        if "l2" not in point.memory.layouts.get(sym, {}):
-            raise ValueError(f"{l2} symbol {sym!r} is no container in L2")
+            bounds[side] = b
+        if bounds["src"] != bounds["dst"]:
+            raise ValueError(f"src bounds {bounds['src']}, dst bounds {bounds['dst']}: both sides "
+                             "move the same loops")  # fmt: skip
+        if l2 is not None:
+            sym = v[l2]["symbol"]
+            if "l2" not in point.memory.layouts.get(sym, {}):
+                raise ValueError(f"{l2} symbol {sym!r} is no container in L2")
+        if "size" in v:
+            _check_size(v, point)
     else:
         if not isinstance(v, Mapping):
             raise TypeError(f"accel values must be an object, got {v!r}")
@@ -315,6 +329,33 @@ def _check(s: Configure, point: DesignPoint) -> None:
             return
         _check_unit(s.component, v, found[s.component], point)
         _check_widths(s, point, [s.component])
+
+
+def _element(side: Mapping[str, Any], point: DesignPoint) -> int:
+    """The element's bytes of the container a DMA side moves: its L2 array's (``symbol``), or
+    the one whose L1 layout holds its ``base``."""
+    g = point.graph
+    if "symbol" in side:
+        return np.dtype(g.containers[side["symbol"]].dtype).itemsize
+    for c, lays in point.memory.layouts.items():
+        if "l1" in lays and c in g.containers:
+            elem = np.dtype(g.containers[c].dtype).itemsize
+            lo, hi = lays["l1"].extent(elem)
+            if lo <= int(side["base"]) < hi:
+                return elem
+    raise ValueError(f"base {side['base']} is in no container's L1 layout")
+
+
+def _check_size(v: Mapping[str, Any], point: DesignPoint) -> None:
+    """A DMA task's ``size``, a burst's bytes: it divides the L1 beat and is whole elements of
+    both sides' containers."""
+    size, beat = v["size"], point.platform.l1.wide_bits // 8
+    if type(size) is not int or size < 1 or beat % size:
+        raise ValueError(f"size {size!r} must divide the {beat}-byte beat")
+    for side in ("src", "dst"):
+        elem = _element(v[side], point)
+        if size % elem:
+            raise ValueError(f"size {size} is not whole {elem}-byte elements of the {side} side")
 
 
 def _check_unit(where: str, v: Mapping[str, Any], inst: Any, point: DesignPoint) -> None:

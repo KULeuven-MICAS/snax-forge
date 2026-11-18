@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any
 from snax_forge.brm import SEED
 from snax_forge.char import load
 from snax_forge.char.tables import streamer_cost as _streamer
+from snax_forge.design.check import IN_SERIES
 from snax_forge.design.streamers import group_links, instances
 
 from .cost import PARTS
@@ -236,7 +237,9 @@ def graph_counts(graph: Graph, est: Estimate) -> Counts:
                 pushes.setdefault(k.split(".", 1)[0], b.fires)
         for u, b in g.cost.units.items():
             out.units[u] = (b.fires // insts[u].span, pushes.get(u, 0))
-    if est.schedule != "serial":  # pipelined, the control units clock the overlapped cycles (D179)
+    if (
+        est.schedule not in IN_SERIES
+    ):  # pipelined, the control units clock the overlapped cycles (D179)
         out.busy = est.accelerator_cycles
     for s in est.streamer_counts:
         out.movers[s.name] = (s.words, s.words)

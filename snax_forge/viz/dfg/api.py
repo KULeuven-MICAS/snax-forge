@@ -9,7 +9,9 @@ reads a step back from the URL hash.
 ``graph_view`` lays a graph out in rows in execution order, containers between top-level nodes,
 a container versioned after each write (``A@1``) so no edge goes up; independent chains side by
 side (``columns``), blocks folded into one box (``fold``), groups, accelerators, a packed
-output's ``FifoPacker`` and a sliced input's ``FifoSlicer`` boxed. Every item has a ``text`` and a ``details`` entry, made here.
+output's ``FifoPacker`` and a sliced input's ``FifoSlicer`` boxed, data_transpose's copy a block
+between its two containers (``transpose · dma``). Every item has a ``text`` and a ``details``
+entry, made here.
 ``step_view`` adds the marks, the estimate, its cost and the left column's sections;
 ``compare_view`` gives two steps' diff as rows ``{label, under, a, b, differs}``; ``partners``
 lists the maps a map can be fused, seeded or interchanged with, from the transforms' own sites.
@@ -1106,6 +1108,8 @@ def compact_text(g: Graph, n: Node, param: str | None = None) -> str:
     if n.kind == "link":
         depth = a["depth"]
         return f"{a['container']} · {'wire' if depth == 0 else f'FIFO {depth}'}"
+    if n.kind == "transpose":  # data_transpose's copy, a block between its two containers
+        return f"transpose · {a['by']}"
     return n.id
 
 
@@ -1310,6 +1314,8 @@ def _node_details(n: Node) -> dict[str, Any]:
     if n.kind == "link":
         return {"kind": "link", "container": a["container"], "depth": a["depth"],
                 "from": a["from"], "to": a["to"]}  # fmt: skip
+    if n.kind == "transpose":
+        return {"kind": "transpose", "perm": list(a["perm"]), "by": a["by"], **io}
     return {"kind": n.kind, "attrs": dict(a), **io}
 
 
@@ -1633,10 +1639,14 @@ def columns(tops: Sequence[Node]) -> tuple[list[int], list[dict[str, Any]]]:
 def drawn_once(g: Graph) -> set[str]:
     """The containers drawn once, above the columns that read them, when the graph has more
     than one column (the inputs no node writes among them): those ``mark_transpose`` marked in
-    any column (a tasklet's or a bound unit's ``sandbox.transpose``); every other input is
-    drawn in each column that reads it."""
-    return {n.inputs[c].data for n, _ in g.walk() for c in n.attrs.get(TRANSPOSE, {})
-            if c in n.inputs}  # fmt: skip
+    any column (a tasklet's or a bound unit's ``sandbox.transpose``) and the source of
+    ``data_transpose``'s copy (a ``transpose`` node's ``src``), so the reads in the row's order
+    and the transposed one start from the same box; every other input is drawn in each column
+    that reads it."""
+    marked = {n.inputs[c].data for n, _ in g.walk() for c in n.attrs.get(TRANSPOSE, {})
+              if c in n.inputs}  # fmt: skip
+    copied = {n.inputs["src"].data for n, _ in g.walk() if n.kind == "transpose"}
+    return marked | copied
 
 
 def transpose_label(data: str, perm: Sequence[int]) -> str:

@@ -4,7 +4,9 @@
 derives, loads, streamer and idle-mover tasks, accelerator tasks, serial syncs, starts, stores
 and the final syncs, is CONTRACTS, "Task list" (its "Derived" part). Each accelerated node is
 one tile: every map around it is a temporal firing loop (``unit_firings``). Every configure and
-sync uses the platform's ``wait_mode``; a load moves the whole layout as contiguous beats.
+sync uses the platform's ``wait_mode``; a load moves the whole layout as contiguous beats, a
+``transpose`` node (data_transpose's copy, rank 2) is ``transpose_<dst>``, one L1-to-L1 burst per
+element, where its first reader's loads are (``copy``).
 
 ``memlet_values`` gives a streamer task's values from a memlet and the container's L1 layout:
 base ``layout.base + sum_d (c_d + sum_k a_dk * b_k) * strides[d]`` for firing loops ``v_k``
@@ -13,9 +15,10 @@ base ``layout.base + sum_d (c_d + sum_k a_dk * b_k) * strides[d]`` for firing lo
 The spatial bounds must be the streamer's, and for an ``affine`` BRM the addresses visited beat
 by beat (``addresses``) must be the nest's through the same layout (streams.py). A packed
 output's writer and a sliced input's reader move words (``packed_values``, D174 · D180). The design point's ``schedule`` (D179)
-orders the accelerators: ``serial`` adds ``serial_syncs``; ``pipeline`` moves the stores past
-other accelerators' starts (``later_stores``), and ``pipeline_compute`` also gathers the starts
-with only loads to wait for (``gathered``). A ``LowerError`` names what does not fit.
+orders the accelerators: ``serial`` adds ``serial_syncs``, ``sequential`` a sync after every
+start (``sequential``); ``pipeline`` moves the stores past other accelerators' starts
+(``later_stores``), and ``pipeline_compute`` also gathers the starts with only loads to wait for
+(``gathered``). A ``LowerError`` names what does not fit.
 """
 
 from __future__ import annotations
@@ -129,6 +132,8 @@ def task_list(point: DesignPoint) -> TaskList:
     tasks = _Derivation(point).run()
     if point.schedule == "serial":
         return serial_syncs(tasks, point)
+    if point.schedule == "sequential":
+        return sequential(tasks)
     tasks = later_stores(tasks, point)
     return gathered(tasks, point) if point.schedule == "pipeline_compute" else tasks
 
@@ -169,6 +174,24 @@ def serial_syncs(tasks: TaskList, point: DesignPoint) -> TaskList:
                     synced.add(prev[1])
                 prev = (acc, accel[0])
         steps.append(step)
+    return TaskList(tasks.name, steps)
+
+
+def sequential(tasks: TaskList) -> TaskList:
+    """``tasks`` with a sync right after every start (CONTRACTS, "Task list"): on its
+    accelerator task, else its last task (a DMA's), so each step, configures included, begins
+    after the previous one has ended. A later sync on a task already synced is left out."""
+    conf = tasks.configured()
+    steps: list[Any] = []
+    synced: set[str] = set()
+    for step in tasks.steps:
+        if isinstance(step, Sync) and step.task in synced:
+            continue
+        steps.append(step)
+        if isinstance(step, Start):
+            t = next((t for t in step.tasks if conf[t].type == "accel"), step.tasks[-1])
+            steps.append(Sync(t, conf[t].wait_mode))
+            synced.update(step.tasks)
     return TaskList(tasks.name, steps)
 
 
@@ -333,6 +356,8 @@ class _Derivation:
         self.in_l1: dict[str, str] = {}  # container -> task that last put it in L1
         self.readers: dict[str, list[str]] = {}  # container -> reader tasks since that
         self.final: dict[str, str] = {}  # container -> task that leaves it in its last memory
+        self.copies = {m.data: t for t, _ in g.walk() if t.kind == "transpose"
+                       for m in t.outputs.values()}  # fmt: skip
 
     def run(self) -> TaskList:
         done: set[str] = set()
@@ -425,14 +450,55 @@ class _Derivation:
         return starts, unit_loops
 
     def loads(self, unit_nodes: list[Any]) -> None:
-        """A DMA into L1 for each input not there yet."""
+        """A DMA into L1 for each input not there yet: a load, or the copy that makes it."""
         for un in unit_nodes:
             for p in self.outer(un):
                 c = un.inputs[p].data if p in un.inputs else None
-                if c is not None and c not in self.in_l1 and self.moved(c):
-                    task = f"load_{c}"
-                    self.dma(task, "l2_to_l1", c, [])
-                    self.in_l1[c] = task
+                if c is not None and c not in self.in_l1 and c in self.copies:
+                    self.copy(self.copies[c])
+                elif c is not None and c not in self.in_l1 and self.moved(c):
+                    self.load(c)
+
+    def load(self, c: str) -> None:
+        task = f"load_{c}"
+        self.dma(task, "l2_to_l1", c, [])
+        self.in_l1[c] = task
+
+    # NB (D182): the DMA moves a transposed copy one element a burst, the source's rows read
+    # across; each step of the innermost loop is one burst of an element (c.py).
+    def copy(self, t: Node) -> None:
+        """Node ``t``'s copy, ``transpose_<dst>``: the DMA from the source's L1 layout into the
+        destination's, after what put the source in L1 (its load, loaded here if none did). Its
+        loops are the destination's dimensions, the last innermost, each moving the source along
+        the dimension ``perm`` maps there: one burst of an element (``size``) per step."""
+        (src,), (dst,) = t.inputs.values(), t.outputs.values()
+        a, b, perm = src.data, dst.data, t.attrs["perm"]
+        if t.attrs["by"] != "dma":
+            raise LowerError(f"{t.id}: a copy by {t.attrs['by']} has no task; use by=dma")
+        if len(perm) != 2:
+            raise LowerError(f"{t.id}: a copy of rank {len(perm)}; a transpose lowers at rank 2 "
+                             "only for now")  # fmt: skip
+        if a not in self.in_l1 and self.moved(a):
+            self.load(a)
+        la, lb = self.layout(a, "l1"), self.layout(b, "l1")
+        for c, lay in ((a, la), (b, lb)):
+            if lay is None:
+                raise LowerError(f"{t.id}: container {c} has no L1 layout; the copy is L1 to L1")
+        dims = range(len(perm) - 1, -1, -1)  # innermost first
+        bounds = [lb.shape[k] for k in dims]
+        values = {
+            "direction": "l1_to_l1",
+            "size": np.dtype(self.g.containers[a].dtype).itemsize,
+            "src": {"base": la.base, "bounds": bounds,
+                    "strides": [la.strides[perm[k]] for k in dims]},
+            "dst": {"base": lb.base, "bounds": bounds, "strides": [lb.strides[k] for k in dims]},
+        }  # fmt: skip
+        task = f"transpose_{b}"
+        after = [self.in_l1[a]] if a in self.in_l1 else []
+        self.steps.append(Configure(task, "dma", "dma", values, after, self.mode))
+        self.steps.append(Start([task]))
+        self.readers.setdefault(a, []).append(task)
+        self.in_l1[b] = task
 
     def streamers(self, unit_nodes: list[Any], starts: dict[str, dict[str, Any]],
                   unit_loops: dict[str, list[Loop]]) -> dict[str, Configure]:  # fmt: skip
