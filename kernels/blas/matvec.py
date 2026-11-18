@@ -6,7 +6,7 @@ Each row of A dotted with p: an elementwise product into a transient
 the row loop i around each. It binds as dot's variants with the
 row loop as the jobs (``recipes/matvec/matvec_<k>.json``).
 
-int64 by default, the products at ``ACC``; the type
+int64 by default, the products at ``OP_TYPE``; the type
 presets ``i8``, ``i16`` and ``i32`` are in ``SPEC`` (kernels/README.md).
 """
 
@@ -16,11 +16,11 @@ import numpy as np
 from snax_forge.sdfg.spec import KernelSpec
 
 M, N = dace.symbol("M"), dace.symbol("N")
-ACC = np.int64
+OP_TYPE = np.int64
 
 
 def matvec(A, p, q):
-    q[:] = np.sum(A.astype(ACC) * p.astype(ACC), axis=1)
+    q[:] = np.sum(A.astype(OP_TYPE) * p.astype(OP_TYPE), axis=1)
 
 
 def make_inputs(rng, m=16, n=512):
@@ -42,10 +42,10 @@ SPEC = KernelSpec(
     bytes_moved=lambda m=16, n=512: 8 * m * n + 8 * n + 8 * m,
     sweep_sizes=({"m": 16, "n": 512}, {"m": 8, "n": 512}),
     tags=("reduction", "partial-reduction"),
-    types={"ACC": "int64"},
+    types={"OP_TYPE": "int64"},
     presets={
-        "i8": {"A": "int8", "p": "int8", "q": "int32", "ACC": "int32"},
-        "i16": {"A": "int16", "p": "int16", "q": "int32", "ACC": "int32"},
-        "i32": {"A": "int32", "p": "int32", "q": "int64", "ACC": "int64"},
+        "i8": {"A": "int8", "p": "int8", "q": "int32", "OP_TYPE": "int32"},
+        "i16": {"A": "int16", "p": "int16", "q": "int32", "OP_TYPE": "int32"},
+        "i32": {"A": "int32", "p": "int32", "q": "int64", "OP_TYPE": "int64"},
     },
 )

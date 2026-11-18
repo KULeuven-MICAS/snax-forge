@@ -126,6 +126,24 @@ def test_a_number_given_for_a_factor_becomes_a_param(roots, tmp_path):
     assert got["params"]["depth"] == "D" and two.recipe.params["D"] == 1
 
 
+def test_a_kernel_session_at_a_type_preset(roots):
+    """``edit-dfg --kernel mvt_types --set types=i8 --set dtypes.x2=int64``: the preset and the
+    dtype reach the import and the recipe, the rest are params; the session's recipe file
+    carries them."""
+    from snax_forge.viz.dfg.edit import kernel_start
+
+    body = kernel_start({"M": 64, "N": 64, "types": "i8", "dtypes.x2": "int64"})
+    assert body == {"types": "i8", "dtypes": {"x2": "int64"}, "params": {"M": 64, "N": 64}}
+    s = Session.from_kernel("mvt_types", body["params"], dtypes=body["dtypes"], roots=roots,
+                            types=body["types"])  # fmt: skip
+    g = s.graphs[0]
+    assert (g.containers["A"].dtype, g.containers["x1"].dtype, g.containers["x2"].dtype) == (
+        "int8", "int32", "int64")  # fmt: skip
+    assert s.recipe.types == "i8" and s.recipe.dtypes == {"x2": "int64"}
+    saved = Recipe.load(roots.sessions / s.name / "recipe.json")
+    assert (saved.types, saved.dtypes, saved.params) == ("i8", {"x2": "int64"}, {"M": 64, "N": 64})
+
+
 def test_a_kernel_session_needs_every_symbol_and_no_w(roots):
     """The kernel's symbols only, each a param of its name; one without a value is refused
     with one line naming it."""

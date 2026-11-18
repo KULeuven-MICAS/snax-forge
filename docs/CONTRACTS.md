@@ -58,7 +58,7 @@ The workload as one `.snaxdfg` JSON file (D71), written by an importer and rewri
 | `symbols` | name → int or `null`: `null` as imported, the value once a recipe binds it |
 | `containers` | name → `shape` (ints or expressions over symbols), `dtype` (a NumPy dtype name), `transient`, `attrs` (namespaced; `sdfg.scalar: true` marks a scalar argument of shape `[1]`) |
 | `body` | the nodes, in execution order |
-| `type_params` | optional, the kernel's type parameters it was imported at where not their default (`{"ACC": "int32"}`), so its reference runs at them too |
+| `type_params` | optional, the kernel's type parameters it was imported at where not their default (`{"OP_TYPE": "int32"}`), so its reference runs at them too |
 
 ### Nodes
 
@@ -226,9 +226,9 @@ SNAX-SANDBOX's ordered list of transforms (D72): a JSON file in a category folde
 | `name` | the recipe; its steps are written to `out/sandbox/<name>/` |
 | `kernel` | the kernel whose import it starts from |
 | `params` | recipe params, each an int or a string; `--set NAME=VALUE` overrides one |
-| `types` | optional, one of the kernel's type presets (its `SPEC.presets`: `i8`, `i16`, `i32`), the dtypes of its containers and type parameters (`ACC`) at once (D113 · D173); `--set types=i8` |
+| `types` | optional, one of the kernel's type presets (its `SPEC.presets`: `i8`, `i16`, `i32`), the dtypes of its containers and type parameters (`OP_TYPE`) at once (D113 · D173); `--set types=i8` |
 | `symbols` | a value per graph symbol: an int or an expression over the params |
-| `dtypes` | optional, container or type parameter → NumPy integer dtype in place of the kernel's, on top of `types` (D113): applied before DaCe builds the SDFG, the inputs cast to it (`vecadd_i32`: A, B, C and ACC `int32`); `--set dtypes.C=int16` |
+| `dtypes` | optional, container or type parameter → NumPy integer dtype in place of the kernel's, on top of `types` (D113): applied before DaCe builds the SDFG, the inputs cast to it (`vecadd_i32`: A, B, C and OP_TYPE `int32`); `--set dtypes.C=int16` |
 | `steps` | in order: `transform` (a registered name) and its `params`; an int param takes an int or an expression over the recipe params (`"factor": "W"`) |
 
 Running a recipe binds the symbols (step 0), applies the steps and checks each against the reference executor on the same seeded inputs, writing `<i>_<transform>.snaxdfg` and `recipe.json`. vecadd's, `recipes/elementwise/vecadd.json`:

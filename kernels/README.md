@@ -9,16 +9,16 @@ The PolyBench and DL kernels are NPBench's DaCe sources (BSD-3, `NPBENCH_LICENSE
 - they are `int64` where the kernel is integer arithmetic, at PolyBench's MINI sizes; `softmax`, `mlp`, `lenet` and `resnet` keep NPBench's `float32` (`float-staged`) until their tier decides the integer form;
 - the tiers are PAPER §6.1's.
 
-The kernels that run at narrow types (`vecadd`, `vecmul`, `matadd`, `relu`, `axpy`, `vsum`, `rowsum`, `dot`, `matvec`) list type presets in their `SPEC` (`presets`), chosen with `--set types=` (D113 · D173):
+The kernels that run at narrow types (`vecadd`, `vecmul`, `matadd`, `relu`, `axpy`, `vsum`, `rowsum`, `dot`, `matvec`, `mvt_types`) list type presets in their `SPEC` (`presets`), chosen with `--set types=` (D113 · D173):
 
-| Preset | Inputs | Outputs and `ACC` |
+| Preset | Inputs | Outputs and `OP_TYPE` |
 |---|---|---|
 | `i8` | `int8` | `int32` |
 | `i16` | `int16` | `int32` |
 | `i32` | `int32` | `int64` |
 
-- `ACC`, a type parameter (`SPEC.types`), is the type a product or sum runs at, written as a cast in the kernel: dot is `np.sum(A.astype(ACC) * B.astype(ACC))`. At its default (`int64`, or the containers' own type) the cast changes nothing.
-- NumPy's own form, products that wrap at the inputs' type, is `--set dtypes.ACC=int8` on top of `i8`; `tests/kernels/` checks each preset's graph against the kernel's function in NumPy.
+- `OP_TYPE`, a type parameter (`SPEC.types`), is the type a product or sum runs at, written as a cast in the kernel: dot is `np.sum(A.astype(OP_TYPE) * B.astype(OP_TYPE))`. At its default (`int64`, or the containers' own type) the cast changes nothing.
+- NumPy's own form, products that wrap at the inputs' type, is `--set dtypes.OP_TYPE=int8` on top of `i8`; `tests/kernels/` checks each preset's graph against the kernel's function in NumPy.
 
 ## Regularity
 
@@ -158,6 +158,15 @@ $$x_1 \leftarrow x_1 + A y_1, \qquad x_2 \leftarrow x_2 + A^T y_2$$
 
 - Accumulates in place into `x1` and `x2` (open item 47, LOW4).
 - Two independent mat-vecs over `A`, the second transposed.
+
+### mvt_types
+
+`polybench/mvt_types.py` · tier A · int64, presets `i8`, `i16`, `i32`
+
+mvt with each product at `OP_TYPE`: `x1 += A @ y1.astype(OP_TYPE)`, `x2 += A.T @ y2.astype(OP_TYPE)`.
+
+- A separate kernel, so mvt and its recipes keep their names: the cast's temporaries rename the products `tmp1_*` and `tmp4_*` (mvt's `tmp0_*`, `tmp2_*`); the `+=` maps keep mvt's names, as the function sits on mvt's lines.
+- One cast per product: NumPy runs `@` at its operands' result type (int8 with int32 is int32), so A is widened inside the op; without the cast `A @ y` of two int8 arrays wraps at int8. y is cast rather than `A.T`, which would make a Transpose the importer refuses.
 
 ### gesummv
 

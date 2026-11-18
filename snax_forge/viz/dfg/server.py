@@ -127,15 +127,15 @@ class EditState:
         return out
 
     def open(self, body: dict[str, Any]) -> Any:
-        """Start or open the session ``body`` asks for: ``kernel`` (with ``params``), ``recipe`` or
-        ``session``, on ``platform`` if given."""
+        """Start or open the session ``body`` asks for: ``kernel`` (with ``params``, and ``types``
+        and ``dtypes`` if given), ``recipe`` or ``session``, on ``platform`` if given."""
         from snax_forge.sandbox.session import Session
 
         platform = body.get("platform") or self.platform
         if "kernel" in body:
             session = Session.from_kernel(body["kernel"], dict(body.get("params") or {}),
                                           body.get("symbols"), body.get("dtypes"), platform,
-                                          body.get("name"), self.roots)  # fmt: skip
+                                          body.get("name"), self.roots, body.get("types"))  # fmt: skip
         elif "recipe" in body:
             from snax_forge.sandbox.recipe import find_recipe
 

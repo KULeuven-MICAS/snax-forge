@@ -152,10 +152,11 @@ class Session:
     def from_kernel(cls, kernel: str, params: dict[str, int | str],
                     symbols: dict[str, Any] | None = None, dtypes: dict[str, str] | None = None,
                     platform: str = PLATFORM, name: str | None = None,
-                    roots: Roots | None = None) -> Session:  # fmt: skip
-        """A new session on ``kernel``'s import, each symbol the param of its name by default."""
+                    roots: Roots | None = None, types: str | None = None) -> Session:  # fmt: skip
+        """A new session on ``kernel``'s import (at its type preset ``types`` and ``dtypes`` if
+        given), each symbol the param of its name by default."""
         roots = roots or Roots()
-        imported = _import(kernel, dtypes or {})
+        imported = _import(kernel, dtypes or {}, types)
         if symbols is None:
             symbols = {s: s for s in imported.symbols}
         missing = [x for s in imported.symbols if s in symbols
@@ -164,7 +165,7 @@ class Session:
             missing = list(dict.fromkeys(missing))
             sets = " ".join(f"--set {x}={EXAMPLE_SIZE}" for x in missing)
             raise SandboxError(f"{kernel}: give {', '.join(missing)}, e.g. {sets}")
-        recipe = Recipe(kernel, kernel, dict(params), dict(symbols), [], dict(dtypes or {}))
+        recipe = Recipe(kernel, kernel, dict(params), dict(symbols), [], dict(dtypes or {}), types)
         return cls(cls._free(roots, name or kernel), recipe, imported, platform, roots, 0)
 
     @classmethod

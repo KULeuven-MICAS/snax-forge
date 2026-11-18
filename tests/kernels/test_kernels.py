@@ -28,7 +28,7 @@ def test_kernel_inputs_reference_sdfg(name: str) -> None:
 
 def _presets() -> list[tuple[str, str, dict[str, str]]]:
     out = [(name, p, {}) for name in sorted(kernel_paths()) for p in load(name).presets]
-    return [*out, ("dot", "i8", {"ACC": "int8"}), ("vecmul", "i8", {"C": "int16"})]
+    return [*out, ("dot", "i8", {"OP_TYPE": "int8"}), ("vecmul", "i8", {"C": "int16"})]
 
 
 @pytest.mark.slow  # each import builds its SDFG in DaCe
@@ -36,7 +36,7 @@ def _presets() -> list[tuple[str, str, dict[str, str]]]:
 def test_a_preset_computes_what_numpy_does(name: str, preset: str, dtypes: dict) -> None:
     """The kernel's own function in NumPy, at the preset's types (its type parameters rebound),
     equals the reference executor on the imported graph, exactly (D143 · D175); dot at i8 with
-    ACC int8 is NumPy's wrapped product, vecmul at i8 into int16 a wrapped output."""
+    OP_TYPE int8 is NumPy's wrapped product, vecmul at i8 into int16 a wrapped output."""
     from snax_forge.dfg.import_sdfg import import_kernel
     from snax_forge.dfg.reference import reference_check
 
