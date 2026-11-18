@@ -11,8 +11,9 @@ The args each adapter reads: ``simd_lanes`` lanes, op, streams (2 by default) an
 k2 for axpby, each baked (an int that fits opType, else ``gen.k``) or read from a container (a
 CSR); ``tree_accumulate`` and ``serial_accumulate`` lanes, op add only, a seed port when the
 BRM's design param ``seed`` is 1; ``mac`` lanes, ``accumulate`` and ``regOut``;
-``lane_accumulate`` lanes. Every port is whole 64-bit channels. An instance judged without a
-graph (brm/instance.py's check) has no dtypes: its adapter checks all but the widths.
+``lane_accumulate`` lanes. Every port is whole 64-bit channels, a packed output (D174) or a
+sliced input (D180). An instance judged without a graph (brm/instance.py's check) has no
+dtypes: its adapter checks all but the widths.
 """
 
 from __future__ import annotations
@@ -26,7 +27,7 @@ from snax_forge import expr
 from snax_forge.brm import SEED, Instance
 from snax_forge.brm.dtypes import fits, result_type
 from snax_forge.common import CodedError
-from snax_forge.design.streamers import packed
+from snax_forge.design.streamers import per_word
 
 
 class GenError(CodedError):
@@ -36,21 +37,25 @@ class GenError(CodedError):
 @dataclass(frozen=True)
 class Port:
     """A unit's BRM port in ``accelerator.json``: the datapath's port, its direction (``in``
-    or ``out``, the BRM port's), its dtype, its lanes; a packed outer output's d_out."""
+    or ``out``, the BRM port's), its dtype, its lanes; a packed outer output's d_out, a sliced
+    outer input's d_in."""
 
     port: str
     dir: str
     dtype: str | None  # None: judged without a graph (module doc)
     lanes: int
     d_out: int = 1  # an outer output's results per word through its packer (D174)
+    d_in: int = 1  # an outer input's pops per word through its slicer (D180)
 
     def to_dict(self) -> dict[str, Any]:
         d = {"port": self.port, "dir": self.dir, "dtype": self.dtype, "lanes": self.lanes}
-        return d | ({"d_out": self.d_out} if self.d_out > 1 else {})
+        d |= {"d_out": self.d_out} if self.d_out > 1 else {}
+        return d | ({"d_in": self.d_in} if self.d_in > 1 else {})
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> Port:
-        return cls(d["port"], d["dir"], d["dtype"], d["lanes"], d.get("d_out", 1))
+        return cls(d["port"], d["dir"], d["dtype"], d["lanes"], d.get("d_out", 1),
+                   d.get("d_in", 1))  # fmt: skip
 
 
 @dataclass(frozen=True)
@@ -150,7 +155,8 @@ def _fill_ports(inst: Instance, dtypes: Mapping[str, str] | None, words: set[str
                 what: str) -> dict[str, Port]:  # fmt: skip
     """Every port of the instance in its order: the binding's datapath port (by default the same
     name), its dtype and its lanes; a port in ``words`` must be whole 64-bit channels
-    (``gen.lanes``) or a packed output (D174); the others are one word (a fold's output)."""
+    (``gen.lanes``), a packed output (D174) or a sliced input (D180); the others are one word
+    (a fold's output)."""
     mapping = inst.impl.binding.get("ports") or {}
     out = {}
     for p in inst.ports:
@@ -158,7 +164,7 @@ def _fill_ports(inst: Instance, dtypes: Mapping[str, str] | None, words: set[str
         if dtypes is not None:
             dtype = dtypes[p.name]
             bits, _ = port_dtype(dtype, f"{what} port {p.name}")
-            packs = packed(dtype, n, p.direction == "out", 64) > 1
+            packs = per_word(dtype, n, 64) > 1  # packed or sliced: one word on one channel
             if p.name in words and n * bits % 64 and not packs:
                 raise GenError(
                     "gen.lanes",

@@ -8,7 +8,8 @@ bits.py), per accelerator its streamer set and CSRs (accelerators.py), the data 
 and, on a technology, the cost (cost.py; ``tech=None`` leaves it out). The work no unit runs is
 ``unmapped_iterations`` at ``UNMAPPED_CYCLES_PER_ITERATION`` cycles each, an assumption held in
 this one constant so a measured value can replace it; ``total_cycles`` adds it to the
-accelerator's. The viewers and ``design.md`` read it (report/design.py).
+accelerator's. Under a pipelined ``schedule`` (D179) the accelerator's cycles are the longest
+path through the runs (schedule.py), not their sum. The viewers and ``design.md`` read it (report/design.py).
 """
 
 from __future__ import annotations
@@ -44,6 +45,8 @@ from .cost import (
 )
 from .cycles import EstimateError, GroupEstimate, group_blocks, group_cycles, not_mapped
 from .data import ContainerData, PortData, SplitData, containers, outer_ports, ports, splits
+from .schedule import RunEstimate, longest_path, overlap
+from .schedule import runs as group_runs
 
 if TYPE_CHECKING:
     from snax_forge.design.platform import Platform
@@ -76,6 +79,8 @@ class Estimate(JsonFile):
     streamer_counts: list[StreamerCounts] = field(default_factory=list)
     xbar_inputs: tuple[int, int] | None = None
     bank_shape: tuple[int, int, int] | None = None
+    schedule: str = "serial"  # the design point's (D179)
+    runs: list[RunEstimate] = field(default_factory=list)  # in start order (schedule.py)
 
     @property
     def streamers(self) -> int:
@@ -218,8 +223,25 @@ class Estimate(JsonFile):
 
     @property
     def accelerator_cycles(self) -> int:
-        """The groups' cycles added up: they run one after another through L1."""
-        return sum(g.cycles for g in self.groups)
+        """The groups' cycles added up, serial: they run one after another through L1; under a
+        pipelined schedule, the longest path through the runs (schedule.py)."""
+        if self.schedule == "serial" or not self.runs:
+            return sum(g.cycles for g in self.groups)
+        return longest_path(self.runs)
+
+    @property
+    def overlap_note(self) -> str | None:
+        """One line when, pipelined, runs of different accelerators at once move more L1 words a
+        cycle than there are banks (design.md, run.md): a bound on the streams, not a cycle
+        count."""
+        if self.schedule == "serial" or self.bank_shape is None:
+            return None
+        rate, accs = overlap(self.runs)
+        if rate <= self.bank_shape[0]:
+            return None
+        return (f"{' and '.join(accs)} run at once under {self.schedule}: their streams move "
+                f"{rate:.1f} words a cycle over {self.bank_shape[0]} banks, so bank conflicts "
+                "stretch them beyond the ideal")  # fmt: skip
 
     @property
     def unmapped_cycles(self) -> int:
@@ -246,6 +268,8 @@ class Estimate(JsonFile):
             "unmapped_iterations": self.unmapped_iterations,
             "unmapped_cycles": self.unmapped_cycles,
             "total_cycles": self.total_cycles,
+            "schedule": self.schedule,
+            "runs": [r.to_dict() for r in self.runs],
             "containers": {k: c.to_dict() for k, c in self.containers.items()},
             "l1_footprint": self.l1_footprint,
             "l1_size": self.l1_size,
@@ -289,23 +313,32 @@ class Estimate(JsonFile):
             [StreamerCounts.from_dict(x) for x in hw.get("streamers", [])],
             None if hw.get("xbar_inputs") is None else tuple(hw["xbar_inputs"]),
             None if hw.get("bank_shape") is None else tuple(hw["bank_shape"]),
+            d.get("schedule", "serial"),
+            [RunEstimate.from_dict(r) for r in d.get("runs", [])],
         )  # fmt: skip
 
 
 def estimate(graph: Graph, platform: Platform | None = None,
-             tech: str | None = DEFAULT_TECH) -> Estimate:  # fmt: skip
+             tech: str | None = DEFAULT_TECH, schedule: str = "serial") -> Estimate:  # fmt: skip
     """The ideal estimate of a bound graph (its symbols bound), on ``platform``'s L1 if given,
-    costed on ``tech``'s table unless None."""
+    costed on ``tech``'s table unless None, its accelerators ordered by ``schedule`` (a design
+    point's, D179)."""
     blocks = group_blocks(graph, platform.acc_csr.job_width if platform is not None else 32)
     found = [g for g, _, _ in blocks]
+    data = containers(graph)
+    node_words: dict[str, int] = {}
+    for n, _, port in outer_ports(graph):
+        if data[port.container].placement == "l1":
+            node_words[n.id] = node_words.get(n.id, 0) + port.beats * port.num_ch
+    in_l1 = {c for c, x in data.items() if x.placement == "l1"}
+    run_list = group_runs(graph, found, in_l1, node_words)
     table = None if tech is None else load(tech)
-    if table is not None:
-        c_acc = sum(g.cycles for g in found)
+    if table is not None:  # every control unit clocked over the accelerator's cycles
+        c_acc = Estimate(found, 0, {}, schedule=schedule, runs=run_list).accelerator_cycles
         for g, units, bufs in blocks:
             g.cost = group_cost(table, units, bufs, g.bits, g.ctrl_bits, c_acc)
     unit_group = {u: g for g in found for u in g.units}
     words = dict.fromkeys((g.name for g in found), 0)
-    data = containers(graph)
     l1_words: dict[str, int] = {}
     for n, _, port in outer_ports(graph):
         words[unit_group[n.attrs["instance"]].name] += port.beats * port.num_ch
@@ -327,7 +360,7 @@ def estimate(graph: Graph, platform: Platform | None = None,
     return Estimate(found, not_mapped(graph), data, size, ports(graph), splits(graph),
                     tech, None if table is None else dict(table.source),
                     not_mapped(graph, spatial=True), l1_words,
-                    accelerators(graph, platform), counts, xin, shape)  # fmt: skip
+                    accelerators(graph, platform), counts, xin, shape, schedule, run_list)  # fmt: skip
 
 
 def _hw_counts(graph: Graph, platform: Platform, data: dict[str, ContainerData]
@@ -379,6 +412,7 @@ __all__ = [
     "MemoryCost",
     "Part",
     "PortData",
+    "RunEstimate",
     "SplitData",
     "StreamerCost",
     "StreamerCounts",

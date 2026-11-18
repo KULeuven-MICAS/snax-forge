@@ -8,8 +8,8 @@ reads a step back from the URL hash.
 
 ``graph_view`` lays a graph out in rows in execution order, containers between top-level nodes,
 a container versioned after each write (``A@1``) so no edge goes up; independent chains side by
-side (``columns``), blocks folded into one box (``fold``), groups, accelerators and a packed
-output's ``FifoPacker`` boxed. Every item has a ``text`` and a ``details`` entry, made here.
+side (``columns``), blocks folded into one box (``fold``), groups, accelerators, a packed
+output's ``FifoPacker`` and a sliced input's ``FifoSlicer`` boxed. Every item has a ``text`` and a ``details`` entry, made here.
 ``step_view`` adds the marks, the estimate, its cost and the left column's sections;
 ``compare_view`` gives two steps' diff as rows ``{label, under, a, b, differs}``; ``partners``
 lists the maps a map can be fused, seeded or interchanged with, from the transforms' own sites.
@@ -41,11 +41,12 @@ from snax_forge.design.streamers import (
     instance_of,
     packed,
     port_loops,
+    sliced,
 )
 from snax_forge.dfg import DfgError, Graph, Memlet, Node
 from snax_forge.dfg.graph import BAKED, SCALAR, TRANSPOSE
 from snax_forge.dfg.subset import dim_names, map_range, parse_dim
-from snax_forge.estimate.bits import packer_bits
+from snax_forge.estimate.bits import packer_bits, slicer_bits
 from snax_forge.estimate.cost import L1_LABEL, PARTS, L1Cost, caveat, dec3, heading, shares, sig3
 from snax_forge.expr import ExprError
 from snax_forge.sandbox.blocks import BLOCK
@@ -193,7 +194,7 @@ def graph_view(e: Entry, platform: Any = None, est: Any = None,
         acc["text"] = acc["name"]
         for grp in acc["groups"]:
             grp["text"] = grp["name"]
-            for pk in out["packers"]:  # a packer is its group's hardware: inside its outline
+            for pk in out["packers"]:  # a packer or slicer is its group's hardware: inside it
                 if pk["instance"] in {u["instance"] for u in grp["units"]}:
                     grp["tops"] = [*grp["tops"], pk["id"]]
     out["details"] = details(g, out, est)
@@ -947,7 +948,7 @@ def cost_tables(est: Any, g: Graph | None = None) -> list[dict[str, Any]]:
             for kind, blocks in (("unit", c.units), ("link", c.links)):
                 for k, b in blocks.items():
                     dp = b.datapath or "–"
-                    what = "packer" if b.datapath == "FifoPacker" else kind  # by <unit>.<port>
+                    what = {"FifoPacker": "packer", "FifoSlicer": "slicer"}.get(b.datapath, kind)
                     raw.append((k, what, dp if b.found else f"{dp} · not characterized",
                                 b.found is not None, b.total_um2, b.task_nj))  # fmt: skip
             raw.append((f"{gname} ctrl", "ctrl", "control unit", True, c.ctrl_um2, c.ctrl_nj))
@@ -1220,11 +1221,19 @@ def details(g: Graph, view: dict[str, Any], est: Any) -> dict[str, dict[str, Any
             elif n.kind == "link" and n.attrs["container"] in x.cost.links:
                 c = n.attrs["container"]
                 d["cost"] = cost_details(x.cost.links[c], x.bits.get(c, 0), est.tech)
-    for pk in view.get("packers", []):  # a packed output's FifoPacker (D174)
-        d = {"kind": "packer", "unit": pk["instance"], "port": pk["port"], "dtype": pk["dtype"],
-             "lanes": pk["lanes"], "d_out": pk["d_out"],
-             "what": f"{pk['d_out']} results to a 64-bit word, on one writer channel; placed by the flow",
-             "bits": packer_bits(pk["d_out"], pk["lanes"], pk["dtype"])}  # fmt: skip
+    for pk in view.get(
+        "packers", []
+    ):  # a packed output's FifoPacker (D174), a sliced input's FifoSlicer (D180)
+        if pk["kind"] == "slicer":
+            d = {"kind": "slicer", "unit": pk["instance"], "port": pk["port"], "dtype": pk["dtype"],
+                 "lanes": pk["lanes"], "d_in": pk["d_in"],
+                 "what": f"{pk['d_in']} pops from a 64-bit word, on one reader channel; placed by the flow",
+                 "bits": slicer_bits(pk["d_in"])}  # fmt: skip
+        else:
+            d = {"kind": "packer", "unit": pk["instance"], "port": pk["port"], "dtype": pk["dtype"],
+                 "lanes": pk["lanes"], "d_out": pk["d_out"],
+                 "what": f"{pk['d_out']} results to a 64-bit word, on one writer channel; placed by the flow",
+                 "bits": packer_bits(pk["d_out"], pk["lanes"], pk["dtype"])}  # fmt: skip
         key = f"{pk['instance']}.{pk['port']}"
         for x in groups.values():
             if x.cost is not None and key in x.cost.links:
@@ -1349,6 +1358,24 @@ def packer_node(g: Graph, n: Node, port: str, data: str) -> dict[str, Any] | Non
     inst = n.attrs["instance"]
     return {"kind": "packer", "id": f"{inst}_{port}_packer", "instance": inst, "port": port,
             "text": f"FifoPacker · d_out {d_out}", "d_out": d_out, "lanes": lanes, "dtype": dtype,
+            "inputs": [{"connector": "in", "data": data}],
+            "outputs": [{"connector": "out", "data": data}]}  # fmt: skip
+
+
+def slicer_node(g: Graph, n: Node, port: str, data: str) -> dict[str, Any] | None:
+    """The ``FifoSlicer`` the flow places on accelerated node ``n``'s input ``port`` when its
+    lanes fill less than a word (D180, design/streamers.py's ``sliced``), as the drawing shows
+    it: a box between ``data``'s container and the port; None where the port is wired."""
+    lanes = _lanes(n, port) if port in n.inputs else None
+    if lanes is None:
+        return None
+    dtype = g.containers[data].dtype
+    d_in = sliced(dtype, lanes, False, WORD_BITS)
+    if d_in == 1:
+        return None
+    inst = n.attrs["instance"]
+    return {"kind": "slicer", "id": f"{inst}_{port}_slicer", "instance": inst, "port": port,
+            "text": f"FifoSlicer · d_in {d_in}", "d_in": d_in, "lanes": lanes, "dtype": dtype,
             "inputs": [{"connector": "in", "data": data}],
             "outputs": [{"connector": "out", "data": data}]}  # fmt: skip
 
@@ -1545,8 +1572,8 @@ def _uses(n: Node) -> list[tuple[str, Node, str, Memlet]]:
 
 def packing(g: Graph, n: Node, port: str, data: str) -> str | None:
     """``int32 · num_slc 2 · num_ch 2`` for an accelerated node's port (``int32 · num_slc 2 ·
-    d_out 2 · num_ch 1`` for a packed output, D174); None for any other node, or an instance the
-    BRM library does not resolve."""
+    d_out 2 · num_ch 1`` for a packed output, D174, ``d_in 2`` for a sliced input, D180); None for
+    any other node, or an instance the BRM library does not resolve."""
     lanes = _lanes(n, port)
     if lanes is None:
         return None
@@ -1555,6 +1582,9 @@ def packing(g: Graph, n: Node, port: str, data: str) -> str | None:
     d_out = packed(dtype, lanes, port in n.outputs, WORD_BITS)
     if d_out > 1:
         return f"{dtype} · num_slc {num_slc} · d_out {d_out} · num_ch 1"
+    d_in = sliced(dtype, lanes, port in n.outputs, WORD_BITS)
+    if d_in > 1:
+        return f"{dtype} · num_slc {num_slc} · d_in {d_in} · num_ch 1"
     return f"{dtype} · num_slc {num_slc} · num_ch {-(-lanes // num_slc)}"
 
 
@@ -1872,7 +1902,7 @@ def _layout(g: Graph, tops: list[Node] | None = None) -> dict[str, Any]:
     version = dict.fromkeys(g.containers, 0)
     boxes: dict[str, dict[str, Any]] = {}
     edges: list[dict[str, Any]] = []
-    packed_out: list[dict[str, Any]] = []  # the packers drawn (packer_node), for the outlines
+    packed_out: list[dict[str, Any]] = []  # the packers and slicers drawn, for the outlines
     top_rows: list[dict[str, Any]] = []  # the rows above every column
     rows_of: dict[int, list[dict[str, Any]]] = {col["id"]: [] for col in cols}
     seen: dict[int | None, set[str]] = {None: set()} | {col["id"]: set() for col in cols}
@@ -1965,6 +1995,14 @@ def _layout(g: Graph, tops: list[Node] | None = None) -> dict[str, Any]:
             above = box_row(rows_of[col], col, first, {}, k)
         if k == cols[col]["tops"][0]:  # an input drawn once: its edge from above the columns
             above |= {c: key for c, key in shared.items() if c in reads[k]}
+        # a sliced input's slicer (slicer_node): a row of its own between the containers and the node
+        slicers = {(n.id, c): sl for side, n, c, m in _uses(top)
+                   if side == "read" and m.data not in linked and m.data not in local
+                   and m.data in above and c not in csr_connectors(g, n)
+                   and (sl := slicer_node(g, n, c, m.data)) is not None}  # fmt: skip
+        if slicers:
+            rows_of[col].append({"kind": "packers", "column": col, "nodes": list(slicers.values())})
+            packed_out.extend(slicers.values())
         rows_of[col].append({"kind": "node", "column": col, "node": _node(g, top)})
         writers: dict[str, list[str]] = {}  # container -> writer connectors inside this node
         wrote: dict[str, list[tuple[Node, str, Memlet]]] = {}  # container -> its writes here
@@ -2005,9 +2043,13 @@ def _layout(g: Graph, tops: list[Node] | None = None) -> dict[str, Any]:
                 if perm is not None:  # read across the loop order (mark_transpose): Aᵀ
                     label = transpose_label(m.data, perm)
                     text = f"{text} (transpose {', '.join(map(str, perm))})"
-                edges.append(_edge(above[m.data], port, m.data, text, "read",
-                                   packing(g, n, c, m.data), label=label, seed=seeded,
-                                   transpose=perm is not None,
+                sl = slicers.get((n.id, c))
+                if sl is not None:  # into the slicer: d_in pops a word
+                    edges.append(_edge(above[m.data], f"{sl['id']}.in", m.data, text, "read",
+                                       per_word=sl["d_in"]))  # fmt: skip
+                edges.append(_edge(above[m.data] if sl is None else f"{sl['id']}.out", port,
+                                   m.data, text, "read", packing(g, n, c, m.data), label=label,
+                                   seed=seeded, transpose=perm is not None,
                                    slice_=memlet_text(m) if n.kind == "block" else None))  # fmt: skip
         last[col] = (k, wrote)
     ends = [col["id"] for col in cols if col["id"] not in joined]
@@ -2042,7 +2084,8 @@ def _edge(
     ``label`` any other text drawn beside it (a scalar's ``alpha[0] · broadcast``, a fold's
     seed ``q[m_t]``); ``seed`` a fold's seed; ``transpose`` a read ``mark_transpose`` marked,
     its label ``Aᵀ``; ``slice_`` at a collapsed block's port, the part one firing takes
-    (``A[m_t, 0:N]``), drawn beside the edge; ``per_word`` out of a packer, its d_out."""
+    (``A[m_t, 0:N]``), drawn beside the edge; ``per_word`` out of a packer, its d_out, or into a
+    slicer, its d_in."""
     out = {"id": f"{src}->{dst}", "from": src, "to": dst, "data": data, "text": text, "dir": side}
     if slice_ is not None:
         out["slice"] = slice_

@@ -90,7 +90,9 @@
     "port": {"description": "The datapath's port.", "$ref": "#/$defs/name"},
     "dir": {"description": "The BRM port's direction.", "enum": ["in", "out"]},
     "dtype": {"$ref": "#/$defs/dtype"},
-    "lanes": {"type": "integer", "minimum": 1}
+    "lanes": {"type": "integer", "minimum": 1},
+    "d_out": {"description": "An outer output's results per 64-bit word through its packer; absent at 1.", "enum": [2, 4, 8]},
+    "d_in": {"description": "An outer input's pops per 64-bit word through its slicer; absent at 1.", "enum": [2, 4, 8]}
    },
    "required": ["port", "dir", "dtype", "lanes"],
    "additionalProperties": false

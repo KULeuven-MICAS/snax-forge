@@ -260,21 +260,27 @@ def write_accelerator(design_point: str | Path, out_dir: str | Path,
 
 
 def counter(unit: Unit, n: int) -> tuple[int, str]:
-    """The counter a task of ``n`` firings gives with an always-ready streamer, and the working."""
+    """The counter a task of ``n`` firings gives with an always-ready streamer, and the working;
+    a sliced input (D180) shows its first word the cycle after the first busy cycle takes it."""
     shell = ("The group's BUSY_COUNTER is reset by the accepted start and counts each busy cycle; busy "
              "rises the cycle after the start")  # fmt: skip
+    s = 1 if any(p.d_in > 1 for p in unit.ports.values()) else 0
+    first = 1 + s
+    sliced = (" A sliced input takes its first word in busy cycle 1 and shows it the next, so the "
+              "first firing is in busy cycle 2.") if s else ""  # fmt: skip
     if unit.latency == 0:  # lockstep
-        return n, (
+        every = f"busy cycle from busy cycle {first}" if s else "busy cycle"
+        return n + s, (
             f"{shell}. L 0, II 1, inputs always valid and the output always ready: a firing every "
-            f"busy cycle, the {n}th the run's last: {n} busy cycles"
+            f"{every}, the {n}th the run's last: {n + s} busy cycles" + (f".{sliced}" if s else "")
         )
-    last = (n - 1) * unit.ii + 1
+    last = (n - 1) * unit.ii + first
     busy = last + unit.latency
     return busy, (
         f"{shell}. L {unit.latency}, II {unit.ii}, inputs always valid and the output always ready: "
-        f"firing k (from 0) in busy cycle 1 + {unit.ii} * k, the last ({n - 1}) in {last}, its "
+        f"firing k (from 0) in busy cycle {first} + {unit.ii} * k, the last ({n - 1}) in {last}, its "
         f"result pushed {unit.latency} later, the run's last cycle (a sum before it leaves while the "
-        f"next input is taken): {busy} busy cycles"
+        f"next input is taken): {busy} busy cycles" + (f".{sliced}" if s else "")
     )
 
 
@@ -290,7 +296,9 @@ def rule_graph(group: Group) -> tuple[list[dict[str, Any]], list[dict[str, Any]]
         return [name for name, p in u.ports.items() if p.dir == "in"]
 
     units = [{"name": u.name, "L": u.latency, "ii": u.ii, "span": u.span,
-              "inputs": sum(f"{u.name}.{p}" not in fed for p in ins(u))} for u in group.units]  # fmt: skip
+              "inputs": sum(f"{u.name}.{p}" not in fed for p in ins(u)),
+              "d_in": [u.ports[p].d_in for p in ins(u) if f"{u.name}.{p}" not in fed]}
+             for u in group.units]  # fmt: skip
     by_name = {u.name: u for u in group.units}
     links = []
     for link in group.links:

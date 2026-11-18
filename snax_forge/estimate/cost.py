@@ -392,9 +392,9 @@ def shares(parts: Mapping[str, Part]) -> dict[str, tuple[float | None, float | N
 
 
 def block_cost(table: Table, block: Block, bits: int, c_acc: int) -> BlockCost:
-    """One block's cost on ``table`` (CONTRACTS, "Cost model"): its fires only, each its comb
-    energy and its bits loading (a packer's, the bits its table point says load per push);
-    ``c_acc`` is not used, a held flop costing nothing."""
+    """One block's cost on ``table`` (CONTRACTS, "Cost model"): its fires, each its comb energy
+    and its bits loading (a packer's or a slicer's, the bits its table point says load per push or
+    pop); ``c_acc`` is not used, a held flop costing nothing."""
     p = block.params
     got = None
     if block.datapath is not None:

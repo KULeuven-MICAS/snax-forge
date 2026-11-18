@@ -7,7 +7,8 @@ tailed split.
 
 ``outer_ports`` gives the bound ports on no link. A port's beats come from the firing loops its
 streamer runs over (design/streamers.py's ``port_loops``), its num_slc as the DFG viewer's
-``packing``; a packed output's beats are its words (its innermost loop over d_out, D174). A
+``packing``; a packed output's or a sliced input's beats are its words (its innermost loop
+over d_out or d_in, D174 · D180). A
 link's and a local value's traffic is not L1 traffic.
 """
 
@@ -25,7 +26,7 @@ from snax_forge.design.streamers import (
     instance_of,
     linked_ports,
     links,
-    packed,
+    per_word,
     port_loops,
     slices_per_word,
     unplaced,
@@ -111,12 +112,11 @@ def outer_ports(graph: Graph) -> list[tuple[Node, str, PortData]]:
             m = (n.inputs | n.outputs)[p.name]
             mine = port_loops(inst, p.name, m, loops)
             counts = [lp.count for lp in mine]
-            d_out = packed(graph.containers[m.data].dtype, inst.lanes(p.name),
-                           p.direction == "out", WORD_BITS)  # fmt: skip
-            if d_out > 1:  # words: the innermost loop of more than one push over d_out
+            d = per_word(graph.containers[m.data].dtype, inst.lanes(p.name), WORD_BITS)
+            if d > 1:  # words: the innermost loop of more than one push or pop over d_out, d_in
                 k = next((i for i in range(len(counts) - 1, -1, -1) if counts[i] > 1), None)
                 if k is not None:
-                    counts[k] = -(-counts[k] // d_out)
+                    counts[k] = -(-counts[k] // d)
             out.append((n, p.name, PortData(m.data, [(lp.var, lp.count) for lp in mine],
                                             prod(counts),
                                             _num_ch(graph, m.data, inst.lanes(p.name)))))  # fmt: skip

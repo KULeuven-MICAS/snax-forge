@@ -84,6 +84,23 @@ def test_check_writes_nothing(tmp_path, capsys, monkeypatch):
     assert "[graph.unbound] tasklet add" in capsys.readouterr().err
 
 
+def test_the_schedule_is_set_kept_and_checked(tmp_path, capsys):
+    """--set design.schedule: kept in design_point.json; an unknown value or another design.
+    path is a design error that names the schedules."""
+    out = tmp_path / "d"
+    assert run(BOUND, "--platform", SMALL16, "--out", out) == 0
+    assert DesignPoint.load(out / "design_point.json").schedule == "serial"
+    assert run(BOUND, "--platform", SMALL16, "--out", out, "--set", "design.schedule=pipeline") == 0
+    assert DesignPoint.load(out / "design_point.json").schedule == "pipeline"
+    capsys.readouterr()
+    assert run(BOUND, "--platform", SMALL16, "--set", "design.schedule=overlap") == 1
+    err = capsys.readouterr().err
+    assert "[design.schedule] design.schedule: 'overlap' is no schedule; give one of serial, " \
+        "pipeline, pipeline_compute" in err  # fmt: skip
+    assert run(BOUND, "--platform", SMALL16, "--set", "design.order=pipeline") == 1
+    assert "[design.schedule] design.order: no such field" in capsys.readouterr().err
+
+
 @pytest.mark.parametrize("arg", ["l1.n_banks=32", "mem.A.l1.base=0", "platform.l1.n_banks"])
 def test_a_bad_set_argument_exits_2(arg):
     with pytest.raises(SystemExit) as e:

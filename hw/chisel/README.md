@@ -26,7 +26,7 @@ hw/chisel/
     │   ├── shell/                      # accelerator.json, <tag>_csr, _ctrl, _datapath, a shared set's port mux, the wrapper
     │   ├── RepoPaths.scala             # out/hw and repository paths
     │   ├── elementwise/                # the typed ALU lane, the ops
-    │   └── stream/                     # FifoSlicer (parked, D142), FifoPacker (a packed output, D174)
+    │   └── stream/                     # FifoSlicer (a sliced input, D180), FifoPacker (a packed output, D174)
     └── test/
         ├── scala/snax/forge/           # one spec per module, plus a model; shell/ for the accelerator
         └── resources/
@@ -59,7 +59,7 @@ pixi run design out/sandbox/vsum_tree_w8/2_bind.snaxdfg --platform platforms/sna
 pixi run gen-rtl out/design/vsum_tree_w8/design_point.json --fixture hw/chisel/src/test/resources/rtl/vsum_tree_w8
 ```
 
-The others come from their recipe as it is, named after it; dot_2 to dot_6 with `--set N=16`, matvec_4 to matvec_6 with `--set M=2 --set N=16`.
+The others come from their recipe as it is, named after it; dot_2 to dot_6 with `--set N=16`, matvec_4 to matvec_6 with `--set M=2 --set N=16`, and vecadd_i32_w1 from vecadd_i32 with `--set W=1`.
 
 The specs on the fixtures:
 
@@ -71,12 +71,13 @@ The specs on the fixtures:
 | `CtrlRegistersSpec` | every `<tag>_<group>_ctrl`'s registers, by name and bits, equal to `ctrl_registers.json` (from `util/ctrl_regs.py --json`, which `tests/estimate/test_bits.py` keeps current) |
 | `TwoGroupsSpec` | each of dot 1's groups (`mul`, `sum`) on its own |
 | `ShellPackedSpec` | a packed outer output (D174): vsum_tree_i32's sum changed by hand to int32 at d_out 2, its 64-bit writer and its words over 3 jobs, the last short |
+| `ShellSlicedSpec` | a sliced outer input (D180): the fixture vecadd_i32_w1 (a and b at int32 d_in 2, out d_out 2), its 64-bit readers and 3 jobs from 2 words each, the last short, into 2 words |
 
 ### One block alone
 
-`Emit --block NAME --params JSON --out DIR` (C§10) checks the params (`Datapath.check`) and builds `make(params)` as the top module with an asynchronous reset, as inside the wrapper; `pixi run gen-block LIST.json` runs a list of them in one java call. The reset comes from `DatapathModule.asyncTop`, which `emitBlock` sets around the construction, so no block, builder or wrapper changes. `NAME` may also be a stream block of `Emit.streamBlocks` (`FifoPacker`), its params checked in `Emit` and built with `RequireAsyncReset`.
+`Emit --block NAME --params JSON --out DIR` (C§10) checks the params (`Datapath.check`) and builds `make(params)` as the top module with an asynchronous reset, as inside the wrapper; `pixi run gen-block LIST.json` runs a list of them in one java call. The reset comes from `DatapathModule.asyncTop`, which `emitBlock` sets around the construction, so no block, builder or wrapper changes. `NAME` may also be a stream block of `Emit.streamBlocks` (`FifoPacker`, `FifoSlicer`), its params checked in `Emit` and built with `RequireAsyncReset`.
 
-- `BlockEmitSpec`: a block of every datapath (Mac in its three forms, SerialAccumulate at lanes 1 and 8, LinkBuffer at depth 1 and 2), its ports against `blocks.json`'s live ports and pins, every flop on `posedge clock or posedge reset`; FifoPacker at int32, int16 and int8 (d_out 2, 4, 8), at int32 byte for byte the packer in ShellPackedSpec's wrapper.
+- `BlockEmitSpec`: a block of every datapath (Mac in its three forms, SerialAccumulate at lanes 1 and 8, LinkBuffer at depth 1 and 2), its ports against `blocks.json`'s live ports and pins, every flop on `posedge clock or posedge reset`; FifoPacker at int32, int16 and int8 (d_out 2, 4, 8), at int32 byte for byte the packer in ShellPackedSpec's wrapper; FifoSlicer at one word of int32 (1 lane), int16 (1, 2) and int8 (1, 2, 4), at int32 byte for byte the slicer in ShellSlicedSpec's wrapper.
 - `BlockInShellSpec`: the block alone byte for byte equal to the module inside the accelerator (vsum_tree_w8's TreeAccumulate, dot_5_w1's Mac); dot_5_w1's SerialAccumulate differs only where firtool folds its constant `first`.
 - `BlockFlopsSpec`: a block of every datapath at random params per seed, its declared register bits equal to its `flops`.
 
@@ -91,7 +92,7 @@ The specs read snax-gvsoc's cases from the folders four variables name; without 
     pixi run -e hw chisel-test
 
 - `UnitCasesSpec` (`SnaxUnitCases`): a group controller with its datapath through the one-unit cases: the start line's JOBS and JOB_BEATS, every cycle's input valids and output ready, the run lines and every result (axpy's cases at op axpby, k1 and k2 baked or on their pins, a CSR's value; a case with `fold lanes` on `LaneAccumulate`, each lane its own sum, rowsum 2's `lane_fold_rowsum`); a case whose L and II no catalogue datapath has runs the controller alone.
-- `GroupCasesSpec` (`SnaxGroupCases`): `GroupCtrl` alone through the group cases (dot 2–6 at C§10's formulas, backpressure, an input gap, JOBS 0, the fold's seed: two folds unseeded, the first or both seeded, a late seed on a fold and on a SerialAccumulate; the output packer, `pack_*`, through `GroupCtrl` and a `FifoPacker` wired as the wrapper wires them): every cycle's outer valids and ready, each input's ready, each unit's fire and give, each buffer's occupancy, busy, a pack case's word sent, and the run lines; at the end a pack case's words; each case twice, its Ts fixed and from JOB_BEATS (wires held through the run).
+- `GroupCasesSpec` (`SnaxGroupCases`): `GroupCtrl` alone through the group cases (dot 2–6 at C§10's formulas, backpressure, an input gap, JOBS 0, the fold's seed: two folds unseeded, the first or both seeded, a late seed on a fold and on a SerialAccumulate; the output packer, `pack_*`, and the input slicer, `slice_*`, through `GroupCtrl` with a `FifoPacker` and `FifoSlicer`s wired as the wrapper wires them): every cycle's outer valids and ready, each input's ready (a sliced input's word taken), each unit's fire and give, each buffer's occupancy, busy, a pack case's word sent, and the run lines; at the end a pack case's words; each case twice, its Ts fixed and from JOB_BEATS (wires held through the run).
 - `DatapathVectorsSpec` (`SnaxDatapathVectors`): every catalogue datapath on the NumPy vectors of `vectors.txt`, as snax-gvsoc's `tb.cpp` reads them; a `set` line pokes a CSR slot's pin (SimdLanes' `k`, `k1`, `k2`) before its step.
 - `ShellCasesSpec` (`SnaxShellCases`): vecadd's and vsum's `<tag>_shell_wrapper` through the `SnaxShell` cases, which snax-gvsoc's `tb.cpp` checks `snax_shell.hpp`'s rule against: every access's result (a write's cycle, a read's value) and, every cycle, the group's STATUS from the busy and done pins; a case with JOB_BEATS runs on the fold, one with a unit's scalar CSRs (`K1:32`, `K1_LO K1_HI`) on vecadd's wrapper turned into axpy's unit, those CSRs after JOBS (the `words` lines are snax-gvsoc's alone).
 
@@ -116,7 +117,7 @@ Every module has a spec; the random ones drive it with seeded random data, confi
 | `AccPeripheralsSpec` | 1 to 3 groups, BUSY_COUNTER of 1, 2, 3 or 8 bits, starts and busy runs of 0 to 20 cycles as a control unit gives them | cleared by the accepted start, + 1 per busy cycle, saturating: E − a after a run |
 | `ShellScalarSpec` | axpy's shell at int32 and int64, k1 (and k2) from its CSRs: a random k per run written as `main.c` does, then START, random data | K1's offset and width (K1_LO and K1_HI at 64 bits); NumPy's `k1 * a + k2 * b` at the k last written |
 | `ShellRandomSpec` | per fixture: J, T, empty runs, data at its types, streamer gaps and stalls, polled or held starts | the datapath models; STATUS and BUSY_COUNTER as C§10 states them |
-| `FifoSlicerSpec`, `FifoPackerSpec` | types, words, lanes, data, input gaps, output stalls; the slicer into the packer; the packer's runs ended by `last`, a short word zero above, `clear` between runs | the element order of D142 (the docstrings); snax-gvsoc's `SnaxPacker` (D174) |
+| `FifoSlicerSpec`, `FifoPackerSpec` | types, words, lanes, data, input gaps, output stalls; the slicer into the packer; the slicer under random `enable` and `clear`, a reader early, a short last word then a clear, `enable` low mid-run; the packer's runs ended by `last`, a short word zero above, `clear` between runs | the element order of D142 (the docstrings); snax-gvsoc's `SnaxSlicer` (D180) and `SnaxPacker` (D174) |
 
 The random specs run one test per seed of `Seeds` (scalatest names it "seed N"); `SNAX_FORGE_SEED=N pixi run -e hw chisel-test` runs only seed N. Each suite runs in a forked JVM of its own, a fork per CPU and at most 8 at a time (`build.sbt`), so the slowest suite (ShellRandomSpec) bounds the run.
 

@@ -2,7 +2,7 @@
 
     python -m snax_forge.flow RECIPE --platform P [--set NAME=VALUE ...]
                               [--set platform.PATH=VALUE ...] [--set memory.PATH=VALUE ...]
-                              [--memory M] [--graph FILE] [--name NAME] [--out DIR]
+                              [--set design.schedule=S] [--memory M] [--graph FILE] [--name NAME] [--out DIR]
                               [--seed S] [--trace LEVEL[:SOURCES]] [--vcd] [--keep-work]
                               [--energy]
     python -m snax_forge.flow GRAPH.snaxdfg --platform P [--kernel K]
@@ -10,8 +10,8 @@
                               [--memory M] [--name NAME] [--out DIR] [--seed S] [--trace ...]
 
 Runs run.py's ``run_flow`` on a recipe, or ``run_bound`` on a file ending in ``.snaxdfg``, into
-``out/flow/<name>/``. ``--set`` takes recipe params, platform fields and memory pins as the sandbox
-and design commands do. ``--trace`` picks the level (``off``, ``task``, ``beat``, ``stall``,
+``out/flow/<name>/``. ``--set`` takes recipe params, platform fields, memory pins and the design
+point's schedule as the sandbox and design commands do. ``--trace`` picks the level (``off``, ``task``, ``beat``, ``stall``,
 ``finegrained``) and, after a colon, the sources (``run/sources.py``); ``--vcd`` adds gtkwave's
 VCD. ``--energy`` runs the quiet build again and prices its windows (``energy/``, D177). With a graph, the kernel is its ``name`` unless ``--kernel`` names it, and a recipe param or
 ``--graph`` is refused, as ``--kernel`` is with a recipe. Exit 0 when the program's check passed,
@@ -40,14 +40,14 @@ BOUND = ".snaxdfg"
 
 
 def setting(text: str) -> tuple[str, str, Any]:
-    """A dotted path as the design step reads it (platform. or memory.), else a recipe
-    param, ``types`` or ``dtypes.<name>`` as the sandbox reads it."""
+    """A dotted path as the design step reads it (platform., memory. or design.), else a
+    recipe param, ``types`` or ``dtypes.<name>`` as the sandbox reads it."""
     path = text.partition("=")[0]
     if "." not in path or path.partition(".")[0] == "dtypes":
         return ("recipe", *sandbox_setting(text))
-    if path.partition(".")[0] not in ("platform", "memory"):
+    if path.partition(".")[0] not in ("platform", "memory", "design"):
         raise argparse.ArgumentTypeError(
-            f"{text!r}: a dotted path starts with platform., memory. or dtypes."
+            f"{text!r}: a dotted path starts with platform., memory., design. or dtypes."
         )
     return design_setting(text)
 
@@ -92,6 +92,7 @@ def main(argv: list[str] | None = None) -> int:
         "platform_sets": sets["platform"],
         "memory_path": args.memory,
         "memory_sets": sets["memory"],
+        "design_sets": sets["design"],
         "name": args.name,
         "out": args.out,
         "seed": args.seed,

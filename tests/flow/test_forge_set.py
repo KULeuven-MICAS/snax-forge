@@ -81,15 +81,18 @@ def test_a_failing_forge_stops_the_set(tmp_path, stubbed, capsys):
 
 
 def test_the_full_set_holds_the_quick_one():
-    assert fs.SETS["full"][: len(fs.QUICK)] == fs.QUICK and len(fs.SETS["full"]) == 25
+    assert fs.SETS["full"][: len(fs.QUICK)] == fs.QUICK and len(fs.SETS["full"]) == 26
     assert fs.SETS["full"][-3] == fs.Design("relu") and fs.Design("relu") not in fs.QUICK
 
 
 def test_the_pack_set_runs_every_narrow_recipe_once_at_i8():
     """The narrow types' set: each recipe at i8 and its smallest W, dot_serial at i32 only, and
-    dot_3 and matvec_3 again at W = 32, dot_3 at i16 and i32; the names forge's folders take."""
+    dot_3 and matvec_3 again at W = 32, dot_3 at i16 and i32, vecadd at W = 1 and matvec_3 at
+    W = 4 (sliced inputs, D180); the names forge's folders take."""
     pack = fs.SETS["pack"]
-    assert len(pack) == 28 and len({d.name for d in pack}) == 28
+    assert len(pack) == 30 and len({d.name for d in pack}) == 30
+    assert pack[-2:] == [fs.Design("vecadd", ("types=i8", "W=1")),
+                         fs.Design("matvec_3", ("types=i8", "W=4"))]  # fmt: skip
     assert fs.Design("matvec_3", ("types=i8", "W=8")) in fs.QUICK
     assert fs.Design("matvec_3", ("types=i8", "W=8")).name == "matvec_3_typesi8_W8"
 
@@ -125,22 +128,33 @@ def test_every_sets_recipe_is_found_in_its_folder():
     """forge_set takes its names through ``find_recipe``: each set's recipes are in a folder of
     ``recipes/``, and the sets keep their names."""
     assert [d.recipe for d in fs.QUICK] == ["vecadd_i32", "vsum_tree_i8", "dot_1", "dot_1_enc",
-                                            "dot_4", "axpy", "vsum_tree", "matvec_3"]  # fmt: skip
-    assert all(not d.sets for d in fs.QUICK[:6]) and all(d.sets == fs.I8 for d in fs.QUICK[6:])
+                                            "dot_4", "axpy", "vsum_tree", "matvec_3",
+                                            "vecadd_i32"]  # fmt: skip
+    assert all(not d.sets for d in fs.QUICK[:6]) and all(d.sets == fs.I8 for d in fs.QUICK[6:8])
+    assert fs.QUICK[8] == fs.Design("vecadd_i32", ("W=1",))  # sliced inputs (D180)
     for name in {d.recipe for names in fs.SETS.values() for d in names}:
         path = fs.find_recipe(name)
         assert path.parent.parent == REPO / "recipes" and path.stem == name
 
 
 def test_the_mvt_set_is_its_own():
-    """mvt: mvt_1 and mvt_1_dot2 at W = 4 and 8, mvt_2 at W = 4 (at 8 the design
-    check refuses it: 85 crossbar inputs), each contiguous and padded_rows, then mvt_2_reuse at
-    its defaults (the twin check); in neither quick nor full."""
+    """mvt at its defaults, 64 x 64: mvt_1, mvt_1_dot2 and mvt_1_dot2_shared, then mvt_2 and
+    mvt_2_shared, each at W = 4 and 8, contiguous and padded_rows (mvt_2 at 8 has 84 crossbar
+    inputs, above 64: a note), mvt_2_reuse at its defaults (the twin check), mvt_3 at its defaults (W = 8, contiguous), mvt_4 at W = 8 and 4,
+    mvt_3_split at W = 8, contiguous and padded_rows, under each schedule (D179); in neither
+    quick nor full."""
     names = [d.name for d in fs.SETS["mvt"]]
+    pad = "_passes.layoutpadded_rows"
+    two = ["mvt_2", "mvt_2_shared"]
     assert names == [
-        "mvt_1", "mvt_1_W8", "mvt_1_passes.layoutpadded_rows", "mvt_1_W8_passes.layoutpadded_rows",
-        "mvt_1_dot2", "mvt_1_dot2_W8", "mvt_1_dot2_passes.layoutpadded_rows",
-        "mvt_1_dot2_W8_passes.layoutpadded_rows",
-        "mvt_2", "mvt_2_passes.layoutpadded_rows", "mvt_2_reuse",
+        *(f"{r}{w}{p}" for r in ("mvt_1", "mvt_1_dot2", "mvt_1_dot2_shared")
+          for w in ("", "_W8") for p in ("", pad)),
+        *(f"{r}{w}{p}" for r in two for w in ("", "_W_x1-8_W_x2-8") for p in ("", pad)),
+        "mvt_2_reuse",
+        "mvt_3",
+        *(f"mvt_4{w}{p}" for w in ("", "_W_x1-4") for p in ("", pad)),
+        *(f"mvt_3_split{p}_schedule{s}" for p in ("", pad)
+          for s in ("serial", "pipeline", "pipeline_compute")),
     ]  # fmt: skip
+    assert len(names) == 32
     assert not {d.recipe for d in fs.SETS["mvt"]} & {d.recipe for d in fs.SETS["full"]}

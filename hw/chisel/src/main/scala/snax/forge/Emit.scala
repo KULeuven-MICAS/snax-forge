@@ -26,17 +26,18 @@ import snax.forge.stream.{FifoPacker, FifoSlicer}
   * {{{
   * pixi run chisel-gen                        # every target
   * pixi run chisel-gen -- --list              # names only, no elaboration
-  * pixi run chisel-gen -- Fifo                # substring match, so both parked stream blocks
+  * pixi run chisel-gen -- Fifo                # substring match, so both stream blocks
   * pixi run chisel-gen -- --out /tmp/rtl Lanes
   * pixi run chisel-gen -- --describe          # the datapath catalogue (Datapaths), as blocks.json holds it
   * pixi run chisel-gen -- --spec out/rtl/vecadd/accelerator.json   # the accelerator of an accelerator.json (gen-rtl)
   * pixi run chisel-gen -- --spec A.json --out DIR_A --spec B.json --out DIR_B   # several, in one call
   * pixi run chisel-gen -- --block TreeAccumulate --params '{"inType":"int64","outType":"int64","lanes":8,"op":"add"}' --out DIR
   * pixi run chisel-gen -- --block FifoPacker --params '{"inLanes":1,"laneType":"int32","words":1}' --out DIR
+  * pixi run chisel-gen -- --block FifoSlicer --params '{"words":1,"laneType":"int32","outLanes":1}' --out DIR
   * }}}
   *
   * `--block NAME --params JSON --out DIR` repeats like `--spec` (gen-block); `--spec` and `--block` go in one call.
-  * `NAME` is a catalogue datapath or a stream block of `streamBlocks` (FifoPacker).
+  * `NAME` is a catalogue datapath or a stream block of `streamBlocks` (FifoPacker, FifoSlicer).
   */
 object Emit {
 
@@ -67,22 +68,22 @@ object Emit {
   private case class Target(label: String, note: String, gen: () => RawModule)
 
   /** Everything the emitter knows how to build on its own, apart from `--spec` and `--block`: each catalogue datapath
-    * (`Datapaths.all`) at its `example` params, and the parked stream blocks.
+    * (`Datapaths.all`) at its `example` params, and the stream blocks.
     */
   private val catalogue: Seq[Target] =
     Datapaths.all.map { d =>
       Target(d.name, s"datapath: ${ujson.write(ujson.Obj.from(d.example))}", () => d.make(d.example))
     } ++ Seq(
-      // Not in the datapath catalogue, emitted on their own: the slicer parked (open item 93), the packer placed by
-      // ShellWrapper on a packed output (D174) and emittable alone at any params with --block
+      // Not in the datapath catalogue, emitted on their own: the slicer and the packer, placed by ShellWrapper on a
+      // sliced input (D180) and a packed output (D174), and emittable alone at any params with --block
       Target(
         "FifoSlicer",
-        "parked: 2 words of int8 in, 4 lanes out per pop (r = 4)",
+        "stream block: 2 words of int8 in, 4 lanes out per pop (r = 4)",
         () => new FifoSlicer(words = 2, laneType = "int8", outLanes = 4)
       ),
       Target(
         "FifoPacker",
-        "parked: 4 lanes of int8 in per push, 2 words out (r = 4)",
+        "stream block: 4 lanes of int8 in per push, 2 words out (r = 4)",
         () => new FifoPacker(inLanes = 4, laneType = "int8", words = 2)
       )
     )
@@ -226,43 +227,54 @@ object Emit {
 
   /** The stream blocks `--block` builds beside the catalogue's datapaths, by name, each from its params (checked, an
     * `IllegalArgumentException` that says the fix). They are not in `Datapaths`, which holds what a unit binds: the
-    * flow places a stream block on a port (FifoPacker on a packed outer output, D142 · D174). FifoSlicer stays parked.
+    * flow places a stream block on a port (FifoPacker on a packed outer output, FifoSlicer on a sliced outer input;
+    * D142 · D174 · D180).
     */
-  val streamBlocks: Map[String, Map[String, ujson.Value] => Block] = Map("FifoPacker" -> (p => packer(p)))
+  val streamBlocks: Map[String, Map[String, ujson.Value] => Block] = Map(
+    "FifoPacker" -> (p =>
+      stream("FifoPacker", Seq("inLanes", "laneType", "words"), p)((lanes, t, words) =>
+        new FifoPacker(lanes, t, words) with RequireAsyncReset
+      )
+    ),
+    "FifoSlicer" -> (p =>
+      stream("FifoSlicer", Seq("words", "laneType", "outLanes"), p)((lanes, t, words) =>
+        new FifoSlicer(words, t, lanes) with RequireAsyncReset
+      )
+    )
+  )
 
-  /** `FifoPacker` on `p`: `inLanes` and `words` positive ints, `laneType` an int type of `IntType`, `inLanes` dividing
-    * the beat's `words` * 64 / width elements (the constructor's `require`, checked first so its refusal says the fix).
-    * Built with an asynchronous, active-high reset (`RequireAsyncReset`), its clock and reset as inside an accelerator,
-    * where `ShellWrapper` builds it under `withClockAndReset(clk_i, (!rst_ni).asAsyncReset)`.
+  /** The stream block `name` on `p`, its params `names` in its constructor's order: its lanes param (`inLanes` or
+    * `outLanes`) and `words` positive ints, `laneType` an int type of `IntType`, the lanes dividing the beat's `words`
+    * * 64 / width elements (the constructor's `require`, checked first so its refusal says the fix). `make(lanes,
+    * laneType, words)` builds it with an asynchronous, active-high reset (`RequireAsyncReset`), its clock and reset as
+    * inside an accelerator, where `ShellWrapper` builds it under `withClockAndReset(clk_i, (!rst_ni).asAsyncReset)`.
     */
-  private def packer(p: Map[String, ujson.Value]): Block = {
-    val names            = Seq("inLanes", "laneType", "words")
+  private def stream(name: String, names: Seq[String], p: Map[String, ujson.Value])(
+    make: (Int, String, Int) => RawModule
+  ): Block = {
+    val lanes            = names.find(_.endsWith("Lanes")).get
     val (missing, extra) = (names.filterNot(p.contains), p.keys.filterNot(names.contains).toSeq.sorted)
     if (missing.nonEmpty || extra.nonEmpty)
       throw new IllegalArgumentException(
-        s"FifoPacker: give params ${names.mkString(", ")}; missing [${missing.mkString(", ")}], extra [${extra.mkString(", ")}]"
+        s"$name: give params ${names.mkString(", ")}; missing [${missing.mkString(", ")}], extra [${extra.mkString(", ")}]"
       )
     def count(n: String): Int =
       p(n) match {
         case ujson.Num(x) if x.isWhole && x >= 1 && x <= Int.MaxValue => x.toInt
-        case v => throw new IllegalArgumentException(s"FifoPacker.$n: ${ujson.write(v)}; give an int of at least 1")
+        case v => throw new IllegalArgumentException(s"$name.$n: ${ujson.write(v)}; give an int of at least 1")
       }
-    val (inLanes, words) = (count("inLanes"), count("words"))
+    val (n, words) = (count(lanes), count("words"))
     val laneType = p("laneType").strOpt.filter(IntType.names.contains).getOrElse {
       val t = ujson.write(p("laneType"))
-      throw new IllegalArgumentException(s"FifoPacker.laneType: $t; give one of ${IntType.names.mkString(", ")}")
+      throw new IllegalArgumentException(s"$name.laneType: $t; give one of ${IntType.names.mkString(", ")}")
     }
     val total    = words.toLong * 64 / IntType(laneType).width
-    if (total % inLanes != 0)
+    if (total % n != 0)
       throw new IllegalArgumentException(
-        s"FifoPacker: inLanes $inLanes does not divide the beat's $total elements ($words word(s) of $laneType); " +
-          s"give an inLanes that divides $total, or more words"
+        s"$name: $lanes $n does not divide the beat's $total elements ($words word(s) of $laneType); " +
+          s"give an $lanes that divides $total, or more words"
       )
-    Block(
-      "FifoPacker",
-      ujson.Obj.from(names.map(n => n -> p(n))),
-      () => new FifoPacker(inLanes, laneType, words) with RequireAsyncReset
-    )
+    Block(name, ujson.Obj.from(names.map(k => k -> p(k))), () => make(n, laneType, words))
   }
 
   /** `--block NAME --params JSON --out DIR`: the block `b` alone as the top module with its ports as they are (`clock`,

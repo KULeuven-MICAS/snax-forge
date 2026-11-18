@@ -98,5 +98,6 @@ def test_streamer_to_dict():
     s = shell(Platform.load(SMALL16), Graph.load(BOUND))["acc_out"]
     assert s.to_dict() == {
         "instance": "acc", "port": "out", "write": True, "n_ports": 4, "spatial_bounds": [4],
-        "temporal_dims": 1, "dtype": "int64", "num_slc": 1, "num_ch": 4, "d_out": 1, "fifo_depth": 2,
+        "temporal_dims": 1, "dtype": "int64", "num_slc": 1, "num_ch": 4, "d_out": 1, "d_in": 1,
+        "fifo_depth": 2,
     }  # fmt: skip

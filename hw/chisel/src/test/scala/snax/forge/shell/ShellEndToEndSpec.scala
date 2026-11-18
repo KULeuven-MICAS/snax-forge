@@ -8,8 +8,9 @@ import snax.forge.{ForgeTester, IntType, LaneBits, Seeds, Sink, SnaxGroupCases, 
 /** Each fixture end to end through its `<tag>_shell_wrapper`: per task its CSR values written by name (JOBS, and
   * JOB_BEATS for a fold) and START written 1, as `main.c` does; the inputs fed by an always-ready streamer (each port's
   * data.h array, lane i of beat t element `t * lanes + i` modulo the array's size, in two's complement at the port's
-  * dtype width); STATUS polled until bit 0 reads 0; then BUSY_COUNTER read, and STATUS again: done (2). The outputs
-  * must equal the goldens (NumPy's, `vectors.json`) and the counter the fixture's value, worked from the nest
+  * dtype width; a sliced input's word d_in beats of them, a packed output's d_out results, the last word short, zero
+  * above its slices); STATUS polled until bit 0 reads 0; then BUSY_COUNTER read, and STATUS again: done (2). The
+  * outputs must equal the goldens (NumPy's, `vectors.json`) and the counter the fixture's value, worked from the nest
   * controller's rule or, for a linked group, the Cycles of CONTRACTS, "Accelerator RTL spec" (`vectors.json`'s
   * `working`).
   *
@@ -33,7 +34,9 @@ import snax.forge.{ForgeTester, IntType, LaneBits, Seeds, Sink, SnaxGroupCases, 
   */
 class ShellEndToEndSpec extends AnyFlatSpec with ForgeTester {
 
-  /** A run: the CSR values, each input's elements and each output's expected elements, by outer port in order. */
+  /** A run: the CSR values, each input's elements and beats (pops) and each output's expected elements, by outer port
+    * in order.
+    */
   case class Run(csrs: Seq[(String, Long)], ins: Seq[Seq[BigInt]], beats: Seq[Int], outs: Seq[Seq[BigInt]])
 
   /** Run `run` on `spec`'s wrapper: the outputs and the counter (`counter`, when given) checked. */
@@ -41,25 +44,35 @@ class ShellEndToEndSpec extends AnyFlatSpec with ForgeTester {
     val ports = (spec.inputs ++ spec.outputs).map { case (u, p) => spec.unit(u).port(p) }
     val ins   = ports.take(spec.inputs.size)
     val outs  = ports.drop(spec.inputs.size)
+    // A port's elements per word on its streamer: its lanes, d_in (sliced) or d_out (packed) times
+    def per(p: AcceleratorSpec.PortSpec): Int = p.lanes * p.dIn * p.dOut
+    val words = run.beats.zip(ins).map { case (b, p) => -(-b * p.lanes / per(p)) }
     test(new ShellHarness(spec)) { dut =>
-      // Beat t of a port: its lanes' elements packed at the port's dtype width.
-      def packed(p: AcceleratorSpec.PortSpec, values: Seq[BigInt], t: Int): BigInt = {
+      // Word t of a port: its elements packed at the port's dtype width; past the last, an input's wrap and an
+      // output's are zero (a short last word)
+      def packed(p: AcceleratorSpec.PortSpec, values: Seq[BigInt], t: Int, zero: Boolean = false): BigInt = {
         val w = IntType(p.dtype).width
-        LaneBits.pack((0 until p.lanes).map(i => values((t * p.lanes + i) % values.size)), w)
+        LaneBits.pack(
+          (0 until per(p)).map { i =>
+            val e = t * per(p) + i
+            if (zero && e >= values.size) BigInt(0) else values(e % values.size)
+          },
+          w
+        )
       }
-      val d = ShellDriver(dut, run.beats, (k, t) => packed(ins(k), run.ins(k), t))
+      val d = ShellDriver(dut, words, (k, t) => packed(ins(k), run.ins(k), t))
       run.csrs.foreach { case (name, v) => d.write(dut.csr(name), v) }
       d.write(dut.csr("START"), 1)
       while ((d.read(dut.csr("STATUS")) & 1) != 0) {}
       counter.foreach(c => assert(d.read(dut.csr("BUSY_COUNTER")) == c, s"$clue: the counter"))
       assert(d.read(dut.csr("STATUS")) == 2, s"$clue: STATUS after the run: done, not busy")
       for (((p, want), k) <- outs.zip(run.outs).zipWithIndex) {
-        val beats = want.size / p.lanes
+        val beats = -(-want.size / per(p))
         val w     = IntType(p.dtype).width
-        val got   = d.outputs(k).map(_ & LaneBits.mask(p.lanes * w))
-        assert(got == (0 until beats).map(t => packed(p, want, t)), s"$clue: output $k")
+        val got   = d.outputs(k).map(_ & LaneBits.mask(per(p) * w))
+        assert(got == (0 until beats).map(t => packed(p, want, t, zero = true)), s"$clue: output $k")
       }
-      assert(d.taken.toSeq == run.beats, s"$clue: every input beat taken")
+      assert(d.taken.toSeq == words, s"$clue: every input word taken")
     }
   }
 

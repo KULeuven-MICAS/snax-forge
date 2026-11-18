@@ -5,14 +5,17 @@ import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
 
 import snax.forge.{ForgeTester, RunLines, SnaxGroupCases}
-import snax.forge.stream.FifoPacker
+import snax.forge.stream.{FifoPacker, FifoSlicer}
 
-/** A group control unit with its outer output packed `dOut` results to a 64-bit word, wired as `shell.ShellWrapper`
-  * wires a packed outer output (D174): the group's outer handshake into a `FifoPacker(1, int<64 / dOut>, 1)`, cleared
-  * when the start is accepted, `last` the group's; `io` is `GroupCtrl`'s with `out.ready` the writer's, `pk.value` the
-  * owner's result pushed, `pk.sent` a word to the writer and `pk.word` that word.
+/** A group control unit with its outer output packed `dOut` results to a 64-bit word and its sliced outer inputs
+  * (`dIn`, each its index and pops per word), wired as `shell.ShellWrapper` wires a packed outer output (D174) and a
+  * sliced outer input (D180): the group's outer handshake into a `FifoPacker(1, int<64 / dOut>, 1)`, cleared when the
+  * start is accepted, `last` the group's; a sliced input's reader into a `FifoSlicer(1, int<64 / d>, 1)`, its pops the
+  * group's input handshake, `enable` the group's busy, `clear` the start accepted. `io` is `GroupCtrl`'s with
+  * `out.ready` the writer's and a sliced input's valid and ready its reader's; `pk.value` the owner's result pushed,
+  * `pk.sent` a word to the writer and `pk.word` that word.
   */
-class PackedGroupCtrl(desc: GroupDesc, dOut: Int) extends Module {
+class PackedGroupCtrl(desc: GroupDesc, dOut: Int, dIn: Seq[(Int, Int)] = Seq.empty) extends Module {
   private val ctrl   = Module(new GroupCtrl(desc, "case"))
   private val packer = Module(new FifoPacker(1, s"int${64 / dOut}", 1))
   require(packer.r == dOut)
@@ -25,7 +28,18 @@ class PackedGroupCtrl(desc: GroupDesc, dOut: Int) extends Module {
   })
 
   io <> ctrl.io
-  packer.io.in.valid  := ctrl.io.out.valid
+  for ((i, d) <- dIn) {
+    val slicer = Module(new FifoSlicer(1, s"int${64 / d}", 1))
+    require(slicer.r == d)
+    slicer.io.in.valid  := io.in(i).valid
+    io.in(i).ready      := slicer.io.in.ready
+    slicer.io.in.bits   := VecInit(0.U(64.W))
+    ctrl.io.in(i).valid := slicer.io.out.valid
+    slicer.io.out.ready := ctrl.io.in(i).ready
+    slicer.io.enable    := ctrl.io.busy
+    slicer.io.clear     := ctrl.io.start.fire
+  }
+  packer.io.in.valid := ctrl.io.out.valid
   ctrl.io.out.ready   := packer.io.in.ready
   packer.io.in.bits   := pk.value.asTypeOf(packer.io.in.bits)
   packer.io.out.ready := io.out.ready
@@ -35,20 +49,22 @@ class PackedGroupCtrl(desc: GroupDesc, dOut: Int) extends Module {
   pk.word             := packer.io.out.bits.asUInt
 }
 
-/** `GroupCtrl` alone (no datapath, as UnitCasesSpec drives shapes it has none for) through snax-gvsoc's 41 group cases
+/** `GroupCtrl` alone (no datapath, as UnitCasesSpec drives shapes it has none for) through snax-gvsoc's 48 group cases
   * (`SnaxGroupCases`: dot 2-6 at T 2 and 4, J 1 and 2, dot 5 and 6 at W 1, backpressure, an input gap, JOBS 0, the
-  * fold's seed: two folds unseeded, the first or both seeded, a late seed on one fold and on a SerialAccumulate; and
-  * the output packer, `pack_*`; their data is checked by `tb.cpp`, and dot5_w1_j2's through the wrapper by
-  * ShellEndToEndSpec), cycle for cycle: per cycle the outer valids and the output's ready poked; each input's ready
-  * (its unit's firing, the per-unit join of CONTRACTS, "Accelerator RTL spec"; a seed's that firing on its job's first
-  * beat, the unit's firings counted mod its T), each unit's fire and give, each buffer's occupancy after the cycle and
-  * busy compared; at the run's end its line from `cls` per busy cycle and the head's firings. Each case runs twice (the
-  * rule does not tell the two apart, the control unit's counters do): with every unit's T fixed (`params.T`), JOBS on
-  * its wire; and with every unit of T != 1 open, its T a JOB_BEATS read live from its wire, so dot 2's and dot 3's mul
-  * counts against or borrows from a sum whose T is the csr's. A `pack_*` case (`dout`) runs through `PackedGroupCtrl`:
-  * the case's ready is the writer's, the owner's n-th push in a run is -(n + 1) at the lane's width, and per busy cycle
-  * `sent` is the packer's word going out; at the end the words sent are the case's `words`. Without
-  * `SNAX_GVSOC_GROUP_CASES` the spec cancels.
+  * fold's seed: two folds unseeded, the first or both seeded, a late seed on one fold and on a SerialAccumulate; the
+  * output packer, `pack_*`; and the input slicer, `slice_*`; their data is checked by `tb.cpp`, and dot5_w1_j2's
+  * through the wrapper by ShellEndToEndSpec), cycle for cycle: per cycle the outer valids and the output's ready poked;
+  * each input's ready (its unit's firing, the per-unit join of CONTRACTS, "Accelerator RTL spec"; a seed's that firing
+  * on its job's first beat, the unit's firings counted mod its T), each unit's fire and give, each buffer's occupancy
+  * after the cycle and busy compared; at the run's end its line from `cls` per busy cycle and the head's firings. Each
+  * case runs twice (the rule does not tell the two apart, the control unit's counters do): with every unit's T fixed
+  * (`params.T`), JOBS on its wire; and with every unit of T != 1 open, its T a JOB_BEATS read live from its wire, so
+  * dot 2's and dot 3's mul counts against or borrows from a sum whose T is the csr's. A `pack_*` case (`dout`) runs
+  * through `PackedGroupCtrl`: the case's ready is the writer's, the owner's n-th push in a run is -(n + 1) at the
+  * lane's width, and per busy cycle `sent` is the packer's word going out; at the end the words sent are the case's
+  * `words`. A `slice_*` case (`din`) runs through it too, its sliced inputs through slicers: their valids are the
+  * readers', and their ready, the word taken, is compared with the case's `took`. Without `SNAX_GVSOC_GROUP_CASES` the
+  * spec cancels.
   */
 class GroupCasesSpec extends AnyFlatSpec with ForgeTester {
 
@@ -73,8 +89,8 @@ class GroupCasesSpec extends AnyFlatSpec with ForgeTester {
 
   private def run(c: SnaxGroupCases.Case, open: Boolean): Unit = {
     val d = desc(c, open)
-    if (c.dOut > 1) test(new PackedGroupCtrl(d, c.dOut)) { dut =>
-      cycles(c, open, d, dut.io, dut.clock, Some(Pk(dut.pk.value, dut.pk.sent, dut.pk.word)))
+    if (c.dOut > 1 || c.dIn.nonEmpty) test(new PackedGroupCtrl(d, c.dOut, c.dIn)) { dut =>
+      cycles(c, open, d, dut.io, dut.clock, Option.when(c.dOut > 1)(Pk(dut.pk.value, dut.pk.sent, dut.pk.word)))
     }
     else test(new GroupCtrl(d, "case"))(dut => cycles(c, open, d, dut.io, dut.clock, None))
   }
@@ -121,9 +137,15 @@ class GroupCasesSpec extends AnyFlatSpec with ForgeTester {
           (u, k) <- c.units.zipWithIndex
           j      <- 0 until u.inputs
         } {
-          val seed = u.seed      && j == u.inputs - 1
-          val want = cyc.fire(k) && (!seed || fired(k) % u.t == 0)
-          assert(high(io.in(at).ready) == want, s"$clue: input $at's ready, ${u.name}'s firing")
+          val seed = u.seed && j == u.inputs - 1
+          c.dIn.indexWhere(_._1 == at) match {
+            case -1 =>
+              val want = cyc.fire(k) && (!seed || fired(k) % u.t == 0)
+              assert(high(io.in(at).ready) == want, s"$clue: input $at's ready, ${u.name}'s firing")
+            case s  => // a sliced input: its reader's word taken
+              val took = high(io.in(at).ready) && cyc.valids(at)
+              assert(took == cyc.took(s), s"$clue: input $at's slicer took $took")
+          }
           at += 1
         }
         for (k   <- c.units.indices if cyc.fire(k)) fired(k) += 1
@@ -150,7 +172,7 @@ class GroupCasesSpec extends AnyFlatSpec with ForgeTester {
       it should "give every group case's cycles and runs" in
         cancel(s"${SnaxGroupCases.Env} is not set (snax-gvsoc's tests/snax/group/cases)")
     case Some(all) =>
-      it should "find the 41 group cases" in assert(all.size == 41, s"${all.size} cases")
+      it should "find the 48 group cases" in assert(all.size == 48, s"${all.size} cases")
       for (c <- all) {
         it should s"give ${c.name}'s cycles and runs" in run(c, open = false)
         it should s"give ${c.name}'s cycles and runs with its T from JOB_BEATS" in run(c, open = true)

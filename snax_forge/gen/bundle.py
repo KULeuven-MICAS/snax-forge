@@ -51,9 +51,10 @@ class Bundle(Config, JsonFile):
 
 def module_tree(acc: Description) -> dict[str, list[str]]:
     """The wrapper's modules and the submodules each holds: ``bundle.json``'s ``modules``
-    (CONTRACTS, "Bundle")."""
+    (CONTRACTS, "Bundle"); then the stream blocks the wrapper holds, unit by unit, a sliced
+    input's ``FifoSlicer`` and a packed output's ``FifoPacker`` (D180, D174), each module once."""
     t = acc.tag
-    return {
+    tree = {
         f"{t}_csr": [f"{t}_peripherals"],
         f"{t}_ctrl": [f"{t}_{g.name}_ctrl" for g in acc.groups],
         f"{t}_datapath": [
@@ -62,6 +63,16 @@ def module_tree(acc: Description) -> dict[str, list[str]]:
         ],
         **{f"{t}_{a.name}_port_mux": [] for a in acc.accelerators if a.port_mux is not None},
     }  # fmt: skip
+    for g in acc.groups:
+        for u in g.units:
+            ports = list(u.ports.values())
+            for p in [*(p for p in ports if p.dir == "in"), *(p for p in ports if p.dir == "out")]:
+                w = f"{'u' if p.dtype.startswith('u') else 'i'}{p.dtype.lstrip('uint')}"
+                if p.d_in > 1:
+                    tree.setdefault(f"FifoSlicer_w1_{w}_n{p.lanes}", [])
+                if p.d_out > 1:
+                    tree.setdefault(f"FifoPacker_n{p.lanes}_{w}_w1", [])
+    return tree
 
 
 def provenance(checkout: Path) -> tuple[str | None, bool]:

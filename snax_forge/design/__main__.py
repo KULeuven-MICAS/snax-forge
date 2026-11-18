@@ -1,7 +1,8 @@
 """SNAX-DESIGN command line (pixi ``design``).
 
     python -m snax_forge.design GRAPH --platform P [--memory M] [--set platform.PATH=VALUE ...]
-                                      [--set memory.PATH=VALUE ...] [--out DIR]
+                                      [--set memory.PATH=VALUE ...] [--set design.schedule=S]
+                                      [--out DIR]
     python -m snax_forge.design check GRAPH --platform P [--memory M] [--set ...]
     python -m snax_forge.design save SRC DST [--force]
     python -m snax_forge.design from-hjson HJSON NAME [--force]
@@ -36,14 +37,15 @@ from .streamers import resolve
 ROOT = repo_root()
 OUT = ROOT / "out" / "design"
 PLATFORMS = ROOT / "platforms"
+HEADS = ("platform", "memory", "design")  # what a --set path starts with
 
 
 def setting(text: str) -> tuple[str, str, Any]:
     path, sep, value = text.partition("=")
     head, dot, rest = path.partition(".")
-    if not sep or head not in ("platform", "memory") or not dot or not rest:
+    if not sep or head not in HEADS or not dot or not rest:
         raise argparse.ArgumentTypeError(
-            f"{text!r} is not platform.PATH=VALUE or memory.PATH=VALUE"
+            f"{text!r} is not platform.PATH=VALUE, memory.PATH=VALUE or design.schedule=VALUE"
         )
     return head, rest, parse_value(value)
 
@@ -53,14 +55,19 @@ def _inputs(ap: argparse.ArgumentParser) -> None:
     ap.add_argument("--platform", type=Path, required=True, help="platform file or working copy")
     ap.add_argument("--memory", type=Path, help="memory working copy to continue from")
     ap.add_argument(
-        "--set", type=setting, action="append", default=[], metavar="platform|memory.PATH=VALUE"
+        "--set",
+        type=setting,
+        action="append",
+        default=[],
+        metavar="platform|memory|design.PATH=VALUE",
     )
 
 
 def _checked(args: argparse.Namespace) -> Design | None:
     sets = [(p, v) for h, p, v in args.set if h == "platform"]
     memory = [(p, v) for h, p, v in args.set if h == "memory"]
-    design = load(args.graph, args.platform, sets, args.memory, memory)
+    own = [(p, v) for h, p, v in args.set if h == "design"]
+    design = load(args.graph, args.platform, sets, args.memory, memory, own)
     problems = run_checks(design)
     if problems:
         print(report(problems, f"design check of {args.graph} on {args.platform}"), file=sys.stderr)

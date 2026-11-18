@@ -176,6 +176,8 @@ class _Program:
         self.started: dict[str, list[str]] = {}  # component -> its tasks, in start order
         self.order: list[str] = []  # every task, in start order
         self.waited: set[str] = set()
+        # sets whose streamer started with no accelerator START (and so no quiet wait) after it
+        self.unpolled: set[str] = set()
         self.counters: list[str] = []  # accelerator tasks, in the order their counters are read
         self.marks: list[dict[str, Any]] = []  # the quiet build's sections, in order
         self.mark_key: tuple[str, str] | None = None  # the configure section open, if any
@@ -419,10 +421,12 @@ class _Program:
                     self.port_mux(acc, s, where, core)
                     self.emit(core, f"csrw_ss({self.prefix(acc)}STREAMER_START_CSR, 1);")
                     streamers_started.add(acc)
+                    self.unpolled.add(acc)
             else:
                 self.emit(core, f"csrw_ss({self.csr('START', c.component, t)}, 1);")
                 self.quiet(core, *self.polls(c.component))
                 self.last_task[self.set_of(c.component)] = t
+                self.unpolled.discard(self.set_of(c.component))
 
     # NB (D169): the port mux knows the group only from PORT_MUX_SEL, written before each
     # STREAMER_START of a shared set.
@@ -477,10 +481,10 @@ class _Program:
                 "SNAX, only poll",
             )  # fmt: skip
         core = self.core_of(comp)
-        if comp == "dma":
-            self.emit(core, "snrt_dma_wait_all();")
+        if comp == "dma":  # every DMA start is waited on at once in the quiet build
+            self.wait_once(core, ["snrt_dma_wait_all();"], True)
         else:
-            self.emit(core, *self.polls(comp))
+            self.wait_once(core, self.polls(comp), self.set_of(comp) not in self.unpolled)
         ended = [t for c, last in covers.items()
                  for t in self.started[c][: self.started[c].index(last) + 1]
                  if t not in self.waited]  # fmt: skip
@@ -494,6 +498,21 @@ class _Program:
                           f"forge_counter[{slot}] = csrr_ss({self.csr('BUSY_COUNTER', c, t)});")  # fmt: skip
         if consumers - {core}:
             self.barrier()
+
+    def wait_once(self, core: int, lines: list[str], quieted: bool) -> None:
+        """A wait the task list places, each build waiting once: right after the quiet build's
+        wait on the start (``quiet``), the two become one wait for both builds; elsewhere, when
+        the quiet build waited on every start it covers (``quieted``), the default build's only;
+        else both builds'. The default build's text is the same either way (``strip_quiet``)."""
+        mine = self.lines[core]
+        block = [QUIET_ON, *lines, QUIET_END]
+        if mine[-len(block) :] == block:
+            del mine[-len(block) :]
+            self.emit(core, *lines)
+        elif quieted:
+            self.emit(core, QUIET_OFF, *lines, QUIET_END)
+        else:
+            self.emit(core, *lines)
 
     def dma_wait(self, i: int, s: Start) -> list[PlacedWait]:
         """The DMA wait the start ``s`` needs: one when a task of it has an ``after`` on a DMA

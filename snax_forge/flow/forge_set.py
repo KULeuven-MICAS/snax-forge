@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from snax_forge.common import cwd_relative
+from snax_forge.design.check import SCHEDULES
 from snax_forge.gen import bundle
 from snax_forge.gen.rtl import warm_emit
 from snax_forge.sandbox.recipe import Recipe, find_recipe
@@ -53,7 +54,9 @@ class Design:
         by_head = flow_run.split_sets([setting(t) for t in self.sets])
         recipe_sets = dict(by_head["recipe"])
         r = Recipe.load(find_recipe(self.recipe)).with_params(recipe_sets)
-        return flow_run.default_name(r, recipe_sets, by_head["platform"], by_head["memory"])
+        return flow_run.default_name(
+            r, recipe_sets, by_head["platform"], by_head["memory"], by_head["design"]
+        )
 
 
 def designs(*recipes: str | Design) -> list[Design]:
@@ -64,7 +67,8 @@ def designs(*recipes: str | Design) -> list[Design]:
 PADDED = "memory.passes.layout=padded_rows"  # each row a word longer
 I8 = ("types=i8", "W=8")  # int8 in, int32 out and accumulate, at its smallest W (D173)
 QUICK = designs("vecadd_i32", "vsum_tree_i8", "dot_1", "dot_1_enc", "dot_4", "axpy",
-                Design("vsum_tree", I8), Design("matvec_3", I8))  # fmt: skip
+                Design("vsum_tree", I8), Design("matvec_3", I8),
+                Design("vecadd_i32", ("W=1",)))  # sliced inputs (D180)  # fmt: skip
 # Every recipe with narrow types at i8 (int32 outputs packed, D174), a few at W = 32, i16, i32
 PACK = [
     *(
@@ -100,6 +104,8 @@ PACK = [
     Design("matvec_3", ("types=i8", "W=32")),
     Design("dot_3", ("types=i16", "W=4")),
     Design("dot_3", ("types=i32", "W=2")),
+    Design("vecadd", ("types=i8", "W=1")),  # sliced inputs (D180)
+    Design("matvec_3", ("types=i8", "W=4")),
 ]
 SETS = {
     "quick": QUICK,
@@ -107,12 +113,17 @@ SETS = {
                               "dot_3", "dot_5", "dot_6", "dot_serial", "matvec_1", "matvec_5",
                               "matvec_6", "matvec_seed", "matvec_seed_serial", "relu", "rowsum_2",
                               Design("rowsum_2", (PADDED,)))],
-    "mvt": [Design("mvt_1"), Design("mvt_1", ("W=8",)), Design("mvt_1", (PADDED,)),
-            Design("mvt_1", ("W=8", PADDED)),
-            Design("mvt_1_dot2"), Design("mvt_1_dot2", ("W=8",)), Design("mvt_1_dot2", (PADDED,)),
-            Design("mvt_1_dot2", ("W=8", PADDED)),
-            Design("mvt_2"), Design("mvt_2", (PADDED,)),
-            Design("mvt_2_reuse")],
+    "mvt": [
+        *(Design(r, w + lay) for r in ("mvt_1", "mvt_1_dot2", "mvt_1_dot2_shared")
+          for w in ((), ("W=8",)) for lay in ((), (PADDED,))),
+        *(Design(r, w + lay) for r in ("mvt_2", "mvt_2_shared")
+          for w in ((), ("W_x1=8", "W_x2=8")) for lay in ((), (PADDED,))),
+        Design("mvt_2_reuse"),
+        Design("mvt_3"),
+        *(Design("mvt_4", w + lay) for w in ((), ("W_x1=4",)) for lay in ((), (PADDED,))),
+        *(Design("mvt_3_split", lay + (f"design.schedule={s}",)) for lay in ((), (PADDED,))
+          for s in SCHEDULES),
+    ],
     "pack": PACK,
 }  # fmt: skip
 

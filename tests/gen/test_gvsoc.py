@@ -512,7 +512,9 @@ ADAPTER_CASES = [
      _dtypes(("a", "out"), a="uint16", out="uint16")),
     ("args", _binding(args={"lanes": "W"}), {}, "gen.args"),
     ("float", None, {}, "gen.dtype", _dtypes(a="float64", b="float64", out="float64")),
-    ("lanes x N", None, {}, "gen.lanes", _dtypes(a="int8", b="int8", out="int8")),
+    # 3 lanes of int8 neither fill whole words nor divide one (W = 4 would be sliced, D180)
+    ("lanes x N", None, {"W": 3, "op": "add", "streams": 2}, "gen.lanes",
+     _dtypes(a="int8", b="int8", out="int8")),
     ("lanes vs port", _binding(args={"lanes": "W * 2", "op": "op"}), {}, "gen.lanes"),
 ]  # fmt: skip
 
@@ -549,7 +551,8 @@ ACCUMULATOR_CASES = [
     ("rate in", _ports(a={"rate": "T"}), {}, "gen.rate"),
     ("lanes", _binding(ACC, args={"lanes": 1}), {"W": 2, "op": "add"}, "gen.lanes"),
     ("lanes out", _ports(out={"lanes": "W"}), {"W": 2, "op": "add"}, "gen.lanes"),
-    ("narrow", None, {}, "gen.lanes", _dtypes(("a", "out"), a="int32", out="int32")),
+    # 3 lanes of int16 in: neither whole words nor a slice of one (1 lane of int32 is sliced)
+    ("narrow", None, {"W": 3, "op": "add"}, "gen.lanes", _dtypes(("a", "out"), a="int16", out="int16")),
 ]  # fmt: skip
 
 
@@ -770,6 +773,26 @@ def _narrow(tmp_path, recipe: str, sets: tuple[str, ...] = ()) -> Path:
         mp.chdir(tmp_path)
         generate(point, out, root=tmp_path)
     return out
+
+
+@requires_submodule
+def test_vecadd_i32_at_w_1_slices_its_inputs(tmp_path):
+    """vecadd_i32 at W = 1 (D180): each int32 reader one channel of one word, its port d_in 2,
+    the writer packed d_out 2, which snax-gvsoc's reader takes."""
+    out = _narrow(tmp_path, "vecadd_i32", ("W=1",))
+    acc = json.loads((out / "accelerator.json").read_text())
+    (unit,) = acc["accelerators"][0]["groups"][0]["units"]
+    for p in ("a", "b"):
+        assert unit["ports"][p] == {"port": p, "dir": "in", "dtype": "int32", "lanes": 1,
+                                    "d_in": 2}  # fmt: skip
+    assert unit["ports"]["out"]["d_out"] == 2 and "d_in" not in unit["ports"]["out"]
+    s = parsed(out / streamer_file("vecadd_i32"))
+    assert (s["data_reader_params"]["spatial_bounds"], s["data_reader_params"]["num_channel"]) == (
+        [[1], [1]], [1, 1]
+    )  # fmt: skip
+    (a,) = snax_cfg().load(out / "snax_forge.hjson").cores[0].accelerators
+    (u,) = a.description.accelerators[0].groups[0].units
+    assert (u.ports["a"].d_in, u.ports["b"].d_in, u.ports["out"].d_out) == (2, 2, 2)
 
 
 def test_vecadd_i32_two_channels_per_port(tmp_path):

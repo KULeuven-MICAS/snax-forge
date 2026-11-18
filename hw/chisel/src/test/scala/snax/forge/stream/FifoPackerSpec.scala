@@ -17,8 +17,10 @@ class SliceAndPack(words: Int, laneType: String, lanes: Int) extends Module {
   private val packer = Module(new FifoPacker(lanes, laneType, words))
   slicer.io.in <> io.in
   packer.io.in <> slicer.io.out
-  packer.io.clear := false.B
-  packer.io.last  := false.B
+  slicer.io.enable := true.B
+  slicer.io.clear  := false.B
+  packer.io.clear  := false.B
+  packer.io.last   := false.B
   io.out <> packer.io.out
 }
 

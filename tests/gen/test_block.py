@@ -19,6 +19,7 @@ TREE = {"inType": "int64", "outType": "int64", "lanes": 8, "op": "add", "seed": 
 MAC = {"inTypes": ["int64", "int64"], "opType": "int64", "outType": "int64", "lanes": 1,
        "accumulate": True, "regOut": False}  # fmt: skip
 PACKER = {"inLanes": 1, "laneType": "int32", "words": 1}
+SLICER = {"words": 1, "laneType": "int8", "outLanes": 4}
 
 
 def entry(tmp_path: Path, datapath: str = "TreeAccumulate", **params) -> dict:
@@ -29,6 +30,7 @@ def test_a_good_entry_passes(tmp_path):
     check_entry(entry(tmp_path))
     check_entry(entry(tmp_path, "Mac", **MAC))
     check_entry(entry(tmp_path, "FifoPacker", **PACKER))
+    check_entry(entry(tmp_path, "FifoSlicer", **SLICER))
 
 
 def test_a_packer_whose_lanes_do_not_divide_its_beat_is_refused(tmp_path):
@@ -36,6 +38,13 @@ def test_a_packer_whose_lanes_do_not_divide_its_beat_is_refused(tmp_path):
         check_entry(entry(tmp_path, "FifoPacker", **{**PACKER, "inLanes": 3}))
     assert e.value.code == "gen.params"
     assert "give an inLanes that divides 2" in str(e.value)
+
+
+def test_a_slicer_whose_lanes_do_not_divide_its_beat_is_refused(tmp_path):
+    with pytest.raises(GenError) as e:
+        check_entry(entry(tmp_path, "FifoSlicer", **{**SLICER, "outLanes": 3}))
+    assert e.value.code == "gen.params"
+    assert "give an outLanes that divides 8" in str(e.value)
 
 
 @pytest.mark.parametrize(

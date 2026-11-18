@@ -77,16 +77,27 @@ class ShellEmitSpec extends AnyFlatSpec {
   def children(sv: Path, module: String): Seq[String] =
     Files.readAllLines(sv.resolve(s"$module.sv")).asScala.toSeq.collect { case Instance(m) => m }
 
-  /** `bundle.py`'s `module_tree`. */
+  /** `bundle.py`'s `module_tree`: then each stream block once, unit by unit, a sliced input's `FifoSlicer` and a packed
+    * output's `FifoPacker`.
+    */
   def tree(spec: AcceleratorSpec): Seq[(String, Seq[String])] = {
-    val t = spec.tag
+    val t      = spec.tag
+    val blocks = spec.groups.flatMap(_.units).flatMap { u =>
+      val ports = u.ports.map(_._2)
+      (ports.filter(_.dir == "in") ++ ports.filter(_.dir == "out")).flatMap { p =>
+        val w = snax.forge.IntType(p.dtype).tag
+        Option.when(p.dIn > 1)(s"FifoSlicer_w1_${w}_n${p.lanes}") ++
+          Option.when(p.dOut > 1)(s"FifoPacker_n${p.lanes}_${w}_w1")
+      }
+    }
     Seq(
       s"${t}_csr"      -> Seq(s"${t}_peripherals"),
       s"${t}_ctrl"     -> spec.groups.map(g => s"${t}_${g.name}_ctrl"),
       s"${t}_datapath" -> spec.groups.flatMap { g =>
         g.units.map(u => s"${t}_${u.name}") ++ g.links.filter(_.depth > 0).map(l => s"${t}_${l.name}")
       }
-    ) ++ spec.sets.filter(_.shared).map(s => s"${t}_${s.name}_port_mux" -> Seq.empty)
+    ) ++ spec.sets.filter(_.shared).map(s => s"${t}_${s.name}_port_mux" -> Seq.empty) ++
+      blocks.distinct.map(_ -> Seq.empty)
   }
 
   behavior of "Emit --spec"
@@ -106,7 +117,7 @@ class ShellEmitSpec extends AnyFlatSpec {
       )
 
       val modules = tree(f.spec)
-      assert(children(sv, done.top) == modules.map(_._1), s"${done.top}")
+      assert(children(sv, done.top).distinct == modules.map(_._1), s"${done.top}") // a stream block's module once
       for ((m, kids) <- modules) assert(children(sv, m) == kids, s"$m")
       for (u <- f.spec.units) assert(children(sv, s"${f.spec.tag}_${u.name}").size == 1, s"${u.name}: one datapath")
       assert(modules.flatMap { case (m, k) => m +: k }.forall(done.modules.contains), s"emitted.json: ${done.modules}")

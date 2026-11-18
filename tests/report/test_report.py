@@ -336,7 +336,8 @@ def test_a_mover_shows_its_dtype_k_and_channels(tmp_path):
     ]  # fmt: skip
     text = render_design(r)
     assert (
-        "| Streamer | Serves | Direction | dtype | num_slc | num_ch | d_out | FIFO depth |" in text
+        "| Streamer | Serves | Direction | dtype | num_slc | num_ch | d_out | d_in | FIFO depth |"
+        in text
     )
     assert "num_ch 2, FIFO depth" in text
 
@@ -346,6 +347,14 @@ def test_a_packed_output_shows_its_d_out(tmp_path):
     r = designed_report(tmp_path, "matvec_3", ["types=i8", "W=8"])
     assert [(s.port, s.dtype, s.num_slc, s.num_ch, s.d_out) for s in r.streamers
             if s.direction == "write"] == [("out", "int32", 2, 1, 2)]  # fmt: skip
+
+
+def test_a_sliced_input_shows_its_d_in(tmp_path):
+    """vecadd_i32 at W = 1: each int32 input sliced 2 from a word, on one channel (D180)."""
+    r = designed_report(tmp_path, "vecadd_i32", ["W=1"])
+    assert [(s.port, s.num_ch, s.d_out, s.d_in) for s in r.streamers] == [
+        ("a", 1, 1, 2), ("b", 1, 1, 2), ("out", 1, 2, 1)
+    ]  # fmt: skip
 
 
 @pytest.mark.parametrize("w", [1, 4])

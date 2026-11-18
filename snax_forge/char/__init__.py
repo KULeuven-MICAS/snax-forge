@@ -8,7 +8,8 @@
 The table, its lookup (``FOUND``) and what None means are in CONTRACTS, "Cost model". A block is
 looked up at its width pair (D176, ``pair_params``): its widest input and its output, a
 SimdLanes' output at most its op's width, an unsigned type as the signed one of its width; a
-packed output's packer by its lane type and d_out. A param the fill leaves None is not compared.
+packed output's packer by its lane type and d_out, a sliced input's slicer by its lane type, lanes
+and d_in. A param the fill leaves None is not compared.
 """
 
 from __future__ import annotations
@@ -27,7 +28,7 @@ HERE = Path(__file__).parent
 # The technologies offered: nangate45 only (snax-forge-experiments synthesizes nothing else).
 TECHS = ("nangate45",)
 DEFAULT_TECH = "nangate45"
-FOUND = ("measured", "copy", "interpolate", "slope", "width")
+FOUND = ("measured", "copy", "interpolate", "slope", "width", "unseeded")
 # A control unit's comb area is CTRL_COMB_PER_FLOP × its flops' area, a rough early estimate (its
 # comb energy taken as negligible); not in the table, a byte copy of snax-forge-experiments'
 # char.json. The L1 side is tables.py's tables.
@@ -58,7 +59,8 @@ class Table:
 @dataclass(frozen=True)
 class Lookup:
     """A block's comb area and comb energy per fire, and how it was found (``FOUND``);
-    ``load_bits`` the bits that load on a fire where not all of them do (a packer's), else None."""
+    ``load_bits`` the bits that load on a fire where not all of them do (a packer's or a
+    slicer's), else None."""
 
     comb_um2: float
     e_comb_pj: float
@@ -116,12 +118,17 @@ def pair_params(datapath: str, params: Mapping[str, Any]) -> dict[str, Any]:
     (a SimdLanes' the smaller of its op and output: the low bits of a sum or product need only
     the operands' low bits, a wider output only copies the sign); the folds' and a LinkBuffer's
     types signed; a packer's ``d_out``, ``lanes`` and ``dtype`` as its ``inLanes``,
-    ``laneType`` and ``words``."""
+    ``laneType`` and ``words``, a slicer's ``d_in``, ``lanes`` and ``dtype`` as its ``words``,
+    ``laneType`` and ``outLanes``."""
     p = {k: v for k, v in params.items() if k not in _IGNORED and v is not None}
     if datapath == "FifoPacker" and "d_out" in p:
         w = _width(p["dtype"])
         return {"inLanes": params["lanes"], "laneType": _signed(w),
                 "words": p["d_out"] * params["lanes"] * w // WORD_BITS}  # fmt: skip
+    if datapath == "FifoSlicer" and "d_in" in p:
+        w = _width(p["dtype"])
+        return {"words": p["d_in"] * params["lanes"] * w // WORD_BITS, "laneType": _signed(w),
+                "outLanes": params["lanes"]}  # fmt: skip
     if datapath in ("SimdLanes", "Mac") and "inTypes" in p and "outType" in p:
         ins = list(p["inTypes"])
         w_in, w_out = max(_width(t) for t in ins), _width(p["outType"])
@@ -176,7 +183,7 @@ def lookup(table: Table, datapath: str, params: Mapping[str, Any], lanes: int,
         return {k: v for k, v in e["params"].items() if v is not None}
 
     entry = next((e for e in entries if key(e) == want), None)
-    if datapath == "FifoPacker":
+    if datapath in ("FifoPacker", "FifoSlicer"):
         if entry is None:
             return None
         p = entry["points"][0]
@@ -188,6 +195,13 @@ def lookup(table: Table, datapath: str, params: Mapping[str, Any], lanes: int,
         if base is None:
             return None
         return _scaled(_over_lanes(base, lanes, depth), _width(want["dtype"]) / 64, "width")
+    if entry is None and want.get("seed") is True:
+        # a seeded fold: the unseeded entry, the same adder and register, the first beat's mux
+        # choosing the seed for the register instead of 0 for the sum
+        base = next((e for e in entries if key(e) == {**want, "seed": False}), None)
+        if base is None:
+            return None
+        return _scaled(_over_lanes(base, lanes, depth), 1.0, "unseeded")
     if entry is None:
         return None
     return _over_lanes(entry, lanes, depth)

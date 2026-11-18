@@ -54,7 +54,7 @@ flowchart TD
 | Flag | What it does |
 |---|---|
 | `--platform P` | the platform the design point is on; `platforms/snax_forge.json` is snax_cluster's base cluster |
-| `--set NAME=VALUE` | a recipe param (`--set W=8`), the kernel's type preset (`--set types=i8`) or one dtype (`--set dtypes.C=int16`), or a design one with `platform.` or `memory.` in front (`--set memory.passes.layout=padded_rows`); each is added to the run's folder name |
+| `--set NAME=VALUE` | a recipe param (`--set W=8`), the kernel's type preset (`--set types=i8`) or one dtype (`--set dtypes.C=int16`), or a design one with `platform.` or `memory.` in front (`--set memory.passes.layout=padded_rows`), or the design point's schedule (`--set design.schedule=serial|pipeline|pipeline_compute`, D179; default `serial`); each is added to the run's folder name |
 | `--trace LEVEL[:SOURCES]` | how much of the run is traced (the table below); the level is added to the folder name |
 | `--vcd` | also writes gtkwave's `run/all.vcd` and `run/view.gtkw` of the traced sources |
 | `--keep-work` | keeps gvrun's `run/work/` after a passing run (a failing run always keeps it) |
@@ -161,7 +161,7 @@ The flow's stages are commands of their own. Each reads the previous one's outpu
 | `pixi run import-dfg K` | the kernel's SDFG | `out/dfg/K.snaxdfg` | |
 | `pixi run check-dfg G --kernel K` | a graph | nothing; runs it against the kernel's reference | |
 | `pixi run sandbox RECIPE` | a recipe | `out/sandbox/<name>/<i>_<transform>.snaxdfg`, each step checked against the reference | `--set`, `--graph G` (start from a graph), `--out`, `--seed` |
-| `pixi run design G --platform P` | a bound graph | `out/design/<name>/`: `platform.json`, `memory.json`, `design_point.json` | `--set platform.PATH=V`, `--set memory.PATH=V`, `--memory`, `--out` |
+| `pixi run design G --platform P` | a bound graph | `out/design/<name>/`: `platform.json`, `memory.json`, `design_point.json` | `--set platform.PATH=V`, `--set memory.PATH=V`, `--set design.schedule=S`, `--memory`, `--out` |
 | `pixi run design check G --platform P` | a bound graph | nothing; the design checks only | |
 | `pixi run design save SRC NAME` | a platform working copy | `platforms/NAME.json` | |
 | `pixi run design from-hjson HJSON NAME` | snax_cluster's cluster file | `platforms/NAME.json` (`--force` to replace) | |
@@ -169,7 +169,7 @@ The flow's stages are commands of their own. Each reads the previous one's outpu
 | `pixi run gen-gvsoc DP` | a design point | `out/gvsoc/<design>/`: the cluster and streamer hjson, `accelerator.json`, headers, `data.h`, `main.c`, `manifest.json` | `--out DIR` |
 | `pixi run gen-rtl DP` | a design point | `out/rtl/<design>/`: `accelerator.json`, `sv/`, `emitted.json` | `--fixture DIR` (a fixture for the Chisel specs) |
 | `pixi run bundle DP` | a design point | `out/bundle/<design>/`: gen-gvsoc's files, `rtl/` with `files.f`, `bundle.json` | `--out DIR` |
-| `pixi run gen-block LIST` | a JSON list of `{"datapath", "params", "out"}`, `datapath` a catalogue datapath or the stream block `FifoPacker` | each block alone, as an accelerator holds it, into its `out/sv/` | |
+| `pixi run gen-block LIST` | a JSON list of `{"datapath", "params", "out"}`, `datapath` a catalogue datapath or a stream block, `FifoPacker` or `FifoSlicer` | each block alone, as an accelerator holds it, into its `out/sv/` | |
 
 Example: vecadd by hand, then its program and run with `gvsoc/Makefile` (section 7), which prints the same four `forge` lines as the flow:
 
@@ -191,7 +191,7 @@ The RTL commands need sbt; the flow calls none of them:
 - `gen-rtl` checks `accelerator.json` against the datapath catalogue (`hw/chisel/blocks.json`), then runs `hw/chisel/`'s `Emit --spec` on a classpath sbt exports once into `hw/chisel/target/emit-classpath-<hash>.txt` (again after a change under `hw/chisel/src/main/` or to `build.sbt`).
 - The modules are named after the entry's tag, `<accelerator_slot>_<design>`: `snax_forge_vecadd_shell_wrapper` is what snax_cluster's `snax_acc_wrapper.sv.tpl` connects, and it holds `snax_forge_vecadd_csr`, `snax_forge_vecadd_ctrl` and `snax_forge_vecadd_datapath`.
 - `bundle` writes no `forge_expected.txt` (a bundle alone has no SNAX-GVSoC run); `pixi run forge` does (section 6).
-- `gen-block` is for snax-forge-experiments, which synthesizes and simulates a block alone. Beside the catalogue's datapaths it takes the stream block `FifoPacker` (a packed output's packer, D174), params `inLanes`, `laneType`, `words`, `inLanes` dividing the beat's `words` × 64 / width elements:
+- `gen-block` is for snax-forge-experiments, which synthesizes and simulates a block alone. Beside the catalogue's datapaths it takes the stream blocks `FifoPacker` (a packed output's packer, D174), params `inLanes`, `laneType`, `words`, and `FifoSlicer` (a sliced input's slicer, D180), params `words`, `laneType`, `outLanes`, the lanes dividing the beat's `words` × 64 / width elements:
 
 ```bash
 echo '[{"datapath": "TreeAccumulate", "params": {"inType": "int64", "outType": "int64", "lanes": 8, "op": "add", "seed": false}, "out": "out/block/tree"},
@@ -222,7 +222,7 @@ Three read-only viewers and the reports. Each viewer serves on 127.0.0.1 until C
 
 **`view-dfg`** on a recipe's sandbox folder shows its steps in order. Give it `--platform`: without one, the Estimate costs only the datapath and control, not the streamers, crossbar and memory.
 
-- Each container's box shows its dtype (`A[N] int8 L1 · 64 B`), and each edge its container's dtype beside it, below the box it leaves or above the box it enters; an accelerated port's packing (`int32 · num_slc 2 · d_out 2 · num_ch 1`) is in the edge's Details. A packed output's `FifoPacker · d_out 2` is a box before its container, inside its group's outline, with its sizes, register bits and cost in its Details.
+- Each container's box shows its dtype (`A[N] int8 L1 · 64 B`), and each edge its container's dtype beside it, below the box it leaves or above the box it enters; an accelerated port's packing (`int32 · num_slc 2 · d_out 2 · num_ch 1`) is in the edge's Details. A packed output's `FifoPacker · d_out 2` is a box before its container, inside its group's outline, with its sizes, register bits and cost in its Details; a sliced input's `FifoSlicer · d_in 2` likewise, between its container and the unit (`d_in 2` in the port's packing), its cost not modelled yet.
 - Details of each item (click a box, a container, an edge or an outline), and the Estimate: the accelerator's cycles, the unmapped work's (one cycle per iteration, an assumption), their total, and the cost per accelerator in µm² and nJ (CONTRACTS, "Cost model").
 - The left column lists the Symbols, the Containers (`A: N · L1 · 16 KiB`) and the Bindings as a tree, accelerator ▸ group ▸ unit, each param with what it configures.
 - To compare two designs, give both folders: `pixi run view-dfg out/sandbox/dot_4/ out/sandbox/dot_5/ --platform platforms/snax_forge.json`. Each step is then named `<folder>/<stem>`, and Compare lays Details and the Estimate out as two columns, the cost cells as `before → after`.
@@ -266,7 +266,7 @@ One ELF, snax-forge's, runs on SNAX-GVSoC and on snax_cluster's RTL. The RTL run
 - `forge` takes `--platform` (default `platforms/snax_forge.json`), `--set` and `--trace`, passed to the flow. `forge-set` takes `--sim vsim|vlt` and `-j N`.
 - `forge_expected.txt` holds the run's counter and data lines, then each counter's `forge fill`, its group's streamer fill from the estimate.
 - Beside `forge.elf`, forge leaves `forge_quiet.elf` (the same `main.c` with `-DFORGE_QUIET`: every start waited on at once, each section marked in CSR `0x7c5`, no prints) and its legend `obs_marks.json`, for a power run on the netlist.
-- The sets: `quick` is vecadd_i32, vsum_tree_i8, dot_1, dot_1_enc, dot_4, axpy, and vsum_tree and matvec_3 at `types=i8`, W = 8 (packed outputs, D174). `full` adds seventeen more (the list in `snax_forge/flow/forge_set.py`), among them matvec_1, matvec_seed, matvec_seed_serial and rowsum_2 twice. `mvt` is eleven bundles at M = N = 40, not in the other two. `pack` is 28 narrow designs: every recipe with narrow types at i8 and W = 8, dot_serial at i32, and dot_3 and matvec_3 at W = 32, dot_3 at i16 and i32.
+- The sets: `quick` is vecadd_i32, vsum_tree_i8, dot_1, dot_1_enc, dot_4, axpy, vsum_tree and matvec_3 at `types=i8`, W = 8 (packed outputs, D174), and vecadd_i32 at W = 1 (sliced inputs, D180). `full` adds seventeen more (the list in `snax_forge/flow/forge_set.py`), among them matvec_1, matvec_seed, matvec_seed_serial and rowsum_2 twice. `mvt` is 32 bundles at M = N = 64, the recipes' defaults: mvt_1, mvt_1_dot2, mvt_1_dot2_shared, mvt_2, mvt_2_shared and mvt_4 at W = 4 and 8, contiguous and `padded_rows`, mvt_2_reuse and mvt_3 (W = 8) at their defaults, mvt_3_split (W = 8) contiguous and `padded_rows` under each `design.schedule` (D179); not in the other two. `pack` is 30 narrow designs: every recipe with narrow types at i8 and W = 8, dot_serial at i32, and dot_3 and matvec_3 at W = 32, dot_3 at i16 and i32, vecadd at W = 1 and matvec_3 at W = 4 (sliced inputs).
 - When each set is due is CLAUDE.md's rule: the quick set on vsim before a PR that changes the emitted RTL or `main.c` merges, the full set at a phase's close, the numbers into open item 95.
 
 Example:

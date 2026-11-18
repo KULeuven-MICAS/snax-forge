@@ -561,17 +561,48 @@ def test_dot_1_repeats_the_configure_and_run_sections_per_accelerator(tmp_path):
     assert [m["label"] for m in marks if m["kind"] == "run"] == ["run vmul", "run vsum"]
 
 
-def test_every_start_is_waited_on_at_once_in_the_quiet_build(tmp_path):
-    src, _ = quiet(tmp_path)
-    f = functions(src, quiet=True)["forge_core_0"]
-    for i, x in enumerate(f):
+def quiet_build(src: str) -> str:
+    """main.c as ``-DFORGE_QUIET`` compiles it: the ``#ifndef FORGE_QUIET`` blocks gone, the
+    lines of each ``#ifdef FORGE_QUIET`` block kept without the directives."""
+    out, skip = [], False
+    for line in src.splitlines():
+        s = line.strip()
+        if s in (QUIET_ON, QUIET_OFF):
+            skip = s == QUIET_OFF
+        elif s == QUIET_END:
+            skip = False
+        elif not skip:
+            out.append(line)
+    return "\n".join(out)
+
+
+# vecadd's one wait follows its start; dot_1's vmul is waited on after vsum's configure (D158)
+@pytest.mark.parametrize("name", ["vecadd", "dot_1"])
+def test_every_start_is_waited_on_at_once_in_the_quiet_build_and_each_build_waits_once(
+    tmp_path, name
+):
+    from tests.gen.helpers import bound_recipe
+
+    graph = bound_recipe("dot_1", "dot") if name == "dot_1" else None
+    src, _ = quiet(tmp_path, graph=graph, name=name)
+    q = functions(quiet_build(src), quiet=True)["forge_core_0"]
+    starts = [re.fullmatch(r"csrw_ss\((\w+)_RW_START, 1\);", x) for x in q]
+    units = [m[1] for m in starts if m]
+    assert units
+    for i, x in enumerate(q):
         if x.startswith("snrt_dma_start_"):
-            assert f[i + 1 : i + 4] == [QUIET_ON, "snrt_dma_wait_all();", QUIET_END], x
-        if x == "csrw_ss(ACC_RW_START, 1);":
-            assert f[i + 1 : i + 7] == [
-                QUIET_ON, "while (csrr_ss(ACC_RO_STATUS) & 1) {", "}",
-                "while (csrr_ss(ACC_STREAMER_BUSY_CSR)) {", "}", QUIET_END,
+            assert q[i + 1] == "snrt_dma_wait_all();", x
+        if starts[i]:
+            u = starts[i][1]
+            assert q[i + 1 : i + 5] == [
+                f"while (csrr_ss({u}_RO_STATUS) & 1) {{", "}",
+                f"while (csrr_ss({u}_STREAMER_BUSY_CSR)) {{", "}",
             ]  # fmt: skip
+    default = functions(src)["forge_core_0"]
+    for lines in (q, default):  # one poll per start, in either build
+        for u in set(units):
+            assert lines.count(f"while (csrr_ss({u}_RO_STATUS) & 1) {{") == units.count(u)
+    assert q.count("snrt_dma_wait_all();") == sum(x.startswith("snrt_dma_start_") for x in q)
 
 
 def test_the_quiet_build_prints_nothing_and_the_default_build_has_no_quiet_part(tmp_path):

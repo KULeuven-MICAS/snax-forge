@@ -12,8 +12,10 @@ base ``layout.base + sum_d (c_d + sum_k a_dk * b_k) * strides[d]`` for firing lo
 ``sum_d a_dk * s_k * strides[d]``; one spatial loop per range dimension, the last range first.
 The spatial bounds must be the streamer's, and for an ``affine`` BRM the addresses visited beat
 by beat (``addresses``) must be the nest's through the same layout (streams.py). A packed
-output's writer moves words (``packed_values``, D174). Accelerators run in series
-(``serial_syncs``); a ``LowerError`` names what does not fit.
+output's writer and a sliced input's reader move words (``packed_values``, D174 · D180). The design point's ``schedule`` (D179)
+orders the accelerators: ``serial`` adds ``serial_syncs``; ``pipeline`` moves the stores past
+other accelerators' starts (``later_stores``), and ``pipeline_compute`` also gathers the starts
+with only loads to wait for (``gathered``). A ``LowerError`` names what does not fit.
 """
 
 from __future__ import annotations
@@ -95,14 +97,15 @@ def memlet_values(
     return values, [b for b, _ in fastest]
 
 
-def packed_values(values: dict[str, Any], d_out: int) -> dict[str, Any]:
-    """A packed output's writer values (CONTRACTS, "Task list"): its innermost loop of more
-    than one push, (n, s), becomes (ceil(n / d_out), d_out * s), one write per word; the outer
-    loops and the base stay (connect.pack checked that they are whole words)."""
+def packed_values(values: dict[str, Any], d: int) -> dict[str, Any]:
+    """A packed output's writer values, or a sliced input's reader values (CONTRACTS, "Task
+    list"): its innermost loop of more than one beat, (n, s), becomes (ceil(n / d), d * s), one
+    word per d beats (d_out pushes, d_in pops); the outer loops and the base stay (connect.pack
+    checked that they are whole words)."""
     bounds, strides = list(values["temporal_bounds"]), list(values["temporal_strides"])
     k = next((i for i, n in enumerate(bounds) if n > 1), None)  # innermost first
     if k is not None:
-        bounds[k], strides[k] = -(-bounds[k] // d_out), strides[k] * d_out
+        bounds[k], strides[k] = -(-bounds[k] // d), strides[k] * d
     return {**values, "temporal_bounds": bounds, "temporal_strides": strides}
 
 
@@ -121,8 +124,13 @@ def addresses(values: dict[str, Any], spatial_bounds: list[int]) -> np.ndarray:
 
 
 def task_list(point: DesignPoint) -> TaskList:
-    """The task list of a design point; see the module doc. Raises LowerError."""
-    return serial_syncs(_Derivation(point).run(), point)
+    """The task list of a design point under its schedule; see the module doc. Raises
+    LowerError."""
+    tasks = _Derivation(point).run()
+    if point.schedule == "serial":
+        return serial_syncs(tasks, point)
+    tasks = later_stores(tasks, point)
+    return gathered(tasks, point) if point.schedule == "pipeline_compute" else tasks
 
 
 def accelerator_components(point: DesignPoint) -> dict[str, str]:
@@ -162,6 +170,121 @@ def serial_syncs(tasks: TaskList, point: DesignPoint) -> TaskList:
                 prev = (acc, accel[0])
         steps.append(step)
     return TaskList(tasks.name, steps)
+
+
+def _task_accelerator(point: DesignPoint, conf: dict[str, Configure]) -> dict[str, str]:
+    """Each streamer and accelerator task -> its accelerator."""
+    acc_of = accelerator_components(point)
+    out = {}
+    for t, c in conf.items():
+        if c.type == "accel":
+            out[t] = acc_of[c.component]
+        elif c.type == "streamer":
+            out[t] = acc_of[point.streamers[c.component].instance]
+    return out
+
+
+def _store(step: Any) -> bool:
+    return isinstance(step, Configure) and step.type == "dma" and \
+        step.values["direction"] == "l1_to_l2"  # fmt: skip
+
+
+def _accel_start(step: Any, conf: dict[str, Configure]) -> bool:
+    return isinstance(step, Start) and any(conf[t].type == "accel" for t in step.tasks)
+
+
+# NB (D179): a store waits for its writer, so before another accelerator's start it would hold
+# that start until the writer's accelerator ends.
+def later_stores(tasks: TaskList, point: DesignPoint) -> TaskList:
+    """``tasks`` with each store (its configure and start) moved past the later accelerators'
+    blocks (their loads, configures and start) until a block of its own accelerator, which waits
+    for the same run anyway, else to before the final syncs (CONTRACTS, "Task list"). A store is
+    of a container's last write, so nothing after it writes that container in L1."""
+    conf = tasks.configured()
+    acc = _task_accelerator(point, conf)
+    steps = tasks.steps
+    next_acc: list[str | None] = [None] * (len(steps) + 1)  # the next accelerator start's
+    for i in range(len(steps) - 1, -1, -1):
+        s = steps[i]
+        next_acc[i] = acc[next(t for t in s.tasks if t in acc)] if _accel_start(s, conf) \
+            else next_acc[i + 1]  # fmt: skip
+    out: list[Any] = []
+    pending: list[tuple[str, list[Any]]] = []  # (its writer's accelerator, configure and start)
+
+    def flush(own: str | None = None, needed: frozenset[str] = frozenset()) -> None:
+        """Out with the pending stores of accelerator ``own`` and those ``needed`` names; with
+        no ``own``, every one."""
+        nonlocal pending
+        go = [own is None or a == own or pair[0].task_name in needed for a, pair in pending]
+        out.extend(x for (_, pair), g in zip(pending, go, strict=True) if g for x in pair)
+        pending = [p for p, g in zip(pending, go, strict=True) if not g]
+
+    i = 0
+    while i < len(steps):
+        s = steps[i]
+        if _store(s) and i + 1 < len(steps) and steps[i + 1] == Start([s.task_name]):
+            pending.append((acc[s.after[0]], [s, steps[i + 1]]))
+            i += 2
+            continue
+        if isinstance(s, Sync) or next_acc[i] is None:
+            flush()
+        else:
+            flush(next_acc[i], frozenset(s.after) if isinstance(s, Configure) else frozenset())
+        out.append(s)
+        i += 1
+    flush()
+    return TaskList(tasks.name, out)
+
+
+def gathered(tasks: TaskList, point: DesignPoint) -> TaskList:
+    """``tasks`` (``later_stores``'s) with the starts that have only loads to wait for gathered
+    (CONTRACTS, "Task list"): a block is the steps up to an accelerator start; consecutive blocks
+    whose tasks' ``after`` are DMA tasks only, with no store or sync among them (the first may
+    open with stores) and no component in common, run as their loads, then their configures,
+    then their starts back to back. A block with nothing to gather with stays as it is."""
+    conf = tasks.configured()
+    blocks: list[list[Any]] = [[]]
+    for s in tasks.steps:
+        blocks[-1].append(s)
+        if _accel_start(s, conf):
+            blocks.append([])
+    tail = blocks.pop()
+
+    def head(b: list[Any]) -> int:  # the stores before its first load or configure
+        return next(k for k, s in enumerate(b) if isinstance(s, Configure) and not _store(s))
+
+    def gatherable(b: list[Any]) -> bool:
+        body = b[head(b) :]
+        return not any(isinstance(s, Sync) or _store(s) for s in body) and all(
+            conf[a].type == "dma" for s in body if isinstance(s, Configure) for a in s.after
+        )
+
+    def comps(b: list[Any]) -> set[str]:
+        return {s.component for s in b if isinstance(s, Configure) and s.type != "dma"}
+
+    runs: list[list[list[Any]]] = []
+    for b in blocks:
+        last = runs[-1] if runs else None
+        if (last is not None and gatherable(last[0]) and gatherable(b) and head(b) == 0
+                and not comps(b) & set().union(*map(comps, last))):  # fmt: skip
+            last.append(b)
+        else:
+            runs.append([b])
+    out: list[Any] = []
+    for run in runs:
+        if len(run) == 1:
+            out += run[0]
+            continue
+        out += run[0][: head(run[0])]
+        bodies = [b[head(b) :] for b in run]
+        loads = {t for b in bodies for s in b if isinstance(s, Configure) and s.type == "dma"
+                 for t in [s.task_name]}  # fmt: skip
+        out += [s for b in bodies for s in b if (isinstance(s, Configure) and s.task_name in loads)
+                or (isinstance(s, Start) and set(s.tasks) <= loads)]  # fmt: skip
+        out += [s for b in bodies for s in b
+                if isinstance(s, Configure) and s.task_name not in loads]  # fmt: skip
+        out += [s for b in bodies for s in b if _accel_start(s, conf)]
+    return TaskList(tasks.name, out + tail)
 
 
 def unit_firings(g: Graph, node: Node, inst: Instance) -> tuple[dict[str, Any], list[Loop]]:
@@ -344,8 +467,8 @@ class _Derivation:
                             f"{what}.{p}: the memlet gives {values}, the BRM's nest gives {want}: "
                             "they take the elements in different orders"
                         )
-                if s.d_out > 1:  # words, on one channel
-                    values, sb = packed_values(values, s.d_out), [1, *sb[1:]]
+                if max(s.d_out, s.d_in) > 1:  # words, on one channel
+                    values, sb = packed_values(values, max(s.d_out, s.d_in)), [1, *sb[1:]]
                 task = f"{un.id}_{s.name}"
                 c = m.data
                 if p in un.inputs:

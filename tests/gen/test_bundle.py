@@ -194,6 +194,26 @@ def test_the_module_tree_names_every_group_unit_and_buffer():
     }  # fmt: skip
 
 
+def test_the_module_tree_ends_with_each_stream_block_once():
+    """dot_serial with mul's a and b at int32, one lane, sliced 2 (D180), and sum's out at int32
+    packed 2 (D174): one FifoSlicer module for both inputs, then the packer, after the shell's."""
+    from snax_forge.gen.blocks import Port
+    from tests.gen.test_accelerator import dot_serial
+
+    desc = dot_serial()
+    mul, total = (a.groups[0].units[0] for a in desc.accelerators)
+    mul = replace(mul, ports={p: Port(p, "in", "int32", 1, d_in=2) for p in ("a", "b")}
+                  | {"out": Port("out", "out", "int32", 1)})  # fmt: skip
+    total = replace(total, ports={**total.ports, "out": Port("out", "out", "int32", 1, d_out=2)})
+    accs = [replace(a, groups=[replace(a.groups[0], units=[u])])
+            for a, u in zip(desc.accelerators, (mul, total), strict=True)]  # fmt: skip
+    t = "snax_forge_dot_serial"
+    tree = bundle_mod.module_tree(replace(desc, accelerators=accs))
+    assert list(tree)[-2:] == ["FifoSlicer_w1_i32_n1", "FifoPacker_n1_i32_w1"]
+    assert list(tree)[:3] == [f"{t}_csr", f"{t}_ctrl", f"{t}_datapath"]
+    assert tree["FifoSlicer_w1_i32_n1"] == tree["FifoPacker_n1_i32_w1"] == []
+
+
 def test_the_expected_lines_and_their_refusal(tmp_path, fake):
     """write_expected keeps the run's counter lines in order, then its data line, and names the
     file in bundle.json; a run without a counter or with data errors is ``bundle.expected``."""

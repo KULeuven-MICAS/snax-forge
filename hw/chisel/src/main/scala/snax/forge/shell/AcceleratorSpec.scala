@@ -25,10 +25,14 @@ object AcceleratorSpec {
 
   /** A unit's BRM port: the datapath's port, its direction (`in` or `out`), its dtype (NumPy's name), its lanes;
     * `dOut`, on an outer output a packer feeds, its results per 64-bit word (`d_out`, written only when packed, else 1;
-    * D174).
+    * D174); `dIn`, on an outer input a slicer feeds, its pops per 64-bit word (`d_in`, written only when sliced, else
+    * 1; D180).
     */
-  case class PortSpec(port: String, dir: String, dtype: String, lanes: Int, dOut: Int = 1) {
+  case class PortSpec(port: String, dir: String, dtype: String, lanes: Int, dOut: Int = 1, dIn: Int = 1) {
     require(dOut >= 1, s"port $port: d_out $dOut, must be 1 or more")
+    require(dIn  >= 1, s"port $port: d_in $dIn, must be 1 or more")
+    require(dOut == 1 || dir == "out", s"port $port: d_out $dOut on an input; only an output is packed")
+    require(dIn == 1 || dir == "in", s"port $port: d_in $dIn on an output; only an input is sliced")
   }
 
   /** A link: from a unit's output BRM port to another unit's input, `(unit, port)` each; depth 0 a wire, >= 1 a buffer
@@ -140,7 +144,8 @@ object AcceleratorSpec {
                   p("dir").str,
                   p("dtype").str,
                   p("lanes").num.toInt,
-                  p.obj.get("d_out").map(_.num.toInt).getOrElse(1)
+                  p.obj.get("d_out").map(_.num.toInt).getOrElse(1),
+                  p.obj.get("d_in").map(_.num.toInt).getOrElse(1)
                 )
               },
               u.obj.get("opType").map(_.str),

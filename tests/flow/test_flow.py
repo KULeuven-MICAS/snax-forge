@@ -38,7 +38,8 @@ from snax_forge.flow import (
     summary,
 )
 from snax_forge.flow import run as flow_run
-from snax_forge.flow.run import check_toolchain, first_error, with_level
+from snax_forge.flow.__main__ import setting
+from snax_forge.flow.run import check_toolchain, first_error, split_sets, with_level
 from snax_forge.gen import Manifest
 from snax_forge.run import read_run
 from snax_forge.sandbox import Recipe
@@ -519,6 +520,13 @@ def test_default_name():
     # a name ending in a digit gets a '-' before its value, the others none
     assert default_name(r, {"W_acc_1": 10, "W_acc_2": 4}) == "vecadd_W_acc_1-10_W_acc_2-4"
     assert default_name(r, {"W": 4, "W_acc_1": 8}) == "vecadd_W4_W_acc_1-8"
+    # the design point's own field last, as the flow and forge read it
+    sets = split_sets([setting("memory.passes.layout=padded_rows"),
+                       setting("design.schedule=pipeline")])  # fmt: skip
+    assert sets["design"] == [("schedule", "pipeline")]
+    assert default_name(r, {}, (), sets["memory"], sets["design"]) == (
+        "vecadd_passes.layoutpadded_rows_schedulepipeline"
+    )
 
 
 def test_the_summary_names_every_stage(tmp_path, monkeypatch):

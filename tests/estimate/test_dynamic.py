@@ -51,6 +51,52 @@ def test_a_packed_outputs_packer_pushes_its_owners_pushes(tmp_path):
         assert price(p, c).parts[part] == pytest.approx(want.energy_nj, rel=1e-12), part
 
 
+def test_a_sliced_inputs_slicer_pops_its_units_firings(tmp_path):
+    """vecadd_i32 at W = 1: each slicer pops on the unit's 64 firings; with the graph's counts the
+    static estimate, and 10 more busy cycles add the control unit's clock only."""
+    from tests.gen.helpers import designed
+
+    point = DesignPoint.load(tmp_path / designed(tmp_path, "vecadd_i32", "v", ["W=1"]))
+    est = estimate(point.graph, point.platform)
+    p, c = _static(point.graph, est)
+    assert set(p.slicers) == {"acc.a", "acc.b"} and set(p.links) == {"acc.out"}
+    u, count, e_pop = p.slicers["acc.a"]
+    assert (u, count, c.units["acc"], c.busy) == ("acc", "firings", (64, 64), 65)
+    s = est.groups[0].cost.links["acc.a"]
+    assert e_pop == s.e_fire_pj
+    base = price(p, c)
+    for part, want in est.parts.items():
+        assert base.parts[part] == pytest.approx(want.energy_nj, rel=1e-12), part
+    assert base.fires == 64 + 64 + 2 * 64  # the unit's, the packer's pushes, the slicers' pops
+    c.busy += 10
+    more = price(p, c)
+    assert more.parts["datapath"] == base.parts["datapath"]
+    assert more.parts["control"] - base.parts["control"] == pytest.approx(
+        10 * p.ctrl_bits * p.e_ctrl_pj / 1000
+    )
+    assert Prices.from_dict(p.to_dict()) == p
+
+
+def test_a_sliced_seed_pops_once_a_job():
+    """A seed's slicer pops on its unit's pushes (one result a job), a plain input's on its
+    firings."""
+    p = Prices(
+        {"sum": (1, 2.0)},
+        {},
+        0,
+        0.0,
+        {},
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        {"sum.seed": ("sum", "pushes", 0.5), "sum.a": ("sum", "firings", 0.7)},
+    )
+    e = price(p, Counts({"sum": (40, 4)}, busy=42))
+    assert e.parts["datapath"] == pytest.approx((40 * 2.0 + 4 * 0.5 + 40 * 0.7) / 1000)
+    assert e.fires == 40 + 4 + 40
+
+
 def test_dot_3_at_w8_counts_and_a_refusal_at_a_grants_price():
     """dot 3 at W = 8, N = 2048: 4097 words through the crossbar, 4096 read at a read-only input's
     price and 1 written at a write-only one's (D178); 100 refused requests on reader A's lanes add

@@ -48,7 +48,7 @@ from .streamers import (
     linked_ports,
     memlet_spatial_bounds,
     nest_spatial_bounds,
-    packed,
+    per_word,
     port_loops,
     resolve,
     set_channels,
@@ -65,6 +65,8 @@ STAGES: dict[str, tuple[str, ...]] = {
     "connect": ("platform", "graph"),
     "memory": ("connect",),
 }
+# The design point's ``schedule`` (CONTRACTS, "Task list"): how LOWER orders the accelerators.
+SCHEDULES = ("serial", "pipeline", "pipeline_compute")
 # Component names besides the shell and the accelerators: the DMA's (lower/derive.py).
 FIXED = ("dma",)
 # snRuntime's top of L1 (snax-gvsoc sw/snRuntime/src/start.S): a stack of
@@ -86,6 +88,7 @@ class Design:
     instances: dict[str, Instance] = field(default_factory=dict)  # filled by graph.brm
     memory_spec: MemorySpec | None = field(default_factory=MemorySpec)
     memory: MemoryPlan | None = None  # made by the memory.pin check, or given (a design point)
+    schedule: str = "serial"  # one of SCHEDULES, checked by design.schedule
 
     def context(self) -> MemoryContext:
         return MemoryContext(self.graph, self.platform)
@@ -119,15 +122,25 @@ def load(
     sets: Sequence[tuple[str, Any]] = (),
     memory_path: str | Path | None = None,
     memory_sets: Sequence[tuple[str, Any]] = (),
+    design_sets: Sequence[tuple[str, Any]] = (),
 ) -> Design:
     """Load the inputs; what fails to load becomes a problem, never an exception.
 
     The platform is the working copy (``Platform.with_changes``), with ``sets``
     applied when they are given. The memory spec starts from ``memory_path``
     (a memory working copy) or the default passes, with ``memory_sets``
-    applied; the plan itself is made by the memory checks.
+    applied; the plan itself is made by the memory checks. ``design_sets`` set the
+    design point's own fields (``schedule``), checked by design.schedule.
     """
     problems: list[Problem] = []
+    schedule = "serial"
+    for path, value in design_sets:
+        if path == "schedule":
+            schedule = value
+        else:
+            problems.append(Problem("design.schedule", f"design.{path}",
+                                    "no such field; the design point's own field is schedule",
+                                    f"--set design.schedule={SCHEDULES[0]}"))  # fmt: skip
     platform = None
     try:
         platform = Platform.load(platform_path).with_changes(sets)
@@ -144,7 +157,7 @@ def load(
         spec = start.with_changes(memory_sets)
     except DesignError as e:
         problems += e.problems
-    return Design(platform, graph, problems, str(graph_path), memory_spec=spec)
+    return Design(platform, graph, problems, str(graph_path), memory_spec=spec, schedule=schedule)
 
 
 NOTES: dict[str, Check] = {}
@@ -228,6 +241,15 @@ def _streamers(design: Design) -> dict[str, tuple[str, str]]:
 
 def _platform_load(design: Design) -> Iterable[Problem]:
     return [p for p in design.load_problems if p.code.startswith("platform.")]
+
+
+def _design_schedule(design: Design) -> Iterable[Problem]:
+    """The schedule is one of ``SCHEDULES``; a ``--set design.`` path is ``schedule``."""
+    yield from (p for p in design.load_problems if p.code == "design.schedule")
+    if design.schedule not in SCHEDULES:
+        yield Problem("design.schedule", "design.schedule",
+                      f"{design.schedule!r} is no schedule; give one of {', '.join(SCHEDULES)}",
+                      f"--set design.schedule={SCHEDULES[0]}")  # fmt: skip
 
 
 def _platform_l2(design: Design) -> Iterable[Problem]:
@@ -526,9 +548,10 @@ def _connect_pack(design: Design) -> Iterable[Problem]:
     """Each port's elements fill whole words: with num_slc slices (elements) of its
     container's dtype per word, the fastest spatial bound S_0 is a multiple of num_slc, the
     fastest spatial loop steps 1 element, every other loop a multiple of num_slc, and the start
-    is on a word. An output whose W divides num_slc is packed instead (D174, ``_packed``). At
-    num_slc = 1 every port passes. The base address is memory.align's. At any k, a memlet stays
-    inside its container's padded shape (a tail's padding, as the reference executor requires)."""
+    is on a word. A port whose W divides num_slc is packed (an output, D174) or sliced (an
+    input, D180) instead (``_packed``). At num_slc = 1 every port passes. The base address is
+    memory.align's. At any k, a memlet stays inside its container's padded shape (a tail's
+    padding, as the reference executor requires)."""
     g, pf = design.graph, design.platform
     for n in accelerated(g):
         slots = slot_connectors(n)  # a CSR's value: no streamer, nothing packed
@@ -543,10 +566,10 @@ def _connect_pack(design: Design) -> Iterable[Problem]:
                 continue
             out = conn in n.outputs
             lanes = prod(b for _, b, _ in walk.spatial)
-            if packed(dtype, lanes, out, pf.l1.width_bits) > 1:
+            if per_word(dtype, lanes, pf.l1.width_bits) > 1:
                 mine = port_loops(instance_of(n), conn, m, firing_loops(g, n))
                 yield from _packed(f"node {n.id}.{conn}", m.data, dtype, num_slc, walk,
-                                   {lp.var for lp in mine})  # fmt: skip
+                                   {lp.var for lp in mine}, out)  # fmt: skip
                 continue
             yield from _pack(f"node {n.id}.{conn}", m.data, dtype, num_slc, out, walk)
 
@@ -600,17 +623,15 @@ def _pack(
     lanes = prod(b for _, b, _ in walk.spatial)
     s0, fastest = (walk.spatial[0][1], walk.spatial[0][2]) if walk.spatial else (1, 1)
     of = f"{dtype}, num_slc = {num_slc} slices per word"
-    if lanes < num_slc:
-        fix = f"give the port num_slc = {num_slc} lanes"
-        if out:
-            fits = [w for w in range(1, num_slc) if num_slc % w == 0]
-            fix = f"give the port W = {', '.join(map(str, fits))} lanes (packed) or {num_slc}"
+    if lanes < num_slc:  # W not dividing num_slc: neither sliced nor packed
+        fits = [w for w in range(1, num_slc) if num_slc % w == 0]
+        how = "packed" if out else "sliced"
         yield Problem(
             "connect.pack", where,
-            f"W = {lanes} lane{'s' if lanes > 1 else ''} < num_slc = {num_slc} ({of}): a beat would fill "
-            "part of a word" + ("" if out else ", and an input's slicer is parked"),
-            f"make {'the output' if out else 'the'} container {c} int64 or uint64 (one element "
-            f"per word), or {fix}",
+            f"W = {lanes} lane{'s' if lanes > 1 else ''} < num_slc = {num_slc} ({of}) and does not "
+            f"divide it: a beat would fill part of a word, and only a W dividing num_slc is {how}",
+            f"give the port W = {', '.join(map(str, fits))} ({how}) or a multiple of {num_slc} "
+            f"(wired), or make the container {c} int64 or uint64 (one element per word)",
         )  # fmt: skip
         return
     if s0 % num_slc:
@@ -659,15 +680,19 @@ def _pack(
 
 
 def _packed(
-    where: str, c: str, dtype: str, num_slc: int, walk: _Walk, names: set[str]
+    where: str, c: str, dtype: str, num_slc: int, walk: _Walk, names: set[str], out: bool = True
 ) -> Iterator[Problem]:
-    """A packed output (D174): d_out = num_slc / W results to a word, so its pushes are
-    contiguous (the innermost of its own loops, ``names``, steps W elements), its start and
-    every outer step whole words, and with an outer loop d_out divides the innermost count,
-    since only the run's last word may be short."""
+    """A packed output (D174) or a sliced input (D180): d = num_slc / W beats to a word, so its
+    beats are contiguous (the innermost of its own loops, ``names``, steps W elements), its start
+    and every outer step whole words (a step of 0 re-reads them), and with an outer loop d
+    divides the innermost count, since only the run's last word may be short."""
     lanes = prod(b for _, b, _ in walk.spatial)
     d_out = num_slc // lanes
-    of = f"{dtype}, num_slc = {num_slc}, W = {lanes}: packed d_out = {d_out} results to a word"
+    d, beats, which = ("d_out", "results", "pushes") if out else ("d_in", "pops", "pops")
+    how = "packed" if out else "sliced"
+    of = f"{dtype}, num_slc = {num_slc}, W = {lanes}: {how} {d} = {d_out} {beats} " + (
+        "to a word" if out else "from a word"
+    )
     if any(b > 1 for _, b, _ in walk.spatial[1:]) or (walk.spatial and walk.spatial[0][2] != 1):
         yield Problem(
             "connect.pack", where,
@@ -681,16 +706,18 @@ def _packed(
         if s != lanes:
             yield Problem(
                 "connect.pack", where,
-                f"loop {v} steps {s} elements of {c}, not W = {lanes}: the pushes are not "
+                f"loop {v} steps {s} elements of {c}, not W = {lanes}: the {which} are not "
                 f"contiguous ({of})",
-                f"make the output's innermost loop step {lanes} element{'s' if lanes > 1 else ''}",
+                f"make the {'output' if out else 'input'}'s innermost loop step {lanes} "
+                f"element{'s' if lanes > 1 else ''}",
             )  # fmt: skip
             return
         if len(loops) > 1 and n % d_out:  # its outer steps fail only because of it
             yield Problem(
                 "connect.pack", where,
-                f"loop {v} pushes {n} results per pass, not a multiple of d_out = {d_out}: a "
-                f"word would end inside the pass, and only the run's last word may be short ({of})",
+                f"loop {v} {'pushes' if out else 'pops'} {n} {beats} per pass, not a multiple of "
+                f"{d} = {d_out}: a word would end inside the pass, and only the run's last word "
+                f"may be short ({of})",
                 f"pad the row to {round_up(n, d_out) * lanes} elements",
             )  # fmt: skip
             return
@@ -797,7 +824,7 @@ def _port_spatial_bounds(design: Design, s: str, i: str, p: str) -> list[int] | 
 
 def _connect_num_ch(design: Design) -> Iterable[Problem]:
     """A streamer entry's ``num_ch`` against the wire default W / num_slc: only that is
-    placed for now, since any other needs the FIFO slicer; a packed output's is 1."""
+    placed for now; a packed output's and a sliced input's is 1."""
     g, pf = design.graph, design.platform
     for s, (i, p) in _streamers(design).items():
         num_ch = pf.num_ch(s)
@@ -808,12 +835,13 @@ def _connect_num_ch(design: Design) -> Iterable[Problem]:
         dtype = g.containers[(node.inputs | node.outputs)[p].data].dtype
         num_slc = slices_per_word(dtype, pf.l1.width_bits)
         lanes = prod(sb)
-        if packed(dtype, lanes, p in node.outputs, pf.l1.width_bits) > 1:
+        if per_word(dtype, lanes, pf.l1.width_bits) > 1:
             if num_ch != 1:
+                what, how = ("an output", "packed") if p in node.outputs else ("an input", "sliced")
                 yield Problem(
                     "connect.num_ch", f"platform.streamers.{s}.num_ch",
-                    f"num_ch = {num_ch} for an output of {lanes} lane{'s' if lanes > 1 else ''} "
-                    f"of {dtype} packed {num_slc // lanes} to a word: a packed output has one "
+                    f"num_ch = {num_ch} for {what} of {lanes} lane{'s' if lanes > 1 else ''} "
+                    f"of {dtype} {how} {num_slc // lanes} to a word: a {how} port has one "
                     "channel",
                     f"remove num_ch, or {_set(f'streamers.{s}.num_ch', 1)}",
                 )  # fmt: skip
@@ -1209,6 +1237,7 @@ for _code, _stage, _fn in (
     ("platform.load", "platform", _platform_load),
     ("platform.l2", "platform", _platform_l2),
     ("platform.banks", "platform", _platform_banks),
+    ("design.schedule", "platform", _design_schedule),
     ("graph.load", "graph", _graph_load),
     ("graph.symbols", "graph", _graph_symbols),
     ("graph.unbound", "graph", _graph_unbound),
