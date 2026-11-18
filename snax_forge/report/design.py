@@ -216,7 +216,9 @@ class EstimateTable(Record):
     bank_notes: list[str] = field(default_factory=list)  # a group's bank bound over its cycles
     unmapped_cycles: int = 0  # unmapped_iterations at UNMAPPED_CYCLES_PER_ITERATION
     unmapped_iterations: int = 0  # over every map, spatial ones included
-    total_cycles: int = 0  # accelerator_cycles + unmapped_cycles
+    total_cycles: int = 0  # accelerator_cycles + unmapped_cycles + copy_cycles
+    copies: list[str] = field(default_factory=list)  # each copy: its name, bursts and cycles
+    copy_cycles: int = 0  # the copies' cycles at the DMA's measured rate
     l1: list[L1Row] = field(default_factory=list)  # per accelerator, its words in L1
     streamers: int = 1  # the streamer sets, one per accelerator
     csrs: int | None = None  # every CSR of the entry; None without a platform
@@ -498,6 +500,8 @@ def estimate_table(point: Any, tech: str | None = DEFAULT_TECH) -> EstimateTable
                          notes, unmapped_cycles=e.unmapped_cycles,
                          unmapped_iterations=e.unmapped_iterations,
                          total_cycles=e.total_cycles, schedule=e.schedule,
+                         copies=[f"{x.name}, {x.bursts} bursts by {x.by}" for x in e.copies],
+                         copy_cycles=e.copy_cycles,
                          l1=[L1Row(a, x.words, x.bits, x.energy_nj, x.reads, x.writes, x.xbar_nj,
                                    x.banks_nj) for a, x in e.l1.items()],
                          streamers=e.streamers, csrs=e.csrs, parts=parts,
@@ -643,7 +647,9 @@ def render_design(r: DesignReport) -> str:
 
 def cycles_line(e: EstimateTable) -> str:
     """The Estimate's cycles: the accelerator's, the unmapped work's at one cycle per
-    iteration (an assumption; left out at 0), the total."""
+    iteration (an assumption; left out at 0), the copies' at the DMA's measured rate (left out
+    without one), the total."""
+    from snax_forge.estimate import DMA_CYCLES_PER_BURST
     from snax_forge.estimate import UNMAPPED_CYCLES_PER_ITERATION as PER
 
     unmapped = ""
@@ -652,7 +658,15 @@ def cycles_line(e: EstimateTable) -> str:
         unmapped = (f" Unmapped: {e.unmapped_cycles} cycles ({e.unmapped_iterations} iterations at "
                     f"{each}, an assumption).")  # fmt: skip
     how = "" if e.schedule in IN_SERIES else f" ({e.schedule}: the longest path through the runs)"
-    return f"Accelerator cycles: {e.accelerator_cycles}{how}.{unmapped} Total: {e.total_cycles}."
+    copies = ""
+    if e.copies:
+        rate = f"{DMA_CYCLES_PER_BURST:.2f}"
+        copies = (f" Copies: {e.copy_cycles} cycles ({'; '.join(e.copies)}; {rate} cycles a "
+                  "burst, the DMA's rate on the RTL).")  # fmt: skip
+    return (
+        f"Accelerator cycles: {e.accelerator_cycles}{how}.{unmapped}{copies} "
+        f"Total: {e.total_cycles}."
+    )
 
 
 def render_sets(rows: list[SetRow]) -> list[str]:
