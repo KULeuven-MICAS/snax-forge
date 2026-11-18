@@ -26,6 +26,7 @@ from snax_forge.design.streamers import accelerators as graph_accelerators
 
 from .accelerators import AcceleratorEstimate, StreamerEstimate, accelerators
 from .bits import ctrl_bits, ctrl_registers
+from .copies import DMA_CYCLES_PER_BURST, CopyEstimate, copies
 from .cost import (
     PARTS,
     BlockCost,
@@ -43,7 +44,6 @@ from .cost import (
     xbar_cost,
     xbar_kinds,
 )
-from .copies import DMA_CYCLES_PER_BURST, CopyEstimate, copies
 from .cycles import EstimateError, GroupEstimate, group_blocks, group_cycles, not_mapped
 from .data import ContainerData, PortData, SplitData, containers, outer_ports, ports, splits
 from .schedule import RunEstimate, longest_path, overlap

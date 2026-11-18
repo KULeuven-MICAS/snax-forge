@@ -61,8 +61,8 @@ def test_the_executor_copies_the_input_permuted():
 @pytest.mark.parametrize(("edit", "message"), [
     ({"body__0__attrs__perm": [0, 0]}, r"perm: \[0, 0\] is not a permutation of 'A''s 2"),
     ({"body__0__attrs__perm": [1, 0, 2]}, "is not a permutation"),
-    ({"body__0__attrs__perm": [0, 1]}, r"'A_T' is \['N', 'M'\], 'A' permuted by \[0, 1\] is "
-                                       r"\['M', 'N'\]"),
+    ({"body__0__attrs__perm": [0, 1]}, (r"'A_T' is \['N', 'M'\], 'A' permuted by \[0, 1\] is "
+                                        r"\['M', 'N'\]")),
     ({"containers__A_T__dtype": "int8"}, "'A_T' is int8, 'A' int64"),
     ({"body__0__attrs__by": "cpu"}, r"by: 'cpu' is not one of \['dma', 'core'\]"),
     ({"body__0__inputs__src__subset": ["0:M", "1:N"]}, "moves the whole of 'A'"),

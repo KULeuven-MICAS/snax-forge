@@ -194,7 +194,7 @@ def test_data_transpose_refuses():
 def test_the_form_offers_dma_and_refuses_core():
     g = mvt()
     answer = {"params": TRANSFORMS["data_transpose"].site(g, "tmp2_mult_map")}
-    node, container, by = form("data_transpose", g, answer, {})
+    _, container, by = form("data_transpose", g, answer, {})
     assert (container["value"], container["readonly"]) == ("A", True)
     assert by["type"] == "choice" and by["value"] == "dma"
     assert [(c["value"], c["ok"], c.get("message")) for c in by["choices"]] == [
