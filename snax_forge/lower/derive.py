@@ -15,7 +15,8 @@ by beat (``addresses``) must be the nest's through the same layout (streams.py).
 output's writer and a sliced input's reader move words (``packed_values``, D174 · D180). The design point's ``schedule`` (D179)
 orders the accelerators: ``serial`` adds ``serial_syncs``; ``pipeline`` moves the stores past
 other accelerators' starts (``later_stores``), and ``pipeline_compute`` also gathers the starts
-with only loads to wait for (``gathered``). A ``LowerError`` names what does not fit.
+with only loads to wait for (``gathered``). A ``transpose`` node (data_transpose's copy) has no
+task yet and is refused. A ``LowerError`` names what does not fit.
 """
 
 from __future__ import annotations
@@ -335,6 +336,12 @@ class _Derivation:
         self.final: dict[str, str] = {}  # container -> task that leaves it in its last memory
 
     def run(self) -> TaskList:
+        for t, _ in self.g.walk():
+            if t.kind == "transpose":  # no task makes the copy yet: its readers would read zeros
+                (src,), (dst,) = t.inputs.values(), t.outputs.values()
+                raise LowerError(f"{t.id}: the copy of {src.data} into {dst.data} "
+                                 f"(data_transpose, by {t.attrs['by']}) has no task yet; read "
+                                 f"{src.data} by strides with mark_transpose instead")  # fmt: skip
         done: set[str] = set()
         for n in self.nodes:
             group = self.group_of[n.attrs["instance"]]

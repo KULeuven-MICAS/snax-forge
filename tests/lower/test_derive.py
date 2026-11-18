@@ -6,7 +6,7 @@ import pytest
 
 from snax_forge.design import Design, DesignPoint, MemorySpec, Platform, run_checks, streamers
 from snax_forge.design.streamers import Loop
-from snax_forge.dfg import Memlet
+from snax_forge.dfg import Graph, Memlet
 from snax_forge.lower import (
     Layout,
     LowerError,
@@ -546,3 +546,20 @@ def test_a_sliced_reader_moves_words():
     for t in ("add_acc_a", "add_acc_b", "add_acc_out"):
         v = c[t].values
         assert (v["temporal_bounds"], v["temporal_strides"]) == ([32], [8]), t
+
+
+def test_a_transpose_node_is_refused_until_its_copy_has_a_task():
+    """data_transpose's copy has no DMA task yet: lower refuses it by name, with the fix,
+    rather than a program whose readers read an empty container."""
+    d = bound_vecadd(4).to_dict()
+    d["containers"]["A_T"] = dict(d["containers"]["A"], transient=True)
+    d["body"].insert(0, {"id": "transpose_A", "kind": "transpose",
+                         "inputs": {"src": {"data": "A", "subset": ["0:N"]}},
+                         "outputs": {"dst": {"data": "A_T", "subset": ["0:N"]}},
+                         "attrs": {"perm": [0], "by": "dma"}})  # fmt: skip
+    dp = Design(Platform.load(SNAX_FORGE), Graph.from_dict(d))
+    assert run_checks(dp) == []
+    with pytest.raises(LowerError, match=r"^transpose_A: the copy of A into A_T \(data_transpose, "
+                                         r"by dma\) has no task yet; read A by strides with "
+                                         r"mark_transpose instead$"):  # fmt: skip
+        task_list(DesignPoint.of(dp, "vecadd"))
