@@ -1639,10 +1639,14 @@ def columns(tops: Sequence[Node]) -> tuple[list[int], list[dict[str, Any]]]:
 def drawn_once(g: Graph) -> set[str]:
     """The containers drawn once, above the columns that read them, when the graph has more
     than one column (the inputs no node writes among them): those ``mark_transpose`` marked in
-    any column (a tasklet's or a bound unit's ``sandbox.transpose``); every other input is
-    drawn in each column that reads it."""
-    return {n.inputs[c].data for n, _ in g.walk() for c in n.attrs.get(TRANSPOSE, {})
-            if c in n.inputs}  # fmt: skip
+    any column (a tasklet's or a bound unit's ``sandbox.transpose``) and the source of
+    ``data_transpose``'s copy (a ``transpose`` node's ``src``), so the reads in the row's order
+    and the transposed one start from the same box; every other input is drawn in each column
+    that reads it."""
+    marked = {n.inputs[c].data for n, _ in g.walk() for c in n.attrs.get(TRANSPOSE, {})
+              if c in n.inputs}  # fmt: skip
+    copied = {n.inputs["src"].data for n, _ in g.walk() if n.kind == "transpose"}
+    return marked | copied
 
 
 def transpose_label(data: str, perm: Sequence[int]) -> str:
