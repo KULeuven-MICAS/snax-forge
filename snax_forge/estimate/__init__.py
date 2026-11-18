@@ -7,8 +7,8 @@ DMA, no core control): per group its cycles, their split and its register bits (
 bits.py), per accelerator its streamer set and CSRs (accelerators.py), the data side (data.py)
 and, on a technology, the cost (cost.py; ``tech=None`` leaves it out). The work no unit runs is
 ``unmapped_iterations`` at ``UNMAPPED_CYCLES_PER_ITERATION`` cycles each, an assumption held in
-this one constant so a measured value can replace it; ``total_cycles`` adds it to the
-accelerator's. Under a pipelined ``schedule`` (D179) the accelerator's cycles are the longest
+this one constant so a measured value can replace it; a copy (data_transpose's) at the DMA's
+measured rate (copies.py); ``total_cycles`` adds both to the accelerator's. Under a pipelined ``schedule`` (D179) the accelerator's cycles are the longest
 path through the runs (schedule.py), not their sum. The viewers and ``design.md`` read it (report/design.py).
 """
 
@@ -43,6 +43,7 @@ from .cost import (
     xbar_cost,
     xbar_kinds,
 )
+from .copies import DMA_CYCLES_PER_BURST, CopyEstimate, copies
 from .cycles import EstimateError, GroupEstimate, group_blocks, group_cycles, not_mapped
 from .data import ContainerData, PortData, SplitData, containers, outer_ports, ports, splits
 from .schedule import RunEstimate, longest_path, overlap
@@ -81,6 +82,7 @@ class Estimate(JsonFile):
     bank_shape: tuple[int, int, int] | None = None
     schedule: str = "serial"  # the design point's (D179)
     runs: list[RunEstimate] = field(default_factory=list)  # in start order (schedule.py)
+    copies: list[CopyEstimate] = field(default_factory=list)  # data_transpose's (copies.py)
 
     @property
     def streamers(self) -> int:
@@ -134,11 +136,14 @@ class Estimate(JsonFile):
 
     @cached_property
     def memory(self) -> MemoryCost | None:
-        """The L1 banks priced; None when not costed."""
+        """The L1 banks priced, the streamers' words and the copies' accesses (copies.py);
+        None when not costed."""
         c = self.costs
         if c is None or self.bank_shape is None:
             return None
-        return memory_cost(c, *self.bank_shape, *self._rw())
+        reads, writes = self._rw()
+        k = sum(x.bursts for x in self.copies)  # a copy reads and writes once per burst
+        return memory_cost(c, *self.bank_shape, reads + k, writes + k)
 
     @property
     def l1(self) -> dict[str, L1Cost]:
@@ -250,9 +255,15 @@ class Estimate(JsonFile):
         return self.unmapped_iterations * UNMAPPED_CYCLES_PER_ITERATION
 
     @property
+    def copy_cycles(self) -> int:
+        """The copies' cycles (copies.py), added up and rounded; under a pipelined schedule
+        added as well, for now."""
+        return round(sum(x.cycles for x in self.copies))
+
+    @property
     def total_cycles(self) -> int:
-        """The accelerator's cycles plus the unmapped ones."""
-        return self.accelerator_cycles + self.unmapped_cycles
+        """The accelerator's cycles plus the unmapped ones and the copies'."""
+        return self.accelerator_cycles + self.unmapped_cycles + self.copy_cycles
 
     @property
     def l1_footprint(self) -> int:
@@ -267,6 +278,8 @@ class Estimate(JsonFile):
             "not_mapped": self.not_mapped,
             "unmapped_iterations": self.unmapped_iterations,
             "unmapped_cycles": self.unmapped_cycles,
+            "copies": [x.to_dict() for x in self.copies],
+            "copy_cycles": self.copy_cycles,
             "total_cycles": self.total_cycles,
             "schedule": self.schedule,
             "runs": [r.to_dict() for r in self.runs],
@@ -315,6 +328,7 @@ class Estimate(JsonFile):
             None if hw.get("bank_shape") is None else tuple(hw["bank_shape"]),
             d.get("schedule", "serial"),
             [RunEstimate.from_dict(r) for r in d.get("runs", [])],
+            [CopyEstimate.from_dict(x) for x in d.get("copies", [])],
         )  # fmt: skip
 
 
@@ -360,7 +374,8 @@ def estimate(graph: Graph, platform: Platform | None = None,
     return Estimate(found, not_mapped(graph), data, size, ports(graph), splits(graph),
                     tech, None if table is None else dict(table.source),
                     not_mapped(graph, spatial=True), l1_words,
-                    accelerators(graph, platform), counts, xin, shape, schedule, run_list)  # fmt: skip
+                    accelerators(graph, platform), counts, xin, shape, schedule, run_list,
+                    copies(graph))  # fmt: skip
 
 
 def _hw_counts(graph: Graph, platform: Platform, data: dict[str, ContainerData]
@@ -399,11 +414,13 @@ def _hw_counts(graph: Graph, platform: Platform, data: dict[str, ContainerData]
 
 
 __all__ = [
+    "DMA_CYCLES_PER_BURST",
     "PARTS",
     "UNMAPPED_CYCLES_PER_ITERATION",
     "AcceleratorEstimate",
     "BlockCost",
     "ContainerData",
+    "CopyEstimate",
     "Estimate",
     "EstimateError",
     "GroupCost",
