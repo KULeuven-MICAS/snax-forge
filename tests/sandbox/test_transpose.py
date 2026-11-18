@@ -1,6 +1,6 @@
-"""mark_transpose and unmark_transpose (transpose.py) on mvt at M = 8, N = 16: half 2's
-multiply reads A[m, n] under the loops (n, m), π = (1, 0); half 1 reads everything in loop
-order."""
+"""mark_transpose, unmark_transpose and data_transpose (transpose.py) on mvt at M = 8, N = 16:
+half 2's multiply reads A[m, n] under the loops (n, m), π = (1, 0); half 1 reads everything in
+loop order."""
 
 from __future__ import annotations
 
@@ -14,13 +14,14 @@ from snax_forge.sandbox import (
     Recipe,
     SandboxError,
     apply_recipe,
+    data_transpose,
     mark_transpose,
     unbind,
     unmark_transpose,
 )
 from snax_forge.sandbox.session import form
 from snax_forge.sandbox.transforms import TRANSFORMS, join_map, split_map, tag_map, untag_map
-from snax_forge.sandbox.transpose import loop_orders
+from snax_forge.sandbox.transpose import loop_orders, transpose_choices
 from tests.helpers import imported
 
 from .helpers import SIZES, mvt, step
@@ -134,3 +135,80 @@ def test_the_form_names_the_container():
     assert mark_transpose(two, "tmp2_mult", "B").node("tmp2_mult").attrs[TRANSPOSE] == {
         "in2": [1, 0]
     }
+
+
+def test_data_transpose_copies_a_and_half_2_reads_the_copy_in_loop_order():
+    """A_T, A's shape permuted, a transient; the transpose node just before half 2's multiply;
+    the multiply reads A_T[n, m] under (n, m), so nothing is left to transpose there."""
+    g = mvt()
+    assert TRANSFORMS["data_transpose"].site(g, "tmp2_mult_map") == {
+        "node": "tmp2_mult_map", "container": "A", "by": "dma"}  # fmt: skip
+    d = data_transpose(g, "tmp2_mult_map")
+    a_t = d.containers["A_T"]
+    assert (a_t.shape, a_t.dtype, a_t.transient) == (["N", "M"], "int64", True)
+    assert list(d.containers).index("A_T") == list(d.containers).index("A") + 1
+    top = [n.id for n in d.body]
+    assert top.index("transpose_A") == top.index("tmp2_mult_map") - 1
+    assert d.node("transpose_A").to_dict() == {
+        "id": "transpose_A", "kind": "transpose",
+        "inputs": {"src": {"data": "A", "subset": ["0:M", "0:N"]}},
+        "outputs": {"dst": {"data": "A_T", "subset": ["0:N", "0:M"]}},
+        "attrs": {"perm": [1, 0], "by": "dma"}}  # fmt: skip
+    assert loop_orders(d, "tmp2_mult") == [("in1", "A_T", [0, 1]), ("in2", "y2", [0])]
+    assert d.node("tmp0_mult").inputs == g.node("tmp0_mult").inputs  # half 1 still reads A
+    assert transpose_choices(d, "tmp2_mult") == []
+    with pytest.raises(SandboxError, match="tmp2_mult reads A_T, y2 in loop order"):
+        data_transpose(d, "tmp2_mult")
+
+
+def test_a_split_range_moves_with_its_dimension():
+    """After split_map on m, the split index sits in A_T's second dimension; every step is
+    checked against the reference executor."""
+    r = Recipe.from_dict({"name": "t", "kernel": "mvt", "symbols": SIZES, "steps": [
+        step("tag_map", map="tmp2_mult_map", kind="temporal"),
+        step("split_map", map="tmp2_mult_map_1", factor=4),
+        step("data_transpose", node="tmp2_mult", container="A", by="dma"),
+    ]})  # fmt: skip
+    d = apply_recipe(r, imported("mvt"))[-1].graph
+    assert d.node("tmp2_mult").inputs["in1"].to_dict() == {
+        "data": "A_T", "subset": ["n_t", "4 * m_1_t + m_2_s"]}  # fmt: skip
+
+
+def test_data_transpose_refuses():
+    g = mvt()
+    with pytest.raises(SandboxError, match="^data_transpose by core is not built yet; use by=dma$"):
+        data_transpose(g, "tmp2_mult_map", by="core")
+    with pytest.raises(SandboxError, match="by 'cpu' is not one of dma, core"):
+        data_transpose(g, "tmp2_mult_map", by="cpu")
+    with pytest.raises(SandboxError, match="tmp0_mult reads A, y1 in loop order"):
+        data_transpose(g, "tmp0_mult_map")
+    d = g.to_dict()
+    d["containers"]["A_T"] = {"shape": ["N", "M"], "dtype": "int64", "transient": True}
+    with pytest.raises(SandboxError, match="a container A_T exists already; rename it, or undo"):
+        data_transpose(Graph.from_dict(d), "tmp2_mult_map")
+    marked = mark_transpose(g, "tmp2_mult")
+    with pytest.raises(SandboxError, match="data_transpose 'tmp2_mult': tmp2_mult marks A already"):
+        data_transpose(marked, "tmp2_mult")
+
+
+def test_the_form_offers_dma_and_refuses_core():
+    g = mvt()
+    answer = {"params": TRANSFORMS["data_transpose"].site(g, "tmp2_mult_map")}
+    node, container, by = form("data_transpose", g, answer, {})
+    assert (container["value"], container["readonly"]) == ("A", True)
+    assert by["type"] == "choice" and by["value"] == "dma"
+    assert [(c["value"], c["ok"], c.get("message")) for c in by["choices"]] == [
+        ("dma", True, None),
+        ("core", False, "data_transpose by core is not built yet; use by=dma")]  # fmt: skip
+
+
+def test_mark_transpose_refuses_an_element_narrower_than_a_word():
+    """A packed int8 read cannot cross the loop order; data_transpose can take it."""
+    d = mvt().to_dict()
+    for c in d["containers"].values():
+        c["dtype"] = "int8"
+    g = Graph.from_dict(d)
+    message = "mark_transpose 'tmp2_mult_map': A is int8: a packed read cannot cross the loop order; use data_transpose"
+    with pytest.raises(SandboxError, match=f"^{message}$"):
+        mark_transpose(g, "tmp2_mult_map")
+    assert data_transpose(g, "tmp2_mult_map").containers["A_T"].dtype == "int8"

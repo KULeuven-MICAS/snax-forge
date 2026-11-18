@@ -1010,8 +1010,10 @@ def form(
     side, its ``value`` giving both params, labelled with the partner and the transient's
     marker, ``_pair_field``; on two maps ``first`` the selection's and fuse_seed's ``second`` a
     choice per map of the elementwise nest, ``_second_field``), ``unfuse_seed``'s ``map`` (a
-    choice per seeded fold, ``_fold_field``) and ``mark_transpose``'s and ``unmark_transpose``'s
-    ``container`` (its one container, or a choice when there are several, ``_transpose_field``)."""
+    choice per seeded fold, ``_fold_field``), ``mark_transpose``'s, ``unmark_transpose``'s and
+    ``data_transpose``'s ``container`` (its one container, or a choice when there are several,
+    ``_transpose_field``) and ``data_transpose``'s ``by`` (dma, core shown and refused,
+    ``_by_field``)."""
 
     from snax_forge.common import fresh
 
@@ -1065,8 +1067,10 @@ def form(
             field |= _second_field(g, filled["first"], filled.get("second"))
         elif name == "unfuse_seed" and p == "map":  # the seeded folds
             field |= _fold_field(g, filled["map"])
-        elif name in ("mark_transpose", "unmark_transpose") and p == "container":
+        elif name in ("mark_transpose", "unmark_transpose", "data_transpose") and p == "container":
             field |= _transpose_field(name, g, filled["node"], filled.get("container"))
+        elif name == "data_transpose" and p == "by":
+            field |= _by_field()
         elif name == "tag_map" and p == "kind":
             field |= {"type": "choice", "value": DEFAULT_KIND,
                       "choices": [{"value": t, "label": t} for t in TAGS]}  # fmt: skip
@@ -1179,14 +1183,17 @@ def _fold_field(g: Graph, map: str) -> dict[str, Any]:
 
 
 def _transpose_field(name: str, g: Graph, node: str, container: str | None) -> dict[str, Any]:
-    """mark_transpose's or unmark_transpose's ``container``: the one container it takes at
+    """mark_transpose's, unmark_transpose's or data_transpose's ``container``: the one it takes at
     ``node``, or a choice per container when there are several, each labelled with its π
     (transpose.py's ``transpose_choices``), the first the default; and the form's hint."""
     from .transpose import transpose_choices
 
-    found = transpose_choices(g, node, mark=name == "mark_transpose")
-    hint = ("the input read across the loop order, drawn as its transpose (Aᵀ); no memlet "
-            "changes" if name == "mark_transpose" else "the input whose transpose mark goes")  # fmt: skip
+    found = transpose_choices(g, node, mark=name != "unmark_transpose")
+    hint = {"mark_transpose": "the input read across the loop order, drawn as its transpose "
+                              "(Aᵀ); no memlet changes",
+            "data_transpose": "the input read across the loop order, copied transposed into "
+                              "<container>_T before the nest, which then reads the copy",
+            "unmark_transpose": "the input whose transpose mark goes"}[name]  # fmt: skip
     if len(found) == 1:
         return {"value": found[0]["container"], "readonly": True, "hint": hint}
     choices = [{"value": x["container"], "ok": True,
@@ -1194,6 +1201,17 @@ def _transpose_field(name: str, g: Graph, node: str, container: str | None) -> d
                for x in found]  # fmt: skip
     value = container if container is not None else found[0]["container"]
     return {"type": "choice", "readonly": False, "value": value, "choices": choices, "hint": hint}
+
+
+def _by_field() -> dict[str, Any]:
+    """data_transpose's ``by``: what makes the copy, dma; core shown, not built yet."""
+    from .transpose import DATA_TRANSPOSE_BY, NOT_BUILT
+
+    return {"type": "choice", "readonly": False, "value": "dma",
+            "hint": "what makes the copy: the DMA (one burst per element), or the core",
+            "choices": [{"value": b, "label": b, "ok": b not in NOT_BUILT,
+                         **({"message": NOT_BUILT[b]} if b in NOT_BUILT else {})}
+                        for b in DATA_TRANSPOSE_BY]}  # fmt: skip
 
 
 def _timing(inst: Any) -> dict[str, int]:
