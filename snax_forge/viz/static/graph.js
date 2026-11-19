@@ -97,6 +97,7 @@ function elkGraph(d, sizes, lanes = new Map(), forced = false) {
     own.set(id, { node, side, data });
   };
   const nodes = new Map(d.nodes.map((n) => [n.id, n]));
+  const fixed = fixedPorts(d);
   const named = (n) => Boolean((n.ins && n.ins.length) || (n.outs && n.outs.length));
   const ends = d.edges.map((e, i) => {
     const a = nodes.get(e.from), b = nodes.get(e.to);
@@ -122,7 +123,7 @@ function elkGraph(d, sizes, lanes = new Map(), forced = false) {
       ...ins.map((id, i) => ({ id, width: 7, height: 7, layoutOptions: { "elk.port.side": "NORTH", "elk.port.index": String(i) } })),
       ...outs.map((id, i) => ({ id, width: 7, height: 7, layoutOptions: { "elk.port.side": "SOUTH", "elk.port.index": String(outs.length - 1 - i) } })),
     ];
-    const lo = { "elk.portConstraints": named(n) || lanes.has(n.id) ? "FIXED_ORDER" : "FIXED_SIDE", "elk.portAlignment.default": "DISTRIBUTED" };
+    const lo = { "elk.portConstraints": fixed.has(n.id) || lanes.has(n.id) ? "FIXED_ORDER" : "FIXED_SIDE", "elk.portAlignment.default": "DISTRIBUTED" };
     if (n.layer === "first") lo["elk.layered.layering.layerConstraint"] = "FIRST";
     if (n.row !== undefined && n.row !== null) lo["elk.layered.layering.layerChoiceConstraint"] = String(n.row);
     byOutline.get(n.parent || null).push({ id: n.id, width: w, height: ht, ports, layoutOptions: lo });
@@ -167,44 +168,56 @@ function elkGraph(d, sizes, lanes = new Map(), forced = false) {
   return { graph, own };
 }
 
-/** The loops whose data cross inside them in layout ``L``: for each, its data in the order its
-outputs leave (left to right), so the next layout keeps the inputs in that order too. */
-function crossedLanes(d, L, own) {
-  const sides = new Map(); // a loop -> {NORTH: [[x, data]], SOUTH: [...]}
+/** Each loop's lanes after layout ``L``: a loop chain (loops joined by their hops) carries its
+data side by side, so every loop of a chain orders its ports by one order, the data's left to
+right where they first enter the chain (from a container, a copy or a unit). A chain whose
+loops already keep it gets none. The leaves below then take their inputs in that order, their
+ports being free (``fixedPorts``). */
+function chainLanes(d, L, own) {
+  const loops = new Set(d.nodes.filter((n) => n.kind === "loop").map((n) => n.id));
+  const chain = new Map([...loops].map((id) => [id, id])); // union-find over the hops
+  const root = (id) => (chain.get(id) === id ? id : root(chain.get(id)));
+  for (const e of d.edges) if (loops.has(e.from) && loops.has(e.to)) chain.set(root(e.from), root(e.to));
+  const entry = new Map(); // a chain -> datum -> x where it enters
+  d.edges.forEach((e, i) => {
+    if (!loops.has(e.to) || loops.has(e.from) || !e.data || !L.edges[i] || !L.edges[i].pts.length) return;
+    const c = root(e.to);
+    if (!entry.has(c)) entry.set(c, new Map());
+    const x = L.edges[i].pts[0].x;
+    const m = entry.get(c);
+    if (!m.has(e.data) || x < m.get(e.data)) m.set(e.data, x);
+  });
+  const sides = new Map(); // a loop -> {NORTH, SOUTH}: its data left to right in L
   for (const [id, p] of own) {
-    if (!p.data) continue;
-    const n = d.nodes.find((x) => x.id === p.node);
-    if (!n || n.kind !== "loop") continue;
+    if (!p.data || !loops.has(p.node)) continue;
     const at = L.boxes.get(p.node) && L.boxes.get(p.node).ports.get(id);
     if (!at) continue;
     if (!sides.has(p.node)) sides.set(p.node, { NORTH: [], SOUTH: [] });
     sides.get(p.node)[p.side].push([at.x, p.data]);
   }
-  const order = (list) => {
-    const first = new Map();
-    for (const [x, data] of [...list].sort((a, b) => a[0] - b[0])) if (!first.has(data)) first.set(data, x);
-    return [...first.keys()];
-  };
+  const order = (list) => [...new Set([...list].sort((a, b) => a[0] - b[0]).map((x) => x[1]))];
   const lanes = new Map();
-  for (const [node, s] of sides) {
-    const ins = order(s.NORTH), outs = order(s.SOUTH);
-    const shared = outs.filter((x) => ins.includes(x));
-    if (shared.length < 2) continue;
-    if (shared.join("|") !== ins.filter((x) => outs.includes(x)).join("|")) lanes.set(node, outs);
+  const changes = new Set();
+  for (const [node, sd] of sides) {
+    const m = entry.get(root(node)) || new Map();
+    const mine = [...new Set([...order(sd.NORTH), ...order(sd.SOUTH)])];
+    if (mine.length < 2) continue;
+    const at = (x) => (m.has(x) ? m.get(x) : Infinity);
+    const want = [...mine].sort((a, b) => at(a) - at(b) || mine.indexOf(a) - mine.indexOf(b));
+    lanes.set(node, want);
+    const keeps = (side) => order(side).join("|") === want.filter((x) => order(side).includes(x)).join("|");
+    if (!keeps(sd.NORTH) || !keeps(sd.SOUTH)) changes.add(root(node));
   }
-  // the loops chained to one that is reordered keep its order, so the data do not cross between them
-  const loops = new Set(d.nodes.filter((n) => n.kind === "loop").map((n) => n.id));
-  const todo = [...lanes.keys()];
-  while (todo.length) {
-    const node = todo.pop();
-    for (const e of d.edges) {
-      const other = e.from === node ? e.to : e.to === node ? e.from : null;
-      if (!other || !loops.has(other) || lanes.has(other)) continue;
-      lanes.set(other, lanes.get(node));
-      todo.push(other);
-    }
-  }
+  for (const node of [...lanes.keys()]) if (!changes.has(root(node))) lanes.delete(node);
   return lanes;
+}
+
+/** A box whose ports keep the server's order: a temporal mux or demux (its ports grouped by
+task) and a unit a mux feeds (its inputs under the mux's outputs). Any other box's ports are
+free, so ELK puts an input where its edge comes from and two edges into one box do not cross. */
+function fixedPorts(d) {
+  const fed = new Set(d.nodes.filter((n) => n.kind === "mux" && n.width_of).map((n) => n.width_of));
+  return new Set(d.nodes.filter((n) => n.kind === "mux" || n.kind === "demux" || fed.has(n.id)).map((n) => n.id));
 }
 
 function collectEdges(root) {
@@ -278,6 +291,14 @@ export async function layout(d, probe, seed = null) {
   return L;
 }
 
+/** Drawing ``d`` laid out again from scratch, ELK free to choose every order (clean graph);
+the layout kept for it from now on. */
+export async function relayout(d, probe) {
+  const L = await layOut(d, probe);
+  layouts.set(JSON.stringify(d), L);
+  return L;
+}
+
 const SEED_SHARE = 0.6; // of a step's boxes the step before must hold to keep its order
 
 /** Drawing ``d`` with its boxes in the left-to-right order ``seed`` (the layout of a step shown
@@ -324,9 +345,9 @@ async function layOut(d, probe, forced = false) {
   const t0 = performance.now();
   let { graph, own } = elkGraph(d, sizes, new Map(), forced);
   let L = absolute(d, await elk().layout(graph));
-  // a datum that crosses another inside a loop reads as if it went where the other goes: lay
-  // out again with those loops' ports in one order on both sides
-  const lanes = crossedLanes(d, L, own);
+  // a datum that crosses another inside a loop chain reads as if it went where the other goes:
+  // lay out again with each such chain's ports in one order, the order its data enter it
+  const lanes = chainLanes(d, L, own);
   if (lanes.size) {
     ({ graph, own } = elkGraph(d, sizes, lanes, forced));
     L = absolute(d, await elk().layout(graph));

@@ -16,7 +16,7 @@
 
 import { dragHandle, h, keep, stored } from "./dom.js";
 import * as edit from "./edit.js";
-import { TASK_COLOURS, Viewport, layout, render } from "./graph.js";
+import { TASK_COLOURS, Viewport, layout, relayout, render } from "./graph.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -165,7 +165,8 @@ function panel(v, k, pick, seed = null) {
     h("button", { type: "button", title: "zoom out (-)", "data-zoom": "out" }, "−"), zoom,
     h("button", { type: "button", title: "zoom in (+)", "data-zoom": "in" }, "+"),
     h("button", { type: "button", title: "100 % (1)", "data-zoom": "one" }, "1:1"),
-    h("button", { type: "button", title: "the whole step in the panel (0)", "data-zoom": "fit" }, "fit"));
+    h("button", { type: "button", title: "the whole step in the panel (0)", "data-zoom": "fit" }, "fit"),
+    h("button", { type: "button", title: "clean graph: lay this step out again from scratch, every order chosen afresh for the fewest crossings (c)", "data-zoom": "clean" }, "clean graph"));
   const head = h("div", { class: "c-panel-head" },
     v.folder ? h("span", { class: "muted" }, `${v.folder} · `) : null,
     pick ? stepSelect(k, pick) : h("b", {}, v.label),
@@ -183,7 +184,7 @@ function panel(v, k, pick, seed = null) {
     if (!b) return;
     ev.stopPropagation();
     const z = el._vp;
-    ({ out: () => z.zoom(1 / 1.2), in: () => z.zoom(1.2), one: () => z.set(1, z.tx, z.ty), fit: () => z.fit() })[b.dataset.zoom]();
+    ({ out: () => z.zoom(1 / 1.2), in: () => z.zoom(1.2), one: () => z.set(1, z.tx, z.ty), fit: () => z.fit(), clean: () => el._clean() })[b.dataset.zoom]();
   });
   el._ready = layout(v.drawing, probe, seed).then((L) => { el._layout = L; }, (e) => { el._error = e; });
   el._draw = (prev) => {
@@ -194,6 +195,15 @@ function panel(v, k, pick, seed = null) {
     render(canvas, v.drawing, el._layout);
     el._vp.show(el._layout, prev);
     if (state.mode === "edit") edit.decorate(v, el);
+  };
+  el._clean = async () => { // the step laid out afresh; its boxes glide to their new places
+    if (el._error) return;
+    const old = new Map([...el.querySelectorAll(".v3-box")].map((b) => [b.dataset.id, b.getBoundingClientRect()]));
+    const prev = { L: el._vp.L, s: el._vp.s, tx: el._vp.tx, ty: el._vp.ty };
+    el._layout = await relayout(v.drawing, probe);
+    el._draw(prev);
+    outline();
+    if (!still()) glide(el, old);
   };
   return el;
 }
@@ -916,6 +926,8 @@ document.addEventListener("keydown", (ev) => {
     else edit.undo();
   } else if (ev.altKey || ev.ctrlKey || ev.metaKey) {
     return;
+  } else if (ev.key === "c") { // clean graph, in every panel
+    for (const p of document.querySelectorAll("#graphs .c-panel")) if (p._clean) p._clean();
   } else if (["0", "1", "+", "=", "-"].includes(ev.key)) { // the zoom, in every panel
     for (const p of document.querySelectorAll("#graphs .c-panel")) {
       const z = p._vp;
