@@ -88,7 +88,7 @@ bottom; a box without named ports a port of its own per edge, so no two edges me
 point), the outlines as compound nodes, the edges with their labels. ``lanes``: a loop's data in
 the order its ports keep on both sides, so a datum leaves a loop on the side it entered (else ELK
 orders a loop's ports freely). Also returns each own port's box, side and datum. */
-function elkGraph(d, sizes, lanes = new Map(), forced = false) {
+function elkGraph(d, sizes, lanes = new Map(), forced = false, inOrder = new Map()) {
   const byOutline = new Map([[null, []], ...d.outlines.map((o) => [o.id, []])]);
   const extra = new Map(); // a box -> its own ports
   const own = new Map(); // an own port -> {node, side, data}
@@ -117,7 +117,7 @@ function elkGraph(d, sizes, lanes = new Map(), forced = false) {
   for (const n of d.nodes) {
     const [w, ht] = sizes.get(n.id);
     const mine = extra.get(n.id) || [];
-    const ins = [...(n.ins || []).map((p) => `${n.id}.${p}`), ...mine.filter((p) => p.side === "NORTH").map((p) => p.id)];
+    const ins = [...(inOrder.get(n.id) || n.ins || []).map((p) => `${n.id}.${p}`), ...mine.filter((p) => p.side === "NORTH").map((p) => p.id)];
     const outs = [...(n.outs || []).map((p) => `${n.id}.${p}`), ...mine.filter((p) => p.side === "SOUTH").map((p) => p.id)];
     // FIXED_ORDER counts clockwise: left to right on top, right to left at the bottom
     const ports = [
@@ -211,6 +211,32 @@ function chainLanes(d, L, own) {
   }
   for (const node of [...lanes.keys()]) if (!changes.has(root(node))) lanes.delete(node);
   return lanes;
+}
+
+/** Each temporal mux whose inputs cross on their way in after layout ``L``: its inputs in a new
+order, each task's inputs still together and the tasks in the server's order, but within a task
+by where their edges come from. A mux routes any input to any output, so the order of a task's
+inputs is free (``a·mvt`` may sit right of ``b·mvt``); the edges then come in without crossing. */
+function muxOrders(d, L) {
+  const from = new Map(); // "box.port" -> the x its edge comes from
+  d.edges.forEach((e, i) => {
+    if (e.to_port && L.edges[i] && L.edges[i].pts.length) from.set(`${e.to}.${e.to_port}`, L.edges[i].pts[0].x);
+  });
+  const out = new Map();
+  for (const n of d.nodes) {
+    if (n.kind !== "mux" || !n.ins || n.ins.length < 2) continue;
+    const tasks = n.port_tasks || {};
+    const groups = [];
+    for (const p of n.ins) {
+      const last = groups[groups.length - 1];
+      if (last && tasks[last[0]] === tasks[p]) last.push(p);
+      else groups.push([p]);
+    }
+    const x = (p) => (from.has(`${n.id}.${p}`) ? from.get(`${n.id}.${p}`) : Infinity);
+    const order = groups.flatMap((g) => [...g].sort((a, b) => x(a) - x(b) || g.indexOf(a) - g.indexOf(b)));
+    if (order.join("|") !== n.ins.join("|")) out.set(n.id, order);
+  }
+  return out;
 }
 
 /** A box whose ports keep the server's order: a temporal mux or demux (its ports grouped by
@@ -376,9 +402,34 @@ async function layOut(d, probe, forced = false) {
     ({ graph, own } = elkGraph(d, sizes, lanes, forced));
     L = absolute(d, await elk().layout(graph));
   }
+  // a temporal mux's inputs of one task put in the order their edges come in, so they do not cross
+  const muxes = muxOrders(d, L);
+  if (muxes.size) {
+    ({ graph, own } = elkGraph(d, sizes, lanes, forced, muxes));
+    const again = absolute(d, await elk().layout(graph));
+    if (crossings(again) <= crossings(L)) L = again;
+  }
   L.ms = performance.now() - t0;
   liftInputs(d, L);
   return L;
+}
+
+/** How many pairs of edge segments cross in layout ``L`` (the check that a new order helped). */
+function crossings(L) {
+  const segs = L.edges.flatMap((e) => e.pts.slice(1).map((q, i) => [e.pts[i], q]));
+  let n = 0;
+  for (let i = 0; i < segs.length; i++) {
+    for (let j = i + 1; j < segs.length; j++) {
+      const [a, b] = segs[i], [c, e] = segs[j];
+      const h1 = Math.abs(a.y - b.y) < 0.5, h2 = Math.abs(c.y - e.y) < 0.5;
+      if (h1 === h2) continue; // parallel runs do not cross
+      const [hh, vv] = h1 ? [[a, b], [c, e]] : [[c, e], [a, b]];
+      const y = hh[0].y, x = vv[0].x;
+      if (x > Math.min(hh[0].x, hh[1].x) + 0.5 && x < Math.max(hh[0].x, hh[1].x) - 0.5
+        && y > Math.min(vv[0].y, vv[1].y) + 0.5 && y < Math.max(vv[0].y, vv[1].y) - 0.5) n++;
+    }
+  }
+  return n;
 }
 
 // -- drawing ----------------------------------------------------------------------------------
