@@ -13,11 +13,11 @@ from snax_forge.sandbox.blocks import lift
 from snax_forge.sandbox.share import share
 from snax_forge.sandbox.transforms import tag_map
 from snax_forge.sandbox.transpose import mark_transpose
-from snax_forge.viz.dfg.api import Entry, _layout, graph_view
+from snax_forge.viz.dfg.api import Entry, graph_view
 from tests.helpers import imported
 from tests.sandbox.helpers import mvt
 
-from .test_columns import drawn, pairs
+from .helpers import boxes, containers, ends
 
 HALVES = (["tmp0_mult_map", "sum_map"], ["tmp2_mult_map", "sum_map_2"])
 
@@ -36,13 +36,15 @@ def view(g: Graph, *expanded: str) -> dict:
 
 def test_each_half_is_one_box_until_expanded():
     v = view(_mvt_of_matvecs())
-    assert drawn(v["rows"]) == [{
-        0: [["A@0", "y1@0"], "matvec", ["x1@0", "tmp0@1"], "augassign_18_4_map", ["x1@1"]],
-        1: [["A@0~2", "y2@0"], "matvec_1", ["x2@0", "tmp2@1"], "augassign_19_4_map", ["x2@1"]],
-    }]  # fmt: skip
-    assert ("A@0", "matvec.in:A") in pairs(v) and ("matvec.out:tmp0", "tmp0@1") in pairs(v)
-    node = next(r["node"] for r in v["rows"][0]["columns"][0]["rows"] if r["kind"] == "node")
-    assert node["text"] == "matvec · matvec/matvec_dot3 · W = 4"
+    assert containers(v, first=True) == ["A@0", "y1@0", "x1@0", "y2@0", "x2@0"]
+    assert ("A@0", "matvec.in:A") in ends(v) and ("matvec.out:tmp0", "tmp0@1") in ends(v)
+    assert ("A@0", "matvec_1.in:A") in ends(v)  # A one box, read by both halves
+    b = boxes(v)["matvec"]
+    assert (b["kind"], b["text"], b["block"]) == (
+        "block",
+        "matvec · matvec/matvec_dot3 · W = 4",
+        "matvec",
+    )
     assert [(b["name"], b["collapsed"], b["hidden"]) for b in v["blocks"]] == [
         ("matvec", True, False), ("dot", False, True), ("matvec_1", True, False),
         ("dot_1", False, True)]  # fmt: skip
@@ -58,29 +60,33 @@ def test_each_half_is_one_box_until_expanded():
 def test_expanding_shows_the_inner_block_then_the_nodes():
     g = _mvt_of_matvecs()
     one = view(g, "matvec")
-    # the rows' loop stays drawn around the dot (both nests' row maps as one), its ports the
-    # slice one firing takes: row m_t of A in half 1, column n_t in half 2
-    (row,) = [r["node"] for r in one["rows"][0]["columns"][0]["rows"] if r["kind"] == "node"][:1]
-    assert row["text"] == "tmp0_mult_map + sum_map · m_t · 8 · temporal"
-    assert [n["id"] for n in row["body"]] == ["dot"]
-    assert next(b for b in one["blocks"] if b["name"] == "matvec")["tops"] == ["tmp0_mult_map"]
-    slices = {(e["from"], e["to"]): e["slice"] for e in one["edges"] if "slice" in e}
-    assert slices[("A@0", "dot.in:A")] == "A[m_t, 0:N]"
-    assert slices[("dot.out:tmp0", "tmp0@1")] == "tmp0[m_t]"
-    two = view(g, "matvec_1")
-    slices = {(e["from"], e["to"]): e["slice"] for e in two["edges"] if "slice" in e}
-    assert slices[("A@0~2", "dot_1.in:A")] == "A[0:M, n_t]"
+    # the rows' loop stays drawn round the dot (both nests' row maps as one, the other a chip)
+    # in the block's outline, its ports the slice one firing takes: row m_t of A in half 1
+    row = boxes(one)["tmp0_mult_map"]
+    assert (row["text"], row["sub"], row["chips"], row["parent"]) == (
+        "tmp0_mult_map · temporal", "m_t · 8", [["sum_map", None]], "block:matvec")  # fmt: skip
+    assert [(o["id"], o["text"]) for o in one["drawing"]["outlines"]] == [
+        ("block:matvec", "▾ matvec · matvec/matvec_dot3 · W = 4")]  # fmt: skip
+    subs = {e["id"]: e.get("sub") for e in one["drawing"]["edges"]}
+    assert subs["tmp0_mult_map->dot.in:A"] == "A[m_t, 0:N]"
+    assert subs["dot.out:tmp0->tmp0@1"] == "tmp0[m_t]"
+    assert ("y1@0", "dot.in:y1") in ends(one)  # y1 whole in every m_t: past the row loop
     both = view(g, "matvec", "dot", "matvec_1", "dot_1")
-    plain = _layout(g)  # the graph's own nodes, no block folded
+    plain = graph_view(
+        Entry(g.name, Path(g.name), g, None), expanded=[b["name"] for b in both["blocks"]]
+    )
     assert not [b for b in both["blocks"] if b["collapsed"]]
-    assert pairs(both) == pairs(plain) and ("tmp0_mult.out", "tmp0_prod.in") in pairs(both)
+    assert ends(both) == ends(plain) and not [
+        b for b in boxes(both).values() if b["kind"] == "block"
+    ]
 
 
 def test_a_transposed_read_keeps_its_label_on_the_box():
     g = _mvt_of_matvecs(mark_transpose(imported("mvt"), "tmp2_mult"))
     v = view(g)
-    (e,) = [e for e in v["edges"] if e["to"] == "matvec_1.in:A"]
-    assert e.get("transpose") and drawn(v["rows"])[0] == ["A@0"]  # A drawn once
+    (e,) = [e for e in v["drawing"]["edges"] if e["to"] == "matvec_1" and e["to_port"] == "in:A"]
+    assert (e["label"], e["transpose"]) == ("Aᵀ", True)
+    assert [c for c in containers(v) if c.startswith("A@")] == ["A@0"]  # A drawn once
 
 
 def test_halves_sharing_units_expand_together():
@@ -110,10 +116,6 @@ def test_the_step_route_takes_the_blocks_expanded(tmp_path):
     with served(make_dfg_server([tmp_path / "s"], 0)) as srv:
         _, shut = get_json(srv, "/api/step/3")
         _, open_ = get_json(srv, "/api/step/3?expand=dot")
-    assert drawn(shut["rows"])[1] == "mult_map"  # the rows' loop, the dot box inside it
+    assert ("mult_map", "dot.in:A") in ends(shut)  # the rows' loop, then the dot box
     assert shut["marks"]["blocks"] == ["dot"]  # applied: unapply takes it
-    assert [x for x in drawn(open_["rows"]) if isinstance(x, str)] == [
-        "mult_map",
-        "tmp0",
-        "sum_map",
-    ]
+    assert "dot" not in boxes(open_) and {"mult_map", "unit:mul", "unit:sum"} <= set(boxes(open_))

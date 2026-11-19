@@ -408,10 +408,9 @@ body.dfg { padding: 0; height: 100vh; font-size: 17px; /* the run viewer's 15 px
 .dfg-col-handle.left { grid-area: lh; }
 .dfg-col-handle.right { grid-area: rh; }
 .dfg-col-handle:hover, .dfg-col-handle.dragging { background: var(--rule); }
-.dfg-centre { grid-area: centre; max-width: none; margin: 0; min-width: 0; overflow: auto; padding: 0.8rem; display: flex; gap: 0.8rem; align-items: flex-start; justify-content: safe center; }
+.dfg-centre { grid-area: centre; max-width: none; margin: 0; min-width: 0; min-height: 0; overflow: hidden; padding: 0; display: flex; gap: 0; align-items: stretch; }
 /* Compare: the two graphs side by side, one thin line between them; the column scrolls */
 .dfg-centre.two { align-items: stretch; gap: 0; }
-.dfg-centre.two > .c-panel { flex: 0 0 auto; }
 .dfg-centre.two > .c-panel + .c-panel { border-left: 1px solid var(--rule); }
 .dfg-right { grid-area: right; min-width: 0; overflow: auto; border-left: 1px solid var(--rule); background: var(--panel); padding: 0.6rem 0.8rem; font-size: 0.88em; }
 .dfg-side-panel h2 { font-size: 0.925rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 0.4rem 0 0.3rem; }
@@ -467,7 +466,6 @@ table.c-cost-table .num { text-align: right; font-variant-numeric: tabular-nums;
 table.c-cost-table tr.differs .num { white-space: normal; } /* Compare's before → after wraps at the arrow */
 .c-cost-wrap { max-width: 100%; overflow-x: auto; } /* the fallback: the table scrolls inside the panel */
 .c-cost-dp { font-size: 0.86em; color: var(--muted); }
-.c-cost-tag { font-size: 0.82em; font-style: normal; padding: 0 0.25rem; border: 1px solid var(--rule); border-radius: 3px; }
 table.c-cost-table thead th { color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--rule); }
 table.c-cost-table tbody th { font-weight: 400; }
 table.c-cost-table tr.total th, table.c-cost-table tr.total td { border-top: 1px solid var(--rule); font-weight: 600; }
@@ -477,34 +475,36 @@ table.c-cost-table tr.differs td, table.c-cost-table tr.differs th { background:
 .c-bar-track i { display: block; height: 100%; background: var(--data); }
 
 /* a panel: one step's drawing, on the page's background, no frame; its title plain text */
-.c-panel { padding: 0 var(--space-2); min-width: 14rem; border-bottom: none; }
-.c-panel-head { margin-bottom: var(--space-1); font-size: 0.9em; }
+/* a panel fills the centre (half of it with Compare); its drawing pans and zooms inside it */
+.c-panel { flex: 1 1 0; min-width: 14rem; min-height: 0; display: flex; flex-direction: column; padding: 0; border-bottom: none; }
+.c-panel-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.2rem; padding: var(--space-2) var(--space-3) var(--space-1); font-size: 0.9em; }
+.c-panel.broken { padding: var(--space-2); }
+.c-zoom { display: flex; align-items: center; gap: 0.25rem; margin-left: auto; }
+.c-zoom button { padding: 0 0.45rem; font-size: 0.9em; }
+.c-zoom-read { min-width: 3.2rem; text-align: center; font-size: 0.88em; }
+.c-panel > .c-viewport { position: relative; flex: 1; min-height: 0; overflow: hidden; cursor: grab; touch-action: none; }
+.c-viewport.panning { cursor: grabbing; }
+.c-viewport > .c-canvas { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+/* level of detail when zoomed out (graph.js): labels and port names below 42 %, chips, dtypes and badges below 30 % */
+.c-canvas.lod-1 .c-label, .c-canvas.lod-1 .c-pname { display: none; }
+.c-canvas.lod-2 .c-chips, .c-canvas.lod-2 .c-badge, .c-canvas.lod-2 .c-dtype { display: none; }
 .load-error { color: var(--mem); font-weight: 600; white-space: pre-wrap; overflow-wrap: anywhere; }
-.c-scroll { overflow: visible; }
-.c-canvas { position: relative; width: max-content; min-width: 100%; padding: var(--space-16) var(--space-8) var(--space-6); }
-.c-rows { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: calc(var(--space-8) + var(--space-2)); } /* room for the edges' dtype */
-.c-row { display: flex; gap: var(--space-4); justify-content: center; align-items: flex-start; }
-/* independent chains side by side, each a column of its own rows (api.py's _layout) */
-.c-cols { display: flex; gap: var(--space-14); justify-content: center; align-items: flex-start; }
-.c-col { display: flex; flex-direction: column; align-items: center; gap: calc(var(--space-8) + var(--space-2)); }
 svg.dfg-edges { position: absolute; top: 0; left: 0; z-index: 0; pointer-events: none; overflow: visible; transition: opacity 0.15s; }
 .c-panel.settling svg.dfg-edges { opacity: 0; } /* while the boxes glide (dfg.js) */
 
-/* maps: a slim bar in the tag's colour, the body indented below */
+/* loops: a box in the tag's colour */
 .c-map { --loop: var(--loop-none); border-left: 3px solid var(--loop); border-radius: 3px; background: color-mix(in srgb, var(--loop) 5%, transparent); cursor: pointer; }
 .c-map.loop-tile { --loop: var(--loop-tile); }
 .c-map.loop-temporal { --loop: var(--loop-temporal); }
 .c-map.loop-spatial { --loop: var(--loop-spatial); }
 .c-bar { padding: 0.1rem 0.6rem; background: color-mix(in srgb, var(--loop) 22%, var(--panel)); color: var(--ink); font-size: 0.8em; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; white-space: nowrap; border-radius: 0 3px 3px 0; }
-.c-body { display: flex; flex-direction: column; align-items: center; gap: var(--space-6); padding: var(--space-6) var(--space-2) var(--space-2) var(--space-4); }
-.c-node > .c-body { padding: var(--space-2); }
 
 /* tasklets, units and links: small boxes with their text */
 .c-node { position: relative; display: flex; flex-direction: column; align-items: stretch; min-width: 7rem; border: 1.5px solid var(--ink); border-radius: 4px; background: var(--panel); cursor: pointer; }
 .c-node.c-unit { border: 2px solid var(--busy); background: var(--busy-bg); }
 .c-node.c-link { border: 2px dashed var(--busy); background: var(--busy-bg); }
 .c-node.c-copy { border: 2px solid var(--data); background: color-mix(in srgb, var(--data) 18%, var(--panel)); }
-/* a packed output's FifoPacker (api.py's packer_node): the containers' colour, as the memory side it feeds */
+/* a packed output's FifoPacker, a sliced input's FifoSlicer: the containers' colour, as the memory side they serve */
 .c-node.c-packer { border: 1.5px solid var(--data); background: color-mix(in srgb, var(--data) 10%, var(--panel)); }
 .c-text { padding: 0.15rem 0.6rem; font-size: 0.82em; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; white-space: nowrap; text-align: center; }
 /* a fold: an upside-down trapezoid, wide on top where the inputs come in, narrow at the bottom
@@ -514,43 +514,21 @@ svg.dfg-edges { position: absolute; top: 0; left: 0; z-index: 0; pointer-events:
 .c-node.c-fold.c-unit { --fold-edge: var(--busy); --fold-fill: var(--busy-bg); --bw: 2px; }
 .c-node.c-fold::before { content: ""; position: absolute; inset: 0; z-index: -2; background: var(--fold-edge); clip-path: polygon(0 0, 100% 0, calc(100% - var(--slant)) 100%, var(--slant) 100%); }
 .c-fold > .c-shape { position: absolute; inset: 0; z-index: -1; background: var(--fold-fill); clip-path: polygon(calc(var(--bw) * 1.7) var(--bw), calc(100% - var(--bw) * 1.7) var(--bw), calc(100% - var(--slant) - var(--bw) * 0.6) calc(100% - var(--bw)), calc(var(--slant) + var(--bw) * 0.6) calc(100% - var(--bw))); }
-.c-fold > .c-ports.out { margin: 0 var(--slant); }
 .c-node.c-fold.sel { box-shadow: none; --fold-edge: var(--hl); --bw: 2.5px; }
-.c-ports { display: flex; justify-content: space-evenly; height: 0; }
-.c-port { display: block; width: 7px; height: 7px; margin-top: -4px; border-radius: 50%; background: var(--edge); }
-.c-ports.out .c-port { margin-top: -3px; }
 
 /* containers: a pill with its name and badge */
 .c-pill { display: flex; align-items: baseline; gap: 0.4rem; padding: 0.12rem 0.7rem; border: 1.5px solid var(--data); border-radius: 1rem; background: color-mix(in srgb, var(--data) 10%, var(--panel)); font-size: 0.85em; cursor: pointer; white-space: nowrap; }
 .c-pill.transient { border-style: dashed; }
-.c-pill.again { opacity: 0.75; }
 /* a kernel's scalar argument: a parameter hexagon (its edges labelled "alpha[0] · broadcast") */
 .c-pill.scalar { border: none; border-radius: 0; padding: 0.14rem 1.1rem; background: color-mix(in srgb, var(--data) 28%, var(--panel)); clip-path: polygon(0.6rem 0, calc(100% - 0.6rem) 0, 100% 50%, calc(100% - 0.6rem) 100%, 0.6rem 100%, 0 50%); }
 .c-badge { font-size: 0.8em; color: var(--muted); }
 .c-dtype { color: var(--muted); } /* the container's dtype, at the pill's own size */
 .c-share { margin-left: 0.4rem; padding: 0 0.3rem; border: 1.5px dashed var(--p); border-radius: 3px; font: 600 0.72rem ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
 
-/* edges: their container's dtype beside each (dfg.js), a wide transparent stroke under each to click */
-path.edge { fill: none; stroke: var(--edge); stroke-width: 1.3; }
+/* edges: a wide transparent stroke under each to click (graph.js) */
 path.edge-hit { fill: none; stroke: transparent; stroke-width: 12; pointer-events: stroke; cursor: pointer; }
-path.arrow { fill: var(--edge); }
-path.arrow-sel { fill: var(--hl); }
-path.edge.sel { stroke: var(--hl); stroke-width: 2.6; }
-/* a fused nest's local value: the writer's connector straight to the reader's, as a link's wire */
-path.edge.local { stroke: var(--busy); stroke-width: 2; stroke-dasharray: 4 3; }
-path.edge.seed { stroke-dasharray: 1 3; stroke-linecap: round; stroke-width: 2; }
-svg.dfg-edges text.edge-label { font: 600 0.72rem ui-monospace, "SF Mono", Menlo, Consolas, monospace; fill: var(--busy); }
-svg.dfg-edges text.edge-label.sel { fill: var(--hl); }
-/* a broadcast's label at its edge's start: a band of the page behind it, so an edge it crosses does not run through it */
-svg.dfg-edges text.edge-label.at-start { paint-order: stroke; stroke: var(--bg); stroke-width: 4px; stroke-linejoin: round; }
-/* a collapsed block's port: the slice one firing takes, in the ink, not a link's green */
-svg.dfg-edges text.edge-label.slice { fill: var(--ink); font-weight: 500; }
-/* an edge's dtype: the page's font at its container's size (set in dfg.js), the grey of the badges, no band */
-svg.dfg-edges text.edge-label.dtype { font-family: inherit; font-weight: 400; fill: var(--muted); }
-/* a marked read's Aᵀ: the container's font size (set in dfg.js), its ink */
-svg.dfg-edges text.edge-label.transpose { font-family: inherit; font-weight: 700; fill: var(--ink); }
 
-/* groups and accelerators: a thin dashed outline, the name on top */
+/* groups and accelerators: a thin dashed outline, the name in its lower right corner */
 svg.dfg-edges .group-box rect, svg.dfg-edges .acc-box rect { fill: none; stroke-dasharray: 5 4; pointer-events: stroke; cursor: pointer; }
 svg.dfg-edges .group-box rect { stroke: var(--muted); stroke-width: 1; }
 svg.dfg-edges .acc-box rect { stroke: var(--rule); stroke-width: 1.5; }
@@ -696,6 +674,7 @@ i.key.c-unit { background: var(--busy-bg); box-shadow: inset 0 0 0 2px var(--bus
 i.key.c-packer { background: color-mix(in srgb, var(--data) 10%, var(--panel)); box-shadow: inset 0 0 0 1.5px var(--data); }
 i.key.c-fold { background: var(--ink); clip-path: polygon(0 0, 100% 0, 75% 100%, 25% 100%); }
 i.key.c-link { background: var(--busy-bg); border: 2px dashed var(--busy); }
+i.key.c-mux { background: var(--muted); clip-path: polygon(0 0, 100% 0, 75% 100%, 25% 100%); opacity: 0.7; }
 i.key.c-copy { background: color-mix(in srgb, var(--data) 18%, var(--panel)); box-shadow: inset 0 0 0 2px var(--data); }
 i.key.c-pill { background: color-mix(in srgb, var(--data) 18%, var(--panel)); box-shadow: inset 0 0 0 1.5px var(--data); border-radius: 6px; }
 i.key.c-pill.transient { background: var(--panel); box-shadow: none; border: 1.5px dashed var(--data); }
@@ -834,3 +813,60 @@ table.c-cost-table tr.streamer th, table.c-cost-table tr.streamer td { color: va
 .c-part-row { display: grid; grid-template-columns: minmax(5rem, auto) 1fr; gap: 0.4rem; align-items: center; margin-bottom: 0.2rem; }
 .c-part-side { display: flex; flex-direction: column; font-size: 0.82em; line-height: 1.2; }
 .c-part-side span:first-child { font-weight: 600; }
+
+/* -- the step's drawing, laid out by ELK (graph.js, D185) -----------------------------
+   Boxes are placed absolutely at ELK's places and sizes; edges, labels and outlines in one SVG
+   layer under them, port names in one over them. After share, each task has a colour. */
+:root { --task-0: #7a5bc2; --task-1: #b07a00; --task-2: #2f7f8a; --task-3: #b5476b; }
+@media (prefers-color-scheme: dark) { :root { --task-0: #a58cf0; --task-1: #e0a83a; --task-2: #5fbfcc; --task-3: #e47c9c; } }
+.c-probe { position: absolute; left: -10000px; top: 0; visibility: hidden; display: flex; flex-direction: column; align-items: flex-start; }
+.c-box { position: absolute !important; box-sizing: border-box; margin: 0; z-index: 1; }
+.c-panel.settling svg.c-over { opacity: 0; }
+svg.c-over { z-index: 2; }
+path.edge { fill: none; stroke: var(--c, var(--edge)); stroke-width: 1.4; }
+path.edge.seed { stroke-dasharray: 1 3.5; stroke-linecap: round; stroke-width: 2.2; }
+path.edge.link, path.edge.local { stroke-width: 2; stroke-dasharray: 5 3; }
+path.edge.wire { stroke-width: 1.6; }
+path.edge.empty { stroke-width: 1.1; stroke-dasharray: 3 4; opacity: 0.7; }
+path.edge.sel { stroke: var(--hl); stroke-width: 2.6; opacity: 1; }
+svg.dfg-edges text.c-label { font: 600 11.5px ui-monospace, "SF Mono", Menlo, Consolas, monospace; fill: var(--muted); paint-order: stroke; stroke: var(--bg); stroke-width: 4px; stroke-linejoin: round; pointer-events: visiblePainted; cursor: pointer; }
+svg.dfg-edges text.c-label.link, svg.dfg-edges text.c-label.local { fill: var(--busy); }
+/* a marked read (mark_transpose): Aᵀ in the ink, bold and larger */
+svg.dfg-edges text.c-label.transpose { font: 700 16px ui-sans-serif, system-ui, sans-serif; fill: var(--ink); }
+svg.dfg-edges text.c-label.sel { fill: var(--hl); }
+svg.dfg-edges text.c-pname { font: 500 9.5px ui-monospace, "SF Mono", Menlo, Consolas, monospace; fill: var(--muted); text-anchor: middle; }
+.c-node.has-pnames > .c-text { padding-top: 0.7rem; }
+.c-node.has-onames > .c-text { padding-bottom: 0.7rem; }
+/* a loop: a sharp box, its map and kind over its variable and iterations, a linked nest's maps as chips */
+.c-map.c-loop { border-radius: 0; display: flex; align-items: center; }
+.c-map.c-loop > .c-bar { border-radius: 0; padding: 0.2rem 0.7rem; text-align: center; line-height: 1.35; flex: 1; }
+.c-loop-sub { font-size: 0.95em; opacity: 0.85; }
+.c-unit-sub { margin-top: -0.15rem; padding: 0 1.2rem 0.15rem; font-size: 0.8em; color: var(--muted); text-align: center; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; white-space: nowrap; }
+.c-chips { display: flex; flex-direction: column; align-items: center; gap: 0.15rem; padding: 0 0.5rem 0.3rem; }
+.c-loop .c-chips { padding: 0.15rem 0 0; }
+.c-chip { --t: var(--muted); padding: 0 0.3rem; border: 1.5px solid var(--t); border-radius: 3px; color: var(--t); background: var(--panel); font: 600 0.66rem ui-monospace, "SF Mono", Menlo, Consolas, monospace; white-space: nowrap; cursor: pointer; }
+.c-chip.map { --t: var(--loop-temporal); }
+.c-chip.sel { background: var(--t); color: var(--panel); }
+/* a temporal mux in front of a shared unit's inputs, a demux after its output: the fold's trapezoid in the muted ink */
+.c-node.c-mux, .c-node.c-demux { --slant: 1.4rem; --mux-edge: var(--muted); isolation: isolate; border: none; border-radius: 0; background: none; padding: 0.15rem calc(var(--slant) / 2 + 0.4rem); min-width: 13rem; }
+.c-node.c-mux::before, .c-node.c-demux::before { content: ""; position: absolute; inset: 0; z-index: -2; background: var(--mux-edge); }
+.c-node.c-mux::before { clip-path: polygon(0 0, 100% 0, calc(100% - var(--slant)) 100%, var(--slant) 100%); }
+.c-node.c-demux::before { clip-path: polygon(var(--slant) 0, calc(100% - var(--slant)) 0, 100% 100%, 0 100%); }
+.c-mux > .c-shape, .c-demux > .c-shape { position: absolute; inset: 0; z-index: -1; background: var(--panel); }
+.c-mux > .c-shape { clip-path: polygon(2.5px 1.5px, calc(100% - 2.5px) 1.5px, calc(100% - var(--slant) - 1px) calc(100% - 1.5px), calc(var(--slant) + 1px) calc(100% - 1.5px)); }
+.c-demux > .c-shape { clip-path: polygon(calc(var(--slant) + 1px) 1.5px, calc(100% - var(--slant) - 1px) 1.5px, calc(100% - 2.5px) calc(100% - 1.5px), 2.5px calc(100% - 1.5px)); }
+.c-mux > .c-text, .c-demux > .c-text { color: var(--muted); font-size: 0.74em; }
+.c-node.c-mux.sel, .c-node.c-demux.sel { box-shadow: none; --mux-edge: var(--hl); }
+/* an outline's title, in its lower right corner (graph.js) */
+svg.dfg-edges text.c-title { font-size: 0.85rem; paint-order: stroke; stroke: var(--bg); stroke-width: 4px; stroke-linejoin: round; }
+.c-task { margin-left: 0.6rem; padding: 0 0.4rem; border-left: 4px solid var(--t); font: 600 0.8rem ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+/* drag, focus, folded chains, the minimap, find */
+.c-box.moving { z-index: 5; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18); cursor: grabbing; }
+svg.dfg-edges text.c-title { pointer-events: visiblePainted; cursor: grab; }
+.c-canvas.focus .c-box:not(.lit), .c-canvas.focus path.edge:not(.lit), .c-canvas.focus text.c-label:not(.lit) { opacity: 0.18; }
+.c-canvas.focus .c-box.sel, .c-canvas.focus path.edge.sel { opacity: 1; }
+.c-map.c-loop.c-folded { box-shadow: 4px 4px 0 -1px var(--panel), 4px 4px 0 0 var(--loop); }
+.c-map.c-loop.c-folded.sel { box-shadow: 0 0 0 2px var(--hl); }
+.c-minimap { position: absolute; right: var(--space-2); top: var(--space-2); z-index: 4; border: 1px solid var(--rule); border-radius: 3px; background: color-mix(in srgb, var(--panel) 92%, transparent); cursor: crosshair; opacity: 0.9; }
+.c-zoom button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
+.dfg-find { width: 11rem; }

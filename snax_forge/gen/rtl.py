@@ -153,19 +153,6 @@ def flops(datapath: str, params: Mapping[str, Any], cat: Mapping[str, Any]) -> i
     return value(cat[datapath]["flops"], params)
 
 
-def unit_flops(acc: Description | None, unit: Unit, cat: Mapping[str, Any]) -> int:
-    """The register bits of ``unit``'s datapath, its params by the fill rule."""
-    return flops(unit.datapath, fill(acc, unit, cat[unit.datapath]), cat)
-
-
-def link_flops(depth: int, lanes: int, dtype: str, cat: Mapping[str, Any]) -> int:
-    """A link's register bits: a wire none, a buffer its ``LinkBuffer``'s on the link's depth
-    and its ends' lanes and dtype."""
-    if depth == 0:
-        return 0
-    return flops("LinkBuffer", buffer_params(depth, lanes, dtype, cat["LinkBuffer"]), cat)
-
-
 def check_params(datapath: str, params: Mapping[str, Any], sig: Mapping[str, Any]) -> None:
     """``params`` (``fill``'s) against the datapath's catalogue params ``sig``."""
     for k, t in sig.items():
