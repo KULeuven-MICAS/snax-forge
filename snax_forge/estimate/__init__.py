@@ -86,6 +86,9 @@ class Estimate(JsonFile):
     schedule: str = "serial"  # the design point's (D179)
     runs: list[RunEstimate] = field(default_factory=list)  # in start order (schedule.py)
     copies: list[CopyEstimate] = field(default_factory=list)  # data_transpose's (copies.py)
+    # The banks a DMA beat on L1 reads or writes: the DMA's beat over the bank's word, the
+    # platform's wide_bits / width_bits (a superbank); None without a platform
+    superbank_banks: int | None = None
 
     @property
     def streamers(self) -> int:
@@ -148,12 +151,17 @@ class Estimate(JsonFile):
             return None
         reads, writes = self._rw()
         k = self.copy_bursts
+        if k and self.superbank_banks is None:
+            raise ValueError("the estimate has copies and no superbank_banks: estimate it again "
+                             "on its platform")  # fmt: skip
+        k *= self.superbank_banks or 0
         return memory_cost(c, *self.bank_shape, reads + k, writes + k)
 
     @property
     def copy_bursts(self) -> int:
-        """The copies' bursts: each one L1 read and one L1 write, a byte priced as a word, each
-        also a crossbar access (D184); the DMA engine is not costed."""
+        """The copies' bursts, each one beat: one read and one write on the superbank port, each a
+        crossbar access, and a read and a write on every bank of the superbank (D184); the DMA
+        engine is not costed."""
         return sum(x.bursts for x in self.copies)
 
     @property
@@ -315,7 +323,8 @@ class Estimate(JsonFile):
             "hw_counts": {
                 "streamers": [x.to_dict() for x in self.streamer_counts],
                 "xbar_inputs": None if self.xbar_inputs is None else list(self.xbar_inputs),
-                "bank_shape": None if self.bank_shape is None else list(self.bank_shape)},
+                "bank_shape": None if self.bank_shape is None else list(self.bank_shape),
+                "superbank_banks": self.superbank_banks},
         }  # fmt: skip
 
     @classmethod
@@ -340,6 +349,7 @@ class Estimate(JsonFile):
             d.get("schedule", "serial"),
             [RunEstimate.from_dict(r) for r in d.get("runs", [])],
             [CopyEstimate.from_dict(x) for x in d.get("copies", [])],
+            hw.get("superbank_banks"),
         )  # fmt: skip
 
 
@@ -386,7 +396,7 @@ def estimate(graph: Graph, platform: Platform | None = None,
                     tech, None if table is None else dict(table.source),
                     not_mapped(graph, spatial=True), l1_words,
                     accelerators(graph, platform), counts, xin, shape, schedule, run_list,
-                    copies(graph))  # fmt: skip
+                    copies(graph), None if l1 is None else l1.wide_bits // l1.width_bits)  # fmt: skip
 
 
 def _hw_counts(graph: Graph, platform: Platform, data: dict[str, ContainerData]

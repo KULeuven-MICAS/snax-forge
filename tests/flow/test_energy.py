@@ -77,9 +77,10 @@ def test_refusals_cost_the_crossbar_and_the_streamers_and_the_windows_add_up():
     assert sum(e.total.values()) == pytest.approx(sum(x.total for x in e.energies))
 
 
-def test_a_copy_window_costs_its_bank_words_at_the_crossbar_and_the_banks():
+def test_a_copy_window_costs_its_beats_at_the_crossbar_and_its_superbanks_banks():
     """The crossbar's copy counts reach the window's Counts and are priced as D184 says: each
-    read a crossbar read and a bank read, each write a crossbar write and a bank write."""
+    beat read a crossbar read and a read on every bank of the superbank, each beat written a
+    crossbar write and a write on every bank of it."""
     cluster = cluster_from(*files())
     graph = steps("vecadd")[-1]
     snaps = [(1, 50, totals(0, 0, 0, 0) | {"copies": (0, 0)}),
@@ -90,10 +91,12 @@ def test_a_copy_window_costs_its_bank_words_at_the_crossbar_and_the_banks():
     e = energy_of(lines, cluster, MARKS, graph, estimate(graph, Platform.load(SNAX_FORGE)))
     w, got = e.windows[1], e.energies[1]
     assert counts_of(w, cluster).copies == (64, 32)
-    assert (got.requests, got.reads, got.writes) == (96, 64, 32)
     p = e.prices
+    l1 = Platform.load(SNAX_FORGE).l1
+    assert p.superbank_banks == l1.wide_bits // l1.width_bits == 8
+    assert (got.requests, got.reads, got.writes) == (96, 64 * 8, 32 * 8)
     assert got.parts["crossbar"] == pytest.approx((64 * p.e_xro_pj + 32 * p.e_xwo_pj) / 1000)
-    assert got.parts["memory"] == pytest.approx((64 * p.e_rd_pj + 32 * p.e_wr_pj) / 1000)
+    assert got.parts["memory"] == pytest.approx(8 * (64 * p.e_rd_pj + 32 * p.e_wr_pj) / 1000)
     assert all(x.total == 0 for k, x in enumerate(e.energies) if k != 1)
 
 

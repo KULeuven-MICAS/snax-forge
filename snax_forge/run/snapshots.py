@@ -32,9 +32,9 @@ END = -1  # the mark of the end of the simulation's snapshot
 class Counters:
     """Counters at a snapshot, or their difference over a window: per crossbar input (by port)
     ``(grants, stalls)``, per bank ``(reads, writes, conflicts)``, per group its busy-flag
-    classes, per unit ``(firings, pushes)``, per mover its classes, and the bank words the DMA's
-    copies inside L1 read and write, ``copies`` (``(0, 0)`` in a run without the crossbar's
-    line)."""
+    classes, per unit ``(firings, pushes)``, per mover its classes, and the beats the DMA's
+    copies inside L1 read and write on the superbank port, ``copies`` (``(0, 0)`` in a run
+    without the crossbar's line)."""
 
     inputs: dict[str, tuple[int, int]] = field(default_factory=dict)
     banks: list[tuple[int, int, int]] = field(default_factory=list)
