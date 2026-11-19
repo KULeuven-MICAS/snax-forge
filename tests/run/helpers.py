@@ -242,8 +242,8 @@ def synthetic(
         add(end, f"pe{i}", "summary", f"csrs writes={18 if i == acc.core else 0} "
             f"reads={13 if i == acc.core else 0}")  # fmt: skip
     add(end, "idma/fe", "summary", f"dma transfers={copies} busy={copies * 18} "
-        f"r_beats={traffic.r_beats} w_beats={traffic.w_beats} bytes_to_l1=1024 "
-        "bytes_from_l1=512")  # fmt: skip
+        f"r_beats={traffic.r_beats} w_beats={traffic.w_beats} bytes_l2_to_l1=1024 "
+        "bytes_l1_to_l2=512 bytes_l1_to_l1=0")  # fmt: skip
     keep = {"summary", "events"} if level != "off" else {"summary"}
     keep |= {"beats", "stalls", "insn"} if on >= LEVELS.index("beat") else set()
     ev += [x for x in traffic.lines if on >= LEVELS.index(TRAFFIC_LEVEL[x[2]])]
@@ -487,8 +487,9 @@ def snap_lines(cluster: Any, snaps: list[tuple[int, int, dict[str, Any]]],
     end (mark -1). ``counters`` are running totals: ``inputs`` by port (a mover's lane or
     ``core<i>``, ``(grants, stalls)``), ``group`` (the unit's classes), ``units`` (``(firings,
     pushes)`` by instance), ``movers`` (classes by mover name), ``banks`` (``(reads, writes,
-    conflicts)`` per bank, ``banks`` of them at 0 by default). Each component writes in its own
-    order, as SNAX-GVSoC does."""
+    conflicts)`` per bank, ``banks`` of them at 0 by default), ``copies`` (the crossbar's
+    ``(copy_reads, copy_writes)``, its line written only when some snapshot has them). Each
+    component writes in its own order, as SNAX-GVSoC does."""
     acc = cluster.accelerator
     unit, streamer = f"snax_acc{acc.core}/{acc.units[0].path}", acc.csrs.sets[0].trace
     names = {p: f"snax_acc{acc.core}.streamer_{m.set}.{m.gvsoc}.lane{k}"
@@ -496,6 +497,7 @@ def snap_lines(cluster: Any, snaps: list[tuple[int, int, dict[str, Any]]],
     index = {p: input_index(cluster, p) for p in names}
     names |= {c: c for c in cluster.cores}
     index |= {c: 1000 + i for i, c in enumerate(cluster.cores)}
+    copies = any("copies" in c for _, _, c in snaps)
     out = []
     for mark, cycle, c in snaps:
         ins = c.get("inputs", {})
@@ -516,6 +518,13 @@ def snap_lines(cluster: Any, snaps: list[tuple[int, int, dict[str, Any]]],
         for b, (r, w, k) in enumerate(c.get("banks", [(0, 0, 0)] * banks)):
             out.append(line("tcdm/snax_xbar", "summary", f"{cycle} snap mark={mark} bank={b} "
                             f"reads={r} writes={w} conflicts={k}", cycle))  # fmt: skip
+        if copies:
+            cr, cw = c.get("copies", (0, 0))
+            if mark == -1:
+                out.append(line("tcdm/snax_xbar", "summary", f"{cycle} copies copy_reads={cr} "
+                                f"copy_writes={cw}", cycle))  # fmt: skip
+            out.append(line("tcdm/snax_xbar", "summary", f"{cycle} snap mark={mark} "
+                            f"copy_reads={cr} copy_writes={cw}", cycle))  # fmt: skip
         for m in acc.movers:
             k = c.get("movers", {}).get(m.name, dict.fromkeys(
                 ("busy", "stall_xbar", "stall_fifo", "idle"), 0))  # fmt: skip

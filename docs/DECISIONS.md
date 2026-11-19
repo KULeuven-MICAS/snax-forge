@@ -321,9 +321,9 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 
 ### D184 — A copy is costed by its L1 accesses
 
-- **Decided:** a copy (D182) costs what its L1 accesses cost a streamer's: per burst one bank read and one bank write, a burst shorter than a word priced as a word, and each a crossbar access, the read at a read-only input's price and the write at a write-only input's (D178). The static estimate prices the copies' bursts so, the dynamic energy (D177) the DMA's L1 → L1 reads and writes in its window. The DMA engine and the core that issues the copy stay uncosted (D167), and so do the loads and stores. Amends D167, D177 and D182's price of a copy.
+- **Decided:** a copy (D182) costs what its L1 accesses cost a streamer's: per bank word a burst touches, one bank read and one bank write, a burst shorter than a word priced as a word, and each a crossbar access, the read at a read-only input's price and the write at a write-only input's (D178). The static estimate prices the copies' bursts so, one word each, as a transpose's burst of one element is; the dynamic energy (D177) the bank words SNAX-GVSoC's crossbar counts for the DMA's copies inside L1 in its window. The DMA engine and the core that issues the copy stay uncosted (D167), and so do the loads and stores. Amends D167, D177 and D182's price of a copy.
 - **Why:** a copy's traffic is memory and interconnect accesses, priced with the tables already there and nothing new to characterize; without it the copy cost nothing on SNAX-GVSoC. Loads and stores are the same for every form of one kernel, so they cancel when forms are compared.
-- **Where:** CONTRACTS, "Cost model"; `estimate/__init__.py` (`copy_bursts`), `estimate/dynamic.py`, `run/snapshots.py`.
+- **Where:** CONTRACTS, "Cost model"; `estimate/__init__.py` (`copy_bursts`), `estimate/dynamic.py`, `run/snapshots.py` (`Counters.copies`), `flow/energy.py`.
 - **Edge:** a lower bound on the copy: the engine's work per burst and the core's issue loop are left out, which favours the copy against a form that reads A once. snax-forge-experiments X95 measures the copy on the gate-level cluster against it.
 
 ## Viewers, reports and docs

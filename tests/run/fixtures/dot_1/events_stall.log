@@ -854,4 +854,4 @@
 1800100000: 18001: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 2591 csr pc=0x800003ec csr=0x3e7 op=r value=19
 1800100000: 18001: [[34m/chip/soc/cluster_0/pe0/summary                                          [0m] 18001 csrs writes=32 reads=10
 1800100000: 18001: [[34m/chip/soc/cluster_0/pe1/summary                                          [0m] 18001 csrs writes=0 reads=0
-1800100000: 18001: [[34m/chip/soc/cluster_0/idma/fe/summary                                      [0m] 18001 dma transfers=3 busy=47 r_beats=17 w_beats=17 bytes_to_l1=1024 bytes_from_l1=64
+1800100000: 18001: [[34m/chip/soc/cluster_0/idma/fe/summary                                      [0m] 18001 dma transfers=3 busy=47 r_beats=17 w_beats=17 bytes_l2_to_l1=1024 bytes_l1_to_l2=64 bytes_l1_to_l1=0

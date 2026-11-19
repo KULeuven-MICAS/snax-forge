@@ -952,7 +952,7 @@ class Profile:
 | accelerator | its classes over its runs (`busy`: a firing or the II gap after one; `stall_in`, `stall_out`, `flush`), `idle` the rest, `firings`, `utilisation` (`busy` over the window) |
 | streamer | per mover `busy`, `stall_xbar`, `stall_fifo`, `idle`, its crossbar ports, its FIFO's name, depth and highest count per lane |
 | core | its window as `barrier`, else `poll` (reads of one CSR with one value), else `sleep` (`wfi`), else `run`; its SNAX CSR reads and writes; each wait with the block, first and last cycle (`None` and empty at `off`) |
-| DMA | transfers, busy cycles (what `DMA_BUSY` counts), read and write beats, bytes each way |
+| DMA | transfers, busy cycles (what `DMA_BUSY` counts), read and write beats, and bytes by the copies' sides against the L1, as SNAX-GVSoC's `dma` summary gives them: `bytes_l2_to_l1` (only the destination in L1), `bytes_l1_to_l2` (only the source), `bytes_l1_to_l1` (both; a copy between two L2 addresses is not counted) |
 | port | per crossbar input its grants, stalls and the stalls lost to the DMA's superbank; a core's or AXI's over the whole run |
 | banks | reads, writes and conflicts (cycles with two or more requests on a bank), from the streamers and the DMA only |
 | `functional_check` | `kernel`, `seed`, `symbols`, `exit_code`, `data_errors` and `words`, `tasks` (per accelerator task its `counter`, `beats` and `group`), `passed` |
@@ -1021,7 +1021,7 @@ With `--energy` (D177), the flow runs the quiet build (`sw/forge_quiet.elf`, D13
 
 - **Snapshots** (`run/snapshots.py`): each core 0 write to CSR `0x7C5` and the end of the simulation (mark −1) make every SNAX component write its counters as running totals since boot, `snap` lines (snax-gvsoc's `docs/EVENTS.md`, Snapshots). Every component's k-th set of lines is snapshot k; components that took different marks, an input no `input` line names, a last snapshot that is not the end's or an end that is not the crossbar's whole run are each a `RunError` (`snapshots.<rule>`).
 - **Windows**: window k is snapshot k + 1 minus snapshot k, $n(k) = N(S_{k+1}) - N(S_k)$ for every counter N, boot's (all 0) first, so the windows add up to the end. Window k takes its kind and label from `gen/obs_marks.json`'s row of the mark that opens it (`boot` for window 0; `mark <m>` for a mark the file lacks); its `first` and `last` are the snapshots' cycles.
-- **Counters**, by the converter's names: per crossbar input by port (`acc_a.lane0`, `core0`, `axi`) `grants` and `stalls`; per bank `reads`, `writes`, `conflicts`; per group (its unit's trace name) its busy-flag classes; per unit (its instance) `firings` and `pushes`; per mover its classes.
+- **Counters**, by the converter's names: per crossbar input by port (`acc_a.lane0`, `core0`, `axi`) `grants` and `stalls`; per bank `reads`, `writes`, `conflicts`; per group (its unit's trace name) its busy-flag classes; per unit (its instance) `firings` and `pushes`; per mover its classes; `copies`, the crossbar's `copy_reads` and `copy_writes` (the bank words the DMA's copies inside L1 read and write, one per word a beat touches), (0, 0) in a run without that line.
 
 | `energy.json` field | Holds |
 |---|---|
@@ -1223,7 +1223,7 @@ How to read them:
 - **Streamers:** a mover moves its requests over its channels, one beat per C_m requests; a refused request costs a granted one's beat.
 - **Crossbar:** every request, granted or refused, costs one access at its input's kind: a reader's channel read-only, a writer's write-only (D178).
 - **Memory:** only a grant reaches a bank. The cores', AXI's and the DMA's loads and stores are not priced (D167).
-- **A copy** (D184): the DMA's L1 → L1 reads $c_{rd}(j)$ and writes $c_{wr}(j)$ in the window (`Counts.copies`) add $c_{rd}\thinspace(e_{acc}(1 - g_{ro}) + e_{rd}) + c_{wr}\thinspace(e_{acc}(1 - g_{wo}) + e_{wr})$ to the crossbar and memory parts, as a reader's and a writer's grants; the DMA engine costs nothing.
+- **A copy** (D184): the bank words the DMA's copies inside L1 read, $c_{rd}(j)$, and write, $c_{wr}(j)$, in the window (the crossbar's `copy_reads` and `copy_writes`, the window's `copies`, passed to `Counts.copies`) add $c_{rd}\thinspace(e_{acc}(1 - g_{ro}) + e_{rd}) + c_{wr}\thinspace(e_{acc}(1 - g_{wo}) + e_{wr})$ to the crossbar and memory parts, as a reader's and a writer's grants; the DMA engine costs nothing.
 - **Held and idle cycles cost nothing,** as under clock gating (D154 · D172).
 
 The static identity: `graph_counts` puts the graph's counts in this form (a unit's fires over its span, its links' loads as pushes, the groups' cycles, each port's words as requests and grants, none refused, the copies' bursts as their reads and writes). Priced with each port's streamer as a mover, every part equals the static estimate's (`tests/estimate/test_dynamic.py`, to 1e-12).

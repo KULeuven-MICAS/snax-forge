@@ -37,6 +37,10 @@ def test_a_snap_line_reads_in_each_form():
     assert (got.kind, got.fields) == ("snap", {"mark": 2, "unit": "mul", "firings": 3, "pushes": 1})
     got = parse_line(line("tcdm/snax_xbar", "summary", "5 snap mark=-1 input=9 grants=4 stalls=0"))
     assert got.fields == {"mark": -1, "input": 9, "grants": 4, "stalls": 0}
+    got = parse_line(line("tcdm/snax_xbar", "summary", "5 snap mark=3 copy_reads=64 copy_writes=8"))
+    assert got.fields == {"mark": 3, "copy_reads": 64, "copy_writes": 8}
+    got = parse_line(line("tcdm/snax_xbar", "summary", "5 copies copy_reads=64 copy_writes=8"))
+    assert (got.kind, got.fields) == ("copies", {"copy_reads": 64, "copy_writes": 8})
 
 
 def test_snapshots_come_in_the_order_taken_named_as_the_converter_names(cluster):
@@ -60,6 +64,21 @@ def test_windows_are_differences_named_by_their_marks_and_add_up_to_the_end(clus
     for port, (grants, stalls) in snaps[-1].counters.inputs.items():
         assert sum(w.counters.inputs[port][0] for w in ws) == grants
         assert sum(w.counters.inputs[port][1] for w in ws) == stalls
+
+
+def test_a_copy_window_counts_the_copys_bank_words_and_a_run_without_them_none(cluster):
+    copy = [{"mark": 1, "kind": "dma_copy", "label": "dma transpose_A_T"}, MARKS[1]]
+    snaps = [(m, c, x | {"copies": cp}) for (m, c, x), cp in
+             zip(RUN, [(0, 0), (4096, 4096), (4096, 4096)], strict=True)]  # fmt: skip
+    ws = windows(snapshots(read(cluster, snaps), cluster), copy)
+    assert [(w.kind, w.counters.copies) for w in ws] == [
+        ("boot", (0, 0)), ("dma_copy", (4096, 4096)), ("run", (0, 0))]  # fmt: skip
+    assert Window.from_dict(ws[1].to_dict()) == ws[1]
+    old = ws[1].to_dict()
+    del old["counters"]["copies"]
+    assert Window.from_dict(old).counters.copies == (0, 0)
+    plain = windows(snapshots(read(cluster), cluster), copy)
+    assert all(w.counters.copies == (0, 0) for w in plain)
 
 
 def test_a_mark_the_marks_file_lacks_is_named_by_its_value(cluster):

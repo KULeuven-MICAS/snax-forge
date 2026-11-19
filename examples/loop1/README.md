@@ -96,9 +96,9 @@ Between them, the run is serial. The task table of `run.md` gives the bars:
 The DMA is busy 213 cycles of the window against the accelerator's 128:
 
 <!-- excerpt: vecadd_N512_stall/report/run.md -->
-| DMA | Transfers | Busy | Beats read | Beats written | Bytes L2 → L1 | Bytes L1 → L2 | Bytes per busy cycle |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| dma | 3 | 213 | 192 | 192 | 8192 | 4096 | 57.7 |
+| DMA | Transfers | Busy | Beats read | Beats written | Bytes L2 → L1 | Bytes L1 → L2 | Bytes L1 → L1 | Bytes per busy cycle |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| dma | 3 | 213 | 192 | 192 | 8192 | 4096 | 0 | 57.7 |
 
 <!-- excerpt: vecadd_N512_stall/report/run.md -->
 | Core | Run | Poll | Barrier | Sleep | CSR writes | CSR reads |
@@ -149,9 +149,9 @@ The folder is `out/flow/vecadd_N512_W8_stall/`, next to the first one. `report/r
 | dma | 2 | store_C | – | 277 | 348 | 71 | L1 → L2 | 4096 |
 
 <!-- excerpt: vecadd_N512_W8_stall/report/run.md -->
-| DMA | Transfers | Busy | Beats read | Beats written | Bytes L2 → L1 | Bytes L1 → L2 | Bytes per busy cycle |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| dma | 3 | 213 | 192 | 192 | 8192 | 4096 | 57.7 |
+| DMA | Transfers | Busy | Beats read | Beats written | Bytes L2 → L1 | Bytes L1 → L2 | Bytes L1 → L1 | Bytes per busy cycle |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| dma | 3 | 213 | 192 | 192 | 8192 | 4096 | 0 | 57.7 |
 
 ## 7. Check the prediction
 

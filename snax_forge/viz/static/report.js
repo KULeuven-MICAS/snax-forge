@@ -179,7 +179,7 @@ function memorySection(detail) {
 function dmaSection(detail) {
   const dmas = Object.entries(detail.profile.dmas).map(([name, d]) => ({ name, ...d }));
   if (!dmas.length) return null;
-  return section("dma", "DMA", "Busy cycles are those DMA_BUSY counts; bytes each way by the copies' addresses against the L1.",
+  return section("dma", "DMA", "Busy cycles are those DMA_BUSY counts; bytes by the copies' addresses against the L1: into it, out of it, and copied inside it.",
     table([
       { key: "name", label: "DMA" },
       { key: "transfers", label: "Transfers", num: true, fmt: int },
@@ -188,6 +188,7 @@ function dmaSection(detail) {
       { key: "beats_written", label: "Beats written", num: true, fmt: int },
       { key: "bytes_l2_to_l1", label: "Bytes L2 → L1", num: true, fmt: int },
       { key: "bytes_l1_to_l2", label: "Bytes L1 → L2", num: true, fmt: int },
+      { key: "bytes_l1_to_l1", label: "Bytes L1 → L1", num: true, fmt: int },
     ], dmas));
 }
 

@@ -130,6 +130,7 @@ class DmaRun(Record):
     beats_written: int
     bytes_l2_to_l1: int
     bytes_l1_to_l2: int
+    bytes_l1_to_l1: int
     bytes_per_busy_cycle: float
 
 
@@ -409,7 +410,8 @@ def build_run(rv: api.RunView) -> RunReport:
 
     dmas = [
         DmaRun(name, d.transfers, d.busy, d.beats_read, d.beats_written, d.bytes_l2_to_l1,
-               d.bytes_l1_to_l2, (d.bytes_l2_to_l1 + d.bytes_l1_to_l2) / d.busy if d.busy else 0.0)
+               d.bytes_l1_to_l2, d.bytes_l1_to_l1,
+               (d.bytes_l2_to_l1 + d.bytes_l1_to_l2 + d.bytes_l1_to_l1) / d.busy if d.busy else 0.0)
         for name, d in p.dmas.items()
     ]  # fmt: skip
     ports = [PortRow(n, x.grants, x.stalls, x.stalls_dma, x.whole_run) for n, x in p.ports.items()]
@@ -529,10 +531,11 @@ def render_run(r: RunReport) -> str:
         out += ["", "## DMA", ""]
         out += table(
             ["DMA", "Transfers", "Busy", "Beats read", "Beats written", "Bytes L2 → L1",
-             "Bytes L1 → L2", "Bytes per busy cycle"],
+             "Bytes L1 → L2", "Bytes L1 → L1", "Bytes per busy cycle"],
             [[d.name, d.transfers, d.busy, d.beats_read, d.beats_written, d.bytes_l2_to_l1,
-              d.bytes_l1_to_l2, f"{d.bytes_per_busy_cycle:.1f}"] for d in r.dmas],
-            {1, 2, 3, 4, 5, 6, 7},
+              d.bytes_l1_to_l2, d.bytes_l1_to_l1, f"{d.bytes_per_busy_cycle:.1f}"]
+             for d in r.dmas],
+            {1, 2, 3, 4, 5, 6, 7, 8},
         )  # fmt: skip
 
     out += ["", "## Memory", ""]
