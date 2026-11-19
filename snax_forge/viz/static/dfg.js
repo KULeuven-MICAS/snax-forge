@@ -1,14 +1,10 @@
 // DFG viewer: one step of a recipe at a time, two with Compare.
 //
-// The server works out everything shown (viz/dfg/api.py): the rows top to
-// bottom in execution order, each top-level node's tree with its compact text,
-// one edge per memlet, the Details of every item and the Estimate's figures.
-// Here the boxes are plain HTML laid out by CSS and the edges one SVG layer
-// per panel, measured from the placed boxes and redrawn when a panel changes
-// size; nothing is computed but where to draw. Text is never in the SVG
-// but a group's name. The old step stays on screen until the new one's view
-// arrives; then its boxes glide from where they were (glide), unless the
-// browser asks for reduced motion.
+// The server works out everything shown (viz/dfg/api.py): the step's drawing (its boxes, ports,
+// edges and outlines, drawing.py), the Details of every item and the Estimate's figures. graph.js
+// lays the drawing out with ELK and draws it; nothing here is computed but where to draw. The
+// old step stays on screen until the new one is laid out; then its boxes glide from where they
+// were (glide), unless the browser asks for reduced motion.
 //
 // The URL hash holds the state, as in the run viewer: #step=<k>&sel=<id>&cmp=<j>&t=<transform>&tech=<tech>&open=<blocks>
 // (step and cmp, view mode: the steps' names, dot4_w8/6_link from several folders, and an old
@@ -20,6 +16,7 @@
 
 import { dragHandle, h, keep, stored } from "./dom.js";
 import * as edit from "./edit.js";
+import { TASK_COLOURS, layout, render } from "./graph.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -132,70 +129,11 @@ function legend() {
     h("li", {}, h("i", { class: "key c-link" }), "link"),
     h("li", {}, h("i", { class: "key c-packer" }), "packer, slicer"),
     h("li", {}, h("i", { class: "key c-copy" }), "copy (transpose)"),
+    h("li", {}, h("i", { class: "key c-mux" }), "temporal mux (shared unit)"),
     h("li", {}, h("i", { class: "key c-pill" }), "container"),
     h("li", {}, h("i", { class: "key c-pill transient" }), "transient"),
     h("li", {}, h("i", { class: "key c-pill scalar" }), "scalar"),
   );
-}
-
-// -- the compact drawing ------------------------------------------------------------
-
-function ports(n, side) {
-  const list = (side === "in" ? n.inputs : n.outputs).filter((p) => !p.csr);
-  if (!list.length) return null;
-  return h("div", { class: `c-ports ${side}` },
-    list.map((p) => h("i", { class: "c-port", "data-port": `${n.id}.${p.connector}`, title: `${p.connector}: ${p.data}` })));
-}
-
-function nodeEl(n) {
-  if (n.kind === "block") { // a collapsed block (api.py's ``fold``): one box, double-click opens it
-    return h("div", { class: "c-node c-block", "data-sel": n.id, "data-block": n.id, title: "double-click to expand" },
-      ports(n, "in"), h("div", { class: "c-text" }, n.text), ports(n, "out"));
-  }
-  if (n.kind === "map") {
-    return h("div", { class: `c-map loop-${n.loop_kind || "none"}`, "data-sel": n.id },
-      h("div", { class: "c-bar" }, n.text),
-      h("div", { class: "c-body" }, n.body.map(nodeEl)));
-  }
-  const cls = { tasklet: "c-tasklet", accelerated: "c-unit", link: "c-link", packer: "c-packer", slicer: "c-packer", transpose: "c-copy" }[n.kind] || "c-tasklet";
-  // a fold (api.py's ``fold``): an upside-down trapezoid, its fill a layer of its own under
-  // the text (style.css), the output connectors inside its narrow bottom
-  return h("div", { class: `c-node ${cls}${n.fold ? " c-fold" : ""}`, "data-sel": n.id },
-    n.fold ? h("i", { class: "c-shape" }) : null,
-    ports(n, "in"),
-    h("div", { class: "c-text" }, n.text),
-    n.body && n.body.length ? h("div", { class: "c-body" }, n.body.map(nodeEl)) : null,
-    ports(n, "out"));
-}
-
-function topEl(n) {
-  const el = nodeEl(n);
-  el.setAttribute("data-top", n.id);
-  return el;
-}
-
-function pill(v, key) {
-  const b = v.boxes[key];
-  const c = v.containers[b.container];
-  return h("div", { class: `c-pill${c.transient ? " transient" : ""}${c.scalar ? " scalar" : ""}${b.again ? " again" : ""}`, "data-box": key, "data-sel": c.name },
-    h("b", {}, c.text), c.dtype ? h("span", { class: "c-dtype" }, c.dtype) : null,
-    c.badge ? h("span", { class: "c-badge" }, c.badge) : null,
-    c.share ? h("span", { class: "c-share" }, c.share) : null);
-}
-
-/** Rows top to bottom (api.py's ``_layout``): a row of containers, a top-level node, or the
-independent chains' columns side by side, each its own rows (a join's node below them). */
-function rowEls(v, rows) {
-  return rows.map((r) => {
-    if (r.kind === "columns") {
-      return h("div", { class: "c-cols" }, r.columns.map((c) =>
-        h("div", { class: "c-col", "data-column": c.id }, rowEls(v, c.rows))));
-    }
-    if (r.kind === "packers") return h("div", { class: "c-row" }, r.nodes.map(topEl)); // api.py's packer_node, slicer_node
-    return r.kind === "containers"
-      ? h("div", { class: "c-row" }, r.boxes.map((key) => pill(v, key)))
-      : h("div", { class: "c-row" }, topEl(r.node));
-  });
 }
 
 /** The steps as a dropdown's options; from several folders, an optgroup per folder (the
@@ -217,335 +155,35 @@ function stepSelect(current, onChange) {
     stepOptionNodes(current));
 }
 
-/** One panel: a step's drawing; with ``pick``, its own step dropdown (Compare). */
+/** One panel: a step's drawing (graph.js), laid out before it is shown; with ``pick``, its own
+step dropdown (Compare). After ``share`` the head names the tasks in their colours. */
 function panel(v, k, pick) {
+  const tasks = (v.drawing && v.drawing.tasks) || [];
   const head = h("div", { class: "c-panel-head" },
     v.folder ? h("span", { class: "muted" }, `${v.folder} · `) : null,
     pick ? stepSelect(k, pick) : h("b", {}, v.label),
-    h("span", { class: "muted" }, v.graph ? ` ${v.graph}` : ""));
-  if (v.error) return h("section", { class: "c-panel broken" }, head, h("p", { class: "load-error" }, v.error));
-  const svg = document.createElementNS(SVG, "svg");
-  svg.setAttribute("class", "dfg-edges");
-  const rows = h("div", { class: "c-rows" }, rowEls(v, v.rows));
-  const canvas = h("div", { class: "c-canvas" }, rows, svg);
+    h("span", { class: "muted" }, v.graph ? ` ${v.graph}` : ""),
+    tasks.map((t, i) => h("span", { class: "c-task", style: { "--t": TASK_COLOURS[i % TASK_COLOURS.length] }, title: `task ${t}: its edges and chips in this colour` }, t)));
+  if (v.error || !v.drawing) return h("section", { class: "c-panel broken" }, head, h("p", { class: "load-error" }, v.error || "no drawing"));
+  const canvas = h("div", { class: "c-canvas" });
   const el = h("section", { class: "c-panel" }, head, h("div", { class: "c-scroll" }, canvas));
   el._view = v;
+  el._ready = layout(v.drawing, probe).then((L) => { el._layout = L; }, (e) => { el._error = e; });
   el._draw = () => {
-    if (el.classList.contains("settling")) return; // the boxes are gliding: drawn once they settle
-    // the outlines' margins can move boxes without resizing the canvas (a column shorter than
-    // its neighbour), so the edges are drawn again until the margins hold
-    for (let pass = 0; pass < 3; pass++) {
-      drawEdges(canvas, svg, v.edges, k, v.containers);
-      if (!drawOutlines(canvas, svg, v)) break;
+    if (el._error) {
+      canvas.replaceChildren(h("p", { class: "load-error" }, `layout: ${el._error.message || el._error}`));
+      return;
     }
-    outline();
+    render(canvas, v.drawing, el._layout);
+    if (state.mode === "edit") edit.decorate(v, el);
   };
-  new ResizeObserver(() => requestAnimationFrame(el._draw)).observe(canvas);
-  if (state.mode === "edit") edit.decorate(v, el);
   return el;
 }
 
-// -- edges ------------------------------------------------------------------------
+// boxes are measured here before ELK lays them out: hidden, in the page, so its fonts apply
+const probe = h("div", { class: "c-probe", "aria-hidden": "true" });
+document.body.append(probe);
 
-const SVG = "http://www.w3.org/2000/svg";
-const svgEl = (tag, attrs) => {
-  const e = document.createElementNS(SVG, tag);
-  for (const [key, val] of Object.entries(attrs)) e.setAttribute(key, String(val));
-  return e;
-};
-
-function anchor(canvas, key) {
-  return canvas.querySelector(`[data-box="${CSS.escape(key)}"]`) || canvas.querySelector(`[data-port="${CSS.escape(key)}"]`);
-}
-
-function drawEdges(canvas, svg, edges, k, containers = {}) {
-  const c = canvas.getBoundingClientRect();
-  svg.setAttribute("width", canvas.scrollWidth);
-  svg.setAttribute("height", canvas.scrollHeight);
-  const marker = `arrow-${k}`;
-  const defs = svgEl("defs", {});
-  for (const [id, cls] of [[marker, "arrow"], [`${marker}-sel`, "arrow-sel"]]) {
-    const m = svgEl("marker", {
-      id, viewBox: "0 0 10 10", refX: 10, refY: 5, markerWidth: 8, markerHeight: 8,
-      markerUnits: "userSpaceOnUse", orient: "auto-start-reverse",
-    });
-    m.append(svgEl("path", { d: "M0,0 L10,5 L0,10 z", class: cls }));
-    defs.append(m);
-  }
-  const out = [];
-  const xs = spread(canvas, edges);
-  const pillFont = getComputedStyle(canvas.querySelector(".c-pill") || canvas).fontSize; // the dtype labels' size
-  for (const e of edges) {
-    const a = anchor(canvas, e.from);
-    const b = anchor(canvas, e.to);
-    if (!a || !b) continue;
-    const ra = a.getBoundingClientRect();
-    const rb = b.getBoundingClientRect();
-    // From the bottom of one end to the top of the other, a connector inside a node included
-    // (the boxes it passes are drawn over it)
-    const [x1, x2] = xs.get(e).map((x) => x - c.left);
-    const y1 = ra.bottom - c.top;
-    const y2 = rb.top - c.top;
-    const bend = Math.max(18, Math.abs(y2 - y1) * 0.45);
-    const d = `M${x1},${y1} C${x1},${y1 + bend} ${x2},${y2 - bend} ${x2},${y2 - 2}`;
-    out.push(svgEl("path", { d, class: "edge-hit", "data-sel": e.id }));
-    const p = svgEl("path", { d, class: `edge ${e.dir}${e.local ? " local" : ""}${e.seed ? " seed" : ""}`, "data-sel": e.id, "marker-end": `url(#${marker})` });
-    p._marker = marker;
-    out.push(p);
-    if (e.slice) { // a collapsed block's port (api.py's fold): the part one firing takes, beside its edge by the container's box
-      // a read's a third of the way down (edges from one box apart by then), a write's by the box below
-      const sy = e.dir === "read" ? Math.max(y1 + 14, y1 + (y2 - y1) * 0.3) : y2 - 8;
-      const left = e.dir === "read" && x2 < x1 - 4; // an edge going left: its label on its left side
-      const t = svgEl("text", { x: curveX(x1, y1, x2, y2, bend, sy) + (left ? -8 : 8), y: sy, "text-anchor": left ? "end" : "start",
-        class: "edge-label at-start slice", "data-sel": e.data });
-      t.textContent = withType(e.slice);
-      out.push(t);
-    }
-    const dtype = containers[e.data] && containers[e.data].dtype;
-    const withType = (text) => (dtype ? `${text} · ${dtype}` : text); // where the edge has a label of its own already
-    if (dtype && !e.local && !e.slice && !(e.label && !e.transpose)) { // its container's dtype beside the edge, in the gap next to the container's box
-      // (a read's below the box it leaves, a write's above the box it enters), never over a box
-      const ty = e.dir === "read" ? y1 + 16 : y2 - 7;
-      const tx = curveX(x1, y1, x2, y2, bend, ty);
-      const left = x2 < x1 - 4; // an edge going left: its label on its left side
-      const t = svgEl("text", { x: tx + (left ? -7 : 7), y: ty, "text-anchor": left ? "end" : "start", class: "edge-label dtype", "data-sel": e.data });
-      t.style.fontSize = pillFont;
-      t.textContent = e.per_word ? `${dtype} · ${e.per_word} per word` : dtype; // out of a packer or into a slicer: d_out, d_in
-      out.push(t);
-    }
-    if (e.label && e.transpose) { // a marked read (mark_transpose, api.py): Aᵀ beside its edge, just above the reader's top-level map, at the container's font size
-      const top = (b.closest(".c-row") || b).getBoundingClientRect().top - c.top;
-      const ty = Math.max(y1 + 14, top - 8);
-      const t = svgEl("text", { x: curveX(x1, y1, x2, y2, bend, ty) + 8, y: ty, class: "edge-label at-start transpose", "data-sel": e.data });
-      t.style.fontSize = getComputedStyle(a).fontSize;
-      t.textContent = e.label;
-      out.push(t);
-    } else if (e.label) { // a fused nest's local value (its name, no box), a scalar's broadcast (alpha[0] · broadcast) or a fold's seed (q[m_t]), api.py
-      // a local value's right of its edge, halfway down (clear of the line and its arrow); a
-      // broadcast's at its start, beside the hexagon, so no map bar it passes hides it, on the side the
-      // edge leans away from (the next edge's dtype is on the other)
-      const away = !e.local && x2 >= x1 - 4; // an edge going right: its label on its left side
-      const [tx, ty] = e.local ? [Math.max(x1, x2) + 10, (y1 + y2) / 2 + 4] : [away ? x1 - 6 : x1 + 6, y1 + 14];
-      const t = svgEl("text", { x: tx, y: ty, "text-anchor": away ? "end" : "start", class: `edge-label${e.local ? "" : " at-start"}`, "data-sel": e.data });
-      t.textContent = withType(e.label);
-      out.push(t);
-    }
-  }
-  svg.replaceChildren(defs, ...out);
-}
-
-/** Each edge's start and end x on the page. An end is its anchor's middle, but where several
-edges leave a container's box (or enter one) they leave from points spread over the middle half
-of its edge, ordered by where their other ends are, so they part at the box, not at one point;
-a connector is one point. */
-function spread(canvas, edges) {
-  const mid = (key) => {
-    const a = anchor(canvas, key);
-    if (!a) return null;
-    const r = a.getBoundingClientRect();
-    return { x: r.left + r.width / 2, w: r.width, box: Boolean(a.dataset.box) };
-  };
-  const at = new Map(edges.map((e) => [e, [mid(e.from), mid(e.to)]]));
-  const xs = new Map([...at].map(([e, [a, b]]) => [e, [a?.x, b?.x]]));
-  for (const side of [0, 1]) {
-    const by = new Map(); // a box's key -> its edges on this side
-    for (const e of edges) {
-      const end = at.get(e)[side];
-      if (!end || !end.box || !at.get(e)[1 - side]) continue;
-      const key = side ? e.to : e.from;
-      if (!by.has(key)) by.set(key, []);
-      by.get(key).push(e);
-    }
-    for (const list of by.values()) {
-      if (list.length < 2) continue;
-      list.sort((p, q) => at.get(p)[1 - side].x - at.get(q)[1 - side].x);
-      const { x, w } = at.get(list[0])[side];
-      const step = Math.min(16, (w / 2) / (list.length - 1));
-      list.forEach((e, i) => { xs.get(e)[side] = x + (i - (list.length - 1) / 2) * step; });
-    }
-  }
-  return xs;
-}
-
-/** The x of an edge's curve (drawEdges's cubic) at height ``y``, by bisection: its y only
-grows from the start to the end. */
-function curveX(x1, y1, x2, y2, bend, y) {
-  const at = (t, p0, p1, p2, p3) => (1 - t) ** 3 * p0 + 3 * (1 - t) ** 2 * t * p1 + 3 * (1 - t) * t ** 2 * p2 + t ** 3 * p3;
-  let lo = 0, hi = 1;
-  for (let i = 0; i < 30; i++) {
-    const mid = (lo + hi) / 2;
-    if (at(mid, y1, y1 + bend, y2 - bend, y2 - 2) < y) lo = mid; else hi = mid;
-  }
-  return at(lo, x1, x1, x2, x2);
-}
-
-/** Each row of containers left to right by where its edges land: a box takes the place of the
-leftmost connector it feeds (else of the leftmost that wrote it), ties and boxes without edges in
-api.py's order, so an edge does not cross the row for want of an order (axpy's fused nest: y,
-read by augassign's left connector, first). The connectors sit in node rows, which the order
-does not move, so one pass settles it. Then each node's input connectors by where their edges come
-from, so two edges into one node do not cross (mvt's tmp0_mult: y1, then the shared A). It runs
-before the glide measures where the boxes are. */
-function orderRows(panel) {
-  const canvas = panel.querySelector(".c-canvas");
-  if (!canvas || !panel._view) return;
-  const edges = panel._view.edges;
-  const xOf = (key) => {
-    const a = anchor(canvas, key);
-    if (!a) return Infinity;
-    const r = a.getBoundingClientRect();
-    return r.left + r.width / 2;
-  };
-  for (const row of canvas.querySelectorAll(".c-rows .c-row")) {
-    const pills = [...row.children].filter((el) => el.dataset.box);
-    if (pills.length < 2) continue;
-    const at = pills.map((el, i) => {
-      const key = el.dataset.box;
-      const fed = edges.filter((e) => e.from === key).map((e) => xOf(e.to));
-      const wrote = edges.filter((e) => e.to === key).map((e) => xOf(e.from));
-      return { el, x: Math.min(...(fed.length ? fed : wrote.length ? wrote : [Infinity])), i };
-    });
-    at.sort((a, b) => (a.x === b.x ? a.i - b.i : a.x - b.x));
-    at.forEach(({ el }, k) => { el.style.order = String(k); });
-  }
-  // then each node's input connectors left to right by where their edges come from (the box
-  // above, or the writer's connector), ties in the node's order: mvt's tmp0_mult takes y1 left of
-  // the shared A, so their edges do not cross
-  for (const row of canvas.querySelectorAll(".c-ports.in")) {
-    const at = [...row.children].map((el, i) => {
-      const from = edges.filter((e) => e.to === el.dataset.port).map((e) => xOf(e.from));
-      return { el, x: from.length ? Math.min(...from) : Infinity, i };
-    });
-    if (at.length < 2) continue;
-    at.sort((a, b) => (a.x === b.x ? a.i - b.i : a.x - b.x));
-    at.forEach(({ el }, k) => { el.style.order = String(k); });
-  }
-}
-
-// -- outlines: groups and accelerators, open blocks ------------------------------
-// One pass for the three kinds, from the inside out: an outline holds the outlines whose boxes
-// it holds (a group inside its accelerator, both inside an open block around the same boxes),
-// each GAP px outside the ones it holds and its name in a band of its own (a group's on top at
-// the left, an accelerator's on top at the right, a block's at the bottom left), so none
-// crosses another or its name. The rows that hold an outline's first and last box get the
-// margin it needs above and below, so it clears the containers' rows too.
-
-function unionRect(canvas, rects) {
-  const c = canvas.getBoundingClientRect();
-  const r = rects.filter(Boolean);
-  if (!r.length) return null;
-  return {
-    left: Math.min(...r.map((x) => x.left)) - c.left, top: Math.min(...r.map((x) => x.top)) - c.top,
-    right: Math.max(...r.map((x) => x.right)) - c.left, bottom: Math.max(...r.map((x) => x.bottom)) - c.top,
-  };
-}
-
-const LABEL = 17; // px of an outline's band for its name (style.css: 0.85rem)
-const GAP = 8; // px between an outline and what it holds
-
-/** Every outline to draw: ``{kind, name, text, tops, rank}``, ``rank`` ordering outlines
-around the same boxes (a group inside its accelerator inside a block, a deeper block inside). */
-function outlines(v) {
-  const out = [];
-  for (const acc of v.accelerators || []) {
-    const groups = acc.groups.filter((g) => g.drawn !== false);
-    for (const grp of groups) out.push({ kind: "group", name: grp.text, text: grp.text, tops: grp.tops, rank: 0 });
-    // an accelerator that is one group of its name (dot 2 to 6) is drawn once, as the group
-    if (!groups.length || (acc.groups.length === 1 && acc.groups[0].name === acc.name)) continue;
-    out.push({ kind: "acc", name: acc.text, text: acc.text, tops: [...new Set(groups.flatMap((g) => g.tops))], rank: 1 });
-  }
-  const open = (v.blocks || []).filter((b) => !b.collapsed && !b.hidden && b.foldable);
-  const same = new Map(); // blocks open around the same boxes: one outline, ``matvec › dot``
-  for (const b of open) {
-    const key = b.tops.join(",");
-    if (!same.has(key)) same.set(key, []);
-    same.get(key).push(b);
-  }
-  const deepest = Math.max(0, ...open.map((b) => b.depth));
-  for (const bs of same.values()) {
-    bs.sort((a, b) => a.depth - b.depth);
-    const inner = bs[bs.length - 1];
-    out.push({ kind: "block", name: inner.name, block: inner.name, tops: bs[0].tops, rank: 2 + deepest - bs[0].depth,
-      text: `▾ ${bs.length > 1 ? bs.map((b) => b.name).join(" › ") : inner.text}`,
-      tip: `${bs.map((b) => b.text).join("\n")}\ndouble-click to collapse` });
-  }
-  return out;
-}
-
-/** ``a`` holds ``b``: every box of ``b`` is one of ``a``'s, and ``a`` ranks above ``b`` when
-they hold the same. */
-function holds(a, b) {
-  if (a === b || !b.tops.every((t) => a.tops.includes(t))) return false;
-  return a.tops.length > b.tops.length || a.rank > b.rank;
-}
-
-function drawOutlines(canvas, svg, v) {
-  const list = outlines(v);
-  const top = (id) => canvas.querySelector(`[data-top="${CSS.escape(id)}"]`);
-  for (const o of list) o.els = o.tops.map(top).filter(Boolean);
-  const shown = list.filter((o) => o.els.length);
-  const boxOf = new Map();
-  const box = (o) => { // the outline's box, its name's band included, after those it holds
-    if (boxOf.has(o)) return boxOf.get(o);
-    const r = unionRect(canvas, o.els.map((el) => el.getBoundingClientRect()));
-    for (const inner of shown) {
-      if (!holds(o, inner)) continue;
-      const b = box(inner);
-      r.left = Math.min(r.left, b.left); r.right = Math.max(r.right, b.right);
-      r.top = Math.min(r.top, b.top); r.bottom = Math.max(r.bottom, b.bottom);
-    }
-    const b = { left: r.left - GAP, right: r.right + GAP, top: r.top - GAP - (o.kind === "block" ? 0 : LABEL),
-      bottom: r.bottom + GAP + (o.kind === "block" ? LABEL : 0) };
-    boxOf.set(o, b);
-    return b;
-  };
-  const out = [];
-  const room = new Map(); // a row -> the room its outlines need above and below it
-  for (const o of shown) {
-    const b = box(o);
-    const cls = { group: "group-box", acc: "acc-box", block: "block-box" }[o.kind];
-    const g = svgEl("g", { class: cls, "data-sel": o.name, ...(o.kind === "group" ? { "data-group": o.name } : {}),
-      ...(o.block ? { "data-block": o.block } : {}) });
-    const rect = { x: b.left, y: b.top, width: b.right - b.left, height: b.bottom - b.top, rx: o.kind === "block" ? 10 : 6 };
-    g.append(svgEl("rect", { ...rect, class: "outline-hit" }), svgEl("rect", rect));
-    const t = o.kind === "acc"
-      ? svgEl("text", { x: b.right - 6, y: b.top + LABEL - 5, "text-anchor": "end" })
-      : svgEl("text", { x: b.left + 6, y: o.kind === "block" ? b.bottom - 5 : b.top + LABEL - 5 });
-    t.textContent = o.text;
-    g.append(t);
-    if (o.tip) {
-      const tip = svgEl("title", {});
-      tip.textContent = o.tip;
-      g.append(tip);
-    }
-    out.push(g);
-    const rows = o.els.map((el) => el.closest(".c-row")).filter(Boolean);
-    const c = canvas.getBoundingClientRect();
-    const first = rows.reduce((x, y) => (y.getBoundingClientRect().top < x.getBoundingClientRect().top ? y : x));
-    const last = rows.reduce((x, y) => (y.getBoundingClientRect().bottom > x.getBoundingClientRect().bottom ? y : x));
-    const up = first.getBoundingClientRect().top - c.top - b.top;
-    const down = b.bottom - (last.getBoundingClientRect().bottom - c.top);
-    room.set(first, { ...(room.get(first) || { up: 0, down: 0 }), up: Math.max(up, (room.get(first) || { up: 0 }).up) });
-    room.set(last, { ...(room.get(last) || { up: 0, down: 0 }), down: Math.max(down, (room.get(last) || { down: 0 }).down) });
-  }
-  svg.append(...out);
-  // the room each row needs: a margin, which only grows while the panel shows this view (an
-  // outline over two columns names the higher of its first rows, so a margin that also shrank
-  // would swap them on every draw); true when one grew, so the panel draws again
-  let changed = false;
-  const grow = (row, side, px) => {
-    if (px > (parseFloat(row.style[side]) || 0)) { row.style[side] = `${px}px`; changed = true; }
-  };
-  for (const row of canvas.querySelectorAll(".c-row")) {
-    const want = room.get(row);
-    if (!want) continue;
-    const gap = parseFloat(getComputedStyle(row.parentElement).rowGap) || 0; // what the rows keep already
-    // a pill's height clear of it, and a line more for the edges' dtype labels beside the pill
-    grow(row, "marginTop", Math.max(0, Math.ceil(want.up - gap + 36)));
-    grow(row, "marginBottom", Math.max(0, Math.ceil(want.down - gap + 36)));
-  }
-  return changed;
-}
 
 /** Block ``name`` opened or closed (its view's ``blocks``): opening opens the blocks holding
 it, closing closes those inside it; the blocks sharing its units (``together``) go with it. */
@@ -596,49 +234,34 @@ async function blocks() {
 
 // -- the move between steps: the boxes glide from their old places --------------------------
 
-const HTML = "http://www.w3.org/1999/xhtml";
 const GLIDE_MS = 250;
 let drawn = null; // the views last drawn, one per panel
 
 const still = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
-const boxes = (root) => [...root.querySelectorAll(".c-canvas [data-sel]")].filter((el) => el.namespaceURI === HTML);
-const boxKey = (el) => (el.dataset.box ? `box:${el.dataset.box}` : `node:${el.dataset.sel}`);
 
-/** Where every box is on screen, per panel: its key -> its rect. */
+/** Where every box is on screen, per panel: its drawing id -> its rect. */
 function places() {
-  return [...$("graphs").children].map((p) => new Map(boxes(p).map((el) => [boxKey(el), el.getBoundingClientRect()])));
+  return [...$("graphs").children].map((p) => new Map([...p.querySelectorAll(".v3-box")].map((el) => [el.dataset.id, el.getBoundingClientRect()])));
 }
 
-/** A new step's panel: each box that was on screen moves from there to its place, a box inside
-another by what is left of its own move; a new one fades in; the edges are drawn when all
-settle. */
+/** A new step's panel: each box that was on screen moves from there to its place, a new one
+fades in; the edges show when all settle. */
 function glide(panel, old) {
-  const moved = new Map(); // box -> its whole move, which the boxes inside it share
   const runs = [];
-  for (const el of boxes(panel)) {
-    const up = el.parentElement.closest(".c-canvas [data-sel]");
-    const carried = (up && moved.get(up)) || [0, 0];
-    const was = old.get(boxKey(el));
+  for (const el of panel.querySelectorAll(".v3-box")) {
+    const was = old.get(el.dataset.id);
     if (!was) {
-      moved.set(el, carried);
       runs.push(el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: GLIDE_MS * 1.5, easing: "ease-out" }));
       continue;
     }
     const now = el.getBoundingClientRect();
-    const whole = [was.left - now.left, was.top - now.top];
-    moved.set(el, whole);
-    const dx = whole[0] - carried[0];
-    const dy = whole[1] - carried[1];
+    const dx = was.left - now.left, dy = was.top - now.top;
     if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) continue;
-    runs.push(el.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "none" }],
-      { duration: GLIDE_MS, easing: "ease-out" }));
+    runs.push(el.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "none" }], { duration: GLIDE_MS, easing: "ease-out" }));
   }
   if (!runs.length) return;
   panel.classList.add("settling");
-  Promise.all(runs.map((a) => a.finished.catch(() => null))).then(() => {
-    panel.classList.remove("settling");
-    panel._draw();
-  });
+  Promise.all(runs.map((a) => a.finished.catch(() => null))).then(() => panel.classList.remove("settling"));
 }
 
 // -- selection --------------------------------------------------------------------
@@ -1080,16 +703,17 @@ async function draw() {
         panel(shown, state.k, goto),
       ];
     }
+    await Promise.all(panels.map((p) => p._ready));
     const old = places();
     $("graphs").replaceChildren(...panels);
-    panels.forEach(orderRows);
+    panels.forEach((p) => p._draw && p._draw());
     $("graphs").classList.toggle("two", panels.length === 2);
     const now = panels.map((p) => p._view);
     if (!still() && drawn && old.length === panels.length) {
       panels.forEach((p, i) => p._view !== drawn[i] && glide(p, old[i]));
     }
     drawn = now;
-    requestAnimationFrame(() => panels.forEach((p) => p._draw && p._draw()));
+    outline();
     await Promise.all([details(), estimate(), blocks(), containers(), bindings(), state.mode === "edit" ? edit.sidebar() : null]);
     const broken = state.steps.filter((s) => s.error).length;
     status(broken ? `${broken} of ${state.steps.length} files did not load` : "", broken > 0);

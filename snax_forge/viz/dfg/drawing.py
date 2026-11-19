@@ -96,7 +96,8 @@ class _Drawing:
                 key,
                 kind="container",
                 sel=c,
-                **{k: d[k] for k in ("name", "text", "dtype", "badge", "transient")},
+                **{k: d[k] for k in ("name", "text", "dtype", "badge", "transient", "scalar")},
+                **({"share": d["share"]} if "share" in d else {}),
             )
             if first:
                 self.nodes[key]["layer"] = "first"
@@ -308,7 +309,7 @@ def drawing(g: Graph, tops: Sequence[Node], placed: dict[str, Any] | None = None
             return d.box(n.id, kind="copy", text=api.compact_text(g, n), sel=n.id,
                          ins=list(n.inputs), outs=list(n.outputs))["id"]  # fmt: skip
         if n.kind == "block":
-            return d.box(n.id, kind="block", text=api.block_text(n.attrs["block"]), sel=f"block:{n.id}",
+            return d.box(n.id, kind="block", text=api.block_text(n.attrs["block"]), sel=n.id, block=n.id,
                          ins=list(n.inputs), outs=list(n.outputs))["id"]  # fmt: skip
         box = d.box(n.id, kind="tasklet", text=api.compact_text(g, n), sel=n.id,
                     ins=[c for c, _ in _reads(g, n)], outs=list(n.outputs))  # fmt: skip
@@ -576,14 +577,14 @@ def _outlines(g: Graph, d: _Drawing, by_inst: dict[str, list[Node]], shared: dic
 
     for b in open_:
         out.append({"id": f"block:{b['name']}", "kind": "block", "text": f"▾ {b['text']}",
-                    "block": b["name"], "parent": f"block:{block_parent[b['name']]}"
+                    "sel": b["name"], "block": b["name"], "parent": f"block:{block_parent[b['name']]}"
                     if block_parent[b["name"]] else None})  # fmt: skip
     acc_outline: dict[str, str | None] = {}
     for acc, ks in accs.items():
         drawn = [k for k in ks if k in drawn_grp]
         if len(ks) > 1 or (ks and ks[0] != acc):
             inner = {innermost(x) for k in ks for u in groups[k]["units"] for x in by_inst[u]}
-            out.append({"id": f"acc:{acc}", "kind": "accelerator", "text": f"accelerator {acc}",
+            out.append({"id": f"acc:{acc}", "kind": "accelerator", "text": f"accelerator {acc}", "sel": acc,
                         "parent": f"block:{next(iter(inner))}" if len(inner) == 1 and None not in inner
                         else None})  # fmt: skip
             acc_outline[acc] = f"acc:{acc}"
@@ -596,7 +597,7 @@ def _outlines(g: Graph, d: _Drawing, by_inst: dict[str, list[Node]], shared: dic
             par = acc_outline[acc] or (
                 f"block:{next(iter(inner))}" if len(inner) == 1 and None not in inner else None
             )
-            out.append({"id": f"grp:{k}", "kind": "group", "text": text, "parent": par})
+            out.append({"id": f"grp:{k}", "kind": "group", "text": text, "sel": k, "parent": par})
     # every box's outline
     for bid, box in d.nodes.items():
         if box["kind"] == "unit":

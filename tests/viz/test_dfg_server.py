@@ -393,18 +393,27 @@ def test_a_post_that_is_not_json_is_refused(tmp_path):
 
 
 def test_the_page_and_every_file_it_imports_are_served(tmp_path):
-    """dfg.html, and each file it and its modules import (``src``, ``href``, ``from "./x"``),
-    from the server in both modes."""
+    """dfg.html, and each file it and its modules import (``src``, ``href``, ``from "./x"``,
+    ELK's worker ``"vendor/x"``), from the server in both modes."""
     html = (STATIC / "dfg.html").read_text()
-    wanted, todo = set(), re.findall(r'(?:src|href)="([\w.-]+)"', html)
+    wanted, todo = set(), re.findall(r'(?:src|href)="([\w./-]+)"', html)
     while todo:
         name = todo.pop()
         if name in wanted:
             continue
         wanted.add(name)
-        if name.endswith(".js"):
-            todo += re.findall(r'from "\./([\w.-]+)"', (STATIC / name).read_text())
-    assert {"dfg.js", "style.css"} <= wanted
+        if name.endswith(".js") and not name.startswith("vendor/"):
+            text = (STATIC / name).read_text()
+            todo += re.findall(r'from "\./([\w.-]+)"', text) + re.findall(
+                r'"(vendor/[\w.-]+)"', text
+            )
+    assert {
+        "dfg.js",
+        "graph.js",
+        "style.css",
+        "vendor/elk-api.js",
+        "vendor/elk-worker.min.js",
+    } <= wanted
     fixture = REPO / "tests" / "dfg" / "fixtures" / "vecadd.snaxdfg"
     roots = Roots(tmp_path / "s", tmp_path / "r", tmp_path / "b")
     for srv in (make_dfg_server([fixture], 0), make_edit_server(0, roots=roots)):
