@@ -53,6 +53,7 @@ from snax_forge.estimate.cost import L1_LABEL, PARTS, L1Cost, caveat, dec3, head
 from snax_forge.expr import ExprError
 from snax_forge.sandbox.blocks import BLOCK
 from snax_forge.sandbox.session import map_ids
+from snax_forge.viz.dfg.drawing import drawing
 
 # A bank word, in bits: num_slc = WORD_BITS / b slices of a b-bit dtype
 WORD_BITS = 64
@@ -199,7 +200,9 @@ def graph_view(e: Entry, platform: Any = None, est: Any = None,
             for pk in out["packers"]:  # a packer or slicer is its group's hardware: inside it
                 if pk["instance"] in {u["instance"] for u in grp["units"]}:
                     grp["tops"] = [*grp["tops"], pk["id"]]
+    out["drawing"] = drawing(g, tops, placed, out["blocks"])
     out["details"] = details(g, out, est)
+    out["details"] |= drawing_details(g, out["drawing"], out["details"], est)
     for b in out["blocks"]:
         out["details"][f"block:{b['name']}"] = block_details(g, b)
     for edge in out["edges"]:  # their memlet and packing are in Details
@@ -376,6 +379,11 @@ def _name_params(view: dict[str, Any], g: Graph, recipe: Any) -> None:
 
     walk(view.get("rows"))
     walk(view.get("nodes"))
+    for x in (view.get("drawing") or {}).get("nodes", []):  # a unit's box: its first node's text
+        n = nodes.get(x.get("sel")) if x["kind"] == "unit" else None
+        if n is not None:
+            ps = names.get(n.attrs["instance"]) or []
+            x["text"] = compact_text(g, n, ps[0] if ps else None)
     for m, text in map_ranges(g, recipe).items():
         d = view.get("details", {}).get(f"node:{m}")
         if d is not None:
@@ -1269,6 +1277,47 @@ def details(g: Graph, view: dict[str, Any], est: Any) -> dict[str, dict[str, Any
             elif n is not None and port in (n.inputs | n.outputs):
                 d["subset"] = list((n.inputs | n.outputs)[port].subset)
         out[f"edge:{edge['id']}"] = d
+    return out
+
+
+def drawing_details(g: Graph, drawn: dict[str, Any], old: dict[str, dict[str, Any]],
+                    est: Any) -> dict[str, dict[str, Any]]:  # fmt: skip
+    """The drawing's own items' Details (drawing.py): a slicer's or packer's (its row's), a
+    temporal mux's, and every edge's: its memlet, and where it meets a unit its port, loops and
+    beats, as ``details`` gives the rows' edges."""
+    out: dict[str, dict[str, Any]] = {}
+    nodes = {n.id: n for n, _ in g.walk()}
+    ports = est.ports if est is not None else {}
+    loops_of: dict[str, Any] = {}
+    for box in drawn["nodes"]:
+        if box["kind"] in ("slicer", "packer") and f"node:{box['old']}" in old:
+            out[f"node:{box['id']}"] = old[f"node:{box['old']}"]
+        elif box["kind"] in ("mux", "demux"):
+            tasks = list(dict.fromkeys(box["port_tasks"].values()))
+            out[f"node:{box['id']}"] = {
+                "kind": f"temporal {box['kind']}", "unit": box["unit"], "tasks": tasks,
+                "what": "the streamers run once per task on the same hardware, programmed again "
+                        "between the runs (D165); no mux cell",
+            }  # fmt: skip
+    for e in drawn["edges"]:
+        d: dict[str, Any] = {"kind": "edge", "data": e.get("data"), "memlet": e.get("sub")}
+        n = nodes.get(e.get("node") or "")
+        port = e.get("port")
+        if n is not None and n.kind == "accelerated" and port in (n.inputs | n.outputs):
+            m = (n.inputs | n.outputs)[port]
+            d["packing"] = packing(g, n, port, m.data)
+            d["subset"] = list(m.subset)
+            d["port"] = f"{n.attrs['instance']}.{port}"
+            d["streamer"] = d["port"] in ports
+            try:
+                if n.id not in loops_of:
+                    loops_of[n.id] = firing_loops(g, n)
+                mine = port_loops(instance_of(n), port, m, loops_of[n.id])
+                d["loops"] = [[lp.var, lp.count] for lp in mine]
+                d["beats"] = prod(lp.count for lp in mine)
+            except (BrmError, ExprError, KeyError, ValueError):
+                pass
+        out[f"edge:{e['id']}"] = d
     return out
 
 
