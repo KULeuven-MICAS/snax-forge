@@ -32,13 +32,16 @@ END = -1  # the mark of the end of the simulation's snapshot
 class Counters:
     """Counters at a snapshot, or their difference over a window: per crossbar input (by port)
     ``(grants, stalls)``, per bank ``(reads, writes, conflicts)``, per group its busy-flag
-    classes, per unit ``(firings, pushes)``, per mover its classes."""
+    classes, per unit ``(firings, pushes)``, per mover its classes, and the bank words the DMA's
+    copies inside L1 read and write, ``copies`` (``(0, 0)`` in a run without the crossbar's
+    line)."""
 
     inputs: dict[str, tuple[int, int]] = field(default_factory=dict)
     banks: list[tuple[int, int, int]] = field(default_factory=list)
     groups: dict[str, dict[str, int]] = field(default_factory=dict)
     units: dict[str, tuple[int, int]] = field(default_factory=dict)
     movers: dict[str, dict[str, int]] = field(default_factory=dict)
+    copies: tuple[int, int] = (0, 0)
 
     def minus(self, other: Counters) -> Counters:
         """``self`` less ``other``, field by field (a counter ``other`` lacks counts from 0)."""
@@ -57,6 +60,7 @@ class Counters:
             {k: subd(v, other.groups.get(k)) for k, v in self.groups.items()},
             {k: sub(v, other.units.get(k)) for k, v in self.units.items()},  # type: ignore[misc]
             {k: subd(v, other.movers.get(k)) for k, v in self.movers.items()},
+            sub(self.copies, other.copies),  # type: ignore[arg-type]
         )
 
     def zero(self) -> Counters:
@@ -72,15 +76,18 @@ class Counters:
                 "banks": [{"reads": r, "writes": w, "conflicts": c} for r, w, c in self.banks],
                 "groups": {k: dict(v) for k, v in self.groups.items()},
                 "units": {k: {"firings": f, "pushes": p} for k, (f, p) in self.units.items()},
-                "movers": {k: dict(v) for k, v in self.movers.items()}}  # fmt: skip
+                "movers": {k: dict(v) for k, v in self.movers.items()},
+                "copies": {"reads": self.copies[0], "writes": self.copies[1]}}  # fmt: skip
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> Counters:
+        cp = d.get("copies", {"reads": 0, "writes": 0})  # none in counters written before them
         return cls({k: (v["grants"], v["stalls"]) for k, v in d["inputs"].items()},
                    [(b["reads"], b["writes"], b["conflicts"]) for b in d["banks"]],
                    {k: dict(v) for k, v in d["groups"].items()},
                    {k: (v["firings"], v["pushes"]) for k, v in d["units"].items()},
-                   {k: dict(v) for k, v in d["movers"].items()})  # fmt: skip
+                   {k: dict(v) for k, v in d["movers"].items()},
+                   (cp["reads"], cp["writes"]))  # fmt: skip
 
 
 @dataclass
@@ -137,8 +144,8 @@ def snapshots(lines: Sequence[Line], cluster: Cluster) -> list[Snapshot]:
         if x.trace != "summary" or x.kind != "snap":
             continue
         f = x.fields
-        key = next(k for k in ("input", "bank", "unit", "mover", "busy") if k in f)
-        ident = (key, f[key] if key != "busy" else None)
+        key = next(k for k in ("input", "bank", "unit", "mover", "busy", "copy_reads") if k in f)
+        ident = (key, f[key] if key not in ("busy", "copy_reads") else None)
         mine = taken.setdefault(x.path, [])
         if not mine or (mine[-1][0], mine[-1][1]) != (f["mark"], x.cycle) or ident in seen[x.path]:
             mine.append((f["mark"], x.cycle, Counters()))
@@ -159,6 +166,8 @@ def snapshots(lines: Sequence[Line], cluster: Cluster) -> list[Snapshot]:
             c.units[f["unit"]] = (f["firings"], f["pushes"])
         elif key == "mover":
             c.movers[source_of(x, cluster)] = {k: f[k] for k in MOVER_CLASSES}
+        elif key == "copy_reads":
+            c.copies = (f["copy_reads"], f["copy_writes"])
         else:
             c.groups[source_of(x, cluster)] = {k: f[k] for k in GROUP_CLASSES}
     if not taken:
@@ -182,6 +191,7 @@ def snapshots(lines: Sequence[Line], cluster: Cluster) -> list[Snapshot]:
             merged.groups |= c.groups
             merged.units |= c.units
             merged.movers |= c.movers
+            merged.copies = (merged.copies[0] + c.copies[0], merged.copies[1] + c.copies[1])
         out.append(Snapshot(mark, min(cycles), merged))
     _check_end(lines, out[-1], inputs)
     return out

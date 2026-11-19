@@ -669,4 +669,4 @@
 2000100000: 20001: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 2970 csr pc=0x8000038c csr=0x3d5 op=r value=19
 2000100000: 20001: [[34m/chip/soc/cluster_0/pe0/summary                                          [0m] 20001 csrs writes=18 reads=7
 2000100000: 20001: [[34m/chip/soc/cluster_0/pe1/summary                                          [0m] 20001 csrs writes=0 reads=0
-2000100000: 20001: [[34m/chip/soc/cluster_0/idma/fe/summary                                      [0m] 20001 dma transfers=3 busy=54 r_beats=24 w_beats=24 bytes_to_l1=1024 bytes_from_l1=512
+2000100000: 20001: [[34m/chip/soc/cluster_0/idma/fe/summary                                      [0m] 20001 dma transfers=3 busy=54 r_beats=24 w_beats=24 bytes_l2_to_l1=1024 bytes_l1_to_l2=512 bytes_l1_to_l1=0

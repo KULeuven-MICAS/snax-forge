@@ -133,11 +133,12 @@ def test_the_run_report_equals_its_sources(flows):
         ]
     (d,) = r.dmas
     pd = p.dmas["dma"]
-    assert (d.transfers, d.busy, d.bytes_l2_to_l1, d.bytes_l1_to_l2) == (
+    assert (d.transfers, d.busy, d.bytes_l2_to_l1, d.bytes_l1_to_l2, d.bytes_l1_to_l1) == (
         pd.transfers,
         pd.busy,
         pd.bytes_l2_to_l1,
         pd.bytes_l1_to_l2,
+        pd.bytes_l1_to_l1,
     )
     assert [(x.port, x.grants, x.whole_run) for x in r.ports] == [
         (n, x.grants, x.whole_run) for n, x in p.ports.items()

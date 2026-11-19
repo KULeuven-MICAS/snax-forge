@@ -49,9 +49,10 @@ def test_a_unit_start():
           "dst_stride": 0, "reps": 1}),
         ("idma/fe", "events", "2909 done id=2", {"id": 2}),
         ("idma/fe", "summary",
-         "20001 dma transfers=3 busy=54 r_beats=24 w_beats=24 bytes_to_l1=1024 bytes_from_l1=512",
-         {"transfers": 3, "busy": 54, "r_beats": 24, "w_beats": 24, "bytes_to_l1": 1024,
-          "bytes_from_l1": 512}),
+         ("20001 dma transfers=3 busy=54 r_beats=24 w_beats=24 bytes_l2_to_l1=1024 "
+          "bytes_l1_to_l2=512 bytes_l1_to_l1=0"),
+         {"transfers": 3, "busy": 54, "r_beats": 24, "w_beats": 24, "bytes_l2_to_l1": 1024,
+          "bytes_l1_to_l2": 512, "bytes_l1_to_l1": 0}),
         ("pe1", "summary", "20001 csrs writes=0 reads=0", {"writes": 0, "reads": 0}),
         ("tcdm/snax_xbar", "beats",
          "2933 grant in=0 op=r addr=0x0 bank=0 row=0 value=0x2bd back=2934 b=0",

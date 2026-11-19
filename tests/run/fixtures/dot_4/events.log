@@ -362,4 +362,4 @@
 1600100000: 16001: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 3619 csr pc=0x8000036c csr=0x3d6 op=r value=133
 1600100000: 16001: [[34m/chip/soc/cluster_0/pe0/summary                                          [0m] 16001 csrs writes=19 reads=43
 1600100000: 16001: [[34m/chip/soc/cluster_0/pe1/summary                                          [0m] 16001 csrs writes=0 reads=0
-1600100000: 16001: [[34m/chip/soc/cluster_0/idma/fe/summary                                      [0m] 16001 dma transfers=3 busy=150 r_beats=129 w_beats=129 bytes_to_l1=8192 bytes_from_l1=64
+1600100000: 16001: [[34m/chip/soc/cluster_0/idma/fe/summary                                      [0m] 16001 dma transfers=3 busy=150 r_beats=129 w_beats=129 bytes_l2_to_l1=8192 bytes_l1_to_l2=64 bytes_l1_to_l1=0

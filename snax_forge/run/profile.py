@@ -60,6 +60,7 @@ class DmaProfile:
     beats_written: int
     bytes_l2_to_l1: int
     bytes_l1_to_l2: int
+    bytes_l1_to_l1: int = 0  # a copy inside L1 (none in a profile written before it was counted)
 
 
 @dataclass

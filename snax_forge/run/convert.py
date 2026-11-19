@@ -338,7 +338,7 @@ def profile_of(lines: Sequence[tuple[str, Line]], cluster: Cluster, total_cycles
         raise RunError("convert.summary", f"the DMA: {len(dma)} `dma` summary lines, not 1")
     d = dma[0]
     p.dmas[DMA] = DmaProfile(d["transfers"], d["busy"], d["r_beats"], d["w_beats"],
-                             d["bytes_to_l1"], d["bytes_from_l1"])  # fmt: skip
+                             d["bytes_l2_to_l1"], d["bytes_l1_to_l2"], d["bytes_l1_to_l1"])  # fmt: skip
     for x in sorted((x for s, x in summary if s == XBAR and x.kind == "input"),
                     key=lambda x: x.fields["index"]):  # fmt: skip
         f = x.fields

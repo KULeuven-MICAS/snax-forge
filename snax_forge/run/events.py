@@ -53,16 +53,29 @@ GRAMMAR: dict[str, dict[str, list[tuple[Fields, Fields]]]] = {
         ),
         "input": forms(({"index", "name", "grants", "stalls", "stalls_dma", "whole_run"}, set())),
         "bank": forms(({"index", "reads", "writes", "conflicts"}, set())),
+        "copies": forms(({"copy_reads", "copy_writes"}, set())),
         "csrs": forms(({"writes", "reads"}, set())),
         "snap": forms(
             ({"mark", "input", "grants", "stalls"}, set()),
             ({"mark", "bank", "reads", "writes", "conflicts"}, set()),
+            ({"mark", "copy_reads", "copy_writes"}, set()),
             ({"mark", "busy", "stall_in", "stall_out", "flush"}, set()),
             ({"mark", "unit", "firings", "pushes"}, set()),
             ({"mark", "mover", "busy", "stall_xbar", "stall_fifo", "idle"}, set()),
         ),
         "dma": forms(
-            ({"transfers", "busy", "r_beats", "w_beats", "bytes_to_l1", "bytes_from_l1"}, set())
+            (
+                {
+                    "transfers",
+                    "busy",
+                    "r_beats",
+                    "w_beats",
+                    "bytes_l2_to_l1",
+                    "bytes_l1_to_l2",
+                    "bytes_l1_to_l1",
+                },
+                set(),
+            )
         ),
     },
     "events": {

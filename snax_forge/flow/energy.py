@@ -6,7 +6,7 @@
 lines), ``marks`` its ``obs_marks.json``, ``est`` the design's costed estimate. Each window
 between two snapshots (run/snapshots.py) is priced at the instances' prices
 (estimate/dynamic.py): its units' firings and pushes, its groups' busy cycles, its movers'
-requests and grants. ``static`` is the estimate's own five parts with the counts they were
+requests and grants, the crossbar's counts of the DMA's copies inside L1. ``static`` is the estimate's own five parts with the counts they were
 priced on, for comparison. ``EnergyRun`` round-trips through ``to_dict`` / ``from_dict``.
 """
 
@@ -79,12 +79,13 @@ def mover_specs(cluster: Cluster) -> list[MoverSpec]:
 
 def counts_of(w: Window, cluster: Cluster) -> Counts:
     """A window's counts as the pricing reads them: per unit its firings and pushes, the groups'
-    busy cycles added up, per mover its lanes' grants and stalls (requests) and grants."""
+    busy cycles added up, per mover its lanes' grants and stalls (requests) and grants, and the
+    crossbar's counts of the DMA's copies inside L1 (D184)."""
     movers = {}
     for m in cluster.accelerator.movers:
         lanes = [w.counters.inputs[p] for p in m.ports if p in w.counters.inputs]
         movers[m.name] = (sum(g + s for g, s in lanes), sum(g for g, _ in lanes))
-    return Counts(dict(w.counters.units), w.counters.busy(), movers)
+    return Counts(dict(w.counters.units), w.counters.busy(), movers, w.counters.copies)
 
 
 def energy_of(lines: Sequence[Line], cluster: Cluster, marks: Sequence[dict[str, Any]],
