@@ -4,8 +4,8 @@
 // page's style, edges, labels and outlines in one SVG layer under them, port names in one over
 // them. A step's layout is kept with its view, so going back to a step does not lay it out again.
 //
-// Rows: a kernel's inputs in ELK's first layer, lifted back to one row after compaction; the
-// front loops on the rows api.py gives (``row``); a group's temporal muxes on one row, its
+// Rows: every box on the row of its longest path from the kernel's inputs (ELK's partitions), the
+// front loops on the rows api.py gives (``row``), a group's temporal muxes on one row and its
 // demuxes on another (``rows``). An outline's title sits in its lower right corner.
 
 import { h } from "./dom.js";
@@ -21,7 +21,6 @@ const titleLines = (text) => {
   return i < 0 ? [text] : [text.slice(0, i), text.slice(i + 3)];
 };
 const padBottom = (o) => 10 + TITLE_LINE * titleLines(o.text).length;
-const LIFT_GAP = 0.5;
 
 let engine = null;
 /** ELK in its worker, made on first use; ``ELK`` is vendor/elk-api.js's global. */
@@ -255,7 +254,7 @@ function muxOrders(d, L) {
 inputs, no less than the row api.py gives a front loop (``row``); in each outline the temporal
 muxes share one row, the lowest any of them needs, and the demuxes another, so a group's per-task
 switches read as one stage. (ELK's layerChoiceConstraint is not read by elkjs's layering.) */
-export function rows(d) {
+function rows(d) {
   const preds = new Map(d.nodes.map((n) => [n.id, []]));
   for (const e of d.edges) if (preds.has(e.to) && preds.has(e.from) && e.from !== e.to) preds.get(e.to).push(e.from);
   const least = new Map(d.nodes.filter((n) => n.row != null).map((n) => [n.id, n.row]));
@@ -359,25 +358,6 @@ function absolute(d, root) {
       label: l && l.x !== undefined ? { x: ox + l.x + 3, y: oy + l.y + 11.5 } : null };
   }).sort((a, b) => a.i - b.i);
   return { boxes, edges, width: root.width, height: root.height };
-}
-
-/** The kernel's inputs in one row on top: compaction moves a source towards what it feeds, so
-each is put back on the top row and its edges start there. */
-function liftInputs(d, L) {
-  const first = d.nodes.filter((n) => n.layer === "first" && !n.parent).map((n) => n.id);
-  if (!first.length) return;
-  const top = Math.min(...first.map((id) => L.boxes.get(id).y));
-  for (const id of first) {
-    const b = L.boxes.get(id);
-    const dy = b.y - top;
-    if (dy < LIFT_GAP) continue;
-    b.y -= dy;
-    for (const p of b.ports.values()) p.y -= dy;
-    for (const e of L.edges) {
-      if (!e.src.startsWith(`${id}.`) || !e.pts.length) continue;
-      e.pts[0] = { x: e.pts[0].x, y: e.pts[0].y - dy };
-    }
-  }
 }
 
 // a drawing's text -> its layout, the last KEEP: a step whose drawing did not change (after an
@@ -488,7 +468,6 @@ async function layOut(d, probe, forced = false) {
     if (crossings(again) <= crossings(L)) L = again;
   }
   L.ms = performance.now() - t0;
-  liftInputs(d, L);
   return L;
 }
 
@@ -575,7 +554,6 @@ class Drawn {
     if (!L.moves) L.moves = new Map();
     const k = ++uid;
     canvas.replaceChildren();
-    canvas.classList.add("v3");
     canvas.style.width = `${L.width}px`;
     canvas.style.height = `${L.height}px`;
     const svg = svgEl("svg", { class: "dfg-edges", width: L.width, height: L.height });
@@ -608,7 +586,7 @@ class Drawn {
       const g = svgEl("g", { class: cls, "data-sel": o.sel, "data-group": o.kind === "group" ? o.sel : null, "data-block": o.block || null });
       const rect = { x: b.x, y: b.y, width: b.w, height: b.h, rx: o.kind === "block" ? 10 : 6 };
       const rects = [svgEl("rect", { ...rect, class: "outline-hit" }), svgEl("rect", rect)];
-      const t = svgEl("text", { class: "v3-title", "data-outline": o.id, "text-anchor": "end" });
+      const t = svgEl("text", { class: "c-title", "data-outline": o.id, "text-anchor": "end" });
       const lines = titleLines(o.text).map((line) => {
         const span = svgEl("tspan");
         span.textContent = line;
@@ -633,7 +611,7 @@ class Drawn {
       const tip = svgEl("title");
       tip.textContent = [e.sub, e.task ? `task ${e.task}` : null].filter(Boolean).join(" · ") || e.id;
       hit.append(tip);
-      const path = svgEl("path", { class: `edge v3 ${e.style}`, "data-sel": e.id, "data-edge": e.id });
+      const path = svgEl("path", { class: `edge ${e.style}`, "data-sel": e.id, "data-edge": e.id });
       path.style.setProperty("--c", colour);
       if (e.style !== "empty") {
         path._marker = marker(colour);
@@ -642,7 +620,7 @@ class Drawn {
       edgeLayer.append(hit, path);
       let label = null;
       if (e.label && le.label) {
-        label = svgEl("text", { class: `edge-label v3-label ${e.style}${e.transpose ? " transpose" : ""}`, "data-sel": e.id, "data-edge": e.id });
+        label = svgEl("text", { class: `c-label ${e.style}${e.transpose ? " transpose" : ""}`, "data-sel": e.id, "data-edge": e.id });
         if (e.task && d.tasks.length) label.style.fill = colour;
         label.textContent = e.label;
         labels.append(label);
@@ -656,13 +634,13 @@ class Drawn {
     for (const n of d.nodes) {
       const b = L.boxes.get(n.id);
       const el = boxEl(d, n);
-      el.classList.add("v3-box");
+      el.classList.add("c-box");
       Object.assign(el.style, { width: `${b.w}px`, height: `${b.h}px` });
       canvas.append(el);
       this.els.set(n.id, el);
     }
     // port names, over the boxes
-    const top = svgEl("svg", { class: "dfg-edges v3-top", width: L.width, height: L.height });
+    const top = svgEl("svg", { class: "dfg-edges c-over", width: L.width, height: L.height });
     this.pnames = [];
     for (const n of d.nodes) {
       const b = L.boxes.get(n.id);
@@ -672,7 +650,7 @@ class Drawn {
           const p = b.ports.get(`${n.id}.${name}`);
           if (!p) continue;
           const task = (n.port_tasks || {})[name];
-          const t = svgEl("text", { class: "v3-pname" });
+          const t = svgEl("text", { class: "c-pname" });
           if (task) t.style.fill = taskColour(d, task);
           t.textContent = task ? name.split("·")[0] : name; // a mux's port: its task by colour
           top.append(t);
@@ -796,7 +774,7 @@ class Drawn {
         if (ol) start(ev, ol.holds);
         return;
       }
-      const el = ev.target.closest(".v3-box");
+      const el = ev.target.closest(".c-box");
       if (el) start(ev, [el.dataset.id]);
     });
   }

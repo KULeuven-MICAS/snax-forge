@@ -3,7 +3,8 @@
 Runs are flow folders made the way the flow makes them, SNAX-GVSoC stubbed
 (tests/flow/helpers.py: ``stubbed_flow``, its synthetic events), so the
 viewer reads exactly what the flow writes. ``served`` serves any viewer server in a thread;
-``get`` and ``post`` talk to one (a POST is JSON unless ``ctype`` says otherwise).
+``get`` and ``post`` talk to one (a POST is JSON unless ``ctype`` says otherwise). ``boxes``,
+``containers``, ``ends`` and ``box_of`` read a DFG step's drawing.
 """
 
 from __future__ import annotations
@@ -305,3 +306,34 @@ def get_json(srv, path: str) -> tuple[int, Any]:
             return r.status, json.loads(r.read())
     except HTTPError as e:
         return e.code, json.loads(e.read())
+
+
+# =============================================================================
+# A DFG step's drawing (viz/dfg/drawing.py)
+# =============================================================================
+
+
+def boxes(v: dict) -> dict[str, dict]:
+    """The drawing's boxes by id."""
+    return {n["id"]: n for n in v["drawing"]["nodes"]}
+
+
+def containers(v: dict, first: bool = False) -> list[str]:
+    """The drawing's container boxes in its order; ``first`` the kernel's inputs' row only."""
+    return [n["id"] for n in v["drawing"]["nodes"]
+            if n["kind"] == "container" and (not first or n.get("layer") == "first")]  # fmt: skip
+
+
+def ends(v: dict, data: str | None = None) -> list[tuple[str, str]]:
+    """The drawing's edges as (from, to), ``box.port`` where a port is named; ``data``'s only."""
+    end = lambda b, p: f"{b}.{p}" if p else b
+    return [(end(e["from"], e["from_port"]), end(e["to"], e["to_port"]))
+            for e in v["drawing"]["edges"] if data is None or e.get("data") == data]  # fmt: skip
+
+
+def box_of(v: dict, node: str) -> dict:
+    """The box drawing graph node ``node``: its own, or the unit whose chips or selection name it."""
+    for b in v["drawing"]["nodes"]:
+        if b["id"] == node or b.get("sel") == node or node in [c for c, _ in b.get("chips") or []]:
+            return b
+    raise KeyError(node)

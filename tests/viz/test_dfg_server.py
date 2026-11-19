@@ -17,16 +17,10 @@ from snax_forge.sandbox.session import Roots
 from snax_forge.viz.dfg.server import make_dfg_server, make_edit_server
 from tests.helpers import REPO, imported, recipe_path
 
-from .helpers import get, get_json, post, run_dir, served, serving
+from .helpers import boxes, containers, ends, get, get_json, post, run_dir, served, serving
 
 PLATFORM = REPO / "platforms" / "snax_forge.json"
 STATIC = REPO / "snax_forge" / "viz" / "static"
-
-
-def _texts(node):
-    yield node["text"]
-    for child in node.get("body", []):
-        yield from _texts(child)
 
 
 # =============================================================================
@@ -47,20 +41,18 @@ def test_view_mode_over_dot_2s_steps(tmp_path):
         assert status == 200 and [s["label"] for s in steps] == [
             "0 input", "1 split_map", "2 bind", "3 split_map", "4 bind", "5 link"]  # fmt: skip
         status, v = get_json(srv, "/api/step/5")
-        texts = [t for row in v["rows"] if row["kind"] == "node" for t in _texts(row["node"])]
-        assert {"tmp0 · FIFO 1", "mul · a * b · W 4", "mult_map · n_1_t · 128 · temporal"} <= set(
-            texts
-        )
-        assert v["containers"]["A"]["badge"] == "L1 · 4 KiB"
-        # tmp0 is the link's: no box, the edges from mult into the link and out of it into sum
-        boxes = [b for row in v["rows"] if row["kind"] == "containers" for b in row["boxes"]]
-        assert boxes == ["A@0", "B@0", "out@1"]
-        assert [(e["from"], e["to"]) for e in v["edges"] if e["data"] == "tmp0"] == [
-            ("mult.out", "tmp0.in"), ("tmp0.out", "sum.a")]  # fmt: skip
+        texts = {b["text"] for b in v["drawing"]["nodes"]}
+        assert {"tmp0 · FIFO 1", "mul · a * b · W 4", "mult_map · temporal"} <= texts
+        assert boxes(v)["A@0"]["badge"] == "L1 · 4 KiB"
+        # tmp0 is the link's: no box, the edges from mul into the link and out of it into sum
+        assert containers(v) == ["A@0", "B@0", "out@1"]
+        link = next(b["id"] for b in v["drawing"]["nodes"] if b["kind"] == "link")
+        assert ends(v, "tmp0") == [("unit:mul.out", f"{link}.in"), (f"{link}.out", "unit:sum.a")]
         four = get_json(srv, "/api/step/4")[1]  # before the link, tmp0 in L1 keeps its box
-        assert [b for row in four["rows"] if row["kind"] == "containers" for b in row["boxes"]] == [
-            "A@0", "B@0", "tmp0@1", "out@1"]  # fmt: skip
-        (edge,) = [e for e in v["edges"] if e["data"] == "tmp0" and e["to"].startswith("sum.")]
+        assert containers(four) == ["A@0", "B@0", "tmp0@1", "out@1"]
+        (edge,) = [
+            e for e in v["drawing"]["edges"] if e.get("data") == "tmp0" and e["to"] == "unit:sum"
+        ]
         d = v["details"][f"edge:{edge['id']}"]
         assert (d["subset"], d["packing"], d["loops"], d["beats"], d["streamer"]) == (
             ["4 * n_1_t:4 * n_1_t + 4"], "int64 · num_slc 1 · num_ch 4", [["n_1_t", 128]], 128,

@@ -231,7 +231,7 @@ def drawing(g: Graph, tops: Sequence[Node], placed: dict[str, Any] | None = None
             return None
         bid = f"slicer:{n.attrs['instance']}.{port}"
         d.box(bid, kind="slicer", text=sl["text"], sel=bid, ins=["in"], outs=["out"],
-              unit=n.attrs["instance"], port=port, old=sl["id"])  # fmt: skip
+              unit=n.attrs["instance"], port=port, node=n.id, data=data)  # fmt: skip
         return bid
 
     def packer_of(n: Node, port: str, data: str) -> str | None:
@@ -240,7 +240,7 @@ def drawing(g: Graph, tops: Sequence[Node], placed: dict[str, Any] | None = None
             return None
         bid = f"packer:{n.attrs['instance']}.{port}"
         d.box(bid, kind="packer", text=pk["text"], sel=bid, ins=["in"], outs=["out"],
-              unit=n.attrs["instance"], port=port, old=pk["id"])  # fmt: skip
+              unit=n.attrs["instance"], port=port, node=n.id, data=data)  # fmt: skip
         return bid
 
     def into(n: Node, port: str, data: str, task: str | None) -> tuple[str, str]:
@@ -326,8 +326,12 @@ def drawing(g: Graph, tops: Sequence[Node], placed: dict[str, Any] | None = None
             src = nodes.get(bid, mp)
             its = api._iterations(g, src.attrs["range"])
             kind = src.attrs.get("loop.kind")
-            d.box(bid, kind="loop", text=f"{bid} · {kind or 'untagged'}",
-                  sub=f"{src.attrs['var']} · {'?' if its is None else its}", loop=kind, sel=bid)  # fmt: skip
+            box = d.box(bid, kind="loop", text=f"{bid} · {kind or 'untagged'}",
+                        sub=f"{src.attrs['var']} · {'?' if its is None else its}", loop=kind,
+                        sel=bid)  # fmt: skip
+            merged = src.attrs.get("view.merged") or []  # a block's firing loop over its nests
+            if len(merged) > 1:
+                box["chips"] = [[m, None] for m in merged if m != bid]
         return bid
 
     def dtype_changes(n: Node, data: str) -> str | None:

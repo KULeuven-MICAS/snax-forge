@@ -229,7 +229,7 @@ function panel(v, k, pick, seed = null, slot = "main") {
   };
   const again = async (get) => { // laid out again: the boxes glide to their new places
     if (el._error) return;
-    const old = new Map([...el.querySelectorAll(".v3-box")].map((b) => [b.dataset.id, b.getBoundingClientRect()]));
+    const old = new Map([...el.querySelectorAll(".c-box")].map((b) => [b.dataset.id, b.getBoundingClientRect()]));
     const prev = { L: el._vp.L, s: el._vp.s, tx: el._vp.tx, ty: el._vp.ty };
     el._layout = await get();
     el._draw(prev);
@@ -357,14 +357,14 @@ const still = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 /** Where every box is on screen, per panel: its drawing id -> its rect. */
 function places() {
-  return [...$("graphs").children].map((p) => new Map([...p.querySelectorAll(".v3-box")].map((el) => [el.dataset.id, el.getBoundingClientRect()])));
+  return [...$("graphs").children].map((p) => new Map([...p.querySelectorAll(".c-box")].map((el) => [el.dataset.id, el.getBoundingClientRect()])));
 }
 
 /** A new step's panel: each box that was on screen moves from there to its place, a new one
 fades in; the edges show when all settle. */
 function glide(panel, old) {
   const runs = [];
-  for (const el of panel.querySelectorAll(".v3-box")) {
+  for (const el of panel.querySelectorAll(".c-box")) {
     const was = old.get(el.dataset.id);
     if (!was) {
       runs.push(el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: GLIDE_MS * 1.5, easing: "ease-out" }));
@@ -417,7 +417,7 @@ function outline() {
     canvas.classList.toggle("focus", Boolean(lit));
     for (const el of canvas.querySelectorAll(".lit")) el.classList.remove("lit");
     if (lit) {
-      for (const id of lit.boxes) { const b = canvas.querySelector(`.v3-box[data-id="${CSS.escape(id)}"]`); if (b) b.classList.add("lit"); }
+      for (const id of lit.boxes) { const b = canvas.querySelector(`.c-box[data-id="${CSS.escape(id)}"]`); if (b) b.classList.add("lit"); }
       for (const id of lit.edges) for (const el of canvas.querySelectorAll(`[data-edge="${CSS.escape(id)}"]`)) el.classList.add("lit");
     }
   }

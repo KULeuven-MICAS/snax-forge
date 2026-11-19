@@ -1,8 +1,8 @@
 """The DFG viewer: loading files, the view of a graph, the routes.
 
-The rows, boxes and edges are what the panel draws, so they are checked here
-exactly; where the browser puts them, and the SVG curves, are checked by eye
- on the three vecadd fixtures and a recipe's output directory.
+The drawing's boxes, ports, edges and outlines are what the page lays out, so they are checked
+here exactly; where ELK puts them is checked by eye on the page (test_drawing.py has the
+structural checks over every recipe).
 """
 
 from __future__ import annotations
@@ -30,11 +30,18 @@ from snax_forge.viz.dfg.api import (
 from snax_forge.viz.dfg.server import make_dfg_server
 from tests.helpers import FIXTURES, REPO, recipe_path
 
-from .helpers import get, served
+from .helpers import box_of, boxes, containers, ends, get, served
 
 
 def view(path: Path) -> dict:
     return graph_view(load_entry(path.stem, path))
+
+
+def writes(v: dict) -> list[tuple[str, str]]:
+    """Every edge into a container's box: (from, its memlet in Details)."""
+    b = boxes(v)
+    return [(f, v["details"][f"edge:{e['id']}"]["memlet"]) for e, (f, _) in
+            zip(v["drawing"]["edges"], ends(v), strict=True) if b[e["to"]]["kind"] == "container"]  # fmt: skip
 
 
 def tasklet(tid, ins, outs, code="out = in1 + in2"):
@@ -132,10 +139,10 @@ def test_a_broken_file_keeps_its_error(tmp_path):
         ("bad", "node 'add'.inputs.in2: unknown container 'X'"),
         ("notjson", "invalid JSON: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)"),
     ]  # fmt: skip
-    assert "rows" not in graph_view(gs.get("bad"))
+    assert "drawing" not in graph_view(gs.get("bad"))
     bad.write_text((FIXTURES / "vecadd.snaxdfg").read_text())
     gs.reload()
-    assert gs.get("bad").error is None and graph_view(gs.get("bad"))["rows"]
+    assert gs.get("bad").error is None and graph_view(gs.get("bad"))["drawing"]["nodes"]
 
 
 # =============================================================================
@@ -144,32 +151,23 @@ def test_a_broken_file_keeps_its_error(tmp_path):
 
 
 def test_vecadd_accelerated():
-    """The compact texts, and everything else in Details: the unit's BRM, params, timing and
+    """The boxes' texts, and everything else in Details: the unit's BRM, params, timing and
     what it replaced; each edge's memlet and packing (int64: one per word, num_ch = W)."""
     v = view(FIXTURES / "vecadd_accelerated.snaxdfg")
     assert v["graph"] == "vecadd" and v["symbols"] == {"N": 64}
-    assert [r["kind"] for r in v["rows"]] == ["containers", "node", "containers"]
-    assert v["rows"][0]["boxes"] == ["A@0", "B@0"] and v["rows"][2]["boxes"] == ["C@1"]
-    assert v["boxes"]["C@1"] == {
-        "key": "C@1", "container": "C", "version": 1, "written_by": ["add"], "again": False,
-        "column": 0,
-    }  # fmt: skip
-    assert v["containers"]["A"] == {
-        "name": "A",
-        "text": "A[N]",
-        "dtype": "int64",
-        "badge": "L1 · 512 B",
-        "transient": False,
-        "scalar": False,
-    }
-    top = v["rows"][1]["node"]
-    assert (top["id"], top["loop_kind"], top["text"]) == (
-        "add_map",
+    assert (containers(v), containers(v, first=True)) == (["A@0", "B@0", "C@1"], ["A@0", "B@0"])
+    b = boxes(v)
+    assert b["A@0"] == {"id": "A@0", "kind": "container", "sel": "A", "name": "A", "text": "A[N]",
+                        "dtype": "int64", "badge": "L1 · 512 B", "transient": False,
+                        "scalar": False, "layer": "first"}  # fmt: skip
+    loop, unit = b["add_map"], b["unit:acc"]
+    assert (loop["text"], loop["sub"], loop["loop"]) == (
+        "add_map · temporal",
+        "n_1_t · 16",
         "temporal",
-        "add_map · n_1_t · 16 · temporal",
     )
-    acc = top["body"][0]
-    assert (acc["text"], acc["inputs"][0]) == ("acc · a + b · W 4", {"connector": "a", "data": "A"})
+    assert (unit["text"], unit["sel"], unit["ins"], unit["outs"]) == (
+        "acc · a + b · W 4", "add", ["a", "b"], ["out"])  # fmt: skip
     d = v["details"]["node:add"]
     assert (d["brm"], d["implementation"], d["params"], d["replaced"], d["timing"]) == (
         "simd", "chisel_tiled_spatial", {"W": 4, "op": "add", "streams": 2}, "add_map_s › add",
@@ -178,10 +176,9 @@ def test_vecadd_accelerated():
                                            "loop.kind": "temporal",
                                            "loop.split": {"var": "n", "range": "0:N"}}  # fmt: skip
     assert v["details"]["container:A"]["sizes"] == [64]
-    assert [(e["id"], e["dir"]) for e in v["edges"]] == [
-        ("A@0->add.a", "read"), ("B@0->add.b", "read"), ("add.out->C@1", "write")]  # fmt: skip
-    assert "text" not in v["edges"][0] and "packing" not in v["edges"][0]
-    e = v["details"]["edge:A@0->add.a"]
+    assert ends(v) == [("A@0", "add_map"), ("add_map", "unit:acc.a"), ("B@0", "add_map"),
+                       ("add_map", "unit:acc.b"), ("unit:acc.out", "C@1")]  # fmt: skip
+    e = v["details"]["edge:add_map->unit:acc.a"]
     assert (e["memlet"], e["packing"], e["loops"], e["beats"], e["streamer"]) == (
         "A[4 * n_1_t:4 * n_1_t + 4]", "int64 · num_slc 1 · num_ch 4", [["n_1_t", 16]], 16, True)  # fmt: skip
 
@@ -212,57 +209,52 @@ def recipe_view(tmp_path: Path, recipe: str, params: dict | None = None) -> dict
 def test_a_port_edge_labels_its_packing(tmp_path, recipe, want):
     """Each accelerated port's edge: dtype, num_slc = 64 / b, num_ch = W / num_slc."""
     v = recipe_view(tmp_path, recipe)
-    edges = [v["details"][f"edge:{e['id']}"] for e in v["edges"]]
-    assert {e["data"]: e["packing"] for e in edges if e["packing"]} == want
+    edges = [v["details"][f"edge:{e['id']}"] for e in v["drawing"]["edges"]]
+    assert {e["data"]: e["packing"] for e in edges if e.get("packing")} == want
 
 
 def test_a_packed_output_draws_its_packer(tmp_path):
-    """vsum at i8, W = 8: a FifoPacker box between the sum's output and out (D174), the edge
-    out of it d_out 2 a word; at int64 the output is wired, no packer."""
+    """vsum at i8, W = 8: a FifoPacker box between the sum's output and out (D174); at int64
+    the output is wired, no packer."""
     v = recipe_view(tmp_path, "vsum_tree", {"types": "i8", "W": 8})
-    (pk,) = v["packers"]
-    assert (pk["id"], pk["text"], pk["d_out"]) == ("acc_out_packer", "FifoPacker · d_out 2", 2)
-    assert {"kind": "packers", "column": 0, "nodes": [pk]} in v["rows"]
-    ends = {(e["from"], e["to"]): e.get("per_word") for e in v["edges"] if e["data"] == "out"}
-    assert ends == {("sum.out", "acc_out_packer.in"): None, ("acc_out_packer.out", "out@1"): 2}
-    d = v["details"]["node:acc_out_packer"]
-    assert (d["kind"], d["unit"], d["port"], d["lanes"], d["bits"]) == (
-        "packer",
-        "acc",
-        "out",
-        1,
-        33,
-    )
-    assert recipe_view(tmp_path, "vsum_tree")["packers"] == []
+    pk = boxes(v)["packer:acc.out"]
+    assert (pk["kind"], pk["text"]) == ("packer", "FifoPacker · d_out 2")
+    assert ends(v, "out") == [
+        ("unit:acc.out", "packer:acc.out.in"),
+        ("packer:acc.out.out", "out@1"),
+    ]
+    d = v["details"]["node:packer:acc.out"]
+    assert (d["kind"], d["unit"], d["port"], d["lanes"], d["d_out"], d["bits"]) == (
+        "packer", "acc", "out", 1, 2, 33)  # fmt: skip
+    plain = recipe_view(tmp_path, "vsum_tree")
+    assert not [b for b in boxes(plain).values() if b["kind"] == "packer"]
 
 
 def test_a_sliced_input_draws_its_slicer(tmp_path):
-    """vecadd_i32 at W = 1: a FifoSlicer box between A and the unit's a, and one for B (D180), the
-    edge into each d_in 2 a word, the edge out of it the port's packing; the packer below."""
+    """vecadd_i32 at W = 1: a FifoSlicer box between A's loop and the unit's a, and one for B
+    (D180), the edge into each the port's packing; the packer below."""
     v = recipe_view(tmp_path, "vecadd_i32", {"W": 1})
-    sa, sb, pk = sorted(v["packers"], key=lambda x: x["id"])
-    assert (sa["id"], sa["text"], sa["d_in"]) == ("acc_a_slicer", "FifoSlicer · d_in 2", 2)
-    assert (sb["id"], pk["id"]) == ("acc_b_slicer", "acc_out_packer")
-    assert {"kind": "packers", "column": 0, "nodes": [sa, sb]} in v["rows"]
-    rows = [r["kind"] for r in v["rows"]]
-    assert rows.index("packers") < rows.index("node")  # the slicers above the node
-    ends = {(e["from"], e["to"]): e.get("per_word") for e in v["edges"] if e["data"] == "A"}
-    assert ends == {("A@0", "acc_a_slicer.in"): 2, ("acc_a_slicer.out", "add.a"): None}
-    edge = v["details"]["edge:acc_a_slicer.out->add.a"]
+    assert {k: b["kind"] for k, b in boxes(v).items() if b["kind"] in ("slicer", "packer")} == {
+        "slicer:acc.a": "slicer", "slicer:acc.b": "slicer", "packer:acc.out": "packer"}  # fmt: skip
+    assert boxes(v)["slicer:acc.a"]["text"] == "FifoSlicer · d_in 2"
+    assert ends(v, "A") == [("A@0", "add_map"), ("add_map", "slicer:acc.a.in")]
+    assert ("slicer:acc.a.out", "unit:acc.a") in ends(v)  # the wire into the port
+    edge = v["details"]["edge:add_map->slicer:acc.a.in"]
     assert edge["packing"] == "int32 · num_slc 2 · d_in 2 · num_ch 1"
-    d = v["details"]["node:acc_a_slicer"]
+    d = v["details"]["node:slicer:acc.a"]
     assert (d["kind"], d["unit"], d["port"], d["lanes"], d["d_in"], d["bits"]) == (
         "slicer", "acc", "a", 1, 2, 66
     )  # fmt: skip
     assert "placed by the flow" in d["what"]
-    assert recipe_view(tmp_path, "vecadd_i32")["packers"] == []
+    plain = recipe_view(tmp_path, "vecadd_i32")
+    assert not [b for b in boxes(plain).values() if b["kind"] in ("slicer", "packer")]
 
 
 def test_a_packed_output_edge_shows_its_d_out(tmp_path):
     """vsum at i8, W = 8: the int32 sum packed 2 to a word on one channel (D174)."""
     v = recipe_view(tmp_path, "vsum_tree", {"types": "i8", "W": 8})
-    edges = [v["details"][f"edge:{e['id']}"] for e in v["edges"]]
-    assert {e["data"]: e["packing"] for e in edges if e["packing"]} == {
+    edges = [v["details"][f"edge:{e['id']}"] for e in v["drawing"]["edges"]]
+    assert {e["data"]: e["packing"] for e in edges if e.get("packing")} == {
         "A": "int8 · num_slc 8 · num_ch 1", "out": "int32 · num_slc 2 · d_out 2 · num_ch 1"
     }  # fmt: skip
 
@@ -271,74 +263,70 @@ def test_a_folding_write_names_its_op():
     """dot's sum map writes out[0] with reduce add: the edge's memlet says so, and the tasklet's
     text is the fold."""
     v = view(FIXTURES / "dot.snaxdfg")
-    writes = [
-        (e["from"], v["details"][f"edge:{e['id']}"]["memlet"])
-        for e in v["edges"]
-        if e["dir"] == "write"
-    ]
-    assert writes == [("mult.out", "tmp0[n]"), ("sum.out", "out[0] (reduce add)")]
-    tops = [r["node"] for r in v["rows"] if r["kind"] == "node"]
-    assert [t["body"][0]["text"] for t in tops] == ["mult · in1 * in2", "sum · fold +"]
+    assert writes(v) == [("mult.out", "tmp0[n]"), ("sum.out", "out[0] (reduce add)")]
+    assert [boxes(v)[x]["text"] for x in ("mult", "sum")] == ["mult · in1 * in2", "sum · fold +"]
 
 
 def test_the_bound_dot_shows_both_accelerators():
     """dot after its recipe: mul and sum, each over N // 4 beats; tmp0 between them."""
     v = view(FIXTURES / "dot_accelerated.snaxdfg")
-    tops = [r["node"] for r in v["rows"] if r["kind"] == "node"]
-    assert [t["text"] for t in tops] == [
-        "mult_map · n_1_t · 16 · temporal",
-        "sum_map · n_1_t · 16 · temporal",
+    b = boxes(v)
+    assert [(b[x]["text"], b[x]["sub"]) for x in ("mult_map", "sum_map")] == [
+        ("mult_map · temporal", "n_1_t · 16"), ("sum_map · temporal", "n_1_t · 16")]  # fmt: skip
+    assert [b[x]["text"] for x in ("unit:mul", "unit:sum")] == [
+        "mul · a * b · W 4",
+        "sum · fold + · W 4",
     ]
-    assert [t["body"][0]["text"] for t in tops] == ["mul · a * b · W 4", "sum · fold + · W 4"]
-    writes = [
-        (e["from"], v["details"][f"edge:{e['id']}"]["memlet"])
-        for e in v["edges"]
-        if e["dir"] == "write"
+    assert writes(v) == [
+        ("unit:mul.out", "tmp0[4 * n_1_t:4 * n_1_t + 4]"),
+        ("unit:sum.out", "out[0:1]"),
     ]
-    assert writes == [("mult.out", "tmp0[4 * n_1_t:4 * n_1_t + 4]"), ("sum.out", "out[0:1]")]
 
 
 def test_dot_1_enc_draws_one_accelerator_of_two_groups(tmp_path):
-    """dot_1_enc: the accelerator dot, its groups vmul and vsum in the graph's order,
-    each unit in its group and its group's box around its top-level map; each unit's panel names
-    its group and accelerator. dot 1 draws the two as two accelerators."""
+    """dot_1_enc: the accelerator dot, its groups vmul and vsum in the graph's order, each unit
+    inside the accelerator's outline (a group of one unit and no link has none); each unit's
+    Details name its group and accelerator. dot 1 has two accelerators and no outline."""
     from tests.gen.helpers import bound_dot1, bound_dot1_enc
 
     path = tmp_path / "dot_1_enc.snaxdfg"
     path.write_text(bound_dot1_enc().to_json())
     v = view(path)
-    assert v["accelerators"] == [{"name": "dot", "text": "dot", "groups": [
-        {"name": "vmul", "text": "vmul", "tops": ["mult_map"], "links": [],
-         "units": [{"instance": "vmul", "nodes": ["mult"]}]},
-        {"name": "vsum", "text": "vsum", "tops": ["sum_map"], "links": [],
-         "units": [{"instance": "vsum", "nodes": ["sum"]}]},
-    ]}]  # fmt: skip
+    assert [(o["id"], o["text"], o["sel"]) for o in v["drawing"]["outlines"]] == [
+        ("acc:dot", "accelerator dot", "dot")]  # fmt: skip
+    assert [boxes(v)[u]["parent"] for u in ("unit:vmul", "unit:vsum")] == ["acc:dot", "acc:dot"]
     units = [v["details"][f"node:{n}"] for n in ("mult", "sum")]
     assert [(u["accelerator"], u["group"]) for u in units] == [("dot", "vmul"), ("dot", "vsum")]
     assert v["details"]["group:vmul"]["accelerator"] == "dot"
     assert v["details"]["accelerator:dot"]["groups"] == ["vmul", "vsum"]
     plain = tmp_path / "dot_1.snaxdfg"
     plain.write_text(bound_dot1().to_json())
-    assert [a["name"] for a in view(plain)["accelerators"]] == ["vmul", "vsum"]
+    p = view(plain)
+    assert p["drawing"]["outlines"] == []
+    assert [k for k in p["details"] if k.startswith("accelerator:")] == [
+        "accelerator:vmul",
+        "accelerator:vsum",
+    ]
 
 
 def test_without_encapsulate_each_group_is_its_own_accelerator():
     v = view(FIXTURES / "dot_accelerated.snaxdfg")
-    assert [(a["name"], [g["name"] for g in a["groups"]]) for a in v["accelerators"]] == [
-        ("mul", ["mul"]), ("sum", ["sum"])]  # fmt: skip
+    assert [(k, d["groups"]) for k, d in v["details"].items() if k.startswith("accelerator:")] == [
+        ("accelerator:mul", ["mul"]), ("accelerator:sum", ["sum"])]  # fmt: skip
     units = [v["details"][f"node:{n}"] for n in ("mult", "sum")]
     assert [(u["accelerator"], u["group"]) for u in units] == [("mul", "mul"), ("sum", "sum")]
 
 
 @pytest.mark.slow
-def test_a_maps_bar_starts_with_its_id():
-    """Vecmul as imported at N = 2048, its map's bar ``mult_map · n · 2048 · untagged``."""
+def test_a_loop_box_names_its_map_kind_variable_and_iterations():
+    """Vecmul as imported at N = 2048: its map's box ``mult_map · untagged`` over ``n · 2048``."""
     from snax_forge.viz.dfg.api import Entry
     from tests.helpers import steps
 
     g = steps("vecmul", N=2048)[0]
     v = graph_view(Entry("0_input", Path("0_input.snaxdfg"), g, None))
-    assert v["rows"][1]["node"]["text"] == "mult_map · n · 2048 · untagged"
+    b = boxes(v)["mult_map"]
+    assert (b["text"], b["sub"]) == ("mult_map · untagged", "n · 2048")
 
 
 @pytest.mark.slow
@@ -615,60 +603,59 @@ def test_view_mode_reads_the_folders_recipe(tmp_path):
 
 def test_iterations_need_bound_symbols():
     plain = view(FIXTURES / "vecadd.snaxdfg")
-    assert plain["rows"][1]["node"]["text"] == "add_map · n · ? · untagged"
+    b = boxes(plain)
+    assert (b["add_map"]["text"], b["add_map"]["sub"]) == ("add_map · untagged", "n · ?")
     assert plain["details"]["container:A"]["sizes"] is None
-    assert plain["containers"]["A"]["badge"] is None and plain["estimate_error"]
-    split = view(FIXTURES / "vecadd_split.snaxdfg")
-    inner = split["rows"][1]["node"]["body"][0]
-    assert (inner["id"], inner["loop_kind"], inner["text"]) == (
-        "add_map_s",
+    assert b["A@0"]["badge"] is None and plain["estimate_error"]
+    inner = boxes(view(FIXTURES / "vecadd_split.snaxdfg"))["add_map_s"]
+    assert (inner["loop"], inner["text"], inner["sub"]) == (
         "spatial",
-        "add_map_s · n_2_s · 4 · spatial",
+        "add_map_s · spatial",
+        "n_2_s · 4",
     )
 
 
-def test_a_transient_between_two_maps_and_a_container_shown_again(tmp_path):
-    """C = (A + B) * B: tmp0 between the maps, B shown again above the second map."""
+def test_a_transient_between_two_maps_and_an_input_read_twice(tmp_path):
+    """C = (A + B) * B: tmp0 between the maps, B one box that both maps read."""
     path = graph_file(
         tmp_path, "two", {"A": False, "B": False, "C": False, "tmp0": True},
         [a_map("add_map", tasklet("add", {"in1": "A", "in2": "B"}, {"out": "tmp0"})),
          a_map("mult_map", tasklet("mult", {"in1": "tmp0", "in2": "B"}, {"out": "C"}, "out = in1 * in2"))],
     )  # fmt: skip
     v = view(path)
-    assert [r.get("boxes") for r in v["rows"]] == [
-        ["A@0", "B@0"], None, ["tmp0@1", "B@0~1"], None, ["C@1"]
-    ]  # fmt: skip
-    assert v["boxes"]["B@0~1"]["again"] and v["boxes"]["tmp0@1"]["written_by"] == ["add"]
-    assert [(e["from"], e["to"]) for e in v["edges"]] == [
-        ("A@0", "add.in1"), ("B@0", "add.in2"), ("add.out", "tmp0@1"),
-        ("tmp0@1", "mult.in1"), ("B@0~1", "mult.in2"), ("mult.out", "C@1"),
+    assert containers(v) == ["A@0", "B@0", "tmp0@1", "C@1"]
+    assert ends(v) == [
+        ("A@0", "add_map"), ("add_map", "add.in1"), ("B@0", "add_map"), ("add_map", "add.in2"),
+        ("add.out", "tmp0@1"), ("tmp0@1", "mult_map"), ("mult_map", "mult.in1"),
+        ("B@0", "mult_map"), ("mult_map", "mult.in2"), ("mult.out", "C@1"),
     ]  # fmt: skip
 
 
 def test_in_place_gets_a_new_version(tmp_path):
-    """A read by the first map and written by the second: A@0 at the top, A@1 at the bottom."""
+    """A read by the first map and written by the second: A@0 an input, A@1 a box of its own."""
     path = graph_file(
         tmp_path, "inplace", {"A": False, "B": False, "tmp0": True},
         [a_map("add_map", tasklet("add", {"in1": "A", "in2": "B"}, {"out": "tmp0"})),
          a_map("copy_map", tasklet("copy", {"in1": "tmp0"}, {"out": "A"}, "out = in1"))],
     )  # fmt: skip
     v = view(path)
-    assert [r.get("boxes") for r in v["rows"]] == [["A@0", "B@0"], None, ["tmp0@1"], None, ["A@1"]]
-    assert ("copy.out", "A@1") in [(e["from"], e["to"]) for e in v["edges"]]
+    assert containers(v) == ["A@0", "B@0", "tmp0@1", "A@1"]
+    assert ("copy.out", "A@1") in ends(v)
 
 
 def test_inside_one_node_an_edge_goes_straight_from_the_writer(tmp_path):
+    """t1 writes tmp0 and t2 reads it in the same map: the edge goes straight from t1 to t2,
+    and the map's hop into t2, which no data takes, is an empty one."""
     path = graph_file(
         tmp_path, "chain", {"A": False, "B": False, "tmp0": True},
         [a_map("m", tasklet("t1", {"in1": "A"}, {"out": "tmp0"}, "out = in1"),
                tasklet("t2", {"in1": "tmp0"}, {"out": "B"}, "out = in1"))],
     )  # fmt: skip
     v = view(path)
-    assert [(e["from"], e["to"], e["data"]) for e in v["edges"]] == [
-        ("A@0", "t1.in1", "A"), ("t1.out", "t2.in1", "tmp0"),
-        ("t1.out", "tmp0@1", "tmp0"), ("t2.out", "B@1", "B"),
-    ]  # fmt: skip
-    assert v["rows"][-1]["boxes"] == ["tmp0@1", "B@1"]
+    assert ends(v) == [("A@0", "m"), ("m", "t1.in1"), ("t1.out", "t2.in1"), ("t1.out", "tmp0@1"),
+                       ("t2.out", "B@1"), ("m", "t2")]  # fmt: skip
+    assert v["drawing"]["edges"][-1]["style"] == "empty"
+    assert containers(v) == ["A@0", "tmp0@1", "B@1"]
 
 
 def test_unused_containers_are_in_the_first_row(tmp_path):
@@ -676,7 +663,7 @@ def test_unused_containers_are_in_the_first_row(tmp_path):
         tmp_path, "unused", {"A": False, "B": False, "Z": False},
         [a_map("m", tasklet("t", {"in1": "A"}, {"out": "B"}, "out = in1"))],
     )  # fmt: skip
-    assert view(path)["rows"][0]["boxes"] == ["A@0", "Z@0"]
+    assert containers(view(path), first=True) == ["A@0", "Z@0"]
 
 
 # =============================================================================
@@ -695,7 +682,8 @@ def test_routes(tmp_path):
         assert json.loads(get(srv, "/api/steps")[2]) == [
             {"name": "vecadd", "folder": None, "label": "vecadd", "error": None}
         ]
-        assert json.loads(get(srv, "/api/step/0")[2])["rows"][0]["boxes"] == ["A@0", "B@0"]
+        nodes = json.loads(get(srv, "/api/step/0")[2])["drawing"]["nodes"]
+        assert [n["id"] for n in nodes if n.get("layer") == "first"] == ["A@0", "B@0"]
         for gone in ("/api/graphs", "/api/graph/vecadd", "/api/step/1"):
             with pytest.raises(HTTPError) as e:
                 get(srv, gone)
@@ -722,44 +710,45 @@ def test_cli_rejects_a_missing_path(tmp_path, capsys):
 
 
 def _link_and_group(v: dict) -> tuple[dict, list]:
-    """The view's one link node and its accelerators."""
-    (link,) = [r["node"] for r in v["rows"] if r["kind"] == "node" and r["node"]["kind"] == "link"]
-    return link, v["accelerators"]
+    """The drawing's one link box and its outlines."""
+    (link,) = [b for b in v["drawing"]["nodes"] if b["kind"] == "link"]
+    return link, v["drawing"]["outlines"]
 
 
 def test_dot4_draws_its_wire_and_boxes_its_group(tmp_path):
-    """dot 4: the link node in the accelerated node's style, ``out_partial = wire``,
-    what it replaced; mac, the link and sum in one group box of the accelerator dot."""
+    """dot 4: the link box ``out_partial · wire`` keyed by its ports, mac, the link and sum in
+    one group outline; out_partial and the fused nest's tmp0 get no box, the edges run through
+    the link."""
     v = recipe_view(tmp_path, "dot_4")
-    link, accs = _link_and_group(v)
-    assert link["text"] == "out_partial · wire"
-    assert v["details"][f"node:{link['id']}"] == {"kind": "link", "container": "out_partial",
-                                                  "depth": 0, "from": "mac", "to": "sum"}  # fmt: skip
-    assert v["containers"]["out_partial"]["badge"] == "wire"
-    # out_partial gets no box: the edges run through the link, straight between the connectors
-    boxes = [b for r in v["rows"] if r["kind"] == "containers" for b in r["boxes"]]
-    assert boxes == [
-        "A@0",
-        "B@0",
-        "out@1",
-    ]  # tmp0, the fused nest's local value, left with the bind
-    assert "tmp0" not in v["containers"]
-    assert [(e["from"], e["to"]) for e in v["edges"] if e["data"] == "out_partial"] == [
-        ("mult.out", f"{link['id']}.in"), (f"{link['id']}.out", "sum_final.a")]  # fmt: skip
+    link, outlines = _link_and_group(v)
+    assert (link["id"], link["text"], link["sel"]) == (
+        "link:mac.out>sum.a",
+        "out_partial · wire",
+        "out_partial",
+    )
+    assert v["details"]["node:out_partial"] == {"kind": "link", "container": "out_partial",
+                                                "depth": 0, "from": "mac", "to": "sum"}  # fmt: skip
+    assert containers(v) == ["A@0", "B@0", "out@1"]
+    assert ends(v, "out_partial") == [
+        ("unit:mac.out", f"{link['id']}.in"),
+        (f"{link['id']}.out", "unit:sum.a"),
+    ]
     assert v["details"]["container:out_partial"]["placement"] == "link"
-    (acc,) = accs
-    (grp,) = acc["groups"]
-    assert (acc["name"], grp["name"], grp["links"]) == ("dot", "dot", [link["id"]])
-    assert [u["instance"] for u in grp["units"]] == ["mac", "sum"]
-    assert grp["tops"] == ["mult_map", link["id"], "sum_final"]
+    assert [(o["id"], o["text"]) for o in outlines] == [("grp:dot", "group dot")]
+    assert [boxes(v)[x]["parent"] for x in ("unit:mac", link["id"], "unit:sum")] == ["grp:dot"] * 3
+    grp = v["details"]["group:dot"]
+    assert (grp["accelerator"], grp["units"], grp["links"]) == (
+        "dot",
+        ["mac", "sum"],
+        ["out_partial"],
+    )
     assert v["details"]["node:mult"]["group"] == "dot"
 
 
 def test_a_fused_nests_local_value_is_an_edge_inside_the_map_not_a_box():
-    """dot 4 after fuse_map: tmp0 (``loop.local``) gets no box; mult's output connector joins
-    sum's input connector inside the fused map, the edge marked local and labelled tmp0; the
-    Containers line and Details give no bytes and the fused map; dot 1's tmp0 in L1 keeps its
-    box."""
+    """dot 4 after fuse_map: tmp0 (``loop.local``) gets no box; mult's output joins sum's input
+    straight, the edge local and labelled tmp0; the Containers line and Details give no bytes
+    and the fused map; dot 1's tmp0 in L1 keeps its box."""
     from snax_forge.design import Platform
     from snax_forge.estimate import estimate
     from snax_forge.sandbox import Recipe
@@ -772,11 +761,13 @@ def test_a_fused_nests_local_value_is_an_edge_inside_the_map_not_a_box():
     k = names.index("fuse_map") + 1
     g = steps("dot_4")[k]
     v = step_view(Entry("3_fuse_map", Path("3_fuse_map.snaxdfg"), g, None), "3 fuse_map", platform)
-    boxes = [b for r in v["rows"] if r["kind"] == "containers" for b in r["boxes"]]
-    assert not any(b.startswith("tmp0@") for b in boxes)
-    (edge,) = [e for e in v["edges"] if e["data"] == "tmp0"]
-    assert (edge["from"], edge["to"], edge["local"], edge["label"]) == (
-        "mult.out", "sum.in1", True, "tmp0")  # fmt: skip
+    assert not any(c.startswith("tmp0@") for c in containers(v))
+    (edge,) = [e for e in v["drawing"]["edges"] if e.get("data") == "tmp0"]
+    assert (ends(v, "tmp0"), edge["style"], edge["label"]) == (
+        [("mult.out", "sum.in1")],
+        "local",
+        "tmp0",
+    )
     line = {c["name"]: c for c in v["containers_section"]}["tmp0"]
     assert (line["line"], line["bytes"]) == ("N · local to mult_map", None)
     d = v["details"]["container:tmp0"]
@@ -785,19 +776,18 @@ def test_a_fused_nests_local_value_is_an_edge_inside_the_map_not_a_box():
     assert estimate(g, platform).containers["tmp0"].placement == "local"  # the estimate's own
     one = steps("dot_1")[-1]
     w = step_view(Entry("8_bind", Path("8_bind.snaxdfg"), one, None), "8 bind", platform)
-    assert any(b.startswith("tmp0@") for r in w["rows"] if r["kind"] == "containers"
-               for b in r["boxes"])  # fmt: skip
-    assert not any(e.get("local") for e in w["edges"])
+    assert "tmp0@1" in containers(w)
+    assert not [e for e in w["drawing"]["edges"] if e["style"] == "local"]
 
 
 def test_dot6_draws_a_buffer_with_its_depth(tmp_path):
     v = recipe_view(tmp_path, "dot_6")
-    link, accs = _link_and_group(v)
-    assert (link["text"], v["details"][f"node:{link['id']}"]["depth"]) == (
+    link, outlines = _link_and_group(v)
+    assert (link["text"], v["details"][f"node:{link['sel']}"]["depth"]) == (
         "out_partial · FIFO 1",
         1,
     )
-    assert [g["name"] for g in accs[0]["groups"]] == ["dot"]
+    assert [o["id"] for o in outlines] == ["grp:dot"]
 
 
 # =============================================================================
@@ -976,14 +966,14 @@ def test_the_recipes_param_names_in_the_boxes_and_details():
     assert unit_params(g, r) == {"vmul": ["W_mul"], "vsum": ["W_sum"]}
     assert map_ranges(g, r) == {"mult_map": "0:N // W_mul = 256", "sum_map": "0:N // W_sum = 256"}
     v = step_view(Entry("5", Path("5"), g, None), "5", Platform.load(SNAX_FORGE), recipe=r)
-    texts = json.dumps(v["rows"], ensure_ascii=False)
+    texts = json.dumps(v["drawing"], ensure_ascii=False)
     assert "vmul · a * b · W_mul 8" in texts and "vsum · fold + · W_sum 8" in texts
     assert v["details"]["node:mult_map"]["range"] == "0:N // W_mul = 256"
     tail = dot1_split(10, 10)
     gt = apply_recipe(tail, imported("dot"))[-1].graph
     assert map_ranges(gt, tail)["mult_map"] == "0:(N + W_mul - 1) // W_mul = 205"
     plain = step_view(Entry("5", Path("5"), g, None), "5", Platform.load(SNAX_FORGE))
-    assert "vmul · a * b · W 8" in json.dumps(plain["rows"], ensure_ascii=False)
+    assert "vmul · a * b · W 8" in json.dumps(plain["drawing"], ensure_ascii=False)
     two = Recipe.load(recipe_path("dot_2")).with_params({"N": 2048, "W": 8})
     g2 = apply_recipe(two, imported("dot"))[-1].graph
     assert unit_params(g2, two) == {"mul": ["W"], "sum": ["W"]}
@@ -1029,27 +1019,21 @@ def _views(r, graphs):
 
 
 def _node_in(view: dict, node_id: str) -> dict:
-    stack = [r["node"] for r in view["rows"] if r["kind"] == "node"]
-    while stack:
-        n = stack.pop()
-        if n["id"] == node_id:
-            return n
-        stack += n.get("body") or []
-    raise KeyError(node_id)
+    return box_of(view, node_id)
 
 
 def test_a_scalar_is_a_parameter_hexagon_its_edge_broadcast():
     """alpha before any bake: listed ``scalar · int32``, its box marked scalar (the hexagon), its
-    edge into mult's port labelled ``alpha[0] · broadcast``."""
+    edge straight into mult's port (no loop: alpha[0] uses none) labelled broadcast."""
     r, graphs = _axpy("axpy")
     (v,) = _views(r, graphs[:1])
     line = {c["name"]: c["line"] for c in v["containers_section"]}
     assert line["alpha"] == "scalar · int32" and line["x"] == "N · L1 · 256 B"
-    assert v["containers"]["alpha"]["scalar"] and not v["containers"]["x"]["scalar"]
-    (e,) = [e for e in v["edges"] if e["data"] == "alpha"]
-    assert (e["to"], e["label"], e.get("csr")) == ("mult.in1", "alpha[0] · broadcast", None)
-    assert [p["connector"] for p in _node_in(v, "mult")["inputs"] if not p.get("csr")] == [
-        "in1", "in2"]  # fmt: skip
+    b = boxes(v)
+    assert b["alpha@0"]["scalar"] and not b["x@0"]["scalar"]
+    (e,) = [e for e in v["drawing"]["edges"] if e.get("data") == "alpha"]
+    assert ((e["to"], e["to_port"]), e["label"]) == (("mult", "in1"), "broadcast · ↻ n")
+    assert b["mult"]["ins"] == ["in1", "in2"]
 
 
 def test_a_scalar_read_as_csr_is_drawn_like_a_baked_one():
@@ -1062,13 +1046,12 @@ def test_a_scalar_read_as_csr_is_drawn_like_a_baked_one():
     rb, baked = _axpy("axpy_baked")
     assert r.steps[0].params == {"container": "alpha", "value": "csr"}
     assert compact_text(graphs[1], graphs[1].node("mult")) == "mult · csr(alpha) * in2"
-    for g, v, vb in zip(graphs[1:], _views(r, graphs[1:]), _views(rb, baked[1:]), strict=True):
+    for v, vb in zip(_views(r, graphs[1:]), _views(rb, baked[1:]), strict=True):
         assert "alpha" in {c["name"] for c in v["containers_section"]}
-        assert not [b for b in v["boxes"].values() if b["container"] == "alpha"]
-        assert not [e for e in v["edges"] if e["data"] == "alpha"]
-        ins = [p["connector"] for p in _node_in(v, "mult")["inputs"] if not p.get("csr")]
-        assert ins == [p["connector"] for p in _node_in(vb, "mult")["inputs"]]
-        assert v["rows"][0] == vb["rows"][0]  # the same boxes, in the same order
+        assert not [b for b in boxes(v).values() if b.get("sel") == "alpha"]
+        assert not [e for e in v["drawing"]["edges"] if e.get("data") == "alpha"]
+        assert box_of(v, "mult")["ins"] == box_of(vb, "mult")["ins"]
+        assert containers(v, first=True) == containers(vb, first=True)  # the same inputs
 
 
 def test_a_units_slots_show_csr_or_baked():
@@ -1097,7 +1080,7 @@ def test_a_container_box_names_its_shape():
     a = graphs[0]
     assert [container_text(a, c) for c in ("alpha", "x", "y")] == ["alpha", "x[N]", "y[N]"]
     (v,) = _views(r, graphs[:1])
-    assert {c: v["containers"][c]["text"] for c in ("alpha", "x", "y")} == {
+    assert {c: boxes(v)[f"{c}@0"]["text"] for c in ("alpha", "x", "y")} == {
         "alpha": "alpha", "x": "x[N]", "y": "y[N]"}  # fmt: skip
 
 
@@ -1110,8 +1093,8 @@ def test_a_baked_tasklet_reads_the_value():
 
     assert compact_text(g, g.node("mult")) == "mult · 3 * in2"
     (v,) = _views(r, [g])
-    assert "alpha" not in v["containers"]
-    assert [p["connector"] for p in _node_in(v, "mult")["inputs"]] == ["in2"]
+    assert not [b for b in boxes(v).values() if b.get("sel") == "alpha"]
+    assert boxes(v)["mult"]["ins"] == ["in2"]
     assert compact_text(g, g.node("augassign_19_4")) == "augassign_19_4 · in1 + in2"
 
 
@@ -1152,8 +1135,8 @@ def test_the_editor_offers_bake_unbake_and_fuse_map_on_axpy(tmp_path, monkeypatc
 
 
 def test_the_lane_accumulator_reads_as_a_fold():
-    """rowsum_2 bound: its unit reads ``acc · fold + · W 4``, the way the folds read, inside the
-    row block map and the column map; its Details give the W lanes down a column."""
+    """rowsum_2 bound: its unit reads ``acc · fold + · W 4`` over the column loop, under the row
+    block loop and the column loop; its Details give the W lanes down a column."""
     from snax_forge.design import Platform
     from snax_forge.sandbox import Recipe, apply_recipe
     from snax_forge.viz.dfg.api import Entry, step_view
@@ -1163,11 +1146,15 @@ def test_the_lane_accumulator_reads_as_a_fold():
     r = Recipe.load(recipe_path("rowsum_2"))
     g = apply_recipe(r, imported("rowsum"))[-1].graph
     v = step_view(Entry("4", Path("4"), g, None), "4", Platform.load(SNAX_FORGE), recipe=r)
-    (top,) = [row["node"] for row in v["rows"] if row["kind"] == "node"]
-    (col,) = top["body"]
-    (unit,) = col["body"]
-    assert [top["text"], col["text"], unit["text"]] == [
-        "sum_map · m_1_t · 2 · temporal", "sum_map_1 · n_t · 64 · temporal", "acc · fold + · W 4"]  # fmt: skip
+    b = boxes(v)
+    assert [(b[x]["text"], b[x].get("sub")) for x in ("sum_map", "sum_map_1", "unit:acc")] == [
+        ("sum_map · temporal", "m_1_t · 2"), ("sum_map_1 · temporal", "n_t · 64"),
+        ("acc · fold + · W 4", "over n_t")]  # fmt: skip
+    assert ends(v, "A") == [
+        ("A@0", "sum_map"),
+        ("sum_map", "sum_map_1"),
+        ("sum_map_1", "unit:acc.a"),
+    ]
     d = v["details"]["node:sum"]
     assert (d["brm"], d["replaced"]) == ("lane_accumulate", "sum_map_s › sum")
     assert d["inputs"] == {"a": "A[4 * m_1_t:4 * m_1_t + 4, n_t]"}
@@ -1188,24 +1175,23 @@ def _matvec_seed():
 
 def test_the_seed_is_two_edges_of_x_on_the_fold():
     """Before fuse_seed the sum writes tmp1, which the elementwise nest adds to q; after it q
-    has two edges on the fold, its seed (labelled with its memlet alone, as q[m_t]) and its
-    write, and tmp1 has no box; bound, the unit's seed port takes the seed's edge and
-    its Details list it."""
+    is read by the fold's seed port (a seed edge, its memlet in Details) and written by its
+    output, and tmp1 has no box; bound, the unit's seed port takes the seed's edge."""
     r, graphs = _matvec_seed()
     before, seeded, bound = _views(r, graphs[5:8])
-    assert "tmp1" in {b["container"] for b in before["boxes"].values()}
-    assert not [e for e in before["edges"] if e.get("seed")]
-    for v, node, subset in ((seeded, "sum", "q[m_t]"), (bound, "sum", "q[m_t:m_t + 1]")):
-        assert "tmp1" not in {b["container"] for b in v["boxes"].values()}
-        q = [e for e in v["edges"] if e["data"] == "q"]
-        seed = [e for e in q if e.get("seed")]
-        assert [(e["from"], e["to"]) for e in q] == [("q@0", f"{node}.seed"),
-                                                     (f"{node}.out", "q@1")]  # fmt: skip
-        assert seed[0]["label"] == subset
-        assert v["details"][f"edge:{seed[0]['id']}"]["memlet"] == f"{subset} (seed)"
-        assert v["details"][f"node:{node}"]["seed"] == seed[0]["label"]
-        conns = _node_in(v, node)["inputs"]
-        assert [c["connector"] for c in conns if c.get("seed")] == ["seed"]
+    assert "tmp1@1" in containers(before)
+    assert not [e for e in before["drawing"]["edges"] if e["style"] == "seed"]
+    for v, box, subset in ((seeded, "sum", "q[m_t]"), (bound, "unit:sum", "q[m_t:m_t + 1]")):
+        assert "tmp1@1" not in containers(v)
+        assert ends(v, "q") == [
+            ("q@0", "sum_map"),
+            ("sum_map", f"{box}.seed"),
+            (f"{box}.out", "q@1"),
+        ]
+        (seed,) = [e for e in v["drawing"]["edges"] if e["style"] == "seed"]
+        assert v["details"][f"edge:{seed['id']}"]["memlet"] == subset
+        assert v["details"]["node:sum"]["seed"] == subset
+        assert "seed" in boxes(v)[box]["ins"]
     assert seeded["details"]["node:sum"]["outputs"] == {
         "out": "q[m_t] (reduce add, seed q[m_t])"}  # fmt: skip
     d = bound["details"]["node:sum"]
@@ -1286,7 +1272,7 @@ def test_matvec_acc_partners_at_import():
     marks = {p["transform"]: p["marker"] for p in v["partners"]["sum_map"] if "marker" in p}
     assert {t: (m["box"], m["container"]) for t, m in marks.items()} == {
         "fuse_map": ("tmp0@1", "tmp0"), "fuse_seed": ("tmp1@1", "tmp1")}  # fmt: skip
-    assert {v["boxes"][m["box"]]["container"] for m in marks.values()} == {"tmp0", "tmp1"}
+    assert {boxes(v)[m["box"]]["sel"] for m in marks.values()} == {"tmp0", "tmp1"}
 
 
 def test_matvec_acc_partners_after_the_tag_and_split():
@@ -1353,14 +1339,7 @@ def test_a_seeded_or_bound_graph_has_no_seed_partner():
 
 
 def _fold_nodes(v: dict) -> list[str]:
-    stack = [r["node"] for r in v["rows"] if r["kind"] == "node"]
-    out = []
-    while stack:
-        n = stack.pop(0)
-        if n.get("fold"):
-            out.append(n["id"])
-        stack += n.get("body") or []
-    return out
+    return [b["sel"] for b in v["drawing"]["nodes"] if b.get("fold")]
 
 
 def test_a_folding_node_is_marked_fold():
@@ -1382,6 +1361,6 @@ def test_a_folding_node_is_marked_fold():
                        ("axpy", [])):  # fmt: skip
         v = view_of(recipe_graphs(name)[1][-1])
         assert sorted(_fold_nodes(v)) == want, name
-    links = [r["node"] for r in view_of(recipe_graphs("dot_4")[1][-1])["rows"]
-             if r["kind"] == "node" and r["node"]["kind"] == "link"]  # fmt: skip
-    assert links and not any(n.get("fold") for n in links)
+    links = [b for b in view_of(recipe_graphs("dot_4")[1][-1])["drawing"]["nodes"]
+             if b["kind"] == "link"]  # fmt: skip
+    assert links and not any(b.get("fold") for b in links)
