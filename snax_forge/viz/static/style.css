@@ -900,6 +900,6 @@ svg.dfg-edges text.v3-title { pointer-events: visiblePainted; cursor: grab; }
 .c-canvas.focus .v3-box.sel, .c-canvas.focus path.edge.sel { opacity: 1; }
 .c-map.c-loop.c-folded { box-shadow: 4px 4px 0 -1px var(--panel), 4px 4px 0 0 var(--loop); }
 .c-map.c-loop.c-folded.sel { box-shadow: 0 0 0 2px var(--hl); }
-.c-minimap { position: absolute; right: var(--space-2); bottom: var(--space-2); z-index: 4; border: 1px solid var(--rule); border-radius: 3px; background: color-mix(in srgb, var(--panel) 92%, transparent); cursor: crosshair; opacity: 0.9; }
+.c-minimap { position: absolute; right: var(--space-2); top: var(--space-2); z-index: 4; border: 1px solid var(--rule); border-radius: 3px; background: color-mix(in srgb, var(--panel) 92%, transparent); cursor: crosshair; opacity: 0.9; }
 .c-zoom button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
 .dfg-find { width: 11rem; }

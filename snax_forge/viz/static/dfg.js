@@ -751,8 +751,8 @@ async function estimate() {
     box.replaceChildren(...[columnsTable(cmp.columns.labels, cmp.columns.estimate),
       cmp.columns.caveat ? h("p", { class: "c-est-line muted" }, cmp.columns.caveat) : null,
       ...compareBars(cmp.columns.cost_bars),
-      tables.length ? h("p", { class: "c-est-line muted" }, `cost per block, ${cmp.columns.labels[0]} → ${cmp.columns.labels[1]}`) : null,
-      ...tables.map(costTable)].filter(Boolean));
+      tables.length ? h("details", { class: "c-part-details" }, h("summary", {}, `cost per block, ${cmp.columns.labels[0]} → ${cmp.columns.labels[1]}`),
+        tables.map(costTable)) : null].filter(Boolean));
     return;
   }
   const b = await view(state.k);
@@ -776,7 +776,7 @@ async function estimate() {
     h("p", { class: "c-est-head" }, h("b", {}, c.heading), ": ", h("b", { class: "nb" }, c.area_text), " · ", h("b", { class: "nb" }, c.energy_text), " per run"),
     h("p", { class: "c-est-line muted" }, c.caveat),
     ...costParts(c),
-    ...(c.tables || []).map(costTable),
+    (c.tables || []).length ? h("details", { class: "c-part-details" }, h("summary", {}, "cost per block, as a table"), c.tables.map(costTable)) : null,
     h("p", { class: "c-est-line" }, "not characterized: ", c.missing.length ? c.missing.join(", ") : "none"),
     c.not_costed && c.not_costed.length ? h("p", { class: "c-est-line" }, "not costed: ", c.not_costed.join("; ")) : null,
     c.extrapolated && c.extrapolated.length ? h("p", { class: "c-est-line" }, "outside the tables' grid, extrapolated: ", c.extrapolated.join(", ")) : null,

@@ -5,15 +5,22 @@
 // them. A step's layout is kept with its view, so going back to a step does not lay it out again.
 //
 // Rows: a kernel's inputs in ELK's first layer, lifted back to one row after compaction; the
-// front loops on the rows api.py gives (``row``). An outline's title goes where it crosses the
-// fewest wires and boxes, along its top inside edge, then its bottom one.
+// front loops on the rows api.py gives (``row``); a group's temporal muxes on one row, its
+// demuxes on another (``rows``). An outline's title sits in its lower right corner.
 
 import { h } from "./dom.js";
 
 const SVG = "http://www.w3.org/2000/svg";
 const LABEL_FONT = '600 11.5px ui-monospace, "SF Mono", Menlo, Consolas, monospace';
 export const TASK_COLOURS = ["var(--task-0)", "var(--task-1)", "var(--task-2)", "var(--task-3)"];
-const PAD = { group: 30, accelerator: 28, block: 26 }; // px over an outline's boxes for its title
+// an outline's title: its lines (split after the name, ``group mvt_1`` over ``shared by mvt,
+// mvt_1``) in its lower right corner, in a band of their own under what it holds
+const TITLE_LINE = 15;
+const titleLines = (text) => {
+  const i = text.indexOf(" · ");
+  return i < 0 ? [text] : [text.slice(0, i), text.slice(i + 3)];
+};
+const padBottom = (o) => 10 + TITLE_LINE * titleLines(o.text).length;
 const LIFT_GAP = 0.5;
 
 let engine = null;
@@ -99,6 +106,7 @@ function elkGraph(d, sizes, lanes = new Map(), forced = false, inOrder = new Map
   };
   const nodes = new Map(d.nodes.map((n) => [n.id, n]));
   const fixed = fixedPorts(d);
+  const row = rows(d);
   const named = (n) => Boolean((n.ins && n.ins.length) || (n.outs && n.outs.length));
   const ends = d.edges.map((e, i) => {
     const a = nodes.get(e.from), b = nodes.get(e.to);
@@ -126,12 +134,12 @@ function elkGraph(d, sizes, lanes = new Map(), forced = false, inOrder = new Map
     ];
     const lo = { "elk.portConstraints": fixed.has(n.id) || lanes.has(n.id) ? "FIXED_ORDER" : "FIXED_SIDE", "elk.portAlignment.default": "DISTRIBUTED" };
     if (n.layer === "first") lo["elk.layered.layering.layerConstraint"] = "FIRST";
-    if (n.row !== undefined && n.row !== null) lo["elk.layered.layering.layerChoiceConstraint"] = String(n.row);
+    lo["elk.partitioning.partition"] = String(row.get(n.id));
     byOutline.get(n.parent || null).push({ id: n.id, width: w, height: ht, ports, layoutOptions: lo });
   }
   const made = new Map(d.outlines.map((o) => [o.id, {
     id: o.id, children: byOutline.get(o.id),
-    layoutOptions: { "elk.padding": `[top=${PAD[o.kind] || 28},left=14,bottom=14,right=14]` } }]));
+    layoutOptions: { "elk.padding": `[top=14,left=14,bottom=${padBottom(o)},right=14]` } }]));
   for (const o of d.outlines) if (o.parent && made.has(o.parent)) made.get(o.parent).children.push(made.get(o.id));
   // the top level in the drawing's order, an outline where its first box is
   const outline = new Map(d.outlines.map((o) => [o.id, o]));
@@ -150,6 +158,10 @@ function elkGraph(d, sizes, lanes = new Map(), forced = false, inOrder = new Map
     id: `e${i}`, sources: [ends[i][0]], targets: [ends[i][1]],
     labels: e.label ? [{ text: e.label, width: Math.ceil(textWidth(e.label) * (e.transpose ? 1.45 : 1)) + 6, height: e.transpose ? 20 : 15 }] : [],
   }));
+  // a group's muxes on one row, its demuxes on another: ELK's partitions hold only outside an
+  // outline, so inside one each switch gets two edges that are never drawn, from what feeds the
+  // group's lowest switch and into what that switch feeds, which leave it no other layer
+  edges.push(...switchRows(d, row, ends).map(([src, dst], k) => ({ id: `z${k}`, sources: [src], targets: [dst] })));
   const graph = {
     id: "root",
     layoutOptions: {
@@ -158,7 +170,7 @@ function elkGraph(d, sizes, lanes = new Map(), forced = false, inOrder = new Map
       "elk.layered.spacing.edgeNodeBetweenLayers": "14", "elk.spacing.nodeNode": "26",
       "elk.spacing.edgeEdge": "12", "elk.spacing.edgeNode": "14", "elk.spacing.edgeLabel": "3",
       "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
-      "elk.layered.compaction.postCompaction.strategy": "EDGE_LENGTH",
+      "elk.partitioning.activate": "true", "elk.layered.compaction.postCompaction.strategy": "NONE",
       "elk.layered.nodePlacement.strategy": "BRANDES_KOEPF", "elk.layered.nodePlacement.bk.fixedAlignment": "BALANCED",
       "elk.layered.edgeLabels.sideSelection": "ALWAYS_UP", "elk.edgeLabels.placement": "CENTER",
       "elk.padding": "[top=20,left=20,bottom=20,right=20]",
@@ -239,6 +251,72 @@ function muxOrders(d, L) {
   return out;
 }
 
+/** Each box's row (ELK's partition, which keeps rows in order): the longest path to it from the
+inputs, no less than the row api.py gives a front loop (``row``); in each outline the temporal
+muxes share one row, the lowest any of them needs, and the demuxes another, so a group's per-task
+switches read as one stage. (ELK's layerChoiceConstraint is not read by elkjs's layering.) */
+export function rows(d) {
+  const preds = new Map(d.nodes.map((n) => [n.id, []]));
+  for (const e of d.edges) if (preds.has(e.to) && preds.has(e.from) && e.from !== e.to) preds.get(e.to).push(e.from);
+  const least = new Map(d.nodes.filter((n) => n.row != null).map((n) => [n.id, n.row]));
+  const groups = [];
+  for (const kind of ["mux", "demux"]) {
+    const by = new Map();
+    for (const n of d.nodes.filter((x) => x.kind === kind)) {
+      if (!by.has(n.parent || null)) by.set(n.parent || null, []);
+      by.get(n.parent || null).push(n.id);
+    }
+    groups.push(...[...by.values()].filter((ids) => ids.length > 1));
+  }
+  let rank = new Map();
+  for (let pass = 0; pass < 4; pass++) {
+    rank = new Map();
+    const of = (id) => {
+      if (rank.has(id)) return rank.get(id);
+      rank.set(id, 0); // a cycle (none expected) stops here
+      const r = Math.max(least.get(id) || 0, ...preds.get(id).map((p) => of(p) + 1));
+      rank.set(id, r);
+      return r;
+    };
+    d.nodes.forEach((n) => of(n.id));
+    let moved = false;
+    for (const ids of groups) {
+      const r = Math.max(...ids.map((id) => rank.get(id)));
+      for (const id of ids) if ((least.get(id) || 0) < r) { least.set(id, r); moved = true; }
+    }
+    if (!moved) break;
+  }
+  return rank;
+}
+
+/** The edges (port to port) that put each temporal mux of a group on the row of the group's
+lowest one (its anchor), and each demux on the row of the lowest demux: from the port feeding the
+anchor into the switch's first input, from the switch's first output into the port the anchor
+feeds. */
+function switchRows(d, row, ends) {
+  const out = [];
+  for (const kind of ["mux", "demux"]) {
+    const by = new Map();
+    for (const n of d.nodes.filter((x) => x.kind === kind)) {
+      if (!by.has(n.parent || null)) by.set(n.parent || null, []);
+      by.get(n.parent || null).push(n);
+    }
+    for (const ns of by.values()) {
+      if (ns.length < 2) continue;
+      const anchor = ns.reduce((a, b) => (row.get(b.id) > row.get(a.id) ? b : a));
+      const into = d.edges.findIndex((e) => e.to === anchor.id);
+      const from = d.edges.findIndex((e) => e.from === anchor.id);
+      for (const n of ns) {
+        if (n === anchor) continue;
+        const myIn = d.edges.findIndex((e) => e.to === n.id), myOut = d.edges.findIndex((e) => e.from === n.id);
+        if (into >= 0 && myIn >= 0) out.push([ends[into][0], ends[myIn][1]]);
+        if (from >= 0 && myOut >= 0) out.push([ends[myOut][0], ends[from][1]]);
+      }
+    }
+  }
+  return out;
+}
+
 /** A box whose ports keep the server's order: a temporal mux or demux (its ports grouped by
 task) and a unit a mux feeds (its inputs under the mux's outputs). Any other box's ports are
 free, so ELK puts an input where its edge comes from and two edges into one box do not cross. */
@@ -272,12 +350,12 @@ function absolute(d, root) {
     }
   };
   walk(root, 0, 0);
-  const edges = collectEdges(root).map((e) => {
+  const edges = collectEdges(root).filter((e) => !e.id.startsWith("z")).map((e) => {
     const [ox, oy] = pos.get(e.container || "root") || [0, 0];
     const sec = (e.sections || [])[0];
     const pts = sec ? [sec.startPoint, ...(sec.bendPoints || []), sec.endPoint].map((p) => ({ x: ox + p.x, y: oy + p.y })) : [];
     const l = (e.labels || [])[0];
-    return { i: Number(e.id.slice(1)), src: e.sources[0], dst: e.targets[0], pts,
+    return { i: e.id.startsWith("z") ? -1 : Number(e.id.slice(1)), src: e.sources[0], dst: e.targets[0], pts,
       label: l && l.x !== undefined ? { x: ox + l.x + 3, y: oy + l.y + 11.5 } : null };
   }).sort((a, b) => a.i - b.i);
   return { boxes, edges, width: root.width, height: root.height };
@@ -530,14 +608,19 @@ class Drawn {
       const g = svgEl("g", { class: cls, "data-sel": o.sel, "data-group": o.kind === "group" ? o.sel : null, "data-block": o.block || null });
       const rect = { x: b.x, y: b.y, width: b.w, height: b.h, rx: o.kind === "block" ? 10 : 6 };
       const rects = [svgEl("rect", { ...rect, class: "outline-hit" }), svgEl("rect", rect)];
-      const t = svgEl("text", { class: "v3-title", "data-outline": o.id });
-      t.textContent = o.text;
+      const t = svgEl("text", { class: "v3-title", "data-outline": o.id, "text-anchor": "end" });
+      const lines = titleLines(o.text).map((line) => {
+        const span = svgEl("tspan");
+        span.textContent = line;
+        t.append(span);
+        return span;
+      });
       const tip = svgEl("title");
       tip.textContent = `${o.kind === "block" ? "double-click to collapse; " : ""}drag the title to move what it holds`;
       t.append(tip);
       g.append(...rects, t);
       svg.append(g);
-      return { o, base: b, r: b, rects, t, holds: kids(o.id) };
+      return { o, base: b, r: b, rects, t, lines, holds: kids(o.id) };
     }).filter(Boolean);
     const edgeLayer = svgEl("g");
     const labels = svgEl("g");
@@ -599,8 +682,7 @@ class Drawn {
     }
     canvas.append(top);
     this.place(d.nodes.map((n) => n.id), true);
-    // the titles, once the text is in the page and measurable
-    requestAnimationFrame(() => this.titles());
+    this.titles();
     this.dragging();
   }
 
@@ -649,11 +731,11 @@ class Drawn {
     for (const ol of [...this.outlines].reverse()) {
       let r = ol.base;
       if (ol.holds.some((id) => L.moves.has(id))) {
-        const pad = PAD[ol.o.kind] || 28;
+        const pad = padBottom(ol.o);
         const bs = ol.holds.map((id) => this.box(id));
         for (const o of d.outlines.filter((x) => x.parent === ol.o.id)) if (rects.has(o.id)) bs.push(rects.get(o.id));
-        const x0 = Math.min(...bs.map((b) => b.x)) - 14, y0 = Math.min(...bs.map((b) => b.y)) - pad;
-        const x1 = Math.max(...bs.map((b) => b.x + b.w)) + 14, y1 = Math.max(...bs.map((b) => b.y + b.h)) + 14;
+        const x0 = Math.min(...bs.map((b) => b.x)) - 14, y0 = Math.min(...bs.map((b) => b.y)) - 14;
+        const x1 = Math.max(...bs.map((b) => b.x + b.w)) + 14, y1 = Math.max(...bs.map((b) => b.y + b.h)) + pad;
         r = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
       }
       rects.set(ol.o.id, r);
@@ -668,32 +750,16 @@ class Drawn {
     if (!all) this.titles();
   }
 
-  /** Every outline's title where it crosses the fewest wires and boxes: along its top inside
-  edge, then its bottom one (half a crossing dearer), leftmost among equals. */
+  /** Every outline's title in its lower right corner, right-aligned, one line under another. */
   titles() {
-    const segs = this.edges.flatMap(({ pts: p }) => p.slice(1).map((q, i) => [Math.min(p[i].x, q.x), Math.min(p[i].y, q.y), Math.max(p[i].x, q.x), Math.max(p[i].y, q.y)]));
-    const boxes = this.d.nodes.map((n) => this.box(n.id)).map((b) => [b.x, b.y, b.x + b.w, b.y + b.h]);
     for (const ol of this.outlines) {
       const r = ol.r;
-      const tw = ol.t.getComputedTextLength() + 6;
-      const th = 16;
-      const hits = (x0, y0) => {
-        const x1 = x0 + tw, y1 = y0 + th;
-        let n = 0;
-        for (const s of segs) if (s[0] <= x1 && s[2] >= x0 && s[1] <= y1 && s[3] >= y0) n++;
-        for (const b of boxes) if (b[0] <= x1 && b[2] >= x0 && b[1] <= y1 && b[3] >= y0) n += 2;
-        return n;
-      };
-      let best = null;
-      for (const [y0, cost] of [[r.y + 4, 0], [r.y + r.h - th - 3, 0.5]]) {
-        for (let x0 = r.x + 8; x0 + tw <= r.x + r.w - 6; x0 += 4) {
-          const score = hits(x0, y0) + cost + (x0 - r.x) * 1e-4;
-          if (!best || score < best.score) best = { score, x0, y0 };
-        }
-      }
-      if (!best) best = { x0: r.x + 8, y0: r.y + 4 };
-      ol.t.setAttribute("x", best.x0 + 2);
-      ol.t.setAttribute("y", best.y0 + 12.5);
+      const x = r.x + r.w - 8;
+      const last = r.y + r.h - 7;
+      ol.lines.forEach((span, i) => {
+        span.setAttribute("x", x);
+        span.setAttribute("y", last - TITLE_LINE * (ol.lines.length - 1 - i));
+      });
     }
   }
 
