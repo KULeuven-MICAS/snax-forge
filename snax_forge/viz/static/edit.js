@@ -134,10 +134,12 @@ export function redo() {
   if (ctx.state.session && ctx.state.session.redo !== null) move(ctx.state.session.redo);
 }
 
+/** The cursor moved to step ``k``: no step's graph changes, so the views and layouts kept stay. */
 export async function move(k) {
   const r = await post("/api/cursor", { k });
   log(r.body.log, !r.ok);
-  await changed();
+  ctx.state.session = await session();
+  await ctx.show();
 }
 
 // -- the start dialog ------------------------------------------------------------------

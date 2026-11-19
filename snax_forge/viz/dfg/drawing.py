@@ -411,7 +411,7 @@ def drawing(g: Graph, tops: Sequence[Node], placed: dict[str, Any] | None = None
                 d.edge(a, ap, tgt, tp, task=task, skip=skipped_all, data=m.data,
                        style="seed" if seeded else "data", sub=api.memlet_text(m), node=n.id, port=port,
                        mark=api.transpose_label(m.data, perm) if perm is not None else None,
-                       broadcast=m.data in scalars and not m.names)  # fmt: skip
+                       transpose=perm is not None, broadcast=m.data in scalars and not m.names)  # fmt: skip
             for c, m in n.outputs.items():
                 if m.data in local:
                     local_writer[m.data] = (nb, c)

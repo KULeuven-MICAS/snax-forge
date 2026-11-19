@@ -84,13 +84,17 @@ function textWidth(t) {
 
 /** ELK's graph: each box at its measured size, its ports in order (inputs on top, outputs at the
 bottom; a box without named ports a port of its own per edge, so no two edges meet at one
-point), the outlines as compound nodes, the edges with their labels. */
-function elkGraph(d, sizes) {
+point), the outlines as compound nodes, the edges with their labels. ``lanes``: a loop's data in
+the order its ports keep on both sides, so a datum leaves a loop on the side it entered (else ELK
+orders a loop's ports freely). Also returns each own port's box, side and datum. */
+function elkGraph(d, sizes, lanes = new Map(), forced = false) {
   const byOutline = new Map([[null, []], ...d.outlines.map((o) => [o.id, []])]);
   const extra = new Map(); // a box -> its own ports
-  const addPort = (node, id, side) => {
+  const own = new Map(); // an own port -> {node, side, data}
+  const addPort = (node, id, side, data) => {
     if (!extra.has(node)) extra.set(node, []);
-    if (!extra.get(node).some((p) => p.id === id)) extra.get(node).push({ id, side });
+    if (!extra.get(node).some((p) => p.id === id)) extra.get(node).push({ id, side, data });
+    own.set(id, { node, side, data });
   };
   const nodes = new Map(d.nodes.map((n) => [n.id, n]));
   const named = (n) => Boolean((n.ins && n.ins.length) || (n.outs && n.outs.length));
@@ -98,21 +102,27 @@ function elkGraph(d, sizes) {
     const a = nodes.get(e.from), b = nodes.get(e.to);
     const src = e.from_port ? `${e.from}.${e.from_port}` : named(a) ? `${e.from}.__out` : `${e.from}.__o${i}`;
     const dst = e.to_port ? `${e.to}.${e.to_port}` : named(b) ? `${e.to}.__in` : `${e.to}.__i${i}`;
-    if (!e.from_port) addPort(e.from, src, "SOUTH");
-    if (!e.to_port) addPort(e.to, dst, "NORTH");
+    if (!e.from_port) addPort(e.from, src, "SOUTH", e.data || null);
+    if (!e.to_port) addPort(e.to, dst, "NORTH", e.data || null);
     return [src, dst];
   });
+  for (const [node, list] of extra) { // a loop's ports by its lanes, the same order on both sides
+    const order = lanes.get(node);
+    if (!order) continue;
+    const at = (p) => (order.includes(p.data) ? order.indexOf(p.data) : order.length);
+    list.sort((p, q) => at(p) - at(q));
+  }
   for (const n of d.nodes) {
     const [w, ht] = sizes.get(n.id);
-    const own = extra.get(n.id) || [];
-    const ins = [...(n.ins || []).map((p) => `${n.id}.${p}`), ...own.filter((p) => p.side === "NORTH").map((p) => p.id)];
-    const outs = [...(n.outs || []).map((p) => `${n.id}.${p}`), ...own.filter((p) => p.side === "SOUTH").map((p) => p.id)];
+    const mine = extra.get(n.id) || [];
+    const ins = [...(n.ins || []).map((p) => `${n.id}.${p}`), ...mine.filter((p) => p.side === "NORTH").map((p) => p.id)];
+    const outs = [...(n.outs || []).map((p) => `${n.id}.${p}`), ...mine.filter((p) => p.side === "SOUTH").map((p) => p.id)];
     // FIXED_ORDER counts clockwise: left to right on top, right to left at the bottom
     const ports = [
       ...ins.map((id, i) => ({ id, width: 7, height: 7, layoutOptions: { "elk.port.side": "NORTH", "elk.port.index": String(i) } })),
       ...outs.map((id, i) => ({ id, width: 7, height: 7, layoutOptions: { "elk.port.side": "SOUTH", "elk.port.index": String(outs.length - 1 - i) } })),
     ];
-    const lo = { "elk.portConstraints": named(n) ? "FIXED_ORDER" : "FIXED_SIDE", "elk.portAlignment.default": "DISTRIBUTED" };
+    const lo = { "elk.portConstraints": named(n) || lanes.has(n.id) ? "FIXED_ORDER" : "FIXED_SIDE", "elk.portAlignment.default": "DISTRIBUTED" };
     if (n.layer === "first") lo["elk.layered.layering.layerConstraint"] = "FIRST";
     if (n.row !== undefined && n.row !== null) lo["elk.layered.layering.layerChoiceConstraint"] = String(n.row);
     byOutline.get(n.parent || null).push({ id: n.id, width: w, height: ht, ports, layoutOptions: lo });
@@ -136,9 +146,9 @@ function elkGraph(d, sizes) {
   for (const o of d.outlines) if (!o.parent && !top.includes(made.get(o.id))) top.push(made.get(o.id)); // an empty one
   const edges = d.edges.map((e, i) => ({
     id: `e${i}`, sources: [ends[i][0]], targets: [ends[i][1]],
-    labels: e.label ? [{ text: e.label, width: textWidth(e.label) + 6, height: 15 }] : [],
+    labels: e.label ? [{ text: e.label, width: Math.ceil(textWidth(e.label) * (e.transpose ? 1.45 : 1)) + 6, height: e.transpose ? 20 : 15 }] : [],
   }));
-  return {
+  const graph = {
     id: "root",
     layoutOptions: {
       "elk.algorithm": "layered", "elk.direction": "DOWN", "elk.hierarchyHandling": "INCLUDE_CHILDREN",
@@ -153,6 +163,48 @@ function elkGraph(d, sizes) {
     },
     children: top, edges,
   };
+  if (forced) graph.layoutOptions["elk.layered.crossingMinimization.forceNodeModelOrder"] = "true";
+  return { graph, own };
+}
+
+/** The loops whose data cross inside them in layout ``L``: for each, its data in the order its
+outputs leave (left to right), so the next layout keeps the inputs in that order too. */
+function crossedLanes(d, L, own) {
+  const sides = new Map(); // a loop -> {NORTH: [[x, data]], SOUTH: [...]}
+  for (const [id, p] of own) {
+    if (!p.data) continue;
+    const n = d.nodes.find((x) => x.id === p.node);
+    if (!n || n.kind !== "loop") continue;
+    const at = L.boxes.get(p.node) && L.boxes.get(p.node).ports.get(id);
+    if (!at) continue;
+    if (!sides.has(p.node)) sides.set(p.node, { NORTH: [], SOUTH: [] });
+    sides.get(p.node)[p.side].push([at.x, p.data]);
+  }
+  const order = (list) => {
+    const first = new Map();
+    for (const [x, data] of [...list].sort((a, b) => a[0] - b[0])) if (!first.has(data)) first.set(data, x);
+    return [...first.keys()];
+  };
+  const lanes = new Map();
+  for (const [node, s] of sides) {
+    const ins = order(s.NORTH), outs = order(s.SOUTH);
+    const shared = outs.filter((x) => ins.includes(x));
+    if (shared.length < 2) continue;
+    if (shared.join("|") !== ins.filter((x) => outs.includes(x)).join("|")) lanes.set(node, outs);
+  }
+  // the loops chained to one that is reordered keep its order, so the data do not cross between them
+  const loops = new Set(d.nodes.filter((n) => n.kind === "loop").map((n) => n.id));
+  const todo = [...lanes.keys()];
+  while (todo.length) {
+    const node = todo.pop();
+    for (const e of d.edges) {
+      const other = e.from === node ? e.to : e.to === node ? e.from : null;
+      if (!other || !loops.has(other) || lanes.has(other)) continue;
+      lanes.set(other, lanes.get(node));
+      todo.push(other);
+    }
+  }
+  return lanes;
 }
 
 function collectEdges(root) {
@@ -210,12 +262,58 @@ function liftInputs(d, L) {
   }
 }
 
-const layouts = new WeakMap(); // a drawing -> its layout, as long as its view is kept
+// a drawing's text -> its layout, the last KEEP: a step whose drawing did not change (after an
+// edit elsewhere, a Reload, a step seen before) is not laid out again
+const layouts = new Map();
+const KEEP = 400;
 
 /** Drawing ``d`` laid out: each box measured in ``probe`` (a hidden element in the page, so the
 page's fonts apply), then ELK. */
-export async function layout(d, probe) {
-  if (layouts.has(d)) return layouts.get(d);
+export async function layout(d, probe, seed = null) {
+  const key = JSON.stringify(d);
+  if (layouts.has(key)) return layouts.get(key);
+  const L = await layOut(seeded(d, seed), probe, Boolean(seed) && seeded(d, seed) !== d);
+  layouts.set(key, L);
+  if (layouts.size > KEEP) layouts.delete(layouts.keys().next().value);
+  return L;
+}
+
+const SEED_SHARE = 0.6; // of a step's boxes the step before must hold to keep its order
+
+/** Drawing ``d`` with its boxes in the left-to-right order ``seed`` (the layout of a step shown
+before) had them, a new box beside the boxes it connects to; ``d`` itself when the two share
+too few boxes. Laid out with that order forced, a step keeps its neighbour's arrangement and
+only what changed moves (the order a step is laid out in is the first one it is seen from). */
+function seeded(d, seed) {
+  if (!seed) return d;
+  if (seeded.memo && seeded.memo[0] === d && seeded.memo[1] === seed) return seeded.memo[2];
+  const x = new Map();
+  for (const n of d.nodes) {
+    const b = seed.boxes.get(n.id);
+    if (b) x.set(n.id, b.x + b.w / 2);
+  }
+  let out = d;
+  if (x.size >= SEED_SHARE * d.nodes.length) {
+    for (let pass = 0; pass < 4; pass++) { // a new box: the mean of its placed neighbours
+      for (const n of d.nodes) {
+        if (x.has(n.id)) continue;
+        const near = d.edges.flatMap((e) => (e.from === n.id ? [e.to] : e.to === n.id ? [e.from] : [])).filter((id) => x.has(id));
+        if (near.length) x.set(n.id, near.reduce((a, id) => a + x.get(id), 0) / near.length);
+      }
+    }
+    let last = -Infinity; // still none: just after the box before it in the drawing's order
+    for (const n of d.nodes) {
+      if (!x.has(n.id)) x.set(n.id, last + 1e-3);
+      last = x.get(n.id);
+    }
+    const at = new Map(d.nodes.map((n, i) => [n.id, i]));
+    out = { ...d, nodes: [...d.nodes].sort((a, b) => x.get(a.id) - x.get(b.id) || at.get(a.id) - at.get(b.id)) };
+  }
+  seeded.memo = [d, seed, out];
+  return out;
+}
+
+async function layOut(d, probe, forced = false) {
   probe.replaceChildren(...d.nodes.map((n) => boxEl(d, n)));
   const sizes = new Map([...probe.children].map((el) => [el.dataset.id, [Math.ceil(el.offsetWidth), Math.ceil(el.offsetHeight)]]));
   probe.replaceChildren();
@@ -224,10 +322,17 @@ export async function layout(d, probe) {
     if (n.width_of && sizes.has(n.width_of)) sizes.set(n.id, [Math.max(sizes.get(n.id)[0], sizes.get(n.width_of)[0]), sizes.get(n.id)[1]]);
   }
   const t0 = performance.now();
-  const out = await elk().layout(elkGraph(d, sizes));
-  const L = { ...absolute(d, out), ms: performance.now() - t0 };
+  let { graph, own } = elkGraph(d, sizes, new Map(), forced);
+  let L = absolute(d, await elk().layout(graph));
+  // a datum that crosses another inside a loop reads as if it went where the other goes: lay
+  // out again with those loops' ports in one order on both sides
+  const lanes = crossedLanes(d, L, own);
+  if (lanes.size) {
+    ({ graph, own } = elkGraph(d, sizes, lanes, forced));
+    L = absolute(d, await elk().layout(graph));
+  }
+  L.ms = performance.now() - t0;
   liftInputs(d, L);
-  layouts.set(d, L);
   return L;
 }
 
@@ -335,7 +440,7 @@ export function render(canvas, d, L) {
     }
     edgeLayer.append(hit, p);
     if (e.label && le.label) {
-      const t = svgEl("text", { x: le.label.x, y: le.label.y, class: `edge-label v3-label ${e.style}`, "data-sel": e.id });
+      const t = svgEl("text", { x: le.label.x, y: le.label.y + (e.transpose ? 4.5 : 0), class: `edge-label v3-label ${e.style}${e.transpose ? " transpose" : ""}`, "data-sel": e.id });
       if (e.task && d.tasks.length) t.style.fill = colour;
       t.textContent = e.label;
       labels.append(t);
@@ -401,4 +506,95 @@ function placeTitle(ol, segs, boxes) {
   if (!best) best = { x0: r.x + 8, y0: r.y + 4 };
   ol.t.setAttribute("x", best.x0 + 2);
   ol.t.setAttribute("y", best.y0 + 12.5);
+}
+
+// -- pan and zoom -----------------------------------------------------------------------------
+
+const MIN_SCALE = 0.1;
+const MAX_SCALE = 3;
+
+/** A panel's view of its drawing: ``world`` (the canvas) moved and scaled inside ``vp``. Drag the
+empty canvas or scroll to pan, Ctrl (⌘) and scroll or pinch to zoom about the pointer. Below 42 %
+the edge labels and port names go, below 30 % the chips, dtypes and badges (level of detail). */
+export class Viewport {
+  constructor(vp, world, onChange = () => {}) {
+    Object.assign(this, { vp, world, onChange, s: 1, tx: 0, ty: 0, L: null });
+    vp.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      const r = vp.getBoundingClientRect();
+      if (e.ctrlKey || e.metaKey) this.zoomAt(Math.exp(-e.deltaY * 0.0025), e.clientX - r.left, e.clientY - r.top);
+      else this.set(this.s, this.tx - e.deltaX, this.ty - e.deltaY);
+    }, { passive: false });
+    let drag = null;
+    vp.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0 || e.target.closest("[data-sel], select, button")) return;
+      drag = { x: e.clientX, y: e.clientY, tx: this.tx, ty: this.ty, moved: false, id: e.pointerId };
+    });
+    vp.addEventListener("pointermove", (e) => {
+      if (!drag) return;
+      const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+      if (!drag.moved && Math.abs(dx) + Math.abs(dy) < 4) return;
+      if (!drag.moved) {
+        vp.setPointerCapture(drag.id);
+        vp.classList.add("panning");
+      }
+      drag.moved = true;
+      this.set(this.s, drag.tx + dx, drag.ty + dy);
+    });
+    const end = () => {
+      if (drag && drag.moved) { // the click that ends a pan selects nothing
+        vp.addEventListener("click", (ev) => ev.stopPropagation(), { capture: true, once: true });
+        setTimeout(() => vp.classList.remove("panning"), 0);
+      }
+      drag = null;
+    };
+    vp.addEventListener("pointerup", end);
+    vp.addEventListener("pointercancel", end);
+  }
+
+  set(s, tx, ty) {
+    Object.assign(this, { s: Math.min(MAX_SCALE, Math.max(MIN_SCALE, s)), tx, ty });
+    this.world.style.transform = `translate(${this.tx}px, ${this.ty}px) scale(${this.s})`;
+    this.world.classList.toggle("lod-1", this.s < 0.42);
+    this.world.classList.toggle("lod-2", this.s < 0.3);
+    this.onChange(this);
+  }
+
+  zoomAt(f, cx, cy) {
+    const s = Math.min(MAX_SCALE, Math.max(MIN_SCALE, this.s * f));
+    this.set(s, cx - ((cx - this.tx) * s) / this.s, cy - ((cy - this.ty) * s) / this.s);
+  }
+
+  /** Zoom by ``f`` about the middle of the panel. */
+  zoom(f) {
+    const r = this.vp.getBoundingClientRect();
+    this.zoomAt(f, r.width / 2, r.height / 2);
+  }
+
+  /** The whole drawing in the panel, at 100 % at most, centred across and from the top. */
+  fit() {
+    const r = this.vp.getBoundingClientRect();
+    if (!this.L || !r.width) return;
+    const s = Math.max(MIN_SCALE, Math.min(1, (r.width - 24) / this.L.width, (r.height - 24) / this.L.height));
+    this.set(s, (r.width - this.L.width * s) / 2, 12);
+  }
+
+  /** Layout ``L`` shown where ``prev`` (a view of the step before) had its boxes: across, the
+  boxes both steps hold keep their middle on screen; down, the topmost of them stays, so the
+  inputs stay put and only what changed moves. Fit when they hold none. */
+  show(L, prev) {
+    this.L = L;
+    const common = prev && prev.L ? [...L.boxes.keys()].filter((id) => prev.L.boxes.has(id) && !id.startsWith("grp:")
+      && !id.startsWith("acc:") && !id.startsWith("block:")) : [];
+    if (!common.length) {
+      this.fit();
+      return;
+    }
+    const at = (M) => {
+      const c = common.map((id) => M.boxes.get(id));
+      return [c.reduce((a, b) => a + b.x + b.w / 2, 0) / c.length, Math.min(...c.map((b) => b.y))];
+    };
+    const [ox, oy] = at(prev.L), [nx, ny] = at(L);
+    this.set(prev.s, prev.tx + (ox - nx) * prev.s, prev.ty + (oy - ny) * prev.s);
+  }
 }

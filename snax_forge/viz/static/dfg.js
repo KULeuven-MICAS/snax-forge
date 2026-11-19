@@ -16,7 +16,7 @@
 
 import { dragHandle, h, keep, stored } from "./dom.js";
 import * as edit from "./edit.js";
-import { TASK_COLOURS, layout, render } from "./graph.js";
+import { TASK_COLOURS, Viewport, layout, render } from "./graph.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -156,25 +156,43 @@ function stepSelect(current, onChange) {
 }
 
 /** One panel: a step's drawing (graph.js), laid out before it is shown; with ``pick``, its own
-step dropdown (Compare). After ``share`` the head names the tasks in their colours. */
-function panel(v, k, pick) {
+step dropdown (Compare). After ``share`` the head names the tasks in their colours. The drawing
+pans and zooms in the panel (graph.js's Viewport); the head has the zoom's buttons. */
+function panel(v, k, pick, seed = null) {
   const tasks = (v.drawing && v.drawing.tasks) || [];
+  const zoom = h("span", { class: "c-zoom-read muted" }, "100 %");
+  const tools = h("span", { class: "c-zoom" },
+    h("button", { type: "button", title: "zoom out (-)", "data-zoom": "out" }, "−"), zoom,
+    h("button", { type: "button", title: "zoom in (+)", "data-zoom": "in" }, "+"),
+    h("button", { type: "button", title: "100 % (1)", "data-zoom": "one" }, "1:1"),
+    h("button", { type: "button", title: "the whole step in the panel (0)", "data-zoom": "fit" }, "fit"));
   const head = h("div", { class: "c-panel-head" },
     v.folder ? h("span", { class: "muted" }, `${v.folder} · `) : null,
     pick ? stepSelect(k, pick) : h("b", {}, v.label),
     h("span", { class: "muted" }, v.graph ? ` ${v.graph}` : ""),
-    tasks.map((t, i) => h("span", { class: "c-task", style: { "--t": TASK_COLOURS[i % TASK_COLOURS.length] }, title: `task ${t}: its edges and chips in this colour` }, t)));
+    tasks.map((t, i) => h("span", { class: "c-task", style: { "--t": TASK_COLOURS[i % TASK_COLOURS.length] }, title: `task ${t}: its edges and chips in this colour` }, t)),
+    tools);
   if (v.error || !v.drawing) return h("section", { class: "c-panel broken" }, head, h("p", { class: "load-error" }, v.error || "no drawing"));
   const canvas = h("div", { class: "c-canvas" });
-  const el = h("section", { class: "c-panel" }, head, h("div", { class: "c-scroll" }, canvas));
+  const vp = h("div", { class: "c-scroll c-viewport" }, canvas);
+  const el = h("section", { class: "c-panel" }, head, vp);
   el._view = v;
-  el._ready = layout(v.drawing, probe).then((L) => { el._layout = L; }, (e) => { el._error = e; });
-  el._draw = () => {
+  el._vp = new Viewport(vp, canvas, (x) => { zoom.textContent = `${Math.round(x.s * 100)} %`; });
+  tools.addEventListener("click", (ev) => {
+    const b = ev.target.closest("[data-zoom]");
+    if (!b) return;
+    ev.stopPropagation();
+    const z = el._vp;
+    ({ out: () => z.zoom(1 / 1.2), in: () => z.zoom(1.2), one: () => z.set(1, z.tx, z.ty), fit: () => z.fit() })[b.dataset.zoom]();
+  });
+  el._ready = layout(v.drawing, probe, seed).then((L) => { el._layout = L; }, (e) => { el._error = e; });
+  el._draw = (prev) => {
     if (el._error) {
       canvas.replaceChildren(h("p", { class: "load-error" }, `layout: ${el._error.message || el._error}`));
       return;
     }
     render(canvas, v.drawing, el._layout);
+    el._vp.show(el._layout, prev);
     if (state.mode === "edit") edit.decorate(v, el);
   };
   return el;
@@ -679,13 +697,40 @@ async function estimate() {
 
 // -- drawing a state ----------------------------------------------------------------
 
+/** The layout of the step shown (the last panel's), the order the steps beside it start from. */
+function shownLayout() {
+  const ps = [...$("graphs").children];
+  const p = ps[ps.length - 1];
+  return (p && p._vp && p._vp.L) || null;
+}
+
+/** The steps either side of the one shown, fetched and laid out while the page is idle, so ← →
+draw at once. A step the server will not give yet (a redo step not replayed) is left. */
+function prefetch() {
+  const k = state.k;
+  const idle = window.requestIdleCallback || ((f) => setTimeout(f, 50));
+  idle(async () => {
+    for (const j of [k + 1, k - 1]) {
+      if (j < 0 || j >= state.steps.length || state.k !== k) continue;
+      try {
+        const v = await view(j);
+        if (v.drawing) await layout(v.drawing, probe, shownLayout());
+      } catch {
+        // not there yet: drawn when asked for
+      }
+    }
+  });
+}
+
 async function draw() {
   writeHash();
   $("step").value = String(state.k);
   $("compare").checked = state.cmp !== null;
   $("prev").disabled = state.k <= 0;
   $("next").disabled = state.k >= state.steps.length - 1;
-  status("Loading…");
+  // "Loading…" only for a slow step: the status line takes a row of the header, so showing it
+  // on every step would move the page down and back
+  const slow = setTimeout(() => status("Loading…"), 300);
   try {
     const shown = await view(state.k);
     const there = state.sels.filter((x) => KINDS.some((kind) => shown.details && shown.details[`${kind}:${x}`]));
@@ -694,19 +739,24 @@ async function draw() {
       state.t = null;
       writeHash();
     }
+    // each panel laid out in the order the panel now on screen has (graph.js's ``seeded``)
+    const seeds = [...$("graphs").children].map((p) => (p._vp && p._vp.L) || null);
+    const seed = (i, n) => (seeds.length === n ? seeds[i] : seeds[seeds.length - 1] || null);
     let panels;
     if (state.cmp === null) {
-      panels = [panel(shown, state.k, null)];
+      panels = [panel(shown, state.k, null, seed(0, 1))];
     } else {
       panels = [
-        panel(await view(state.cmp), state.cmp, (j) => { state.cmp = j; draw(); }),
-        panel(shown, state.k, goto),
+        panel(await view(state.cmp), state.cmp, (j) => { state.cmp = j; draw(); }, seed(0, 2)),
+        panel(shown, state.k, goto, seed(1, 2)),
       ];
     }
     await Promise.all(panels.map((p) => p._ready));
     const old = places();
+    // each panel's view of the step before: the boxes both hold stay where they were
+    const prev = [...$("graphs").children].map((p) => p._vp && { L: p._vp.L, s: p._vp.s, tx: p._vp.tx, ty: p._vp.ty });
     $("graphs").replaceChildren(...panels);
-    panels.forEach((p) => p._draw && p._draw());
+    panels.forEach((p, i) => p._draw && p._draw(prev.length === panels.length ? prev[i] : null));
     $("graphs").classList.toggle("two", panels.length === 2);
     const now = panels.map((p) => p._view);
     if (!still() && drawn && old.length === panels.length) {
@@ -715,9 +765,12 @@ async function draw() {
     drawn = now;
     outline();
     await Promise.all([details(), estimate(), blocks(), containers(), bindings(), state.mode === "edit" ? edit.sidebar() : null]);
+    clearTimeout(slow);
     const broken = state.steps.filter((s) => s.error).length;
     status(broken ? `${broken} of ${state.steps.length} files did not load` : "", broken > 0);
+    prefetch();
   } catch (e) {
+    clearTimeout(slow);
     status(String(e.message || e), true);
   }
 }
@@ -863,6 +916,14 @@ document.addEventListener("keydown", (ev) => {
     else edit.undo();
   } else if (ev.altKey || ev.ctrlKey || ev.metaKey) {
     return;
+  } else if (["0", "1", "+", "=", "-"].includes(ev.key)) { // the zoom, in every panel
+    for (const p of document.querySelectorAll("#graphs .c-panel")) {
+      const z = p._vp;
+      if (!z) continue;
+      if (ev.key === "0") z.fit();
+      else if (ev.key === "1") z.set(1, z.tx, z.ty);
+      else z.zoom(ev.key === "-" ? 1 / 1.2 : 1.2);
+    }
   } else if (ev.key === "ArrowLeft" && state.k > 0) goto(state.k - 1);
   else if (ev.key === "ArrowRight" && state.k < state.steps.length - 1) goto(state.k + 1);
 });
