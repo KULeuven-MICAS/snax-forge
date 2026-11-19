@@ -6,17 +6,20 @@
 // old step stays on screen until the new one is laid out; then its boxes glide from where they
 // were (glide), unless the browser asks for reduced motion.
 //
-// The URL hash holds the state, as in the run viewer: #step=<k>&sel=<id>&cmp=<j>&t=<transform>&tech=<tech>&open=<blocks>
+// The URL hash holds the state, as in the run viewer: #step=<k>&sel=<id>&cmp=<j>&t=<transform>&tech=<tech>&open=<blocks>&fold=<loops>&focus=1&zoom=<s,x,y>&zoomc=<s,x,y>
 // (step and cmp, view mode: the steps' names, dot4_w8/6_link from several folders, and an old
 // hash's bare stem or number still opens its step, /api/find; edit mode: numbers; t, edit mode: that transform's form open for the selection; tech, the technology the cost
 // estimate is on, one of /api/mode's techs, passed to every step and compare request; open, the blocks drawn
 // as their nodes, comma-separated, passed as ?expand=). A selection is a name:
 // everything of that name is outlined (a link node and its container share one) and Details
-// shows each. In edit mode (edit.js) the steps are the session's, the shown one its cursor.
+// shows each, and an edge or a container its whole route. fold, the loop chains drawn as one box
+// (by their first loop); focus, the selection's upstream and downstream lit, the rest dimmed; zoom
+// and zoomc, the view of the step and of the step compared. In edit mode (edit.js) the steps are
+// the session's, the shown one its cursor.
 
 import { dragHandle, h, keep, stored } from "./dom.js";
 import * as edit from "./edit.js";
-import { TASK_COLOURS, Viewport, layout, relayout, render } from "./graph.js";
+import { Minimap, TASK_COLOURS, Viewport, chainHead, foldChains, layout, lineage, relayout, render, resetLayout, routes } from "./graph.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -37,7 +40,8 @@ function status(msg, err = false) {
 
 // -- state ----------------------------------------------------------------------
 
-const state = { mode: "view", steps: [], k: 0, cmp: null, sel: null, sels: [], t: null, session: null, platform: null, tech: null, techs: [], expanded: new Set() };
+const state = { mode: "view", steps: [], k: 0, cmp: null, sel: null, sels: [], t: null, session: null, platform: null, tech: null, techs: [], expanded: new Set(),
+  folded: new Set(), focus: false, lock: false, wantZoom: {} };
 
 // The selection: ``sels`` every selected item in the order selected (shift-click adds or
 // removes one), ``sel`` the last, which Details, the Bindings and the hash's ``t`` follow; the
@@ -55,7 +59,12 @@ const num = (v) => (v === null || v === "" || Number.isNaN(Number(v)) ? null : N
 /** The hash as written; ``k`` and ``cmp`` are still its text until ``resolve``. */
 function readHash() {
   const q = new URLSearchParams(location.hash.slice(1));
-  return { k: q.get("step") || null, sel: q.get("sel") || null, cmp: q.get("cmp") || null, t: q.get("t") || null, tech: q.get("tech") || null, open: q.get("open") || null };
+  const zoom = (key) => { // the view: zoom, x, y
+    const z = (q.get(key) || "").split(",").map(Number);
+    return z.length === 3 && z.every(Number.isFinite) && z[0] > 0 ? z : null;
+  };
+  return { k: q.get("step") || null, sel: q.get("sel") || null, cmp: q.get("cmp") || null, t: q.get("t") || null, tech: q.get("tech") || null, open: q.get("open") || null,
+    fold: q.get("fold") || null, focus: q.get("focus") === "1", zoom: zoom("zoom"), zoomc: zoom("zoomc") };
 }
 
 /** The hash's steps as numbers: edit mode's are; view mode's are names, an old hash's a bare
@@ -80,6 +89,12 @@ function writeHash() {
   if (state.t && state.sel) q.set("t", state.t);
   if (state.tech) q.set("tech", state.tech);
   if (state.expanded.size) q.set("open", [...state.expanded].sort().join(","));
+  if (state.folded.size) q.set("fold", [...state.folded].sort().join(","));
+  if (state.focus) q.set("focus", "1");
+  for (const p of document.querySelectorAll("#graphs .c-panel")) { // each panel's view
+    const z = p._vp;
+    if (z && z.L) q.set(p._slot === "cmp" ? "zoomc" : "zoom", [z.s.toFixed(3), Math.round(z.tx), Math.round(z.ty)].join(","));
+  }
   history.replaceState(null, "", `#${q}`);
 }
 
@@ -155,18 +170,21 @@ function stepSelect(current, onChange) {
     stepOptionNodes(current));
 }
 
-/** One panel: a step's drawing (graph.js), laid out before it is shown; with ``pick``, its own
-step dropdown (Compare). After ``share`` the head names the tasks in their colours. The drawing
-pans and zooms in the panel (graph.js's Viewport); the head has the zoom's buttons. */
-function panel(v, k, pick, seed = null) {
+/** One panel: a step's drawing (graph.js), its folded loop chains as one box each, laid out
+before it is shown; with ``pick``, its own step dropdown (Compare); ``slot`` "main" or "cmp" (the
+step compared). After ``share`` the head names the tasks in their colours. The drawing pans and
+zooms in the panel (graph.js's Viewport), a minimap in its corner when it does not fit; the head
+has the zoom's buttons, clean graph, reset and focus. */
+function panel(v, k, pick, seed = null, slot = "main") {
   const tasks = (v.drawing && v.drawing.tasks) || [];
   const zoom = h("span", { class: "c-zoom-read muted" }, "100 %");
+  const button = (key, text, title) => h("button", { type: "button", title, "data-zoom": key }, text);
   const tools = h("span", { class: "c-zoom" },
-    h("button", { type: "button", title: "zoom out (-)", "data-zoom": "out" }, "−"), zoom,
-    h("button", { type: "button", title: "zoom in (+)", "data-zoom": "in" }, "+"),
-    h("button", { type: "button", title: "100 % (1)", "data-zoom": "one" }, "1:1"),
-    h("button", { type: "button", title: "the whole step in the panel (0)", "data-zoom": "fit" }, "fit"),
-    h("button", { type: "button", title: "clean graph: lay this step out again from scratch, every order chosen afresh for the fewest crossings (c)", "data-zoom": "clean" }, "clean graph"));
+    button("out", "−", "zoom out (-)"), zoom, button("in", "+", "zoom in (+)"),
+    button("one", "1:1", "100 % (1)"), button("fit", "fit", "the whole step in the panel (0)"),
+    button("clean", "clean graph", "lay the step out again: after a drag in the order the boxes are in now, so every edge is routed round it; else from scratch, every order chosen afresh for the fewest crossings (c)"),
+    button("reset", "reset", "back to the first layout, every move by hand undone (r)"),
+    h("button", { type: "button", title: "light what the selection reads and feeds, dim the rest (f)", "data-zoom": "focus", "aria-pressed": String(state.focus) }, "focus"));
   const head = h("div", { class: "c-panel-head" },
     v.folder ? h("span", { class: "muted" }, `${v.folder} · `) : null,
     pick ? stepSelect(k, pick) : h("b", {}, v.label),
@@ -174,38 +192,108 @@ function panel(v, k, pick, seed = null) {
     tasks.map((t, i) => h("span", { class: "c-task", style: { "--t": TASK_COLOURS[i % TASK_COLOURS.length] }, title: `task ${t}: its edges and chips in this colour` }, t)),
     tools);
   if (v.error || !v.drawing) return h("section", { class: "c-panel broken" }, head, h("p", { class: "load-error" }, v.error || "no drawing"));
+  const d = foldChains(v.drawing, state.folded);
   const canvas = h("div", { class: "c-canvas" });
   const vp = h("div", { class: "c-scroll c-viewport" }, canvas);
   const el = h("section", { class: "c-panel" }, head, vp);
-  el._view = v;
-  el._vp = new Viewport(vp, canvas, (x) => { zoom.textContent = `${Math.round(x.s * 100)} %`; });
+  Object.assign(el, { _view: v, _d: d, _slot: slot });
+  el._vp = new Viewport(vp, canvas, (x) => {
+    zoom.textContent = `${Math.round(x.s * 100)} %`;
+    if (el._mini) el._mini.draw();
+    viewChanged(el);
+  });
+  el._mini = new Minimap(vp, el._vp);
   tools.addEventListener("click", (ev) => {
     const b = ev.target.closest("[data-zoom]");
     if (!b) return;
     ev.stopPropagation();
     const z = el._vp;
-    ({ out: () => z.zoom(1 / 1.2), in: () => z.zoom(1.2), one: () => z.set(1, z.tx, z.ty), fit: () => z.fit(), clean: () => el._clean() })[b.dataset.zoom]();
+    ({ out: () => z.zoom(1 / 1.2), in: () => z.zoom(1.2), one: () => z.set(1, z.tx, z.ty), fit: () => z.fit(),
+      clean: () => el._clean(), reset: () => el._reset(), focus: () => toggleFocus() })[b.dataset.zoom]();
   });
-  el._ready = layout(v.drawing, probe, seed).then((L) => { el._layout = L; }, (e) => { el._error = e; });
+  el._ready = layout(d, probe, seed).then((L) => { el._layout = L; }, (e) => { el._error = e; });
   el._draw = (prev) => {
     if (el._error) {
       canvas.replaceChildren(h("p", { class: "load-error" }, `layout: ${el._error.message || el._error}`));
       return;
     }
-    render(canvas, v.drawing, el._layout);
-    el._vp.show(el._layout, prev);
+    el._drawn = render(canvas, d, el._layout, () => el._vp.s);
+    const want = state.wantZoom[slot];
+    if (want) { // the view the hash asked for, once
+      el._vp.L = el._layout;
+      el._vp.set(...want);
+      state.wantZoom[slot] = null;
+    } else el._vp.show(el._layout, prev);
+    el._mini.draw(el._drawn);
     if (state.mode === "edit") edit.decorate(v, el);
   };
-  el._clean = async () => { // the step laid out afresh; its boxes glide to their new places
+  const again = async (get) => { // laid out again: the boxes glide to their new places
     if (el._error) return;
     const old = new Map([...el.querySelectorAll(".v3-box")].map((b) => [b.dataset.id, b.getBoundingClientRect()]));
     const prev = { L: el._vp.L, s: el._vp.s, tx: el._vp.tx, ty: el._vp.ty };
-    el._layout = await relayout(v.drawing, probe);
+    el._layout = await get();
     el._draw(prev);
     outline();
     if (!still()) glide(el, old);
   };
+  el._clean = () => again(() => relayout(d, probe, el._layout.moves && el._layout.moves.size ? el._drawn.places() : null));
+  el._reset = () => again(() => resetLayout(d, probe));
   return el;
+}
+
+/** A panel's view moved: the hash keeps it; with the views locked (Compare), the other panel
+moves with it. */
+let locking = false;
+let hashSoon = 0;
+function viewChanged(el) {
+  cancelAnimationFrame(hashSoon);
+  hashSoon = requestAnimationFrame(writeHash);
+  if (!state.lock || locking) return;
+  locking = true;
+  for (const p of document.querySelectorAll("#graphs .c-panel")) {
+    if (p !== el && p._vp && p._vp.L) p._vp.set(el._vp.s, el._vp.tx, el._vp.ty);
+  }
+  locking = false;
+}
+
+function toggleFocus() {
+  state.focus = !state.focus;
+  for (const b of document.querySelectorAll('#graphs [data-zoom="focus"]')) b.setAttribute("aria-pressed", String(state.focus));
+  writeHash();
+  outline();
+}
+
+/** Loop ``id``'s chain folded into one box, or unfolded. */
+function toggleChain(el, id) {
+  const head = el && el._view && el._view.drawing ? chainHead(el._view.drawing, id) : id;
+  if (state.folded.has(head)) state.folded.delete(head);
+  else state.folded.add(head);
+  draw();
+}
+
+/** Find: the boxes whose name or text holds ``text``, in every panel; the next one (after the
+last found) centred and selected. */
+let found = -1;
+function find(text, next = true) {
+  const q = text.trim().toLowerCase();
+  if (!q) return;
+  const panels = [...document.querySelectorAll("#graphs .c-panel")].filter((p) => p._drawn);
+  const main = panels[panels.length - 1];
+  if (!main) return;
+  const hits = main._d.nodes.filter((n) => [n.id, n.sel, n.text, ...(n.chips || []).map(([x]) => x)].some((x) => x && String(x).toLowerCase().includes(q)));
+  hits.sort((a, b) => Number(b.sel === q || b.id === q) - Number(a.sel === q || a.id === q));
+  if (!hits.length) {
+    status(`find: no box holds "${text.trim()}"`, true);
+    return;
+  }
+  status("");
+  found = next ? (found + 1) % hits.length : 0;
+  const n = hits[found];
+  for (const p of panels) {
+    const b = p._drawn.places().get(n.id);
+    if (b) p._vp.centre(b.x + b.w / 2, b.y + b.h / 2, Math.max(p._vp.s, 0.8));
+  }
+  select(n.sel || n.id);
 }
 
 // boxes are measured here before ELK lays them out: hidden, in the page, so its fonts apply
@@ -312,6 +400,25 @@ function outline() {
       for (const other of shared[name] || []) {
         for (const el of panelEl.querySelectorAll(`.c-node[data-sel="${CSS.escape(other)}"]`)) el.classList.add("sel");
       }
+    }
+  }
+  // an edge's or a container's whole route (graph.js's ``routes``); with focus, what the
+  // selection reads and feeds lit and the rest dimmed
+  for (const p of document.querySelectorAll("#graphs .c-panel")) {
+    if (!p._d || !p._drawn) continue;
+    for (const id of routes(p._d, state.sels)) {
+      for (const el of p.querySelectorAll(`[data-edge="${CSS.escape(id)}"]`)) {
+        el.classList.add("sel");
+        if (el._marker) el.setAttribute("marker-end", `url(#${el._marker}-sel)`);
+      }
+    }
+    const lit = state.focus ? lineage(p._d, state.sels) : null;
+    const canvas = p.querySelector(".c-canvas");
+    canvas.classList.toggle("focus", Boolean(lit));
+    for (const el of canvas.querySelectorAll(".lit")) el.classList.remove("lit");
+    if (lit) {
+      for (const id of lit.boxes) { const b = canvas.querySelector(`.v3-box[data-id="${CSS.escape(id)}"]`); if (b) b.classList.add("lit"); }
+      for (const id of lit.edges) for (const el of canvas.querySelectorAll(`[data-edge="${CSS.escape(id)}"]`)) el.classList.add("lit");
     }
   }
   showPartners();
@@ -724,7 +831,7 @@ function prefetch() {
       if (j < 0 || j >= state.steps.length || state.k !== k) continue;
       try {
         const v = await view(j);
-        if (v.drawing) await layout(v.drawing, probe, shownLayout());
+        if (v.drawing) await layout(foldChains(v.drawing, state.folded), probe, shownLayout());
       } catch {
         // not there yet: drawn when asked for
       }
@@ -736,6 +843,7 @@ async function draw() {
   writeHash();
   $("step").value = String(state.k);
   $("compare").checked = state.cmp !== null;
+  $("lock").closest("label").hidden = state.cmp === null;
   $("prev").disabled = state.k <= 0;
   $("next").disabled = state.k >= state.steps.length - 1;
   // "Loading…" only for a slow step: the status line takes a row of the header, so showing it
@@ -754,11 +862,11 @@ async function draw() {
     const seed = (i, n) => (seeds.length === n ? seeds[i] : seeds[seeds.length - 1] || null);
     let panels;
     if (state.cmp === null) {
-      panels = [panel(shown, state.k, null, seed(0, 1))];
+      panels = [panel(shown, state.k, null, seed(0, 1), "main")];
     } else {
       panels = [
-        panel(await view(state.cmp), state.cmp, (j) => { state.cmp = j; draw(); }, seed(0, 2)),
-        panel(shown, state.k, goto, seed(1, 2)),
+        panel(await view(state.cmp), state.cmp, (j) => { state.cmp = j; draw(); }, seed(0, 2), "cmp"),
+        panel(shown, state.k, goto, seed(1, 2), "main"),
       ];
     }
     await Promise.all(panels.map((p) => p._ready));
@@ -810,6 +918,9 @@ async function load() {
   status("Loading…");
   let want = readHash();
   state.expanded = new Set((want.open || "").split(",").filter(Boolean));
+  state.folded = new Set((want.fold || "").split(",").filter(Boolean));
+  state.focus = want.focus;
+  state.wantZoom = { main: want.zoom, cmp: want.zoomc };
   try {
     const mode = await getJSON("/api/mode");
     state.mode = mode.mode;
@@ -892,6 +1003,18 @@ $("compare").addEventListener("change", (ev) => {
   state.cmp = ev.target.checked ? clampStep(state.k - 1) : null;
   draw();
 });
+$("lock").addEventListener("change", (ev) => { // Compare's two views pan and zoom together
+  state.lock = ev.target.checked;
+  const ps = [...document.querySelectorAll("#graphs .c-panel")].filter((p) => p._vp);
+  if (state.lock && ps.length === 2) viewChanged(ps[1]);
+});
+$("find").addEventListener("keydown", (ev) => {
+  if (ev.key === "Enter") {
+    ev.preventDefault();
+    find(ev.target.value);
+  } else if (ev.key === "Escape") ev.target.blur();
+});
+$("find").addEventListener("input", (ev) => { found = -1; if (ev.target.value.trim().length > 1) find(ev.target.value, false); });
 // A click on an item selects it; on empty space it clears the selection, as Esc does.
 $("graphs").addEventListener("click", (ev) => {
   if (ev.target.closest("select")) return;
@@ -902,7 +1025,12 @@ $("graphs").addEventListener("click", (ev) => {
 // A double-click on a block's box or outline opens or closes it (and the blocks sharing its units).
 $("graphs").addEventListener("dblclick", (ev) => {
   const t = ev.target.closest("[data-block]");
-  if (t) toggleBlock(t.getAttribute("data-block"));
+  if (t) {
+    toggleBlock(t.getAttribute("data-block"));
+    return;
+  }
+  const c = ev.target.closest("[data-chain]"); // a loop: its chain folded or unfolded
+  if (c) toggleChain(c.closest(".c-panel"), c.getAttribute("data-chain"));
 });
 // Keys: ← → the steps; Esc closes an open form, then clears the selection; edit mode: Enter
 // applies the form that has the focus, Ctrl+Z (⌘Z) undoes, Ctrl+Shift+Z redoes. In a text field
@@ -926,8 +1054,13 @@ document.addEventListener("keydown", (ev) => {
     else edit.undo();
   } else if (ev.altKey || ev.ctrlKey || ev.metaKey) {
     return;
-  } else if (ev.key === "c") { // clean graph, in every panel
-    for (const p of document.querySelectorAll("#graphs .c-panel")) if (p._clean) p._clean();
+  } else if (ev.key === "c" || ev.key === "r") { // clean graph or reset, in every panel
+    for (const p of document.querySelectorAll("#graphs .c-panel")) if (p._clean) (ev.key === "c" ? p._clean : p._reset)();
+  } else if (ev.key === "f") {
+    toggleFocus();
+  } else if (ev.key === "/") {
+    ev.preventDefault();
+    $("find").focus();
   } else if (["0", "1", "+", "=", "-"].includes(ev.key)) { // the zoom, in every panel
     for (const p of document.querySelectorAll("#graphs .c-panel")) {
       const z = p._vp;
@@ -948,11 +1081,14 @@ window.addEventListener("hashchange", async () => {
     return;
   }
   const open = (want.open || "").split(",").filter(Boolean).sort().join(",");
-  if (open !== [...state.expanded].sort().join(",")) { // another block opened or closed: redraw
+  const fold = (want.fold || "").split(",").filter(Boolean).sort().join(",");
+  if (open !== [...state.expanded].sort().join(",") || fold !== [...state.folded].sort().join(",")) { // a block or a chain opened or closed: redraw
     state.expanded = new Set(open.split(",").filter(Boolean));
+    state.folded = new Set(fold.split(",").filter(Boolean));
     draw();
     return;
   }
+  if (want.focus !== state.focus) toggleFocus();
   const tech = pickTech(want.tech, state.tech);
   if (tech !== state.tech) {
     state.tech = tech;

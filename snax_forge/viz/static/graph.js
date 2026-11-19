@@ -62,7 +62,8 @@ export function boxEl(d, n) {
       n.share ? h("span", { class: "c-share" }, n.share) : null);
   }
   if (n.kind === "loop") {
-    return h("div", { class: `c-map c-loop loop-${n.loop === "untagged" ? "none" : n.loop || "none"}`, "data-id": n.id, "data-sel": n.sel },
+    return h("div", { class: `c-map c-loop loop-${n.loop === "untagged" ? "none" : n.loop || "none"}${n.folded ? " c-folded" : ""}`, "data-id": n.id, "data-sel": n.sel,
+      "data-chain": n.folded ? n.sel : n.id, title: n.folded ? "a folded loop chain: double-click to unfold" : "double-click to fold its loop chain into one box" },
       h("div", { class: "c-bar" }, h("div", {}, n.text), n.sub ? h("div", { class: "c-loop-sub" }, n.sub) : null, chipsEl(d, n)));
   }
   const shaped = n.fold || n.kind === "mux" || n.kind === "demux";
@@ -278,6 +279,7 @@ function liftInputs(d, L) {
 // a drawing's text -> its layout, the last KEEP: a step whose drawing did not change (after an
 // edit elsewhere, a Reload, a step seen before) is not laid out again
 const layouts = new Map();
+const firsts = new Map(); // a drawing's text -> the layout it got first, for reset
 const KEEP = 400;
 
 /** Drawing ``d`` laid out: each box measured in ``probe`` (a hidden element in the page, so the
@@ -287,16 +289,38 @@ export async function layout(d, probe, seed = null) {
   if (layouts.has(key)) return layouts.get(key);
   const L = await layOut(seeded(d, seed), probe, Boolean(seed) && seeded(d, seed) !== d);
   layouts.set(key, L);
+  if (!firsts.has(key)) firsts.set(key, L);
+  if (firsts.size > KEEP) firsts.delete(firsts.keys().next().value);
   if (layouts.size > KEEP) layouts.delete(layouts.keys().next().value);
   return L;
 }
 
-/** Drawing ``d`` laid out again from scratch, ELK free to choose every order (clean graph);
-the layout kept for it from now on. */
-export async function relayout(d, probe) {
-  const L = await layOut(d, probe);
+/** Drawing ``d`` laid out again (clean graph), the layout kept for it from now on: with ``at``
+(the boxes' places after a drag, id -> {x, w}) in the left-to-right order they are in now, so
+every edge is routed again round the arrangement made by hand; else from scratch, ELK free to
+choose every order. */
+export async function relayout(d, probe, at = null) {
+  const L = at ? await layOut(seeded(d, { boxes: at }), probe, true) : await layOut(d, probe);
   layouts.set(JSON.stringify(d), L);
   return L;
+}
+
+/** Drawing ``d``'s first layout again, the moves by hand dropped (reset). */
+export async function resetLayout(d, probe) {
+  const key = JSON.stringify(d);
+  const L = firsts.get(key);
+  if (!L) return layout(d, probe);
+  L.moves = new Map();
+  layouts.set(key, L);
+  return L;
+}
+
+/** The first loop of the chain loop ``id`` is in (its hops followed up). */
+export function chainHead(d, id) {
+  const loops = new Set(d.nodes.filter((n) => n.kind === "loop").map((n) => n.id));
+  let at = id;
+  for (let prev; (prev = d.edges.find((e) => e.to === at && loops.has(e.from) && loops.has(at)));) at = prev.from;
+  return at;
 }
 
 const SEED_SHARE = 0.6; // of a step's boxes the step before must hold to keep its order
@@ -395,138 +419,385 @@ const edgeColour = (d, e) => (e.task && d.tasks.length && e.style !== "wire" ? t
 
 let uid = 0;
 
-/** Drawing ``d`` with layout ``L`` into ``canvas`` (emptied first): the outlines and edges, the
-boxes, the port names. Returns the boxes by id. */
-export function render(canvas, d, L) {
-  const k = ++uid;
-  canvas.replaceChildren();
-  canvas.classList.add("v3");
-  canvas.style.width = `${L.width}px`;
-  canvas.style.height = `${L.height}px`;
-  const svg = svgEl("svg", { class: "dfg-edges", width: L.width, height: L.height });
-  const defs = svgEl("defs");
-  const colours = [];
-  const marker = (colour) => {
-    let i = colours.indexOf(colour);
-    if (i < 0) {
-      i = colours.push(colour) - 1;
-      for (const [id, fill] of [[`m${k}-${i}`, colour], [`m${k}-${i}-sel`, "var(--hl)"]]) {
-        const m = svgEl("marker", { id, viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 7, markerHeight: 7,
-          orient: "auto-start-reverse", markerUnits: "userSpaceOnUse" });
-        const p = svgEl("path", { d: "M0,0 L10,5 L0,10 z" });
-        p.style.fill = fill;
-        m.append(p);
-        defs.append(m);
-      }
-    }
-    return `m${k}-${i}`;
-  };
-  svg.append(defs);
-  // outlines first, under everything
-  const outlines = d.outlines.map((o) => {
-    const b = L.boxes.get(o.id);
-    if (!b) return null;
-    const cls = { group: "group-box", accelerator: "acc-box", block: "block-box" }[o.kind] || "group-box";
-    const g = svgEl("g", { class: cls, "data-sel": o.sel, "data-group": o.kind === "group" ? o.sel : null, "data-block": o.block || null });
-    const rect = { x: b.x, y: b.y, width: b.w, height: b.h, rx: o.kind === "block" ? 10 : 6 };
-    const t = svgEl("text", { class: "v3-title" });
-    t.textContent = o.text;
-    g.append(svgEl("rect", { ...rect, class: "outline-hit" }), svgEl("rect", rect), t);
-    if (o.kind === "block") {
-      const tip = svgEl("title");
-      tip.textContent = "double-click to collapse";
-      g.append(tip);
-    }
-    svg.append(g);
-    return { o, b, t };
-  }).filter(Boolean);
-  const edgeLayer = svgEl("g");
-  const labels = svgEl("g");
-  const drawn = [];
-  d.edges.forEach((e, i) => {
-    const le = L.edges[i];
-    if (!le || !le.pts.length) return;
-    const pts = cleanPts(le.pts);
-    const path = rounded(pts);
-    const colour = edgeColour(d, e);
-    const hit = svgEl("path", { d: path, class: "edge-hit", "data-sel": e.id });
-    const tip = svgEl("title");
-    tip.textContent = [e.sub, e.task ? `task ${e.task}` : null].filter(Boolean).join(" · ") || e.id;
-    hit.append(tip);
-    const p = svgEl("path", { d: path, class: `edge v3 ${e.style}`, "data-sel": e.id });
-    p.style.setProperty("--c", colour);
-    if (e.style !== "empty") {
-      p._marker = marker(colour);
-      p.setAttribute("marker-end", `url(#${p._marker})`);
-    }
-    edgeLayer.append(hit, p);
-    if (e.label && le.label) {
-      const t = svgEl("text", { x: le.label.x, y: le.label.y + (e.transpose ? 4.5 : 0), class: `edge-label v3-label ${e.style}${e.transpose ? " transpose" : ""}`, "data-sel": e.id });
-      if (e.task && d.tasks.length) t.style.fill = colour;
-      t.textContent = e.label;
-      labels.append(t);
-    }
-    drawn.push(pts);
-  });
-  svg.append(edgeLayer, labels);
-  canvas.append(svg);
-  const els = new Map();
-  for (const n of d.nodes) {
-    const b = L.boxes.get(n.id);
-    const el = boxEl(d, n);
-    el.classList.add("v3-box");
-    Object.assign(el.style, { left: `${b.x}px`, top: `${b.y}px`, width: `${b.w}px`, height: `${b.h}px` });
-    canvas.append(el);
-    els.set(n.id, el);
+/** A right-angled route from an output (below a box) to an input (above one), for an edge whose
+end was moved by hand. */
+function reroute(a, b) {
+  const gap = 14;
+  if (b.y - a.y > 2 * gap) {
+    const my = b.y - gap - Math.min(18, (b.y - a.y) / 4);
+    return [a, { x: a.x, y: my }, { x: b.x, y: my }, b];
   }
-  // port names, over the boxes
-  const top = svgEl("svg", { class: "dfg-edges v3-top", width: L.width, height: L.height });
-  for (const n of d.nodes) {
-    const b = L.boxes.get(n.id);
-    for (const side of ["in", "out"]) {
-      if (!shownNames(n, side)) continue;
-      for (const name of side === "in" ? n.ins : n.outs) {
-        const p = b.ports.get(`${n.id}.${name}`);
-        if (!p) continue;
-        const task = (n.port_tasks || {})[name];
-        const t = svgEl("text", { class: "v3-pname", x: p.x, y: p.y + (side === "in" ? 13 : -7) });
-        if (task) t.style.fill = taskColour(d, task);
-        t.textContent = task ? name.split("·")[0] : name; // a mux's port: its task by colour
-        top.append(t);
-      }
-    }
-  }
-  canvas.append(top);
-  // the titles, once the text is in the page and measurable
-  const boxes = d.nodes.map((n) => L.boxes.get(n.id)).map((b) => [b.x, b.y, b.x + b.w, b.y + b.h]);
-  const segs = drawn.flatMap((p) => p.slice(1).map((q, i) => [Math.min(p[i].x, q.x), Math.min(p[i].y, q.y), Math.max(p[i].x, q.x), Math.max(p[i].y, q.y)]));
-  requestAnimationFrame(() => outlines.forEach((ol) => placeTitle(ol, segs, boxes)));
-  return els;
+  const side = Math.max(a.x, b.x) + 30;
+  return [a, { x: a.x, y: a.y + gap }, { x: side, y: a.y + gap }, { x: side, y: b.y - gap }, { x: b.x, y: b.y - gap }, b];
 }
 
-/** An outline's title where it crosses the fewest wires and boxes: along its top inside edge,
-then its bottom one (half a crossing dearer), leftmost among equals. */
-function placeTitle(ol, segs, boxes) {
-  const r = ol.b;
-  const tw = (ol.t.getComputedTextLength ? ol.t.getComputedTextLength() : 0) + 6;
-  const th = 16;
-  const hits = (x0, y0) => {
-    const x1 = x0 + tw, y1 = y0 + th;
-    let n = 0;
-    for (const s of segs) if (s[0] <= x1 && s[2] >= x0 && s[1] <= y1 && s[3] >= y0) n++;
-    for (const b of boxes) if (b[0] <= x1 && b[2] >= x0 && b[1] <= y1 && b[3] >= y0) n += 2;
-    return n;
-  };
-  let best = null;
-  for (const [y0, cost] of [[r.y + 4, 0], [r.y + r.h - th - 3, 0.5]]) {
-    for (let x0 = r.x + 8; x0 + tw <= r.x + r.w - 6; x0 += 4) {
-      const score = hits(x0, y0) + cost + (x0 - r.x) * 1e-4;
-      if (!best || score < best.score) best = { score, x0, y0 };
+/** Drawing ``d`` with layout ``L`` into ``canvas`` (emptied first): the outlines and edges, the
+boxes, the port names. A box dragged moves by hand (``L.moves``, kept with the layout while the
+page is open): its edges are routed again as right angles and its outlines grow round it; an
+outline's title drags all it holds. ``scale()`` is the view's zoom, so a drag follows the
+pointer. */
+export function render(canvas, d, L, scale = () => 1) {
+  return new Drawn(canvas, d, L, scale);
+}
+
+class Drawn {
+  constructor(canvas, d, L, scale) {
+    Object.assign(this, { canvas, d, L, scale });
+    if (!L.moves) L.moves = new Map();
+    const k = ++uid;
+    canvas.replaceChildren();
+    canvas.classList.add("v3");
+    canvas.style.width = `${L.width}px`;
+    canvas.style.height = `${L.height}px`;
+    const svg = svgEl("svg", { class: "dfg-edges", width: L.width, height: L.height });
+    const defs = svgEl("defs");
+    const colours = [];
+    const marker = (colour) => {
+      let i = colours.indexOf(colour);
+      if (i < 0) {
+        i = colours.push(colour) - 1;
+        for (const [id, fill] of [[`m${k}-${i}`, colour], [`m${k}-${i}-sel`, "var(--hl)"]]) {
+          const m = svgEl("marker", { id, viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 7, markerHeight: 7,
+            orient: "auto-start-reverse", markerUnits: "userSpaceOnUse" });
+          const p = svgEl("path", { d: "M0,0 L10,5 L0,10 z" });
+          p.style.fill = fill;
+          m.append(p);
+          defs.append(m);
+        }
+      }
+      return `m${k}-${i}`;
+    };
+    svg.append(defs);
+    // outlines first, under everything; each holds its boxes and the outlines inside it
+    const inside = new Map(d.outlines.map((o) => [o.id, []]));
+    for (const n of d.nodes) if (n.parent && inside.has(n.parent)) inside.get(n.parent).push(n.id);
+    const kids = (oid) => [...inside.get(oid), ...d.outlines.filter((o) => o.parent === oid).flatMap((o) => kids(o.id))];
+    this.outlines = d.outlines.map((o) => {
+      const b = L.boxes.get(o.id);
+      if (!b) return null;
+      const cls = { group: "group-box", accelerator: "acc-box", block: "block-box" }[o.kind] || "group-box";
+      const g = svgEl("g", { class: cls, "data-sel": o.sel, "data-group": o.kind === "group" ? o.sel : null, "data-block": o.block || null });
+      const rect = { x: b.x, y: b.y, width: b.w, height: b.h, rx: o.kind === "block" ? 10 : 6 };
+      const rects = [svgEl("rect", { ...rect, class: "outline-hit" }), svgEl("rect", rect)];
+      const t = svgEl("text", { class: "v3-title", "data-outline": o.id });
+      t.textContent = o.text;
+      const tip = svgEl("title");
+      tip.textContent = `${o.kind === "block" ? "double-click to collapse; " : ""}drag the title to move what it holds`;
+      t.append(tip);
+      g.append(...rects, t);
+      svg.append(g);
+      return { o, base: b, r: b, rects, t, holds: kids(o.id) };
+    }).filter(Boolean);
+    const edgeLayer = svgEl("g");
+    const labels = svgEl("g");
+    this.edges = [];
+    d.edges.forEach((e, i) => {
+      const le = L.edges[i];
+      if (!le || !le.pts.length) return;
+      const colour = edgeColour(d, e);
+      const hit = svgEl("path", { class: "edge-hit", "data-sel": e.id });
+      const tip = svgEl("title");
+      tip.textContent = [e.sub, e.task ? `task ${e.task}` : null].filter(Boolean).join(" · ") || e.id;
+      hit.append(tip);
+      const path = svgEl("path", { class: `edge v3 ${e.style}`, "data-sel": e.id, "data-edge": e.id });
+      path.style.setProperty("--c", colour);
+      if (e.style !== "empty") {
+        path._marker = marker(colour);
+        path.setAttribute("marker-end", `url(#${path._marker})`);
+      }
+      edgeLayer.append(hit, path);
+      let label = null;
+      if (e.label && le.label) {
+        label = svgEl("text", { class: `edge-label v3-label ${e.style}${e.transpose ? " transpose" : ""}`, "data-sel": e.id, "data-edge": e.id });
+        if (e.task && d.tasks.length) label.style.fill = colour;
+        label.textContent = e.label;
+        labels.append(label);
+      }
+      this.edges.push({ e, src: le.src, dst: le.dst, base: cleanPts(le.pts), path, hit, label,
+        lpos: le.label ? { x: le.label.x, y: le.label.y + (e.transpose ? 4.5 : 0) } : null });
+    });
+    svg.append(edgeLayer, labels);
+    canvas.append(svg);
+    this.els = new Map();
+    for (const n of d.nodes) {
+      const b = L.boxes.get(n.id);
+      const el = boxEl(d, n);
+      el.classList.add("v3-box");
+      Object.assign(el.style, { width: `${b.w}px`, height: `${b.h}px` });
+      canvas.append(el);
+      this.els.set(n.id, el);
+    }
+    // port names, over the boxes
+    const top = svgEl("svg", { class: "dfg-edges v3-top", width: L.width, height: L.height });
+    this.pnames = [];
+    for (const n of d.nodes) {
+      const b = L.boxes.get(n.id);
+      for (const side of ["in", "out"]) {
+        if (!shownNames(n, side)) continue;
+        for (const name of side === "in" ? n.ins : n.outs) {
+          const p = b.ports.get(`${n.id}.${name}`);
+          if (!p) continue;
+          const task = (n.port_tasks || {})[name];
+          const t = svgEl("text", { class: "v3-pname" });
+          if (task) t.style.fill = taskColour(d, task);
+          t.textContent = task ? name.split("·")[0] : name; // a mux's port: its task by colour
+          top.append(t);
+          this.pnames.push({ t, node: n.id, p, dy: side === "in" ? 13 : -7 });
+        }
+      }
+    }
+    canvas.append(top);
+    this.place(d.nodes.map((n) => n.id), true);
+    // the titles, once the text is in the page and measurable
+    requestAnimationFrame(() => this.titles());
+    this.dragging();
+  }
+
+  /** Box ``id`` where it is drawn: its layout place and any move by hand. */
+  box(id) {
+    const b = this.L.boxes.get(id);
+    const [dx, dy] = this.L.moves.get(id) || [0, 0];
+    return { x: b.x + dx, y: b.y + dy, w: b.w, h: b.h };
+  }
+
+  port(pid, node) {
+    const p = this.L.boxes.get(node).ports.get(pid);
+    const [dx, dy] = this.L.moves.get(node) || [0, 0];
+    return { x: p.x + dx, y: p.y + dy };
+  }
+
+  /** The boxes ``ids`` put where they are, and what hangs on them drawn again. */
+  place(ids, all = false) {
+    const { L, d } = this;
+    const touched = new Set(ids);
+    for (const id of ids) {
+      const b = this.box(id);
+      Object.assign(this.els.get(id).style, { left: `${b.x}px`, top: `${b.y}px` });
+    }
+    for (const x of this.edges) {
+      if (!all && !touched.has(x.e.from) && !touched.has(x.e.to)) continue;
+      const moved = L.moves.has(x.e.from) || L.moves.has(x.e.to);
+      x.pts = moved ? cleanPts(reroute(this.port(x.src, x.e.from), this.port(x.dst, x.e.to))) : x.base;
+      const path = rounded(x.pts);
+      x.path.setAttribute("d", path);
+      x.hit.setAttribute("d", path);
+      if (x.label) {
+        const at = moved ? { x: x.pts[0].x + 5, y: (x.pts[0].y + x.pts[1].y) / 2 + 4 } : x.lpos;
+        x.label.setAttribute("x", at.x);
+        x.label.setAttribute("y", at.y);
+      }
+    }
+    for (const pn of this.pnames) {
+      if (!all && !touched.has(pn.node)) continue;
+      const [dx, dy] = L.moves.get(pn.node) || [0, 0];
+      pn.t.setAttribute("x", pn.p.x + dx);
+      pn.t.setAttribute("y", pn.p.y + dy + pn.dy);
+    }
+    // an outline holds its boxes: grown round them once one of them moved, inner ones first
+    const rects = new Map();
+    for (const ol of [...this.outlines].reverse()) {
+      let r = ol.base;
+      if (ol.holds.some((id) => L.moves.has(id))) {
+        const pad = PAD[ol.o.kind] || 28;
+        const bs = ol.holds.map((id) => this.box(id));
+        for (const o of d.outlines.filter((x) => x.parent === ol.o.id)) if (rects.has(o.id)) bs.push(rects.get(o.id));
+        const x0 = Math.min(...bs.map((b) => b.x)) - 14, y0 = Math.min(...bs.map((b) => b.y)) - pad;
+        const x1 = Math.max(...bs.map((b) => b.x + b.w)) + 14, y1 = Math.max(...bs.map((b) => b.y + b.h)) + 14;
+        r = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+      }
+      rects.set(ol.o.id, r);
+      ol.r = r;
+      for (const rect of ol.rects) {
+        rect.setAttribute("x", r.x);
+        rect.setAttribute("y", r.y);
+        rect.setAttribute("width", r.w);
+        rect.setAttribute("height", r.h);
+      }
+    }
+    if (!all) this.titles();
+  }
+
+  /** Every outline's title where it crosses the fewest wires and boxes: along its top inside
+  edge, then its bottom one (half a crossing dearer), leftmost among equals. */
+  titles() {
+    const segs = this.edges.flatMap(({ pts: p }) => p.slice(1).map((q, i) => [Math.min(p[i].x, q.x), Math.min(p[i].y, q.y), Math.max(p[i].x, q.x), Math.max(p[i].y, q.y)]));
+    const boxes = this.d.nodes.map((n) => this.box(n.id)).map((b) => [b.x, b.y, b.x + b.w, b.y + b.h]);
+    for (const ol of this.outlines) {
+      const r = ol.r;
+      const tw = ol.t.getComputedTextLength() + 6;
+      const th = 16;
+      const hits = (x0, y0) => {
+        const x1 = x0 + tw, y1 = y0 + th;
+        let n = 0;
+        for (const s of segs) if (s[0] <= x1 && s[2] >= x0 && s[1] <= y1 && s[3] >= y0) n++;
+        for (const b of boxes) if (b[0] <= x1 && b[2] >= x0 && b[1] <= y1 && b[3] >= y0) n += 2;
+        return n;
+      };
+      let best = null;
+      for (const [y0, cost] of [[r.y + 4, 0], [r.y + r.h - th - 3, 0.5]]) {
+        for (let x0 = r.x + 8; x0 + tw <= r.x + r.w - 6; x0 += 4) {
+          const score = hits(x0, y0) + cost + (x0 - r.x) * 1e-4;
+          if (!best || score < best.score) best = { score, x0, y0 };
+        }
+      }
+      if (!best) best = { x0: r.x + 8, y0: r.y + 4 };
+      ol.t.setAttribute("x", best.x0 + 2);
+      ol.t.setAttribute("y", best.y0 + 12.5);
     }
   }
-  if (!best) best = { x0: r.x + 8, y0: r.y + 4 };
-  ol.t.setAttribute("x", best.x0 + 2);
-  ol.t.setAttribute("y", best.y0 + 12.5);
+
+  /** A press on a box (or an outline's title) that moves drags it; one that does not is a
+  click, which selects as before. */
+  dragging() {
+    const start = (ev, ids) => {
+      if (ev.button !== 0) return;
+      ev.stopPropagation();
+      const was = ids.map((id) => this.L.moves.get(id) || [0, 0]);
+      const at = { x: ev.clientX, y: ev.clientY };
+      let moved = false;
+      const move = (e) => {
+        const dx = (e.clientX - at.x) / this.scale(), dy = (e.clientY - at.y) / this.scale();
+        if (!moved && Math.abs(dx) + Math.abs(dy) < 4 / this.scale()) return;
+        if (!moved) for (const id of ids) this.els.get(id).classList.add("moving");
+        moved = true;
+        ids.forEach((id, i) => this.L.moves.set(id, [was[i][0] + dx, was[i][1] + dy]));
+        this.place(ids);
+      };
+      const up = () => {
+        removeEventListener("pointermove", move);
+        removeEventListener("pointerup", up);
+        for (const id of ids) this.els.get(id).classList.remove("moving");
+        if (moved) this.canvas.addEventListener("click", (e) => e.stopPropagation(), { capture: true, once: true });
+      };
+      addEventListener("pointermove", move);
+      addEventListener("pointerup", up);
+    };
+    this.canvas.addEventListener("pointerdown", (ev) => {
+      const t = ev.target.closest("[data-outline]");
+      if (t) {
+        const ol = this.outlines.find((x) => x.o.id === t.dataset.outline);
+        if (ol) start(ev, ol.holds);
+        return;
+      }
+      const el = ev.target.closest(".v3-box");
+      if (el) start(ev, [el.dataset.id]);
+    });
+  }
+
+  /** The canvas places of the boxes, for the minimap and find: id -> {x, y, w, h}. */
+  places() {
+    return new Map(this.d.nodes.map((n) => [n.id, this.box(n.id)]));
+  }
+}
+
+// -- what a selection lights ------------------------------------------------------------------
+
+// a box data pass through on their way, and the port each side of it that carries them on: a
+// mux's ``a·mvt`` in becomes its ``a`` out, a demux's ``out`` in its ``out·mvt`` out
+const THROUGH = {
+  mux: { on: (inP, outP, task) => outP === inP.split("·")[0], back: (outP, inP, task) => inP.split("·")[0] === outP && (!task || inP.endsWith(`·${task}`)) },
+  demux: { on: (inP, outP, task) => outP.split("·")[0] === inP && (!task || outP.endsWith(`·${task}`)), back: (outP, inP) => inP === outP.split("·")[0] },
+  slicer: { on: () => true, back: () => true },
+  packer: { on: () => true, back: () => true },
+  link: { on: () => true, back: () => true },
+};
+
+/** The edges a selection traces: an edge's whole route, every hop of its datum to the same port
+(``data``, ``node``, ``port``), on through the muxes, slicers, packers and link FIFOs it passes;
+a container's every route. */
+export function routes(d, sels) {
+  const kind = new Map(d.nodes.map((n) => [n.id, n.kind]));
+  const out = new Set();
+  const seeds = [];
+  for (const s of sels) {
+    const e = d.edges.find((x) => x.id === s);
+    if (e) seeds.push(...(e.data && e.node ? d.edges.filter((x) => x.data === e.data && x.node === e.node && x.port === e.port) : [e]));
+    else if (d.nodes.some((n) => n.kind === "container" && n.sel === s)) seeds.push(...d.edges.filter((x) => x.data === s));
+  }
+  const todo = seeds.map((e) => [e, e.task]);
+  while (todo.length) {
+    const [e, task] = todo.pop();
+    if (out.has(e.id)) continue;
+    out.add(e.id);
+    const on = THROUGH[kind.get(e.to)];
+    if (on) for (const x of d.edges) if (x.from === e.to && on.on(e.to_port || "", x.from_port || "", task)) todo.push([x, task]);
+    const back = THROUGH[kind.get(e.from)];
+    if (back) for (const x of d.edges) if (x.to === e.from && back.back(e.from_port || "", x.to_port || "", task)) todo.push([x, task]);
+  }
+  return out;
+}
+
+/** The boxes and edges upstream and downstream of the selection (focus): every box a path of
+edges joins to a selected box, either way, and the edges between them. */
+export function lineage(d, sels) {
+  const boxes = new Set();
+  for (const n of d.nodes) {
+    if (sels.includes(n.sel) || sels.includes(n.id) || (n.chips || []).some(([x]) => sels.includes(x))) boxes.add(n.id);
+  }
+  for (const e of d.edges) if (sels.includes(e.id)) boxes.add(e.from).add(e.to);
+  if (!boxes.size) return null;
+  const lit = new Set(boxes);
+  for (const [a, b] of [["from", "to"], ["to", "from"]]) {
+    const todo = [...boxes];
+    const seen = new Set(boxes);
+    while (todo.length) {
+      const id = todo.pop();
+      for (const e of d.edges) {
+        if (e[a] !== id || seen.has(e[b])) continue;
+        seen.add(e[b]);
+        lit.add(e[b]);
+        todo.push(e[b]);
+      }
+    }
+  }
+  return { boxes: lit, edges: new Set(d.edges.filter((e) => lit.has(e.from) && lit.has(e.to)).map((e) => e.id)) };
+}
+
+// -- folding a loop chain -------------------------------------------------------------------
+
+/** Drawing ``d`` with the loop chains whose first loop is in ``folded`` drawn as one box each
+(``fold:<first loop>``): the edges into any of its loops go into it, those out of any leave it,
+the hops between its loops go. A chain is the loops joined by their hops. */
+export function foldChains(d, folded) {
+  if (!folded || !folded.size) return d;
+  const loops = new Map(d.nodes.filter((n) => n.kind === "loop").map((n) => [n.id, n]));
+  const up = new Map();
+  for (const e of d.edges) if (loops.has(e.from) && loops.has(e.to)) up.set(e.to, e.from);
+  const head = (id) => (up.has(id) ? head(up.get(id)) : id);
+  const into = new Map(); // a folded loop -> its box
+  const chains = new Map();
+  for (const id of loops.keys()) {
+    const h = head(id);
+    if (!folded.has(h)) continue;
+    into.set(id, `fold:${h}`);
+    if (!chains.has(h)) chains.set(h, []);
+    chains.get(h).push(loops.get(id));
+  }
+  if (!into.size) return d;
+  const nodes = [];
+  for (const n of d.nodes) {
+    if (!into.has(n.id)) {
+      nodes.push(n);
+      continue;
+    }
+    const h = head(n.id);
+    if (n.id !== h) continue;
+    const chain = chains.get(h);
+    nodes.push({ id: `fold:${h}`, kind: "loop", loop: chain[0].loop, sel: h, folded: true, row: n.row,
+      text: `${h} ▸ ${chain.length} loop${chain.length > 1 ? "s" : ""}`, sub: chain.map((x) => x.sub).join(" › "),
+      chips: chain.flatMap((x) => x.chips || []) });
+  }
+  const seen = new Set();
+  const edges = [];
+  for (const e of d.edges) {
+    const a = into.get(e.from) || e.from, b = into.get(e.to) || e.to;
+    if (a === b) continue;
+    const id = `${a}${e.from_port && !into.has(e.from) ? `.${e.from_port}` : ""}->${b}${e.to_port && !into.has(e.to) ? `.${e.to_port}` : ""}#${e.data || ""}`;
+    if (seen.has(id)) continue; // one edge per datum between a folded chain and a box
+    seen.add(id);
+    edges.push({ ...e, from: a, to: b });
+  }
+  return { ...d, nodes, edges };
 }
 
 // -- pan and zoom -----------------------------------------------------------------------------
@@ -586,6 +857,12 @@ export class Viewport {
     this.set(s, cx - ((cx - this.tx) * s) / this.s, cy - ((cy - this.ty) * s) / this.s);
   }
 
+  /** The canvas point (``cx``, ``cy``) in the middle of the panel, at zoom ``s``. */
+  centre(cx, cy, s = this.s) {
+    const r = this.vp.getBoundingClientRect();
+    this.set(s, r.width / 2 - cx * s, r.height / 2 - cy * s);
+  }
+
   /** Zoom by ``f`` about the middle of the panel. */
   zoom(f) {
     const r = this.vp.getBoundingClientRect();
@@ -617,5 +894,57 @@ export class Viewport {
     };
     const [ox, oy] = at(prev.L), [nx, ny] = at(L);
     this.set(prev.s, prev.tx + (ox - nx) * prev.s, prev.ty + (oy - ny) * prev.s);
+  }
+}
+
+// -- the minimap ------------------------------------------------------------------------------
+
+/** A small map of the whole step in the panel's corner, the part in view outlined; a click or a
+drag on it moves the view there. Shown only when the step does not fit the panel. */
+export class Minimap {
+  constructor(vp, view) {
+    this.view = view;
+    this.el = document.createElement("canvas");
+    this.el.className = "c-minimap";
+    this.el.title = "the whole step: click or drag to move the view";
+    vp.append(this.el);
+    const go = (e) => {
+      const r = this.el.getBoundingClientRect();
+      if (!this.k) return;
+      this.view.centre((e.clientX - r.left) / this.k, (e.clientY - r.top) / this.k);
+    };
+    this.el.addEventListener("pointerdown", (e) => {
+      e.stopPropagation();
+      this.el.setPointerCapture(e.pointerId);
+      go(e);
+      const move = (ev) => go(ev);
+      this.el.addEventListener("pointermove", move);
+      this.el.addEventListener("pointerup", () => this.el.removeEventListener("pointermove", move), { once: true });
+    });
+    this.el.addEventListener("click", (e) => e.stopPropagation());
+  }
+
+  draw(drawn) {
+    if (drawn) this.drawn = drawn;
+    const v = this.view, L = v.L;
+    if (!L || !this.drawn) return;
+    const r = v.vp.getBoundingClientRect();
+    const fits = L.width * v.s <= r.width + 1 && L.height * v.s <= r.height + 1;
+    this.el.hidden = fits;
+    if (fits) return;
+    const W = 170;
+    this.k = Math.min(W / L.width, 130 / L.height);
+    const w = Math.ceil(L.width * this.k), h = Math.ceil(L.height * this.k);
+    const dpr = window.devicePixelRatio || 1;
+    Object.assign(this.el, { width: w * dpr, height: h * dpr });
+    Object.assign(this.el.style, { width: `${w}px`, height: `${h}px` });
+    const c = this.el.getContext("2d");
+    c.setTransform(dpr * this.k, 0, 0, dpr * this.k, 0, 0);
+    const css = getComputedStyle(v.vp);
+    c.fillStyle = css.getPropertyValue("--edge") || "#888";
+    for (const b of this.drawn.places().values()) c.fillRect(b.x, b.y, b.w, b.h);
+    c.strokeStyle = css.getPropertyValue("--hl") || "#d4386a";
+    c.lineWidth = 2 / this.k;
+    c.strokeRect(-v.tx / v.s, -v.ty / v.s, r.width / v.s, r.height / v.s);
   }
 }

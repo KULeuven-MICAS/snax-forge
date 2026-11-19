@@ -893,3 +893,13 @@ svg.dfg-edges text.v3-pname { font: 500 9.5px ui-monospace, "SF Mono", Menlo, Co
 /* an outline's title, placed where it crosses the fewest wires (graph.js) */
 svg.dfg-edges text.v3-title { font-size: 0.85rem; paint-order: stroke; stroke: var(--bg); stroke-width: 4px; stroke-linejoin: round; }
 .c-task { margin-left: 0.6rem; padding: 0 0.4rem; border-left: 4px solid var(--t); font: 600 0.8rem ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+/* drag, focus, folded chains, the minimap, find */
+.v3-box.moving { z-index: 5; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18); cursor: grabbing; }
+svg.dfg-edges text.v3-title { pointer-events: visiblePainted; cursor: grab; }
+.c-canvas.focus .v3-box:not(.lit), .c-canvas.focus path.edge:not(.lit), .c-canvas.focus text.v3-label:not(.lit) { opacity: 0.18; }
+.c-canvas.focus .v3-box.sel, .c-canvas.focus path.edge.sel { opacity: 1; }
+.c-map.c-loop.c-folded { box-shadow: 4px 4px 0 -1px var(--panel), 4px 4px 0 0 var(--loop); }
+.c-map.c-loop.c-folded.sel { box-shadow: 0 0 0 2px var(--hl); }
+.c-minimap { position: absolute; right: var(--space-2); bottom: var(--space-2); z-index: 4; border: 1px solid var(--rule); border-radius: 3px; background: color-mix(in srgb, var(--panel) 92%, transparent); cursor: crosshair; opacity: 0.9; }
+.c-zoom button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
+.dfg-find { width: 11rem; }
