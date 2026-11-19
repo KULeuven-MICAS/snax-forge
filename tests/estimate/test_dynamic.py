@@ -90,6 +90,7 @@ def test_a_sliced_seed_pops_once_a_job():
         0.0,
         0.0,
         0.0,
+        8,
         {"sum.seed": ("sum", "pushes", 0.5), "sum.a": ("sum", "firings", 0.7)},
     )
     e = price(p, Counts({"sum": (40, 4)}, busy=42))

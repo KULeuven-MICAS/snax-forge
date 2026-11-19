@@ -1,9 +1,10 @@
 """The copies a graph makes outside its accelerators: data_transpose's ``transpose`` nodes.
 
 ``copies(graph)`` gives a ``CopyEstimate`` per transpose node (CONTRACTS, "Estimate"): by the
-DMA one burst per element of its input, ``DMA_CYCLES_PER_BURST`` cycles each, and two L1
-accesses per burst (one read, one write) whatever the burst's size, priced at the banks'
-per-access energy in the memory part (``Estimate.memory``). The DMA engine itself is not priced.
+DMA one burst per element of its input, ``DMA_CYCLES_PER_BURST`` cycles each, and per burst
+one beat read and one written on L1's superbank port, whatever the burst's size: a crossbar
+access each and a read or a write on every bank of the superbank (``Estimate.xbar``,
+``Estimate.memory``). The DMA engine itself is not priced.
 """
 
 from __future__ import annotations
@@ -38,7 +39,7 @@ class CopyEstimate:
 
     @property
     def accesses(self) -> int:
-        """Its L1 accesses: one read and one write per burst."""
+        """Its accesses on the superbank port: one read and one write per burst."""
         return 2 * self.bursts
 
     def to_dict(self) -> dict[str, Any]:

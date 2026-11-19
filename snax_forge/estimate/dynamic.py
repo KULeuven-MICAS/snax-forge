@@ -11,9 +11,10 @@ stalls) and grants. A unit fires its firings times its span, a buffer link loads
 pushes its producer's pushes, a slicer pops on its unit's firings (a seed's on its pushes, one a
 job), the control units clock every group's busy cycle, a mover moves
 its requests over its channels, the crossbar serves every request at its mover's kind (a
-reader's read-only, a writer's write-only, D178) and the banks the grants. A copy's L1 reads
-and writes (the DMA's L1 → L1 transfers, D184) cost the banks and the crossbar as a reader's and
-a writer's; the DMA engine nothing. With ``graph_counts`` the parts are the static estimate's
+reader's read-only, a writer's write-only, D178) and the banks the grants. A copy's beats (the
+DMA's L1 → L1 transfers on the superbank port, D184) cost the crossbar an access each, as a
+reader's and a writer's, and the banks a read or a write on every bank of the superbank; the
+DMA engine nothing. With ``graph_counts`` the parts are the static estimate's
 (``Estimate.parts``).
 """
 
@@ -55,7 +56,7 @@ class Prices:
     link or packer (``<unit>.<port>``) its producer and energy per load or push, the control
     units' bits and e_ctrl, per mover whether it writes, its channels and its energy per beat,
     the crossbar's per request of a read-only and of a write-only input (D178), a bank's per read
-    and per write; per slicer (``<unit>.<port>``) its unit, the count it pops on (``firings``, a
+    and per write, the banks a DMA beat reads or writes (a superbank's, D184); per slicer (``<unit>.<port>``) its unit, the count it pops on (``firings``, a
     seed's ``pushes``) and its energy per pop."""
 
     units: dict[str, tuple[int, float]]
@@ -67,6 +68,7 @@ class Prices:
     e_xwo_pj: float
     e_rd_pj: float
     e_wr_pj: float
+    superbank_banks: int
     slicers: dict[str, tuple[str, str, float]] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -78,7 +80,7 @@ class Prices:
                 "movers": {k: {"write": w, "channels": c, "e_beat": e}
                            for k, (w, c, e) in self.movers.items()},
                 "e_xbar_ro": self.e_xro_pj, "e_xbar_wo": self.e_xwo_pj, "e_rd": self.e_rd_pj,
-                "e_wr": self.e_wr_pj}  # fmt: skip
+                "e_wr": self.e_wr_pj, "superbank_banks": self.superbank_banks}  # fmt: skip
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> Prices:
@@ -87,6 +89,7 @@ class Prices:
                    d["ctrl_bits"], d["e_ctrl"],
                    {k: (v["write"], v["channels"], v["e_beat"]) for k, v in d["movers"].items()},
                    d["e_xbar_ro"], d["e_xbar_wo"], d["e_rd"], d["e_wr"],
+                   d.get("superbank_banks", 1),  # a run priced before D184's wide port: 1 bank
                    {k: (v["from"], v["count"], v["e_fire"])
                     for k, v in d.get("slicers", {}).items()})  # fmt: skip
 
@@ -94,7 +97,8 @@ class Prices:
 @dataclass
 class Counts:
     """A window's counts (module doc): per unit ``(firings, pushes)``, the groups' busy-flag cycles
-    added up, per mover ``(requests, grants)``, and the copies' L1 ``(reads, writes)`` (D184)."""
+    added up, per mover ``(requests, grants)``, and the copies' beats on the superbank port
+    ``(reads, writes)`` (D184)."""
 
     units: dict[str, tuple[int, int]] = field(default_factory=dict)
     busy: int = 0
@@ -152,9 +156,10 @@ def prices_of(graph: Graph, est: Estimate, movers: Sequence[MoverSpec]) -> Price
     """Each instance's price per transaction from a costed estimate's own (cost.py): a unit's and
     a link's energy per fire, the control units' bits and e_ctrl, each mover's energy per beat at
     its depth, loops and channels, the crossbar's energy per access, the banks' per read and
-    write. Raises ValueError when ``est`` has no cost on a platform."""
+    write, the banks a DMA beat reaches. Raises ValueError when ``est`` has no cost on a
+    platform."""
     costs, x, m = est.costs, est.xbar, est.memory
-    if costs is None or x is None or m is None:
+    if costs is None or x is None or m is None or est.superbank_banks is None:
         raise ValueError("the estimate is not costed on a platform: no prices")
     insts = instances(graph)
     units: dict[str, tuple[int, float]] = {}
@@ -177,7 +182,7 @@ def prices_of(graph: Graph, est: Estimate, movers: Sequence[MoverSpec]) -> Price
     beat = {s.name: (s.write, s.channels, _streamer(costs, s.depth, s.loops, s.channels).energy_pj)
             for s in movers}  # fmt: skip
     return Prices(units, links, bits, load(est.tech or "").e_ctrl_pj, beat, x.e_ro_pj, x.e_wo_pj,
-                  m.e_rd_pj, m.e_wr_pj, slicers)  # fmt: skip
+                  m.e_rd_pj, m.e_wr_pj, est.superbank_banks, slicers)  # fmt: skip
 
 
 def _producers(graph: Graph, units: Sequence[str]) -> Callable[[str], str]:
@@ -212,13 +217,13 @@ def price(p: Prices, c: Counts) -> Energy:
             writes += g
         else:
             reads += g
-    cr, cw = (
-        c.copies
-    )  # a copy's L1 accesses: the banks and the crossbar, as a reader's and a writer's
+    # A copy's beats: an access each on the crossbar, as a reader's and a writer's, and a read or
+    # a write on every bank of the superbank (D184)
+    cr, cw = c.copies
     requests += cr + cw
     xbar += cr * p.e_xro_pj + cw * p.e_xwo_pj
-    reads += cr
-    writes += cw
+    reads += cr * p.superbank_banks
+    writes += cw * p.superbank_banks
     parts = {
         "datapath": dp / 1000,
         "control": p.e_ctrl_pj * p.ctrl_bits * c.busy / 1000,
@@ -235,8 +240,8 @@ def graph_counts(graph: Graph, est: Estimate) -> Counts:
     """The static estimate's counts in ``Counts``' form: a unit's firings (its fires over its
     span) and its pushes (its links' and packer's loads, a seeded unit's seed pops), the groups' cycles (pipelined, the
     accelerator's: the longest path, D179), per port's
-    streamer its words as requests and grants (none refused), the copies' bursts as their L1 reads
-    and writes. Priced at ``prices_of`` with the
+    streamer its words as requests and grants (none refused), the copies' bursts as their beats,
+    one read and one write each. Priced at ``prices_of`` with the
     ports' streamers as movers, the parts are ``est.parts``' energies."""
     insts = instances(graph)
     out = Counts()
