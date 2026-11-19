@@ -10,7 +10,7 @@ URL hash.
 it out, D185), its blocks (``fold``), each item's Details, and the maps' ``partners``;
 ``step_view`` adds the marks, the estimate, its cost and the left column's sections;
 ``compare_view`` gives two steps' diff as rows ``{label, under, a, b, differs}``. CONTRACTS,
-"The viewer's API"; the estimate and the cost in "Estimate" and "Cost model".
+"Recipe" (the viewer's API); the estimate and the cost in "Estimate" and "Cost model".
 """
 
 from __future__ import annotations
@@ -1050,7 +1050,7 @@ def _operation(n: Node, code: str, ins: Sequence[str]) -> str:
 
 
 def compact_text(g: Graph, n: Node, param: str | None = None) -> str:
-    """A node's text in the compact drawing (module doc); a unit's lanes under ``param``, the
+    """A node's text in its box (drawing.py); a unit's lanes under ``param``, the
     recipe param its split names (``W_acc_1 8``), else ``W``."""
     a = n.attrs
     if n.kind == "map":

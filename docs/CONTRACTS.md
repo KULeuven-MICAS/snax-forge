@@ -304,21 +304,36 @@ What `bind` checks:
 
 ### The viewer's API
 
-The page only draws; Python builds every text and number (`viz/dfg/api.py`, D55).
+Python builds every box, port, edge, text and number (`viz/dfg/api.py`, `viz/dfg/drawing.py`); the page measures the boxes, lays them out and draws them (D55, D185).
 
 | Route | Gives |
 |---|---|
 | `GET /api/steps` | each step's `name` (`<folder>/<stem>` when the files come from several folders, `-2`, `-3` on a clash), `folder`, `label` |
-| `GET /api/step/<k>` | the drawing (boxes, rows, columns, edges), Details, the Estimate (section 13), the cost (section 14), the left column (`symbols_section`, `containers_section`, `bindings_section`), `shared`, `partners`, in edit mode `problems` and `notes` |
+| `GET /api/step/<k>` | `drawing`, Details, the Estimate (section 13), the cost (section 14), the left column (`symbols_section`, `containers_section`, `bindings_section`), `blocks`, `shared`, `partners`, in edit mode `problems` and `notes` |
 | `GET /api/step/<k>/site?sel=<id>&sel=<id>` | each transform's site for the selection, in the order selected; a transform that takes one item refuses several (`site.one`) |
 | `GET /api/compare/<j>/<k>` | `columns`: `labels`, Details' and the Estimate's rows `{label, under, a, b, differs}`, `caveat`, `cost_tables` |
 | `GET /api/find?step=<ref>` | a step from a bare stem or a number |
 
-- The URL hash holds the whole view (`step=`, `tech=`, `open=` for the blocks opened); `?tech=` names the technology (`char.tech` for an unknown one).
+The `drawing` is `{nodes, edges, outlines, tasks}`; positions are the page's, never in the API.
+
+| Field | Holds |
+|---|---|
+| node `id` | a container version `A@1`, a map or node id, or a hardware key: `unit:<instance>`, `link:<from>.<port>><to>.<port>`, `slicer:<instance>.<port>`, `packer:<instance>.<port>`, `mux:<instance>[.<port>]`, `demux:<instance>.<port>` |
+| node `kind`, `text`, `sub` | container, loop, tasklet, unit, link, slicer, packer, mux, demux, copy or block; its text; a loop's `var · n`, a fold's `over …` |
+| node `sel` | what a click selects (a node, map or container name; a unit its first node) |
+| node `ins`, `outs` | port names in order; none on a container or loop, whose edges get a port each |
+| node `parent`, `chips` | its outline; `[node, task]` per node a unit runs, or a merged loop's other maps |
+| node `layer`, `row`, `port_tasks`, `width_of` | `first` for a kernel input; a front loop's row; a mux's port per task; the unit a mux is as wide as |
+| edge `from`, `from_port`, `to`, `to_port` | its ends |
+| edge `style`, `task`, `label` | data, seed, link, local, wire or empty; its task after `share`; the dtype where it changes, `↻ var` for an outer loop skipped, `Aᵀ`, `broadcast` |
+| edge `data`, `node`, `port`, `sub` | the container, the node and port it feeds or leaves, the memlet |
+| outline | `id` (`grp:`, `acc:`, `block:`), `kind`, `text`, `sel`, `parent` |
+
+- The URL hash holds the whole view: `step=`, `sel=`, `cmp=`, `tech=`, `open=` (the blocks opened), `fold=` (the loop chains folded), `focus=1`, `zoom=` and `zoomc=` (each panel's zoom and place); `?tech=` names the technology (`char.tech` for an unknown one).
 - **Bindings** is a tree, `{kind: accelerator | group, name, children}` down to `{kind: entry, index}` into `entries`: one entry per bound unit with its split's params, a split not bound yet, a link whose depth is a param. A param several entries name says `shared with …`.
-- **Blocks** (D166): a closed block is drawn as one box inside its firing loops, each edge labelled with the slice one firing takes (`A[m_t, 0:N]`).
-- **Packers** (D174): a packed output's `FifoPacker` is drawn as a box of its own (`packers`, a row between its node and the container it writes, inside its group's outline), the edge out of it `int32 · 2 per word`; it is the view's, not a node of the graph, and appears from `bind` on, where `design/streamers.py`'s `packed` places it.
-- **Partners**: a selected map's partners for `fuse_map`, `fuse_seed` and `interchange_map`, from the transforms' own sites, and a near partner with its refusal and fix.
+- **Blocks** (D166): a closed block is drawn as one box inside its firing loops, its ports `in:A`, `out:x`, each edge's memlet the slice one firing takes (`A[m_t, 0:N]`).
+- **Packers and slicers** (D174, D180): a packed output's `FifoPacker` and a sliced input's `FifoSlicer` are boxes of their own on the unit's port, inside its group's outline; they are the view's, not nodes of the graph, and appear from `bind` on, where `design/streamers.py`'s `packed` and `sliced` place them.
+- **Partners**: a selected map's partners for `fuse_map`, `fuse_seed` and `interchange_map`, from the transforms' own sites, a fuse's marker on the transient's box, and a near partner with its refusal and fix.
 
 ## 5. Platform
 

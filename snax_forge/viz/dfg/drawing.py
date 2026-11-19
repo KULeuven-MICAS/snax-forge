@@ -7,7 +7,7 @@ hardware is keyed by what it is (``unit:<instance>``, ``link:<from>.<port>><to>.
 of its inputs per task. Python decides every box, edge, text and hint; the page measures and
 places them.
 
-Entry point: ``drawing(g, tops, placed, blocks)``; CONTRACTS, "The viewer's API".
+Entry point: ``drawing(g, tops, placed, blocks)``; CONTRACTS, "Recipe" (its viewer's API).
 """
 
 from __future__ import annotations
@@ -23,7 +23,6 @@ from snax_forge.sandbox.blocks import BLOCK
 from snax_forge.sandbox.share import SHARED
 
 LEAVES = ("tasklet", "accelerated", "transpose", "block")
-HARDWARE = ("unit", "link", "slicer", "packer", "mux", "demux")
 
 
 def _api() -> Any:
@@ -496,7 +495,7 @@ def _vars_before(maps: list[Node], i: int | None) -> set[str]:
 
 
 def _rows(d: _Drawing, nodes: dict[str, Node], alias: dict[str, str]) -> None:
-    """The row of each loop the kernel's inputs feed (CONTRACTS, "The viewer's API"): every
+    """The row of each loop the kernel's inputs feed (CONTRACTS, "Recipe"): every
     outermost loop that reads only inputs, or what a copy made of them, on one row, each next
     level of its chain on the next."""
     kind = {k: n["kind"] for k, n in d.nodes.items()}

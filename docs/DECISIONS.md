@@ -7,7 +7,7 @@ Rules (D117):
 - An entry is a choice with a real alternative that someone may want to reverse: direction, ownership, the interfaces between components, the order of work. Implementation details live in the module's docstring and its tests.
 - An entry says what was decided, why, and where the detail lives, in a few short bullets; an edge case only when there is one. A change is written into the entry, not chained after it.
 - Entries merged into one keep all their numbers in its heading, so a cite of any of them still finds it. A number is never changed or reused; the text of a removed entry is in git history.
-- A new decision gets the next free number, under the area it belongs to. Next free number: **D185**.
+- A new decision gets the next free number, under the area it belongs to. Next free number: **D186**.
 
 Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29–D45, D47–D50, D53, D54, D56, D58–D63, D65–D67, D69, D74, D76–D78, D80, D81, D83, D88–D97, D100, D101, D103, D104, D106, D107, D109, D110, D114, D115, D119, D124, D127, D128, D132, D133, D138–D141, D151, D156, D159, D160, D181.
 
@@ -330,9 +330,15 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 
 ### D55 · D57 · D99 — Local viewers that only draw; reports for people and LLMs
 
-- **Decided:** the viewers are a local server on 127.0.0.1 plus a static page: stdlib only, no build step or library, offline, every POST `application/json`. `view` shows runs, `view-dfg` given `.snaxdfg` files, `edit-dfg` a session the server holds, saved as a new recipe in `recipes/custom/`, never overwriting. Python answers every fold, lookup and step and the page only draws; the view's state is in the URL hash. Design and run reports are Markdown from dataclasses in the layout of HLS reports, every number from the design point, profile or trace.
+- **Decided:** the viewers are a local server on 127.0.0.1 plus a static page: stdlib only, no build step, offline, every POST `application/json`; one library, vendored, for the DFG page's layout (D185). `view` shows runs, `view-dfg` given `.snaxdfg` files, `edit-dfg` a session the server holds, saved as a new recipe in `recipes/custom/`, never overwriting. Python answers every fold, lookup and step and the page only lays out and draws; the view's state is in the URL hash. Design and run reports are Markdown from dataclasses in the layout of HLS reports, every number from the design point, profile or trace.
 - **Why:** nothing to install, a view never disagrees with a report, and LLMs read the reports.
 - **Where:** `viz/`, `report/`; CONTRACTS, "Recipe".
+
+### D185 — The DFG page: a flat graph laid out by ELK
+
+- **Decided:** the DFG page draws a step as a flat graph: loops as a chain of boxes, an edge through the loops its subset uses, one chain for a link whose loops match, hardware keyed by what it is (`unit:<instance>`, `link:<from port>><to port>`, `slicer:` and `packer:<instance>.<port>`) and drawn once, with a temporal mux and demux per task after `share`. Python decides every box, port, edge, text and id (`viz/dfg/drawing.py`); the page measures the boxes and lays them out with ELK (elkjs, vendored, in its worker): rows by ELK's partitions, edges routed as right angles. Moves by hand and the view last while the page is open.
+- **Why:** nested frames and CSS rows overlapped once links, slicers and packers sat together, and `share` made two halves' boxes one id; only the browser knows the text sizes. A library known for layered drawings beats hand-placed rows.
+- **Where:** CONTRACTS, "Recipe" (its viewer's API); `viz/dfg/drawing.py`, `viz/static/graph.js`, `viz/static/vendor/`.
 
 ### D26 · D46 — Contracts are dataclasses, written down and checked
 

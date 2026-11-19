@@ -222,10 +222,28 @@ Three read-only viewers and the reports. Each viewer serves on 127.0.0.1 until C
 
 **`view-dfg`** on a recipe's sandbox folder shows its steps in order. Give it `--platform`: without one, the Estimate costs only the datapath and control, not the streamers, crossbar and memory.
 
-- Each container's box shows its dtype (`A[N] int8 L1 · 64 B`), and each edge its container's dtype beside it, below the box it leaves or above the box it enters; an accelerated port's packing (`int32 · num_slc 2 · d_out 2 · num_ch 1`) is in the edge's Details. A packed output's `FifoPacker · d_out 2` is a box before its container, inside its group's outline, with its sizes, register bits and cost in its Details; a sliced input's `FifoSlicer · d_in 2` likewise, between its container and the unit (`d_in 2` in the port's packing), its cost not modelled yet.
+- The step is drawn as a flat graph (D185): the kernel's inputs on top, each loop a box (`tmp1_mult_map · temporal` over `m_t · 64`) chained down to what it drives, an edge through the loops its subset uses (`↻ m_t` where it skips an outer one), each unit, link FIFO, slicer and packer drawn once. After `share`, a temporal mux and demux stand for the streamers run once per task, and each task's edges and chips have a colour.
+- Each container's box shows its dtype (`A[N] int8 L1 · 64 B`); an edge is labelled only where the dtype changes (`int32` out of an int8 multiply). The memlet is the edge's tooltip; an accelerated port's packing (`int32 · num_slc 2 · d_out 2 · num_ch 1`), loops and beats are in its Details. A `FifoPacker · d_out 2` or `FifoSlicer · d_in 2` box has its sizes, register bits and cost in its Details.
 - Details of each item (click a box, a container, an edge or an outline), and the Estimate: the accelerator's cycles, the unmapped work's (one cycle per iteration, an assumption), their total, and the cost per accelerator in µm² and nJ (CONTRACTS, "Cost model").
 - The left column lists the Symbols, the Containers (`A: N · L1 · 16 KiB`) and the Bindings as a tree, accelerator ▸ group ▸ unit, each param with what it configures.
 - To compare two designs, give both folders: `pixi run view-dfg out/sandbox/dot_4/ out/sandbox/dot_5/ --platform platforms/snax_forge.json`. Each step is then named `<folder>/<stem>`, and Compare lays Details and the Estimate out as two columns, the cost cells as `before → after`.
+
+Moving around the drawing, in `view-dfg` and `edit-dfg` alike:
+
+| Do | To |
+|---|---|
+| drag the canvas, scroll | pan |
+| Ctrl (⌘) and scroll, or pinch; `+` `-`; `1`; `0` | zoom about the pointer; zoom in and out; 100 %; the whole step in the panel |
+| click a box, edge, chip or outline | select it, its Details on the right; an edge or a container lights its whole route |
+| drag a box, or an outline by its title | move it; its edges are routed again |
+| `c` or clean graph | lay the step out again: after a drag in the order you left the boxes, else from scratch |
+| `r` or reset | the step's first layout, every move undone |
+| `f` or focus | light what the selection reads and feeds, dim the rest |
+| double-click a loop, a block | fold its loop chain into one box, open or close the block |
+| `/` | find a box by name; Enter for the next |
+| ← → | the step before or after |
+
+The minimap at a panel's top right shows the whole step when it does not fit; lock views (with Compare) pans and zooms both panels together. Moves last while the page is open; the zoom, folds and focus are in the address bar.
 
 ## 5. Build a recipe by hand: `edit-dfg`
 

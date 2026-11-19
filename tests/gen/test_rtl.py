@@ -30,6 +30,7 @@ from snax_forge.gen.accelerator import ACCELERATOR_JSON, Link
 from snax_forge.gen.gvsoc import generate
 from snax_forge.gen.rtl import (
     accelerator_spec,
+    buffer_params,
     catalogue,
     check_params,
     check_unit,
@@ -37,9 +38,7 @@ from snax_forge.gen.rtl import (
     fill,
     flops,
     group_counter,
-    link_flops,
     live,
-    unit_flops,
     write_accelerator,
     write_fixture,
 )
@@ -454,16 +453,21 @@ def test_flops_is_the_expression_on_the_params(datapath, params, bits):
                                                              (False, True, 256)])  # fmt: skip
 def test_a_units_flops_come_from_its_params_by_the_fill_rule(accumulate, reg_out, bits):
     """A Mac of 4 int64 lanes: its accumulator or its output register, none plain."""
-    unit = _mac(accumulate, reg_out)
-    assert unit_flops(_alone(unit), unit, catalogue()) == bits
+    unit, cat = _mac(accumulate, reg_out), catalogue()
+    assert flops(unit.datapath, fill(_alone(unit), unit, cat[unit.datapath]), cat) == bits
 
 
 def test_a_links_flops_are_its_buffers():
     """A wire holds nothing; a buffer its depth's beats of its ends' lanes and dtype."""
     cat = catalogue()
-    assert link_flops(0, 8, "int64", cat) == 0
-    assert [link_flops(d, 8, "int64", cat) for d in (1, 2, 4)] == [512, 1024, 2048]
-    assert link_flops(2, 4, "int8", cat) == 64
+
+    def link(depth: int, lanes: int, dtype: str) -> int:
+        params = buffer_params(depth, lanes, dtype, cat["LinkBuffer"])
+        return flops("LinkBuffer", params, cat) if depth else 0
+
+    assert link(0, 8, "int64") == 0
+    assert [link(d, 8, "int64") for d in (1, 2, 4)] == [512, 1024, 2048]
+    assert link(2, 4, "int8") == 64
 
 
 def test_axpys_unit_fills_k1_from_its_csr_and_k1_is_a_live_pin(tmp_path):

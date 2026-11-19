@@ -106,7 +106,7 @@ def default_calls(g: Graph, name: str, selected: str) -> list[dict[str, Any]]:
             for b in library_names() for i in load_brm(b).implementations]  # fmt: skip
 
 
-# mvt's sizes for mark_transpose (test_transpose.py, tests/viz/test_columns.py)
+# mvt's sizes for the sandbox's and the viewer's mvt tests (``mvt``)
 SIZES = {"M": 8, "N": 16}
 
 
