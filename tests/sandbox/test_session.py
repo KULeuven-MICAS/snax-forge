@@ -652,6 +652,18 @@ def test_save_keeps_only_the_params_its_steps_use(roots):
     )  # its own, kept
 
 
+def test_save_keeps_a_param_named_only_inside_apply_recipes_params():
+    """``apply_recipe``'s ``{"W": "W_x1"}``: W_x1 is kept, the step's own names are not."""
+    from snax_forge.sandbox.recipe import Step
+
+    steps = [Step("lift", {"kernel": "matvec_acc", "at": "tmp1_mult_map"}),
+             Step("apply_recipe", {"block": "matvec_acc", "recipe": "matvec/matvec_seed",
+                                   "params": {"W": "W_x1"}})]  # fmt: skip
+    keep = session.used_params({"M": 64, "N": 64, "W_x1": 8, "D": 1}, steps,
+                               {"M": "M", "N": "N"}, [])  # fmt: skip
+    assert keep == {"M", "N", "W_x1"}
+
+
 def test_sites_over_a_selection_on_dot_1(roots):
     """Dot 1 by hand at step 8: the two group outlines (acc_1, acc_2) offer encapsulate with
     both units ticked, one unit's box (mult) only that unit; split over two items is refused,

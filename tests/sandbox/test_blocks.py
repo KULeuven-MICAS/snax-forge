@@ -267,9 +267,9 @@ def test_a_sub_recipe_lifts_and_applies_by_the_blocks_name(tmp_path):
                                              ("mvt_2_reuse", "mvt_2"),
                                              ("mvt_4_i8_col_reuse", "mvt_4_i8_col")])  # fmt: skip
 def test_mvt_from_matvec_recipes_is_the_hand_written_mvt(reuse, hand):
-    """Both halves from matvec_dot1 or matvec_dot2, the vadd and the sharing by hand, or half 2
-    from matvec_seed_column_form: the graph of the hand-written recipe, the units' and groups'
-    names aside."""
+    """Both halves from matvec_dot1 or matvec_dot2, the vadd and the sharing by hand, or from
+    matvec_seed_dot2 and matvec_seed_column_form on two lifted blocks: the graph of the
+    hand-written recipe, the units' and groups' names aside."""
 
     def names(g):
         d = g.to_dict()

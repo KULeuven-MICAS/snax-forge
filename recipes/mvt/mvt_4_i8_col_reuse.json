@@ -5,35 +5,21 @@
  "symbols": {"M": "M", "N": "N"},
  "types": "i8",
  "steps": [
-  {"transform": "tag_map", "params": {"map": "tmp1_mult_map", "kind": "temporal"}},
-  {"transform": "split_map", "params": {"map": "tmp1_mult_map_1", "factor": "W_x1"}},
-  {
-   "transform": "bind",
-   "params": {
-    "node": "tmp1_mult",
-    "brm": "simd",
-    "implementation": "chisel_tiled_spatial",
-    "instance": "vmul_x1"
-   }
-  },
-  {"transform": "tag_map", "params": {"map": "sum_map", "kind": "temporal"}},
-  {"transform": "split_map", "params": {"map": "sum_map_1", "factor": "W_x1"}},
-  {"transform": "fuse_seed", "params": {"first": "sum_map_1_s", "second": "augassign_18_4_map"}},
-  {
-   "transform": "bind",
-   "params": {
-    "node": "sum",
-    "brm": "accumulate",
-    "implementation": "chisel_adder_tree",
-    "instance": "vsum_x1"
-   }
-  },
-  {"transform": "link", "params": {"container": "tmp1_prod", "depth": "D_2", "group": "mvt"}},
+  {"transform": "lift", "params": {"kernel": "matvec_acc", "at": "tmp1_mult_map"}},
   {
    "transform": "apply_recipe",
    "params": {
+    "block": "matvec_acc",
+    "recipe": "matvec/matvec_seed_dot2",
+    "params": {"W": "W_x1", "D": "D_2"}
+   }
+  },
+  {"transform": "lift", "params": {"kernel": "matvec_acc", "at": "tmp4_mult_map"}},
+  {
+   "transform": "apply_recipe",
+   "params": {
+    "block": "matvec_acc_1",
     "recipe": "matvec/matvec_seed_column_form",
-    "region": ["tmp4_mult_map", "sum_map_2", "augassign_19_4_map"],
     "params": {"W": "W_x1"}
    }
   }

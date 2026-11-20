@@ -728,15 +728,22 @@ def used_params(params: dict[str, Any], steps: list[Step], symbols: dict[str, An
 
 
 def _step_names(step: Step) -> set[str]:
-    """The names a step's string params use (an int param's expression over the params)."""
-    out: set[str] = set()
-    for v in step.params.values():
-        if isinstance(v, str):
-            try:
-                out |= expr.names(v)
-            except expr.ExprError:
-                continue
-    return out
+    """The names a step's string params use (an int param's expression over the params), also
+    inside a dict or a list (``apply_recipe``'s ``params``: ``{"W": "W_x1"}``)."""
+    return _names_in(step.params)
+
+
+def _names_in(v: Any) -> set[str]:
+    if isinstance(v, str):
+        try:
+            return set(expr.names(v))
+        except expr.ExprError:
+            return set()
+    if isinstance(v, dict):
+        return set().union(*(_names_in(x) for x in v.values()))
+    if isinstance(v, list):
+        return set().union(*(_names_in(x) for x in v))
+    return set()
 
 
 def rename_split_params(recipe: Recipe, g: Graph, instance: str | None,
