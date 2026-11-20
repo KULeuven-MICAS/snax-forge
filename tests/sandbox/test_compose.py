@@ -334,3 +334,22 @@ def test_different_ranges_name_the_split_that_fixes_them():
     fixed = split_map(t, "mult_map_1", 4)
     assert fuse_pairs(fixed) == [("mult_map", "sum_map")] and fuse_near(fixed) == []
     fuse_map(fixed, "mult_map", "sum_map")
+
+
+def test_fuse_map_names_lanes_on_two_dimensions():
+    """matvec with the multiply's lanes on m (matvec_column_form's first steps) and the fold's on
+    n (the row form's): fuse_map names the dimension each puts its lanes on, and the fix."""
+    import json
+
+    from snax_forge.sandbox import Recipe, apply_recipe
+    from tests.helpers import imported, recipe_path
+
+    d = json.loads(recipe_path("matvec_column_form").read_text())
+    d["steps"] = d["steps"][:3] + [
+        {"transform": "tag_map", "params": {"map": "sum_map", "kind": "temporal"}},
+        {"transform": "split_map", "params": {"map": "sum_map_1", "factor": "W"}},
+        {"transform": "fuse_map", "params": {"first": "mult_map", "second": "sum_map"}}]  # fmt: skip
+    with pytest.raises(SandboxError, match=r"mult_map_s puts the lanes on tmp0's dimension 0 "
+                       r"\(m\), sum_map_1_s on its dimension 1 \(n\); .* split the map over n in "
+                       r"the first nest, or over m in the second"):  # fmt: skip
+        apply_recipe(Recipe.from_dict(d), imported("matvec"))

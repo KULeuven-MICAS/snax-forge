@@ -264,10 +264,12 @@ def test_a_sub_recipe_lifts_and_applies_by_the_blocks_name(tmp_path):
 @pytest.mark.slow
 @pytest.mark.parametrize(("reuse", "hand"), [("mvt_1_reuse", "mvt_1"),
                                              ("mvt_1_dot2_reuse", "mvt_1_dot2"),
-                                             ("mvt_2_reuse", "mvt_2")])  # fmt: skip
+                                             ("mvt_2_reuse", "mvt_2"),
+                                             ("mvt_4_i8_col_reuse", "mvt_4_i8_col")])  # fmt: skip
 def test_mvt_from_matvec_recipes_is_the_hand_written_mvt(reuse, hand):
-    """Both halves from matvec_dot1 or matvec_dot2, the vadd and the sharing by hand: the
-    graph of the hand-written recipe, the units' and groups' names aside."""
+    """Both halves from matvec_dot1 or matvec_dot2, the vadd and the sharing by hand, or half 2
+    from matvec_seed_column_form: the graph of the hand-written recipe, the units' and groups'
+    names aside."""
 
     def names(g):
         d = g.to_dict()
@@ -289,6 +291,26 @@ def test_mvt_from_matvec_recipes_is_the_hand_written_mvt(reuse, hand):
         walk(d)
         return d
 
-    graphs = [apply_recipe(Recipe.load(recipe_path(x)), imported("mvt"))[-1].graph
-              for x in (reuse, hand)]  # fmt: skip
+    recipes = [Recipe.load(recipe_path(x)) for x in (reuse, hand)]
+    graphs = [apply_recipe(r, imported(r.kernel, types=r.types))[-1].graph for r in recipes]
     assert names(graphs[0]) == names(graphs[1])
+
+
+@pytest.mark.slow
+def test_the_column_form_applies_to_either_half_of_mvt():
+    """matvec_seed_column_form on both halves of mvt_types at i8 straight from the import: each
+    half a seeded mac, half 2 reading A by rows (through Aᵀ), half 1 down its columns, which
+    the design check refuses at int8 (connect.pack), not the sandbox."""
+    r = Recipe.from_dict({
+        "name": "mvt_both_col", "kernel": "mvt_types", "types": "i8",
+        "params": {"M": 16, "N": 16, "W": 8}, "symbols": {"M": "M", "N": "N"},
+        "steps": [{"transform": "apply_recipe",
+                   "params": {"recipe": "matvec/matvec_seed_column_form", "region": heads,
+                              "params": {"W": "W"}}}
+                  for heads in (["tmp1_mult_map", "sum_map", "augassign_18_4_map"],
+                                ["tmp4_mult_map", "sum_map_2", "augassign_19_4_map"])]})  # fmt: skip
+    g = apply_recipe(r, imported("mvt_types", types="i8"))[-1].graph
+    units = {n.attrs["instance"]: n for n, _ in g.walk() if n.kind == "accelerated"}
+    assert sorted(units) == ["mac", "mac_1"] and {n.attrs["brm"] for n in units.values()} == {"mac"}
+    reads = sorted(m.subset[-1] for n in units.values() for k, m in n.inputs.items() if k == "a")
+    assert reads == ["8 * n_1_t:8 * n_1_t + 8", "n_t"]  # half 2 a row's 8, half 1 one column

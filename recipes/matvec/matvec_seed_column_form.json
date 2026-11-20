@@ -1,0 +1,20 @@
+{
+ "name": "matvec_seed_column_form",
+ "kernel": "matvec_acc",
+ "params": {"W": 4, "M": 8, "N": 512},
+ "symbols": {"M": "M", "N": "N"},
+ "steps": [
+  {"transform": "tag_map", "params": {"map": "mult_map_1", "kind": "temporal"}},
+  {"transform": "split_map", "params": {"map": "mult_map", "factor": "W"}},
+  {"transform": "interchange_map", "params": {"map": "mult_map_1", "with": "mult_map_s"}},
+  {"transform": "tag_map", "params": {"map": "sum_map_1", "kind": "temporal"}},
+  {"transform": "split_map", "params": {"map": "sum_map", "factor": "W"}},
+  {"transform": "interchange_map", "params": {"map": "sum_map_s", "with": "sum_map_1"}},
+  {"transform": "fuse_seed", "params": {"first": "sum_map_s", "second": "augassign_19_4_map"}},
+  {"transform": "fuse_map", "params": {"first": "mult_map", "second": "sum_map"}},
+  {
+   "transform": "bind",
+   "params": {"node": "mult_map_s", "brm": "mac", "implementation": "chisel_mac", "instance": "mac"}
+  }
+ ]
+}
