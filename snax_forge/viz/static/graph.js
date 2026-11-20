@@ -542,7 +542,7 @@ function reroute(a, b) {
 /** Drawing ``d`` with layout ``L`` into ``canvas`` (emptied first): the outlines and edges, the
 boxes, the port names. A box dragged moves by hand (``L.moves``, kept with the layout while the
 page is open): its edges are routed again as right angles and its outlines grow round it; an
-outline's title drags all it holds. ``scale()`` is the view's zoom, so a drag follows the
+outline's title or frame drags all it holds. ``scale()`` is the view's zoom, so a drag follows the
 pointer. */
 export function render(canvas, d, L, scale = () => 1) {
   return new Drawn(canvas, d, L, scale);
@@ -585,7 +585,7 @@ class Drawn {
       const cls = { group: "group-box", accelerator: "acc-box", block: "block-box" }[o.kind] || "group-box";
       const g = svgEl("g", { class: cls, "data-sel": o.sel, "data-group": o.kind === "group" ? o.sel : null, "data-block": o.block || null });
       const rect = { x: b.x, y: b.y, width: b.w, height: b.h, rx: o.kind === "block" ? 10 : 6 };
-      const rects = [svgEl("rect", { ...rect, class: "outline-hit" }), svgEl("rect", rect)];
+      const rects = [svgEl("rect", { ...rect, class: "outline-hit", "data-frame": o.id }), svgEl("rect", rect)];
       const t = svgEl("text", { class: "c-title", "data-outline": o.id, "text-anchor": "end" });
       const lines = titleLines(o.text).map((line) => {
         const span = svgEl("tspan");
@@ -594,7 +594,7 @@ class Drawn {
         return span;
       });
       const tip = svgEl("title");
-      tip.textContent = `${o.kind === "block" ? "double-click to collapse; " : ""}drag the title to move what it holds`;
+      tip.textContent = `${o.kind === "block" ? "double-click to collapse; " : ""}drag the title or the frame to move what it holds`;
       t.append(tip);
       g.append(...rects, t);
       svg.append(g);
@@ -768,9 +768,10 @@ class Drawn {
       addEventListener("pointerup", up);
     };
     this.canvas.addEventListener("pointerdown", (ev) => {
-      const t = ev.target.closest("[data-outline]");
+      const t = ev.target.closest("[data-outline]") || ev.target.closest("rect[data-frame]");
       if (t) {
-        const ol = this.outlines.find((x) => x.o.id === t.dataset.outline);
+        const id = t.dataset.outline || t.dataset.frame;
+        const ol = this.outlines.find((x) => x.o.id === id);
         if (ol) start(ev, ol.holds);
         return;
       }

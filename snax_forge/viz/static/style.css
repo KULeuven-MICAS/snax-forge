@@ -865,6 +865,7 @@ svg.dfg-edges text.c-title { font-size: 0.85rem; paint-order: stroke; stroke: va
 /* drag, focus, folded chains, the minimap, find */
 .c-box.moving { z-index: 5; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18); cursor: grabbing; }
 svg.dfg-edges text.c-title { pointer-events: visiblePainted; cursor: grab; }
+svg.dfg-edges rect.outline-hit { cursor: grab; }
 .c-canvas.focus .c-box:not(.lit), .c-canvas.focus path.edge:not(.lit), .c-canvas.focus text.c-label:not(.lit) { opacity: 0.18; }
 .c-canvas.focus .c-box.sel, .c-canvas.focus path.edge.sel { opacity: 1; }
 .c-map.c-loop.c-folded { box-shadow: 4px 4px 0 -1px var(--panel), 4px 4px 0 0 var(--loop); }

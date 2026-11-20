@@ -235,7 +235,7 @@ Moving around the drawing, in `view-dfg` and `edit-dfg` alike:
 | drag the canvas, scroll | pan |
 | Ctrl (⌘) and scroll, or pinch; `+` `-`; `1`; `0` | zoom about the pointer; zoom in and out; 100 %; the whole step in the panel |
 | click a box, edge, chip or outline | select it, its Details on the right; an edge or a container lights its whole route |
-| drag a box, or an outline by its title | move it; its edges are routed again |
+| drag a box, or an outline by its title or its frame | move it, an outline with all it holds; its edges are routed again |
 | `c` or clean graph | lay the step out again: after a drag in the order you left the boxes, else from scratch |
 | `r` or reset | the step's first layout, every move undone |
 | `f` or focus | light what the selection reads and feeds, dim the rest |
