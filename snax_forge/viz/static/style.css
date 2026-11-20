@@ -874,3 +874,10 @@ svg.dfg-edges g rect.outline-fill { fill: transparent; stroke: none; pointer-eve
 .c-minimap { position: absolute; right: var(--space-2); top: var(--space-2); z-index: 4; border: 1px solid var(--rule); border-radius: 3px; background: color-mix(in srgb, var(--panel) 92%, transparent); cursor: crosshair; opacity: 0.9; }
 .c-zoom button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
 .dfg-find { width: 11rem; }
+/* what an open lift or apply_recipe form would change (dfg.js's preview) */
+:root { --pv: #0e7c86; }
+@media (prefers-color-scheme: dark) { :root { --pv: #3cc3cf; } }
+.c-box.pv-on { box-shadow: 0 0 0 2.5px var(--pv); }
+svg.dfg-edges rect.pv-on:not(.outline-hit):not(.outline-fill) { stroke: var(--pv); stroke-width: 2.5; stroke-dasharray: none; }
+svg.dfg-edges path.edge.pv-edge { stroke: var(--pv); stroke-width: 2.6; }
+svg.dfg-edges path.edge.pv-touch { stroke: var(--pv); stroke-width: 1.8; stroke-opacity: 0.55; }

@@ -338,6 +338,7 @@ The `drawing` is `{nodes, edges, outlines, tasks}`; positions are the page's, ne
 - **Blocks** (D166): a closed block is drawn as one box inside its firing loops, its ports `in:A`, `out:x`, each edge's memlet the slice one firing takes (`A[m_t, 0:N]`).
 - **Packers and slicers** (D174, D180): a packed output's `FifoPacker` and a sliced input's `FifoSlicer` are boxes of their own on the unit's port, inside its group's outline; they are the view's, not nodes of the graph, and appear from `bind` on, where `design/streamers.py`'s `packed` and `sliced` place them.
 - **Partners**: a selected map's partners for `fuse_map`, `fuse_seed` and `interchange_map`, from the transforms' own sites, a fuse's marker on the transient's box, and a near partner with its refusal and fix.
+- **Preview**: `lift`'s and `apply_recipe`'s choices (`preview` on the field) each give what they would change: a kernel its region's node ids (`nodes`) and every region of it (`every`), a recipe the block's node ids and name (`nodes`) and what it makes (`hint`, `8 steps → mul, sum, link`). The page lists them as rows and lights the boxes of the choice under the pointer (else the one ticked), the edges between them and, dimmer, the edges from or to them.
 
 ## 5. Platform
 

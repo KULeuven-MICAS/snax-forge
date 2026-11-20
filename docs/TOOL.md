@@ -271,6 +271,7 @@ What else to know:
 - Every Apply and param change also runs Save's design checks, listed under the Estimate: problems first, then notes. A note tagged "before Save" (an unbound tasklet, two accelerators not yet encapsulated) is something still to do, and Save refuses it.
 - Undo, redo and the step list move the cursor; Apply below the last step asks to drop the steps after it. A param changed in Bindings replays the steps up to the cursor; the later ones are replayed when the cursor reaches them. Its ✎ renames it in every step that names it (inside `apply_recipe`'s params too); an unused param has a × that drops it.
 - With several units (dot 1), shift-click the groups' outlines and apply `encapsulate` to make one accelerator of them.
+- `lift` and `apply_recipe` list their choices as rows: the one under the pointer lights what it would change on the drawing (`lift` the region, or every region with "every region it matches"; `apply_recipe` the block), and each recipe says what it makes (`8 steps → mul, sum, link`).
 - Export step writes one step's graph to the session's `export/`.
 
 ## 6. Check against snax_cluster's RTL: `forge` and `forge-set`

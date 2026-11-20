@@ -15,7 +15,8 @@ CONTRACTS, "Recipe". ``apply_recipe`` runs the sub-recipe's steps on the region 
 step's names renamed onto the region's by running the same steps on the pattern side by side;
 the whole is one step, checked against the reference once. ``unapply`` reads the record
 (``sandbox.applied``) on the first top-level node the recipe made. ``reusable``,
-``lift_choices`` and ``recipes_for`` give the kernels and recipes the sites offer.
+``lift_choices``, ``lift_regions``, ``block_ids`` and ``recipes_for`` give the kernels, regions and
+recipes the sites offer.
 """
 
 from __future__ import annotations
@@ -428,6 +429,24 @@ def _lift_site(g: Graph, selected: str) -> dict[str, Any]:
 def lift_choices(g: Graph, at: str) -> list[str]:
     """The kernels ``lift`` takes at node ``at`` (the editor's choice)."""
     return list(dict.fromkeys(k for k, _ in _lift_choices(g, at)))
+
+
+def lift_regions(g: Graph, at: str) -> dict[str, dict[str, list[str]]]:
+    """Per kernel ``lift`` takes at ``at``, the node ids it would make a block of: ``here`` the
+    region holding ``at``, ``every`` every region of the kernel (the editor lights them)."""
+    out: dict[str, dict[str, list[str]]] = {}
+    for k, m in _lift_choices(g, at):
+        here = out.setdefault(k, {"here": [], "every": []})["here"]
+        here += [n.id for n in _region_nodes(g, m) if n.id not in here]
+    for k, d in out.items():
+        for m in _found(g)[k]:
+            d["every"] += [n.id for n in _region_nodes(g, m) if n.id not in d["every"]]
+    return out
+
+
+def block_ids(g: Graph, name: str) -> list[str]:
+    """The node ids block ``name`` holds, in the graph's order (the editor lights them)."""
+    return [n.id for n, _ in g.walk() if any(b["name"] == name for b in _blocks_of(n))]
 
 
 def lift(g: Graph, kernel: str, at: str | None = None) -> Graph:

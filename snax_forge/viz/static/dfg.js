@@ -422,6 +422,37 @@ function outline() {
     }
   }
   showPartners();
+  showPreview();
+}
+
+// What an open lift or apply_recipe form would change (edit.js's ``preview``): the boxes of the
+// node ids it gives (a loop, a tasklet, a unit by its chips, a block folded or its outline),
+// the edges between them, and dimmer the edges from or to them.
+function preview(ids) {
+  state.preview = ids && ids.length ? new Set(ids) : null;
+  showPreview();
+}
+
+function showPreview() {
+  for (const el of document.querySelectorAll("#graphs .pv-on, #graphs .pv-edge, #graphs .pv-touch")) {
+    el.classList.remove("pv-on", "pv-edge", "pv-touch");
+  }
+  const ids = state.preview;
+  if (!ids) return;
+  for (const p of document.querySelectorAll("#graphs .c-panel")) {
+    if (!p._d) continue;
+    const lit = new Set(p._d.nodes.filter((n) => ids.has(n.id) || ids.has(n.sel)
+      || (n.chips || []).some((c) => ids.has(c[0]))).map((n) => n.id));
+    for (const id of lit) for (const el of p.querySelectorAll(`.c-box[data-id="${CSS.escape(id)}"]`)) el.classList.add("pv-on");
+    for (const o of p._d.outlines) {
+      if (o.block && ids.has(o.block)) for (const el of p.querySelectorAll(`rect[data-frame="${CSS.escape(o.id)}"]`)) el.classList.add("pv-on");
+    }
+    for (const e of p._d.edges) {
+      const both = lit.has(e.from) && lit.has(e.to), one = lit.has(e.from) || lit.has(e.to);
+      if (!one) continue;
+      for (const el of p.querySelectorAll(`path.edge[data-edge="${CSS.escape(e.id)}"]`)) el.classList.add(both ? "pv-edge" : "pv-touch");
+    }
+  }
 }
 
 // A selected map's partners (api.py's ``partners``, found by the transforms' own sites): each
@@ -935,7 +966,7 @@ async function load() {
     techOptions();
     if (state.mode === "edit") {
       want = await resolve(want);
-      edit.init({ state, status, clear, show, view, writeHash, hover });
+      edit.init({ state, status, clear, show, view, writeHash, hover, preview });
       state.session = await edit.session();
       setSels(want.sel);
       state.t = want.t;

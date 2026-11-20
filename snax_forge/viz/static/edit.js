@@ -282,6 +282,11 @@ function field(f) {
         h("span", {}, c.label), h("small", {}, timing));
     }));
   }
+  if (f.type === "choice" && f.preview) { // lift's and apply_recipe's: a row each, lighting what it changes (preview)
+    return h("div", { class: "dfg-choices", ...attrs, "data-radios": f.name }, f.choices.map((c) => h("label", { class: "dfg-choice", title: c.hint || "" },
+      h("input", { type: "radio", name: `pick-${f.name}`, value: c.value, checked: c.value === f.value }),
+      h("span", {}, c.label), c.hint ? h("small", {}, c.hint) : null)));
+  }
   if (f.type === "choice" && f.spread) { // a choice whose value gives several params (fuse_map's and fuse_seed's pair)
     const same = (c) => JSON.stringify(c.value) === JSON.stringify(f.value);
     return h("select", { ...attrs, title: f.hint || "" }, f.choices.map((c, i) => h("option",
@@ -369,6 +374,9 @@ function params(form, el) {
       Object.assign(out, f.choices[Number(node.value)].value);
     } else if (f.type === "checklist") {
       out[f.name] = [...node.querySelectorAll("input:checked")].map((x) => x.value);
+    } else if (node.dataset.radios) {
+      const picked = node.querySelector("input:checked");
+      out[f.name] = picked ? picked.value : f.value;
     } else if (f.type === "int") {
       const raw = node.value.trim();
       out[f.name] = /^-?\d+$/.test(raw) ? Number(raw) : raw;
@@ -402,6 +410,37 @@ async function apply(transform, form, el) {
   }
 }
 
+/** ``lift``'s and ``apply_recipe``'s forms: the graph lights what the choice under the pointer
+(or focused) would change, else the one ticked: ``lift`` the region holding the selection or,
+with "every region", every region of the kernel; ``apply_recipe`` the block (session.py's
+``nodes`` and ``every`` per choice). */
+function previewChoices(form, formEl) {
+  const by = Object.fromEntries(form.filter((f) => f.preview).map((f) => [f.name, f]));
+  if (!Object.keys(by).length) return;
+  const ticked = (name) => {
+    const el = formEl.querySelector(`[data-field="${name}"] input:checked`);
+    return el ? el.value : by[name] && by[name].value;
+  };
+  const ids = (over) => {
+    const pick = (name) => (over && over.name === name ? over.value : ticked(name));
+    if (by.recipe) return (by.recipe.choices.find((c) => c.value === pick("recipe")) || {}).nodes || [];
+    const c = by.kernel.choices.find((x) => x.value === pick("kernel"));
+    if (!c) return [];
+    return by.at && pick("at") === "" ? c.every : c.nodes;
+  };
+  for (const name of Object.keys(by)) {
+    for (const lab of formEl.querySelectorAll(`[data-field="${name}"] label`)) {
+      const input = lab.querySelector("input");
+      const over = { name, value: input.value };
+      lab.addEventListener("mouseenter", () => ctx.preview(ids(over)));
+      lab.addEventListener("mouseleave", () => ctx.preview(ids(null)));
+      input.addEventListener("focus", () => ctx.preview(ids(over)));
+      input.addEventListener("change", () => ctx.preview(ids(null)));
+    }
+  }
+  ctx.preview(ids(null));
+}
+
 /** ``apply_recipe``'s form: another recipe chosen, its own params' fields in place of the
 last one's (session.py's ``_apply_fields``), each a session param named as the server names
 one (``W``, or ``W_2`` when the session has W). */
@@ -410,7 +449,8 @@ function recipeParams(form, formEl, label) {
   const field = form.find((f) => f.name === "recipe");
   if (!pick || !field) return;
   pick.addEventListener("change", () => {
-    const c = field.choices.find((x) => x.value === pick.value);
+    const v = (pick.querySelector("input:checked") || pick).value;
+    const c = field.choices.find((x) => x.value === v);
     const known = { ...((ctx.state.session && ctx.state.session.params) || {}) };
     const fresh = (p) => {
       let n = p;
@@ -439,6 +479,7 @@ export function closeForm() {
 /** The transforms for the selection at step k (the left column's top); with Compare on, a note
 (a transform applies to one step). */
 export async function sidebar() {
+  ctx.preview([]); // an open lift or apply_recipe form lights its choice again below
   const st = ctx.state;
   const bar = $("transforms");
   if (st.cmp !== null) {
@@ -465,6 +506,7 @@ export async function sidebar() {
       a.form.map(label),
       h("button", { type: "submit", class: "primary", disabled: unfit(a.form) }, "Apply")) : null;
     if (formEl && name === "apply_recipe") recipeParams(a.form, formEl, label);
+    if (formEl) previewChoices(a.form, formEl);
     return h("div", { class: `dfg-transform${isOpen ? " open" : ""}` },
       h("button", { type: "button", class: "dfg-transform-name", "aria-expanded": isOpen ? "true" : "false",
         onclick: () => {

@@ -1002,18 +1002,21 @@ DEFAULT_KIND = "temporal"
 
 def _lift_fields(g: Graph, filled: dict[str, Any]) -> list[dict[str, Any]]:
     """``lift``'s form: ``kernel`` a choice of the kernels whose pattern matches a region
-    holding the selected node, ``at`` that region or every region of the kernel (empty)."""
-    from .blocks import lift_choices
+    holding the selected node, each with the node ids of that region (``nodes``) and of every
+    region of the kernel (``every``) for the page to light, ``at`` that region or every region
+    of the kernel (empty)."""
+    from .blocks import lift_regions
 
     at = filled["at"]
-    kernels = [{"value": k, "label": k} for k in lift_choices(g, at)]
+    kernels = [{"value": k, "label": k, "nodes": r["here"], "every": r["every"]}
+               for k, r in lift_regions(g, at).items()]  # fmt: skip
     where = [{"value": at, "label": f"the region holding {at}"},
              {"value": "", "label": "every region it matches"}]  # fmt: skip
     return [
         {"name": "kernel", "type": "choice", "sweepable": False, "readonly": False,
-         "value": filled["kernel"], "choices": kernels},
+         "value": filled["kernel"], "choices": kernels, "preview": True},
         {"name": "at", "type": "choice", "sweepable": False, "readonly": False, "value": at,
-         "choices": where},
+         "choices": where, "preview": True},
     ]  # fmt: skip
 
 
@@ -1022,10 +1025,21 @@ def _apply_fields(g: Graph, filled: dict[str, Any], params: dict[str, Any]) -> l
     choice of the recipes of its kernel, each with its ``params`` that no kernel symbol names
     (dot_3's ``{"W": 4}``, which the page swaps in when the choice changes), and an int field
     ``params.<P>`` per param of the first, a param of the session's own (``W``, or ``W_2`` when
-    the session has W), its value the recipe's."""
-    from .blocks import _block, recipe_path, recipes_for
+    the session has W), its value the recipe's. Each choice also gives the block's node ids
+    and its name (``nodes``, for the page to light) and what the recipe makes (``hint``,
+    ``8 steps → mul, sum, link``)."""
+    from .blocks import _block, block_ids, recipe_path, recipes_for
 
     rec = _block(g, filled["block"], "apply_recipe", applied=False)
+    nodes = [*block_ids(g, filled["block"]), filled["block"]]  # its nodes, and itself folded
+
+    def makes(ref: str) -> str:  # what the recipe makes: its steps and the units it binds
+        sub = Recipe.load(recipe_path(ref))
+        made = [st.params.get("instance") for st in sub.steps if st.transform == "bind"]
+        made += ["link"] * sum(st.transform == "link" for st in sub.steps)
+        made += [f"{st.params.get('recipe')} on each" for st in sub.steps
+                 if st.transform == "apply_recipe"]  # fmt: skip
+        return f"{len(sub.steps)} steps → {', '.join(str(x) for x in made) or 'no unit'}"
 
     def own(ref: str) -> dict[str, Any]:  # a recipe's params no kernel symbol names
         sub = Recipe.load(recipe_path(ref))
@@ -1034,12 +1048,13 @@ def _apply_fields(g: Graph, filled: dict[str, Any], params: dict[str, Any]) -> l
             p: (v if isinstance(v, int) else 1) for p, v in sub.params.items() if p not in named
         }
 
-    choices = [{"value": r, "label": r, "params": own(r)} for r in recipes_for(rec["kernel"])]
+    choices = [{"value": r, "label": r, "params": own(r), "nodes": nodes, "hint": makes(r)}
+               for r in recipes_for(rec["kernel"])]  # fmt: skip
     fields = [
         {"name": "block", "type": "str", "sweepable": False, "readonly": True,
          "value": filled["block"]},
         {"name": "recipe", "type": "choice", "sweepable": False, "readonly": False,
-         "value": filled["recipe"], "choices": choices},
+         "value": filled["recipe"], "choices": choices, "preview": True},
     ]  # fmt: skip
     for p, v in own(filled["recipe"]).items():
         fields.append({"name": f"params.{p}", "type": "int", "sweepable": True,

@@ -314,3 +314,31 @@ def test_the_column_form_applies_to_either_half_of_mvt():
     assert sorted(units) == ["mac", "mac_1"] and {n.attrs["brm"] for n in units.values()} == {"mac"}
     reads = sorted(m.subset[-1] for n in units.values() for k, m in n.inputs.items() if k == "a")
     assert reads == ["8 * n_1_t:8 * n_1_t + 8", "n_t"]  # half 2 a row's 8, half 1 one column
+
+
+def test_the_lift_and_apply_forms_give_what_each_choice_changes():
+    """lift at half 2's multiply: each kernel with the region holding it (dot: its inner loops
+    and fold, matvec_acc: the += nest too) and every region of the kernel (both halves);
+    apply_recipe on the lifted block: each recipe with the block's nodes and its name, and what
+    it makes."""
+    from snax_forge.sandbox.session import form
+
+    g = mvt()
+    lift_form = form("lift", g, {"params": {"at": "tmp2_mult", "kernel": "dot"}}, {})
+    kernels = {c["value"]: c for c in lift_form[0]["choices"]}
+    assert lift_form[0]["preview"] and set(kernels) >= {"dot", "matvec", "matvec_acc"}
+    assert "augassign_19_4_map" in kernels["matvec_acc"]["nodes"]
+    assert "augassign_19_4_map" not in kernels["matvec"]["nodes"]
+    assert set(kernels["dot"]["nodes"]) < set(kernels["dot"]["every"])
+    assert "tmp0_mult" in kernels["dot"]["every"] and "tmp0_mult" not in kernels["dot"]["nodes"]
+    b = lift(g, "matvec_acc", at="tmp2_mult")
+    (name,) = {x["name"] for n, _ in b.walk() for x in n.attrs.get(BLOCK, [])}
+    apply_form = form(
+        "apply_recipe", b, {"params": {"block": name, "recipe": "matvec/matvec_seed"}}, {}
+    )
+    recipes = {
+        c["value"]: c for c in next(f for f in apply_form if f["name"] == "recipe")["choices"]
+    }
+    seed = recipes["matvec/matvec_seed_dot2"]
+    assert name in seed["nodes"] and "tmp2_mult" in seed["nodes"]
+    assert seed["hint"] == "8 steps → mul, sum, link"
