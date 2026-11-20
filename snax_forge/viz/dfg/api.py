@@ -363,7 +363,7 @@ def bindings_section(g: Graph, recipe: Any = None, editable: bool = False) -> di
         split   a split whose map is not bound yet: its factor's params (``not bound``)
         link    a link whose depth a step gives as a param
         recipe  an ``apply_recipe`` step whose ``params`` name the session's params
-                (``matvec/matvec_seed_column_form on matvec_acc_1 · W_x1 = 8``)
+                (``matvec_seed_column_form on matvec_acc_1 · W_x1 = 8``)
 
     Each param ``{name, value, editable, shared_with}``: an input in edit mode
     (``POST /api/params``), ``shared_with`` the other entries naming it (dot 2–6's ``W``, the
@@ -417,7 +417,8 @@ def bindings_section(g: Graph, recipe: Any = None, editable: bool = False) -> di
         names = sorted({x for v in p["params"].values() for x in _param_names(v, params)})
         if names:
             on = p.get("block") or (p.get("region") or ["?"])[0]
-            entries.append({"kind": "recipe", "id": on, "label": f"{p.get('recipe')} on {on}",
+            short = str(p.get("recipe")).rpartition("/")[2]  # the stem: the folder adds little
+            entries.append({"kind": "recipe", "id": on, "label": f"{short} on {on}",
                             "names": names, "lanes": {}, "note": None})  # fmt: skip
     for i, (m, transform, ps, _, _) in enumerate(splits):
         node = next((x for x, _ in g.walk() if x.id == m and x.kind == "map"), None)

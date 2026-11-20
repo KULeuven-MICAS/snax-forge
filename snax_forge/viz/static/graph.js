@@ -513,6 +513,7 @@ function rounded(pts, r = 9) {
   for (let i = 1; i < pts.length - 1; i++) {
     const p = pts[i - 1], q = pts[i], n = pts[i + 1];
     const d1 = Math.hypot(q.x - p.x, q.y - p.y), d2 = Math.hypot(n.x - q.x, n.y - q.y);
+    if (!d1 || !d2) continue; // a point on its neighbour: no corner to round
     const rr = Math.min(r, d1 / 2, d2 / 2);
     const a = { x: q.x + ((p.x - q.x) * rr) / d1, y: q.y + ((p.y - q.y) * rr) / d1 };
     const b = { x: q.x + ((n.x - q.x) * rr) / d2, y: q.y + ((n.y - q.y) * rr) / d2 };
@@ -542,7 +543,7 @@ function reroute(a, b) {
 /** Drawing ``d`` with layout ``L`` into ``canvas`` (emptied first): the outlines and edges, the
 boxes, the port names. A box dragged moves by hand (``L.moves``, kept with the layout while the
 page is open): its edges are routed again as right angles and its outlines grow round it; an
-outline's title or frame drags all it holds. ``scale()`` is the view's zoom, so a drag follows the
+outline's title, frame or empty inside drags all it holds. ``scale()`` is the view's zoom, so a drag follows the
 pointer. */
 export function render(canvas, d, L, scale = () => 1) {
   return new Drawn(canvas, d, L, scale);
@@ -585,7 +586,10 @@ class Drawn {
       const cls = { group: "group-box", accelerator: "acc-box", block: "block-box" }[o.kind] || "group-box";
       const g = svgEl("g", { class: cls, "data-sel": o.sel, "data-group": o.kind === "group" ? o.sel : null, "data-block": o.block || null });
       const rect = { x: b.x, y: b.y, width: b.w, height: b.h, rx: o.kind === "block" ? 10 : 6 };
-      const rects = [svgEl("rect", { ...rect, class: "outline-hit", "data-frame": o.id }), svgEl("rect", rect)];
+      // its inside (a press there selects or drags it; inner outlines lie on top), the band a
+      // click on its frame hits, the frame drawn
+      const rects = [svgEl("rect", { ...rect, class: "outline-fill", "data-frame": o.id }),
+        svgEl("rect", { ...rect, class: "outline-hit", "data-frame": o.id }), svgEl("rect", rect)];
       const t = svgEl("text", { class: "c-title", "data-outline": o.id, "text-anchor": "end" });
       const lines = titleLines(o.text).map((line) => {
         const span = svgEl("tspan");
@@ -594,7 +598,7 @@ class Drawn {
         return span;
       });
       const tip = svgEl("title");
-      tip.textContent = `${o.kind === "block" ? "double-click to collapse; " : ""}drag the title or the frame to move what it holds`;
+      tip.textContent = `${o.kind === "block" ? "double-click to collapse; " : ""}drag it by its title, frame or inside to move what it holds`;
       t.append(tip);
       g.append(...rects, t);
       svg.append(g);
@@ -688,12 +692,16 @@ class Drawn {
     for (const x of this.edges) {
       if (!all && !touched.has(x.e.from) && !touched.has(x.e.to)) continue;
       const moved = L.moves.has(x.e.from) || L.moves.has(x.e.to);
-      x.pts = moved ? cleanPts(reroute(this.port(x.src, x.e.from), this.port(x.dst, x.e.to))) : x.base;
+      const [fx, fy] = L.moves.get(x.e.from) || [0, 0], [tx, ty] = L.moves.get(x.e.to) || [0, 0];
+      // both ends moved together (an outline dragged): the route as laid out, moved with them
+      x.pts = !moved ? x.base : fx === tx && fy === ty ? x.base.map((q) => ({ x: q.x + fx, y: q.y + fy }))
+        : cleanPts(reroute(this.port(x.src, x.e.from), this.port(x.dst, x.e.to)));
       const path = rounded(x.pts);
       x.path.setAttribute("d", path);
       x.hit.setAttribute("d", path);
       if (x.label) {
-        const at = moved ? { x: x.pts[0].x + 5, y: (x.pts[0].y + x.pts[1].y) / 2 + 4 } : x.lpos;
+        const at = !moved ? x.lpos : fx === tx && fy === ty ? { x: x.lpos.x + fx, y: x.lpos.y + fy }
+          : { x: x.pts[0].x + 5, y: (x.pts[0].y + x.pts[1].y) / 2 + 4 };
         x.label.setAttribute("x", at.x);
         x.label.setAttribute("y", at.y);
       }
@@ -902,7 +910,7 @@ const MIN_SCALE = 0.1;
 const MAX_SCALE = 3;
 
 /** A panel's view of its drawing: ``world`` (the canvas) moved and scaled inside ``vp``. Drag the
-empty canvas or scroll to pan, Ctrl (⌘) and scroll or pinch to zoom about the pointer. Below 42 %
+empty canvas outside every outline or scroll to pan, Ctrl (⌘) and scroll or pinch to zoom about the pointer. Below 42 %
 the edge labels and port names go, below 30 % the chips, dtypes and badges (level of detail). */
 export class Viewport {
   constructor(vp, world, onChange = () => {}) {

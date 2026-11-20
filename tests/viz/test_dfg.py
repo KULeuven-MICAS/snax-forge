@@ -538,7 +538,7 @@ def _entries(b):
 @pytest.mark.slow
 def test_an_apply_recipes_params_are_bindings_not_unused():
     """mvt_4_i8_col_reuse: each apply_recipe step naming the session's params is an entry
-    (``matvec/matvec_seed_dot2 on matvec_acc · W_x1 = 8 · D_2 = 1``), so nothing is unused."""
+    (``matvec_seed_dot2 on matvec_acc · W_x1 = 8 · D_2 = 1``), so nothing is unused."""
     from snax_forge.sandbox import Recipe
     from snax_forge.viz.dfg.api import bindings_section
     from tests.helpers import steps
@@ -547,8 +547,8 @@ def test_an_apply_recipes_params_are_bindings_not_unused():
     b = bindings_section(steps("mvt_4_i8_col_reuse")[-1], r, editable=True)
     recipes = [(e["label"], [(p["name"], p["value"]) for p in e["params"]])
                for e in b["entries"] if e["kind"] == "recipe"]  # fmt: skip
-    assert recipes == [("matvec/matvec_seed_dot2 on matvec_acc", [("D_2", 1), ("W_x1", 8)]),
-                       ("matvec/matvec_seed_column_form on matvec_acc_1", [("W_x1", 8)])]  # fmt: skip
+    assert recipes == [("matvec_seed_dot2 on matvec_acc", [("D_2", 1), ("W_x1", 8)]),
+                       ("matvec_seed_column_form on matvec_acc_1", [("W_x1", 8)])]  # fmt: skip
     assert b["unused"] == []
 
 
