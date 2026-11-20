@@ -269,7 +269,7 @@ What else to know:
 
 - The Estimate shows 64 cycles as imported, all unmapped; 64 after the split and the tags (a tag runs nothing); 16 on the accelerator after the bind, with an expected BUSY_COUNTER of 19, a guide and not a check (the flow's run measures `add_acc 19`).
 - Every Apply and param change also runs Save's design checks, listed under the Estimate: problems first, then notes. A note tagged "before Save" (an unbound tasklet, two accelerators not yet encapsulated) is something still to do, and Save refuses it.
-- Undo, redo and the step list move the cursor; Apply below the last step asks to drop the steps after it. A param changed in Bindings replays the steps up to the cursor; the later ones are replayed when the cursor reaches them.
+- Undo, redo and the step list move the cursor; Apply below the last step asks to drop the steps after it. A param changed in Bindings replays the steps up to the cursor; the later ones are replayed when the cursor reaches them. Its ✎ renames it in every step that names it (inside `apply_recipe`'s params too); an unused param has a × that drops it.
 - With several units (dot 1), shift-click the groups' outlines and apply `encapsulate` to make one accelerator of them.
 - Export step writes one step's graph to the session's `export/`.
 

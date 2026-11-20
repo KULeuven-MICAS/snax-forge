@@ -316,6 +316,11 @@ def test_a_param_changes_log_line_counts_its_checks(tmp_path, monkeypatch):
         )
         status, got = post(srv, "/api/params", {"params": {"W_acc_2": 8}})
         assert got["log"] == "params W_acc_2=8  ok · 9 steps replayed"
+        status, got = post(srv, "/api/params", {"rename": {"from": "W_acc_2", "to": "W_s"}})
+        assert status == 200 and got["log"] == "params: W_acc_2 → W_s  ok · 9 steps replayed"
+        status, got = post(srv, "/api/params", {"drop": "W_s"})
+        assert status == 400 and got["code"] == "params.drop" and "split" in got["message"]
+        assert post(srv, "/api/params", {"rename": {"to": "x"}})[1]["code"] == "request.body"
 
 
 @pytest.mark.slow

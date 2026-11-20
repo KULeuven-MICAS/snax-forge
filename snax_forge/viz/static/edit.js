@@ -126,6 +126,27 @@ export async function setParam(name, input) {
   await changed();
 }
 
+/** A param renamed in the session (``POST /api/params`` ``rename``): every step that names it,
+inside ``apply_recipe``'s params too, and the symbols; the steps replayed. */
+export async function renameParam(name) {
+  const to = (prompt(`rename ${name} to`, name) || "").trim();
+  if (!to || to === name) return;
+  ctx.status("replaying…");
+  const r = await post("/api/params", { rename: { from: name, to } });
+  log(r.body.log, !r.ok);
+  ctx.status(r.ok ? "" : r.body.message, !r.ok);
+  await changed();
+}
+
+/** A param no step, symbol or other param names, dropped (``POST /api/params`` ``drop``); one
+something still names is refused, naming what. */
+export async function dropParam(name) {
+  const r = await post("/api/params", { drop: name });
+  log(r.body.log, !r.ok);
+  ctx.status(r.ok ? "" : r.body.message, !r.ok);
+  await changed();
+}
+
 export function undo() {
   if (ctx.state.session && ctx.state.session.undo !== null) move(ctx.state.session.undo);
 }

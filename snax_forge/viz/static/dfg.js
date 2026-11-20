@@ -614,7 +614,8 @@ function hlParam(name, on) {
 }
 
 /** One param of an entry: ``W = 8``, an input in edit mode (``POST /api/params``, every entry
-naming it changes with it), what it is shared with. */
+naming it changes with it), what it is shared with; in edit mode a ✎ that renames it through
+the session and, when nothing names it (``unused``), a × that drops it. */
 function paramEl(p) {
   const value = p.value === null || p.value === undefined ? "?" : String(p.value);
   const shared = p.shared_with && p.shared_with.length ? `shared with ${p.shared_with.join(", ")}` : "";
@@ -625,6 +626,10 @@ function paramEl(p) {
   p.editable
     ? h("input", { value, size: Math.max(3, value.length), "aria-label": `param ${p.name}`, onchange: (ev) => edit.setParam(p.name, ev.target) })
     : h("b", { class: "mono" }, value),
+  p.editable ? h("button", { type: "button", class: "param-act", title: `rename ${p.name} in every step`,
+    "aria-label": `rename ${p.name}`, onclick: () => edit.renameParam(p.name) }, "✎") : null,
+  p.editable && p.unused ? h("button", { type: "button", class: "param-act", title: `drop ${p.name}`,
+    "aria-label": `drop ${p.name}`, onclick: () => edit.dropParam(p.name) }, "×") : null,
   shared ? h("small", {}, ` · ${shared}`) : null);
 }
 
@@ -648,7 +653,7 @@ async function bindings() {
       h("div", { class: "dfg-bind-kids" }, n.children.map(branch))));
   const rows = b.tree ? b.tree.map(branch) : b.entries.map(entry);
   const unused = b.unused.length ? h("div", { class: "dfg-binding unused" }, h("span", { class: "muted" }, "unused: "),
-    b.unused.map((p, i) => [i ? ", " : "", paramEl({ ...p, shared_with: [] })])) : null;
+    b.unused.map((p, i) => [i ? ", " : "", paramEl({ ...p, shared_with: [], unused: true })])) : null;
   box.replaceChildren(...(rows.length || unused ? [...rows, unused].filter(Boolean) : [h("p", { class: "muted" }, "Nothing split or bound yet.")]));
 }
 

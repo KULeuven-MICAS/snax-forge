@@ -609,6 +609,8 @@ svg.dfg-edges .block-box text { font-size: 0.85rem; font-weight: 600; fill: var(
 .dfg-param { display: inline-flex; align-items: baseline; gap: 0.15rem; padding: 0 0.2rem; border-radius: 3px; flex-wrap: wrap; }
 .dfg-param input { font: inherit; width: auto; color: var(--ink); background: var(--bg); border: 1px solid var(--rule); border-radius: 3px; padding: 0 0.25rem; }
 .dfg-param small { color: var(--muted); }
+.dfg-param .param-act { font: inherit; color: var(--muted); background: none; border: none; padding: 0 0.1rem; cursor: pointer; }
+.dfg-param .param-act:hover { color: var(--ink); }
 .dfg-param.param-hl { box-shadow: 0 0 0 2px var(--busy); }
 .dfg-transform { border-top: 1px solid var(--rule); }
 .dfg-transform-name { display: block; width: 100%; text-align: left; border: none; background: none; padding: 0.35rem 0.2rem; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }

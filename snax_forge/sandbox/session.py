@@ -359,6 +359,53 @@ class Session:
                     "redo": list(range(self.cursor + 1, self.n + 1)),
                     "checks": self._checks_of(self.cursor)}  # fmt: skip
 
+    def drop_param(self, name: str) -> dict[str, Any]:
+        """Param ``name`` gone from the session, when no step, symbol or other param names it."""
+        with self._lock:
+            r = self.recipe
+            if name not in r.params:
+                return _refused("params.drop", f"no param {name!r} (params: {sorted(r.params)})")
+            users = _param_users(r, name)
+            if users:
+                return _refused("params.drop", f"{name} is named by {', '.join(users)}: rename "
+                                "it, or undo those steps first")  # fmt: skip
+            self.recipe = replace(r, params={k: v for k, v in r.params.items() if k != name})
+            self.own_params = [p for p in self.own_params if p != name]
+            self._write()
+            return {"ok": True, "params": dict(self.recipe.params)}
+
+    def rename_param(self, old: str, new: str) -> dict[str, Any]:
+        """Param ``old`` named ``new`` in the params, every step (inside ``apply_recipe``'s
+        params too), the symbols and the other params; every step replayed."""
+        with self._lock:
+            r = self.recipe
+            if old not in r.params:
+                return _refused("params.rename", f"no param {old!r} (params: {sorted(r.params)})")
+            if not isinstance(new, str) or not new.isidentifier() or new.startswith("_"):
+                return _refused("params.rename", f"{new!r} is not a name (an identifier, not "
+                                "starting with _)")  # fmt: skip
+            taken = set(r.params) | set(r.symbols) | set(self.graphs[0].containers)
+            if new in taken:
+                return _refused("params.rename", f"{new} is taken (a param, symbol or container)")
+            ren = {old: new}
+            recipe = replace(
+                r, params={ren.get(k, k): _renamed(v, ren) for k, v in r.params.items()},
+                symbols={k: _renamed(v, ren) for k, v in r.symbols.items()},
+                steps=[Step(st.transform, {p: _renamed(v, ren) for p, v in st.params.items()})
+                       for st in r.steps])  # fmt: skip
+            try:
+                graphs, inputs, want = self._replay(recipe, self.cursor)
+            except StepError as e:
+                return _refused(_code(e), str(e), index=e.index)  # type: ignore[attr-defined]
+            except (SandboxError, DfgError) as e:
+                return _refused(_code(e), str(e), index=0)
+            self.recipe, self.graphs, self.inputs, self.want = recipe, graphs, inputs, want
+            self.own_params = [ren.get(p, p) for p in self.own_params]
+            self._forget(-1)
+            self._write()
+            return {"ok": True, "params": dict(recipe.params), "replayed": self.cursor,
+                    "redo": list(range(self.cursor + 1, self.n + 1))}  # fmt: skip
+
     def save(self, name: str, force: bool = False) -> dict[str, Any]:
         """Steps 1..cursor as a recipe of its own (CONTRACTS, "Recipe")."""
         with self._lock:
@@ -870,8 +917,22 @@ def merge_shared_params(recipe: Recipe, g: Graph, own: list[str]) -> tuple[Recip
     return replace(recipe, params=params, steps=steps), renamed
 
 
+def _param_users(r: Recipe, name: str) -> list[str]:
+    """What names param ``name``: ``step 4 (apply_recipe)``, ``symbol M``, ``param W_2``."""
+    out = [f"step {i + 1} ({st.transform})" for i, st in enumerate(r.steps)
+           if name in _step_names(st)]  # fmt: skip
+    out += [f"symbol {k}" for k, v in r.symbols.items() if name in _names_in(v)]
+    out += [f"param {k}" for k, v in r.params.items() if k != name and name in _names_in(v)]
+    return out
+
+
 def _renamed(v: Any, renamed: dict[str, str]) -> Any:
-    """A step param with the renamed params in place (a bare name; an expression rewritten)."""
+    """A step param with the renamed params in place (a bare name; an expression rewritten;
+    inside a dict's values or a list, as ``apply_recipe``'s ``params``)."""
+    if isinstance(v, dict):
+        return {k: _renamed(x, renamed) for k, x in v.items()}
+    if isinstance(v, list):
+        return [_renamed(x, renamed) for x in v]
     if not isinstance(v, str):
         return v
     if v in renamed:

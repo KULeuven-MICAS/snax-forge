@@ -664,6 +664,40 @@ def test_save_keeps_a_param_named_only_inside_apply_recipes_params():
     assert keep == {"M", "N", "W_x1"}
 
 
+def test_a_param_is_dropped_only_when_nothing_names_it(roots):
+    """vecmul with an extra param K nothing names: dropped, and Save does not need it; W, which
+    its split names, is refused naming the step; an unknown name is refused."""
+    extra = roots.recipes / "elementwise" / "vecmul_extra.json"
+    extra.parent.mkdir(parents=True, exist_ok=True)
+    replace(recipe("vecmul"), name="vecmul_extra",
+            params={**recipe("vecmul").params, "K": 3}).save(extra)  # fmt: skip
+    s = Session.from_recipe(extra, roots=roots)
+    assert ok(s.drop_param("K"))["params"] == recipe("vecmul").params
+    assert "K" not in s.own_params and "K" not in Recipe.load(s.folder / "recipe.json").params
+    refused = s.drop_param("W")
+    assert refused["code"] == "params.drop" and "step 1 (split_map)" in refused["message"]
+    assert s.drop_param("nope")["code"] == "params.drop"
+
+
+def test_a_param_renamed_in_every_step_and_inside_apply_recipe(roots):
+    """dot 1 by hand: W_acc_1 renamed W_m in its split and the params, the graphs the same;
+    mvt_4_i8_col_reuse's W_x1 renamed W inside both apply_recipe steps' params, replayed; a
+    taken name or a non-identifier is refused."""
+    s, _ = dot1_by_hand(roots)
+    before = [g.to_dict() for g in s.graphs]
+    ok(s.rename_param("W_acc_1", "W_m"))
+    assert "W_m" in s.recipe.params and "W_acc_1" not in s.recipe.params
+    assert s.recipe.steps[0].params["factor"] == "W_m"
+    assert [g.to_dict() for g in s.graphs] == before
+    assert s.rename_param("W_m", "W_acc_2")["code"] == "params.rename"
+    assert s.rename_param("W_m", "2W")["code"] == "params.rename"
+    m = opened("mvt_4_i8_col_reuse", roots)
+    ok(m.rename_param("W_x1", "W"))
+    assert [st.params["params"]["W"] for st in m.recipe.steps if st.transform == "apply_recipe"] \
+        == ["W", "W"]  # fmt: skip
+    assert m.recipe.params["W"] == 8 and "W_x1" not in m.recipe.params
+
+
 def test_sites_over_a_selection_on_dot_1(roots):
     """Dot 1 by hand at step 8: the two group outlines (acc_1, acc_2) offer encapsulate with
     both units ticked, one unit's box (mult) only that unit; split over two items is refused,
