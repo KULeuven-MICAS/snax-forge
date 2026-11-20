@@ -31,14 +31,15 @@ DESIGNS = [
     "matvec_1", "matvec_2", "matvec_3", "matvec_4", "matvec_5", "matvec_6", "relu",
     "axpy", "axpy_baked", "rowsum_2", "rowsum_2_padded", "matvec_seed", "matvec_seed_serial",
     "dot_1_shared", "mvt_1_dot2_shared", "vecadd_i32_w1", "mvt_4_i64_dma_AT_sequential",
-    "mvt_4_i8_dma_AT_sequential",
+    "mvt_4_i8_dma_AT_sequential", "mvt_4_i8_col_sequential",
 ]  # fmt: skip
 # A fixture made from another recipe, or with --set values: its recipe and its sets
 FROM = {"rowsum_2_padded": ("rowsum_2", ("memory.passes.layout=padded_rows",)),
         "mvt_1_dot2_shared": ("mvt_1_dot2_shared", ("W=8",)),
         "vecadd_i32_w1": ("vecadd_i32", ("W=1",)),
         "mvt_4_i64_dma_AT_sequential": ("mvt_4_i64_dma_AT", ("design.schedule=sequential",)),
-        "mvt_4_i8_dma_AT_sequential": ("mvt_4_i8_dma_AT", ("design.schedule=sequential",))}  # fmt: skip
+        "mvt_4_i8_dma_AT_sequential": ("mvt_4_i8_dma_AT", ("design.schedule=sequential",)),
+        "mvt_4_i8_col_sequential": ("mvt_4_i8_col", ("design.schedule=sequential",))}  # fmt: skip
 
 pytestmark = requires_submodule
 
