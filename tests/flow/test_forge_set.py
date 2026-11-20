@@ -143,7 +143,9 @@ def test_the_mvt_set_is_its_own():
     inputs, above 64: a note), mvt_2_reuse at its defaults (the twin check), mvt_3 at its defaults (W = 8, contiguous), mvt_4 at W = 8 and 4,
     mvt_3_split at W = 8, contiguous and padded_rows, under each schedule of D179, and mvt_4,
     mvt_4_i64_dma_AT and mvt_4_i8_dma_AT (int8 in, int32 out) at W = 8, contiguous and
-    padded_rows, sequential (D183); in neither quick nor full."""
+    padded_rows, sequential (D183), and mvt_4_i8_col (half 2 a seeded Mac, D186 · D187) at its
+    defaults, sequential contiguous and padded_rows and pipeline contiguous; in neither quick nor
+    full."""
     names = [d.name for d in fs.SETS["mvt"]]
     pad = "_passes.layoutpadded_rows"
     two = ["mvt_2", "mvt_2_shared"]
@@ -158,6 +160,8 @@ def test_the_mvt_set_is_its_own():
           for s in ("serial", "pipeline", "pipeline_compute")),
         *(f"{r}{p}_schedulesequential"
           for r in ("mvt_4", "mvt_4_i64_dma_AT", "mvt_4_i8_dma_AT") for p in ("", pad)),
+        "mvt_4_i8_col_schedulesequential", f"mvt_4_i8_col{pad}_schedulesequential",
+        "mvt_4_i8_col_schedulepipeline",
     ]  # fmt: skip
-    assert len(names) == 38
+    assert len(names) == 41
     assert not {d.recipe for d in fs.SETS["mvt"]} & {d.recipe for d in fs.SETS["full"]}
