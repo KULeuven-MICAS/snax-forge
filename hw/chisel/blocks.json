@@ -90,9 +90,16 @@
    },
    "lanes": {"type": "int", "min": 1},
    "accumulate": {"type": "bool"},
-   "regOut": {"type": "bool"}
+   "regOut": {"type": "bool"},
+   "seed": {"type": "bool"}
   },
-  "ports": {"a": "in", "b": "in", "c": {"dir": "in", "when": {"accumulate": false}}, "out": "out"},
+  "ports": {
+   "a": "in",
+   "b": "in",
+   "c": {"dir": "in", "when": {"accumulate": false}},
+   "seed": {"dir": "in", "when": {"seed": true}},
+   "out": "out"
+  },
   "latency": "max(accumulate, regOut)",
   "span": 1,
   "flops": "lanes * width(outType) * max(accumulate, regOut)",
@@ -107,7 +114,8 @@
    "outType": "outputs.dtype",
    "lanes": "inputs.lanes",
    "accumulate": "unit.params.accumulate",
-   "regOut": "unit.params.regOut"
+   "regOut": "unit.params.regOut",
+   "seed": "unit.ports.seed"
   }
  },
  "SerialAccumulate": {

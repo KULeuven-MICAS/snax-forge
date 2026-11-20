@@ -76,7 +76,12 @@ class BlockEmitSpec extends AnyFlatSpec {
       Set.empty,
       registered = true
     )
-  } ++ Seq((true, false, true), (false, false, false), (false, true, true)).map { case (acc, reg, registered) =>
+  } ++ Seq(
+    (true, false, false, true),
+    (true, false, true, true),
+    (false, false, false, false),
+    (false, true, false, true)
+  ).map { case (acc, reg, seed, registered) => // seeded, the port seed
     Case(
       "Mac",
       ujson.Obj(
@@ -85,7 +90,8 @@ class BlockEmitSpec extends AnyFlatSpec {
         "outType"    -> "int64",
         "lanes"      -> Lanes,
         "accumulate" -> acc,
-        "regOut"     -> reg
+        "regOut"     -> reg,
+        "seed"       -> seed
       ),
       Set.empty,
       registered
@@ -296,7 +302,8 @@ class BlockEmitSpec extends AnyFlatSpec {
       (
         "a bool that is not one",
         "Mac",
-        """{"inTypes":["int64","int64"],"opType":"int64","outType":"int64","lanes":1,"accumulate":1,"regOut":false}"""
+        """{"inTypes":["int64","int64"],"opType":"int64","outType":"int64","lanes":1,"accumulate":1,"regOut":false,""" +
+          """"seed":false}"""
       ),
       ("params that are not an object", "TreeAccumulate", "[]")
     )

@@ -12,7 +12,10 @@ import snax.forge.IntType
   *
   *   - `accumulate`: on `fire`, s ← `first` ? p : s + p at `outType`; `out` is s. Latency 1, pins `fire` and `first`:
   *     its control unit pushes `out` in the cycle after a job's last beat fires, and may fire the next job's first beat
-  *     in that cycle, since s changes only at the cycle's end.
+  *     in that cycle, since s changes only at the cycle's end. Seeded (`seed`), it has one more input, `seed`, of
+  *     `out`'s type and lanes, read once per job: s ← `first` ? seed + p : s + p, so lane l's sum starts from seed(l)
+  *     (D187). The control unit holds the first beat until the seed is valid and takes it with that firing
+  *     (`ctrl.GroupRule`); unseeded it is the block it was, the same RTL.
   *   - plain: `out` = p + c at `outType` (`c` of `out`'s type and lanes), combinational (latency 0), or with `regOut` a
   *     register that takes it on `en` (latency 1, pin `en`: its firing).
   *
@@ -30,6 +33,8 @@ import snax.forge.IntType
   *   the accumulating form; otherwise the plain a·b + c
   * @param regOut
   *   the plain form's output register (`regIn` is not built)
+  * @param seed
+  *   the accumulating form's seed port (the BRM's `seed`); refused on the plain form
   */
 class Mac(
   val inTypes:    Seq[String] = Seq("int64", "int64"),
@@ -37,13 +42,15 @@ class Mac(
   val outType:    String      = "int64",
   val lanes:      Int         = 4,
   val accumulate: Boolean     = true,
-  val regOut:     Boolean     = false
+  val regOut:     Boolean     = false,
+  val seed:       Boolean     = false
 ) extends DatapathModule {
   require(lanes > 0, s"lanes must be positive, got $lanes")
   require(
     !(accumulate && regOut),
     "regOut is the plain form's output register; an accumulating Mac's s is its register"
   )
+  require(!seed || accumulate, "seed is the accumulating form's start; a plain Mac adds c instead")
   require(
     inTypes.size == (if (accumulate) 2 else 3),
     s"inTypes must name a, b${if (accumulate) "" else " and c"}, got ${inTypes.mkString(", ")}"
@@ -57,12 +64,13 @@ class Mac(
   private val form = if (accumulate) "acc" else if (regOut) "reg" else "plain"
 
   override def desiredName: String =
-    s"Mac_${ins.take(2).map(_.tag).mkString("x")}_${opT.tag}_${outT.tag}_n${lanes}_$form"
+    s"Mac_${ins.take(2).map(_.tag).mkString("x")}_${opT.tag}_${outT.tag}_n${lanes}_$form${if (seed) "_seed" else ""}"
 
   val io = IO(new Bundle {
     val a     = Input(Vec(lanes, ins(0).lane))
     val b     = Input(Vec(lanes, ins(1).lane))
     val c     = if (!accumulate) Some(Input(Vec(lanes, outT.lane))) else None
+    val seed  = Option.when(Mac.this.seed)(Input(Vec(lanes, outT.lane)))
     val out   = Output(Vec(lanes, outT.lane))
     val fire  = if (accumulate) Some(Input(Bool())) else None
     val first = if (accumulate) Some(Input(Bool())) else None
@@ -78,8 +86,15 @@ class Mac(
 
   if (accumulate) {
     val s = RegInit(VecInit(Seq.fill(lanes)(0.U(outT.width.W))))
-    when(io.fire.get) {
-      for (l <- 0 until lanes) s(l) := Mux(io.first.get, p(l), s(l) + p(l))
+    io.seed match {
+      case None    =>
+        when(io.fire.get) {
+          for (l <- 0 until lanes) s(l) := Mux(io.first.get, p(l), s(l) + p(l))
+        }
+      case Some(q) => // a job's first beat starts from the seed
+        when(io.fire.get) {
+          for (l <- 0 until lanes) s(l) := Mux(io.first.get, IntType.cast(q(l), outT, outT).asUInt, s(l)) + p(l)
+        }
     }
     for (l <- 0 until lanes) io.out(l) := IntType.cast(s(l), outT, outT)
   } else {

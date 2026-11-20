@@ -49,22 +49,23 @@ class PackedGroupCtrl(desc: GroupDesc, dOut: Int, dIn: Seq[(Int, Int)] = Seq.emp
   pk.word             := packer.io.out.bits.asUInt
 }
 
-/** `GroupCtrl` alone (no datapath, as UnitCasesSpec drives shapes it has none for) through snax-gvsoc's 48 group cases
+/** `GroupCtrl` alone (no datapath, as UnitCasesSpec drives shapes it has none for) through snax-gvsoc's 50 group cases
   * (`SnaxGroupCases`: dot 2-6 at T 2 and 4, J 1 and 2, dot 5 and 6 at W 1, backpressure, an input gap, JOBS 0, the
-  * fold's seed: two folds unseeded, the first or both seeded, a late seed on one fold and on a SerialAccumulate; the
-  * output packer, `pack_*`; and the input slicer, `slice_*`; their data is checked by `tb.cpp`, and dot5_w1_j2's
-  * through the wrapper by ShellEndToEndSpec), cycle for cycle: per cycle the outer valids and the output's ready poked;
-  * each input's ready (its unit's firing, the per-unit join of CONTRACTS, "Accelerator RTL spec"; a seed's that firing
-  * on its job's first beat, the unit's firings counted mod its T), each unit's fire and give, each buffer's occupancy
-  * after the cycle and busy compared; at the run's end its line from `cls` per busy cycle and the head's firings. Each
-  * case runs twice (the rule does not tell the two apart, the control unit's counters do): with every unit's T fixed
-  * (`params.T`), JOBS on its wire; and with every unit of T != 1 open, its T a JOB_BEATS read live from its wire, so
-  * dot 2's and dot 3's mul counts against or borrows from a sum whose T is the csr's. A `pack_*` case (`dout`) runs
-  * through `PackedGroupCtrl`: the case's ready is the writer's, the owner's n-th push in a run is -(n + 1) at the
-  * lane's width, and per busy cycle `sent` is the packer's word going out; at the end the words sent are the case's
-  * `words`. A `slice_*` case (`din`) runs through it too, its sliced inputs through slicers: their valids are the
-  * readers', and their ready, the word taken, is compared with the case's `took`. Without `SNAX_GVSOC_GROUP_CASES` the
-  * spec cancels.
+  * fold's seed: two folds unseeded, the first or both seeded, a late seed on one fold, on a SerialAccumulate and on a
+  * Mac (D187); the output packer, `pack_*`; and the input slicer, `slice_*`, among them a seeded Mac's broadcast input
+  * sliced 8 from a word (D186: wires after the slicer, which the rule does not see); their data is checked by `tb.cpp`,
+  * and dot5_w1_j2's through the wrapper by ShellEndToEndSpec), cycle for cycle: per cycle the outer valids and the
+  * output's ready poked; each input's ready (its unit's firing, the per-unit join of CONTRACTS, "Accelerator RTL spec";
+  * a seed's that firing on its job's first beat, the unit's firings counted mod its T), each unit's fire and give, each
+  * buffer's occupancy after the cycle and busy compared; at the run's end its line from `cls` per busy cycle and the
+  * head's firings. Each case runs twice (the rule does not tell the two apart, the control unit's counters do): with
+  * every unit's T fixed (`params.T`), JOBS on its wire; and with every unit of T != 1 open, its T a JOB_BEATS read live
+  * from its wire, so dot 2's and dot 3's mul counts against or borrows from a sum whose T is the csr's. A `pack_*` case
+  * (`dout`) runs through `PackedGroupCtrl`: the case's ready is the writer's, the owner's n-th push in a run is -(n +
+  * 1) at the lane's width, and per busy cycle `sent` is the packer's word going out; at the end the words sent are the
+  * case's `words`. A `slice_*` case (`din`) runs through it too, its sliced inputs through slicers: their valids are
+  * the readers', and their ready, the word taken, is compared with the case's `took`. Without `SNAX_GVSOC_GROUP_CASES`
+  * the spec cancels.
   */
 class GroupCasesSpec extends AnyFlatSpec with ForgeTester {
 
@@ -172,7 +173,7 @@ class GroupCasesSpec extends AnyFlatSpec with ForgeTester {
       it should "give every group case's cycles and runs" in
         cancel(s"${SnaxGroupCases.Env} is not set (snax-gvsoc's tests/snax/group/cases)")
     case Some(all) =>
-      it should "find the 48 group cases" in assert(all.size == 48, s"${all.size} cases")
+      it should "find the 50 group cases" in assert(all.size == 50, s"${all.size} cases")
       for (c <- all) {
         it should s"give ${c.name}'s cycles and runs" in run(c, open = false)
         it should s"give ${c.name}'s cycles and runs with its T from JOB_BEATS" in run(c, open = true)

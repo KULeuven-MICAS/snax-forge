@@ -39,7 +39,8 @@ class BlockInShellSpec extends AnyFlatSpec {
         "outType"    -> "int64",
         "lanes"      -> 1,
         "accumulate" -> true,
-        "regOut"     -> false
+        "regOut"     -> false,
+        "seed"       -> false
       )
     ),
     Case("dot_5_w1", "sum", false, ujson.Obj("inType" -> "int64", "outType" -> "int64", "lanes" -> 1, "seed" -> false))

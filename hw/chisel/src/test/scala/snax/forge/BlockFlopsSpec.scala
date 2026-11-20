@@ -10,8 +10,8 @@ import snax.forge.datapath.SimdLanes
 import snax.forge.elementwise.ElementwiseOp
 
 /** `flops` (`blocks.json`, the registry's `Datapath.flops`): per seed of `Seeds`, a block of every datapath at random
-  * params (the Mac in its three forms) emitted alone through one `Emit --block` call, and the register bits its
-  * SystemVerilog declares (`reg [n:0] name;` lines of every file, firtool's form for a flop, a Vec register one per
+  * params (the Mac in its three forms and seeded) emitted alone through one `Emit --block` call, and the register bits
+  * its SystemVerilog declares (`reg [n:0] name;` lines of every file, firtool's form for a flop, a Vec register one per
   * element) equal to the expression evaluated on the params (`FlopsExpr`, `snax_forge/expr.py`'s grammar as Python
   * evaluates it).
   */
@@ -19,7 +19,7 @@ class BlockFlopsSpec extends AnyFlatSpec {
 
   private def dtype(r: Rand, atLeast: Int = 0): String = r.pick(IntType.names.filter(IntType(_).width >= atLeast))
 
-  /** One random block per datapath, the Mac in each form: its name and params. */
+  /** One random block per datapath, the Mac in each form and seeded: its name and params. */
   private def blocks(r: Rand): Seq[(String, ujson.Obj)] = {
     def lanes       = r.between(1, 8)
     val elementwise = {
@@ -58,16 +58,18 @@ class BlockFlopsSpec extends AnyFlatSpec {
         "seed"    -> r.chance(0.5)
       )
     }
-    val macs        = Seq((true, false), (false, false), (false, true)).map { case (acc, reg) =>
-      val out = dtype(r)
-      ujson.Obj(
-        "inTypes"    -> ujson.Arr.from(Seq(dtype(r), dtype(r)) ++ (if (acc) Nil else Seq(out))),
-        "opType"     -> dtype(r),
-        "outType"    -> out,
-        "lanes"      -> lanes,
-        "accumulate" -> acc,
-        "regOut"     -> reg
-      )
+    val macs        = Seq((true, false, false), (true, false, true), (false, false, false), (false, true, false)).map {
+      case (acc, reg, seed) =>
+        val out = dtype(r)
+        ujson.Obj(
+          "inTypes"    -> ujson.Arr.from(Seq(dtype(r), dtype(r)) ++ (if (acc) Nil else Seq(out))),
+          "opType"     -> dtype(r),
+          "outType"    -> out,
+          "lanes"      -> lanes,
+          "accumulate" -> acc,
+          "regOut"     -> reg,
+          "seed"       -> seed // the accumulating form's seed: a port, no register
+        )
     }
     val serial      = {
       val in = dtype(r)

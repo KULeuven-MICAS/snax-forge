@@ -456,3 +456,14 @@ def test_a_broadcast_is_sliced_one_lane_a_pop():
     s = g.cost.links["mac_x2.b"]
     assert (s.datapath, s.found, s.fires) == ("FifoSlicer", "measured", 32)
     assert g.bits["mac_x2.b"] == slicer_bits(8)
+    mac = g.cost.units["mac_x2"]  # the seeded Mac at its unseeded entry (D187)
+    assert (mac.datapath, mac.found, mac.fires) == ("Mac", "unseeded", 32)
+    assert e.missing == []
+
+
+def test_an_unseeded_mac_is_priced_at_its_measured_entry():
+    """dot 5's Mac (seed false in the catalogue, no seed key in the table) is priced, not
+    missing."""
+    e = estimate(steps("dot_5")[-1])
+    found = {k: b.found for g in e.groups for k, b in g.cost.units.items()}
+    assert found["mac"] in ("measured", "copy") and e.missing == []
