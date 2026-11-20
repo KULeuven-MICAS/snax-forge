@@ -542,6 +542,8 @@ svg.dfg-edges .group-box rect.outline-hit, svg.dfg-edges .acc-box rect.outline-h
 .c-node.c-block > .c-text { font-weight: 600; }
 svg.dfg-edges .block-box rect { fill: none; stroke: var(--ink); stroke-width: 1.2; stroke-dasharray: 1 4; stroke-linecap: round; pointer-events: stroke; cursor: pointer; }
 svg.dfg-edges .block-box rect.outline-hit { stroke: transparent; stroke-width: 10; stroke-dasharray: none; }
+svg.dfg-edges .block-box.sel rect:not(.outline-hit):not(.outline-fill) { stroke: var(--hl); stroke-width: 2.2; } /* after .block-box rect, which would win */
+svg.dfg-edges .block-box.hover rect:not(.outline-hit):not(.outline-fill) { stroke: var(--busy); stroke-width: 2.5; }
 svg.dfg-edges .block-box text { font-size: 0.85rem; font-weight: 600; fill: var(--ink); paint-order: stroke; stroke: var(--bg); stroke-width: 4px; stroke-linejoin: round; pointer-events: visiblePainted; cursor: pointer; }
 .dfg-block { display: flex; align-items: baseline; gap: 0.2rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dfg-block.sel .dfg-cont-name { color: var(--hl); font-weight: 600; }
@@ -550,7 +552,7 @@ svg.dfg-edges .block-box text { font-size: 0.85rem; font-weight: 600; fill: var(
 
 /* the selection */
 .c-node.sel, .c-pill.sel { box-shadow: 0 0 0 2px var(--hl); }
-.c-map.sel { box-shadow: 0 0 0 2px var(--hl); }
+.c-map.sel, .c-map.c-loop.sel > .c-bar { box-shadow: 0 0 0 2px var(--hl); }
 
 /* a selected map's partners (dfg.js's showPartners): a dashed outline and a tag in the
    transform's colour, and for a fuse a marker beside the transient between the two nests */
@@ -561,7 +563,8 @@ svg.dfg-edges .block-box text { font-size: 0.85rem; font-weight: 600; fill: var(
 .p-interchange_map { --p: var(--p-swap); }
 .p-near { --p: var(--muted); }
 .p-tag.p-near { background: var(--panel); color: var(--muted); border: 1px dashed var(--muted); font-weight: 400; white-space: nowrap; }
-.c-map.p-on { outline: 2px dashed var(--p); outline-offset: 2px; }
+.c-map.p-on > .c-bar { outline: 2px dashed var(--p); outline-offset: 2px; } /* on the bar, which is drawn over the box */
+.c-box.p-on { z-index: 3; } /* its tags and marker over the boxes drawn after it */
 .c-bar { position: relative; }
 .p-tags { position: absolute; right: 0.3rem; bottom: 100%; display: flex; gap: 0.25rem; margin-bottom: 3px; pointer-events: none; }
 .p-tag { padding: 0 0.35rem; border-radius: 3px; background: var(--p); color: var(--panel); font: 600 0.7rem/1.35 ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
@@ -877,7 +880,7 @@ svg.dfg-edges g rect.outline-fill { fill: transparent; stroke: none; pointer-eve
 /* what an open lift or apply_recipe form would change (dfg.js's preview) */
 :root { --pv: #0e7c86; }
 @media (prefers-color-scheme: dark) { :root { --pv: #3cc3cf; } }
-.c-box.pv-on { box-shadow: 0 0 0 2.5px var(--pv); }
+.c-box.pv-on:not(.c-map), .c-map.pv-on > .c-bar { outline: 3px solid var(--pv); outline-offset: 2px; } /* a loop: on its bar, which is drawn over the box */
 svg.dfg-edges rect.pv-on:not(.outline-hit):not(.outline-fill) { stroke: var(--pv); stroke-width: 2.5; stroke-dasharray: none; }
 svg.dfg-edges path.edge.pv-edge { stroke: var(--pv); stroke-width: 2.6; }
 svg.dfg-edges path.edge.pv-touch { stroke: var(--pv); stroke-width: 1.8; stroke-opacity: 0.55; }

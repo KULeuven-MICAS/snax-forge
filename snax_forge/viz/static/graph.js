@@ -6,7 +6,8 @@
 //
 // Rows: every box on the row of its longest path from the kernel's inputs (ELK's partitions), the
 // front loops on the rows api.py gives (``row``), a group's temporal muxes on one row and its
-// demuxes on another (``rows``). An outline's title sits in its lower right corner.
+// demuxes on another (``rows``); a top-level outline on the row of its first box, so outlines that
+// start on one row sit side by side. An outline's title sits in its lower right corner.
 
 import { h } from "./dom.js";
 
@@ -153,6 +154,16 @@ function elkGraph(d, sizes, lanes = new Map(), forced = false, inOrder = new Map
     if (!top.includes(item)) top.push(item);
   }
   for (const o of d.outlines) if (!o.parent && !top.includes(made.get(o.id))) top.push(made.get(o.id)); // an empty one
+  // a top-level outline on the row of its first box: without a partition of its own ELK puts it
+  // after every partitioned box, below whatever else is drawn (both halves of mvt one under the
+  // other)
+  const first = new Map();
+  for (const n of d.nodes) {
+    if (!n.parent || !outline.has(n.parent)) continue;
+    const r = rootOf(n.parent), at = row.get(n.id);
+    if (at !== undefined && (!first.has(r) || at < first.get(r))) first.set(r, at);
+  }
+  for (const [r, at] of first) made.get(r).layoutOptions["elk.partitioning.partition"] = String(at);
   const edges = d.edges.map((e, i) => ({
     id: `e${i}`, sources: [ends[i][0]], targets: [ends[i][1]],
     labels: e.label ? [{ text: e.label, width: Math.ceil(textWidth(e.label) * (e.transpose ? 1.45 : 1)) + 6, height: e.transpose ? 20 : 15 }] : [],
