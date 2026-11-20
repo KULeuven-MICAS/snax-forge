@@ -153,7 +153,7 @@ The first four are shared: designs that differ only in timing, supported values 
 |---|---|
 | `name` | not a Python keyword, not starting with `_`; by convention `a`, `b`, ... in, `out` out |
 | `rate` | a beat every `rate` firings, an int or a runtime param's name: an input at firings `0, r, 2r, ...`, an output at `r-1, 2r-1, ...` (a SIMD block 1 everywhere; a reduction 1 in, `T` out) |
-| `when` | `{param: value, ...}` over design params: the port exists only when every one holds (`simd`'s `b` only at `streams` 2, `accumulate`'s `seed` only at `seed` 1) |
+| `when` | `{param: value, ...}` over design params: the port exists only when every one holds (`simd`'s `b` only at `streams` 2, `accumulate`'s and `mac`'s `seed` only at `seed` 1) |
 | `dtypes` | the dtypes the port takes (`brm/dtypes.py`); every integer dtype by default, written only when narrowed |
 
 ### Timing and params
@@ -200,15 +200,19 @@ The library's BRMs:
 | `simd` | `chisel_tiled_spatial` | `SimdLanes` (`lanes` W, `op`) | |
 | `accumulate` | `chisel_adder_tree` | `TreeAccumulate` (`a` → `in`) | `seed` 0 or 1 adds the input `seed`, one lane at rate T, read once per job (D163) |
 | `accumulate` | `chisel_serial` | `SerialAccumulate` | one lane a cycle, so `span` = lanes |
-| `mac` | `chisel_mac` | `Mac` (`accumulate` true, `regOut` false) | `out = a * b` folded per lane over T beats (D149) |
+| `mac` | `chisel_mac` | `Mac` (`accumulate` true, `regOut` false) | `out = a * b` folded per lane over T beats (D149); `seed` 0 or 1 adds the input `seed`, W lanes at rate T, read once per job (D187); a `b` bound as one lane is given to every lane (D186) |
 | `lane_accumulate` | `chisel_lane_accumulate` | `LaneAccumulate` | rowsum 2: `out = a`, each lane folding its own element over T beats; a front op is refused (bind `mac`) |
 
 `mac`'s pattern, `lane_fold`, is a fused nest (section 4): a multiply and a reduce joined by a local value, the fold indexed by the spatial variable:
 
 <!-- snippet: snax_forge/brm/library/mac.json -->
 ```json
- "function": {"accel": "mac", "params": {"lanes": "W", "op": "op"}, "code": "out = a * b"},
- "dataflow": {"notation": "stream", "ports": {"a": {}, "b": {}, "out": {}}},
+ "function": {
+  "accel": "mac",
+  "params": {"lanes": "W", "op": "op", "seed": "seed"},
+  "code": "out = a * b"
+ },
+ "dataflow": {"notation": "stream", "ports": {"a": {}, "b": {}, "seed": {}, "out": {}}},
  "pattern": {"family": "lane_fold", "attrs": {"op": "mul", "fold": "add"}},
 ```
 
@@ -276,7 +280,7 @@ Each has an inverse, and each refuses with the fix named. The loop names follow 
 What `bind` checks:
 
 - Every map around the spatial map is `temporal` (an untagged one names `tag_map`; `tile` is not lowered yet). The lanes param comes from the spatial bound, and the dimension over the spatial variable becomes the lanes' range.
-- The tasklet's code on the port names equals the BRM's `function.code` (section 3). A folding output without the spatial variable becomes one lane (D102).
+- The tasklet's code on the port names equals the BRM's `function.code` (section 3). A folding output without the spatial variable becomes one lane (D102). An input without it is a broadcast (D186): one lane a beat, given to every lane, taken only on a lane-wise datapath (`SimdLanes`, `Mac`); elsewhere it is refused, naming `mac` and `simd`. A seed (D163 · D187) has its output's lanes.
 - A fused nest binds as one: as a fold (`lane_fold`) or, when the second tasklet is plain, as one code with the first's expression in place of the local value (axpy's `y + alpha * x`).
 - A tasklet that needs a fused map or a split reduction is refused with the fix ("fuse_map first", "split_reduce first", D150).
 
@@ -684,7 +688,7 @@ A unit:
 | Key | Holds |
 |---|---|
 | `name`, `brm`, `datapath` | the bind's instance, its BRM, a catalogue datapath |
-| `ports` | per BRM port, in its order: `port` (the datapath's), `dir`, `dtype`, `lanes`; an outer output that a packer feeds also `d_out`, an outer input that a slicer feeds `d_in` (each absent at 1, D174 · D180) |
+| `ports` | per BRM port, in its order: `port` (the datapath's), `dir`, `dtype`, `lanes`; an outer output that a packer feeds also `d_out`, an outer input that a slicer feeds `d_in` (each absent at 1, D174 · D180); a broadcast input `broadcast` true (absent when false, D186): its lanes stay the unit's, its stream carries one |
 | `opType` | a SIMD or `Mac` unit's op type, NumPy's result type of its inputs or of the kernel's casts (D143 · D175) |
 | `params` | only what the ports do not give: `op`, a baked slot (relu's `k`), a `Mac`'s `accumulate` and `regOut`, `T` when fixed at design time (then no JOB_BEATS) |
 | `scalars` | each slot read from a scalar and its type (axpy's `{"k1": "int32"}`), each an R/W CSR with its datapath `pin` |
@@ -695,7 +699,7 @@ A CSR is `name`, `access` (`rw`, `ro`), `offset` from the shell's first CSR, `wi
 
 - **`movers`**, with `share_ports`: per mover in the streamer's order `{name (reader<k>, writer<k>), role, num_channel, masked, users}`, each user `{group, port, num_channel}`.
 - **`port_mux`**: `{groups (in PORT_MUX_SEL's order), csr}`; PORT_MUX_SEL is the accelerator's last CSR, R/W, as wide as a group's index.
-- **Derived, never stored**: each port's num_slc and num_ch (D142; 1 for a packed output or a sliced input, whose `d_out` or `d_in` a reader checks against num_slc / W), each link's kind and `to_input` (the fed port's place among its unit's inputs), every unit's firings.
+- **Derived, never stored**: each port's num_slc and num_ch (D142; 1 for a packed output or a sliced input, whose `d_out` or `d_in` a reader checks against num_slc / W, W being 1 for a broadcast), each link's kind and `to_input` (the fed port's place among its unit's inputs), every unit's firings.
 
 dot 4's file, one accelerator `dot` of one group `dot`, the MAC's lane partials wired into the tree:
 
@@ -765,8 +769,8 @@ dot 4's file, one accelerator `dot` of one group `dot`, the MAC's lane partials 
 Each a `GenError`, before anything is written:
 
 - **The entry**: a tag that is not an identifier, or a platform without an `accelerator_slot` (`gen.tag`: a design named `dot-1`).
-- **A unit**: a null binding (`gen.binding`), an unregistered datapath (`gen.datapath`), a controller other than `counted` (`gen.controller`), a drain other than 0 (`gen.drain`), timing other than the catalogue's (`gen.timing`), and what the datapath refuses: args (`gen.args`), op (`gen.op`), ports (`gen.ports`), rates (`gen.rate`), a port's lanes neither whole 64-bit channels nor sliced (an input) or packed (an output) (`gen.lanes`), a dtype not intN or uintN (`gen.dtype`).
-- **Links and groups**: a link not from an `out` to an `in` of the same dtype and lanes, or an end with `d_in` or `d_out` (`gen.link`), a port on two links (`gen.link_port`), `inputs` or `outputs` not exactly the unlinked ports (`gen.outer`), a group not connected (`gen.group`), a shared accelerator not as `movers` and `port_mux` say (`gen.share`).
+- **A unit**: a null binding (`gen.binding`), an unregistered datapath (`gen.datapath`), a controller other than `counted` (`gen.controller`), a drain other than 0 (`gen.drain`), timing other than the catalogue's (`gen.timing`), and what the datapath refuses: args (`gen.args`), op (`gen.op`), ports (`gen.ports`), rates (`gen.rate`), a port's lanes neither whole 64-bit channels nor sliced (an input) or packed (an output) (`gen.lanes`), a dtype not intN or uintN (`gen.dtype`), a seed on a `Mac` without `accumulate` (`gen.seed`), a broadcast into a datapath whose lanes are not lane-wise (`gen.broadcast`).
+- **Links and groups**: a link not from an `out` to an `in` of the same dtype and lanes, or an end with `d_in`, `d_out` or `broadcast` (`gen.link`), a port on two links (`gen.link_port`), `inputs` or `outputs` not exactly the unlinked ports (`gen.outer`), a group not connected (`gen.group`), a shared accelerator not as `movers` and `port_mux` say (`gen.share`).
 - **Until the phase that lifts it**: a group that is not a chain in unit order, only the last unit's output outer (`gen.chain`, until tier A), and a unit of span > 1 on an outer input (`gen.span`, until B2).
 
 ### Types, groups and firings

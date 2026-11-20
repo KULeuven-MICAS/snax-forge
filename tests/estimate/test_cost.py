@@ -437,3 +437,22 @@ def test_the_sliced_designs_are_characterized(tmp_path, capsys, recipe, sets):
     slicers = [b for g in e.groups for b in g.cost.links.values() if b.datapath == "FifoSlicer"]
     assert slicers and all(b.found == "measured" and b.fires for b in slicers)
     assert e.missing == []
+
+
+def test_a_broadcast_is_sliced_one_lane_a_pop():
+    """mvt's column-form mac at M = N = 16, W = 8 (D186): y2's reader moves one int8 lane a beat,
+    8 a word, so its 16 pops a strip are 2 words, 4 over the 2 strips; its FifoSlicer pops one lane
+    on each of the mac's 32 firings. A is 8 lanes a beat (32 beats), the seed x2's 8 int32 lanes
+    (one beat of 4 channels a strip)."""
+    from snax_forge.estimate.bits import slicer_bits
+    from tests.helpers import bound_mvt_column
+
+    e = estimate(bound_mvt_column())
+    got = {
+        k: (e.ports[f"mac_x2.{k}"].beats, e.ports[f"mac_x2.{k}"].num_ch) for k in ("a", "b", "seed")
+    }
+    assert got == {"a": (32, 1), "b": (4, 1), "seed": (2, 4)}
+    (g,) = [g for g in e.groups if "mac_x2.b" in g.cost.links]
+    s = g.cost.links["mac_x2.b"]
+    assert (s.datapath, s.found, s.fires) == ("FifoSlicer", "measured", 32)
+    assert g.bits["mac_x2.b"] == slicer_bits(8)

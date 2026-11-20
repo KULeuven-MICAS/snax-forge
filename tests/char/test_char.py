@@ -148,7 +148,18 @@ def test_a_seeded_fold_is_priced_as_its_unseeded_entry():
     assert seeded == Lookup(40.0, 3.0, "unseeded")
     got = lookup(table, "TreeAccumulate", {**tree, "seed": True}, 6)
     assert (got.comb_um2, got.found) == (50.0, "unseeded")
-    assert lookup(SMALL, "TreeAccumulate", {**tree, "seed": True}, 4) is None  # no unseeded entry
+    seeded_only = _table({"TreeAccumulate": [{**SMALL.blocks["TreeAccumulate"][0],
+                                              "params": {**tree, "seed": True, "op": "max"}}]})  # fmt: skip
+    assert lookup(seeded_only, "TreeAccumulate", {**tree, "seed": True}, 4) is None  # no unseeded
+
+
+def test_a_seeded_mac_is_priced_as_a_table_measured_before_the_seed():
+    """D187: no entry of the block has a seed key (measured before it took one), so a seeded
+    unit is priced at the entry without it."""
+    assert lookup(SMALL, "Mac", {**MAC, "seed": True}, 8) == Lookup(70.0, 7.5, "unseeded")
+    tree = {**I64, "op": "add"}
+    assert lookup(SMALL, "TreeAccumulate", {**tree, "seed": True}, 4) == Lookup(40.0, 3.0,
+                                                                              "unseeded")  # fmt: skip
 
 
 def test_simdlanes_is_priced_at_its_widest_input_and_its_op_or_output():

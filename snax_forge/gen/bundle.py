@@ -68,8 +68,8 @@ def module_tree(acc: Description) -> dict[str, list[str]]:
             ports = list(u.ports.values())
             for p in [*(p for p in ports if p.dir == "in"), *(p for p in ports if p.dir == "out")]:
                 w = f"{'u' if p.dtype.startswith('u') else 'i'}{p.dtype.lstrip('uint')}"
-                if p.d_in > 1:
-                    tree.setdefault(f"FifoSlicer_w1_{w}_n{p.lanes}", [])
+                if p.d_in > 1:  # its out lanes, the stream's: one for a broadcast (D186)
+                    tree.setdefault(f"FifoSlicer_w1_{w}_n{p.stream_lanes}", [])
                 if p.d_out > 1:
                     tree.setdefault(f"FifoPacker_n{p.lanes}_{w}_w1", [])
     return tree

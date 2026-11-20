@@ -101,3 +101,17 @@ def test_streamer_to_dict():
         "temporal_dims": 1, "dtype": "int64", "num_slc": 1, "num_ch": 4, "d_out": 1, "d_in": 1,
         "fifo_depth": 2,
     }  # fmt: skip
+
+
+def test_a_broadcast_streams_one_lane():
+    """mvt's column-form mac (D186): y2 is read one lane a beat and given to its 8; A, the seed and
+    the output move their 8 lanes."""
+    from snax_forge.design.streamers import instance_of, is_broadcast, stream_lanes
+    from tests.helpers import bound_mvt_column
+
+    g = bound_mvt_column()
+    (n,) = [n for n, _ in g.walk() if n.attrs.get("instance") == "mac_x2"]
+    inst = instance_of(n)
+    got = {p: (stream_lanes(g, n, inst, p), is_broadcast(g, n, inst, p))
+           for p in ("a", "b", "seed", "out")}  # fmt: skip
+    assert got == {"a": (8, False), "b": (1, True), "seed": (8, False), "out": (8, False)}

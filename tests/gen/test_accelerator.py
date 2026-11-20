@@ -11,7 +11,7 @@ import pytest
 
 from snax_forge.gen import Accelerator, Csr, Description, Group, Link, Port, Unit, describe
 from snax_forge.gen.blocks import GenError
-from tests.helpers import bound_vsum
+from tests.helpers import bound_mvt_column, bound_vsum
 
 from .helpers import (
     bound_dot1,
@@ -247,6 +247,8 @@ def _edit(links=None, inputs=None, outputs=None, ports=None) -> None:
          "gen.link"),  # lanes differ
         ({"ports": {"a": Port("in", "in", "int64", 4, d_in=2),
                     "out": Port("out", "out", "int64", 1)}}, "gen.link"),  # a linked port sliced
+        ({"ports": {"a": Port("in", "in", "int64", 4, broadcast=True),
+                    "out": Port("out", "out", "int64", 1)}}, "gen.link"),  # a linked broadcast
         ({"links": [Link("x", "mac.out", "sum.a", 0), Link("y", "mac.out", "sum.a", 1)]},
          "gen.link_port"),
         ({"inputs": ["mac.a", "mac.b", "sum.a"]}, "gen.outer"),
@@ -255,7 +257,7 @@ def _edit(links=None, inputs=None, outputs=None, ports=None) -> None:
         ({"links": [], "inputs": ["mac.a", "mac.b", "sum.a"], "outputs": ["mac.out", "sum.out"]},
          "gen.group"),
     ],
-    ids=["in-in", "out-out", "unit", "depth", "dtype", "lanes", "sliced", "port", "outer-in",
+    ids=["in-in", "out-out", "unit", "depth", "dtype", "lanes", "sliced", "broadcast", "port", "outer-in",
          "outer-out", "outer-order", "group"],
 )  # fmt: skip
 def test_a_reader_checks_the_links(edit, code):
@@ -403,3 +405,32 @@ def test_a_seeded_fold_has_its_seed_port_and_no_new_csr(tmp_path, recipe, params
     got = {a.name: np.array(a.values) for a in arrays(p)}
     want = got["q"] + got["A"].reshape(8, 512) @ got["p"]
     assert np.array_equal(got["q_golden"], want) and got["q"].any()
+
+
+def test_the_column_form_mac_reads_a_broadcast_and_a_seed(tmp_path):
+    """mvt's half 2 in the column form (D186, D187): the mac's y2 is one int8 lane given to its
+    8, sliced 8 a word, and its seed is x2's 8 int32 lanes; neither adds a CSR. data.h's goldens
+    are x1 + A y1 and x2 + A^T y2."""
+    import numpy as np
+
+    from snax_forge.design import DesignPoint
+    from snax_forge.gen.data import arrays
+
+    p = DesignPoint.load(point(tmp_path, name="mvt_col", graph=bound_mvt_column()))
+    desc = describe(p, "p")
+    mac = next(a for a in desc.accelerators if a.name == "mac_x2")
+    (unit,) = mac.groups[0].units
+    assert {k: v.to_dict() for k, v in unit.ports.items()} == {
+        "a": {"port": "a", "dir": "in", "dtype": "int8", "lanes": 8},
+        "b": {"port": "b", "dir": "in", "dtype": "int8", "lanes": 8, "d_in": 8, "broadcast": True},
+        "seed": {"port": "seed", "dir": "in", "dtype": "int32", "lanes": 8},
+        "out": {"port": "out", "dir": "out", "dtype": "int32", "lanes": 8}}  # fmt: skip
+    assert unit.ports["b"].stream_lanes == 1 and unit.ports["a"].stream_lanes == 8
+    assert Port.from_dict(unit.ports["b"].to_dict()) == unit.ports["b"]
+    assert [c.name for g, _, c in desc.csrs() if g.name == "mac_x2"] == [
+        "START", "JOBS", "JOB_BEATS", "STATUS", "BUSY_COUNTER"]  # fmt: skip
+    validate("accelerator", desc.to_dict())
+    got = {a.name: np.array(a.values) for a in arrays(p)}
+    a = got["A"].reshape(16, 16)
+    assert np.array_equal(got["x2_golden"], got["x2"] + a.T @ got["y2"][:16])
+    assert np.array_equal(got["x1_golden"], got["x1"] + a @ got["y1_l2"][:16])

@@ -35,9 +35,11 @@ from snax_forge.design.streamers import (
     firing_loops,
     group_of,
     instance_of,
+    is_broadcast,
     packed,
     port_loops,
     sliced,
+    stream_lanes,
 )
 from snax_forge.dfg import DfgError, Graph, Memlet, Node
 from snax_forge.dfg.graph import BAKED, SCALAR, TRANSPOSE
@@ -1312,22 +1314,34 @@ def _container(g: Graph, name: str, placed: Any = None) -> dict[str, Any]:
             "transient": c.transient, "scalar": bool(c.attrs.get(SCALAR))} | shared  # fmt: skip
 
 
-def _lanes(n: Node, port: str) -> int | None:
-    """An accelerated node's lanes on ``port``; None for any other node, or an instance the BRM
-    library does not resolve."""
+def _lanes(g: Graph, n: Node, port: str) -> int | None:
+    """The lanes an accelerated node's ``port`` moves a beat (one for a broadcast input, D186);
+    None for any other node, or an instance the BRM library does not resolve."""
     if n.kind != "accelerated":
         return None
     try:
-        return instance_of(n).lanes(port)
-    except (BrmError, ExprError, KeyError):
+        return stream_lanes(g, n, instance_of(n), port)
+    except (BrmError, ExprError, KeyError, ValueError):
         return None
+
+
+def broadcast_port(g: Graph, n: Node, port: str) -> bool:
+    """Whether an accelerated node's ``port`` is a broadcast input (D186), one lane its reader
+    moves given to every lane; False for any other node, or an instance the BRM library does not
+    resolve."""
+    if n.kind != "accelerated":
+        return False
+    try:
+        return is_broadcast(g, n, instance_of(n), port)
+    except (BrmError, ExprError, KeyError, ValueError):
+        return False
 
 
 def packer_node(g: Graph, n: Node, port: str, data: str) -> dict[str, Any] | None:
     """The ``FifoPacker`` the flow places on accelerated node ``n``'s output ``port`` when its
     lanes fill less than a word (D174, design/streamers.py's ``packed``): its text, d_out, lanes
     and dtype; None where the port is wired."""
-    lanes = _lanes(n, port) if port in n.outputs else None
+    lanes = _lanes(g, n, port) if port in n.outputs else None
     if lanes is None:
         return None
     dtype = g.containers[data].dtype
@@ -1341,7 +1355,7 @@ def slicer_node(g: Graph, n: Node, port: str, data: str) -> dict[str, Any] | Non
     """The ``FifoSlicer`` the flow places on accelerated node ``n``'s input ``port`` when its
     lanes fill less than a word (D180, design/streamers.py's ``sliced``): its text, d_in, lanes
     and dtype; None where the port is wired."""
-    lanes = _lanes(n, port) if port in n.inputs else None
+    lanes = _lanes(g, n, port) if port in n.inputs else None
     if lanes is None:
         return None
     dtype = g.containers[data].dtype
@@ -1505,7 +1519,7 @@ def packing(g: Graph, n: Node, port: str, data: str) -> str | None:
     """``int32 · num_slc 2 · num_ch 2`` for an accelerated node's port (``int32 · num_slc 2 ·
     d_out 2 · num_ch 1`` for a packed output, D174, ``d_in 2`` for a sliced input, D180); None for
     any other node, or an instance the BRM library does not resolve."""
-    lanes = _lanes(n, port)
+    lanes = _lanes(g, n, port)
     if lanes is None:
         return None
     dtype = g.containers[data].dtype

@@ -4,7 +4,8 @@
 the graph first uses them and the BRM's port order, as CONTRACTS, "Platform" (the streamer
 shell) and "Memory plan and design point" (the design point's ``streamers``) define them; a
 port on a link has none, an outer port narrower than a word is packed (an output, ``packed``,
-D174) or sliced (an input, ``sliced``, D180), one rule (``per_word``).
+D174) or sliced (an input, ``sliced``, D180), one rule (``per_word``); ``stream_lanes`` gives the
+lanes a streamer moves, one for a broadcast input (``is_broadcast``, D186).
 ``instances``, ``groups`` and ``accelerators`` read the instances off the graph and put them
 into groups and accelerators; ``links``, ``linked_ports``, ``unplaced`` and ``slot_containers``
 read the links, the containers with no L1 space and those read only through a slot connector. Nothing here checks the pairing: check.py runs first and reports
@@ -27,7 +28,7 @@ from typing import Any
 import numpy as np
 
 from snax_forge import expr
-from snax_forge.brm import Instance, load_brm, memlet_ordered, task_nest
+from snax_forge.brm import SEED, Instance, load_brm, memlet_ordered, task_nest
 from snax_forge.dfg import Graph, Memlet, Node
 from snax_forge.dfg.subset import map_range, parse_dim
 
@@ -480,6 +481,23 @@ def memlet_spatial_bounds(m: Memlet, symbols: dict[str, int], what: str) -> list
             length = expr.evaluate(expr.linear(diff, loop_vars)[0], symbols)
             out.append(len(range(0, length, parts[2])))
     return out[::-1]
+
+
+def stream_lanes(graph: Graph, node: Node, inst: Instance, port: str) -> int:
+    """The lanes ``port``'s streamer moves a beat: a stream BRM's bound memlet's ranges, so one
+    for a broadcast input (D186), else the port's lanes."""
+    if memlet_ordered(inst.brm):
+        m = (node.inputs | node.outputs)[port]
+        return prod(memlet_spatial_bounds(m, graph.bound_symbols, f"node {node.id}.{port}"))
+    return inst.lanes(port)
+
+
+def is_broadcast(graph: Graph, node: Node, inst: Instance, port: str) -> bool:
+    """Whether ``port`` is a broadcast (D186): an input, not a seed, of more than one lane whose
+    streamer moves one, given to every lane (bind takes it on a lane-wise datapath only)."""
+    p = inst.brm.port(port)
+    return (p.direction == "in" and port != SEED and inst.lanes(port) > 1
+            and stream_lanes(graph, node, inst, port) == 1)  # fmt: skip
 
 
 def nest_spatial_bounds(inst: Instance, port: str) -> list[int]:

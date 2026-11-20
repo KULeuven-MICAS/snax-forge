@@ -31,7 +31,13 @@ from snax_forge.brm import Instance
 from snax_forge.common import JsonFile
 from snax_forge.design.streamers import group_links as shared_links
 from snax_forge.design.streamers import groups as graph_groups
-from snax_forge.design.streamers import instance_nodes, linked_ports, shared_movers, streamer_name
+from snax_forge.design.streamers import (
+    instance_nodes,
+    is_broadcast,
+    linked_ports,
+    shared_movers,
+    streamer_name,
+)
 from snax_forge.dfg import Graph, Node
 from snax_forge.dfg.subset import map_range, parse_dim
 from snax_forge.lower.c import accelerators as c_accelerators
@@ -429,6 +435,10 @@ def _check_links(acc: Accelerator) -> None:
                     raise GenError("gen.link", f"{what}: {end} has d_in {p.d_in} and d_out "
                                    f"{p.d_out}; a linked port has no slicer or packer, so both "
                                    "are 1 (absent)")  # fmt: skip
+                if p.broadcast:
+                    raise GenError("gen.link", f"{what}: {end} is a broadcast; a linked port "
+                                   "takes its lanes from the link, so it is not one "
+                                   "(absent)")  # fmt: skip
             for end in (k.from_, k.to):
                 if end in linked:
                     raise GenError("gen.link_port", f"{what}: port {end} is on another link too")
@@ -625,10 +635,17 @@ def _unit(point: DesignPoint, name: str, inst: Instance, offsets: Iterator[int])
             f"{inst.span}; {datapath} here is latency {latency}, II 1, span {span}",
         )  # fmt: skip
     ports = dict(fill.ports)
+    node = instance_nodes(point.graph)[name]
     for p, port in ports.items():  # a packed outer output (D174), a sliced outer input (D180)
         s = point.streamers.get(streamer_name(name, p))
         if s is not None and max(s.d_out, s.d_in) > 1:
             ports[p] = replace(port, d_out=s.d_out, d_in=s.d_in)
+        if s is not None and is_broadcast(point.graph, node, inst, p):  # one lane for all (D186)
+            if not DATAPATHS[datapath].lanewise:
+                raise GenError("gen.broadcast", f"{what}: port {p} is read as one lane for all, "
+                               f"but {datapath} sums its lanes; a broadcast feeds a datapath "
+                               "whose lanes compute on their own (SimdLanes, Mac)")  # fmt: skip
+            ports[p] = replace(ports[p], broadcast=True)
     fixed = fixed_fold(point.graph, instance_nodes(point.graph)[name], inst)
     params = dict(fill.params) | ({} if fixed is None else {"T": fixed})
     unit_rw = ["JOB_BEATS"] if fold_rate(inst) is not None and fixed is None else []

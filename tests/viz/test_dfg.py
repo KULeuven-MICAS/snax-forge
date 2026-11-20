@@ -1036,6 +1036,21 @@ def test_a_scalar_is_a_parameter_hexagon_its_edge_broadcast():
     assert b["mult"]["ins"] == ["in1", "in2"]
 
 
+def test_a_broadcast_input_is_labelled_on_its_wire_into_the_unit():
+    """mvt's column-form mac (D186): y2's slicer feeds mac_x2's b, labelled ``b · broadcast``;
+    A and the seed come in unlabelled."""
+    from snax_forge.viz.dfg.api import fold
+    from snax_forge.viz.dfg.drawing import drawing
+    from tests.helpers import bound_mvt_column
+
+    g = bound_mvt_column()
+    tops, blocks = fold(g)
+    d = drawing(g, tops, None, blocks)
+    got = {e["to_port"]: (e["from"], e["label"]) for e in d["edges"] if e["to"] == "unit:mac_x2"}
+    assert got == {"a": ("tmp4_mult_map_1", None), "b": ("slicer:mac_x2.b", "b · broadcast"),
+                   "seed": ("tmp4_mult_map", None)}  # fmt: skip
+
+
 def test_a_scalar_read_as_csr_is_drawn_like_a_baked_one():
     """axpy's recipe: bake_scalar alpha csr first, so mult reads ``csr(alpha) * in2`` where
     axpy_baked's reads ``3 * in2``: alpha gets no box, edge or port, through the fuse and the
