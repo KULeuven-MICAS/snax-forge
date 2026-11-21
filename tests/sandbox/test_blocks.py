@@ -13,7 +13,7 @@ from snax_forge.dfg import Graph
 from snax_forge.sandbox import Recipe, SandboxError, apply_recipe
 from snax_forge.sandbox.blocks import APPLIED, BLOCK, lift, matches, name_block, unlift
 from snax_forge.sandbox.blocks import apply_recipe as apply_block
-from snax_forge.sandbox.transforms import tag_map
+from snax_forge.sandbox.transforms import split_map, tag_map
 from tests.helpers import imported, recipe_path
 
 from .helpers import mvt
@@ -182,6 +182,32 @@ def test_apply_recipe_from_the_editor_on_a_lifted_block():
     assert units == ["mul", "sum"]
     assert not s.sites(s.cursor, "dot")["apply_recipe"]["ok"]  # applied already
     assert s.sites(s.cursor, "dot")["unlift"]["message"].endswith("applied (unapply)")
+
+
+def test_the_editor_names_an_unknown_param_inside_apply_recipe_and_lights_the_fused_maps():
+    """params.W naming a param the session lacks is refused as a param, its fix said; dot_v4
+    fuses the rows' loops outside the block, so its choice lights them too."""
+    s = _matvec_session()
+    r = s.apply("apply_recipe", {"block": "dot", "recipe": "dot/dot_v3", "params": {"W": "Wq"}})
+    assert (r["ok"], r["code"], r["param"]) == (False, "session.param", "Wq")
+    assert r["message"] == "apply_recipe: params.W 'Wq' is not a param; give its value"
+    a = s.sites(s.cursor, "dot")["apply_recipe"]
+    nodes = {c["value"]: c["nodes"] for c in {f["name"]: f for f in a["form"]}["recipe"]["choices"]}
+    assert nodes["dot/dot_v4"][-2:] == ["mult_map", "sum_map"]
+    assert "mult_map" not in nodes["dot/dot_v3"]
+
+
+def test_a_lifted_block_s_refusals_say_the_fix():
+    g = lift(mvt(), "dot", at="tmp0_mult")
+    heads = ["tmp0_mult_map_1", "sum_map_1"]
+    with pytest.raises(SandboxError, match="in block dot already: give block 'dot' instead"):
+        apply_block(g, "dot/dot_v3", region=heads, params={"W": 4})
+    with pytest.raises(SandboxError, match="give region or block, not both"):
+        apply_block(g, "dot/dot_v3", block="dot", region=heads, params={"W": 4})
+    with pytest.raises(SandboxError, match="already in block dot, a dot"):
+        lift(g, "dot", at="tmp0_mult")
+    with pytest.raises(SandboxError, match="transformed since its lift: unlift it"):
+        apply_block(split_map(g, "tmp0_mult_map_1", 4), "dot/dot_v3", block="dot", params={"W": 4})
 
 
 def test_unlift_from_a_node_in_the_block():

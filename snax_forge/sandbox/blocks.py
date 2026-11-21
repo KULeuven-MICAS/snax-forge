@@ -99,6 +99,11 @@ class _NoMatch(Exception):
     pass
 
 
+def _changed_since_lift(chain_nodes: list[Node]) -> bool:
+    """A chain a transform touched (split, tagged, fused, seeded): a lifted block changed."""
+    return any(k in n.attrs for n in chain_nodes for k in TOUCHED)
+
+
 def _outer_of(g: Graph, node_id: str) -> list[Node]:
     for n, outer in g.walk():
         if n.id == node_id:
@@ -262,9 +267,20 @@ def match(g: Graph, kernel: str, heads: list[str], partial: bool = False,
             if rc is None:
                 raise _NoMatch(f"{h} is not a chain of maps down to one tasklet")
             for n in rc:
-                if any(b["kernel"] == kernel and b["name"] != block for b in _blocks_of(n)):
-                    raise _NoMatch(f"{n.id} is in a {kernel} block already")
-            _chain(pc, rc, g, pg, m, _outer_of(g, h))
+                held = [b["name"] for b in _blocks_of(n)
+                        if b["kernel"] == kernel and b["name"] != block]  # fmt: skip
+                if held:
+                    raise _NoMatch(f"{n.id} is in block {held[0]} already: give block "
+                                   f"{held[0]!r} instead of the region")  # fmt: skip
+            try:
+                _chain(pc, rc, g, pg, m, _outer_of(g, h))
+            except _NoMatch as e:
+                if block is not None and _changed_since_lift(rc):
+                    raise _NoMatch(
+                        f"{e} (block {block} was transformed since its lift: "
+                        "unlift it, or apply the recipe before transforming)"
+                    ) from None
+                raise
         if not partial:
             _transients(g, pg, m)
     except (_NoMatch, DfgError, ExprError, KeyError) as e:
@@ -461,6 +477,9 @@ def lift(g: Graph, kernel: str, at: str | None = None) -> Graph:
     if at:
         found = [m for k, m in _lift_choices(g, at) if k == kernel]
         if not found:
+            held = [b["name"] for b in _blocks_of(g.node(at)) if b["kernel"] == kernel]
+            if held:
+                raise SandboxError(f"lift at {at!r}: already in block {held[0]}, a {kernel}")
             raise SandboxError(f"lift at {at!r}: {kernel} does not match here (here: "
                                f"{', '.join(lift_choices(g, at))})")  # fmt: skip
     else:
@@ -682,6 +701,8 @@ def _bound_recipe(g: Graph, recipe: str, region: list[str] | None, block: str | 
     """The sub-recipe on its region of ``g``: its params and symbols the region's, the match,
     the region's heads, the block and its name; and the pattern graph at the region's
     symbols."""
+    if block is not None and region:
+        raise SandboxError(f"{what}: give region or block, not both")
     if block is not None:  # the site's checks first, its messages
         _apply_site(g, block)
     sub = Recipe.load(recipe_path(recipe))

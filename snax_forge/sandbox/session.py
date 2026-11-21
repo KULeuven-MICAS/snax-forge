@@ -102,6 +102,10 @@ def _unknown_param(transform: str, params: dict[str, Any],
     """The first param name an int param uses that the session lacks, with the refusal's
     message; or None."""
     spec = TRANSFORMS.get(transform)
+    nested = params.get("params") if transform == "apply_recipe" else None
+    for p, v in (nested or {}).items():  # the applied recipe's params name the session's
+        if isinstance(v, str) and expr.is_name(v) and v not in known:
+            return v, f"apply_recipe: params.{p} {v!r} is not a param; give its value"
     for p, v in params.items():
         if spec is None or p not in spec.ints or not isinstance(v, str):
             continue
@@ -1027,9 +1031,10 @@ def _apply_fields(g: Graph, filled: dict[str, Any], params: dict[str, Any]) -> l
     (dot_v3's ``{"W": 4}``, which the page swaps in when the choice changes), and an int field
     ``params.<P>`` per param of the first, a param of the session's own (``W``, or ``W_2`` when
     the session has W), its value the recipe's. Each choice also gives the block's node ids
-    and its name (``nodes``, for the page to light) and what the recipe makes (``hint``,
+    and its name, and the outer maps a ``fuse_map`` of the block's nests takes along (dot_v4
+    on matvec's rows; ``nodes``, for the page to light) and what the recipe makes (``hint``,
     ``8 steps → mul, sum, link``)."""
-    from .blocks import _block, block_ids, recipe_path, recipes_for
+    from .blocks import _block, _fuse_outer, block_ids, recipe_path, recipes_for
 
     rec = _block(g, filled["block"], "apply_recipe", applied=False)
     nodes = [*block_ids(g, filled["block"]), filled["block"]]  # its nodes, and itself folded
@@ -1049,8 +1054,19 @@ def _apply_fields(g: Graph, filled: dict[str, Any], params: dict[str, Any]) -> l
             p: (v if isinstance(v, int) else 1) for p, v in sub.params.items() if p not in named
         }
 
-    choices = [{"value": r, "label": r, "params": own(r), "nodes": nodes, "hint": makes(r)}
-               for r in recipes_for(rec["kernel"])]  # fmt: skip
+    def fused(ref: str) -> list[str]:  # the outer maps a fuse_map of the block's nests takes
+        sub = Recipe.load(recipe_path(ref))
+        heads = rec["heads"]
+        if len(heads) < 2 or not any(st.transform == "fuse_map" for st in sub.steps):
+            return []
+        try:
+            f = _fuse_outer(g, heads[0], heads[1])
+        except (SandboxError, DfgError):
+            return []
+        return [f["first"], f["second"]] if f else []
+
+    choices = [{"value": r, "label": r, "params": own(r), "nodes": [*nodes, *fused(r)],
+                "hint": makes(r)} for r in recipes_for(rec["kernel"])]  # fmt: skip
     fields = [
         {"name": "block", "type": "str", "sweepable": False, "readonly": True,
          "value": filled["block"]},
