@@ -24,13 +24,12 @@ import snax.forge.{ForgeTester, IntType, LaneBits, Seeds, Sink, SnaxGroupCases, 
   * (SerialAccumulate at lanes 1) on its group case `dot5_w1_j2`'s own data: J = 2 jobs of T = 4 beats, the results the
   * case's sums (NumPy's) and the counter its busy cycles.
   *
-  * And dot_v1_2: its two groups on one set's movers through `<tag>_dot_port_mux`, `main.c`'s CSR writes in its
-  * order (vmul's JOBS, PORT_MUX_SEL 0, vmul's START, vsum's JOBS and JOB_BEATS while vmul runs, vmul's STATUS polled
-  * and its BUSY_COUNTER read, PORT_MUX_SEL 1, vsum's START, its STATUS polled and BUSY_COUNTER read), an always-ready
-  * streamer per mover and task: task 1's readers vmul's a and b (random int64, one seed), task 2's reader 0 the
-  * products task 1's writer gave and reader 1 idle. The products NumPy's (wrapping), the sum on the writer's low word
-  * with the other three 0, each counter its unshared twin's (`vecmul`'s and `vsum_v1_1`'s `vectors.json`, the same
-  * shapes).
+  * And dot_v1_2: its two groups on one set's movers through `<tag>_dot_port_mux`, `main.c`'s CSR writes in its order
+  * (vmul's JOBS, PORT_MUX_SEL 0, vmul's START, vsum's JOBS and JOB_BEATS while vmul runs, vmul's STATUS polled and its
+  * BUSY_COUNTER read, PORT_MUX_SEL 1, vsum's START, its STATUS polled and BUSY_COUNTER read), an always-ready streamer
+  * per mover and task: task 1's readers vmul's a and b (random int64, one seed), task 2's reader 0 the products task
+  * 1's writer gave and reader 1 idle. The products NumPy's (wrapping), the sum on the writer's low word with the other
+  * three 0, each counter its unshared twin's (`vecmul`'s and `vsum_v1_1`'s `vectors.json`, the same shapes).
   */
 class ShellEndToEndSpec extends AnyFlatSpec with ForgeTester {
 
@@ -113,10 +112,14 @@ class ShellEndToEndSpec extends AnyFlatSpec with ForgeTester {
       (r.busy + r.stallIn + r.stallOut + r.flush).toLong
     }
 
-  private def group(f: RtlFixtures.Fixture, n: Int, jobs: Int): String = s"dot${f.name.split("_").last}_n${n}_j$jobs"
+  private def group(f: RtlFixtures.Fixture, n: Int, jobs: Int): String =
+    s"dot${f.name.split("_").last.stripPrefix("v")}_n${n}_j$jobs"
 
   it should "have the linked variants dot 2–6 and matvec 4–6" in
-    assert(variants.map(_.name) == Seq("dot_v2", "dot_v3", "dot_v4", "dot_v5", "dot_v6", "matvec_v4", "matvec_v5", "matvec_v6"))
+    assert(
+      variants
+        .map(_.name) == Seq("dot_v2", "dot_v3", "dot_v4", "dot_v5", "dot_v6", "matvec_v4", "matvec_v5", "matvec_v6")
+    )
 
   for {
     f      <- variants
@@ -143,7 +146,7 @@ class ShellEndToEndSpec extends AnyFlatSpec with ForgeTester {
 
   for (f <- linked(1))
     it should s"give ${f.name}'s group case data: its NumPy sums and its cycles" in {
-      val name  = s"dot${f.name.split("_")(1)}_w1_j2"
+      val name  = s"dot${f.name.split("_")(1).stripPrefix("v")}_w1_j2"
       val all   = SnaxGroupCases.all.getOrElse(cancel(s"${SnaxGroupCases.Env} is not set"))
       val c     = all.find(_.name == name).getOrElse(fail(s"no group case $name"))
       val data  = c.data.getOrElse(fail(s"$name has no data"))

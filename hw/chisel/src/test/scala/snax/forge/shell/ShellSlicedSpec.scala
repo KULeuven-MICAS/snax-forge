@@ -5,8 +5,8 @@ import org.scalatest.flatspec.AnyFlatSpec
 
 import snax.forge.{ForgeTester, LaneBits}
 
-/** A sliced outer input in the wrapper (D180), the smallest case: the fixture vecadd_v1_1_w1 (SimdLanes add, one lane of
-  * int32), its inputs a and b sliced 2 from a word and its output packed 2 to one, as the flow places them. Each
+/** A sliced outer input in the wrapper (D180), the smallest case: the fixture vecadd_v1_1_w1 (SimdLanes add, one lane
+  * of int32), its inputs a and b sliced 2 from a word and its output packed 2 to one, as the flow places them. Each
   * reader's and the writer's port is one 64-bit word; 3 jobs pop 3 elements from 2 words a reader, the last word short,
   * and push 3 sums into 2 words, the last zero above its slice. Its 64 jobs, goldens and counter are
   * ShellEndToEndSpec's.

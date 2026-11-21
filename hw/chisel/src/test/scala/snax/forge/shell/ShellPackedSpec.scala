@@ -5,8 +5,8 @@ import org.scalatest.flatspec.AnyFlatSpec
 
 import snax.forge.{ForgeTester, LaneBits}
 
-/** A packed outer output in the wrapper (D174), the smallest case: the fixture vsum_v1_1_1 (TreeAccumulate, 4 lanes
-  * of int32 into one) with its sum's output changed by hand to int32 at d_out 2, as `accelerator.json` gives a packed
+/** A packed outer output in the wrapper (D174), the smallest case: the fixture vsum_v1_1_1 (TreeAccumulate, 4 lanes of
+  * int32 into one) with its sum's output changed by hand to int32 at d_out 2, as `accelerator.json` gives a packed
   * port. The writer's port is one 64-bit word, and 3 jobs give two words: the first two sums, then the third alone,
   * zero above it.
   */
