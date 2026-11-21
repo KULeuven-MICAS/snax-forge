@@ -127,6 +127,7 @@ SETS = {
           for r in ("mvt_4", "mvt_4_i64_dma_AT", "mvt_4_i8_dma_AT") for lay in ((), (PADDED,))),
         *(Design("mvt_4_i8_col", lay + (f"design.schedule={s}",))
           for lay, s in (((), "sequential"), ((PADDED,), "sequential"), ((), "pipeline"))),
+        Design("mvt_4_i8_col_vadd", ("design.schedule=sequential",)),
     ],
     "pack": PACK,
 }  # fmt: skip

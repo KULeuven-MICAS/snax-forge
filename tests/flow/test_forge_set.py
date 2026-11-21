@@ -144,8 +144,9 @@ def test_the_mvt_set_is_its_own():
     mvt_3_split at W = 8, contiguous and padded_rows, under each schedule of D179, and mvt_4,
     mvt_4_i64_dma_AT and mvt_4_i8_dma_AT (int8 in, int32 out) at W = 8, contiguous and
     padded_rows, sequential (D183), and mvt_4_i8_col (half 2 a seeded Mac, D186 · D187) at its
-    defaults, sequential contiguous and padded_rows and pipeline contiguous; in neither quick nor
-    full."""
+    defaults, sequential contiguous and padded_rows and pipeline contiguous, and
+    mvt_4_i8_col_vadd (half 2 an unseeded Mac linked into a vadd) sequential contiguous; in
+    neither quick nor full."""
     names = [d.name for d in fs.SETS["mvt"]]
     pad = "_passes.layoutpadded_rows"
     two = ["mvt_2", "mvt_2_shared"]
@@ -162,6 +163,7 @@ def test_the_mvt_set_is_its_own():
           for r in ("mvt_4", "mvt_4_i64_dma_AT", "mvt_4_i8_dma_AT") for p in ("", pad)),
         "mvt_4_i8_col_schedulesequential", f"mvt_4_i8_col{pad}_schedulesequential",
         "mvt_4_i8_col_schedulepipeline",
+        "mvt_4_i8_col_vadd_schedulesequential",
     ]  # fmt: skip
-    assert len(names) == 41
+    assert len(names) == 42
     assert not {d.recipe for d in fs.SETS["mvt"]} & {d.recipe for d in fs.SETS["full"]}
