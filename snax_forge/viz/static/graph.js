@@ -6,8 +6,9 @@
 //
 // Rows: every box on the row of its longest path from the kernel's inputs (ELK's partitions), the
 // front loops on the rows api.py gives (``row``), a group's temporal muxes on one row and its
-// demuxes on another (``rows``); a top-level outline on the row of its first box, so outlines that
-// start on one row sit side by side. An outline's title sits in its lower right corner.
+// demuxes on another (``rows``); at the top level the rows count an outline as one item
+// (``topRows``), so outlines fed from one row sit side by side. An outline's title sits in its
+// lower right corner.
 
 import { h } from "./dom.js";
 
@@ -154,16 +155,16 @@ function elkGraph(d, sizes, lanes = new Map(), forced = false, inOrder = new Map
     if (!top.includes(item)) top.push(item);
   }
   for (const o of d.outlines) if (!o.parent && !top.includes(made.get(o.id))) top.push(made.get(o.id)); // an empty one
-  // a top-level outline on the row of its first box: without a partition of its own ELK puts it
-  // after every partitioned box, below whatever else is drawn (both halves of mvt one under the
-  // other)
-  const first = new Map();
-  for (const n of d.nodes) {
-    if (!n.parent || !outline.has(n.parent)) continue;
-    const r = rootOf(n.parent), at = row.get(n.id);
-    if (at !== undefined && (!first.has(r) || at < first.get(r))) first.set(r, at);
-  }
-  for (const [r, at] of first) made.get(r).layoutOptions["elk.partitioning.partition"] = String(at);
+  // the top level's rows over its items, an outline as one item: ELK puts an outline whole after
+  // every item of a lower partition (an unpartitioned one after all of them), so an outline on
+  // its first box's row went under the whole of an outline one row higher (mvt's halves one
+  // under the other)
+  const itemOf = (id) => {
+    const n = nodes.get(id);
+    return n.parent && outline.has(n.parent) ? rootOf(n.parent) : id;
+  };
+  const item = topRows(d, itemOf);
+  for (const c of top) c.layoutOptions["elk.partitioning.partition"] = String(item.get(c.id) || 0);
   const edges = d.edges.map((e, i) => ({
     id: `e${i}`, sources: [ends[i][0]], targets: [ends[i][1]],
     labels: e.label ? [{ text: e.label, width: Math.ceil(textWidth(e.label) * (e.transpose ? 1.45 : 1)) + 6, height: e.transpose ? 20 : 15 }] : [],
@@ -297,6 +298,69 @@ function rows(d) {
     if (!moved) break;
   }
   return rank;
+}
+
+/** Each top-level item's row (``itemOf`` maps a box to its item: itself, or the outermost outline
+holding it): the longest path to it over the items, no less than the row api.py gives a front
+loop outside every outline. Inside an outline ELK compares partitions among siblings only, so the
+boxes there keep ``rows``. */
+function topRows(d, itemOf) {
+  const succs = new Map();
+  const least = new Map();
+  for (const n of d.nodes) {
+    const it = itemOf(n.id);
+    if (!succs.has(it)) succs.set(it, new Set());
+    if (it === n.id && n.row != null) least.set(it, n.row);
+  }
+  for (const e of d.edges) {
+    if (!succs.has(itemOf(e.from)) || !succs.has(itemOf(e.to))) continue;
+    const a = itemOf(e.from), b = itemOf(e.to);
+    if (a !== b) succs.get(a).add(b);
+  }
+  // an edge back into an outline from what it feeds (a container it writes and reads again, an
+  // `+=` nest beside its group) is not counted: what the outline writes comes after it
+  const boxes = new Set(d.nodes.map((n) => n.id));
+  const outlines = [...succs.keys()].filter((v) => !boxes.has(v));
+  for (const o of outlines) {
+    const reach = new Set();
+    const go = (v) => {
+      for (const w of succs.get(v)) if (w !== o && !reach.has(w)) { reach.add(w); go(w); }
+    };
+    go(o);
+    for (const v of reach) succs.get(v).delete(o);
+  }
+  // any cycle left (Tarjan's strongly connected components) is one item from here on
+  const comp = new Map(), index = new Map(), low = new Map(), stack = [];
+  const visit = (v) => {
+    index.set(v, index.size);
+    low.set(v, index.get(v));
+    stack.push(v);
+    for (const w of succs.get(v)) {
+      if (!index.has(w)) {
+        visit(w);
+        low.set(v, Math.min(low.get(v), low.get(w)));
+      } else if (!comp.has(w)) low.set(v, Math.min(low.get(v), index.get(w)));
+    }
+    if (low.get(v) === index.get(v)) {
+      for (let w = null; w !== v;) comp.set((w = stack.pop()), v);
+    }
+  };
+  for (const v of succs.keys()) if (!index.has(v)) visit(v);
+  const preds = new Map([...succs.keys()].map((v) => [comp.get(v), new Set()]));
+  const floor = new Map();
+  for (const [v, ws] of succs) {
+    const c = comp.get(v);
+    floor.set(c, Math.max(floor.get(c) || 0, least.get(v) || 0));
+    for (const w of ws) if (comp.get(w) !== c) preds.get(comp.get(w)).add(c);
+  }
+  const rank = new Map();
+  const of = (c) => {
+    if (rank.has(c)) return rank.get(c);
+    const r = Math.max(floor.get(c) || 0, ...[...preds.get(c)].map((p) => of(p) + 1));
+    rank.set(c, r);
+    return r;
+  };
+  return new Map([...succs.keys()].map((v) => [v, of(comp.get(v))]));
 }
 
 /** The edges (port to port) that put each temporal mux of a group on the row of the group's
