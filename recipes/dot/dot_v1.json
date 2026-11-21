@@ -1,0 +1,30 @@
+{
+ "name": "dot_v1",
+ "id": "dot1",
+ "description": "A `vmul` and a `vsum` as two accelerators, the products written to L1 and read back. The first of the six dot variants, the one the others are measured against.",
+ "kernel": "dot",
+ "params": {"W": 4, "N": 64},
+ "symbols": {"N": "N"},
+ "steps": [
+  {"transform": "split_map", "params": {"map": "mult_map", "factor": "W"}},
+  {
+   "transform": "bind",
+   "params": {
+    "node": "mult",
+    "brm": "simd",
+    "implementation": "chisel_tiled_spatial",
+    "instance": "vmul"
+   }
+  },
+  {"transform": "split_map", "params": {"map": "sum_map", "factor": "W"}},
+  {
+   "transform": "bind",
+   "params": {
+    "node": "sum",
+    "brm": "accumulate",
+    "implementation": "chisel_adder_tree",
+    "instance": "vsum"
+   }
+  }
+ ]
+}

@@ -119,7 +119,7 @@ def test_every_inverse_gives_back_the_graph_exactly():
 
 
 def test_interchange_and_fuse_keep_each_maps_dimension_and_piece():
-    """rowsum_2's swap keeps m_2_s and n_t; axpy's fused nest takes the first nest's names, then
+    """rowsum_v2's swap keeps m_2_s and n_t; axpy's fused nest takes the first nest's names, then
     one split_map names both tasklets' indices n_1_t, n_2_s, and the inverses give it back."""
     g = tag_map(split_map(bound("rowsum", M=8, N=64), "sum_map", 4), "sum_map_1",
                 "temporal")  # fmt: skip
@@ -137,7 +137,7 @@ def test_interchange_and_fuse_keep_each_maps_dimension_and_piece():
 def test_rowsum_2s_steps():
     """m_1_t and m_2_s from the split, n_t from the tag; the bound unit reads
     A[4 * m_1_t:4 * m_1_t + 4, n_t]."""
-    r = Recipe.load(recipe_path("rowsum_2"))
+    r = Recipe.load(recipe_path("rowsum_v2"))
     graphs = [x.graph for x in apply_recipe(r, imported("rowsum"))]
     assert [maps(g) for g in graphs[1:4]] == [
         [("sum_map", "m_1_t", 1), ("sum_map_s", "m_2_s", 2), ("sum_map_1", "n", 1)],

@@ -1,0 +1,20 @@
+{
+ "name": "relu_v1",
+ "id": "relu_i32",
+ "description": "B = max(A, 0) in one `simd` unit of W lanes.",
+ "kernel": "relu",
+ "params": {"W": 4, "N": 64},
+ "symbols": {"N": "N"},
+ "steps": [
+  {"transform": "split_map", "params": {"map": "numpy_maximum_map", "factor": "W"}},
+  {
+   "transform": "bind",
+   "params": {
+    "node": "numpy_maximum",
+    "brm": "simd",
+    "implementation": "chisel_tiled_spatial",
+    "instance": "acc"
+   }
+  }
+ ]
+}

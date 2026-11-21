@@ -1,11 +1,11 @@
 """axpy on SNAX-GVSoC: y += alpha * x as one simd unit at op axpby, k1 an R/W CSR.
 
 The worked example, W = 2, N = 4, int32: x = (1, -2 | 4, 0), y = (10, 20 | -5, 7). With k1
-read from alpha (``recipes/elementwise/axpy.json``), main.c writes K1 = data.h's ``alpha[0]``
+read from alpha (``recipes/elementwise/axpy_v1.json``), main.c writes K1 = data.h's ``alpha[0]``
 before START: alpha = 3 gives y' = (13, 14 | 7, 7) in JOBS = 2 firings. The same design run again
 with only data.h's alpha (5) and its golden changed, the program rebuilt and nothing else, gives
 y' = (15, 10 | 15, 7): the value is the program's, not the hardware's. Baked
-(``axpy_baked.json``, k1 = 3), the program writes no K1 and data.h holds no alpha.
+(``axpy_v1_1.json``, k1 = 3), the program writes no K1 and data.h holds no alpha.
 """
 
 from __future__ import annotations
@@ -54,7 +54,7 @@ def array(text: str, name: str) -> list[int]:
 
 
 def test_axpy_reads_k1_from_alpha(tmp_path, worked):
-    f = run_flow(recipe_path("axpy"), SNAX_FORGE, recipe_sets=SETS, out=tmp_path / "axpy")
+    f = run_flow(recipe_path("axpy_v1"), SNAX_FORGE, recipe_sets=SETS, out=tmp_path / "axpy")
     assert f.passed, summary(f)
     assert f.check["exit_code"] == 0 and f.check["data_errors"] == 0
     sound(f)  # the counter was 4 as recorded, 2 firings and 2 cycles of the shell
@@ -72,7 +72,7 @@ def test_axpy_reads_k1_from_alpha(tmp_path, worked):
 def test_the_same_design_with_alpha_5_in_data_h(tmp_path, worked):
     """The design's files as the first run wrote them, data.h's alpha 5 and its golden
     y + 5x: the program rebuilt alone, run on the same cluster file."""
-    f = run_flow(recipe_path("axpy"), SNAX_FORGE, recipe_sets=SETS, out=tmp_path / "axpy")
+    f = run_flow(recipe_path("axpy_v1"), SNAX_FORGE, recipe_sets=SETS, out=tmp_path / "axpy")
     assert f.passed, summary(f)
     gen, again = tmp_path / "axpy" / "gen", tmp_path / "alpha5"
     shutil.copytree(gen, again / "gen")
@@ -106,15 +106,15 @@ def test_the_same_design_with_alpha_5_in_data_h(tmp_path, worked):
 
 
 def test_axpy_baked_writes_no_k1(tmp_path, worked):
-    f = run_flow(recipe_path("axpy_baked"), SNAX_FORGE, recipe_sets=SETS,
-                 out=tmp_path / "axpy_baked")  # fmt: skip
+    f = run_flow(recipe_path("axpy_v1_1"), SNAX_FORGE, recipe_sets=SETS,
+                 out=tmp_path / "axpy_v1_1")  # fmt: skip
     assert f.passed, summary(f)
     assert f.check["exit_code"] == 0 and f.check["data_errors"] == 0
     sound(f)  # the counter was 4 as recorded, 2 firings and 2 cycles of the shell
     assert {t: (x["beats"], x["group"]) for t, x in f.check["tasks"].items()} == {
         "mult_acc": (2, "acc")
     }
-    gen = tmp_path / "axpy_baked" / "gen"
+    gen = tmp_path / "axpy_v1_1" / "gen"
     assert "alpha" not in (gen / "data.h").read_text()
     assert "K1" not in (gen / "main.c").read_text()
     (unit,) = json.loads((gen / "accelerator.json").read_text())["accelerators"][0]["groups"][0][

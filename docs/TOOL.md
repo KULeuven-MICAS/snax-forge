@@ -65,14 +65,14 @@ flowchart TD
 Example: vecadd's add bound to `simd` at W = 4.
 
 ```bash
-pixi run flow recipes/elementwise/vecadd.json --platform platforms/snax_forge.json
+pixi run flow recipes/elementwise/vecadd_v1.json --platform platforms/snax_forge.json
 ```
 
     flow vecadd (vecadd: W=4, N=64; N=64) on snax_forge -> out/flow/vecadd/
       sandbox   2 steps, each equal to the input graph on the reference check -> sandbox/
       design    24 checks passed; platform base snax_forge, 0 changes; memory contiguous, 0 changes -> design/
       lower     tasks.json (12 steps)
-      gen       snax_forge.hjson, snax_forge_vecadd_streamer_acc.hjson, accelerator.json, main.c, data.h (seed 0) -> gen/
+      gen       snax_forge.hjson, snax_forge_vecadd_v1_streamer_acc.hjson, accelerator.json, main.c, data.h (seed 0) -> gen/
       build     up to date (snax-gvsoc 1e988679)
       sw        sw/forge.elf (sha256 3fa93c774886c3b3)
       gvsoc     snax_hjson, exit 0 -> run/
@@ -101,7 +101,7 @@ Nothing is compiled per design point: SNAX-GVSoC's `snax_hjson` target reads the
 `--energy` prices what the run did with the static estimate's prices per transaction (D177; CONTRACTS, "Profile and trace", the energy run, and "Cost model", the dynamic energy). The quiet build marks each section of the program in CSR `0x7C5`; on each mark SNAX-GVSoC writes every SNAX counter as it stands, and each window between two marks is priced in the five parts. It reads the run's `summary` lines only, so it adds one quiet run's time to the flow.
 
 ```bash
-pixi run flow recipes/dot/dot_3.json --platform platforms/snax_forge.json --set N=2048 --set W=8 --energy
+pixi run flow recipes/dot/dot_v3.json --platform platforms/snax_forge.json --set N=2048 --set W=8 --energy
 ```
 
 - The flow's output gains a line `energy    sw/forge_quiet.elf, <n> windows; window <k> <E> nJ (static <E> nJ) -> energy/energy.json, report/energy.md`, one entry per window of kind `run`.
@@ -121,7 +121,7 @@ pixi run flow recipes/dot/dot_3.json --platform platforms/snax_forge.json --set 
 From `beat` on, the traced sources are the accelerator, its movers and the DMA unless `:SOURCES` names others (`--trace stall:acc,acc_a`). `t = 0` is the program's `mcycle` read in main. A group of linked units only goes to `task`: the converter reads its task lines only (open item 96). snax-gvsoc's `docs/EVENTS.md` lists every line.
 
 ```bash
-pixi run flow recipes/elementwise/vecadd.json --platform platforms/snax_forge.json --trace stall
+pixi run flow recipes/elementwise/vecadd_v1.json --platform platforms/snax_forge.json --trace stall
 grep -m1 '"k": "stall"' out/flow/vecadd_stall/run/trace.jsonl
 ```
 
@@ -141,7 +141,7 @@ From `task` on, `report/run.md` names each task and opens its Accelerators secti
 
 It stops at the first stage that cannot go on and exits 1, before anything is built:
 
-- A platform without a source hjson stops at `gen`: `pixi run flow recipes/elementwise/vecadd.json --platform platforms/small16.json` prints `FAILED ...: gen: [gen.source] platform small16 has no source hjson: read it from one with pixi run design from-hjson`.
+- A platform without a source hjson stops at `gen`: `pixi run flow recipes/elementwise/vecadd_v1.json --platform platforms/small16.json` prints `FAILED ...: gen: [gen.source] platform small16 has no source hjson: read it from one with pixi run design from-hjson`.
 - A design the platform cannot take stops at the design checks (CONTRACTS, "Design checks"). vecmul at W = 64 needs more crossbar inputs than SNAX-GVSoC's crossbar takes:
 
 ```
@@ -174,7 +174,7 @@ The flow's stages are commands of their own. Each reads the previous one's outpu
 Example: vecadd by hand, then its program and run with `gvsoc/Makefile` (section 7), which prints the same four `forge` lines as the flow:
 
 ```bash
-pixi run sandbox recipes/elementwise/vecadd.json
+pixi run sandbox recipes/elementwise/vecadd_v1.json
 pixi run design out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/snax_forge.json
 pixi run gen-gvsoc out/design/vecadd/design_point.json
 make -C gvsoc sw APPS=forge FORGE=../out/gvsoc/vecadd DESIGN=vecadd
@@ -183,13 +183,13 @@ make -C gvsoc run TARGET=snax_hjson DESIGN=vecadd \
     ELF=../out/snax-gvsoc/sw/vecadd/forge.elf
 ```
 
-- `pixi run sandbox recipes/elementwise/vecadd_undo.json --graph out/sandbox/vecadd/2_bind.snaxdfg --out out/sandbox/vecadd_undo` undoes a recipe: the graph comes back as imported.
+- `pixi run sandbox recipes/elementwise/vecadd_v1_4.json --graph out/sandbox/vecadd/2_bind.snaxdfg --out out/sandbox/vecadd_v1_4` undoes a recipe: the graph comes back as imported.
 - `GVRUN_ARGS` takes gvrun's own options too, such as `--trace=snax_acc0/unit`.
 
 The RTL commands need sbt; the flow calls none of them:
 
 - `gen-rtl` checks `accelerator.json` against the datapath catalogue (`hw/chisel/blocks.json`), then runs `hw/chisel/`'s `Emit --spec` on a classpath sbt exports once into `hw/chisel/target/emit-classpath-<hash>.txt` (again after a change under `hw/chisel/src/main/` or to `build.sbt`).
-- The modules are named after the entry's tag, `<accelerator_slot>_<design>`: `snax_forge_vecadd_shell_wrapper` is what snax_cluster's `snax_acc_wrapper.sv.tpl` connects, and it holds `snax_forge_vecadd_csr`, `snax_forge_vecadd_ctrl` and `snax_forge_vecadd_datapath`.
+- The modules are named after the entry's tag, `<accelerator_slot>_<design>`: `snax_forge_vecadd_v1_shell_wrapper` is what snax_cluster's `snax_acc_wrapper.sv.tpl` connects, and it holds `snax_forge_vecadd_v1_csr`, `snax_forge_vecadd_v1_ctrl` and `snax_forge_vecadd_v1_datapath`.
 - `bundle` writes no `forge_expected.txt` (a bundle alone has no SNAX-GVSoC run); `pixi run forge` does (section 6).
 - `gen-block` is for snax-forge-experiments, which synthesizes and simulates a block alone. Beside the catalogue's datapaths it takes the stream blocks `FifoPacker` (a packed output's packer, D174), params `inLanes`, `laneType`, `words`, and `FifoSlicer` (a sliced input's slicer, D180), params `words`, `laneType`, `outLanes`, the lanes dividing the beat's `words` × 64 / width elements:
 
@@ -216,7 +216,7 @@ Three read-only viewers and the reports. Each viewer serves on 127.0.0.1 until C
 **`view`**, on a run traced at `task` or above (`pixi run view out/flow/vecadd_stall`):
 
 - The Schedule tab draws the window as lanes: each core, the DMA, then per accelerator ▸ group its movers and its unit. Quiet stretches of 16 cycles or more are folded.
-- A mover's task that moves nothing, started only because a shared streamer starts all its movers at once (`dot_1_enc`'s `vsum_a` during the vmul's task), is a dashed bar, `idle (shared start)`.
+- A mover's task that moves nothing, started only because a shared streamer starts all its movers at once (`dot_v1_1`'s `vsum_a` during the vmul's task), is a dashed bar, `idle (shared start)`.
 - A click on a cycle shows the cluster view under it: the DMA, the movers with their lanes, one streamer box per set, the units, the crossbar and the banks at that cycle. The arrows step by event, shift steps by task boundary. A linked group shows its tasks only, since its runs stop at `task`.
 - From `beat` on, the memory tab shows where each container lies in L1 and L2 and how its words move.
 
@@ -226,7 +226,7 @@ Three read-only viewers and the reports. Each viewer serves on 127.0.0.1 until C
 - Each container's box shows its dtype (`A[N] int8 L1 · 64 B`); an edge is labelled only where the dtype changes (`int32` out of an int8 multiply). The memlet is the edge's tooltip; an accelerated port's packing (`int32 · num_slc 2 · d_out 2 · num_ch 1`), loops and beats are in its Details. A `FifoPacker · d_out 2` or `FifoSlicer · d_in 2` box has its sizes, register bits and cost in its Details.
 - Details of each item (click a box, a container, an edge or an outline), and the Estimate: the accelerator's cycles, the unmapped work's (one cycle per iteration, an assumption), their total, and the cost per accelerator in µm² and nJ (CONTRACTS, "Cost model").
 - The left column lists the Symbols, the Containers (`A: N · L1 · 16 KiB`) and the Bindings as a tree, accelerator ▸ group ▸ unit, each param with what it configures.
-- To compare two designs, give both folders: `pixi run view-dfg out/sandbox/dot_4/ out/sandbox/dot_5/ --platform platforms/snax_forge.json`. Each step is then named `<folder>/<stem>`, and Compare lays Details and the Estimate out as two columns, the cost cells as `before → after`.
+- To compare two designs, give both folders: `pixi run view-dfg out/sandbox/dot_v4/ out/sandbox/dot_v5/ --platform platforms/snax_forge.json`. Each step is then named `<folder>/<stem>`, and Compare lays Details and the Estimate out as two columns, the cost cells as `before → after`.
 
 Moving around the drawing, in `view-dfg` and `edit-dfg` alike:
 
@@ -253,10 +253,10 @@ The editor builds a recipe one transform at a time on the drawn graph, each step
 |---|---|
 | a kernel, its symbols given | `pixi run edit-dfg --kernel vecadd --set N=64` |
 | a kernel at a type preset (`types`, `dtypes.<name>` as for a recipe's `--set`) | `pixi run edit-dfg --kernel mvt_types --set M=64 --set N=64 --set types=i8` |
-| a recipe | `pixi run edit-dfg --recipe recipes/elementwise/vecadd.json` |
+| a recipe | `pixi run edit-dfg --recipe recipes/elementwise/vecadd_v1.json` |
 | an earlier session | `pixi run edit-dfg --session out/sessions/vecadd` |
 
-A session opens on `platforms/snax_forge.json` unless `--platform` names another, and lives in `out/sessions/<name>/`. Example, vecadd from its import (http://127.0.0.1:8767/):
+A session opens on `platforms/snax_forge.json` unless `--platform` names another, and lives in `out/sessions/<name>/`. A recipe's `id` (D188) is shown beside the step in its panel and in the start dialog's recipe list, its description as the tooltip, until a new step changes what it builds. Example, vecadd from its import (http://127.0.0.1:8767/):
 
 1. Click `add_map`. The sidebar lists the transforms whose site accepts it, each with its form. Shift-click adds an item to the selection, Esc clears it.
 2. Apply `split` with factor `W`. W is not a param yet, so the form offers `new param W = 4`; keep it. The maps are now `add_map` over `n_1` around `add_map_inner` over `n_2`.
@@ -286,7 +286,7 @@ One ELF, snax-forge's, runs on SNAX-GVSoC and on snax_cluster's RTL. The RTL run
 - `forge` takes `--platform` (default `platforms/snax_forge.json`), `--set` and `--trace`, passed to the flow. `forge-set` takes `--sim vsim|vlt` and `-j N`.
 - `forge_expected.txt` holds the run's counter and data lines, then each counter's `forge fill`, its group's streamer fill from the estimate.
 - Beside `forge.elf`, forge leaves `forge_quiet.elf` (the same `main.c` with `-DFORGE_QUIET`: every start waited on at once, each section marked in CSR `0x7c5`, no prints) and its legend `obs_marks.json`, for a power run on the netlist.
-- The sets: `quick` is vecadd_i32, vsum_tree_i8, dot_1, dot_1_enc, dot_4, axpy, vsum_tree and matvec_3 at `types=i8`, W = 8 (packed outputs, D174), and vecadd_i32 at W = 1 (sliced inputs, D180). `full` adds seventeen more (the list in `snax_forge/flow/forge_set.py`), among them matvec_1, matvec_seed, matvec_seed_serial and rowsum_2 twice. `mvt` is 36 bundles at M = N = 64, the recipes' defaults: mvt_1, mvt_1_dot2, mvt_1_dot2_shared, mvt_2, mvt_2_shared and mvt_4 at W = 4 and 8, contiguous and `padded_rows`, mvt_2_reuse and mvt_3 (W = 8) at their defaults, mvt_3_split (W = 8) contiguous and `padded_rows` under each of D179's schedules, and mvt_4 and mvt_4_i64_dma_AT (W = 8) contiguous and `padded_rows` under `sequential` (D183); not in the other two. `pack` is 30 narrow designs: every recipe with narrow types at i8 and W = 8, dot_serial at i32, and dot_3 and matvec_3 at W = 32, dot_3 at i16 and i32, vecadd at W = 1 and matvec_3 at W = 4 (sliced inputs).
+- The sets: `quick` is vecadd_v1_1, vsum_v1_1_2, dot_v1, dot_v1_1, dot_v4, axpy_v1, vsum_v1_1 and matvec_v3 at `types=i8`, W = 8 (packed outputs, D174), and vecadd_v1_1 at W = 1 (sliced inputs, D180). `full` adds seventeen more (the list in `snax_forge/flow/forge_set.py`), among them matvec_1, matvec_acc_v1, matvec_acc_v2 and rowsum_v2 twice. `mvt` is 36 bundles at M = N = 64, the recipes' defaults: mvt_1, mvt_v1_2, mvt_v1_2_2, mvt_v2, mvt_v2_2 and mvt_v4 at W = 4 and 8, contiguous and `padded_rows`, mvt_v2_1 and mvt_v3 (W = 8) at their defaults, mvt_v3_1 (W = 8) contiguous and `padded_rows` under each of D179's schedules, and mvt_v4 and mvt_v4_1 (W = 8) contiguous and `padded_rows` under `sequential` (D183); not in the other two. `pack` is 30 narrow designs: every recipe with narrow types at i8 and W = 8, dot_v7 at i32, and dot_v3 and matvec_v3 at W = 32, dot_v3 at i16 and i32, vecadd at W = 1 and matvec_v3 at W = 4 (sliced inputs).
 - When each set is due is CLAUDE.md's rule: the quick set on vsim before a PR that changes the emitted RTL or `main.c` merges, the full set at a phase's close, the numbers into open item 95.
 
 Example:
@@ -296,11 +296,11 @@ pixi run forge-set quick
 ```
 
     forge-set quick: 8 designs, 32 at a time; each forge's output in out/forge-set/quick/<design>.txt
-      vecadd_i32       passed
+      vecadd_v1_1       passed
       ...
       axpy             passed
     wrote out/forge-set/quick.md; from snax_cluster's target/snitch_cluster:
-      make snax-forge-check BUNDLES="$ROOT/snax-forge/out/bundle/vecadd_i32 ... $ROOT/snax-forge/out/bundle/axpy" SIM=vsim SNAX_CLUSTER_IMAGE=<image>
+      make snax-forge-check BUNDLES="$ROOT/snax-forge/out/bundle/vecadd_v1_1 ... $ROOT/snax-forge/out/bundle/axpy" SIM=vsim SNAX_CLUSTER_IMAGE=<image>
 
 Run that line from snax_cluster's `target/snitch_cluster`, outside the image:
 
@@ -318,7 +318,7 @@ It prints one verdict per bundle and fails only if one FAILed. `logs/snax-forge-
 | `WARNING` | the worst gap beyond the fill up to 15 % |
 | `FAIL` | a larger gap, or any data error |
 
-A counter that differs prints a line under its verdict, as `dot_1_enc` at N = 512 on vsim, where the RTL's core starts `vmul` 6 cycles after its streamer:
+A counter that differs prints a line under its verdict, as `dot_v1_1` at N = 512 on vsim, where the RTL's core starts `vmul` 6 cycles after its streamer:
 
     NEAR dot_1_enc_N512: the worst counter 0.0 % beyond its fill
       mult_vmul: counter 128 against 131, within its fill 3
@@ -355,7 +355,7 @@ make -C target/snitch_cluster snax-forge-run SIM=vsim CFG_OVERRIDE=$B ELF=$E
 **Refreshing a fixture.** snax-gvsoc keeps one generated design point per folder in `forge/<design>/`, which its `make regress` runs. `tests/gen/test_fixture.py` generates each again and compares it byte for byte with the submodule's copy (it skips when the submodule is not checked out). When the generator or a design point changes, clear the folder in a snax-gvsoc checkout beside this one and write it again:
 
 ```bash
-pixi run sandbox recipes/elementwise/vecadd.json
+pixi run sandbox recipes/elementwise/vecadd_v1.json
 pixi run design out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/snax_forge.json
 pixi run gen-gvsoc out/design/vecadd/design_point.json --out ../snax-gvsoc/forge/vecadd
 ```

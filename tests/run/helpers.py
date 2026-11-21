@@ -14,7 +14,7 @@ from snax_forge.run.trace import LEVELS
 
 PATH = "/chip/soc/cluster_0"
 RECORDED = Path(__file__).parent / "fixtures"  # the recorded runs, a folder each
-TASKS = RECORDED / "vecadd" / "tasks.json"  # the recorded vecadd's
+TASKS = RECORDED / "vecadd_v1" / "tasks.json"  # the recorded vecadd's
 
 
 class Recorded(NamedTuple):
@@ -49,7 +49,7 @@ def load_recorded(name: str | Path, events: str = "events.log") -> Recorded:
 
 
 # vecadd's one streamer set, acc, and its file
-STREAMER_FILE = "snax_forge_vecadd_streamer_acc.hjson"
+STREAMER_FILE = "snax_forge_vecadd_v1_streamer_acc.hjson"
 
 CLUSTER: dict[str, Any] = {
     "cluster": {
@@ -62,7 +62,7 @@ CLUSTER: dict[str, Any] = {
     "acc_core": {
         "xdma": False,
         "snax_acc_cfg": [{
-            "snax_acc_name": "snax_forge_vecadd",
+            "snax_acc_name": "snax_forge_vecadd_v1",
             "snax_streamer_sets": [{"name": "acc",
                                     "snax_streamer_cfg": {"$ref": STREAMER_FILE},
                                     "snax_num_rw_csr": 2, "snax_num_ro_csr": 2}],
@@ -81,11 +81,11 @@ STREAMER: dict[str, Any] = {
 
 # vecadd's accelerator.json, as the recorded run's
 UNIT: dict[str, Any] = json.loads(
-    (Path(__file__).parent / "fixtures" / "vecadd" / "accelerator.json").read_text()
+    (Path(__file__).parent / "fixtures" / "vecadd_v1" / "accelerator.json").read_text()
 )
 
 POINT: dict[str, Any] = {
-    "name": "vecadd",
+    "name": "vecadd_v1",
     "platform": {"accelerator_slot": "snax_forge"},
     "streamers": {
         "acc_a": {"instance": "acc", "port": "a", "write": False},

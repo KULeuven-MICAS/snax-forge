@@ -223,7 +223,8 @@ the server lists them; a recipe that does not load is listed, disabled, with its
 function recipeForm(recipes) {
   const groups = [];
   recipes.forEach((r, i) => {
-    const opt = h("option", { value: i, disabled: !!r.error, title: r.error || r.path }, r.error ? `${r.name} (does not load)` : r.name);
+    const shown = r.id ? `${r.name} · ${r.id}` : r.name;
+    const opt = h("option", { value: i, disabled: !!r.error, title: r.error || r.description || r.path }, r.error ? `${r.name} (does not load)` : shown);
     const last = groups[groups.length - 1];
     if (last && last.folder === r.folder) last.options.push(opt);
     else groups.push({ folder: r.folder, options: [opt] });

@@ -197,7 +197,7 @@ def test_vecadd_checks_itself(tmp_path):
 
 def test_vsum_sets_jobs_and_job_beats_and_reads_its_counter(tmp_path):
     """JOBS = n / T, JOB_BEATS = T; the counter checked against the beats n."""
-    src = text(tmp_path, graph=bound_vsum(), name="vsum")
+    src = text(tmp_path, graph=bound_vsum(), name="vsum_v1")
     assert "csrw_ss(ACC_RW_JOBS, 1);\n    csrw_ss(ACC_RW_JOB_BEATS, 64);" in src
     assert "err += forge_counter[0] < 64;" in src
     assert 'printf("forge counter sum_acc: %u\\n", forge_counter[0]);' in src
@@ -319,10 +319,10 @@ def test_job_values():
 
 
 def dot1_text(tmp_path) -> str:
-    """dot_1_enc's main.c: groups vmul and vsum in the accelerator dot."""
+    """dot_v1_1's main.c: groups vmul and vsum in the accelerator dot."""
     from tests.gen.helpers import bound_dot1_enc
 
-    p, tasks, cluster, acc, arrays = parts(tmp_path, graph=bound_dot1_enc(), name="dot_1_enc")
+    p, tasks, cluster, acc, arrays = parts(tmp_path, graph=bound_dot1_enc(), name="dot_v1_1")
     return main_c(p, tasks, cluster, acc, arrays, ["data.h", "dot_csr.h", STREAMER], POINT)
 
 
@@ -366,7 +366,7 @@ def test_dot_1_checks_both_counters(tmp_path):
 def test_refused_a_start_without_the_idle_movers(tmp_path):
     from tests.gen.helpers import bound_dot1_enc
 
-    p, tasks, cluster, acc, arrays = parts(tmp_path, graph=bound_dot1_enc(), name="dot_1_enc")
+    p, tasks, cluster, acc, arrays = parts(tmp_path, graph=bound_dot1_enc(), name="dot_v1_1")
     d = tasks.to_dict()
     for s in d["steps"]:
         if s["op"] == "start" and "mult_vmul" in s["tasks"]:
@@ -380,7 +380,7 @@ def test_refused_an_idle_mover_at_stride_0(tmp_path):
     """An idle mover starts anyway when its first temporal stride is 0 (Reader.scala)."""
     from tests.gen.helpers import bound_dot1_enc
 
-    p, tasks, cluster, acc, arrays = parts(tmp_path, graph=bound_dot1_enc(), name="dot_1_enc")
+    p, tasks, cluster, acc, arrays = parts(tmp_path, graph=bound_dot1_enc(), name="dot_v1_1")
     d = tasks.to_dict()
     for s in d["steps"]:
         if s.get("task_name") == "mult_vsum_a":
@@ -390,12 +390,12 @@ def test_refused_an_idle_mover_at_stride_0(tmp_path):
 
 
 def test_an_idle_mover_outside_an_encapsulated_set_is_refused(tmp_path):
-    """c.idle's stride check is an encapsulated set's (dot_1_enc, above); in a set of one group an
+    """c.idle's stride check is an encapsulated set's (dot_v1_1, above); in a set of one group an
     idle mover is no other group's, so the start is refused (c.start), whatever its stride."""
     from tests.gen.helpers import bound_recipe
 
-    p, tasks, cluster, acc, arrays = parts(tmp_path, graph=bound_recipe("dot_serial", "dot"),
-                                           name="dot_serial")  # fmt: skip
+    p, tasks, cluster, acc, arrays = parts(tmp_path, graph=bound_recipe("dot_v7", "dot"),
+                                           name="dot_v7")  # fmt: skip
     d = tasks.to_dict()
     for s in d["steps"]:
         if s.get("task_name") == "sum_sum_a":
@@ -411,8 +411,8 @@ def test_two_accelerators_each_run_through_their_own_set(tmp_path):
     (c.instances retired)."""
     from tests.gen.helpers import bound_recipe
 
-    p, tasks, cluster, acc, arrays = parts(tmp_path, graph=bound_recipe("dot_serial", "dot"),
-                                           name="dot_serial")  # fmt: skip
+    p, tasks, cluster, acc, arrays = parts(tmp_path, graph=bound_recipe("dot_v7", "dot"),
+                                           name="dot_v7")  # fmt: skip
     assert [a.name for a in acc.accelerators] == ["mul", "sum"]
     core = functions(main_c(p, tasks, cluster, acc, arrays, INCLUDES, POINT))["forge_core_0"]
     acc_lines = [x for x in core if "START" in x or "STATUS" in x or "BUSY" in x
@@ -553,7 +553,7 @@ def test_vecadd_marks_each_section_in_order(tmp_path):
 def test_dot_1_repeats_the_configure_and_run_sections_per_accelerator(tmp_path):
     from tests.gen.helpers import bound_recipe
 
-    _, marks = quiet(tmp_path, graph=bound_recipe("dot_1", "dot"), name="dot_1")
+    _, marks = quiet(tmp_path, graph=bound_recipe("dot_v1", "dot"), name="dot_v1")
     assert [m["kind"] for m in marks] == [
         "dma_in", "dma_in", "streamer_config", "acc_config", "run", "streamer_config",
         "acc_config", "run", "dma_out", "check",
@@ -583,7 +583,7 @@ def test_every_start_is_waited_on_at_once_in_the_quiet_build_and_each_build_wait
 ):
     from tests.gen.helpers import bound_recipe
 
-    graph = bound_recipe("dot_1", "dot") if name == "dot_1" else None
+    graph = bound_recipe("dot_v1", "dot") if name == "dot_v1" else None
     src, _ = quiet(tmp_path, graph=graph, name=name)
     q = functions(quiet_build(src), quiet=True)["forge_core_0"]
     starts = [re.fullmatch(r"csrw_ss\((\w+)_RW_START, 1\);", x) for x in q]

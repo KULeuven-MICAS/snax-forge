@@ -27,9 +27,9 @@ LANE = {"brm": "lane_accumulate", "implementation": "chisel_lane_accumulate", "i
 
 
 def steps(**params: int) -> list[Graph]:
-    """rowsum_2's graphs (the import, then each step) at ``params``, each step checked against
+    """rowsum_v2's graphs (the import, then each step) at ``params``, each step checked against
     the reference executor."""
-    r = Recipe.load(recipe_path("rowsum_2")).with_params(params)
+    r = Recipe.load(recipe_path("rowsum_v2")).with_params(params)
     return [res.graph for res in apply_recipe(r, imported("rowsum"))]
 
 
@@ -66,7 +66,7 @@ def test_the_recipe_at_its_defaults():
 
 
 def interchanged(**params: int) -> Graph:
-    """rowsum_2's graph before its bind."""
+    """rowsum_v2's graph before its bind."""
     return steps(**params)[-2]
 
 
@@ -89,7 +89,7 @@ def test_refused_a_front_op_in_the_tasklet():
 
 def test_refused_a_front_op_in_a_fused_nest():
     """dot 4 before its bind: the fused multiply and its fold are mac's."""
-    r, graphs = recipe_graphs("dot_4")
+    r, graphs = recipe_graphs("dot_v4")
     k = next(i for i, st in enumerate(r.steps) if st.transform == "bind")
     node = r.steps[k].params["node"]
     with pytest.raises(SandboxError, match="computes 'in1 \\* in2' before the fold, a front op; a "

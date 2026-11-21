@@ -28,7 +28,7 @@ def G(d: dict) -> dict:  # a short name for the parametrize table
 @pytest.fixture(scope="module", params=["vecadd", "vsum"])
 def folder(request, tmp_path_factory):
     tmp = tmp_path_factory.mktemp(request.param)
-    graph = bound_vsum() if request.param == "vsum" else None
+    graph = bound_vsum() if request.param == "vsum_v1" else None
     out = tmp / "gvsoc" / request.param
     generate(point(tmp, name=request.param, graph=graph), out, root=tmp)
     return out

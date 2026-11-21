@@ -59,7 +59,7 @@ $$q = A p, \quad A \in \mathbb{Z}^{M \times N}$$
 $$q \mathrel{+}= A p, \quad A \in \mathbb{Z}^{M \times N}$$
 
 - Written as `q += np.sum(A * p, axis=1)`: matvec's two nests, the sum folding into the transient `tmp1[m]`, then the elementwise `q[m] = q[m] + tmp1[m]` (`augassign_19_4_map`), which `fuse_seed` takes into the fold as its seed, read once per row.
-- `recipes/matvec/matvec_seed.json` (adder tree) and `matvec_seed_serial.json` (`chisel_serial`, SerialAccumulate) bind it at 8 × 512, W = 4.
+- `recipes/matvec/matvec_acc_v1.json` (adder tree) and `matvec_acc_v2.json` (`chisel_serial`, SerialAccumulate) bind it at 8 × 512, W = 4.
 
 ## elementwise/
 
@@ -80,7 +80,7 @@ $$B = \max(A, 0)$$
 
 - `np.maximum` becomes `max(in1, 0)`, in the expression grammar; at int32 DaCe writes the 0 as `dace.int32(0)`, a constant cast the importer folds.
 - A compare-and-select unit at II 1; `mlp`, `lenet` and `resnet` use it between layers.
-- It runs: `recipes/elementwise/relu.json` splits the map by W = 4 and binds `simd` at one stream, op max, its slot k = 0 read off the tasklet's literal and baked into the SimdLanes (C§3).
+- It runs: `recipes/elementwise/relu_v1.json` splits the map by W = 4 and binds `simd` at one stream, op max, its slot k = 0 read off the tasklet's literal and baked into the SimdLanes (C§3).
 
 ### rowsum
 
@@ -89,7 +89,7 @@ $$B = \max(A, 0)$$
 $$y_i = \sum_j A_{ij}$$
 
 - A partial reduction: the reduced axis is not the output's, so the accumulator restarts per row (T < N).
-- It runs: `recipes/reduce/rowsum.json` (adder tree, W = 4) and `recipes/reduce/rowsum_serial.json` (accumulator, W = 1) tag the row map temporal and split the column map, so T = N / W beats per sum and M sums per run (the restart, M13 B0).
+- It runs: `recipes/reduce/rowsum_v1.json` (adder tree, W = 4) and `recipes/reduce/rowsum_v3.json` (accumulator, W = 1) tag the row map temporal and split the column map, so T = N / W beats per sum and M sums per run (the restart, M13 B0).
 - The result goes through a view, which the importer folds: the Reduce writes `y` directly.
 - `softmax`'s sum pass has this shape.
 

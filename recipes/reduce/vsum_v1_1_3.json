@@ -1,0 +1,20 @@
+{
+ "name": "vsum_v1_1_3",
+ "id": "vsum_tree_n21",
+ "description": "`vsum_v1_1` at N = 21, a tail the lanes do not fill.",
+ "kernel": "vsum",
+ "params": {"W": 4, "N": 21},
+ "symbols": {"N": "N"},
+ "steps": [
+  {"transform": "split_map", "params": {"map": "sum_map", "factor": "W"}},
+  {
+   "transform": "bind",
+   "params": {
+    "node": "sum",
+    "brm": "accumulate",
+    "implementation": "chisel_adder_tree",
+    "instance": "acc"
+   }
+  }
+ ]
+}

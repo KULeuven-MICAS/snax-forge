@@ -41,7 +41,7 @@ FLAGS = [
     "-fopenmp",
     "-fsyntax-only",
 ]  # fmt: skip (toolchain.mk's)
-MVT = ["mvt_1", "mvt_1_dot2", "mvt_2", "mvt_1_reuse", "mvt_1_dot2_reuse", "mvt_2_reuse"]
+MVT = ["mvt_v1", "mvt_v1_2", "mvt_v2", "mvt_v1_1", "mvt_v1_2_1", "mvt_v2_1"]
 RECIPES = list(dict.fromkeys([d.recipe for d in SETS["full"]] + MVT))
 
 
@@ -84,8 +84,8 @@ def test_the_generated_program_compiles(tmp_path, recipe):
 @pytest.mark.slow
 def test_mvt_names_y1_as_its_own(tmp_path):
     """mvt's data.h declares y1 as ``y1_l2``, and main.c moves it by that name (N int64)."""
-    n = json.loads((REPO / "recipes/mvt/mvt_2.json").read_text())["params"]["N"]
-    out = _generated(tmp_path, "mvt_2")
+    n = json.loads((REPO / "recipes/mvt/mvt_v2.json").read_text())["params"]["N"]
+    out = _generated(tmp_path, "mvt_v2")
     data, main = (out / "data.h").read_text(), (out / "main.c").read_text()
     assert f"const int64_t y1_l2[{n}]" in data and " y1[" not in data
     assert f"y1_l2, {8 * n});" in main

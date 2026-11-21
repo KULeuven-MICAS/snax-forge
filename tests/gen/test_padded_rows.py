@@ -1,4 +1,4 @@
-"""rowsum_2 under the ``padded_rows`` layout (design/memory.py): A's rows 65 words apart in L2
+"""rowsum_v2 under the ``padded_rows`` layout (design/memory.py): A's rows 65 words apart in L2
 and L1. data.h writes A with each row's pad word zero, the DMA moves the padded block (4160 B,
 65 beats), the streamers take the row stride from the layout, and the golden y is the one the
 contiguous layout gives."""
@@ -19,10 +19,10 @@ PADDED = MemorySpec().with_changes([("passes.layout", "padded_rows")])
 
 
 def point(spec: MemorySpec) -> DesignPoint:
-    g = apply_recipe(Recipe.load(recipe_path("rowsum_2")), imported("rowsum"))[-1].graph
+    g = apply_recipe(Recipe.load(recipe_path("rowsum_v2")), imported("rowsum"))[-1].graph
     d = Design(Platform.load(SNAX_FORGE), g, memory_spec=spec)
     assert run_checks(d) == []
-    return DesignPoint.of(d, "rowsum_2")
+    return DesignPoint.of(d, "rowsum_v2")
 
 
 @pytest.fixture(scope="module")

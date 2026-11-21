@@ -1,0 +1,21 @@
+{
+ "name": "rowsum_v1_1",
+ "id": "rowsum_tree_m3n7",
+ "description": "`rowsum_v1` at 3 × 7, a row the lanes do not fill.",
+ "kernel": "rowsum",
+ "params": {"W": 4, "M": 3, "N": 7},
+ "symbols": {"M": "M", "N": "N"},
+ "steps": [
+  {"transform": "tag_map", "params": {"map": "sum_map", "kind": "temporal"}},
+  {"transform": "split_map", "params": {"map": "sum_map_1", "factor": "W"}},
+  {
+   "transform": "bind",
+   "params": {
+    "node": "sum",
+    "brm": "accumulate",
+    "implementation": "chisel_adder_tree",
+    "instance": "acc"
+   }
+  }
+ ]
+}

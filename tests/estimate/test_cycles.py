@@ -24,7 +24,7 @@ def test_the_closed_cycles_of_c17(kernel, w):
     sizes = {"N": 512} | ({"M": 16} if kernel == "matvec" else {})
     got = []
     for k in range(2, 7):
-        (g,) = estimated(f"{kernel}_{k}", W=w, **sizes).groups
+        (g,) = estimated(f"{kernel}_v{k}", W=w, **sizes).groups
         got.append(g.cycles)
     assert got == TABLE[kernel, w]
 
@@ -32,18 +32,18 @@ def test_the_closed_cycles_of_c17(kernel, w):
 def test_the_row_dot_5_splits_into_bottleneck_ramp_and_stall():
     """matvec 5 at W = 4: the MAC's 2048 firings, its L 1 and the serial sum's L 1 + span 4 − 1,
     and the 45 cycles the MAC waits for the serial sum."""
-    (g,) = estimated("matvec_5", W=4, N=512, M=16).groups
+    (g,) = estimated("matvec_v5", W=4, N=512, M=16).groups
     assert (g.cycles, g.bottleneck, g.ramp, g.stall) == (2098, 2048, 5, 45)
 
 
 # Open item 95: per design at its recipe's defaults, its forge counters in order (dot 1's were
-# measured encapsulated, now dot_1_enc's; dot 1 as two accelerators gives the same groups)
+# measured encapsulated, now dot_v1_1's; dot 1 as two accelerators gives the same groups)
 COUNTERS = {
-    "vecadd_i32": [19], "vsum_tree_i8": [11], "dot_1": [19, 19], "dot_1_enc": [19, 19],
-    "dot_4": [133], "vecadd": [19],
-    "vsum": [67], "vecmul_i32_i64": [19], "dot_2": [133], "dot_3": [132], "dot_5": [136],
-    "dot_6": [137], "matvec_5": [2101], "matvec_6": [2057], "relu": [18], "axpy": [19],
-    "axpy_baked": [19], "dot_serial": [19, 67],
+    "vecadd_v1_1": [19], "vsum_v1_1_2": [11], "dot_v1": [19, 19], "dot_v1_1": [19, 19],
+    "dot_v4": [133], "vecadd_v1": [19],
+    "vsum_v1": [67], "vecmul_v1_1_1": [19], "dot_v2": [133], "dot_v3": [132], "dot_v5": [136],
+    "dot_v6": [137], "matvec_v5": [2101], "matvec_v6": [2057], "relu_v1": [18], "axpy_v1": [19],
+    "axpy_v1_1": [19], "dot_v7": [19, 67],
 }  # fmt: skip
 
 
@@ -55,7 +55,7 @@ def test_cycles_and_the_fill_are_every_forge_counter(name):
 def test_vecadd_and_dot_1():
     """vecadd at N = 64, W = 4: 16 firings at L 0. dot 1 at N = 512: vmul 128, vsum 128 plus its
     L 1, one after the other through L1."""
-    assert [g.cycles for g in estimated("vecadd", N=64, W=4).groups] == [16]
-    e = estimated("dot_1", N=512, W=4)
+    assert [g.cycles for g in estimated("vecadd_v1", N=64, W=4).groups] == [16]
+    e = estimated("dot_v1", N=512, W=4)
     assert [(g.name, g.cycles) for g in e.groups] == [("vmul", 128), ("vsum", 129)]
     assert e.accelerator_cycles == 257

@@ -23,13 +23,13 @@ from tests.helpers import recipe_path
 from .helpers import needs_gvsoc
 
 README = REPO / "examples" / "dot" / "README.md"
-NAMES = [f"dot_{k}" for k in range(1, 7)]
+NAMES = [f"dot_v{k}" for k in range(1, 7)]
 SMALL = 64  # the runs' N
 W = 4
 # The fill: 2 cycles of the streamers' start, one more for a unit reading A and B
-FILL = {"dot_1": (3, 2), **{n: (3,) for n in NAMES[1:]}}
+FILL = {"dot_v1": (3, 2), **{n: (3,) for n in NAMES[1:]}}
 ROW = re.compile(
-    r"^\| `(dot_\d)` \| (.+?) \| (.+?) \| (.+?) \| ([\d, ]+) \| ([\d, ]+) \| ([\d, ]+) \|$"
+    r"^\| `(dot_v\d)` \| (.+?) \| (.+?) \| (.+?) \| ([\d, ]+) \| ([\d, ]+) \| ([\d, ]+) \|$"
 )
 
 
@@ -39,12 +39,12 @@ def c17(name: str, n: int, w: int = W, j: int = 1) -> tuple[int, ...]:
     linked groups' by their formula."""
     t = n // w
     return {
-        "dot_1": (j * t, j * t + 1),
-        "dot_2": (j * t + 2,),
-        "dot_3": (j * t + 1,),
-        "dot_4": (j * t + 2,),
-        "dot_5": (j * (t + w - 1) + 2,),
-        "dot_6": ((j - 1) * max(t, w) + t + w + 2,),
+        "dot_v1": (j * t, j * t + 1),
+        "dot_v2": (j * t + 2,),
+        "dot_v3": (j * t + 1,),
+        "dot_v4": (j * t + 2,),
+        "dot_v5": (j * (t + w - 1) + 2,),
+        "dot_v6": ((j - 1) * max(t, w) + t + w + 2,),
     }[name]
 
 
@@ -67,8 +67,8 @@ def test_the_table_is_c17_plus_the_fill():
 
 def test_the_readme_gives_the_command_and_dot_4s_check_line():
     text = README.read_text()
-    assert "\npixi run flow recipes/dot/dot_4.json --platform platforms/snax_forge.json\n" in text
-    assert f"counters mult_dot {table()['dot_4'][3]} (128 beats)" in text
+    assert "\npixi run flow recipes/dot/dot_v4.json --platform platforms/snax_forge.json\n" in text
+    assert f"counters mult_dot {table()['dot_v4'][3]} (128 beats)" in text
 
 
 @pytest.fixture(scope="module")
@@ -104,7 +104,7 @@ def test_each_counter_is_c17_plus_the_fill(flows, name):
 def test_the_second_readers_one_stall_is_the_fills(flows, name):
     streamers = read_run(flows[name].out / "run").profile.streamers
     held = {k: s.cycles["stall_xbar"] for k, s in streamers.items() if not s.write}
-    second = {"dot_1": "vmul_b", "dot_2": "mul_b", "dot_3": "mul_b"}.get(name, "mac_b")
+    second = {"dot_v1": "vmul_b", "dot_v2": "mul_b", "dot_v3": "mul_b"}.get(name, "mac_b")
     assert held[second] == 1 and sum(held.values()) == 1, held
 
 
@@ -115,7 +115,7 @@ def test_each_row_is_its_runs_description(flows, name):
     acc = json.loads((flows[name].out / "gen" / "accelerator.json").read_text())
     groups, units, link, *_ = table()[name]
     every = [g for a in acc["accelerators"] for g in a["groups"]]
-    if name == "dot_1":
+    if name == "dot_v1":
         assert [a["name"] for a in acc["accelerators"]] == [g["name"] for g in every]
         assert [g["name"] for g in every] == ["vmul", "vsum"]
         assert groups == "`vmul`, `vsum`, an accelerator and a task each"

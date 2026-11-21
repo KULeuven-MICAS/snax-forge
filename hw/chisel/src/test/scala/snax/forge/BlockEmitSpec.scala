@@ -213,8 +213,8 @@ class BlockEmitSpec extends AnyFlatSpec {
     }
 
   it should "emit FifoPacker as the module it is inside an accelerator, byte for byte" in {
-    // ShellPackedSpec's accelerator: vsum_tree_i32's sum at int32, d_out 2, its packer FifoPacker(1, int32, 1)
-    val base   = shell.RtlFixtures.all.find(_.name == "vsum_tree_i32").get.spec
+    // ShellPackedSpec's accelerator: vsum_v1_1_1's sum at int32, d_out 2, its packer FifoPacker(1, int32, 1)
+    val base   = shell.RtlFixtures.all.find(_.name == "vsum_v1_1_1").get.spec
     val spec   = base.copy(groups = base.groups.map { g =>
       g.copy(units = g.units.map { u =>
         u.copy(ports = u.ports.map {
@@ -273,8 +273,8 @@ class BlockEmitSpec extends AnyFlatSpec {
     }
 
   it should "emit FifoSlicer as the module it is inside an accelerator, byte for byte" in {
-    // ShellSlicedSpec's accelerator: vecadd_i32_w1, a and b at int32 d_in 2, each slicer FifoSlicer(1, int32, 1)
-    val spec   = shell.RtlFixtures.all.find(_.name == "vecadd_i32_w1").get.spec
+    // ShellSlicedSpec's accelerator: vecadd_v1_1_w1, a and b at int32 d_in 2, each slicer FifoSlicer(1, int32, 1)
+    val spec   = shell.RtlFixtures.all.find(_.name == "vecadd_v1_1_w1").get.spec
     val inside = Files.createTempDirectory("emit-sliced-shell")
     Emit.elaborate(new shell.ShellWrapper(spec), inside, split = true)
     val name = "FifoSlicer_w1_i32_n1.sv"

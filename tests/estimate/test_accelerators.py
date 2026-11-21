@@ -15,8 +15,8 @@ from .helpers import estimated
 
 
 def test_dot_1_two_streamers_40_csrs_dot_1_enc_one_and_37():
-    """dot 1: vmul 960-981, vsum 982-999; dot_1_enc: one set dot, 960-996."""
-    one, enc = estimated("dot_1"), estimated("dot_1_enc")
+    """dot 1: vmul 960-981, vsum 982-999; dot_v1_1: one set dot, 960-996."""
+    one, enc = estimated("dot_v1"), estimated("dot_v1_1")
     assert (one.streamers, one.csrs, enc.streamers, enc.csrs) == (2, 40, 1, 37)
     assert [(a.name, a.groups, a.csrs, a.own_csrs, a.streamer.csrs) for a in one.accelerators] == [
         ("vmul", ["vmul"], (960, 981), 4, 18), ("vsum", ["vsum"], (982, 999), 5, 13)]  # fmt: skip
@@ -30,7 +30,7 @@ def test_dot_1_two_streamers_40_csrs_dot_1_enc_one_and_37():
 
 
 @pytest.mark.parametrize(
-    "name", ["vecadd_i32", "vsum_tree_i8", "dot_1", "dot_1_enc", "dot_4", "matvec_1", "rowsum"]
+    "name", ["vecadd_v1_1", "vsum_v1_1_2", "dot_v1", "dot_v1_1", "dot_v4", "matvec_v1", "rowsum_v1"]
 )
 def test_the_csrs_are_the_generators(tmp_path, name):
     """Each accelerator's CSRs, first to last, as the generator lays the sets out."""
@@ -50,11 +50,11 @@ def test_the_csrs_are_the_generators(tmp_path, name):
 
 
 def test_without_a_platform_no_csrs_and_round_trip():
-    e = estimate(steps("dot_1")[-1], None, None)
+    e = estimate(steps("dot_v1")[-1], None, None)
     assert [(a.name, a.csrs, a.streamer.csrs, a.streamer.movers) for a in e.accelerators] == [
         ("vmul", None, None, 3), ("vsum", None, None, 2)]  # fmt: skip
     assert e.csrs is None and e.to_dict()["accelerators"][0]["cost"] is None
-    for x in (e, estimated("dot_1")):
+    for x in (e, estimated("dot_v1")):
         d = x.to_dict()
         assert Estimate.from_dict(json.loads(json.dumps(d))).to_dict() == d
         assert all("cost" not in a["streamer"] for a in d["accelerators"])

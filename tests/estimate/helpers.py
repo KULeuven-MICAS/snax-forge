@@ -11,8 +11,8 @@ SNAX_FORGE = REPO / "platforms" / "snax_forge.json"
 
 
 # The JOB_BEATS CSRs of the recipes SYN2 and the experiments' model synthesized:
-# vsum_tree and dot 2-6 one fold's, the elementwise ones none
-OPEN_TS = {"vecadd": 0, "vecmul": 0}
+# vsum_v1_1 and dot 2-6 one fold's, the elementwise ones none
+OPEN_TS = {"vecadd_v1": 0, "vecmul_v1": 0}
 
 
 def copies(recipe: str, job_width: int = 32) -> int:

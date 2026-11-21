@@ -208,8 +208,8 @@ def test_context_sizes():
 PADDED = MemorySpec().with_changes([("passes.layout", "padded_rows")])
 
 
-def rowsum_2(spec: MemorySpec | None = None, **params: int):
-    """rowsum_2 bound by its recipe (W 4, M 8, N 64 unless given) as a Design under ``spec``,
+def rowsum_v2(spec: MemorySpec | None = None, **params: int):
+    """rowsum_v2 bound by its recipe (W 4, M 8, N 64 unless given) as a Design under ``spec``,
     its checks run (they make the plan)."""
     from snax_forge.design import Design, Platform, run_checks
     from snax_forge.sandbox import Recipe, apply_recipe
@@ -217,7 +217,7 @@ def rowsum_2(spec: MemorySpec | None = None, **params: int):
 
     from .helpers import SNAX_FORGE
 
-    r = Recipe.load(recipe_path("rowsum_2")).with_params(params)
+    r = Recipe.load(recipe_path("rowsum_v2")).with_params(params)
     g = apply_recipe(r, imported("rowsum"))[-1].graph
     d = Design(Platform.load(SNAX_FORGE), g, memory_spec=spec or MemorySpec())
     assert run_checks(d) == []
@@ -235,7 +235,7 @@ def test_rowsum_2s_layout_with_and_without_padded_rows(spec, stride, words):
     placed after A's block."""
     from snax_forge.lower.layout import moved_bytes
 
-    d = rowsum_2(spec)
+    d = rowsum_v2(spec)
     ctx, lays = d.context(), d.memory.layouts
     for m in ("l2", "l1"):
         assert (lays["A"][m].shape, lays["A"][m].strides) == ((8, 64), (stride, 8))
@@ -254,7 +254,7 @@ def test_rowsum_2s_layout_with_and_without_padded_rows(spec, stride, words):
 def test_each_lanes_first_read_one_bank_at_64_distinct_at_65(spec, banks):
     """The lanes read down a column, A[4 i_t + w, j]: rows R words apart put lane w in bank
     (w R + j) mod 32, all one bank at R = 64, w + j at R = 65 (L1's 32 banks)."""
-    d = rowsum_2(spec)
+    d = rowsum_v2(spec)
     ctx = d.context()
     (a,) = [x for x in ctx.accesses if x.connector == "a"]
     lay, word, n = d.memory.layouts["A"]["l1"], ctx.word_bytes("l1"), d.platform.l1.n_banks
@@ -276,10 +276,10 @@ def test_padded_rows_rounds_a_row_up_to_odd_words():
     are 32 words, 63 int32 252 B, also 32; either becomes 33 words, 66 elements apart."""
     from snax_forge.design.memory import padded_rows_layout
 
-    c = rowsum_2(N=63).context()
+    c = rowsum_v2(N=63).context()
     assert padded_rows_layout(c, {"A": ["l1"]})["A"]["l1"].strides == (504, 8)
     c.graph.containers["A"].dtype = "int32"
     assert padded_rows_layout(c, {"A": ["l1"]})["A"]["l1"].strides == (264, 4)
-    c = rowsum_2().context()
+    c = rowsum_v2().context()
     c.graph.containers["A"].dtype = "int32"
     assert padded_rows_layout(c, {"A": ["l1"]})["A"]["l1"].strides == (264, 4)

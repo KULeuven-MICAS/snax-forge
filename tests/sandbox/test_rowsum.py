@@ -33,8 +33,8 @@ def rates(g, node="sum"):
 
 @pytest.mark.parametrize(
     "name, w, m, n, lanes",
-    [("rowsum", 4, 8, 64, "4 * n_1_t:4 * n_1_t + 4"),
-     ("rowsum_serial", 1, 4, 16, "n_1_t:n_1_t + 1")],
+    [("rowsum_v1", 4, 8, 64, "4 * n_1_t:4 * n_1_t + 4"),
+     ("rowsum_v3", 1, 4, 16, "n_1_t:n_1_t + 1")],
 )  # fmt: skip
 def test_the_fold_port_has_one_lane_per_row_and_t_is_n_over_w(name, w, m, n, lanes):
     """Two firing loops, lanes along a row, the sum written once per row: T = N / W."""
@@ -55,7 +55,7 @@ def test_the_fold_port_has_one_lane_per_row_and_t_is_n_over_w(name, w, m, n, lan
 
 def test_two_rows_of_eight_on_four_lanes():
     """M = 2, N = 8, W = 4: the tree gives 10, 26 then 6, 6, so T = 2 and y = (36, 12)."""
-    g = bound_rowsum("rowsum", M=2, N=8)
+    g = bound_rowsum("rowsum_v1", M=2, N=8)
     assert rates(g)[1] == {"T": 2}
     a = np.array([[1, 2, 3, 4, 5, 6, 7, 8], [2, 0, 1, 3, 0, 0, 5, 1]], dtype=np.int64)
     inputs = {"A": a, "y": np.zeros(2, dtype=np.int64)}

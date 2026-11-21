@@ -31,7 +31,7 @@ def runs(tmp_path_factory):
     base = tmp_path_factory.mktemp("moves")
     out = {lv: api.load_run(recorded_run(base / f"rec_{lv}", lv), f"rec_{lv}")
            for lv in ("task", "beat", "stall")}  # fmt: skip
-    out["B_pinned"] = api.load_run(run_dir(base / "pinned", "vecadd", "beat", memory_sets=B_PIN))
+    out["B_pinned"] = api.load_run(run_dir(base / "pinned", "vecadd_v1", "beat", memory_sets=B_PIN))
     return out
 
 
@@ -316,10 +316,12 @@ def test_a_beat_level_run_lacks_only_what_needs_stall(runs):
 
 
 def test_a_filtered_trace_says_so(tmp_path):
-    rv = api.load_run(run_dir(tmp_path / "f", "vecadd", "beat", trace_sources=["acc", "acc_a"]))
+    rv = api.load_run(run_dir(tmp_path / "f", "vecadd_v1", "beat", trace_sources=["acc", "acc_a"]))
     m = build_movement(rv)
     assert m.reason is None and m.sources == ["acc", "acc_a"]
     j = api.journey_view(rv, "A", 0)
     assert j["filtered"] == {"sources": ["acc", "acc_a"]}
     assert [h["k"] for h in j["hops"]] == ["grant"]  # no DMA lines: the beat's arrival is missing
-    assert build_movement(api.load_run(run_dir(tmp_path / "w", "vecadd", "beat"))).sources is None
+    assert (
+        build_movement(api.load_run(run_dir(tmp_path / "w", "vecadd_v1", "beat"))).sources is None
+    )

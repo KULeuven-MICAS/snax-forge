@@ -24,9 +24,9 @@ from .helpers import designed, fake_emit
 
 @pytest.fixture(scope="module")
 def shared(tmp_path_factory):
-    """dot_1_shared's design point and its gen-gvsoc folder, under one root."""
+    """dot_v1_2's design point and its gen-gvsoc folder, under one root."""
     tmp = tmp_path_factory.mktemp("shared")
-    point = designed(tmp, "dot_1_shared", "dot_1_shared")
+    point = designed(tmp, "dot_v1_2", "dot_v1_2")
     with pytest.MonkeyPatch.context() as mp:
         mp.chdir(tmp)
         generate(point, tmp / "gvsoc", root=tmp)
@@ -34,8 +34,8 @@ def shared(tmp_path_factory):
 
 
 @requires_submodule
-@pytest.mark.parametrize(("name", "sets", "acc"), [("dot_1_shared", [], "dot"),
-                                                   ("mvt_1_dot2_shared", ["W=8"], "mvt_vadd")])  # fmt: skip
+@pytest.mark.parametrize(("name", "sets", "acc"), [("dot_v1_2", [], "dot"),
+                                                   ("mvt_v1_2_2", ["W=8"], "mvt_vadd")])  # fmt: skip
 def test_gen_rtl_and_the_bundle_take_a_shared_design(tmp_path, monkeypatch, name, sets, acc):
     """Both shared fixtures: gen-rtl's accelerator.json is snax-gvsoc's forge/<name>/ byte for
     byte, movers and port_mux in it, and the bundle (Emit faked) lists the set's port mux after
@@ -87,8 +87,8 @@ def test_design_md_says_the_set_shares_its_movers(shared, tmp_path):
     _, point, out = shared
     shutil.copy(point, tmp_path / "design_point.json")
     c = load_cluster(out / "snax_forge.hjson", tmp_path / "design_point.json")
-    r = build_design("dot_1_shared", c, DesignPoint.load(point),
-                     Recipe.load(recipe_path("dot_1_shared")))  # fmt: skip
+    r = build_design("dot_v1_2", c, DesignPoint.load(point),
+                     Recipe.load(recipe_path("dot_v1_2")))  # fmt: skip
     ((name, movers, channels, shared_),) = [(x.name, x.movers, x.channels, x.shared)
                                             for x in r.sets]  # fmt: skip
     assert (name, movers, channels, shared_) == ("dot", 3, 12, True)

@@ -49,7 +49,7 @@ def pattern(kernel: str) -> Graph:
 
 
 def recipe_path(ref: str) -> Any:
-    """``category/name`` (``dot/dot_3``) as ``recipes/<category>/<name>.json``; a bare name is
+    """``category/name`` (``dot/dot_v3``) as ``recipes/<category>/<name>.json``; a bare name is
     looked up across the folders (recipe.py's ``find_recipe``); a path to a ``.json`` is that
     file."""
     from .recipe import find_recipe
@@ -708,7 +708,7 @@ def _outer_step(tname: str, sp: dict[str, Any], units: dict[str, str], blocks: d
     for k in NAMED:  # a unit's, group's or accelerator's name: free in the outer graph
         v = sp.get(k)
         if isinstance(v, str) and v not in units:
-            # a group or accelerator named after the kernel (dot_3's group dot): the block's
+            # a group or accelerator named after the kernel (dot_v3's group dot): the block's
             units[v] = name if k in ("group", "accelerator") and v == kernel else fresh(v, taken)
     for v in sp.get("units") or []:
         if v not in units:

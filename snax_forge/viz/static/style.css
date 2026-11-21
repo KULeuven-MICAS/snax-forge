@@ -574,6 +574,7 @@ svg.dfg-edges .block-box text { font-size: 0.85rem; font-weight: 600; fill: var(
 
 /* -- edit mode: the sidebar, the top bar's session parts, the log, the dialogs -- */
 .dfg-session { font-weight: 600; }
+.c-recipe-id { margin-left: 0.6em; padding: 0 0.4em; border: 1px solid var(--rule); border-radius: 4px; font: 600 12px ui-monospace, "SF Mono", Menlo, Consolas, monospace; cursor: help; }
 #step option.past { color: var(--muted); }
 .dfg-sidebar { padding: 0.6rem 0.7rem; font-size: 0.88em; }
 .dfg-sidebar h2 { font-size: 0.975rem; margin: 0.2rem 0 0.5rem; color: var(--muted); font-weight: 600; overflow-wrap: anywhere; }

@@ -52,7 +52,7 @@ def made(tmp_path_factory) -> dict[str, tuple[Path, Path]]:
     tmp = tmp_path_factory.mktemp("axpy")
     out = {}
     for name, graph in (("axpy", axpy()), ("axpy_i64", axpy("int64")),
-                        ("axpy_baked", axpy(baked=3))):  # fmt: skip
+                        ("axpy_v1_1", axpy(baked=3))):  # fmt: skip
         path = point(tmp, name=name, graph=graph)
         folder = tmp / "out" / "gvsoc" / name
         generate(path, folder, root=tmp)
@@ -72,7 +72,7 @@ def test_the_design_checks_accept_the_slot_connector():
 
 
 def test_the_accelerator_task_reads_k1_from_alpha(made):
-    for name, k1 in (("axpy", {"k1": {"from": "alpha"}}), ("axpy_baked", {})):
+    for name, k1 in (("axpy", {"k1": {"from": "alpha"}}), ("axpy_v1_1", {})):
         p = DesignPoint.load(made[name][0])
         tasks = task_list(p)
         (acc,) = [s for s in tasks.steps if getattr(s, "type", None) == "accel"]
@@ -104,7 +104,7 @@ def test_check_values_refuses_a_slot_without_its_container(made, values, message
                   ("BUSY_COUNTER", 4, 32)], {"k1": "int32"}),
         ("axpy_i64", [("START", 0, 1), ("JOBS", 1, 32), ("K1_LO", 2, 32), ("K1_HI", 3, 32),
                       ("STATUS", 4, 2), ("BUSY_COUNTER", 5, 32)], {"k1": "int64"}),
-        ("axpy_baked", [("START", 0, 1), ("JOBS", 1, 32), ("STATUS", 2, 2),
+        ("axpy_v1_1", [("START", 0, 1), ("JOBS", 1, 32), ("STATUS", 2, 2),
                         ("BUSY_COUNTER", 3, 32)], None),
     ],
 )  # fmt: skip
@@ -151,7 +151,7 @@ def test_at_int64_the_program_writes_two_words(made):
 
 
 def test_baked_the_program_writes_no_k1_and_data_h_has_no_alpha(made):
-    folder = made["axpy_baked"][1]
+    folder = made["axpy_v1_1"][1]
     assert "K1" not in (folder / "main.c").read_text()
     assert "alpha" not in (folder / "data.h").read_text()
 

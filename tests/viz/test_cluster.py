@@ -172,13 +172,13 @@ def dot1_stall(tmp_path_factory):
     from .helpers import recorded_run
 
     out = recorded_run(
-        tmp_path_factory.mktemp("dot1") / "dot_1_enc_stall", "stall", RECORDED / "dot_1_enc"
+        tmp_path_factory.mktemp("dot1") / "dot_1_enc_stall", "stall", RECORDED / "dot_v1_1"
     )
     return api.load_run(out, "dot_1_enc_stall")
 
 
 def test_the_cluster_view_names_the_unit_that_fires(dot1_stall):
-    """dot_1_enc (fixtures/dot_1_enc, N = 64, W = 4): at a vmul firing ``acc`` is vmul, its task
+    """dot_v1_1 (fixtures/dot_v1_1, N = 64, W = 4): at a vmul firing ``acc`` is vmul, its task
     and fire its own, vsum's entry quiet; at a vsum firing the other way round; each lane's grant
     is its own mover's."""
     idx = dot1_stall.index
@@ -214,13 +214,15 @@ def dot1_sets(tmp_path_factory):
 
     from .helpers import recorded_run
 
-    out = recorded_run(tmp_path_factory.mktemp("sets") / "dot_1_stall", "stall", RECORDED / "dot_1")
+    out = recorded_run(
+        tmp_path_factory.mktemp("sets") / "dot_1_stall", "stall", RECORDED / "dot_v1"
+    )
     return api.load_run(out, "dot_1_stall")
 
 
 def test_the_cluster_view_has_a_streamer_per_set(dot1_sets, dot1_stall):
     """dot 1 (fixtures/dot_1): two streamers inside the accelerator, vmul's busy at a vmul firing
-    and vsum's quiet; dot_1_enc one, busy with both groups' tasks."""
+    and vsum's quiet; dot_v1_1 one, busy with both groups' tasks."""
     idx = dot1_sets.index
     t = next(e["t"] for e in idx.events if e["k"] == "fire" and e["src"] == "vmul")
     a = cv.cluster_at(idx, t)
@@ -264,9 +266,9 @@ def _recorded(tmp_path_factory, fixture, level):
 
 
 def test_a_shared_movers_mux_serves_the_user_of_the_firing_unit(tmp_path_factory):
-    """dot_1_shared: reader0 serves vmul_a at a vmul firing and vsum_a at a vsum firing; reader1,
+    """dot_v1_2: reader0 serves vmul_a at a vmul firing and vsum_a at a vsum firing; reader1,
     vmul's only, serves no one in the idle task it runs with vsum; an unshared run has no user."""
-    idx = _recorded(tmp_path_factory, "dot_1_shared", "stall").index
+    idx = _recorded(tmp_path_factory, "dot_v1_2", "stall").index
     for unit, users in (
         ("vmul", ("vmul_a", "vmul_b", "vmul_out")),
         ("vsum", ("vsum_a", None, "vsum_out")),
@@ -283,8 +285,8 @@ def test_a_shared_movers_mux_serves_the_user_of_the_firing_unit(tmp_path_factory
 
 
 def test_a_linked_group_at_task_says_its_beat_lines_are_refused(tmp_path_factory):
-    """dot_4 (mac → sum linked): at task the answer is ``linked``, with no ``filtered``."""
-    idx = _recorded(tmp_path_factory, "dot_4", "task").index
+    """dot_v4 (mac → sum linked): at task the answer is ``linked``, with no ``filtered``."""
+    idx = _recorded(tmp_path_factory, "dot_v4", "task").index
     t = next(e["t"] for e in idx.events if e["k"] == "start" and e["src"] == "dot")
     at = cv.cluster_at(idx, t + 1)
     assert at["linked"] is True and at["filtered"] is None and at["needs"]["grant"] == "beat"

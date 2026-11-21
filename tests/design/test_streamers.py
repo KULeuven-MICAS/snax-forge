@@ -70,12 +70,12 @@ def test_temporal_dims_come_from_the_graph():
     pf = Platform.load(SMALL16)
     dims = {
         name: {k: s.temporal_dims for k, s in shell(pf, g).items()}
-        for name, g in (("vecadd", Graph.load(BOUND)), ("vsum", bound_vsum()),
+        for name, g in (("vecadd_v1", Graph.load(BOUND)), ("vsum_v1", bound_vsum()),
                         ("matadd", bound_matadd()))
     }  # fmt: skip
     assert dims == {
-        "vecadd": {"acc_a": 1, "acc_b": 1, "acc_out": 1},
-        "vsum": {"acc_a": 1, "acc_out": 1},
+        "vecadd_v1": {"acc_a": 1, "acc_b": 1, "acc_out": 1},
+        "vsum_v1": {"acc_a": 1, "acc_out": 1},
         "matadd": {"acc_a": 2, "acc_b": 2, "acc_out": 2},
     }
 

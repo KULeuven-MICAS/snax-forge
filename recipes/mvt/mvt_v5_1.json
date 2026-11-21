@@ -1,0 +1,29 @@
+{
+ "name": "mvt_v5_1",
+ "id": "mvt_dot2seed_colseed_i8_o32",
+ "description": "`mvt_v5` by reuse: `lift matvec_acc` on each half, then `matvec/matvec_acc_v3` on half 1 and `matvec/matvec_acc_v4` on half 2.",
+ "kernel": "mvt_types",
+ "params": {"M": 64, "N": 64, "W_x1": 8, "D_2": 1},
+ "symbols": {"M": "M", "N": "N"},
+ "types": "i8",
+ "steps": [
+  {"transform": "lift", "params": {"kernel": "matvec_acc", "at": "tmp1_mult_map"}},
+  {
+   "transform": "apply_recipe",
+   "params": {
+    "block": "matvec_acc",
+    "recipe": "matvec/matvec_acc_v3",
+    "params": {"W": "W_x1", "D": "D_2"}
+   }
+  },
+  {"transform": "lift", "params": {"kernel": "matvec_acc", "at": "tmp4_mult_map"}},
+  {
+   "transform": "apply_recipe",
+   "params": {
+    "block": "matvec_acc_1",
+    "recipe": "matvec/matvec_acc_v4",
+    "params": {"W": "W_x1"}
+   }
+  }
+ ]
+}

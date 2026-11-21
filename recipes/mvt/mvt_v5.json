@@ -1,0 +1,52 @@
+{
+ "name": "mvt_v5",
+ "id": "mvt_dot2seed_colseed_i8_o32",
+ "description": "Half 1 a seeded `dot_v2` group, half 2 the column form: one seeded `Mac` with y2 broadcast to its lanes (D186, D187). Both halves read A along its rows, so A is never copied. Int8 in, int32 out.",
+ "kernel": "mvt_types",
+ "params": {"M": 64, "N": 64, "W_x1": 8, "D_2": 1},
+ "symbols": {"M": "M", "N": "N"},
+ "types": "i8",
+ "steps": [
+  {"transform": "tag_map", "params": {"map": "tmp1_mult_map", "kind": "temporal"}},
+  {"transform": "split_map", "params": {"map": "tmp1_mult_map_1", "factor": "W_x1"}},
+  {
+   "transform": "bind",
+   "params": {
+    "node": "tmp1_mult",
+    "brm": "simd",
+    "implementation": "chisel_tiled_spatial",
+    "instance": "vmul_x1"
+   }
+  },
+  {"transform": "tag_map", "params": {"map": "sum_map", "kind": "temporal"}},
+  {"transform": "split_map", "params": {"map": "sum_map_1", "factor": "W_x1"}},
+  {"transform": "fuse_seed", "params": {"first": "sum_map_1_s", "second": "augassign_18_4_map"}},
+  {
+   "transform": "bind",
+   "params": {
+    "node": "sum",
+    "brm": "accumulate",
+    "implementation": "chisel_adder_tree",
+    "instance": "vsum_x1"
+   }
+  },
+  {"transform": "link", "params": {"container": "tmp1_prod", "depth": "D_2", "group": "mvt"}},
+  {"transform": "tag_map", "params": {"map": "tmp4_mult_map_1", "kind": "temporal"}},
+  {"transform": "split_map", "params": {"map": "tmp4_mult_map", "factor": "W_x1"}},
+  {"transform": "interchange_map", "params": {"map": "tmp4_mult_map_1", "with": "tmp4_mult_map_s"}},
+  {"transform": "tag_map", "params": {"map": "sum_map_3", "kind": "temporal"}},
+  {"transform": "split_map", "params": {"map": "sum_map_2", "factor": "W_x1"}},
+  {"transform": "interchange_map", "params": {"map": "sum_map_2_s", "with": "sum_map_3"}},
+  {"transform": "fuse_seed", "params": {"first": "sum_map_2_s", "second": "augassign_19_4_map"}},
+  {"transform": "fuse_map", "params": {"first": "tmp4_mult_map", "second": "sum_map_2"}},
+  {
+   "transform": "bind",
+   "params": {
+    "node": "tmp4_mult_map_s",
+    "brm": "mac",
+    "implementation": "chisel_mac",
+    "instance": "mac_x2"
+   }
+  }
+ ]
+}

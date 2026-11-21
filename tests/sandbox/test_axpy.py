@@ -219,7 +219,7 @@ def test_a_scalar_wider_than_the_op_type_is_refused():
 # =============================================================================
 
 
-@pytest.mark.parametrize(("name", "k1"), [("axpy", None), ("axpy_baked", 3)])
+@pytest.mark.parametrize(("name", "k1"), [("axpy_v1", None), ("axpy_v1_1", 3)])
 def test_axpys_recipes_run_and_check(name, k1):
     """Each step checked against the reference (the baked one at alpha = 3, which it keeps)."""
     from tests.helpers import recipe_path
@@ -238,7 +238,7 @@ def test_the_recipes_fuse_the_imported_maps_then_split_once():
     fused nest; the unit is the one the older order (split, split, fuse_map) binds."""
     from tests.helpers import recipe_path
 
-    for name, value in (("axpy", "csr"), ("axpy_baked", 3)):
+    for name, value in (("axpy_v1", "csr"), ("axpy_v1_1", 3)):
         r = Recipe.load(recipe_path(name))
         assert [s.transform for s in r.steps] == ["bake_scalar", "fuse_map", "split_map", "bind"]
         assert r.steps[0].params == {"container": "alpha", "value": value}

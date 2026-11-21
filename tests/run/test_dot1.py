@@ -20,7 +20,7 @@ from .helpers import load_recorded
 
 @pytest.fixture(scope="module")
 def recorded():
-    return load_recorded("dot_1_enc")
+    return load_recorded("dot_v1_1")
 
 
 def test_the_cluster_has_a_unit_per_group(recorded):
@@ -80,7 +80,7 @@ def test_each_unit_has_its_own_movers(recorded):
 def stalled():
     from snax_forge.run.sources import all_sources
 
-    cluster, tasks, check, lines, regions, _ = load_recorded("dot_1_enc", "events_stall.log")
+    cluster, tasks, check, lines, regions, _ = load_recorded("dot_v1_1", "events_stall.log")
     return cluster, convert(lines, cluster, tasks, check["total_cycles"], "stall",
                             check["functional_check"], regions, all_sources(cluster))  # fmt: skip
 
@@ -115,7 +115,7 @@ def test_both_groups_convert_at_the_beat_levels(stalled, recorded):
 
 def test_beat_levels_are_refused_for_a_linked_group():
     """A group of several linked units (dot 4) stays refused above task."""
-    cluster, tasks, check, lines, regions, _ = load_recorded("dot_4")
+    cluster, tasks, check, lines, regions, _ = load_recorded("dot_v4")
     with pytest.raises(RunError) as e:
         convert(lines, cluster, tasks, check["total_cycles"], "beat", None, regions, [])
     assert e.value.code == "convert.level" and "not read yet" in str(e.value)
@@ -136,7 +136,7 @@ def test_the_cluster_round_trips(recorded):
 
 @pytest.fixture(scope="module")
 def two_sets():
-    return load_recorded("dot_1")
+    return load_recorded("dot_v1")
 
 
 def test_dot_1_has_a_streamer_per_set(two_sets):
@@ -144,7 +144,7 @@ def test_dot_1_has_a_streamer_per_set(two_sets):
     cluster, *_ = two_sets
     a = cluster.accelerator
     assert (a.name, a.accelerators()) == (
-        "snax_forge_dot_1",
+        "snax_forge_dot_v1",
         [("vmul", ["vmul"]), ("vsum", ["vsum"])],
     )
     assert [(x.name, x.first, x.last, x.trace) for x in a.csrs.sets] == [
@@ -184,7 +184,7 @@ def test_dot_1_beats_on_both_accelerators():
     it through vsum_a, each crossbar port named in its set (snax_acc0.streamer_<set>...)."""
     from snax_forge.run.sources import all_sources
 
-    cluster, tasks, check, lines, regions, _ = load_recorded("dot_1", "events_stall.log")
+    cluster, tasks, check, lines, regions, _ = load_recorded("dot_v1", "events_stall.log")
     profile, trace = convert(lines, cluster, tasks, check["total_cycles"], "stall",
                              check["functional_check"], regions, all_sources(cluster))  # fmt: skip
     fires = {u: [e for e in trace.of_kind("fire") if e["src"] == u] for u in ("vmul", "vsum")}

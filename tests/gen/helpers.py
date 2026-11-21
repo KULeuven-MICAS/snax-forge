@@ -2,7 +2,7 @@
 
 ``point`` writes a design point of vecadd (bound by the checked-in recipe,
 W = 4 by default), or of a given graph (``bound_vecmul``: vecmul bound by
-``recipes/elementwise/vecmul.json``; ``bound_vsum``: vsum by ``recipes/reduce/vsum.json``, or at
+``recipes/elementwise/vecmul_v1.json``; ``bound_vsum``: vsum by ``recipes/reduce/vsum_v1.json``, or at
 another W and implementation), on
 ``platforms/snax_forge.json`` (or a given platform), in a folder that stands
 for snax-forge's root: the platform's source hjson is copied into its
@@ -41,7 +41,7 @@ from tests.helpers import FIXTURES, REPO, SUB, recipe_path
 # snax_forge's source hjson (platforms/snax_forge.json's hjson), snax-forge's base cluster
 SOURCE = REPO / "platforms" / "snax_forge_cluster.hjson"
 # The fake Emit's files, in emitted.json's order (not sorted, so files.f's order is its)
-SV = ["sv/snax_forge_vecadd_shell_wrapper.sv", "sv/ElementwiseAlu_w64_add.sv"]
+SV = ["sv/snax_forge_vecadd_v1_shell_wrapper.sv", "sv/ElementwiseAlu_w64_add.sv"]
 COMMIT = "0123456789abcdef0123456789abcdef01234567"
 
 
@@ -91,19 +91,19 @@ def with_groups(desc: Description, groups: list[Group], k: int = 0) -> Descripti
 
 def bound_vecmul(w: int = 4) -> Graph:
     """vecmul bound with W = ``w`` by the checked-in recipe (simd, instance acc)."""
-    recipe = Recipe.load(recipe_path("vecmul")).with_params({"W": w})
+    recipe = Recipe.load(recipe_path("vecmul_v1")).with_params({"W": w})
     return apply_recipe(recipe, Graph.load(FIXTURES / "vecmul.snaxdfg"))[-1].graph
 
 
 def bound_dot1() -> Graph:
     """dot 1 bound by the checked-in recipe: two accelerators, vmul and vsum."""
-    return bound_recipe("dot_1", "dot")
+    return bound_recipe("dot_v1", "dot")
 
 
 def bound_dot1_enc() -> Graph:
-    """dot 1 encapsulated (``recipes/dot/dot_1_enc.json``): groups vmul and vsum in the accelerator
+    """dot 1 encapsulated (``recipes/dot/dot_v1_1.json``): groups vmul and vsum in the accelerator
     dot, one streamer set."""
-    return bound_recipe("dot_1_enc", "dot")
+    return bound_recipe("dot_v1_1", "dot")
 
 
 def bound_recipe(recipe: str, kernel: str) -> Graph:

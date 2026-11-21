@@ -1,5 +1,5 @@
-"""The design point's schedule (D179): mvt_3_split at W = 8, its two halves two accelerators
-(``mvt`` and ``mvt_1``) that share no data, under serial, pipeline and pipeline_compute; mvt_3,
+"""The design point's schedule (D179): mvt_v3_1 at W = 8, its two halves two accelerators
+(``mvt`` and ``mvt_1``) that share no data, under serial, pipeline and pipeline_compute; mvt_v3,
 the same halves on one shared group, gives one task list under all three; sequential syncs after
 every start."""
 
@@ -24,13 +24,13 @@ from .test_c import quiet_build as quiet_text
 
 
 @cache
-def mvt(name: str = "mvt_3_split") -> DesignPoint:
+def mvt(name: str = "mvt_v3_1") -> DesignPoint:
     d = Design(Platform.load(SNAX_FORGE), steps(name, W=8)[-1])
     assert run_checks(d) == []
     return DesignPoint.of(d, name)
 
 
-def at(schedule: str, name: str = "mvt_3_split") -> DesignPoint:
+def at(schedule: str, name: str = "mvt_v3_1") -> DesignPoint:
     return replace(mvt(name), schedule=schedule)
 
 
@@ -99,10 +99,10 @@ def test_every_schedule_keeps_the_tasks_and_their_after(schedule):
 @pytest.mark.parametrize("schedule", SCHEDULES)
 def test_the_shared_form_gives_one_task_list_under_every_schedule(schedule):
     """The halves on one group: one list, sequential's with a sync after every start."""
-    want = task_list(at("serial", "mvt_3"))
+    want = task_list(at("serial", "mvt_v3"))
     if schedule == "sequential":
         want = sequential(want)
-    assert task_list(at(schedule, "mvt_3")) == want
+    assert task_list(at(schedule, "mvt_v3")) == want
 
 
 def test_sequential_syncs_after_every_start():
@@ -139,14 +139,14 @@ def test_the_schedule_round_trips_through_the_design_point():
 @pytest.mark.parametrize("schedule", ["pipeline", "pipeline_compute"])
 def test_the_quiet_build_still_waits_on_every_start_and_each_build_once(tmp_path, schedule,
                                                                          monkeypatch):  # fmt: skip
-    """As test_c's quiet-build test, on the pipelined mvt_3_split: each START followed by its
+    """As test_c's quiet-build test, on the pipelined mvt_v3_1: each START followed by its
     polls in the quiet build, and one poll of each half in either build."""
     from tests.gen import helpers as gen_helpers
 
     real = gen_helpers.DesignPoint.of
     monkeypatch.setattr(gen_helpers.DesignPoint, "of",
                         lambda d, n: replace(real(d, n), schedule=schedule))  # fmt: skip
-    src, _ = quiet(tmp_path, graph=steps("mvt_3_split", W=8)[-1], name="mvt_3_split")
+    src, _ = quiet(tmp_path, graph=steps("mvt_v3_1", W=8)[-1], name="mvt_v3_1")
     q = functions(quiet_text(src), quiet=True)["forge_core_0"]
     default = functions(src)["forge_core_0"]
     for unit in ("MVT", "MVT_1"):

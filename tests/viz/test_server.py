@@ -17,12 +17,12 @@ from .helpers import get, run_dir, serving
 @pytest.fixture(scope="module")
 def vecadd(tmp_path_factory):
     """One stubbed vecadd flow at task for every test that only reads it."""
-    return run_dir(tmp_path_factory.mktemp("server") / "vecadd", "vecadd", "task")
+    return run_dir(tmp_path_factory.mktemp("server") / "vecadd", "vecadd_v1", "task")
 
 
 @pytest.fixture(scope="module")
 def vsum_off(tmp_path_factory):
-    return run_dir(tmp_path_factory.mktemp("server") / "vsum", "vsum", "off")
+    return run_dir(tmp_path_factory.mktemp("server") / "vsum", "vsum_v1", "off")
 
 
 def get_json(srv, path):
@@ -39,11 +39,13 @@ def test_server_serves_viewer_and_runs(vecadd):
         assert get(srv, "/memory.js")[1] == "text/javascript"  # the memory tab
         runs = get_json(srv, "/api/runs")
         assert runs == [
-            {"name": "vecadd", "path": str(d), "design": "vecadd",
+            {"name": "vecadd", "path": str(d), "design": "vecadd_v1",
              "trace_level": "task", "total_cycles": 226}
         ]  # fmt: skip
         detail = get_json(srv, "/api/run/vecadd")
-        assert detail["profile"]["total_cycles"] == 226 and detail["cluster"]["design"] == "vecadd"
+        assert (
+            detail["profile"]["total_cycles"] == 226 and detail["cluster"]["design"] == "vecadd_v1"
+        )
         for gone in ("events?from=0&to=60", "fifo"):  # no such routes
             assert status_of(srv, f"/api/run/vecadd/{gone}") == 404
 
@@ -76,10 +78,10 @@ def test_every_route_the_viewer_calls_exists(vecadd):
 
 
 def test_reload_picks_up_a_changed_directory(tmp_path):
-    d = run_dir(tmp_path / "run", "vecadd", "off")
+    d = run_dir(tmp_path / "run", "vecadd_v1", "off")
     with serving([d]) as srv:
         assert get_json(srv, "/api/runs")[0]["trace_level"] == "off"
-        run_dir(d, "vecadd", "task")  # the folder made again
+        run_dir(d, "vecadd_v1", "task")  # the folder made again
         assert get_json(srv, "/api/runs")[0]["trace_level"] == "off"  # read once, not watched
         req = Request(srv.url + "api/reload", data=b"{}", method="POST",
                       headers={"Content-Type": "application/json"})  # fmt: skip

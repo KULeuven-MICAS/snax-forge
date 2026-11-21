@@ -51,31 +51,31 @@ RTL_FIXTURES = REPO / "hw" / "chisel" / "src" / "test" / "resources" / "rtl"
 FORGE = SUB / "forge"
 # Each fixture: its recipe and --set
 DESIGNS = {
-    "vecadd": ("vecadd", []),
-    "vecmul": ("vecmul", []),
-    "vsum": ("vsum", []),
-    "vsum_tree": ("vsum_tree", []),
-    "vsum_tree_w8": ("vsum_tree", ["W=8"]),
-    "vecadd_i32": ("vecadd_i32", []),
-    "vecmul_i32": ("vecmul_i32", []),
-    "vecadd_i8": ("vecadd_i8", []),
-    "vsum_tree_i32": ("vsum_tree_i32", []),
-    "vsum_tree_i8": ("vsum_tree_i8", []),
-    "vecmul_i32_i64": ("vecmul_i32_i64", []),
-    "dot_1": ("dot_1", []),
-    "dot_1_enc": ("dot_1_enc", []),
-    "dot_2": ("dot_2", ["N=16"]),
-    "dot_3": ("dot_3", ["N=16"]),
-    "dot_4": ("dot_4", ["N=16"]),
-    "dot_5": ("dot_5", ["N=16"]),
-    "dot_5_w1": ("dot_5", ["N=16", "W=1"]),
-    "dot_6": ("dot_6", ["N=16"]),
-    "matvec_4": ("matvec_4", ["M=2", "N=16"]),
-    "matvec_5": ("matvec_5", ["M=2", "N=16"]),
-    "matvec_6": ("matvec_6", ["M=2", "N=16"]),
-    "dot_1_shared": ("dot_1_shared", []),
-    "mvt_1_dot2_shared": ("mvt_1_dot2_shared", ["W=8"]),
-    "vecadd_i32_w1": ("vecadd_i32", ["W=1"]),
+    "vecadd_v1": ("vecadd_v1", []),
+    "vecmul_v1": ("vecmul_v1", []),
+    "vsum_v1": ("vsum_v1", []),
+    "vsum_v1_1": ("vsum_v1_1", []),
+    "vsum_v1_1_w8": ("vsum_v1_1", ["W=8"]),
+    "vecadd_v1_1": ("vecadd_v1_1", []),
+    "vecmul_v1_1": ("vecmul_v1_1", []),
+    "vecadd_v1_2": ("vecadd_v1_2", []),
+    "vsum_v1_1_1": ("vsum_v1_1_1", []),
+    "vsum_v1_1_2": ("vsum_v1_1_2", []),
+    "vecmul_v1_1_1": ("vecmul_v1_1_1", []),
+    "dot_v1": ("dot_v1", []),
+    "dot_v1_1": ("dot_v1_1", []),
+    "dot_v2": ("dot_v2", ["N=16"]),
+    "dot_v3": ("dot_v3", ["N=16"]),
+    "dot_v4": ("dot_v4", ["N=16"]),
+    "dot_v5": ("dot_v5", ["N=16"]),
+    "dot_v5_w1": ("dot_v5", ["N=16", "W=1"]),
+    "dot_v6": ("dot_v6", ["N=16"]),
+    "matvec_v4": ("matvec_v4", ["M=2", "N=16"]),
+    "matvec_v5": ("matvec_v5", ["M=2", "N=16"]),
+    "matvec_v6": ("matvec_v6", ["M=2", "N=16"]),
+    "dot_v1_2": ("dot_v1_2", []),
+    "mvt_v1_2_2": ("mvt_v1_2_2", ["W=8"]),
+    "vecadd_v1_1_w1": ("vecadd_v1_1", ["W=1"]),
 }
 
 # SimdLanes' slot params of a unit with none (axpby's k1 and k2, each slot from its CSR or not)
@@ -108,7 +108,7 @@ def test_the_fill_rule_gives_the_datapaths_params(vecadd, tmp_path):
                                  "outType": "int64", "lanes": 4, "op": "add", "streams": 2,
                                  "k": None} | NO_SLOTS  # fmt: skip
     vsum = accelerator_spec(
-        point(tmp_path / "vsum", name="vsum", graph=bound_vsum()), tmp_path / "vsum"
+        point(tmp_path / "vsum_v1", name="vsum_v1", graph=bound_vsum()), tmp_path / "vsum_v1"
     )
     (v,) = vsum.groups[0].units
     assert fill(vsum, v, catalogue()["TreeAccumulate"]) == {
@@ -121,7 +121,7 @@ def test_relus_unit_fills_one_stream_and_its_k(tmp_path):
     takes it."""
     from .helpers import bound_recipe
 
-    path = point(tmp_path, name="relu", graph=bound_recipe("relu", "relu"))
+    path = point(tmp_path, name="relu_v1", graph=bound_recipe("relu_v1", "relu"))
     acc = accelerator_spec(path, tmp_path)
     (u,) = acc.groups[0].units
     sig = catalogue()["SimdLanes"]
@@ -207,7 +207,7 @@ def test_the_counter_is_worked_from_the_controllers_rule(tmp_path):
     from snax_forge.gen import describe
 
     (add,) = describe(DesignPoint.load(point(tmp_path)), "p").groups[0].units
-    vsum = DesignPoint.load(point(tmp_path, name="vsum", graph=bound_vsum()))
+    vsum = DesignPoint.load(point(tmp_path, name="vsum_v1", graph=bound_vsum()))
     (acc,) = describe(vsum, "p").groups[0].units
     assert counter(add, 16)[0] == 16
     assert counter(acc, 64)[0] == 65
@@ -266,10 +266,10 @@ def test_a_linked_fixtures_counter_is_the_group_rules():
     state too; dot 4 at J 16 and T 128 is C4 = JT + 2; with a buffer of depth 2 for its wire,
     which no formula states, a cycle more: JT + 3."""
     got = {d: json.loads((RTL_FIXTURES / d / "vectors.json").read_text())["tasks"][0]["counter"]
-           for d in ("dot_2", "dot_3", "dot_4", "dot_5", "dot_6", "matvec_4", "matvec_5",
-                     "matvec_6")}  # fmt: skip
-    assert got == {"dot_2": 6, "dot_3": 5, "dot_4": 6, "dot_5": 9, "dot_6": 10, "matvec_4": 10,
-                   "matvec_5": 16, "matvec_6": 14}  # fmt: skip
+           for d in ("dot_v2", "dot_v3", "dot_v4", "dot_v5", "dot_v6", "matvec_v4", "matvec_v5",
+                     "matvec_v6")}  # fmt: skip
+    assert got == {"dot_v2": 6, "dot_v3": 5, "dot_v4": 6, "dot_v5": 9, "dot_v6": 10, "matvec_v4": 10,
+                   "matvec_v5": 16, "matvec_v6": 14}  # fmt: skip
     from tests.gen.test_accelerator import dot4
 
     (group,) = dot4().groups
@@ -305,8 +305,8 @@ def test_a_three_unit_chain_gets_its_counter():
 def test_a_fixtures_tasks_give_jobs_and_job_beats():
     """vectors.json's CSR values are the program's (lower/c.py's job_values)."""
     tasks = {d: json.loads((RTL_FIXTURES / d / "vectors.json").read_text())["tasks"][0]["csrs"]
-             for d in ("vecadd", "vsum_tree_i32")}  # fmt: skip
-    assert tasks == {"vecadd": {"JOBS": 16}, "vsum_tree_i32": {"JOBS": 1, "JOB_BEATS": 16}}
+             for d in ("vecadd_v1", "vsum_v1_1_1")}  # fmt: skip
+    assert tasks == {"vecadd_v1": {"JOBS": 16}, "vsum_v1_1_1": {"JOBS": 1, "JOB_BEATS": 16}}
 
 
 # =============================================================================
@@ -314,7 +314,7 @@ def test_a_fixtures_tasks_give_jobs_and_job_beats():
 # =============================================================================
 
 
-@pytest.mark.parametrize(("recipe", "dtype"), [("vecadd_i32", "int32"), ("vecadd_i8", "int8")])
+@pytest.mark.parametrize(("recipe", "dtype"), [("vecadd_v1_1", "int32"), ("vecadd_v1_2", "int8")])
 def test_a_narrow_elementwise_design_is_filled(tmp_path, recipe, dtype):
     acc = accelerator_spec(tmp_path / designed(tmp_path, recipe, recipe), tmp_path)
     (u,) = acc.groups[0].units
@@ -324,11 +324,9 @@ def test_a_narrow_elementwise_design_is_filled(tmp_path, recipe, dtype):
     }  # fmt: skip
 
 
-@pytest.mark.parametrize(
-    ("recipe", "dtype"), [("vsum_tree_i32", "int32"), ("vsum_tree_i8", "int8")]
-)
+@pytest.mark.parametrize(("recipe", "dtype"), [("vsum_v1_1_1", "int32"), ("vsum_v1_1_2", "int8")])
 def test_a_narrow_fold_into_int64_is_filled(tmp_path, recipe, dtype):
-    """vsum_tree_i32 and vsum_tree_i8: TreeAccumulate casts each lane into its int64 sum."""
+    """vsum_v1_1_1 and vsum_v1_1_2: TreeAccumulate casts each lane into its int64 sum."""
     acc = accelerator_spec(tmp_path / designed(tmp_path, recipe, recipe), tmp_path)
     (u,) = acc.groups[0].units
     params = fill(acc, u, catalogue()["TreeAccumulate"])
@@ -479,7 +477,7 @@ def test_axpys_unit_fills_k1_from_its_csr_and_k1_is_a_live_pin(tmp_path):
 
     sig = catalogue()["SimdLanes"]
     for name, graph, slots in (("axpy", axpy(), {"k1Csr": True}),
-                               ("axpy_baked", axpy(baked=3), {"k1": 3})):  # fmt: skip
+                               ("axpy_v1_1", axpy(baked=3), {"k1": 3})):  # fmt: skip
         acc = accelerator_spec(point(tmp_path / name, name=name, graph=graph), tmp_path / name)
         (u,) = acc.groups[0].units
         params = fill(acc, u, sig)
@@ -503,17 +501,17 @@ def test_axpys_unit_fills_k1_from_its_csr_and_k1_is_a_live_pin(tmp_path):
         check_unit(acc, replace(u, scalars={"k3": "int32"}), catalogue())
 
 
-@pytest.mark.parametrize(("recipe", "datapath"), [("matvec_seed", "TreeAccumulate"),
-                                                  ("matvec_seed_serial", "SerialAccumulate")])  # fmt: skip
+@pytest.mark.parametrize(("recipe", "datapath"), [("matvec_acc_v1", "TreeAccumulate"),
+                                                  ("matvec_acc_v2", "SerialAccumulate")])  # fmt: skip
 def test_a_seeded_fold_fills_seed_and_its_seed_port_is_live(tmp_path, recipe, datapath):
-    """matvec_seed's sum: the catalogue's fill rule unit.ports.seed gives seed true,
+    """matvec_acc_v1's sum: the catalogue's fill rule unit.ports.seed gives seed true,
     and the datapath's port seed is live on it, so the unit passes check_unit; the mul's simd
     and an unseeded fold keep their params."""
     acc = accelerator_spec(tmp_path / designed(tmp_path, recipe, recipe), tmp_path)
     (sum_,) = [u for g in acc.groups for u in g.units if u.name == "sum"]
     sig = catalogue()[datapath]
     params = fill(acc, sum_, sig)
-    assert params["seed"] is True and params["lanes"] == (4 if recipe == "matvec_seed" else 1)
+    assert params["seed"] is True and params["lanes"] == (4 if recipe == "matvec_acc_v1" else 1)
     assert set(live(sig["ports"], params)) == {"in", "seed", "out"}
     assert set(live(sig["ports"], params | {"seed": False})) == {"in", "out"}
     check_unit(acc, sum_, catalogue())

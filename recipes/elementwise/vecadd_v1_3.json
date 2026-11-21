@@ -1,0 +1,20 @@
+{
+ "name": "vecadd_v1_3",
+ "id": "vecadd_n7",
+ "description": "`vecadd_v1` at N = 7, a tail the lanes do not fill.",
+ "kernel": "vecadd",
+ "params": {"W": 4, "N": 7},
+ "symbols": {"N": "N"},
+ "steps": [
+  {"transform": "split_map", "params": {"map": "add_map", "factor": "W"}},
+  {
+   "transform": "bind",
+   "params": {
+    "node": "add",
+    "brm": "simd",
+    "implementation": "chisel_tiled_spatial",
+    "instance": "acc"
+   }
+  }
+ ]
+}

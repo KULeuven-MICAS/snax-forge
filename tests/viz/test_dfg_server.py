@@ -32,9 +32,9 @@ STATIC = REPO / "snax_forge" / "viz" / "static"
 def test_view_mode_over_dot_2s_steps(tmp_path):
     """dot 2's six step files: step 5 (the link) in compact texts, with Details and the
     estimate's 130 cycles."""
-    r = Recipe.load(recipe_path("dot_2"))
-    write_steps(r, apply_recipe(r, import_kernel(r.kernel)), tmp_path / "sandbox" / "dot_2")
-    with served(make_dfg_server([tmp_path / "sandbox" / "dot_2"], 0, platform=PLATFORM)) as srv:
+    r = Recipe.load(recipe_path("dot_v2"))
+    write_steps(r, apply_recipe(r, import_kernel(r.kernel)), tmp_path / "sandbox" / "dot_v2")
+    with served(make_dfg_server([tmp_path / "sandbox" / "dot_v2"], 0, platform=PLATFORM)) as srv:
         assert get_json(srv, "/api/mode") == (200, {"mode": "view", "techs": ["nangate45"],
                                                     "tech": "nangate45"})  # fmt: skip
         status, steps = get_json(srv, "/api/steps")
@@ -325,14 +325,14 @@ def test_a_param_changes_log_line_counts_its_checks(tmp_path, monkeypatch):
 
 @pytest.mark.slow
 def test_the_site_route_takes_a_selection(tmp_path, monkeypatch):
-    """GET /api/step/<k>/site?sel=…&sel=… on dot_1_enc (its recipe at its step 4, before
+    """GET /api/step/<k>/site?sel=…&sel=… on dot_v1_1 (its recipe at its step 4, before
     encapsulate): the two group outlines offer encapsulate with both units ticked, one unit's box
     only that unit (the one-item route as before), split over two is "Not here"; at step 5 the
     accelerator's outline (dot) offers unencapsulate; no sel is a 400."""
     monkeypatch.setattr(session, "_import", imported)
     roots = Roots(tmp_path / "sessions", tmp_path / "recipes", tmp_path / "sandbox")
     with served(make_edit_server(0, roots=roots)) as srv:
-        post(srv, "/api/session", {"recipe": str(recipe_path("dot_1_enc"))})
+        post(srv, "/api/session", {"recipe": str(recipe_path("dot_v1_1"))})
         status, both = get_json(srv, "/api/step/4/site?sel=vmul&sel=vsum")
         assert status == 200 and both["encapsulate"]["ok"]
         units = next(f for f in both["encapsulate"]["form"] if f["name"] == "units")
@@ -380,7 +380,7 @@ def test_a_post_that_is_not_json_is_refused(tmp_path):
     view mode and in edit mode."""
     fixture = REPO / "tests" / "dfg" / "fixtures" / "vecadd.snaxdfg"
     roots = Roots(tmp_path / "s", tmp_path / "r", tmp_path / "b")
-    with serving([run_dir(tmp_path / "vecadd", "vecadd", "off")]) as runs, \
+    with serving([run_dir(tmp_path / "vecadd", "vecadd_v1", "off")]) as runs, \
             served(make_dfg_server([fixture], 0)) as view, served(make_edit_server(0, roots=roots)) as edit:  # fmt: skip
         for srv, path in ((runs, "/api/reload"), (view, "/api/reload"), (edit, "/api/session")):
             assert post(srv, path, ctype=None)[0] == 415

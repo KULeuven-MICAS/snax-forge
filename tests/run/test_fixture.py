@@ -13,12 +13,12 @@ from snax_forge.run.convert import convert, invariants
 
 from .helpers import load_recorded
 
-HERE = Path(__file__).parent / "fixtures" / "vecadd"
+HERE = Path(__file__).parent / "fixtures" / "vecadd_v1"
 
 
 @pytest.fixture(scope="module")
 def recorded():
-    return load_recorded("vecadd")
+    return load_recorded("vecadd_v1")
 
 
 def test_task_level(recorded, tmp_path):

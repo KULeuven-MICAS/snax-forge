@@ -1,7 +1,8 @@
 """Recipes: an ordered list of transforms applied to an imported graph.
 
 ``Recipe`` (``Recipe.load``, ``to_dict``) and its ``Step`` read and write a recipe, a JSON file
-in a category folder of ``recipes/`` (CONTRACTS, "Recipe"). ``find_recipe`` finds one by name,
+in a category folder of ``recipes/`` (CONTRACTS, "Recipe"), named by version, its ``id`` and
+``description`` saying what it builds (D188). ``find_recipe`` finds one by name,
 ``recipe_paths`` lists them all. A transform's int params take an int or an expression over the
 recipe params (snax_forge/expr.py); ``Recipe.with_params`` (``--set W=8``) overrides a param, and
 ``--set types=i8`` a kernel's type preset and ``--set dtypes.C=int16`` one container's or type
@@ -92,6 +93,8 @@ class Recipe(JsonFile):
     steps: list[Step] = field(default_factory=list)
     dtypes: dict[str, str] = field(default_factory=dict)
     types: str | None = None  # the kernel's type preset (its SPEC's ``presets``)
+    id: str | None = None  # what it builds, in the words of recipes/README.md (D188)
+    description: str | None = None  # the same in one to three sentences
 
     def __post_init__(self) -> None:
         for what, v in (("name", self.name), ("kernel", self.kernel)):
@@ -106,6 +109,9 @@ class Recipe(JsonFile):
             self.value(v, f"{self.name}.symbols.{s}")
         if self.types is not None and (not isinstance(self.types, str) or not self.types):
             raise SandboxError(f"{self.name}.types: must be a preset's name, got {self.types!r}")
+        for what, v in (("id", self.id), ("description", self.description)):
+            if v is not None and (not isinstance(v, str) or not v):
+                raise SandboxError(f"{self.name}.{what}: must be a non-empty string, got {v!r}")
         from snax_forge.brm import INT_DTYPES
 
         for c, dt in self.dtypes.items():
@@ -148,6 +154,8 @@ class Recipe(JsonFile):
     def to_dict(self) -> dict[str, Any]:
         return {
             "name": self.name,
+            **({"id": self.id} if self.id is not None else {}),
+            **({"description": self.description} if self.description is not None else {}),
             "kernel": self.kernel,
             "params": dict(self.params),
             "symbols": dict(self.symbols),
@@ -158,7 +166,12 @@ class Recipe(JsonFile):
 
     @classmethod
     def from_dict(cls, d: Mapping[str, Any]) -> Recipe:
-        _keys(d, ("name", "kernel"), ("params", "symbols", "dtypes", "types", "steps"), "recipe")
+        _keys(
+            d,
+            ("name", "kernel"),
+            ("id", "description", "params", "symbols", "dtypes", "types", "steps"),
+            "recipe",
+        )
         name = d["name"]
         for key in ("params", "symbols", "dtypes"):
             if not isinstance(d.get(key, {}), Mapping):
@@ -174,4 +187,6 @@ class Recipe(JsonFile):
             [Step.from_dict(s, f"{name}.steps[{i}]") for i, s in enumerate(steps)],
             dict(d.get("dtypes", {})),
             d.get("types"),
+            d.get("id"),
+            d.get("description"),
         )

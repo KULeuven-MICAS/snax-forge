@@ -1,0 +1,32 @@
+{
+ "name": "mvt_v3",
+ "id": "mvt_dot2chain_shared",
+ "description": "Each half one group `vmul → link → vsum → link → vadd`, so only x goes back to L1; both halves on one group (`share`).",
+ "kernel": "mvt",
+ "params": {"W": 8, "D": 1, "M": 64, "N": 64},
+ "symbols": {"M": "M", "N": "N"},
+ "steps": [
+  {"transform": "tag_map", "params": {"map": "tmp0_mult_map", "kind": "temporal"}},
+  {"transform": "split_map", "params": {"map": "tmp0_mult_map_1", "factor": "W"}},
+  {"transform": "bind", "params": {"node": "tmp0_mult", "brm": "simd", "implementation": "chisel_tiled_spatial", "instance": "vmul_x1"}},
+  {"transform": "tag_map", "params": {"map": "sum_map", "kind": "temporal"}},
+  {"transform": "split_map", "params": {"map": "sum_map_1", "factor": "W"}},
+  {"transform": "bind", "params": {"node": "sum", "brm": "accumulate", "implementation": "chisel_adder_tree", "instance": "vsum_x1"}},
+  {"transform": "link", "params": {"container": "tmp0_prod", "depth": "D", "group": "mvt"}},
+  {"transform": "split_map", "params": {"map": "augassign_18_4_map", "factor": 1}},
+  {"transform": "bind", "params": {"node": "augassign_18_4", "brm": "simd", "implementation": "chisel_tiled_spatial", "instance": "vadd_x1"}},
+  {"transform": "link", "params": {"container": "tmp0", "depth": "D", "group": "mvt"}},
+  {"transform": "mark_transpose", "params": {"node": "tmp2_mult_map", "container": "A"}},
+  {"transform": "tag_map", "params": {"map": "tmp2_mult_map", "kind": "temporal"}},
+  {"transform": "split_map", "params": {"map": "tmp2_mult_map_1", "factor": "W"}},
+  {"transform": "bind", "params": {"node": "tmp2_mult", "brm": "simd", "implementation": "chisel_tiled_spatial", "instance": "vmul_x2"}},
+  {"transform": "tag_map", "params": {"map": "sum_map_2", "kind": "temporal"}},
+  {"transform": "split_map", "params": {"map": "sum_map_3", "factor": "W"}},
+  {"transform": "bind", "params": {"node": "sum_1", "brm": "accumulate", "implementation": "chisel_adder_tree", "instance": "vsum_x2"}},
+  {"transform": "link", "params": {"container": "tmp2_prod", "depth": "D", "group": "mvt_1"}},
+  {"transform": "split_map", "params": {"map": "augassign_19_4_map", "factor": 1}},
+  {"transform": "bind", "params": {"node": "augassign_19_4", "brm": "simd", "implementation": "chisel_tiled_spatial", "instance": "vadd_x2"}},
+  {"transform": "link", "params": {"container": "tmp2", "depth": "D", "group": "mvt_1"}},
+  {"transform": "share", "params": {"group": "mvt_1", "with": "mvt"}}
+ ]
+}

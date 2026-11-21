@@ -1,9 +1,9 @@
 """dot through SNAX-SANDBOX: a multiplier and an accumulator bound in one recipe.
 
-Accepted when ``recipes/dot/dot_1.json`` gives ``dot_accelerated.snaxdfg`` at its
+Accepted when ``recipes/dot/dot_v1.json`` gives ``dot_accelerated.snaxdfg`` at its
 last bind, the fixture's instances ``mul`` and ``sum`` named ``vmul`` and ``vsum``
 (the multiply map bound to simd, the sum map to accumulate, each step
-passing the reference check), ``recipes/dot/dot_1_enc.json`` the same and then both
+passing the reference check), ``recipes/dot/dot_v1_1.json`` the same and then both
 groups in the accelerator ``dot``, and the bound graph equals ``np.dot``; the
 accumulate binding with one lane (the Chisel Accumulator) works as well, the
 reduce matcher rejects every mismatch by name, and unbind and join_map take
@@ -32,8 +32,8 @@ from tests.helpers import graph_dict, recipe_path
 
 from .helpers import FIXTURES, graph
 
-RECIPE = recipe_path("dot_1")
-ENC = recipe_path("dot_1_enc")
+RECIPE = recipe_path("dot_v1")
+ENC = recipe_path("dot_v1_1")
 MUL = {
     "node": "mult",
     "brm": "simd",
@@ -84,7 +84,7 @@ def test_the_dot_recipe_gives_the_fixture():
 
 
 def test_the_dot_1_enc_recipe_encapsulates_dot_1():
-    """dot_1_enc: dot 1's steps, then both groups in the accelerator dot; unencapsulate takes it
+    """dot_v1_1: dot 1's steps, then both groups in the accelerator dot; unencapsulate takes it
     back to dot 1's last graph."""
     plain = apply_recipe(Recipe.load(RECIPE), graph("dot"))
     results = apply_recipe(Recipe.load(ENC), graph("dot"))

@@ -1,11 +1,11 @@
-"""dot 1 end to end: ``recipes/dot/dot_1.json``, a multiplier into tmp0 in L1,
+"""dot 1 end to end: ``recipes/dot/dot_v1.json``, a multiplier into tmp0 in L1,
 then an adder tree over it, two accelerators ``vmul`` and ``vsum``, run in series; and
-``recipes/dot/dot_1_enc.json``, the two as the groups of one accelerator ``dot``.
+``recipes/dot/dot_v1_1.json``, the two as the groups of one accelerator ``dot``.
 
 Up to the generator on the host: dot 1's task list waits once between the accelerators (the
 serial sync on vmul's task) and has no idle mover. On SNAX-GVSoC (marker ``gvsoc``: in the
 image), at trace levels off and task: the run checks itself (every output, both counters), each
-unit's counter is its task's (busy + its stalls, at least its beats), and dot_1_enc's reports
+unit's counter is its task's (busy + its stalls, at least its beats), and dot_v1_1's reports
 name each task's group, its idle movers' too. No cycle count is compared: the window moves with the
 code's layout (open
 item 65).
@@ -28,14 +28,14 @@ from tests.helpers import dot1_split, recipe_path
 
 from .helpers import needs_gvsoc, sound
 
-DOT1 = recipe_path("dot_1")
-DOT1_ENC = recipe_path("dot_1_enc")
+DOT1 = recipe_path("dot_v1")
+DOT1_ENC = recipe_path("dot_v1_1")
 
 
 def test_the_task_list_waits_once_between_the_accelerators(tmp_path):
     from tests.gen.helpers import bound_dot1, point
 
-    p = DesignPoint.load(point(tmp_path, name="dot_1", graph=bound_dot1()))
+    p = DesignPoint.load(point(tmp_path, name="dot_v1", graph=bound_dot1()))
     tl = task_list(p)
     accel = [s.task_name for s in tl.steps if s.op == "configure" and s.type == "accel"]
     assert accel == ["mult_vmul", "sum_vsum"]
@@ -52,7 +52,7 @@ def flows(tmp_path_factory):
 
 @pytest.fixture(scope="module")
 def enc_flow(tmp_path_factory):
-    return run_flow(DOT1_ENC, SNAX_FORGE, out=tmp_path_factory.mktemp("dot_1_enc") / "task",
+    return run_flow(DOT1_ENC, SNAX_FORGE, out=tmp_path_factory.mktemp("dot_v1_1") / "task",
                     trace_level="task")  # fmt: skip
 
 
@@ -79,7 +79,7 @@ def test_dot_1_runs_and_checks_itself(flows, level):
 @pytest.mark.gvsoc
 @needs_gvsoc
 def test_the_reports_name_each_tasks_group(enc_flow):
-    """dot_1_enc: one accelerator, its groups' tasks and their idle movers each by its group."""
+    """dot_v1_1: one accelerator, its groups' tasks and their idle movers each by its group."""
     f = enc_flow
     r = reports_of(f.out)
     groups = {t.name: t.group for t in r.run.tasks}

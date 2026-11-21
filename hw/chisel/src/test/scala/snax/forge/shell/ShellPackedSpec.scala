@@ -5,7 +5,7 @@ import org.scalatest.flatspec.AnyFlatSpec
 
 import snax.forge.{ForgeTester, LaneBits}
 
-/** A packed outer output in the wrapper (D174), the smallest case: the fixture vsum_tree_i32 (TreeAccumulate, 4 lanes
+/** A packed outer output in the wrapper (D174), the smallest case: the fixture vsum_v1_1_1 (TreeAccumulate, 4 lanes
   * of int32 into one) with its sum's output changed by hand to int32 at d_out 2, as `accelerator.json` gives a packed
   * port. The writer's port is one 64-bit word, and 3 jobs give two words: the first two sums, then the third alone,
   * zero above it.
@@ -13,7 +13,7 @@ import snax.forge.{ForgeTester, LaneBits}
 class ShellPackedSpec extends AnyFlatSpec with ForgeTester {
 
   private lazy val spec = {
-    val base = RtlFixtures.all.find(_.name == "vsum_tree_i32").get.spec
+    val base = RtlFixtures.all.find(_.name == "vsum_v1_1_1").get.spec
     base.copy(groups = base.groups.map { g =>
       g.copy(units = g.units.map { u =>
         u.copy(ports = u.ports.map {
@@ -24,7 +24,7 @@ class ShellPackedSpec extends AnyFlatSpec with ForgeTester {
     })
   }
 
-  behavior of "a packed outer output (vsum_tree_i32's sum at int32, d_out 2)"
+  behavior of "a packed outer output (vsum_v1_1_1's sum at int32, d_out 2)"
 
   it should "have a 64-bit writer and send 3 sums as two words, the last short" in {
     test(new ShellHarness(spec)) { dut =>

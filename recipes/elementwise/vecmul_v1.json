@@ -1,0 +1,20 @@
+{
+ "name": "vecmul_v1",
+ "id": "vecmul",
+ "description": "C = A * B in one `simd` unit of W lanes.",
+ "kernel": "vecmul",
+ "params": {"W": 4, "N": 64},
+ "symbols": {"N": "N"},
+ "steps": [
+  {"transform": "split_map", "params": {"map": "mult_map", "factor": "W"}},
+  {
+   "transform": "bind",
+   "params": {
+    "node": "mult",
+    "brm": "simd",
+    "implementation": "chisel_tiled_spatial",
+    "instance": "acc"
+   }
+  }
+ ]
+}

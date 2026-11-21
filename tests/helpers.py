@@ -8,7 +8,7 @@ marker, and the graph fixtures read as dicts or bound by their recipes.
     bound_vsum(w, impl)     vsum bound by its recipe, or at W = ``w`` to ``impl``
     imported(kernel, dtypes)  a kernel's import (DaCe), once per kernel and dtypes
     steps(name, **params)   every graph of the recipe ``name`` at ``params``, the import first
-    dot1_split(w_mul, w_sum, n)  ``recipes/dot/dot_1.json`` with a factor param per split, ``W_mul``
+    dot1_split(w_mul, w_sum, n)  ``recipes/dot/dot_v1.json`` with a factor param per split, ``W_mul``
                             and ``W_sum`` (the dot 1 dry run's)
     bound_mvt_column(m, n)  mvt_types at i8, half 2 in the column form (``MVT_COLUMN_STEPS``)
 """
@@ -49,7 +49,7 @@ def graph_dict(name: str = "vecadd_accelerated") -> dict[str, Any]:
 def bound_vsum(w: int = 1, impl: str = "chisel_adder_tree") -> Graph:
     """vsum bound by the checked-in recipe (W = 1, N = 64; accumulate's chisel_adder_tree,
     instance acc), or with W = ``w`` to ``impl``."""
-    d = Recipe.load(recipe_path("vsum")).with_params({"W": w}).to_dict()
+    d = Recipe.load(recipe_path("vsum_v1")).with_params({"W": w}).to_dict()
     d["steps"][-1]["params"]["implementation"] = impl
     return apply_recipe(Recipe.from_dict(d), Graph.load(FIXTURES / "vsum.snaxdfg"))[-1].graph
 
@@ -75,7 +75,7 @@ def dot1_split(w_mul: int, w_sum: int, n: int = 2048) -> Recipe:
     """dot 1's recipe with ``mult_map`` split by ``W_mul`` and ``sum_map`` by ``W_sum``."""
     from snax_forge.sandbox.recipe import Step
 
-    d = Recipe.load(recipe_path("dot_1"))
+    d = Recipe.load(recipe_path("dot_v1"))
     factor = {"mult_map": "W_mul", "sum_map": "W_sum"}
     return Recipe(d.name, d.kernel, {"N": n, "W_mul": w_mul, "W_sum": w_sum}, d.symbols,
                   [Step(x.transform, {**x.params, "factor": factor[x.params["map"]]})
@@ -94,7 +94,7 @@ def _step(transform: str, **params: Any) -> dict[str, Any]:
     return {"transform": transform, "params": params}
 
 
-# mvt_types at i8 with half 2 in the column form (D186, D187): half 1 as mvt_4_i8_dma_AT's,
+# mvt_types at i8 with half 2 in the column form (D186, D187): half 1 as mvt_v4_1_1's,
 # half 2's lanes on n (strips of W_x1 columns, m in time between the strip and the lanes), its
 # fold seeded from x2, fused and bound as a mac reading y2 as a broadcast
 MVT_COLUMN_STEPS = [

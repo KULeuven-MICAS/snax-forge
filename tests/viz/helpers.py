@@ -23,7 +23,7 @@ from tests.helpers import REPO
 from tests.run.helpers import load_recorded
 
 
-def run_dir(out: Path, name: str = "vecadd", level: str = "task", **kw) -> Path:
+def run_dir(out: Path, name: str = "vecadd_v1", level: str = "task", **kw) -> Path:
     """The flow of recipe ``name`` at trace ``level`` into the folder ``out`` (``kw`` to
     ``run_flow``: ``memory_sets``, ``trace_sources``, ...); returns it."""
     return stubbed_flow(out.parent, name, level, out=out, **kw)
@@ -228,7 +228,7 @@ def two_runs():
 # The recorded run (tests/run/fixtures/vecadd), converted into a flow folder
 # =============================================================================
 
-RECORDED = REPO / "tests" / "run" / "fixtures" / "vecadd"
+RECORDED = REPO / "tests" / "run" / "fixtures" / "vecadd_v1"
 
 
 def recorded_run(out: Path, level: str = "stall", fixture: Path | None = None) -> Path:

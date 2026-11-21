@@ -189,10 +189,10 @@ def test_a_graph_in_the_folders_own_sandbox_is_kept(tmp_path, monkeypatch):
     """A recipe flow's last step run again in its own folder: the same name, the sandbox and
     its recipe stay."""
     stub(monkeypatch, tmp_path)
-    out = tmp_path / "vecadd"
+    out = tmp_path / "vecadd_v1"
     a = run_flow(RECIPE, SNAX_FORGE, graph_path=PLAIN, out=out)
     b = run_bound(a.steps[-1], SNAX_FORGE, out=out)
-    assert (b.name, b.point.name) == ("vecadd", "vecadd") and b.passed
+    assert (b.name, b.point.name) == ("vecadd_v1", "vecadd_v1") and b.passed
     assert (out / "sandbox" / "recipe.json").is_file() and a.steps[-1].is_file()
 
 

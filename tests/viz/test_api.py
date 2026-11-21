@@ -22,7 +22,7 @@ from .helpers import run_dir
 def dirs(tmp_path_factory):
     """vecadd at task and off, vsum at task."""
     base = tmp_path_factory.mktemp("runs")
-    return {(n, lv): run_dir(base / f"{n}-{lv}", n, lv)
+    return {(n, lv): run_dir(base / f"{n}-{lv}", f"{n}_v1", lv)
             for n, lv in [("vecadd", "task"), ("vecadd", "off"), ("vsum", "task")]}  # fmt: skip
 
 
@@ -59,7 +59,7 @@ def test_names_are_the_folders_and_unique(dirs, tmp_path):
 def test_detail_and_summary(dirs):
     rv = api.load_run(dirs[("vecadd", "task")])
     s = api.run_summary(rv)
-    assert (s["design"], s["trace_level"], s["total_cycles"]) == ("vecadd", "task", 226)
+    assert (s["design"], s["trace_level"], s["total_cycles"]) == ("vecadd_v1", "task", 226)
     d = api.run_detail(rv)
     assert d["profile"] == rv.outputs.profile.to_dict() and d["cluster"] == rv.cluster.to_dict()
     assert d["trace"] == {**rv.outputs.trace.meta(), "n_events": len(rv.events)}

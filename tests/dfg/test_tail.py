@@ -41,7 +41,7 @@ def lane_sums(monkeypatch, g: Graph, inputs: dict) -> tuple[list[int], dict]:
 
 def test_vsum_n21_w4(monkeypatch):
     x = 7 * np.arange(21) - 60
-    graphs = steps("vsum_tree", W=4, N=21)
+    graphs = steps("vsum_v1_1", W=4, N=21)
     sums, out = lane_sums(monkeypatch, graphs[-1], {"A": x, "out": np.zeros(1, np.int64)})
     assert sums == [-198, -86, 26, 138, 250, 80]  # the last: one lane and 3 pad lanes of 0
     assert out["out"].tolist() == [210]
@@ -51,7 +51,7 @@ def test_vsum_n21_w4(monkeypatch):
 
 def test_rowsum_3x7_w4(monkeypatch):
     a = np.array([[10 * i + j - 12 for j in range(7)] for i in range(3)])
-    graphs = steps("rowsum", W=4, M=3, N=7)
+    graphs = steps("rowsum_v1", W=4, M=3, N=7)
     sums, out = lane_sums(monkeypatch, graphs[-1], {"A": a, "y": np.zeros(3, np.int64)})
     assert sums == [-42, -21, -2, 9, 38, 39]  # two firings per row
     assert out["y"].tolist() == [-63, 7, 77]
@@ -60,11 +60,11 @@ def test_rowsum_3x7_w4(monkeypatch):
 
 
 def test_padded_shape_rounds_the_split_dimension_up():
-    g = steps("rowsum", W=4, M=3, N=7)[-1]
+    g = steps("rowsum_v1", W=4, M=3, N=7)[-1]
     assert padded_shape(g, "A") == (3, 8) and padded_shape(g, "y") == (3,)
-    g = steps("vecadd", W=4, N=7)[-1]
+    g = steps("vecadd_v1", W=4, N=7)[-1]
     assert padded_shape(g, "A") == (8,)
-    g = steps("vecadd", W=4, N=8)[-1]
+    g = steps("vecadd_v1", W=4, N=8)[-1]
     assert padded_shape(g, "A") == (8,)  # no tail, no padding
 
 
@@ -98,7 +98,7 @@ def test_readers_that_need_different_pads_are_refused():
 
 def test_a_memlet_past_the_padding_is_still_an_error():
     """vecadd N = 7, W = 4, A padded to 8: a memlet reaching element 8 leaves the padding."""
-    d = steps("vecadd", W=4, N=7)[-1].to_dict()
+    d = steps("vecadd_v1", W=4, N=7)[-1].to_dict()
     d["body"][0]["body"][0]["inputs"]["a"]["subset"] = ["4 * n_1_t + 4:4 * n_1_t + 8"]
     a = np.arange(7)
     with pytest.raises(ExecutionError, match="leaves 0:"):

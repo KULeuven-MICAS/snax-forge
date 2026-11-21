@@ -1,13 +1,13 @@
-"""dot 1 through the generator: ``recipes/dot/dot_1_enc.json``, one
+"""dot 1 through the generator: ``recipes/dot/dot_v1_1.json``, one
 accelerator ``dot`` of two groups, ``vmul`` and ``vsum``, in encapsulate's order, each with its
-own CSRs and a task of its own; ``recipes/dot/dot_1.json``, the same groups as two accelerators,
-two streamer sets of the one entry; and dot_serial, two accelerators ``mul`` and ``sum``.
+own CSRs and a task of its own; ``recipes/dot/dot_v1.json``, the same groups as two accelerators,
+two streamer sets of the one entry; and dot_v7, two accelerators ``mul`` and ``sum``.
 
-dot_1_enc's description is the (tests/gen/test_accelerator.py's ``dot``): VMUL at offsets
+dot_v1_1's description is the (tests/gen/test_accelerator.py's ``dot``): VMUL at offsets
 0-3, VSUM at 4-8 (rw 5, ro 4); the header names every CSR with its group; the set's streamer
 holds every unit's movers, readers vmul.a, vmul.b, vsum.a and writers vmul.out, vsum.out; the
 manifest lists both tasks with their group's values and their unit's trace path. dot 1's and
-dot_serial's slots carry two sets each, its own streamer file, CSR counts and interconnect
+dot_v7's slots carry two sets each, its own streamer file, CSR counts and interconnect
 group.
 """
 
@@ -24,22 +24,22 @@ from snax_forge.gen import describe, generate
 from snax_forge.gen.rtl import write_fixture
 
 from .helpers import bound_dot1, bound_dot1_enc, bound_recipe, parsed, point
-from .test_accelerator import dot, dot1, dot_serial
+from .test_accelerator import dot, dot1, dot_v7
 
-POINT = "design/dot_1_enc/design_point.json"
+POINT = "design/dot_v1_1/design_point.json"
 
 
 @pytest.fixture(scope="module")
 def made(tmp_path_factory):
-    tmp = tmp_path_factory.mktemp("dot_1_enc")
-    path = point(tmp, name="dot_1_enc", graph=bound_dot1_enc())
+    tmp = tmp_path_factory.mktemp("dot_v1_1")
+    path = point(tmp, name="dot_v1_1", graph=bound_dot1_enc())
     return tmp, path, generate(path, tmp / "out", root=tmp)
 
 
 def test_the_description_is_c17s(made):
     tmp, path, _ = made
     assert describe(DesignPoint.load(path), POINT) == replace(dot(), design_point=POINT)
-    assert dot().tag == "snax_forge_dot_1_enc"
+    assert dot().tag == "snax_forge_dot_v1_1"
     assert (tmp / "out" / "accelerator.json").read_text() == replace(
         dot(), design_point=POINT
     ).to_json()
@@ -59,7 +59,7 @@ def test_the_header_names_each_csr_with_its_group(made):
 
 def test_the_streamer_holds_every_units_movers(made):
     tmp, _, _ = made
-    text = (tmp / "out" / "snax_forge_dot_1_enc_streamer_dot.hjson").read_text()
+    text = (tmp / "out" / "snax_forge_dot_v1_1_streamer_dot.hjson").read_text()
     s = hjson.loads(text)
     assert len(s["data_reader_params"]["num_channel"]) == 3  # vmul.a, vmul.b, vsum.a
     assert len(s["data_writer_params"]["num_channel"]) == 2  # vmul.out, vsum.out
@@ -96,7 +96,7 @@ def test_main_c_includes_dots_header(made):
 
 
 def test_the_rtl_fixture_has_no_vectors(made, tmp_path, monkeypatch):
-    """vectors.json is a one-task fixture's; dot_1_enc's spec drives each group itself: nothing
+    """vectors.json is a one-task fixture's; dot_v1_1's spec drives each group itself: nothing
     is written."""
     tmp, path, _ = made
     monkeypatch.chdir(tmp)
@@ -106,20 +106,18 @@ def test_the_rtl_fixture_has_no_vectors(made, tmp_path, monkeypatch):
 
 @pytest.fixture(scope="module")
 def serial(tmp_path_factory):
-    tmp = tmp_path_factory.mktemp("dot_serial")
-    path = point(tmp, name="dot_serial", graph=bound_recipe("dot_serial", "dot"))
+    tmp = tmp_path_factory.mktemp("dot_v7")
+    path = point(tmp, name="dot_v7", graph=bound_recipe("dot_v7", "dot"))
     return tmp, path, generate(path, tmp / "out", root=tmp)
 
 
 def test_dot_serials_description_is_two_accelerators(serial):
     tmp, path, _ = serial
-    want = replace(dot_serial(), design_point="design/dot_serial/design_point.json")
+    want = replace(dot_v7(), design_point="design/dot_v7/design_point.json")
     got = describe(DesignPoint.load(path), want.design_point)
     assert [a.name for a in got.accelerators] == ["mul", "sum"]
     assert got.defines() == want.defines()
-    assert (
-        json.loads((tmp / "out" / "accelerator.json").read_text())["tag"] == "snax_forge_dot_serial"
-    )
+    assert json.loads((tmp / "out" / "accelerator.json").read_text())["tag"] == "snax_forge_dot_v7"
 
 
 def test_dot_serials_slot_has_two_sets(serial):
@@ -127,19 +125,19 @@ def test_dot_serials_slot_has_two_sets(serial):
     TCDM ports their sum, the interconnect one group per set."""
     tmp, _, m = serial
     (slot,) = parsed(tmp / "out" / m.cluster)["snax_forge_core_template"]["snax_acc_cfg"]
-    assert slot["snax_acc_name"] == "snax_forge_dot_serial"
+    assert slot["snax_acc_name"] == "snax_forge_dot_v7"
     assert slot["snax_streamer_sets"] == [
-        {"name": "mul", "snax_streamer_cfg": {"$ref": "snax_forge_dot_serial_streamer_mul.hjson"},
+        {"name": "mul", "snax_streamer_cfg": {"$ref": "snax_forge_dot_v7_streamer_mul.hjson"},
          "snax_num_rw_csr": 2, "snax_num_ro_csr": 2},
-        {"name": "sum", "snax_streamer_cfg": {"$ref": "snax_forge_dot_serial_streamer_sum.hjson"},
+        {"name": "sum", "snax_streamer_cfg": {"$ref": "snax_forge_dot_v7_streamer_sum.hjson"},
          "snax_num_rw_csr": 3, "snax_num_ro_csr": 2},
     ]  # fmt: skip
     assert (slot["snax_tcdm_ports"], slot["sparse_interconnect_config"]) == (14, [[12, 1], [2, 1]])
     assert slot["snax_disable_csr_manager"] is True
     for k in ("snax_streamer_cfg", "snax_num_rw_csr", "snax_num_ro_csr"):
         assert k not in slot
-    mul = parsed(tmp / "out" / "snax_forge_dot_serial_streamer_mul.hjson")
-    total = parsed(tmp / "out" / "snax_forge_dot_serial_streamer_sum.hjson")
+    mul = parsed(tmp / "out" / "snax_forge_dot_v7_streamer_mul.hjson")
+    total = parsed(tmp / "out" / "snax_forge_dot_v7_streamer_sum.hjson")
     assert len(mul["data_reader_params"]["num_channel"]) == 2  # mul.a, mul.b
     assert total["data_reader_params"]["num_channel"] == [1]  # sum.a at W = 1
 
@@ -157,7 +155,7 @@ def test_dot_serials_main_c_includes_each_sets_headers(serial):
 @pytest.fixture(scope="module")
 def plain(tmp_path_factory):
     tmp = tmp_path_factory.mktemp("dot_1")
-    path = point(tmp, name="dot_1", graph=bound_dot1())
+    path = point(tmp, name="dot_v1", graph=bound_dot1())
     return tmp, path, generate(path, tmp / "out", root=tmp)
 
 
@@ -176,7 +174,7 @@ def test_dot_1_is_c16s_two_sets(plain):
     (slot,) = parsed(tmp / "out" / m.cluster)["snax_forge_core_template"]["snax_acc_cfg"]
     assert [(x["name"], x["snax_num_rw_csr"], x["snax_num_ro_csr"])
             for x in slot["snax_streamer_sets"]] == [("vmul", 2, 2), ("vsum", 3, 2)]  # fmt: skip
-    for f in ("snax_forge_dot_1_streamer_vmul.hjson", "snax_forge_dot_1_streamer_vsum.hjson",
+    for f in ("snax_forge_dot_v1_streamer_vmul.hjson", "snax_forge_dot_v1_streamer_vsum.hjson",
               "include/vmul_csr.h", "include/streamer_vmul_csr_addr_map.h", "include/vsum_csr.h",
               "include/streamer_vsum_csr_addr_map.h"):  # fmt: skip
         assert f in m.files, f

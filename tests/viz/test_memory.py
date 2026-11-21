@@ -30,21 +30,21 @@ from .helpers import L1, Events, cluster
 
 B_PIN = [("B.l1.base", L1 + 576)]  # B from bank 8 of row 2
 FLOWS = {
-    "default": ("vecadd", "stall", {}),
-    "W8": ("vecadd", "off", {"recipe_sets": {"W": 8}}),
+    "default": ("vecadd_v1", "stall", {}),
+    "W8": ("vecadd_v1", "off", {"recipe_sets": {"W": 8}}),
     "B_pinned": (
-        "vecadd",
+        "vecadd_v1",
         "off",
         {"memory_sets": B_PIN},
     ),  # the synthetic stalls need A, B on one bank
     "B_pinned_1024": (
-        "vecadd",
+        "vecadd_v1",
         "off",
         {"memory_sets": B_PIN, "platform_sets": [("l1.rows", 1024)]},
     ),
-    "task": ("vecadd", "task", {}),
-    "beat": ("vecadd", "beat", {}),
-    "vsum": ("vsum", "off", {}),
+    "task": ("vecadd_v1", "task", {}),
+    "beat": ("vecadd_v1", "beat", {}),
+    "vsum": ("vsum_v1", "off", {}),
 }
 
 
@@ -444,9 +444,9 @@ def designed_l1(tmp_path, recipe):
 
 
 def test_a_tail_and_a_beat_padded(tmp_path):
-    """rowsum_3x7: A[3, 7] laid out over its padded [3, 8], each row's pad at A[r, 7]; y, three
+    """rowsum_v1_1: A[3, 7] laid out over its padded [3, 8], each row's pad at A[r, 7]; y, three
     int64 the DMA moves, padded to a whole 64-byte beat. The extents are the checks'."""
-    s = designed_l1(tmp_path, "rowsum_3x7")
+    s = designed_l1(tmp_path, "rowsum_v1_1")
     a, y = s["regions"]
     assert (a["shape"], a["padded_shape"], a["pad_elements"]) == ([3, 7], [3, 8], 3)
     assert (a["data_end"] - a["start"], a["end"], a["beat_pad"]) == (192, a["data_end"], None)
@@ -462,8 +462,8 @@ def test_a_tail_and_a_beat_padded(tmp_path):
 
 
 def test_two_int32_to_a_word(tmp_path):
-    """vecadd_i32: each L1 word holds two int32, A[2i] and A[2i + 1]; no padding."""
-    s = designed_l1(tmp_path, "vecadd_i32")
+    """vecadd_v1_1: each L1 word holds two int32, A[2i] and A[2i + 1]; no padding."""
+    s = designed_l1(tmp_path, "vecadd_v1_1")
     assert [r["pad_elements"] for r in s["regions"]] == [0, 0, 0]
     assert [r["beat_pad"] for r in s["regions"]] == [None] * 3
     first = next(x for x in s["lines"] if x["kind"] == "row")

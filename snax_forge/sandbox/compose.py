@@ -591,7 +591,7 @@ def _ends(g: Graph, container: str) -> tuple[Node, Node]:
 
 def _link_site(g: Graph, container: str) -> dict[str, Any]:
     """``container`` and a ``group``: an end's group name, else the graph's, or the next free
-    one (``mvt_2``) when another unit's instance or group has it (mvt's second half)."""
+    one (``mvt_v2``) when another unit's instance or group has it (mvt's second half)."""
     w, r = _ends(g, container)
     named = w.attrs.get("group", r.attrs.get("group"))
     if named is not None:

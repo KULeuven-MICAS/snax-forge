@@ -1,0 +1,21 @@
+{
+ "name": "rowsum_v3",
+ "id": "rowsum_serial",
+ "description": "One lane, a serial fold along each row.",
+ "kernel": "rowsum",
+ "params": {"W": 1, "M": 4, "N": 16},
+ "symbols": {"M": "M", "N": "N"},
+ "steps": [
+  {"transform": "tag_map", "params": {"map": "sum_map", "kind": "temporal"}},
+  {"transform": "split_map", "params": {"map": "sum_map_1", "factor": "W"}},
+  {
+   "transform": "bind",
+   "params": {
+    "node": "sum",
+    "brm": "accumulate",
+    "implementation": "chisel_serial",
+    "instance": "acc"
+   }
+  }
+ ]
+}

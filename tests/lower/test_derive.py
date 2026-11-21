@@ -50,10 +50,10 @@ def point(graph="vecadd_accelerated", memory=(), sets=None, edit_graph=None) -> 
 
 
 def test_vecadd_on_snax_forge_gives_its_checked_in_task_list():
-    """Equal to tests/run/fixtures/vecadd/tasks.json, the run fixture's."""
+    """Equal to tests/run/fixtures/vecadd_v1/tasks.json, the run fixture's."""
     d = Design(Platform.load(SNAX_FORGE), bound_vecadd(4))
     assert run_checks(d) == []
-    got = task_list(DesignPoint.of(d, "vecadd"))
+    got = task_list(DesignPoint.of(d, "vecadd_v1"))
     want = TaskList.load(VECADD_TASKS)
     assert got == want and got.to_dict() == want.to_dict()
 
@@ -119,8 +119,8 @@ def test_matadd_lowers_its_two_firing_loops():
 @pytest.mark.parametrize(
     "name, reader, writer, n",
     [
-        ("rowsum", ([16, 8], [32, 512]), ([8], [8]), 128),
-        ("rowsum_serial", ([16, 4], [8, 128]), ([4], [8]), 64),
+        ("rowsum_v1", ([16, 8], [32, 512]), ([8], [8]), 128),
+        ("rowsum_v3", ([16, 4], [8, 128]), ([4], [8]), 64),
     ],
 )
 def test_rowsum_restarts_every_row(name, reader, writer, n):
@@ -266,7 +266,7 @@ def test_the_serial_sync_is_left_out_when_after_holds_the_previous_task():
 
 
 # =============================================================================
-# dot_1_enc: dot 1's two groups in one accelerator, a task each
+# dot_v1_1: dot 1's two groups in one accelerator, a task each
 # =============================================================================
 
 
@@ -275,7 +275,7 @@ def dot1() -> DesignPoint:
 
     d = Design(Platform.load(SNAX_FORGE), bound_dot1_enc())
     assert run_checks(d) == []
-    return DesignPoint.of(d, "dot_1_enc")
+    return DesignPoint.of(d, "dot_v1_1")
 
 
 # every temporal stride a word: a reader at stride 0 on its first loop would start (Reader.scala)
@@ -313,7 +313,7 @@ def test_dot_1_waits_for_mul_s_writer_before_sum_and_never_on_an_idle_mover():
 
 
 def test_dot_1_is_two_accelerators_in_series():
-    """recipes/dot/dot_1.json (no encapsulate): vmul and vsum, two streamer sets; no idle mover, the
+    """recipes/dot/dot_v1.json (no encapsulate): vmul and vsum, two streamer sets; no idle mover, the
     serial sync on vmul's task before vsum starts, the one wait between them."""
     from tests.gen.helpers import bound_dot1
 
@@ -457,7 +457,7 @@ def test_matadd_int32_4x6_in_2x2_tiles_in_words():
 
 
 # =============================================================================
-# The fold's seed: matvec_seed's q, read once per job, written in place
+# The fold's seed: matvec_acc_v1's q, read once per job, written in place
 # =============================================================================
 
 
@@ -478,7 +478,7 @@ def _seeded(name: str, edit=None) -> DesignPoint:
     return DesignPoint.of(d, name)
 
 
-@pytest.mark.parametrize("name, beats", [("matvec_seed", 128), ("matvec_seed_serial", 512)])
+@pytest.mark.parametrize("name, beats", [("matvec_acc_v1", 128), ("matvec_acc_v2", 512)])
 def test_the_seed_is_read_once_per_job_in_place_of_its_write(name, beats):
     """q's seed streamer loops over the jobs only, one beat per row at q's addresses, the
     write's; the in-place rule lets the two start together, each after q's load only; the
@@ -510,7 +510,7 @@ def test_a_seed_on_other_elements_than_its_write_is_refused():
 
     with pytest.raises(LowerError, match=r"node sum\.out: writes q in place of sum_sum_seed's "
                        r"read, but not the same elements in the same order"):  # fmt: skip
-        task_list(_seeded("matvec_seed", reversed_seed))
+        task_list(_seeded("matvec_acc_v1", reversed_seed))
 
 
 @pytest.mark.parametrize(("bounds", "strides", "want"), [
@@ -529,18 +529,18 @@ def test_a_packed_writer_moves_words(bounds, strides, want):
 
 
 def test_a_sliced_reader_moves_words():
-    """vecadd_i32 at W = 1, N = 64 (D180): each reader's 64 pops at 4 B become 32 words at 8 B on
+    """vecadd_v1_1 at W = 1, N = 64 (D180): each reader's 64 pops at 4 B become 32 words at 8 B on
     one channel, as the packed writer's pushes do (CONTRACTS, "Task list")."""
     from snax_forge.dfg.import_sdfg import import_kernel
     from snax_forge.sandbox import Recipe, apply_recipe
     from tests.helpers import recipe_path
 
-    r = Recipe.load(recipe_path("vecadd_i32")).with_params({"W": 1})
+    r = Recipe.load(recipe_path("vecadd_v1_1")).with_params({"W": 1})
     d = Design(
         Platform.load(SNAX_FORGE), apply_recipe(r, import_kernel(r.kernel, r.dtypes))[-1].graph
     )
     assert run_checks(d) == []
-    point = DesignPoint.of(d, "vecadd_i32")
+    point = DesignPoint.of(d, "vecadd_v1_1")
     assert {k: (s.d_in, s.d_out, s.num_ch) for k, s in point.streamers.items()} == {
         "acc_a": (2, 1, 1), "acc_b": (2, 1, 1), "acc_out": (1, 2, 1),
     }  # fmt: skip

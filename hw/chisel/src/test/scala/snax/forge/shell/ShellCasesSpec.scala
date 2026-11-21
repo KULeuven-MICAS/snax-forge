@@ -36,9 +36,9 @@ class ShellCasesSpec extends AnyFlatSpec with ForgeTester {
       if (
         c.csrs.take(2) == Seq("START", "JOBS") && !c.csrs.contains("JOB_BEATS") && c.latency == 0 && c.ii == 1 &&
         c.inputs == 2
-      ) "vecadd"
+      ) "vecadd_v1"
       else if (c.csrs.take(3) == Seq("START", "JOBS", "JOB_BEATS") && c.latency == 1 && c.ii == 1 && c.inputs == 1)
-        "vsum"
+        "vsum_v1"
       else fail(s"${c.name}: no wrapper for csrs ${c.csrs.mkString(" ")}, L ${c.latency}, II ${c.ii}, ${c.inputs} in")
     RtlFixtures.all.find(_.name == name).get
   }

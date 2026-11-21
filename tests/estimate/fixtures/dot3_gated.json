@@ -1,6 +1,6 @@
 {
- "_doc": "dot_3 at N = 2048, W = 2 to 32 on nangate45, HWCOST's five parts on the clock-gated tables as snax-forge-experiments' own implementation priced them (results/cluster/nangate45/hwcost_cg.csv, its gated rows): an independent check of the estimate (tests/estimate/test_cost.py). That implementation kept the hold term, which moves the datapath by at most 0.004 pJ. Its control energies, crossbar areas and crossbar energies are rescaled to the constants measured on the gated forge points and xbar_mix grid (control factor 115.67 to 83.20; f_ro, f_wo 0.396496, 0.41077 to 0.395299, 0.409746; the crossbar's 4096 reads and 1 write at 32 banks' g_ro, g_wo 0.331792, 0.471583, D178); the other parts are as priced.",
- "recipe": "dot_3",
+ "_doc": "dot_v3 at N = 2048, W = 2 to 32 on nangate45, HWCOST's five parts on the clock-gated tables as snax-forge-experiments' own implementation priced them (results/cluster/nangate45/hwcost_cg.csv, its gated rows): an independent check of the estimate (tests/estimate/test_cost.py). That implementation kept the hold term, which moves the datapath by at most 0.004 pJ. Its control energies, crossbar areas and crossbar energies are rescaled to the constants measured on the gated forge points and xbar_mix grid (control factor 115.67 to 83.20; f_ro, f_wo 0.396496, 0.41077 to 0.395299, 0.409746; the crossbar's 4096 reads and 1 write at 32 banks' g_ro, g_wo 0.331792, 0.471583, D178); the other parts are as priced.",
+ "recipe": "dot_v3",
  "N": 2048,
  "tech": "nangate45",
  "rows": [

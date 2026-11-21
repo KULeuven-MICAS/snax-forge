@@ -6,7 +6,7 @@ import org.scalatest.flatspec.AnyFlatSpec
 import snax.forge.{ForgeTester, LaneBits, Sink, Source}
 
 /** Several groups in one accelerator: dot 1 encapsulated, the generated `accelerator.json` of
-  * `recipes/dot/dot_1_enc.json` (the fixture dot_1_enc, snax-gvsoc's `forge/dot_1_enc/`), one accelerator `dot` in one
+  * `recipes/dot/dot_v1_1.json` (the fixture dot_v1_1, snax-gvsoc's `forge/dot_v1_1/`), one accelerator `dot` in one
   * streamer set: group vmul (SimdLanes, mul, 4 lanes of int64; START 0, JOBS 1, STATUS 2, BUSY_COUNTER 3) and group
   * vsum (TreeAccumulate, 4 lanes of int64 into one; START 4, JOBS 5, JOB_BEATS 6, STATUS 7, BUSY_COUNTER 8). Each group
   * starts, runs and reports STATUS on its own: vsum is started first and starved (its input held back), vmul then runs
@@ -14,9 +14,9 @@ import snax.forge.{ForgeTester, LaneBits, Sink, Source}
   */
 class TwoGroupsSpec extends AnyFlatSpec with ForgeTester {
 
-  private lazy val spec = RtlFixtures.all.find(_.name == "dot_1_enc").get.spec
+  private lazy val spec = RtlFixtures.all.find(_.name == "dot_v1_1").get.spec
 
-  behavior of "a two-group accelerator (dot_1_enc)"
+  behavior of "a two-group accelerator (dot_v1_1)"
 
   it should "start, run and report STATUS per group" in {
     test(new ShellHarness(spec)) { dut =>

@@ -1,0 +1,13 @@
+{
+ "name": "matvec_v3_1",
+ "id": "matvec_dot3",
+ "description": "`matvec_v3` by reuse: `dot/dot_v3` applied to the rows.",
+ "kernel": "matvec",
+ "params": {"W": 4, "M": 16, "N": 512},
+ "symbols": {"M": "M", "N": "N"},
+ "steps": [
+  {"transform": "tag_map", "params": {"map": "mult_map", "kind": "temporal"}},
+  {"transform": "tag_map", "params": {"map": "sum_map", "kind": "temporal"}},
+  {"transform": "apply_recipe", "params": {"recipe": "dot/dot_v3", "region": ["mult_map_1", "sum_map_1"], "params": {"W": "W"}}}
+ ]
+}

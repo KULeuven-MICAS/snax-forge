@@ -7,7 +7,7 @@ Rules (D117):
 - An entry is a choice with a real alternative that someone may want to reverse: direction, ownership, the interfaces between components, the order of work. Implementation details live in the module's docstring and its tests.
 - An entry says what was decided, why, and where the detail lives, in a few short bullets; an edge case only when there is one. A change is written into the entry, not chained after it.
 - Entries merged into one keep all their numbers in its heading, so a cite of any of them still finds it. A number is never changed or reused; the text of a removed entry is in git history.
-- A new decision gets the next free number, under the area it belongs to. Next free number: **D188**.
+- A new decision gets the next free number, under the area it belongs to. Next free number: **D189**.
 
 Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29–D45, D47–D50, D53, D54, D56, D58–D63, D65–D67, D69, D74, D76–D78, D80, D81, D83, D88–D97, D100, D101, D103, D104, D106, D107, D109, D110, D114, D115, D119, D124, D127, D128, D132, D133, D138–D141, D151, D156, D159, D160, D181.
 
@@ -167,6 +167,12 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 - **Decided:** a recipe applies another on a region of its graph that matches the other's kernel (`apply_recipe`), so matvec is dot's variant on each row and mvt is matvec's on each half. The user lifts a kernel's regions as blocks by hand (`lift`), rather than a search applying recipes unasked. The match leaves the outer loops free; the editor draws a block as one box in its firing loops.
 - **Why:** a larger kernel is built from the smaller ones' recipes, and the user stays in charge of what is reused.
 - **Where:** CONTRACTS, "Recipe"; `sandbox/blocks.py`.
+
+### D188 — A recipe is named by version, and says what it builds
+
+- **Decided:** a checked-in recipe's `name` (its file's stem, and the design's) is `<kernel>_v<N>`, then `_<k>` per change from its parent (`mvt_v5_1`), the kernel's type presets counted as the kernel (`mvt_types` is `mvt`). `v<N>` is a new structure, each `_<k>` one change (reuse, sharing, type, layout, size); a number is never reused or renumbered. Its `id` says what it builds in a fixed vocabulary (`mvt_dot2seed_colseed_i8_o32`) and its `description` the same in one to three sentences. Recipes that build the same units share an id (a reuse twin and its hand-written recipe), the description saying how. `recipes/custom/`, where the editor saves, is free of the rule, and Save writes neither field.
+- **Why:** the names had grown round by round (`mvt_4_i8_col_vadd`) and no longer said what a recipe builds; a version keeps file, bundle and module names short and stable, the id carries the meaning, and the editor shows both.
+- **Where:** `recipes/README.md` (the vocabulary and every recipe); CONTRACTS, "Recipe".
 
 ## Accelerators
 

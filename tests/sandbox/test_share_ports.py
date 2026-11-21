@@ -13,7 +13,7 @@ from tests.helpers import steps
 
 
 def dot1():
-    return steps("dot_1", W=4)[-1]
+    return steps("dot_v1", W=4)[-1]
 
 
 def test_share_ports_puts_both_on_one_accelerator_and_back():
@@ -31,7 +31,7 @@ def test_share_ports_puts_both_on_one_accelerator_and_back():
 
 
 def test_an_encapsulated_pair_keeps_its_accelerator():
-    """dot_1_enc's dot: share_ports only marks the container, and unshare_ports leaves dot."""
+    """dot_v1_1's dot: share_ports only marks the container, and unshare_ports leaves dot."""
     g = encapsulate(dot1(), "dot", ["vmul", "vsum"])
     assert TRANSFORMS["share_ports"].site(g, "tmp0")["accelerator"] == "dot"
     shared = share_ports(g, "tmp0", "dot")
@@ -49,7 +49,7 @@ def test_an_encapsulated_pair_keeps_its_accelerator():
         (dot1, "nope", "no container of that name"),
         (dot1, "A", r"written by \[\]; both ends are bound units"),
         (dot1, "out", r"read by \[\]; both ends are bound units"),
-        (lambda: steps("dot_2", W=4, N=512)[-1], "tmp0", "a link"),
+        (lambda: steps("dot_v2", W=4, N=512)[-1], "tmp0", "a link"),
         (lambda: share_ports(dot1(), "tmp0", "d"), "tmp0", "already shared"),
     ],
 )  # fmt: skip
@@ -69,10 +69,10 @@ def test_names_another_instance_or_accelerator_are_refused():
 
 
 def test_the_mvt_recipes_share_their_halves():
-    """mvt_1_dot2_shared: the linked group mvt (both halves) and vadd on mvt_vadd;
-    mvt_2_shared: each half's dot and vadd on its own shared set."""
-    assert accelerators(steps("mvt_1_dot2_shared", W=8)[-1]) == {
+    """mvt_v1_2_2: the linked group mvt (both halves) and vadd on mvt_vadd;
+    mvt_v2_2: each half's dot and vadd on its own shared set."""
+    assert accelerators(steps("mvt_v1_2_2", W=8)[-1]) == {
         "mvt_vadd": ["vmul_x1", "vsum_x1", "vadd"]}  # fmt: skip
-    assert accelerators(steps("mvt_2_shared", W_x1=8, W_x2=8)[-1]) == {
+    assert accelerators(steps("mvt_v2_2", W_x1=8, W_x2=8)[-1]) == {
         "mvt_vadd_x1": ["vmul_x1", "vsum_x1", "vadd_x1"],
         "mvt_1_vadd_x2": ["vmul_x2", "vsum_x2", "vadd_x2"]}  # fmt: skip

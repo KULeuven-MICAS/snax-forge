@@ -203,7 +203,7 @@ def default_name(
     """The recipe's name with every ``--set`` appended: recipe params, then platform, memory
     and design paths without their ``platform.`` / ``memory.`` / ``design.`` prefix, each in the
     order given (``vecadd_W8``, ``vecadd_l1.n_banks32``, ``vecadd_B.l1.base576``,
-    ``mvt_3_split_schedulepipeline``)."""
+    ``mvt_v3_1_schedulepipeline``)."""
     sets = [*recipe_sets.items(), *platform_sets, *memory_sets, *design_sets]
     return "_".join([recipe.name, *(_name_part(k, v) for k, v in sets)])
 

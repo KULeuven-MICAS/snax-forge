@@ -143,16 +143,16 @@ def test_the_command(tmp_path, fake, monkeypatch, capsys):
 
 
 def test_dot_1_encs_bundle_holds_both_groups(tmp_path, fake):
-    """An accelerator of two groups (dot_1_enc): the bundle's accelerator.json, header and
+    """An accelerator of two groups (dot_v1_1): the bundle's accelerator.json, header and
     program are gen-gvsoc's; the RTL is elaborated from the same file."""
     from .helpers import bound_dot1_enc
 
     out = tmp_path / "bundle"
-    b, _ = write_bundle(point(tmp_path, name="dot_1_enc", graph=bound_dot1_enc()), out, tmp_path)
-    assert b.tag == "snax_forge_dot_1_enc" and "include/dot_csr.h" in files(out)
+    b, _ = write_bundle(point(tmp_path, name="dot_v1_1", graph=bound_dot1_enc()), out, tmp_path)
+    assert b.tag == "snax_forge_dot_v1_1" and "include/dot_csr.h" in files(out)
     acc = json.loads((out / "accelerator.json").read_text())
     assert [g["name"] for a in acc["accelerators"] for g in a["groups"]] == ["vmul", "vsum"]
-    assert b.top == "snax_forge_dot_1_enc_shell_wrapper"
+    assert b.top == "snax_forge_dot_v1_1_shell_wrapper"
 
 
 def test_dot_1s_bundle_holds_both_accelerators(tmp_path, fake):
@@ -160,31 +160,31 @@ def test_dot_1s_bundle_holds_both_accelerators(tmp_path, fake):
     from .helpers import bound_dot1
 
     out = tmp_path / "bundle"
-    b, _ = write_bundle(point(tmp_path, name="dot_1", graph=bound_dot1()), out, tmp_path)
-    assert b.top == "snax_forge_dot_1_shell_wrapper"
+    b, _ = write_bundle(point(tmp_path, name="dot_v1", graph=bound_dot1()), out, tmp_path)
+    assert b.top == "snax_forge_dot_v1_shell_wrapper"
     assert {"include/vmul_csr.h", "include/vsum_csr.h"} <= set(files(out))
-    assert b.modules["snax_forge_dot_1_ctrl"] == ["snax_forge_dot_1_vmul_ctrl",
-                                                  "snax_forge_dot_1_vsum_ctrl"]  # fmt: skip
+    assert b.modules["snax_forge_dot_v1_ctrl"] == ["snax_forge_dot_v1_vmul_ctrl",
+                                                  "snax_forge_dot_v1_vsum_ctrl"]  # fmt: skip
 
 
 def test_the_module_tree_names_every_group_unit_and_buffer():
-    """From the description, not Emit, under the tag: dot_1_enc's two groups and units,
-    and dot_serial's the same over its two accelerators (one shell); a linked group's units
+    """From the description, not Emit, under the tag: dot_v1_1's two groups and units,
+    and dot_v7's the same over its two accelerators (one shell); a linked group's units
     and its buffer (a wire is no module)."""
-    from tests.gen.test_accelerator import dot, dot4, dot_serial
+    from tests.gen.test_accelerator import dot, dot4, dot_v7
 
-    t = "snax_forge_dot_1_enc"
+    t = "snax_forge_dot_v1_1"
     assert bundle_mod.module_tree(dot()) == {
         f"{t}_csr": [f"{t}_peripherals"], f"{t}_ctrl": [f"{t}_vmul_ctrl", f"{t}_vsum_ctrl"],
         f"{t}_datapath": [f"{t}_vmul", f"{t}_vsum"],
     }  # fmt: skip
-    t = "snax_forge_dot_serial"
-    assert bundle_mod.module_tree(dot_serial()) == {
+    t = "snax_forge_dot_v7"
+    assert bundle_mod.module_tree(dot_v7()) == {
         f"{t}_csr": [f"{t}_peripherals"], f"{t}_ctrl": [f"{t}_mul_ctrl", f"{t}_sum_ctrl"],
         f"{t}_datapath": [f"{t}_mul", f"{t}_sum"],
     }  # fmt: skip
     wire = dot4()
-    t = "snax_forge_dot_4"
+    t = "snax_forge_dot_v4"
     assert bundle_mod.module_tree(wire)[f"{t}_datapath"] == [f"{t}_mac", f"{t}_sum"]
     g = wire.groups[0]
     buffer = with_groups(wire, [replace(g, links=[replace(g.links[0], depth=1)])])
@@ -195,19 +195,19 @@ def test_the_module_tree_names_every_group_unit_and_buffer():
 
 
 def test_the_module_tree_ends_with_each_stream_block_once():
-    """dot_serial with mul's a and b at int32, one lane, sliced 2 (D180), and sum's out at int32
+    """dot_v7 with mul's a and b at int32, one lane, sliced 2 (D180), and sum's out at int32
     packed 2 (D174): one FifoSlicer module for both inputs, then the packer, after the shell's."""
     from snax_forge.gen.blocks import Port
-    from tests.gen.test_accelerator import dot_serial
+    from tests.gen.test_accelerator import dot_v7
 
-    desc = dot_serial()
+    desc = dot_v7()
     mul, total = (a.groups[0].units[0] for a in desc.accelerators)
     mul = replace(mul, ports={p: Port(p, "in", "int32", 1, d_in=2) for p in ("a", "b")}
                   | {"out": Port("out", "out", "int32", 1)})  # fmt: skip
     total = replace(total, ports={**total.ports, "out": Port("out", "out", "int32", 1, d_out=2)})
     accs = [replace(a, groups=[replace(a.groups[0], units=[u])])
             for a, u in zip(desc.accelerators, (mul, total), strict=True)]  # fmt: skip
-    t = "snax_forge_dot_serial"
+    t = "snax_forge_dot_v7"
     tree = bundle_mod.module_tree(replace(desc, accelerators=accs))
     assert list(tree)[-2:] == ["FifoSlicer_w1_i32_n1", "FifoPacker_n1_i32_w1"]
     assert list(tree)[:3] == [f"{t}_csr", f"{t}_ctrl", f"{t}_datapath"]
@@ -243,7 +243,7 @@ def test_the_expected_lines_and_their_refusal(tmp_path, fake):
 def test_each_counter_s_fill_is_its_group_s_from_the_estimate(tmp_path):
     """counter_fills: per accelerator task the estimate's fill of the group it runs, 3
     for vmul's two inputs and 2 for vsum's one, in dot 1's two accelerators."""
-    path = point(tmp_path, name="dot_1", graph=bound_dot1())
+    path = point(tmp_path, name="dot_v1", graph=bound_dot1())
     tasks = path.with_name("tasks.json")
     task_list(DesignPoint.load(path)).save(tasks)
     assert bundle_mod.counter_fills(path, tasks) == {"mult_vmul": 3, "sum_vsum": 2}

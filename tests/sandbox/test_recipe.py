@@ -69,7 +69,7 @@ def test_every_recipe_is_in_a_folder_once_under_its_name():
     for name, (path,) in paths.items():
         assert Recipe.load(path).name == name == path.stem, path
         assert find_recipe(name) == path
-    assert find_recipe("vecadd") == RECIPE_ROOT / "elementwise" / "vecadd.json"
+    assert find_recipe("vecadd_v1") == RECIPE_ROOT / "elementwise" / "vecadd_v1.json"
 
 
 def test_find_recipe_names_what_is_wrong(tmp_path):

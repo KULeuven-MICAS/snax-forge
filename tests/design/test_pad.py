@@ -23,7 +23,7 @@ def bound(name: str, **params) -> Graph:
 
 def test_int32_rowsum_3x7_w4_is_valid_packed():
     """A split by 4 pads each row of 7 to 8: row stride 8, a multiple of k = 2."""
-    d = bound("rowsum", W=4, M=3, N=7).to_dict()
+    d = bound("rowsum_v1", W=4, M=3, N=7).to_dict()
     d["containers"]["A"]["dtype"] = "int32"  # y stays int64: one lane per word
     assert problems(design(Graph.from_dict(d))) == []
 
@@ -31,8 +31,8 @@ def test_int32_rowsum_3x7_w4_is_valid_packed():
 def _vmul_into_vsum(fold: str = "add") -> Graph:
     """vecmul's C, written by an accelerator, read through a tail by vsum's fold (its op
     ``fold``), both at W = 4 and N = 7."""
-    mul = bound("vecmul", W=4, N=7).to_dict()
-    vsum = bound("vsum_tree", W=4, N=7).to_dict()
+    mul = bound("vecmul_v1", W=4, N=7).to_dict()
+    vsum = bound("vsum_v1_1", W=4, N=7).to_dict()
     node = vsum["body"][0]["body"][0]
     node["attrs"]["instance"] = "acc2"
     node["inputs"]["a"]["data"] = "C"
@@ -88,7 +88,7 @@ def test_dot_1_with_a_factor_per_split(w_mul, w_sum):
 def test_a_memlet_past_the_padding_is_refused_by_the_design_check():
     """vecadd N = 7, W = 4, A padded to 8: a hand-edited memlet reaching index 11 leaves the
     padding (the reference executor's rule, met at design time)."""
-    d = bound("vecadd", W=4, N=7).to_dict()
+    d = bound("vecadd_v1", W=4, N=7).to_dict()
     d["body"][0]["body"][0]["inputs"]["a"]["subset"] = ["4 * n_1_t + 4:4 * n_1_t + 8"]
     got = [p for p in problems(design(Graph.from_dict(d))) if p.code == "connect.pack"]
     assert [p.where for p in got] == ["node add.a"]
@@ -99,7 +99,7 @@ def test_a_memlet_past_the_padding_is_refused_by_the_design_check():
 
 
 def test_a_seeded_folds_pads_take_the_ops_identity():
-    """matvec_seed at N = 510, W = 4 (a tail): the pads feed the tree, not the seed, so tmp0's
+    """matvec_acc_v1 at N = 510, W = 4 (a tail): the pads feed the tree, not the seed, so tmp0's
     pad lanes are add's identity, 0 (the multiplier's 0 × 0), and connect.pad passes; the seed
     q is read once per job, through no tail, and the run is q + A p."""
     import numpy as np
@@ -107,7 +107,7 @@ def test_a_seeded_folds_pads_take_the_ops_identity():
     from snax_forge.dfg import execute
     from snax_forge.dfg.pad import pad_value
 
-    g = bound("matvec_seed", W=4, M=8, N=510)
+    g = bound("matvec_acc_v1", W=4, M=8, N=510)
     assert g.node("sum").inputs["seed"].to_dict() == {"data": "q", "subset": ["m_t:m_t + 1"]}
     assert (pad_content(g, "tmp0"), pad_value(g, "tmp0"), pad_value(g, "A")) == (0, 0, 0)
     assert [p for p in problems(design(g, edit_platform=None)) if p.code == "connect.pad"] == []

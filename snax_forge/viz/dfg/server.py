@@ -100,7 +100,7 @@ class EditState:
                 r = Recipe.load(p)
                 out.append({"name": r.name, "path": str(p), "folder": p.parent.name,
                             "kernel": r.kernel, "params": dict(r.params), "steps": len(r.steps),
-                            "error": None})  # fmt: skip
+                            "id": r.id, "description": r.description, "error": None})  # fmt: skip
             except (OSError, ValueError, KeyError, TypeError) as e:
                 out.append({"name": p.stem, "path": str(p), "folder": p.parent.name,
                             "error": str(e)})  # fmt: skip

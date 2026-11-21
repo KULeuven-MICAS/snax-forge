@@ -1,5 +1,5 @@
-"""The accelerator's cycles under the design point's schedule (D179): mvt_3_split at W = 8, two
-independent halves, adds them serial and takes the slower pipelined; mvt_3, the halves on one
+"""The accelerator's cycles under the design point's schedule (D179): mvt_v3_1 at W = 8, two
+independent halves, adds them serial and takes the slower pipelined; mvt_v3, the halves on one
 shared group, adds them under every schedule. Every recipe is imported (DaCe), hence slow."""
 
 from __future__ import annotations
@@ -22,14 +22,14 @@ def at(name: str, schedule: str) -> Estimate:
 
 
 def test_mvt_3_split_adds_its_halves_serial_and_takes_the_slower_pipelined():
-    serial = at("mvt_3_split", "serial")
+    serial = at("mvt_v3_1", "serial")
     halves = [g.cycles for g in serial.groups]
     assert [g.name for g in serial.groups] == ["mvt", "mvt_1"]
     assert serial.accelerator_cycles == sum(halves) == 1030
     assert [r.after for r in serial.runs] == [[], []]  # A is read by both, written by neither
     assert serial.overlap_note is None
     for schedule in ("pipeline", "pipeline_compute"):
-        e = at("mvt_3_split", schedule)
+        e = at("mvt_v3_1", schedule)
         assert e.accelerator_cycles == max(halves) == 515
         assert e.total_cycles == 515 + e.unmapped_cycles
         # two chains of A and y at 8 words, and x's: past the 32 banks
@@ -42,13 +42,13 @@ def test_mvt_3_split_adds_its_halves_serial_and_takes_the_slower_pipelined():
 
 @pytest.mark.parametrize("schedule", SCHEDULES)
 def test_mvt_3_is_the_same_under_every_schedule(schedule):
-    e = at("mvt_3", schedule)
-    assert e.accelerator_cycles == at("mvt_3", "serial").accelerator_cycles == 1030
+    e = at("mvt_v3", schedule)
+    assert e.accelerator_cycles == at("mvt_v3", "serial").accelerator_cycles == 1030
     assert [r.after for r in e.runs] == [[], ["tmp0_mult"]] and e.overlap_note is None
 
 
 def test_the_runs_round_trip_and_a_chain_is_its_sum():
-    e = at("mvt_3_split", "pipeline")
+    e = at("mvt_v3_1", "pipeline")
     back = Estimate.from_dict(e.to_dict())
     assert (back.schedule, back.runs, back.accelerator_cycles) == ("pipeline", e.runs, 515)
     chain = [RunEstimate("a", "g", "x", 3, 0), RunEstimate("b", "h", "y", 4, 0, ["a"]),
@@ -61,7 +61,7 @@ def test_the_graphs_counts_still_give_the_static_estimate(schedule):
     """D177's check under each schedule: pipelined, the control units clock the longest path."""
     from snax_forge.estimate.dynamic import graph_counts, port_movers, price, prices_of
 
-    graph, e = steps("mvt_3_split", W=8)[-1], at("mvt_3_split", schedule)
+    graph, e = steps("mvt_v3_1", W=8)[-1], at("mvt_v3_1", schedule)
     got = price(prices_of(graph, e, port_movers(e)), graph_counts(graph, e))
     for part, want in e.parts.items():
         assert got.parts[part] == pytest.approx(want.energy_nj, rel=1e-12), part

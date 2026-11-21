@@ -61,10 +61,10 @@ def by_id(d: dict) -> dict[str, dict]:
 
 
 def test_shared_hardware_is_drawn_once():
-    """mvt_4_i8_dma_AT after ``share`` (step 18): one box per piece of hardware, keyed by it,
+    """mvt_v4_1_1 after ``share`` (step 18): one box per piece of hardware, keyed by it,
     the two tasks' nodes as chips, a temporal mux in front of the shared ports (one per port
     where a slicer sits) and a demux after the output; the slicer and packer ids no longer collide."""
-    d = drawn("mvt_4_i8_dma_AT", 18)
+    d = drawn("mvt_v4_1_1", 18)
     assert problems(d) == [] and d["tasks"] == ["mvt", "mvt_1"]
     n = by_id(d)
     hw = sorted(k for k in n if ":" in k)
@@ -84,7 +84,7 @@ def test_shared_hardware_is_drawn_once():
 def test_tasks_only_after_share():
     """Before ``share`` (step 8) no edge has a task and there is no mux; after it every edge of
     the shared hardware's two chains has one."""
-    before, after = drawn("mvt_4_i8_dma_AT", 8), drawn("mvt_4_i8_dma_AT", 18)
+    before, after = drawn("mvt_v4_1_1", 8), drawn("mvt_v4_1_1", 18)
     assert before["tasks"] == [] and all(e["task"] is None for e in before["edges"])
     assert not [n for n in before["nodes"] if n["kind"] in ("mux", "demux")]
     tasks = {e["id"]: e["task"] for e in after["edges"]}
@@ -93,14 +93,14 @@ def test_tasks_only_after_share():
 
 def test_an_edge_skips_the_loops_its_subset_does_not_use():
     """y1 is read whole in every m_t: it goes straight to the inner loop, marked ``↻ m_t``."""
-    (e,) = [e for e in drawn("mvt_4_i8_dma_AT", 18)["edges"] if e["from"] == "y1@0"]
+    (e,) = [e for e in drawn("mvt_v4_1_1", 18)["edges"] if e["from"] == "y1@0"]
     assert (e["to"], e["skip"], e["label"]) == ("tmp1_mult_map_1", ["m_t"], "↻ m_t")
 
 
 def test_a_link_draws_one_chain_and_the_readers_loops_as_chips():
     """After the link (step 8) vsum's loops match vmul's level by level: one chain, sum_map and
     sum_map_1 as chips on tmp1_mult_map and tmp1_mult_map_1; the fold says what it sums over."""
-    n = by_id(drawn("mvt_4_i8_dma_AT", 8))
+    n = by_id(drawn("mvt_v4_1_1", 8))
     assert "sum_map" not in n and "sum_map_1" not in n
     assert n["tmp1_mult_map"]["chips"] == [["sum_map", None]]
     assert n["tmp1_mult_map_1"]["chips"] == [["sum_map_1", None]]
@@ -109,21 +109,21 @@ def test_a_link_draws_one_chain_and_the_readers_loops_as_chips():
 
 def test_labels_only_where_the_dtype_changes():
     """int8 in, int32 out of the multiplier: only that edge carries a dtype."""
-    d = drawn("mvt_4_i8_dma_AT", 18)
+    d = drawn("mvt_v4_1_1", 18)
     assert [(e["id"], e["label"]) for e in d["edges"] if e["dt"]] == [
         ("unit:vmul_x2.out->link:vmul_x2.out>vsum_x2.a.in", "int32")]  # fmt: skip
 
 
 @pytest.mark.slow
 def test_every_recipes_every_step_is_well_formed():
-    """Every checked-in recipe, every step: no structural problem (vecadd_undo is refused on
+    """Every checked-in recipe, every step: no structural problem (vecadd_v1_4 is refused on
     purpose)."""
     bad = {}
     for path in sorted((REPO / "recipes").glob("*/*.json")):
         try:
             gs = graphs(path.stem) if find_recipe(path.stem) == path else ()
         except SandboxError:
-            assert path.stem == "vecadd_undo"
+            assert path.stem == "vecadd_v1_4"
             continue
         for k, g in enumerate(gs):
             d = graph_view(Entry(str(k), Path(f"{k}.snaxdfg"), g, None))["drawing"]

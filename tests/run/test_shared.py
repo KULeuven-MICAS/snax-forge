@@ -1,5 +1,5 @@
-"""run/ on a recorded run of two groups sharing one streamer's movers: dot_1_shared at
-trace levels task and stall (fixtures/dot_1_shared/README.md), converted without GVSoC.
+"""run/ on a recorded run of two groups sharing one streamer's movers: dot_v1_2 at
+trace levels task and stall (fixtures/dot_v1_2/README.md), converted without GVSoC.
 
 vmul and vsum share the set dot: mover k of each role carries the k-th widest port of each group,
 so dot_reader0 is vmul_a and vsum_a, dot_reader1 vmul_b only, dot_writer0 vmul_out (4 channels)
@@ -17,14 +17,14 @@ from .helpers import load_recorded
 
 @pytest.fixture(scope="module")
 def recorded():
-    return load_recorded("dot_1_shared")
+    return load_recorded("dot_v1_2")
 
 
 @pytest.fixture(scope="module")
 def stalled():
     from snax_forge.run.sources import all_sources
 
-    cluster, tasks, check, lines, regions, _ = load_recorded("dot_1_shared", "events_stall.log")
+    cluster, tasks, check, lines, regions, _ = load_recorded("dot_v1_2", "events_stall.log")
     return cluster, regions, convert(lines, cluster, tasks, check["total_cycles"], "stall",
                                      check["functional_check"], regions, all_sources(cluster))  # fmt: skip
 

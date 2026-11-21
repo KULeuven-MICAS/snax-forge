@@ -1,0 +1,17 @@
+{
+ "name": "matvec_v3",
+ "id": "matvec_dot3",
+ "description": "A `dot_v3` on each row: the link between `mul` and `sum` a wire.",
+ "kernel": "matvec",
+ "params": {"W": 4, "M": 16, "N": 512},
+ "symbols": {"M": "M", "N": "N"},
+ "steps": [
+  {"transform": "tag_map", "params": {"map": "mult_map", "kind": "temporal"}},
+  {"transform": "split_map", "params": {"map": "mult_map_1", "factor": "W"}},
+  {"transform": "bind", "params": {"node": "mult", "brm": "simd", "implementation": "chisel_tiled_spatial", "instance": "mul"}},
+  {"transform": "tag_map", "params": {"map": "sum_map", "kind": "temporal"}},
+  {"transform": "split_map", "params": {"map": "sum_map_1", "factor": "W"}},
+  {"transform": "bind", "params": {"node": "sum", "brm": "accumulate", "implementation": "chisel_adder_tree", "instance": "sum"}},
+  {"transform": "link", "params": {"container": "tmp0", "depth": 0, "group": "matvec"}}
+ ]
+}

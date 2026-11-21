@@ -189,6 +189,7 @@ function panel(v, k, pick, seed = null, slot = "main") {
     v.folder ? h("span", { class: "muted" }, `${v.folder} · `) : null,
     pick ? stepSelect(k, pick) : h("b", {}, v.label),
     h("span", { class: "muted" }, v.graph ? ` ${v.graph}` : ""),
+    v.recipe_id ? h("span", { class: "c-recipe-id", title: v.recipe_description || "" }, v.recipe_id) : null,
     tasks.map((t, i) => h("span", { class: "c-task", style: { "--t": TASK_COLOURS[i % TASK_COLOURS.length] }, title: `task ${t}: its edges and chips in this colour` }, t)),
     tools);
   if (v.error || !v.drawing) return h("section", { class: "c-panel broken" }, head, h("p", { class: "load-error" }, v.error || "no drawing"));
@@ -333,7 +334,7 @@ async function toggleBlock(name) {
 }
 
 /** The Blocks section: each block indented under the block holding it, a toggle to open or
-close it, its name to select it and its text (``dot · dot/dot_3 · W = 4``). */
+close it, its name to select it and its text (``dot · dot/dot_v3 · W = 4``). */
 async function blocks() {
   const box = $("blocks");
   if (!box) return;

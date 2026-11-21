@@ -51,15 +51,15 @@ The modules, whose behaviour C§10 states:
 
 - Only the outer ports reach the wrapper, which splits each Decoupled port: its data to its unit's datapath, its valid and ready to its group's control unit. A shared set's outer ports are its movers, reached through the port mux.
 - `pixi run gen-rtl DESIGN_POINT` checks and elaborates (`docs/TOOL.md` section 3), running `Emit` with java on hw/chisel's runtime classpath, which sbt exports once into `target/emit-classpath-<hash>.txt`, again after a change under `src/main/` or to `build.sbt`.
-- The fixtures in `src/test/resources/rtl/<design>/` hold `vectors.json`; their `accelerator.json` and streamer hjsons are read from snax-gvsoc's `forge/<design>/` (a spec that needs one cancels without the submodule), but vsum_tree_w8 and dot_5_w1, which `forge/` does not hold, keep them beside their vectors. `tests/gen/test_rtl.py` checks them byte for byte. Refresh one with:
+- The fixtures in `src/test/resources/rtl/<design>/` hold `vectors.json`; their `accelerator.json` and streamer hjsons are read from snax-gvsoc's `forge/<design>/` (a spec that needs one cancels without the submodule), but vsum_v1_1_w8 and dot_v5_w1, which `forge/` does not hold, keep them beside their vectors. `tests/gen/test_rtl.py` checks them byte for byte. Refresh one with:
 
 ```bash
-pixi run sandbox recipes/reduce/vsum_tree.json --set W=8 --out out/sandbox/vsum_tree_w8
-pixi run design out/sandbox/vsum_tree_w8/2_bind.snaxdfg --platform platforms/snax_forge.json --out out/design/vsum_tree_w8
-pixi run gen-rtl out/design/vsum_tree_w8/design_point.json --fixture hw/chisel/src/test/resources/rtl/vsum_tree_w8
+pixi run sandbox recipes/reduce/vsum_v1_1.json --set W=8 --out out/sandbox/vsum_v1_1_w8
+pixi run design out/sandbox/vsum_v1_1_w8/2_bind.snaxdfg --platform platforms/snax_forge.json --out out/design/vsum_v1_1_w8
+pixi run gen-rtl out/design/vsum_v1_1_w8/design_point.json --fixture hw/chisel/src/test/resources/rtl/vsum_v1_1_w8
 ```
 
-The others come from their recipe as it is, named after it; dot_2 to dot_6 with `--set N=16`, matvec_4 to matvec_6 with `--set M=2 --set N=16`, and vecadd_i32_w1 from vecadd_i32 with `--set W=1`.
+The others come from their recipe as it is, named after it; dot_v2 to dot_v6 with `--set N=16`, matvec_v4 to matvec_v6 with `--set M=2 --set N=16`, and vecadd_v1_1_w1 from vecadd_v1_1 with `--set W=1`.
 
 The specs on the fixtures:
 
@@ -67,18 +67,18 @@ The specs on the fixtures:
 |---|---|
 | `ShellEmitSpec` | one emit each: the wrapper's ports are the template's for its streamer hjson plus the group pins; the hierarchy is `bundle.json`'s `modules` (C§11); `emitted.json` lists every file |
 | `ShellCasesSpec` | vecadd's and vsum's wrappers through snax-gvsoc's shell cases (below) |
-| `ShellEndToEndSpec` | `main.c`'s CSR writes with an always-ready streamer: the goldens and counter of `vectors.json`; dot_1_shared's two tasks through its port mux; each linked variant (dot 2–6, matvec 4–6) at N 8 and 16 on random data against NumPy and snax-gvsoc's group cases, matvec 4–6 also at int32 through the wrapping product |
+| `ShellEndToEndSpec` | `main.c`'s CSR writes with an always-ready streamer: the goldens and counter of `vectors.json`; dot_v1_2's two tasks through its port mux; each linked variant (dot 2–6, matvec 4–6) at N 8 and 16 on random data against NumPy and snax-gvsoc's group cases, matvec 4–6 also at int32 through the wrapping product |
 | `CtrlRegistersSpec` | every `<tag>_<group>_ctrl`'s registers, by name and bits, equal to `ctrl_registers.json` (from `util/ctrl_regs.py --json`, which `tests/estimate/test_bits.py` keeps current) |
 | `TwoGroupsSpec` | each of dot 1's groups (`mul`, `sum`) on its own |
-| `ShellPackedSpec` | a packed outer output (D174): vsum_tree_i32's sum changed by hand to int32 at d_out 2, its 64-bit writer and its words over 3 jobs, the last short |
-| `ShellSlicedSpec` | a sliced outer input (D180): the fixture vecadd_i32_w1 (a and b at int32 d_in 2, out d_out 2), its 64-bit readers and 3 jobs from 2 words each, the last short, into 2 words |
+| `ShellPackedSpec` | a packed outer output (D174): vsum_v1_1_1's sum changed by hand to int32 at d_out 2, its 64-bit writer and its words over 3 jobs, the last short |
+| `ShellSlicedSpec` | a sliced outer input (D180): the fixture vecadd_v1_1_w1 (a and b at int32 d_in 2, out d_out 2), its 64-bit readers and 3 jobs from 2 words each, the last short, into 2 words |
 
 ### One block alone
 
 `Emit --block NAME --params JSON --out DIR` (C§10) checks the params (`Datapath.check`) and builds `make(params)` as the top module with an asynchronous reset, as inside the wrapper; `pixi run gen-block LIST.json` runs a list of them in one java call. The reset comes from `DatapathModule.asyncTop`, which `emitBlock` sets around the construction, so no block, builder or wrapper changes. `NAME` may also be a stream block of `Emit.streamBlocks` (`FifoPacker`, `FifoSlicer`), its params checked in `Emit` and built with `RequireAsyncReset`.
 
 - `BlockEmitSpec`: a block of every datapath (Mac in its three forms and seeded, SerialAccumulate at lanes 1 and 8, LinkBuffer at depth 1 and 2), its ports against `blocks.json`'s live ports and pins, every flop on `posedge clock or posedge reset`; FifoPacker at int32, int16 and int8 (d_out 2, 4, 8), at int32 byte for byte the packer in ShellPackedSpec's wrapper; FifoSlicer at one word of int32 (1 lane), int16 (1, 2) and int8 (1, 2, 4), at int32 byte for byte the slicer in ShellSlicedSpec's wrapper.
-- `BlockInShellSpec`: the block alone byte for byte equal to the module inside the accelerator (vsum_tree_w8's TreeAccumulate, dot_5_w1's Mac); dot_5_w1's SerialAccumulate differs only where firtool folds its constant `first`.
+- `BlockInShellSpec`: the block alone byte for byte equal to the module inside the accelerator (vsum_v1_1_w8's TreeAccumulate, dot_v5_w1's Mac); dot_v5_w1's SerialAccumulate differs only where firtool folds its constant `first`.
 - `BlockFlopsSpec`: a block of every datapath at random params per seed (the Mac in its three forms and seeded), its declared register bits equal to its `flops`.
 
 ## The shared cases
@@ -113,7 +113,7 @@ Every module has a spec; the random ones drive it with seeded random data, confi
 | `GroupRuleSettingsSpec` | chains of 1–3 units, L ∈ {0, 1, 2}, T fixed or from JOB_BEATS, depth ∈ {0, 1, 2}, JOBS and JOB_BEATS from {0, 1, 2, 3, 5} on their wires, held through a run, job_width 3, 8 or 32; JOBS 255 of T 255 at job_width 8 (a unit at L 0, one at L 1, a head counting over its consumer's T) | `GroupModel` cycle by cycle: the counters' shared `+ 1` at its top value, the empty run tested on the wires |
 | `GroupDescSpec` | a chain listed out of order; a fork, a join, a cycle, two chains, a link to no unit, on an outer input or on a fed one, an unfed input | the order, head and owner, and SnaxGroupRule's reasons (`configure()`) |
 | `AccCsrRandomSpec` | 1 to 3 groups of 0, 1 or 2 folds (a JOB_BEATS each), each unit with no scalar, a K1 of 8, 16 or 32 bits or K1_LO and K1_HI, job_width and busy_counter_width from 1 to 32; a shared set's PORT_MUX_SEL after the last group's CSRs or none; reads, writes and starts in and out of range, `rsp` and each start's ready, each group's busy and done pulse | the protocol in `AccCsr`'s docstring: a busy group's writes held until idle, JOBS and each JOB_BEATS on `settings`, each scalar's register on `scalars`, PORT_MUX_SEL never held, read back and on `portMuxSel` |
-| `PortMuxSpec` | shared sets of 2 or 3 groups, 1 to 3 reader and 1 to 3 writer movers of 1 to 4 channels, users on some movers only and narrower than their mover; the select over all its values, data, valids and readies every cycle; and dot_1_shared's and mvt_1_dot2_shared's sets | the data-side mux as above (D169): every output each cycle, and every valid unchanged when the readies flip |
+| `PortMuxSpec` | shared sets of 2 or 3 groups, 1 to 3 reader and 1 to 3 writer movers of 1 to 4 channels, users on some movers only and narrower than their mover; the select over all its values, data, valids and readies every cycle; and dot_v1_2's and mvt_v1_2_2's sets | the data-side mux as above (D169): every output each cycle, and every valid unchanged when the readies flip |
 | `AccPeripheralsSpec` | 1 to 3 groups, BUSY_COUNTER of 1, 2, 3 or 8 bits, starts and busy runs of 0 to 20 cycles as a control unit gives them | cleared by the accepted start, + 1 per busy cycle, saturating: E − a after a run |
 | `ShellScalarSpec` | axpy's shell at int32 and int64, k1 (and k2) from its CSRs: a random k per run written as `main.c` does, then START, random data | K1's offset and width (K1_LO and K1_HI at 64 bits); NumPy's `k1 * a + k2 * b` at the k last written |
 | `ShellBroadcastSpec` | a seeded Mac's shell, `b` a broadcast input (D186) from its reader (junk above its lane) or through its slicer: types, lanes 1 to 8, JOBS and JOB_BEATS, data, streamer gaps and stalls | every lane takes `b`'s one lane; job j's lane l is seed + Σ a·b at the output's type |

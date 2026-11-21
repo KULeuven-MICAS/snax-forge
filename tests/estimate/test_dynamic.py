@@ -26,10 +26,10 @@ def _static(graph, est):
 
 
 @pytest.mark.parametrize("name, params", [
-    ("dot_3", {"W": 8, "N": 2048}),  # a linked group, wired
-    ("dot_2", {"W": 8, "N": 2048}),  # a depth-1 buffer link: its producer's pushes
-    ("dot_5", {"W": 8, "N": 2048}),  # a serial sum of span 8: its firings times its span
-    ("vecmul", {"W": 8, "N": 2048}),  # one unit, a writer of 8 channels
+    ("dot_v3", {"W": 8, "N": 2048}),  # a linked group, wired
+    ("dot_v2", {"W": 8, "N": 2048}),  # a depth-1 buffer link: its producer's pushes
+    ("dot_v5", {"W": 8, "N": 2048}),  # a serial sum of span 8: its firings times its span
+    ("vecmul_v1", {"W": 8, "N": 2048}),  # one unit, a writer of 8 channels
 ])  # fmt: skip
 def test_the_graphs_counts_give_the_static_estimate(name, params):
     graph = steps(name, **params)[-1]
@@ -40,10 +40,10 @@ def test_the_graphs_counts_give_the_static_estimate(name, params):
 
 
 def test_a_packed_outputs_packer_pushes_its_owners_pushes(tmp_path):
-    """matvec_3 at i8, W = 8: the sum's int32 results packed 2 to a word."""
+    """matvec_v3 at i8, W = 8: the sum's int32 results packed 2 to a word."""
     from tests.gen.helpers import designed
 
-    point = DesignPoint.load(tmp_path / designed(tmp_path, "matvec_3", "m3", ["types=i8", "W=8"]))
+    point = DesignPoint.load(tmp_path / designed(tmp_path, "matvec_v3", "m3", ["types=i8", "W=8"]))
     est = estimate(point.graph, point.platform)
     p, c = _static(point.graph, est)
     assert p.links["sum.out"][0] == "sum" and c.units["sum"][1] == 16
@@ -52,11 +52,11 @@ def test_a_packed_outputs_packer_pushes_its_owners_pushes(tmp_path):
 
 
 def test_a_sliced_inputs_slicer_pops_its_units_firings(tmp_path):
-    """vecadd_i32 at W = 1: each slicer pops on the unit's 64 firings; with the graph's counts the
+    """vecadd_v1_1 at W = 1: each slicer pops on the unit's 64 firings; with the graph's counts the
     static estimate, and 10 more busy cycles add the control unit's clock only."""
     from tests.gen.helpers import designed
 
-    point = DesignPoint.load(tmp_path / designed(tmp_path, "vecadd_i32", "v", ["W=1"]))
+    point = DesignPoint.load(tmp_path / designed(tmp_path, "vecadd_v1_1", "v", ["W=1"]))
     est = estimate(point.graph, point.platform)
     p, c = _static(point.graph, est)
     assert set(p.slicers) == {"acc.a", "acc.b"} and set(p.links) == {"acc.out"}
@@ -102,8 +102,8 @@ def test_dot_3_at_w8_counts_and_a_refusal_at_a_grants_price():
     """dot 3 at W = 8, N = 2048: 4097 words through the crossbar, 4096 read at a read-only input's
     price and 1 written at a write-only one's (D178); 100 refused requests on reader A's lanes add
     100 read-only accesses and 100 / 8 of A's beats, and no bank access."""
-    graph = steps("dot_3", W=8, N=2048)[-1]
-    est = estimated("dot_3", W=8, N=2048)
+    graph = steps("dot_v3", W=8, N=2048)[-1]
+    est = estimated("dot_v3", W=8, N=2048)
     p, c = _static(graph, est)
     base = price(p, c)
     assert (base.requests, base.reads, base.writes, base.cycles) == (4097, 4096, 1, 257)
@@ -122,16 +122,16 @@ def test_dot_3_at_w8_counts_and_a_refusal_at_a_grants_price():
 
 
 def test_a_count_with_no_price_is_refused():
-    graph = steps("vecmul", W=8, N=2048)[-1]
-    p, c = _static(graph, estimated("vecmul", W=8, N=2048))
+    graph = steps("vecmul_v1", W=8, N=2048)[-1]
+    p, c = _static(graph, estimated("vecmul_v1", W=8, N=2048))
     c.units["ghost"] = (1, 1)
     with pytest.raises(ValueError, match="ghost"):
         price(p, c)
 
 
 def test_prices_counts_and_energies_round_trip():
-    graph = steps("dot_3", W=8, N=2048)[-1]
-    p, c = _static(graph, estimated("dot_3", W=8, N=2048))
+    graph = steps("dot_v3", W=8, N=2048)[-1]
+    p, c = _static(graph, estimated("dot_v3", W=8, N=2048))
     e = price(p, c)
     assert Prices.from_dict(p.to_dict()) == p
     assert Counts.from_dict(c.to_dict()) == c
@@ -139,6 +139,6 @@ def test_prices_counts_and_energies_round_trip():
 
 
 def test_an_estimate_without_a_platform_has_no_prices():
-    graph = steps("vecmul", W=8, N=2048)[-1]
+    graph = steps("vecmul_v1", W=8, N=2048)[-1]
     with pytest.raises(ValueError, match="not costed"):
         prices_of(graph, estimate(graph), [])

@@ -299,7 +299,8 @@ class Session:
                 base = replace(self.recipe, params={**self.recipe.params, **added})
             except SandboxError as e:
                 return _refused("session.param", str(e))
-            trial = replace(base, steps=[*self.recipe.steps[:k], step])
+            # a new step: no longer what the recipe's id and description say (D188)
+            trial = replace(base, steps=[*self.recipe.steps[:k], step], id=None, description=None)
             start = time.perf_counter()
             try:
                 name, values = step_params(trial, k)
@@ -429,7 +430,7 @@ class Session:
                                 f"report {len(problems)} problem(s)", problems=listed)  # fmt: skip
             steps = self.recipe.steps[: self.cursor]
             keep = used_params(self.recipe.params, steps, self.recipe.symbols, self.own_params)
-            recipe = replace(self.recipe, name=name, steps=steps,
+            recipe = replace(self.recipe, name=name, steps=steps, id=None, description=None,
                              params={k: v for k, v in self.recipe.params.items() if k in keep})  # fmt: skip
             path.parent.mkdir(parents=True, exist_ok=True)
             recipe.save(path)
@@ -1023,7 +1024,7 @@ def _lift_fields(g: Graph, filled: dict[str, Any]) -> list[dict[str, Any]]:
 def _apply_fields(g: Graph, filled: dict[str, Any], params: dict[str, Any]) -> list[dict[str, Any]]:
     """``apply_recipe``'s form on a lifted block: ``block`` (the selection's), ``recipe`` a
     choice of the recipes of its kernel, each with its ``params`` that no kernel symbol names
-    (dot_3's ``{"W": 4}``, which the page swaps in when the choice changes), and an int field
+    (dot_v3's ``{"W": 4}``, which the page swaps in when the choice changes), and an int field
     ``params.<P>`` per param of the first, a param of the session's own (``W``, or ``W_2`` when
     the session has W), its value the recipe's. Each choice also gives the block's node ids
     and its name (``nodes``, for the page to light) and what the recipe makes (``hint``,

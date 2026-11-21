@@ -1,4 +1,4 @@
-"""data_transpose's copy in LOWER: mvt_4_i64_dma_AT at 64 × 64 on snax_forge, its
+"""data_transpose's copy in LOWER: mvt_v4_1 at 64 × 64 on snax_forge, its
 transpose_A_T one L1-to-L1 burst per element where half 2's loads are, contiguous and
 ``padded_rows`` at int64 and contiguous at int8; half 2's reader of A_T waits on it through the
 DMA wait (c.py's ``dma_wait``); and the task list under ``sequential``. Every recipe is imported
@@ -22,7 +22,7 @@ from .test_c import INCLUDES, POINT, functions, parts
 
 pytestmark = pytest.mark.slow
 
-NAME = "mvt_4_i64_dma_AT"
+NAME = "mvt_v4_1"
 PADDED = (("passes.layout", "padded_rows"),)
 
 

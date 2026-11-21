@@ -208,6 +208,8 @@ def step_view(e: Entry, label: str, platform: Any = None, marks: dict[str, list[
     out["bindings_section"] = bindings_section(e.graph, recipe, editable)
     if recipe is not None:  # the recipe's param names in the boxes and Details
         _name_params(out, e.graph, recipe)
+        if recipe.id is not None:  # what the recipe builds (D188)
+            out["recipe_id"], out["recipe_description"] = recipe.id, recipe.description
     if marks is None:
         from snax_forge.sandbox.session import marks_of
 
@@ -363,7 +365,7 @@ def bindings_section(g: Graph, recipe: Any = None, editable: bool = False) -> di
         split   a split whose map is not bound yet: its factor's params (``not bound``)
         link    a link whose depth a step gives as a param
         recipe  an ``apply_recipe`` step whose ``params`` name the session's params
-                (``matvec_seed_column_form on matvec_acc_1 · W_x1 = 8``)
+                (``matvec_acc_v4 on matvec_acc_1 · W_x1 = 8``)
 
     Each param ``{name, value, editable, shared_with}``: an input in edit mode
     (``POST /api/params``), ``shared_with`` the other entries naming it (dot 2–6's ``W``, the
@@ -1587,7 +1589,7 @@ def _held(top: Node) -> list[str]:
 
 
 def block_text(rec: dict[str, Any]) -> str:
-    """A block's text: ``dot · dot/dot_3 · W = 4``, a lifted one ``dot · dot · no recipe``, one
+    """A block's text: ``dot · dot/dot_v3 · W = 4``, a lifted one ``dot · dot · no recipe``, one
     named by hand ``half1 · by hand``."""
     if rec.get("kernel") is None:
         return f"{rec['name']} · by hand"

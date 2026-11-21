@@ -45,7 +45,7 @@ def same(g: Graph, n: int = 8) -> None:
 
 
 def fused(n: int = 8) -> Graph:
-    """dot after split_map, split_reduce and fuse_map at W = 4 (dot_4's first steps)."""
+    """dot after split_map, split_reduce and fuse_map at W = 4 (dot_v4's first steps)."""
     g = split_reduce(split_map(dot(n), "mult_map", 4), "sum_map", 4)
     return fuse_map(g, "mult_map", "sum_map")
 
@@ -115,7 +115,9 @@ def test_a_local_value_may_not_also_be_a_live_container():
         Graph.from_dict(d)
 
 
-@pytest.mark.parametrize("name", ["dot_4", "dot_5", "dot_6", "matvec_4", "matvec_5", "matvec_6"])
+@pytest.mark.parametrize(
+    "name", ["dot_v4", "dot_v5", "dot_v6", "matvec_v4", "matvec_v5", "matvec_v6"]
+)
 def test_unbind_then_unfuse_map_gives_the_graph_before_fuse_map(name):
     """On each recipe that fuses: after the fused nest's bind no container is unreferenced, and
     unbind then unfuse_map give the graphs before the bind and before fuse_map exactly."""
@@ -337,14 +339,14 @@ def test_different_ranges_name_the_split_that_fixes_them():
 
 
 def test_fuse_map_names_lanes_on_two_dimensions():
-    """matvec with the multiply's lanes on m (matvec_column_form's first steps) and the fold's on
+    """matvec with the multiply's lanes on m (matvec_v7's first steps) and the fold's on
     n (the row form's): fuse_map names the dimension each puts its lanes on, and the fix."""
     import json
 
     from snax_forge.sandbox import Recipe, apply_recipe
     from tests.helpers import imported, recipe_path
 
-    d = json.loads(recipe_path("matvec_column_form").read_text())
+    d = json.loads(recipe_path("matvec_v7").read_text())
     d["steps"] = d["steps"][:3] + [
         {"transform": "tag_map", "params": {"map": "sum_map", "kind": "temporal"}},
         {"transform": "split_map", "params": {"map": "sum_map_1", "factor": "W"}},

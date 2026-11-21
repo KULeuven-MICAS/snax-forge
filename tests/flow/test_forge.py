@@ -26,7 +26,7 @@ from tests.helpers import recipe_path
 
 from .helpers import PLAINS, stub
 
-RECIPE = recipe_path("vecadd")
+RECIPE = recipe_path("vecadd_v1")
 
 
 @pytest.fixture
@@ -67,22 +67,22 @@ def forged(tmp_path, monkeypatch):
 
 def test_forge_prints_each_step_and_snax_clusters_commands(tmp_path, forged, capsys):
     assert forge_mod.main([str(RECIPE)]) == 0
-    sw = tmp_path / "forge" / "vecadd" / "sw"
+    sw = tmp_path / "forge" / "vecadd_v1" / "sw"
     assert (sw / "obs_marks.json").read_bytes() == (
-        tmp_path / "bundle" / "vecadd" / "obs_marks.json"
+        tmp_path / "bundle" / "vecadd_v1" / "obs_marks.json"
     ).read_bytes()  # the quiet build's legend beside its ELF
     out = capsys.readouterr().out.splitlines()
-    flow, bundle = tmp_path / "flow" / "vecadd", tmp_path / "bundle" / "vecadd"
-    forge = tmp_path / "forge" / "vecadd"
+    flow, bundle = tmp_path / "flow" / "vecadd_v1", tmp_path / "bundle" / "vecadd_v1"
+    forge = tmp_path / "forge" / "vecadd_v1"
     platform = REPO / "platforms" / "snax_forge.json"
     sha = json.loads((flow / "run" / "run.json").read_text())["elf_sha256"]
     assert out == [
         (
-            f"forge vecadd: recipes/elementwise/vecadd.json on platforms/snax_forge.json; every step's output "
+            f"forge vecadd_v1: recipes/elementwise/vecadd_v1.json on platforms/snax_forge.json; every step's output "
             f"in {forge / 'forge.log'}"
         ),
         f"  flow      passed: design point {flow / 'design' / 'design_point.json'}, run {flow}/run/",
-        f"  bundle    {bundle}/: snax_forge_vecadd_shell_wrapper, snax-forge {COMMIT[:12]}",
+        f"  bundle    {bundle}/: snax_forge_vecadd_v1_shell_wrapper, snax-forge {COMMIT[:12]}",
         f"  expected  {bundle / 'forge_expected.txt'}: the run's counter and data lines, each counter's fill",
         (
             f"  sw        {forge / 'sw' / 'forge.elf'} from the bundle (sha256 {sha[:16]}, the "
@@ -112,10 +112,10 @@ def test_forge_prints_each_step_and_snax_clusters_commands(tmp_path, forged, cap
     assert lines[1].startswith("  build     building SNAX-GVSoC: ")  # the live build's lines too
     assert lines[2:4] == [
         "make build",
-        f"flow vecadd (vecadd: W=4, N=64; N=64) on snax_forge -> {flow}/",
+        f"flow vecadd_v1 (vecadd_v1: W=4, N=64; N=64) on snax_forge -> {flow}/",
     ]
     assert f"== bundle: {flow / 'design' / 'design_point.json'} --out {bundle}\n" in log
-    assert f"bundle {bundle}: snax_forge_vecadd_shell_wrapper from " in log
+    assert f"bundle {bundle}: snax_forge_vecadd_v1_shell_wrapper from " in log
     assert f"wrote {bundle / 'bundle.json'}\n" in log
     assert (
         log.endswith("make sw\n") and not (forge / "sw.log").exists()
@@ -126,15 +126,15 @@ def test_forge_prints_each_step_and_snax_clusters_commands(tmp_path, forged, cap
     )
     assert json.loads((bundle / "bundle.json").read_text())["expected"] == "forge_expected.txt"
     sw = forged.calls[-1][1]
-    assert sw == {"APPS": "forge", "FORGE": str(bundle), "DESIGN": "vecadd",
+    assert sw == {"APPS": "forge", "FORGE": str(bundle), "DESIGN": "vecadd_v1",
                   "FORGE_BUILD": str(forge / "sw")}  # fmt: skip
 
 
 def test_the_sets_and_the_trace_reach_the_flow_and_name_the_folders(tmp_path, forged, capsys):
     assert forge_mod.main([str(RECIPE), "--set", "N=128", "--trace", "task"]) == 0
-    assert (tmp_path / "flow" / "vecadd_N128_task" / "run" / "trace.jsonl").is_file()
-    assert (tmp_path / "bundle" / "vecadd_N128_task" / "bundle.json").is_file()
-    log = (tmp_path / "forge" / "vecadd_N128_task" / "forge.log").read_text()
+    assert (tmp_path / "flow" / "vecadd_v1_N128_task" / "run" / "trace.jsonl").is_file()
+    assert (tmp_path / "bundle" / "vecadd_v1_N128_task" / "bundle.json").is_file()
+    log = (tmp_path / "forge" / "vecadd_v1_N128_task" / "forge.log").read_text()
     assert log.splitlines()[0].endswith(" --set N=128 --trace task")
 
 
@@ -147,10 +147,10 @@ def test_a_failing_step_is_named_with_its_logs_tail(tmp_path, forged, capsys, fa
         forged.elf = b"another ELF"
     assert forge_mod.main([str(RECIPE)]) == 1
     captured = capsys.readouterr()
-    log_path = tmp_path / "forge" / "vecadd" / "forge.log"
+    log_path = tmp_path / "forge" / "vecadd_v1" / "forge.log"
     err = captured.err.splitlines()
     tail = log_path.read_text().splitlines()[-30:]
-    assert err[0].startswith(f"forge vecadd FAILED at {failing}")
+    assert err[0].startswith(f"forge vecadd_v1 FAILED at {failing}")
     assert err[0].endswith(f"; the last {len(tail)} lines of {log_path}:")
     assert err[1:] == tail
     if failing == "flow":

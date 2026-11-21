@@ -17,7 +17,7 @@ from .helpers import estimated
 def test_a_link_takes_tmp0_out_of_l1():
     """dot 1 against dot 2 at N = 512, W = 4: tmp0 written and read again through L1 against a
     link; A, B and tmp0 are 512 int64 each, out one, none padded."""
-    one, two = estimated("dot_1", N=512, W=4), estimated("dot_2", N=512, W=4)
+    one, two = estimated("dot_v1", N=512, W=4), estimated("dot_v2", N=512, W=4)
     traffic = [(sum(c.reads for c in e.containers.values()),
                 sum(c.writes for c in e.containers.values())) for e in (one, two)]  # fmt: skip
     assert traffic == [(1536, 513), (1024, 1)]
@@ -85,7 +85,7 @@ def test_unmapped_work_counts_as_cycles():
 def test_the_totals_round_trip_and_stay_out_of_the_counter():
     """The two new fields round-trip, and a group's expected BUSY_COUNTER is its cycles plus the
     fill alone: dot 4 at N = 512 binds everything, dot 1 one group of two runs."""
-    for name in ("dot_1", "dot_4"):
+    for name in ("dot_v1", "dot_v4"):
         e = estimated(name)
         back = Estimate.from_dict(e.to_dict())
         assert (back.unmapped_cycles, back.total_cycles) == (e.unmapped_cycles, e.total_cycles)
@@ -96,14 +96,14 @@ def test_the_totals_round_trip_and_stay_out_of_the_counter():
 
 @pytest.mark.slow
 def test_a_tail_uses_part_of_its_lanes():
-    e = estimate(steps("vecadd_n7")[-1])
+    e = estimate(steps("vecadd_v1_3")[-1])
     assert e.l1_size is None
     ((name, s),) = e.splits.items()
     assert (name, s.n, s.w, s.lane_use) == ("add_map", 7, 4, 7 / 8)
 
 
 @pytest.mark.slow
-@pytest.mark.parametrize("name", ["dot_1", "dot_4", "vecadd_n7"])
+@pytest.mark.parametrize("name", ["dot_v1", "dot_v4", "vecadd_v1_3"])
 def test_the_estimate_round_trips(name):
     e = estimated(name)
     assert Estimate.from_dict(e.to_dict()).to_dict() == e.to_dict()
@@ -116,13 +116,13 @@ def test_the_bank_bound_of_vecmul():
     words take at least 192 cycles of L1 time against the ideal 128, a bound on the streams, not
     on the BUSY_COUNTER (the run's is 194), a note; at
     W = 8 the same 192 is below the ideal 256, no note. Without a platform, no bound."""
-    (sixteen,) = estimated("vecmul", N=2048, W=16).groups
+    (sixteen,) = estimated("vecmul_v1", N=2048, W=16).groups
     assert (sixteen.cycles, sixteen.bank_bound, sixteen.counter) == (128, 192, 131)
     assert sixteen.bank_bound_note == ("acc: the streams move 6144 words over 32 banks, at "
                                        "least 192 cycles of L1 time against the ideal 128")  # fmt: skip
-    (eight,) = estimated("vecmul", N=2048, W=8).groups
+    (eight,) = estimated("vecmul_v1", N=2048, W=8).groups
     assert (eight.cycles, eight.bank_bound, eight.bank_bound_note) == (256, 192, None)
-    (alone,) = estimate(steps("vecmul", N=2048, W=16)[-1]).groups
+    (alone,) = estimate(steps("vecmul_v1", N=2048, W=16)[-1]).groups
     assert (alone.bank_bound, alone.bank_bound_note) == (None, None)
 
 
@@ -130,12 +130,12 @@ def test_the_bank_bound_of_vecmul():
 def test_the_bank_bound_of_dot_1_per_group():
     """dot 1 at N = 2048, W = 8: vmul's 3 ports of 256 beats x 8 channels, 6144 words, 192
     banked cycles under its 256; the sum's in (256 x 8) and out (1 word), 2049 words, 65."""
-    mul, total = estimated("dot_1", N=2048, W=8).groups
+    mul, total = estimated("dot_v1", N=2048, W=8).groups
     assert [(g.name, g.cycles, g.bank_bound) for g in (mul, total)] == [
         ("vmul", 256, 192), ("vsum", 257, 65)]  # fmt: skip
     assert mul.bank_bound_note is None and total.bank_bound_note is None
     # at W = 16 the mul's streams, its own only, need L1 time over its 128 cycles
-    mul, total = estimated("dot_1", N=2048, W=16).groups
+    mul, total = estimated("dot_v1", N=2048, W=16).groups
     assert mul.bank_bound_note == ("vmul: the streams move 6144 words over 32 banks, at least 192 "
                                    "cycles of L1 time against the ideal 128")  # fmt: skip
     assert (total.bank_bound, total.bank_bound_note) == (65, None)

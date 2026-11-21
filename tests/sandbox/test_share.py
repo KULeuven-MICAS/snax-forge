@@ -1,5 +1,5 @@
 """One instance shared by several nodes: mvt's variant 1, both halves on one vmul, vsum
-and vadd (recipes/mvt/mvt_1.json, at its M = N = 64), the sessions at M = 8, N = 16. bind's form
+and vadd (recipes/mvt/mvt_v1.json, at its M = N = 64), the sessions at M = 8, N = 16. bind's form
 offers the instances a node
 can join (session.py's ``share_choices``), and a joining split's editor-named W takes the
 instance's param."""
@@ -67,7 +67,7 @@ def test_a_joining_split_takes_the_instances_param():
 
 @pytest.mark.slow
 def test_mvt_1_runs_both_halves_on_three_accelerators():
-    g = steps("mvt_1")[-1]
+    g = steps("mvt_v1")[-1]
     by: dict[str, list[str]] = {}
     for n, _ in g.walk():
         if n.kind == "accelerated":
@@ -149,7 +149,7 @@ def test_share_refuses_another_shape_naming_it():
 def test_mvt_1_dot2_is_one_dot_group_run_twice():
     from tests.estimate.helpers import estimated
 
-    e = estimated("mvt_1_dot2")
+    e = estimated("mvt_v1_2")
     assert [(g.name, g.cycles) for g in e.groups] == [("mvt", 2052), ("vadd", 32)]
-    two = estimated("mvt_2")
+    two = estimated("mvt_v2")
     assert e.accelerator_cycles == two.accelerator_cycles == 2084
