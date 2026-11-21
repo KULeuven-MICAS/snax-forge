@@ -10,13 +10,13 @@ Every quoted table is copied line for line from the report named above it.
 pixi run flow recipes/elementwise/vecadd_v1.json --platform platforms/snax_forge.json --set N=512 --trace stall
 ```
 
-`N=512` makes the vectors 512 elements long, so the accelerator's work is long enough to see against the cores' and the DMA's. The folder is `out/flow/vecadd_N512_stall/`. The run is traced at stall level so the schedule has its detail rows and `run.md` its stalls; the cycle counts are the same at every trace level.
+`N=512` makes the vectors 512 elements long, so the accelerator's work is long enough to see against the cores' and the DMA's. The folder is `out/flow/vecadd_v1_N512_stall/`. The run is traced at stall level so the schedule has its detail rows and `run.md` its stalls; the cycle counts are the same at every trace level.
 
 ## 2. Read the design report
 
-`out/flow/vecadd_N512_stall/report/design.md` says where the contiguous placement put the three vectors in L1: one after the other, each 16 bank rows long over all 32 banks.
+`out/flow/vecadd_v1_N512_stall/report/design.md` says where the contiguous placement put the three vectors in L1: one after the other, each 16 bank rows long over all 32 banks.
 
-<!-- excerpt: vecadd_N512_stall/report/design.md -->
+<!-- excerpt: vecadd_v1_N512_stall/report/design.md -->
 | Region | Base | End | Bytes | Share | Padding | Banks | Rows |
 |---|---:|---:|---:|---:|---|---|---|
 | A | 268435456 | 268439552 | 4096 | 3.1% | none | 0–31 | 0–15 |
@@ -25,16 +25,16 @@ pixi run flow recipes/elementwise/vecadd_v1.json --platform platforms/snax_forge
 
 Its notes spell out what that means for the accelerator's two readers:
 
-<!-- excerpt: vecadd_N512_stall/report/design.md -->
+<!-- excerpt: vecadd_v1_N512_stall/report/design.md -->
 - acc_a and acc_b: A and B lie 4096 B apart, a whole number of 256-byte bank rows, so A[i] and B[i] are in the same bank for every i.
 
 This is a fact about addresses only. Whether it costs cycles depends on when the two streamers ask, which only the run shows.
 
 ## 3. Read the run report
 
-`out/flow/vecadd_N512_stall/report/run.md`:
+`out/flow/vecadd_v1_N512_stall/report/run.md`:
 
-<!-- excerpt: vecadd_N512_stall/report/run.md -->
+<!-- excerpt: vecadd_v1_N512_stall/report/run.md -->
 |  |  |
 |---|---|
 | Window (main to forge_check, the program's mcycle) | 471 |
@@ -42,14 +42,14 @@ This is a fact about addresses only. Whether it costs cycles depends on when the
 | Data | 0 errors over 512 words |
 | Counters | add_acc 128 (expected 131, a guide) |
 
-<!-- excerpt: vecadd_N512_stall/report/run.md -->
+<!-- excerpt: vecadd_v1_N512_stall/report/run.md -->
 | Unit | Firings | Target II | Achieved II | Utilisation (window) | Task span | Utilisation (span) | Starved (stall_in) | Blocked (stall_out) | Flush |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | acc | 128 | 1 | 1.00 | 27.2% | 129 | 99.2% | 0 | 0 | 0 |
 
 The accelerator fires 128 times, one firing per 4-element beat, every cycle once it runs (achieved II 1.00): it is busy 128 of the 129 cycles of its task and never starved. Its streamers started 10 cycles before it (the task table below: the movers from 183, the accelerator from 193), the gap between the program's two start writes, so their FIFOs were full when it started. That head start is also why its counter reads 128 against the estimate's 131 (D155): the counter starts at the accelerator's START, after the streamers' fill. The streamers barely wait:
 
-<!-- excerpt: vecadd_N512_stall/report/run.md -->
+<!-- excerpt: vecadd_v1_N512_stall/report/run.md -->
 | Streamer | Held by the crossbar (cycles) | Waiting on its FIFO (cycles) | FIFO highest / depth |
 |---|---:|---:|---|
 | acc_a | 0 | 1 | 8 / 8 |
@@ -58,7 +58,7 @@ The accelerator fires 128 times, one firing per 4-element beat, every cycle once
 
 acc_b is held at its first request (cycle 185): both readers ask for elements 0–3, which lie in banks 0–3 for A and for B, as the design report warned, and the banks serve acc_a. From then on acc_b reads each beat one cycle after acc_a. They meet once more when the accelerator starts and the full FIFOs drain together, and acc_out's first write meets acc_b in the same banks a cycle later:
 
-<!-- excerpt: vecadd_N512_stall/report/run.md -->
+<!-- excerpt: vecadd_v1_N512_stall/report/run.md -->
 | Banks | Conflicts per bank |
 |---|---:|
 | 0–3 | 3 |
@@ -68,7 +68,7 @@ So the accelerator is not what makes the run 471 cycles long: it is busy for 27.
 ## 4. Read the schedule
 
 ```bash
-pixi run view out/flow/vecadd_N512_stall
+pixi run view out/flow/vecadd_v1_N512_stall
 ```
 
 The Schedule tab (`docs/TOOL.md` section 1 says how to open it on a server) shows one lane per core, the DMA, each mover and the accelerator over the window. The cluster has one core (D170), which starts the copies, configures the accelerator and waits for it. Three quiet stretches, where no task or copy is open, are folded:
@@ -79,7 +79,7 @@ The Schedule tab (`docs/TOOL.md` section 1 says how to open it on a server) show
 
 Between them, the run is serial. The task table of `run.md` gives the bars:
 
-<!-- excerpt: vecadd_N512_stall/report/run.md -->
+<!-- excerpt: vecadd_v1_N512_stall/report/run.md -->
 | Block | # | Task | Accelerator | Start | Done | Cycles | Direction | Bytes |
 |---|---:|---|---|---:|---:|---:|---|---:|
 | dma | 0 | load_A | – | 34 | 111 | 77 | L2 → L1 | 4096 |
@@ -95,12 +95,12 @@ Between them, the run is serial. The task table of `run.md` gives the bars:
 
 The DMA is busy 213 cycles of the window against the accelerator's 128:
 
-<!-- excerpt: vecadd_N512_stall/report/run.md -->
+<!-- excerpt: vecadd_v1_N512_stall/report/run.md -->
 | DMA | Transfers | Busy | Beats read | Beats written | Bytes L2 → L1 | Bytes L1 → L2 | Bytes L1 → L1 | Bytes per busy cycle |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
 | dma | 3 | 213 | 192 | 192 | 8192 | 4096 | 0 | 57.7 |
 
-<!-- excerpt: vecadd_N512_stall/report/run.md -->
+<!-- excerpt: vecadd_v1_N512_stall/report/run.md -->
 | Core | Run | Poll | Barrier | Sleep | CSR writes | CSR reads |
 |---|---:|---:|---:|---:|---:|---:|
 | core0 | 344 | 127 | 0 | 0 | 18 | 46 |
@@ -125,9 +125,9 @@ Not predicted: the window, and the counter. The counter (`Counters` in `run.md`)
 pixi run flow recipes/elementwise/vecadd_v1.json --platform platforms/snax_forge.json --set N=512 --set W=8 --trace stall
 ```
 
-The folder is `out/flow/vecadd_N512_W8_stall/`, next to the first one. `report/run.md`:
+The folder is `out/flow/vecadd_v1_N512_W8_stall/`, next to the first one. `report/run.md`:
 
-<!-- excerpt: vecadd_N512_W8_stall/report/run.md -->
+<!-- excerpt: vecadd_v1_N512_W8_stall/report/run.md -->
 |  |  |
 |---|---|
 | Window (main to forge_check, the program's mcycle) | 391 |
@@ -135,12 +135,12 @@ The folder is `out/flow/vecadd_N512_W8_stall/`, next to the first one. `report/r
 | Data | 0 errors over 512 words |
 | Counters | add_acc 67 (expected 67, a guide) |
 
-<!-- excerpt: vecadd_N512_W8_stall/report/run.md -->
+<!-- excerpt: vecadd_v1_N512_W8_stall/report/run.md -->
 | Unit | Firings | Target II | Achieved II | Utilisation (window) | Task span | Utilisation (span) | Starved (stall_in) | Blocked (stall_out) | Flush |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | acc | 64 | 1 | 1.00 | 16.4% | 68 | 94.1% | 3 | 0 | 0 |
 
-<!-- excerpt: vecadd_N512_W8_stall/report/run.md -->
+<!-- excerpt: vecadd_v1_N512_W8_stall/report/run.md -->
 | Block | # | Task | Accelerator | Start | Done | Cycles | Direction | Bytes |
 |---|---:|---|---|---:|---:|---:|---|---:|
 | dma | 0 | load_A | – | 34 | 111 | 77 | L2 → L1 | 4096 |
@@ -148,7 +148,7 @@ The folder is `out/flow/vecadd_N512_W8_stall/`, next to the first one. `report/r
 | acc | 0 | add_acc | acc | 183 | 251 | 68 | – | – |
 | dma | 2 | store_C | – | 277 | 348 | 71 | L1 → L2 | 4096 |
 
-<!-- excerpt: vecadd_N512_W8_stall/report/run.md -->
+<!-- excerpt: vecadd_v1_N512_W8_stall/report/run.md -->
 | DMA | Transfers | Busy | Beats read | Beats written | Bytes L2 → L1 | Bytes L1 → L2 | Bytes L1 → L1 | Bytes per busy cycle |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
 | dma | 3 | 213 | 192 | 192 | 8192 | 4096 | 0 | 57.7 |
@@ -168,7 +168,7 @@ The numbers here are SNAX-GVSoC's as printed when this page was last written (CO
 To flip between the two runs:
 
 ```bash
-pixi run view out/flow/vecadd_N512_stall out/flow/vecadd_N512_W8_stall
+pixi run view out/flow/vecadd_v1_N512_stall out/flow/vecadd_v1_N512_W8_stall
 ```
 
 ## What this does not show

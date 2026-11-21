@@ -30,12 +30,12 @@ pixi install && pixi run check
 ```bash
 pixi run flow recipes/elementwise/vecadd_v1.json --platform platforms/snax_forge.json   # recipe to a checked run (builds SNAX-GVSoC the first time)
 pixi run flow recipes/elementwise/vecadd_v1.json --platform platforms/snax_forge.json --trace task   # the same, traced
-pixi run view out/flow/vecadd_task                                                   # the run's report, schedule and cluster view
+pixi run view out/flow/vecadd_v1_task                                                   # the run's report, schedule and cluster view
 pixi run edit-dfg --recipe recipes/elementwise/vecadd_v1.json                           # change the recipe step by step
 pixi run forge recipes/elementwise/vecadd_v1.json                                       # the flow plus the bundle for snax_cluster's RTL
 ```
 
-The first flow ends with `check passed: 214 cycles (main to forge_check); data 0 errors (64 words); counters add_acc 19 (16 beats)` and leaves everything in `out/flow/vecadd/`.
+The first flow ends with `check passed: 214 cycles (main to forge_check); data 0 errors (64 words); counters add_acc 19 (16 beats)` and leaves everything in `out/flow/vecadd_v1/`.
 
 ## Read next
 

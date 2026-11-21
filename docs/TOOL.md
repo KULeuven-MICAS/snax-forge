@@ -68,7 +68,7 @@ Example: vecadd's add bound to `simd` at W = 4.
 pixi run flow recipes/elementwise/vecadd_v1.json --platform platforms/snax_forge.json
 ```
 
-    flow vecadd (vecadd: W=4, N=64; N=64) on snax_forge -> out/flow/vecadd/
+    flow vecadd_v1 (vecadd_v1: W=4, N=64; N=64) on snax_forge -> out/flow/vecadd_v1/
       sandbox   2 steps, each equal to the input graph on the reference check -> sandbox/
       design    24 checks passed; platform base snax_forge, 0 changes; memory contiguous, 0 changes -> design/
       lower     tasks.json (12 steps)
@@ -86,13 +86,13 @@ It exits 0, as the program does. The `check` line reads:
 - `data 0 errors (64 words)`: every output word against its golden value in `data.h`.
 - `add_acc 19 (16 beats)`: the group's BUSY_COUNTER for the task `add_acc`, beside its beats.
 
-What the run leaves in `out/flow/vecadd/`:
+What the run leaves in `out/flow/vecadd_v1/`:
 
 - `flow.log` (these lines, the checks that ran, each stage's time), the build and program logs, `tasks.json`, and the folders `sandbox/`, `design/`, `gen/`, `sw/`, `run/` and `report/`.
 - `run/stdout.txt`: the program's own lines, `forge cycles: 214`, `forge data: 0 errors (64 words)`, `forge counter add_acc: 19`, `forge errors: 0`.
 - `run/run.json`: what ran (the ELF's sha256, where the linker put each L2 container, the submodule's commit).
 - `run/profile.json`: what was measured (CONTRACTS, "Profile and trace"), for example `"acc": {"cycles": {"busy": 16, "stall_in": 3, "stall_out": 0, "flush": 0, "idle": 195}, "firings": 16, ...}`.
-- The folder is named after the recipe with each `--set` appended: `--set W=8` gives `out/flow/vecadd_W8/`, and a param whose name ends in a digit gets a `-` before its value (`--set W_acc_1=10` gives `..._W_acc_1-10`).
+- The folder is named after the recipe with each `--set` appended: `--set W=8` gives `out/flow/vecadd_v1_W8/`, and a param whose name ends in a digit gets a `-` before its value (`--set W_acc_1=10` gives `..._W_acc_1-10`).
 
 Nothing is compiled per design point: SNAX-GVSoC's `snax_hjson` target reads the cluster file in `gen/` when it starts. A later flow prints `build up to date` until the submodule's commit changes or its tree is dirty. A passing run gzips `run/events.log` and deletes `run/work/`.
 
@@ -122,7 +122,7 @@ From `beat` on, the traced sources are the accelerator, its movers and the DMA u
 
 ```bash
 pixi run flow recipes/elementwise/vecadd_v1.json --platform platforms/snax_forge.json --trace stall
-grep -m1 '"k": "stall"' out/flow/vecadd_stall/run/trace.jsonl
+grep -m1 '"k": "stall"' out/flow/vecadd_v1_stall/run/trace.jsonl
 ```
 
     ...
@@ -175,15 +175,15 @@ Example: vecadd by hand, then its program and run with `gvsoc/Makefile` (section
 
 ```bash
 pixi run sandbox recipes/elementwise/vecadd_v1.json
-pixi run design out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/snax_forge.json
-pixi run gen-gvsoc out/design/vecadd/design_point.json
-make -C gvsoc sw APPS=forge FORGE=../out/gvsoc/vecadd DESIGN=vecadd
-make -C gvsoc run TARGET=snax_hjson DESIGN=vecadd \
-    GVRUN_ARGS="--param hjson=$PWD/out/gvsoc/vecadd/snax_forge.hjson" \
+pixi run design out/sandbox/vecadd_v1/2_bind.snaxdfg --platform platforms/snax_forge.json
+pixi run gen-gvsoc out/design/vecadd_v1/design_point.json
+make -C gvsoc sw APPS=forge FORGE=../out/gvsoc/vecadd_v1 DESIGN=vecadd_v1
+make -C gvsoc run TARGET=snax_hjson DESIGN=vecadd_v1 \
+    GVRUN_ARGS="--param hjson=$PWD/out/gvsoc/vecadd_v1/snax_forge.hjson" \
     ELF=../out/snax-gvsoc/sw/vecadd/forge.elf
 ```
 
-- `pixi run sandbox recipes/elementwise/vecadd_v1_4.json --graph out/sandbox/vecadd/2_bind.snaxdfg --out out/sandbox/vecadd_v1_4` undoes a recipe: the graph comes back as imported.
+- `pixi run sandbox recipes/elementwise/vecadd_v1_4.json --graph out/sandbox/vecadd_v1/2_bind.snaxdfg --out out/sandbox/vecadd_v1_4` undoes a recipe: the graph comes back as imported.
 - `GVRUN_ARGS` takes gvrun's own options too, such as `--trace=snax_acc0/unit`.
 
 The RTL commands need sbt; the flow calls none of them:
@@ -213,7 +213,7 @@ Three read-only viewers and the reports. Each viewer serves on 127.0.0.1 until C
 | `pixi run view-dfg FILE\|DIR ... --platform P` | `.snaxdfg` steps, one at a time, or two side by side with Compare | 8766 |
 | `pixi run report RUN` | nothing served; writes the run's `report/design.md` and `report/run.md` again | |
 
-**`view`**, on a run traced at `task` or above (`pixi run view out/flow/vecadd_stall`):
+**`view`**, on a run traced at `task` or above (`pixi run view out/flow/vecadd_v1_stall`):
 
 - The Schedule tab draws the window as lanes: each core, the DMA, then per accelerator ▸ group its movers and its unit. Quiet stretches of 16 cycles or more are folded.
 - A mover's task that moves nothing, started only because a shared streamer starts all its movers at once (`dot_v1_1`'s `vsum_a` during the vmul's task), is a dashed bar, `idle (shared start)`.
@@ -300,7 +300,7 @@ pixi run forge-set quick
       ...
       axpy             passed
     wrote out/forge-set/quick.md; from snax_cluster's target/snitch_cluster:
-      make snax-forge-check BUNDLES="$ROOT/snax-forge/out/bundle/vecadd_v1_1 ... $ROOT/snax-forge/out/bundle/axpy" SIM=vsim SNAX_CLUSTER_IMAGE=<image>
+      make snax-forge-check BUNDLES="$ROOT/snax-forge/out/bundle/vecadd_v1_1 ... $ROOT/snax-forge/out/bundle/axpy_v1" SIM=vsim SNAX_CLUSTER_IMAGE=<image>
 
 Run that line from snax_cluster's `target/snitch_cluster`, outside the image:
 
@@ -356,8 +356,8 @@ make -C target/snitch_cluster snax-forge-run SIM=vsim CFG_OVERRIDE=$B ELF=$E
 
 ```bash
 pixi run sandbox recipes/elementwise/vecadd_v1.json
-pixi run design out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/snax_forge.json
-pixi run gen-gvsoc out/design/vecadd/design_point.json --out ../snax-gvsoc/forge/vecadd
+pixi run design out/sandbox/vecadd_v1/2_bind.snaxdfg --platform platforms/snax_forge.json
+pixi run gen-gvsoc out/design/vecadd_v1/design_point.json --out ../snax-gvsoc/forge/vecadd_v1
 ```
 
 Commit the folder in snax-gvsoc as written, then bump the submodule here so the test compares against it.

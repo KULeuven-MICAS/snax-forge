@@ -717,7 +717,7 @@ def test_matadd_the_first_2d_bind_on_snax_gvsoc(tmp_path):
 
 @pytest.mark.gvsoc
 @needs_gvsoc
-@pytest.mark.parametrize("design, beats", [("rowsum", 128), ("rowsum_v3", 64)])
+@pytest.mark.parametrize("design, beats", [("rowsum_v1", 128), ("rowsum_v3", 64)])
 def test_rowsum_restarts_every_row_on_snax_gvsoc(tmp_path, design, beats):
     """rowsum: one sum per row, T = N / W = 16 beats each, so the accumulator
     restarts M times in one run; A's reader has two temporal loops, y's writer one."""

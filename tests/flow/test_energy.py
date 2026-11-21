@@ -31,7 +31,10 @@ MARKS = [{"mark": 1, "kind": "acc_config", "label": "acc config acc"},
          {"mark": 2, "kind": "run", "label": "run acc"},
          {"mark": 3, "kind": "dma_out", "label": "dma store_out"}]  # fmt: skip
 MOVERS = ("acc_a", "acc_b", "acc_out")
-REAL = {"vecadd": {}, "dot_v3": {"N": 2048, "W": 8}}  # the recipes run on SNAX-GVSoC, their --set
+REAL = {
+    "vecadd_v1": {},
+    "dot_v3": {"N": 2048, "W": 8},
+}  # the recipes run on SNAX-GVSoC, their --set
 
 
 def totals(grants: int, stalls: int, firings: int, busy: int) -> dict:
