@@ -49,11 +49,11 @@ from tests.helpers import recipe_path
 from tests.run.helpers import point_symbols
 
 from . import helpers
-from .helpers import COMMIT, PLAIN, PLAINS, built, golden, main, needs_gvsoc, sound, stub
+from .helpers import COMMIT, PLAIN, built, golden, main, needs_gvsoc, plain, sound, stub
 
 
-def flow(tmp_path, design="vecadd", **kw):
-    kw.setdefault("graph_path", PLAINS[design])
+def flow(tmp_path, design="vecadd_v1", **kw):
+    kw.setdefault("graph_path", plain(design))
     return run_flow(recipe_path(design), SNAX_FORGE, out=tmp_path / "flow", **kw)
 
 
@@ -62,7 +62,7 @@ def flow(tmp_path, design="vecadd", **kw):
 # =============================================================================
 
 
-@pytest.mark.parametrize("design", ["vecadd", "vsum"])
+@pytest.mark.parametrize("design", ["vecadd_v1", "vsum_v1"])
 def test_up_to_gen_then_the_stubbed_run(tmp_path, monkeypatch, design):
     fake = stub(monkeypatch, tmp_path)
     f = flow(tmp_path, design)
@@ -80,7 +80,7 @@ def test_up_to_gen_then_the_stubbed_run(tmp_path, monkeypatch, design):
     assert "FORGE_MARK" not in main_c and "forge_main" not in main_c
     assert "static __attribute__((noinline)) int forge_check(uint32_t t0) {" in main_c
     # data.h's goldens are the kernel's reference on its make_inputs (seed 0)
-    spec = load_kernel(design)
+    spec = load_kernel(design.removesuffix("_v1"))
     inputs = spec.make_inputs(np.random.default_rng(0), n=64)
     spec.reference(**inputs)
     data_h = (out / "gen" / "data.h").read_text()
@@ -106,8 +106,8 @@ def test_the_generated_folder_names_the_design_point_from_the_flows_folder(tmp_p
     """gen/ is byte-identical wherever the flow's folder is: its files name the design point
     as design/design_point.json."""
     stub(monkeypatch, tmp_path)
-    a = run_flow(recipe_path("vecadd"), SNAX_FORGE, graph_path=PLAIN, out=tmp_path / "a" / "x")
-    b = run_flow(recipe_path("vecadd"), SNAX_FORGE, graph_path=PLAIN, out=tmp_path / "b" / "y")
+    a = run_flow(recipe_path("vecadd_v1"), SNAX_FORGE, graph_path=PLAIN, out=tmp_path / "a" / "x")
+    b = run_flow(recipe_path("vecadd_v1"), SNAX_FORGE, graph_path=PLAIN, out=tmp_path / "b" / "y")
     assert a.manifest.design_point == b.manifest.design_point == "design/design_point.json"
     for f in a.manifest.files:
         assert (a.out / "gen" / f).read_bytes() == (b.out / "gen" / f).read_bytes(), f
@@ -122,7 +122,7 @@ def test_run_json_records_what_ran(tmp_path, monkeypatch):
         "design_point": "design/design_point.json",
         "hjson": [
             "gen/snax_forge.hjson",
-            "gen/snax_forge_vecadd_streamer_acc.hjson",
+            "gen/snax_forge_vecadd_v1_streamer_acc.hjson",
             "gen/accelerator.json",
         ],
         "elf": "sw/forge.elf",
@@ -226,7 +226,9 @@ def test_a_make_failure_names_its_log_and_tail(tmp_path, monkeypatch, capsys, st
     msg = str(e.value)
     assert msg.startswith(f"{stage}: make {stage} failed (exit 2); its output is in ")
     assert msg.endswith(f"{stage}.log:\nmake {stage}\ncc: error: no such file")
-    assert (tmp_path / "flow" / "flow.log").read_text().startswith(f"flow vecadd FAILED\n{stage}: ")
+    assert (
+        (tmp_path / "flow" / "flow.log").read_text().startswith(f"flow vecadd_v1 FAILED\n{stage}: ")
+    )
     if stage == "build":
         assert capsys.readouterr().out.splitlines()[1:] == ["make build", "cc: error: no such file"]
 
@@ -452,9 +454,9 @@ def test_a_design_problem_stops_the_flow_before_gen(tmp_path, monkeypatch):
 def test_a_platform_without_a_source_stops_at_gen(tmp_path, monkeypatch):
     fake = stub(monkeypatch, tmp_path)
     with pytest.raises(FlowError, match=r"gen: \[gen.source\] platform small16 has no source"):
-        run_flow(recipe_path("vecadd"), SMALL16, graph_path=PLAIN, out=tmp_path / "flow")
+        run_flow(recipe_path("vecadd_v1"), SMALL16, graph_path=PLAIN, out=tmp_path / "flow")
     assert fake.calls == []
-    assert (tmp_path / "flow" / "flow.log").read_text().startswith("flow vecadd FAILED\n")
+    assert (tmp_path / "flow" / "flow.log").read_text().startswith("flow vecadd_v1 FAILED\n")
 
 
 def test_trace_sources_go_with_the_beat_levels_and_name_this_run(tmp_path, monkeypatch):
@@ -509,23 +511,23 @@ def test_events_that_do_not_convert_stop_at_convert(tmp_path, monkeypatch):
 
 def test_default_name():
     """Every --set: recipe params, then platform and memory paths without their prefix."""
-    r = Recipe.load(recipe_path("vecadd"))
-    assert default_name(r, {}) == "vecadd" and default_name(r, {"W": 8}) == "vecadd_W8"
-    assert default_name(r, {}, memory_sets=[("B.l1.base", 576)]) == "vecadd_B.l1.base576"
-    assert default_name(r, {}, [("l1.n_banks", 32)]) == "vecadd_l1.n_banks32"
+    r = Recipe.load(recipe_path("vecadd_v1"))
+    assert default_name(r, {}) == "vecadd_v1" and default_name(r, {"W": 8}) == "vecadd_v1_W8"
+    assert default_name(r, {}, memory_sets=[("B.l1.base", 576)]) == "vecadd_v1_B.l1.base576"
+    assert default_name(r, {}, [("l1.n_banks", 32)]) == "vecadd_v1_l1.n_banks32"
     both = default_name(r, {"W": 8}, [("l1.n_banks", 32)], [("B.l1.base", 576)])
-    assert both == "vecadd_W8_l1.n_banks32_B.l1.base576"
+    assert both == "vecadd_v1_W8_l1.n_banks32_B.l1.base576"
     # a value that is not a plain word keeps one plain directory name
-    assert default_name(r, {}, [("x.y", [2, 2]), ("z", "a/b c")]) == "vecadd_x.y2,2_zabc"
+    assert default_name(r, {}, [("x.y", [2, 2]), ("z", "a/b c")]) == "vecadd_v1_x.y2,2_zabc"
     # a name ending in a digit gets a '-' before its value, the others none
-    assert default_name(r, {"W_acc_1": 10, "W_acc_2": 4}) == "vecadd_W_acc_1-10_W_acc_2-4"
-    assert default_name(r, {"W": 4, "W_acc_1": 8}) == "vecadd_W4_W_acc_1-8"
+    assert default_name(r, {"W_acc_1": 10, "W_acc_2": 4}) == "vecadd_v1_W_acc_1-10_W_acc_2-4"
+    assert default_name(r, {"W": 4, "W_acc_1": 8}) == "vecadd_v1_W4_W_acc_1-8"
     # the design point's own field last, as the flow and forge read it
     sets = split_sets([setting("memory.passes.layout=padded_rows"),
                        setting("design.schedule=pipeline")])  # fmt: skip
     assert sets["design"] == [("schedule", "pipeline")]
     assert default_name(r, {}, (), sets["memory"], sets["design"]) == (
-        "vecadd_passes.layoutpadded_rows_schedulepipeline"
+        "vecadd_v1_passes.layoutpadded_rows_schedulepipeline"
     )
 
 
@@ -546,7 +548,7 @@ def test_the_trace_level_task_stubbed(tmp_path, monkeypatch):
     """At task the run turns the events on, the folder's default name carries the level, and
     convert writes the trace (its invariants checked, tests/run)."""
     fake = stub(monkeypatch, tmp_path)
-    f = run_flow(recipe_path("vecadd"), SNAX_FORGE, graph_path=PLAIN, trace_level="task",
+    f = run_flow(recipe_path("vecadd_v1"), SNAX_FORGE, graph_path=PLAIN, trace_level="task",
                  out=tmp_path / "flow")  # fmt: skip
     assert fake.calls[-1][1]["TRACES"] == "summary events"
     run = tmp_path / "flow" / "run"
@@ -564,9 +566,9 @@ def test_the_beat_levels_stubbed(tmp_path, monkeypatch, level):
     property, convert keeps its beat events (their invariants checked) and the filter, and the
     profile is the task run's, byte for byte."""
     fake = stub(monkeypatch, tmp_path)
-    run_flow(recipe_path("vecadd"), SNAX_FORGE, graph_path=PLAIN, trace_level="task",
+    run_flow(recipe_path("vecadd_v1"), SNAX_FORGE, graph_path=PLAIN, trace_level="task",
              out=tmp_path / "task")  # fmt: skip
-    f = run_flow(recipe_path("vecadd"), SNAX_FORGE, graph_path=PLAIN, trace_level=level,
+    f = run_flow(recipe_path("vecadd_v1"), SNAX_FORGE, graph_path=PLAIN, trace_level=level,
                  out=tmp_path / level)  # fmt: skip
     v = fake.calls[-1][1]
     traces = v["TRACES"].split()
@@ -597,7 +599,7 @@ def test_named_sources_and_the_vcd_stubbed(tmp_path, monkeypatch):
     """Named sources say whose lines are written, a core's crossbar lines too; --vcd puts
     gvrun's VCD and its gtkwave view into run/."""
     fake = stub(monkeypatch, tmp_path)
-    f = run_flow(recipe_path("vecadd"), SNAX_FORGE, graph_path=PLAIN, trace_level="stall",
+    f = run_flow(recipe_path("vecadd_v1"), SNAX_FORGE, graph_path=PLAIN, trace_level="stall",
                  trace_sources=["core0", "acc_a", "acc"], vcd=True, out=tmp_path / "f")  # fmt: skip
     v = fake.calls[-1][1]
     assert v["TRACES"].split() == ["summary", "events", "snax_acc0/unit/beats",
@@ -640,26 +642,26 @@ def test_the_log_is_the_summary_the_checks_and_the_stage_times(tmp_path, monkeyp
 
 def test_cli_runs_and_says_what_it_did(tmp_path, monkeypatch, capsys):
     built(stub(monkeypatch, tmp_path))  # a build would print its lines first
-    args = [recipe_path("vecadd"), "--platform", SNAX_FORGE, "--graph", PLAIN]
+    args = [recipe_path("vecadd_v1"), "--platform", SNAX_FORGE, "--graph", PLAIN]
     assert main(*args, "--out", tmp_path / "f") == 0
     out = capsys.readouterr().out
-    assert out.startswith("flow vecadd (vecadd: W=4, N=64; N=64) on snax_forge -> ")
+    assert out.startswith("flow vecadd_v1 (vecadd_v1: W=4, N=64; N=64) on snax_forge -> ")
     assert "  check     passed: 226 cycles (main to forge_check)" in out
     assert (tmp_path / "f" / "flow.log").read_text().startswith(out)
     # the sets route as before; the folder carries them
     assert main(*args, "--out", tmp_path / "g", "--set", "W=8",
                 "--set", "platform.streamers.default.fifo_depth=4") == 0  # fmt: skip
     out = capsys.readouterr().out
-    assert "flow vecadd_W8_streamers.default.fifo_depth4 (vecadd: W=8, N=64; N=64)" in out
+    assert "flow vecadd_v1_W8_streamers.default.fifo_depth4 (vecadd_v1: W=8, N=64; N=64)" in out
     pf = json.loads((tmp_path / "g" / "design" / "platform.json").read_text())
     assert pf["changes"] == {"streamers.default.fifo_depth": 4}
     # the design point is the design's, the recipe's name: the folder alone carries the sets
-    assert DesignPoint.load(tmp_path / "g" / "design" / "design_point.json").name == "vecadd"
+    assert DesignPoint.load(tmp_path / "g" / "design" / "design_point.json").name == "vecadd_v1"
 
 
 def test_cli_reports_a_failing_stage_and_a_failing_program(tmp_path, monkeypatch, capsys):
     fake = stub(monkeypatch, tmp_path)
-    args = [recipe_path("vecadd"), "--platform", SNAX_FORGE, "--graph", PLAIN, "--out", tmp_path / "f"]  # fmt: skip
+    args = [recipe_path("vecadd_v1"), "--platform", SNAX_FORGE, "--graph", PLAIN, "--out", tmp_path / "f"]  # fmt: skip
     with pytest.raises(SystemExit):
         main(*args, "--trace", "task:acc")
     assert "sources go with beat, stall or finegrained" in capsys.readouterr().err
@@ -679,7 +681,7 @@ def test_cli_reports_a_failing_stage_and_a_failing_program(tmp_path, monkeypatch
 @pytest.mark.gvsoc
 @needs_gvsoc
 @pytest.mark.parametrize("level", ["off", "task"])
-@pytest.mark.parametrize("design", ["vecadd", "vsum"])
+@pytest.mark.parametrize("design", ["vecadd_v1", "vsum_v1"])
 def test_the_flow_on_snax_gvsoc(tmp_path, design, level):
     """From the kernel: a checked SNAX-GVSoC run, exit 0, its window and counters printed; its
     events converted (convert's invariants hold, or the flow fails)."""
@@ -702,12 +704,12 @@ def test_the_flow_on_snax_gvsoc(tmp_path, design, level):
 def test_matadd_the_first_2d_bind_on_snax_gvsoc(tmp_path):
     """matadd at W = 4, M = 8, N = 16: two firing loops (the rows, the column beats), so each
     streamer has two temporal loops; 32 firings, every output checked."""
-    f = run_flow(recipe_path("matadd"), SNAX_FORGE, out=tmp_path / "matadd")
+    f = run_flow(recipe_path("matadd_v1"), SNAX_FORGE, out=tmp_path / "matadd")
     assert f.passed, summary(f)
     assert f.check["exit_code"] == 0 and f.check["data_errors"] == 0 and f.total_cycles > 0
     assert {t: v["beats"] for t, v in f.check["tasks"].items()} == {"add_acc": 32}
     assert all(t["counter"] >= t["beats"] for t in f.check["tasks"].values())
-    text = (tmp_path / "matadd" / "gen" / "snax_forge_matadd_streamer_acc.hjson").read_text()
+    text = (tmp_path / "matadd" / "gen" / "snax_forge_matadd_v1_streamer_acc.hjson").read_text()
     streamer = json.loads("".join(ln for ln in text.splitlines(True) if not ln.startswith("//")))
     assert streamer["data_reader_params"]["temporal_dim"] == [2, 2]
     assert streamer["data_writer_params"]["temporal_dim"] == [2]
@@ -715,7 +717,7 @@ def test_matadd_the_first_2d_bind_on_snax_gvsoc(tmp_path):
 
 @pytest.mark.gvsoc
 @needs_gvsoc
-@pytest.mark.parametrize("design, beats", [("rowsum", 128), ("rowsum_serial", 64)])
+@pytest.mark.parametrize("design, beats", [("rowsum_v1", 128), ("rowsum_v3", 64)])
 def test_rowsum_restarts_every_row_on_snax_gvsoc(tmp_path, design, beats):
     """rowsum: one sum per row, T = N / W = 16 beats each, so the accumulator
     restarts M times in one run; A's reader has two temporal loops, y's writer one."""
@@ -748,7 +750,7 @@ def test_relu_on_one_stream_on_snax_gvsoc(tmp_path, monkeypatch):
         return {"A": np.array(RELU_A, np.int32), "B": np.zeros(8, np.int32)}
 
     monkeypatch.setattr(reference, "kernel_inputs", inputs)
-    f = run_flow(recipe_path("relu"), SNAX_FORGE, recipe_sets={"W": 4, "N": 8},
+    f = run_flow(recipe_path("relu_v1"), SNAX_FORGE, recipe_sets={"W": 4, "N": 8},
                  out=tmp_path / "relu")  # fmt: skip
     assert f.passed, summary(f)
     assert f.check["exit_code"] == 0 and f.check["data_errors"] == 0
@@ -760,7 +762,7 @@ def test_relu_on_one_stream_on_snax_gvsoc(tmp_path, monkeypatch):
     data = (gen / "data.h").read_text()  # B_golden padded to whole 64-byte beats: 16 int32
     golden = data.split("const int32_t B_golden[16]", 1)[1].split("{", 1)[1].split("}", 1)[0]
     assert [int(x) for x in golden.replace(",", " ").split()] == RELU_B + [0] * 8
-    text = (gen / "snax_forge_relu_streamer_acc.hjson").read_text()
+    text = (gen / "snax_forge_relu_v1_streamer_acc.hjson").read_text()
     streamer = json.loads("".join(ln for ln in text.splitlines(True) if not ln.startswith("//")))
     assert streamer["data_reader_params"]["num_channel"] == [2]
     assert streamer["data_writer_params"]["num_channel"] == [2]
@@ -774,7 +776,7 @@ def test_relu_on_one_stream_on_snax_gvsoc(tmp_path, monkeypatch):
 def test_a_64_kib_l1_runs_on_its_own_runtime(tmp_path):
     """vecadd at l1.rows = 256: the program and its runtime take the design point's cluster
     headers, so the stacks sit at the end of the 64 KiB L1 the model places."""
-    f = run_flow(recipe_path("vecadd"), SNAX_FORGE, platform_sets=[("l1.rows", 256)],
+    f = run_flow(recipe_path("vecadd_v1"), SNAX_FORGE, platform_sets=[("l1.rows", 256)],
                  out=tmp_path / "vecadd")  # fmt: skip
     assert f.passed, summary(f)
     include = tmp_path / "vecadd" / "gen" / "include"

@@ -1,0 +1,62 @@
+{
+ "name": "mvt_v5_2",
+ "id": "mvt_dot2seed_colchain_i8_o32",
+ "description": "`mvt_v5` with half 2's `Mac` unseeded and its W sums linked into a `vadd` of x2. Costs a little more than `mvt_v5` for the same time.",
+ "kernel": "mvt_types",
+ "params": {"M": 64, "N": 64, "W_x1": 8, "D_2": 1},
+ "symbols": {"M": "M", "N": "N"},
+ "types": "i8",
+ "steps": [
+  {"transform": "tag_map", "params": {"map": "tmp1_mult_map", "kind": "temporal"}},
+  {"transform": "split_map", "params": {"map": "tmp1_mult_map_1", "factor": "W_x1"}},
+  {
+   "transform": "bind",
+   "params": {
+    "node": "tmp1_mult",
+    "brm": "simd",
+    "implementation": "chisel_tiled_spatial",
+    "instance": "vmul_x1"
+   }
+  },
+  {"transform": "tag_map", "params": {"map": "sum_map", "kind": "temporal"}},
+  {"transform": "split_map", "params": {"map": "sum_map_1", "factor": "W_x1"}},
+  {"transform": "fuse_seed", "params": {"first": "sum_map_1_s", "second": "augassign_18_4_map"}},
+  {
+   "transform": "bind",
+   "params": {
+    "node": "sum",
+    "brm": "accumulate",
+    "implementation": "chisel_adder_tree",
+    "instance": "vsum_x1"
+   }
+  },
+  {"transform": "link", "params": {"container": "tmp1_prod", "depth": "D_2", "group": "mvt"}},
+  {"transform": "tag_map", "params": {"map": "tmp4_mult_map_1", "kind": "temporal"}},
+  {"transform": "split_map", "params": {"map": "tmp4_mult_map", "factor": "W_x1"}},
+  {"transform": "interchange_map", "params": {"map": "tmp4_mult_map_s", "with": "tmp4_mult_map_1"}},
+  {"transform": "tag_map", "params": {"map": "sum_map_3", "kind": "temporal"}},
+  {"transform": "split_map", "params": {"map": "sum_map_2", "factor": "W_x1"}},
+  {"transform": "interchange_map", "params": {"map": "sum_map_2_s", "with": "sum_map_3"}},
+  {"transform": "fuse_map", "params": {"first": "tmp4_mult_map", "second": "sum_map_2"}},
+  {
+   "transform": "bind",
+   "params": {
+    "node": "tmp4_mult_map_s",
+    "brm": "mac",
+    "implementation": "chisel_mac",
+    "instance": "mac_x2"
+   }
+  },
+  {"transform": "split_map", "params": {"map": "augassign_19_4_map", "factor": "W_x1"}},
+  {
+   "transform": "bind",
+   "params": {
+    "node": "augassign_19_4",
+    "brm": "simd",
+    "implementation": "chisel_tiled_spatial",
+    "instance": "vadd_x2"
+   }
+  },
+  {"transform": "link", "params": {"container": "tmp2", "depth": "D_2", "group": "mvt_x2"}}
+ ]
+}

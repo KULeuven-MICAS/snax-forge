@@ -102,6 +102,10 @@ def _unknown_param(transform: str, params: dict[str, Any],
     """The first param name an int param uses that the session lacks, with the refusal's
     message; or None."""
     spec = TRANSFORMS.get(transform)
+    nested = params.get("params") if transform == "apply_recipe" else None
+    for p, v in (nested or {}).items():  # the applied recipe's params name the session's
+        if isinstance(v, str) and expr.is_name(v) and v not in known:
+            return v, f"apply_recipe: params.{p} {v!r} is not a param; give its value"
     for p, v in params.items():
         if spec is None or p not in spec.ints or not isinstance(v, str):
             continue
@@ -299,7 +303,8 @@ class Session:
                 base = replace(self.recipe, params={**self.recipe.params, **added})
             except SandboxError as e:
                 return _refused("session.param", str(e))
-            trial = replace(base, steps=[*self.recipe.steps[:k], step])
+            # a new step: no longer what the recipe's id and description say (D188)
+            trial = replace(base, steps=[*self.recipe.steps[:k], step], id=None, description=None)
             start = time.perf_counter()
             try:
                 name, values = step_params(trial, k)
@@ -359,6 +364,53 @@ class Session:
                     "redo": list(range(self.cursor + 1, self.n + 1)),
                     "checks": self._checks_of(self.cursor)}  # fmt: skip
 
+    def drop_param(self, name: str) -> dict[str, Any]:
+        """Param ``name`` gone from the session, when no step, symbol or other param names it."""
+        with self._lock:
+            r = self.recipe
+            if name not in r.params:
+                return _refused("params.drop", f"no param {name!r} (params: {sorted(r.params)})")
+            users = _param_users(r, name)
+            if users:
+                return _refused("params.drop", f"{name} is named by {', '.join(users)}: rename "
+                                "it, or undo those steps first")  # fmt: skip
+            self.recipe = replace(r, params={k: v for k, v in r.params.items() if k != name})
+            self.own_params = [p for p in self.own_params if p != name]
+            self._write()
+            return {"ok": True, "params": dict(self.recipe.params)}
+
+    def rename_param(self, old: str, new: str) -> dict[str, Any]:
+        """Param ``old`` named ``new`` in the params, every step (inside ``apply_recipe``'s
+        params too), the symbols and the other params; every step replayed."""
+        with self._lock:
+            r = self.recipe
+            if old not in r.params:
+                return _refused("params.rename", f"no param {old!r} (params: {sorted(r.params)})")
+            if not isinstance(new, str) or not new.isidentifier() or new.startswith("_"):
+                return _refused("params.rename", f"{new!r} is not a name (an identifier, not "
+                                "starting with _)")  # fmt: skip
+            taken = set(r.params) | set(r.symbols) | set(self.graphs[0].containers)
+            if new in taken:
+                return _refused("params.rename", f"{new} is taken (a param, symbol or container)")
+            ren = {old: new}
+            recipe = replace(
+                r, params={ren.get(k, k): _renamed(v, ren) for k, v in r.params.items()},
+                symbols={k: _renamed(v, ren) for k, v in r.symbols.items()},
+                steps=[Step(st.transform, {p: _renamed(v, ren) for p, v in st.params.items()})
+                       for st in r.steps])  # fmt: skip
+            try:
+                graphs, inputs, want = self._replay(recipe, self.cursor)
+            except StepError as e:
+                return _refused(_code(e), str(e), index=e.index)  # type: ignore[attr-defined]
+            except (SandboxError, DfgError) as e:
+                return _refused(_code(e), str(e), index=0)
+            self.recipe, self.graphs, self.inputs, self.want = recipe, graphs, inputs, want
+            self.own_params = [ren.get(p, p) for p in self.own_params]
+            self._forget(-1)
+            self._write()
+            return {"ok": True, "params": dict(recipe.params), "replayed": self.cursor,
+                    "redo": list(range(self.cursor + 1, self.n + 1))}  # fmt: skip
+
     def save(self, name: str, force: bool = False) -> dict[str, Any]:
         """Steps 1..cursor as a recipe of its own (CONTRACTS, "Recipe")."""
         with self._lock:
@@ -382,7 +434,7 @@ class Session:
                                 f"report {len(problems)} problem(s)", problems=listed)  # fmt: skip
             steps = self.recipe.steps[: self.cursor]
             keep = used_params(self.recipe.params, steps, self.recipe.symbols, self.own_params)
-            recipe = replace(self.recipe, name=name, steps=steps,
+            recipe = replace(self.recipe, name=name, steps=steps, id=None, description=None,
                              params={k: v for k, v in self.recipe.params.items() if k in keep})  # fmt: skip
             path.parent.mkdir(parents=True, exist_ok=True)
             recipe.save(path)
@@ -728,15 +780,22 @@ def used_params(params: dict[str, Any], steps: list[Step], symbols: dict[str, An
 
 
 def _step_names(step: Step) -> set[str]:
-    """The names a step's string params use (an int param's expression over the params)."""
-    out: set[str] = set()
-    for v in step.params.values():
-        if isinstance(v, str):
-            try:
-                out |= expr.names(v)
-            except expr.ExprError:
-                continue
-    return out
+    """The names a step's string params use (an int param's expression over the params), also
+    inside a dict or a list (``apply_recipe``'s ``params``: ``{"W": "W_x1"}``)."""
+    return _names_in(step.params)
+
+
+def _names_in(v: Any) -> set[str]:
+    if isinstance(v, str):
+        try:
+            return set(expr.names(v))
+        except expr.ExprError:
+            return set()
+    if isinstance(v, dict):
+        return set().union(*(_names_in(x) for x in v.values()))
+    if isinstance(v, list):
+        return set().union(*(_names_in(x) for x in v))
+    return set()
 
 
 def rename_split_params(recipe: Recipe, g: Graph, instance: str | None,
@@ -863,8 +922,22 @@ def merge_shared_params(recipe: Recipe, g: Graph, own: list[str]) -> tuple[Recip
     return replace(recipe, params=params, steps=steps), renamed
 
 
+def _param_users(r: Recipe, name: str) -> list[str]:
+    """What names param ``name``: ``step 4 (apply_recipe)``, ``symbol M``, ``param W_2``."""
+    out = [f"step {i + 1} ({st.transform})" for i, st in enumerate(r.steps)
+           if name in _step_names(st)]  # fmt: skip
+    out += [f"symbol {k}" for k, v in r.symbols.items() if name in _names_in(v)]
+    out += [f"param {k}" for k, v in r.params.items() if k != name and name in _names_in(v)]
+    return out
+
+
 def _renamed(v: Any, renamed: dict[str, str]) -> Any:
-    """A step param with the renamed params in place (a bare name; an expression rewritten)."""
+    """A step param with the renamed params in place (a bare name; an expression rewritten;
+    inside a dict's values or a list, as ``apply_recipe``'s ``params``)."""
+    if isinstance(v, dict):
+        return {k: _renamed(x, renamed) for k, x in v.items()}
+    if isinstance(v, list):
+        return [_renamed(x, renamed) for x in v]
     if not isinstance(v, str):
         return v
     if v in renamed:
@@ -934,30 +1007,45 @@ DEFAULT_KIND = "temporal"
 
 def _lift_fields(g: Graph, filled: dict[str, Any]) -> list[dict[str, Any]]:
     """``lift``'s form: ``kernel`` a choice of the kernels whose pattern matches a region
-    holding the selected node, ``at`` that region or every region of the kernel (empty)."""
-    from .blocks import lift_choices
+    holding the selected node, each with the node ids of that region (``nodes``) and of every
+    region of the kernel (``every``) for the page to light, ``at`` that region or every region
+    of the kernel (empty)."""
+    from .blocks import lift_regions
 
     at = filled["at"]
-    kernels = [{"value": k, "label": k} for k in lift_choices(g, at)]
+    kernels = [{"value": k, "label": k, "nodes": r["here"], "every": r["every"]}
+               for k, r in lift_regions(g, at).items()]  # fmt: skip
     where = [{"value": at, "label": f"the region holding {at}"},
              {"value": "", "label": "every region it matches"}]  # fmt: skip
     return [
         {"name": "kernel", "type": "choice", "sweepable": False, "readonly": False,
-         "value": filled["kernel"], "choices": kernels},
+         "value": filled["kernel"], "choices": kernels, "preview": True},
         {"name": "at", "type": "choice", "sweepable": False, "readonly": False, "value": at,
-         "choices": where},
+         "choices": where, "preview": True},
     ]  # fmt: skip
 
 
 def _apply_fields(g: Graph, filled: dict[str, Any], params: dict[str, Any]) -> list[dict[str, Any]]:
     """``apply_recipe``'s form on a lifted block: ``block`` (the selection's), ``recipe`` a
     choice of the recipes of its kernel, each with its ``params`` that no kernel symbol names
-    (dot_3's ``{"W": 4}``, which the page swaps in when the choice changes), and an int field
+    (dot_v3's ``{"W": 4}``, which the page swaps in when the choice changes), and an int field
     ``params.<P>`` per param of the first, a param of the session's own (``W``, or ``W_2`` when
-    the session has W), its value the recipe's."""
-    from .blocks import _block, recipe_path, recipes_for
+    the session has W), its value the recipe's. Each choice also gives the block's node ids
+    and its name, and the outer maps a ``fuse_map`` of the block's nests takes along (dot_v4
+    on matvec's rows; ``nodes``, for the page to light) and what the recipe makes (``hint``,
+    ``8 steps → mul, sum, link``)."""
+    from .blocks import _block, _fuse_outer, block_ids, recipe_path, recipes_for
 
     rec = _block(g, filled["block"], "apply_recipe", applied=False)
+    nodes = [*block_ids(g, filled["block"]), filled["block"]]  # its nodes, and itself folded
+
+    def makes(ref: str) -> str:  # what the recipe makes: its steps and the units it binds
+        sub = Recipe.load(recipe_path(ref))
+        made = [st.params.get("instance") for st in sub.steps if st.transform == "bind"]
+        made += ["link"] * sum(st.transform == "link" for st in sub.steps)
+        made += [f"{st.params.get('recipe')} on each" for st in sub.steps
+                 if st.transform == "apply_recipe"]  # fmt: skip
+        return f"{len(sub.steps)} steps → {', '.join(str(x) for x in made) or 'no unit'}"
 
     def own(ref: str) -> dict[str, Any]:  # a recipe's params no kernel symbol names
         sub = Recipe.load(recipe_path(ref))
@@ -966,12 +1054,24 @@ def _apply_fields(g: Graph, filled: dict[str, Any], params: dict[str, Any]) -> l
             p: (v if isinstance(v, int) else 1) for p, v in sub.params.items() if p not in named
         }
 
-    choices = [{"value": r, "label": r, "params": own(r)} for r in recipes_for(rec["kernel"])]
+    def fused(ref: str) -> list[str]:  # the outer maps a fuse_map of the block's nests takes
+        sub = Recipe.load(recipe_path(ref))
+        heads = rec["heads"]
+        if len(heads) < 2 or not any(st.transform == "fuse_map" for st in sub.steps):
+            return []
+        try:
+            f = _fuse_outer(g, heads[0], heads[1])
+        except (SandboxError, DfgError):
+            return []
+        return [f["first"], f["second"]] if f else []
+
+    choices = [{"value": r, "label": r, "params": own(r), "nodes": [*nodes, *fused(r)],
+                "hint": makes(r)} for r in recipes_for(rec["kernel"])]  # fmt: skip
     fields = [
         {"name": "block", "type": "str", "sweepable": False, "readonly": True,
          "value": filled["block"]},
         {"name": "recipe", "type": "choice", "sweepable": False, "readonly": False,
-         "value": filled["recipe"], "choices": choices},
+         "value": filled["recipe"], "choices": choices, "preview": True},
     ]  # fmt: skip
     for p, v in own(filled["recipe"]).items():
         fields.append({"name": f"params.{p}", "type": "int", "sweepable": True,

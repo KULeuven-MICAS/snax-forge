@@ -32,13 +32,20 @@ from snax_forge.flow import run as flow_run
 from snax_forge.flow.forge import QUIET_ELF
 from snax_forge.lower.tasks import TaskList
 from snax_forge.run import load_cluster
+from snax_forge.sandbox.recipe import Recipe
 from tests.design.helpers import FIXTURES, REPO
 from tests.helpers import recipe_path
 from tests.run.helpers import point_symbols, synthetic, tiny_elf
 
 PLAIN = FIXTURES / "vecadd.snaxdfg"  # the import of the vecadd kernel
 SOUND = 0.10  # a counter's gap beyond its fill, as a share of the expected counter
-PLAINS = {"vecadd": PLAIN, "vsum": FIXTURES / "vsum.snaxdfg"}
+PLAINS = {"vecadd": PLAIN, "vsum": FIXTURES / "vsum.snaxdfg"}  # by kernel
+
+
+def plain(recipe: str) -> Path:
+    """The plain graph of the recipe ``recipe``'s kernel."""
+    return PLAINS[Recipe.load(recipe_path(recipe)).kernel]
+
 
 COMMIT = "a" * 40
 B_PIN = [("B.l1.base", 576)]
@@ -255,7 +262,7 @@ def excerpts_hold(readme: str, root: Path) -> int:
     return seen
 
 
-def stubbed_flow(base: Path, design: str = "vecadd", level: str = "task", out: Path | None = None,
+def stubbed_flow(base: Path, design: str = "vecadd_v1", level: str = "task", out: Path | None = None,
                  **kw: Any) -> Path:  # fmt: skip
     """A flow folder (``base/<design>_<level>`` unless ``out``) made with SNAX-GVSoC stubbed
     (``stub``, its synthetic events), outside a test's own monkeypatch, so module-scoped
@@ -266,7 +273,7 @@ def stubbed_flow(base: Path, design: str = "vecadd", level: str = "task", out: P
     with pytest.MonkeyPatch.context() as mp:
         stub(mp, out.parent / f".gvsoc_{out.name}")
         run_flow(recipe_path(design), REPO / "platforms" / "snax_forge.json",
-                 graph_path=PLAINS[design], out=out, trace_level=level, **kw)  # fmt: skip
+                 graph_path=plain(design), out=out, trace_level=level, **kw)  # fmt: skip
     return out
 
 

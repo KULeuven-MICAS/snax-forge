@@ -66,65 +66,68 @@ def designs(*recipes: str | Design) -> list[Design]:
 
 PADDED = "memory.passes.layout=padded_rows"  # each row a word longer
 I8 = ("types=i8", "W=8")  # int8 in, int32 out and accumulate, at its smallest W (D173)
-QUICK = designs("vecadd_i32", "vsum_tree_i8", "dot_1", "dot_1_enc", "dot_4", "axpy",
-                Design("vsum_tree", I8), Design("matvec_3", I8),
-                Design("vecadd_i32", ("W=1",)))  # sliced inputs (D180)  # fmt: skip
+QUICK = designs("vecadd_v1_1", "vsum_v1_1_2", "dot_v1", "dot_v1_1", "dot_v4", "axpy_v1",
+                Design("vsum_v1_1", I8), Design("matvec_v3", I8),
+                Design("vecadd_v1_1", ("W=1",)))  # sliced inputs (D180)  # fmt: skip
 # Every recipe with narrow types at i8 (int32 outputs packed, D174), a few at W = 32, i16, i32
 PACK = [
     *(
         Design(r, I8)
         for r in (
-            "vecadd",
-            "vecmul",
-            "relu",
-            "axpy",
-            "matadd",
-            "vsum_tree",
-            "rowsum",
-            "dot_1",
-            "dot_1_enc",
-            "dot_1_shared",
-            "dot_2",
-            "dot_3",
-            "dot_4",
-            "dot_5",
-            "dot_6",
-            "matvec_1",
-            "matvec_3",
-            "matvec_4",
-            "matvec_6",
-            "matvec_dot1",
-            "matvec_dot3",
-            "matvec_dot4",
-            "matvec_dot6",
+            "vecadd_v1",
+            "vecmul_v1",
+            "relu_v1",
+            "axpy_v1",
+            "matadd_v1",
+            "vsum_v1_1",
+            "rowsum_v1",
+            "dot_v1",
+            "dot_v1_1",
+            "dot_v1_2",
+            "dot_v2",
+            "dot_v3",
+            "dot_v4",
+            "dot_v5",
+            "dot_v6",
+            "matvec_v1",
+            "matvec_v3",
+            "matvec_v4",
+            "matvec_v6",
+            "matvec_v1_1",
+            "matvec_v3_1",
+            "matvec_v4_1",
+            "matvec_v6_1",
         )
     ),
-    Design("dot_serial", ("types=i32", "W=2")),
-    Design("dot_3", ("types=i8", "W=32")),
-    Design("matvec_3", ("types=i8", "W=32")),
-    Design("dot_3", ("types=i16", "W=4")),
-    Design("dot_3", ("types=i32", "W=2")),
-    Design("vecadd", ("types=i8", "W=1")),  # sliced inputs (D180)
-    Design("matvec_3", ("types=i8", "W=4")),
+    Design("dot_v7", ("types=i32", "W=2")),
+    Design("dot_v3", ("types=i8", "W=32")),
+    Design("matvec_v3", ("types=i8", "W=32")),
+    Design("dot_v3", ("types=i16", "W=4")),
+    Design("dot_v3", ("types=i32", "W=2")),
+    Design("vecadd_v1", ("types=i8", "W=1")),  # sliced inputs (D180)
+    Design("matvec_v3", ("types=i8", "W=4")),
 ]
 SETS = {
     "quick": QUICK,
-    "full": [*QUICK, *designs("vecadd", "vsum", "rowsum_serial", "vecmul_i32_i64", "dot_2",
-                              "dot_3", "dot_5", "dot_6", "dot_serial", "matvec_1", "matvec_5",
-                              "matvec_6", "matvec_seed", "matvec_seed_serial", "relu", "rowsum_2",
-                              Design("rowsum_2", (PADDED,)))],
+    "full": [*QUICK, *designs("vecadd_v1", "vsum_v1", "rowsum_v3", "vecmul_v1_1_1", "dot_v2",
+                              "dot_v3", "dot_v5", "dot_v6", "dot_v7", "matvec_v1", "matvec_v5",
+                              "matvec_v6", "matvec_acc_v1", "matvec_acc_v2", "relu_v1", "rowsum_v2",
+                              Design("rowsum_v2", (PADDED,)))],
     "mvt": [
-        *(Design(r, w + lay) for r in ("mvt_1", "mvt_1_dot2", "mvt_1_dot2_shared")
+        *(Design(r, w + lay) for r in ("mvt_v1", "mvt_v1_2", "mvt_v1_2_2")
           for w in ((), ("W=8",)) for lay in ((), (PADDED,))),
-        *(Design(r, w + lay) for r in ("mvt_2", "mvt_2_shared")
+        *(Design(r, w + lay) for r in ("mvt_v2", "mvt_v2_2")
           for w in ((), ("W_x1=8", "W_x2=8")) for lay in ((), (PADDED,))),
-        Design("mvt_2_reuse"),
-        Design("mvt_3"),
-        *(Design("mvt_4", w + lay) for w in ((), ("W_x1=4",)) for lay in ((), (PADDED,))),
-        *(Design("mvt_3_split", lay + (f"design.schedule={s}",)) for lay in ((), (PADDED,))
+        Design("mvt_v2_1"),
+        Design("mvt_v3"),
+        *(Design("mvt_v4", w + lay) for w in ((), ("W_x1=4",)) for lay in ((), (PADDED,))),
+        *(Design("mvt_v3_1", lay + (f"design.schedule={s}",)) for lay in ((), (PADDED,))
           for s in SCHEDULES if s != "sequential"),
         *(Design(r, lay + ("design.schedule=sequential",))
-          for r in ("mvt_4", "mvt_4_i64_dma_AT", "mvt_4_i8_dma_AT") for lay in ((), (PADDED,))),
+          for r in ("mvt_v4", "mvt_v4_1", "mvt_v4_1_1") for lay in ((), (PADDED,))),
+        *(Design("mvt_v5", lay + (f"design.schedule={s}",))
+          for lay, s in (((), "sequential"), ((PADDED,), "sequential"), ((), "pipeline"))),
+        Design("mvt_v5_2", ("design.schedule=sequential",)),
     ],
     "pack": PACK,
 }  # fmt: skip

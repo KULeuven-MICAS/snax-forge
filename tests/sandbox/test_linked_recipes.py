@@ -13,17 +13,17 @@ from tests.helpers import recipe_path
 
 # Each recipe: its last graph's groups (name -> instances) and its link (container, depth)
 WANT = {
-    "dot_2": ({"dot": ["mul", "sum"]}, ("tmp0", 1)),
-    "dot_3": ({"dot": ["mul", "sum"]}, ("tmp0", 0)),
-    "dot_4": ({"dot": ["mac", "sum"]}, ("out_partial", 0)),
-    "dot_5": ({"dot": ["mac", "sum"]}, ("out_partial", 0)),
-    "dot_6": ({"dot": ["mac", "sum"]}, ("out_partial", 1)),
-    "matvec_1": ({"mul": ["mul"], "sum": ["sum"]}, None),
-    "matvec_2": ({"matvec": ["mul", "sum"]}, ("tmp0", 1)),
-    "matvec_3": ({"matvec": ["mul", "sum"]}, ("tmp0", 0)),
-    "matvec_4": ({"matvec": ["mac", "sum"]}, ("q_partial", 0)),
-    "matvec_5": ({"matvec": ["mac", "sum"]}, ("q_partial", 0)),
-    "matvec_6": ({"matvec": ["mac", "sum"]}, ("q_partial", 1)),
+    "dot_v2": ({"dot": ["mul", "sum"]}, ("tmp0", 1)),
+    "dot_v3": ({"dot": ["mul", "sum"]}, ("tmp0", 0)),
+    "dot_v4": ({"dot": ["mac", "sum"]}, ("out_partial", 0)),
+    "dot_v5": ({"dot": ["mac", "sum"]}, ("out_partial", 0)),
+    "dot_v6": ({"dot": ["mac", "sum"]}, ("out_partial", 1)),
+    "matvec_v1": ({"mul": ["mul"], "sum": ["sum"]}, None),
+    "matvec_v2": ({"matvec": ["mul", "sum"]}, ("tmp0", 1)),
+    "matvec_v3": ({"matvec": ["mul", "sum"]}, ("tmp0", 0)),
+    "matvec_v4": ({"matvec": ["mac", "sum"]}, ("q_partial", 0)),
+    "matvec_v5": ({"matvec": ["mac", "sum"]}, ("q_partial", 0)),
+    "matvec_v6": ({"matvec": ["mac", "sum"]}, ("q_partial", 1)),
 }
 
 

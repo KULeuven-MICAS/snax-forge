@@ -19,7 +19,7 @@ from tests.design.helpers import design
 from tests.helpers import FIXTURES, REPO, recipe_path
 
 # vecadd's task list on snax_forge, as derived and checked in for tests/run
-VECADD_TASKS = REPO / "tests" / "run" / "fixtures" / "vecadd" / "tasks.json"
+VECADD_TASKS = REPO / "tests" / "run" / "fixtures" / "vecadd_v1" / "tasks.json"
 
 
 @cache
@@ -33,7 +33,7 @@ def vecadd_point() -> DesignPoint:
 @cache
 def vsum_point() -> DesignPoint:
     """vsum bound by its recipe, on small16."""
-    recipe = Recipe.load(recipe_path("vsum"))
+    recipe = Recipe.load(recipe_path("vsum_v1"))
     g = apply_recipe(recipe, Graph.load(FIXTURES / "vsum.snaxdfg"))[-1].graph
     d = design(g)
     assert not run_checks(d)

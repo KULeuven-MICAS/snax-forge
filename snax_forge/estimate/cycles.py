@@ -31,6 +31,7 @@ from snax_forge.design.streamers import (
     packed,
     port_dtype,
     sliced,
+    stream_lanes,
 )
 from snax_forge.design.streamers import groups as graph_groups
 from snax_forge.dfg import Graph, Node
@@ -219,7 +220,8 @@ def _slicers(graph: Graph, insts: dict[str, Any], members: list[str],
         for p in _ins(insts[u]):
             if f"{u}.{p}" in fed:
                 continue
-            dtype, lanes = port_dtype(graph, nodes[u], p), insts[u].lanes(p)
+            dtype = port_dtype(graph, nodes[u], p)
+            lanes = stream_lanes(graph, nodes[u][0], insts[u], p)  # one for a broadcast (D186)
             d_in = sliced(dtype, lanes, False, WORD_BITS)
             if d_in > 1:
                 out[f"{u}.{p}"] = Block("FifoSlicer", {"d_in": d_in, "lanes": lanes,

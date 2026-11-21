@@ -32,7 +32,7 @@ def _moved(design: Design, c: str) -> int:
 
 
 def test_rowsum_int64_3x7_rows_of_8_moved_as_3_beats():
-    d = _design("rowsum", W=4, M=3, N=7)
+    d = _design("rowsum_v1", W=4, M=3, N=7)
     lay = d.memory.layouts["A"]["l2"]
     assert (lay.shape, lay.strides) == ((3, 7), (64, 8))
     assert _moved(d, "A") == 192
@@ -44,14 +44,14 @@ def test_rowsum_int64_3x7_rows_of_8_moved_as_3_beats():
 
 def test_rowsum_int32_3x7_rows_of_8_moved_as_2_beats():
     """The layout only: the rows of 8 int32 move as 2 beats each."""
-    d = _design("rowsum", {"A": "int32"}, W=4, M=3, N=7)
+    d = _design("rowsum_v1", {"A": "int32"}, W=4, M=3, N=7)
     lay = d.memory.layouts["A"]["l2"]
     assert (lay.shape, lay.strides) == ((3, 7), (32, 4))
     assert _moved(d, "A") == 128
 
 
 def test_vecadd_int64_n7_moves_one_beat():
-    d = _design("vecadd", W=4, N=7)
+    d = _design("vecadd_v1", W=4, N=7)
     assert _moved(d, "A") == 64
     steps = {s.task_name: s for s in task_list(DesignPoint.of(d, "vecadd")).steps
              if hasattr(s, "task_name")}  # fmt: skip

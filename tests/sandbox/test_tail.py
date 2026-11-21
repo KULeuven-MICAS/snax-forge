@@ -17,7 +17,7 @@ def _map(g: Graph, map_id: str):
 
 
 def test_vecadd_n7_w4_runs_two_firings_and_records_the_valid_count():
-    imported, split, bound = steps("vecadd", W=4, N=7)
+    imported, split, bound = steps("vecadd_v1", W=4, N=7)
     m = _map(split, "add_map")
     assert m.attrs["range"] == "0:(N + 3) // 4"
     assert m.attrs["loop.split"] == {"var": "n", "range": "0:N", "valid": "N"}
@@ -30,11 +30,11 @@ def test_vecadd_n7_w4_runs_two_firings_and_records_the_valid_count():
 
 
 def test_a_dividing_split_records_no_valid_count():
-    _, split, _ = steps("vecadd", W=4, N=8)
+    _, split, _ = steps("vecadd_v1", W=4, N=8)
     assert _map(split, "add_map").attrs["loop.split"] == {"var": "n", "range": "0:N"}
 
 
 def test_join_map_undoes_a_tailed_split_exactly():
-    imported = steps("vecadd", W=4, N=7)[0]
+    imported = steps("vecadd_v1", W=4, N=7)[0]
     joined = join_map(split_map(imported, "add_map", 4), "add_map")
     assert json.dumps(joined.to_dict()) == json.dumps(imported.to_dict())

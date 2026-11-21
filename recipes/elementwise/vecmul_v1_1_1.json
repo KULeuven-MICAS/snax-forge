@@ -1,0 +1,21 @@
+{
+ "name": "vecmul_v1_1_1",
+ "id": "vecmul_i32_o64",
+ "description": "`vecmul_v1_1` with an int64 output: int32 operands, the full product kept.",
+ "kernel": "vecmul",
+ "params": {"W": 4, "N": 64},
+ "symbols": {"N": "N"},
+ "dtypes": {"A": "int32", "B": "int32", "C": "int64", "OP_TYPE": "int32"},
+ "steps": [
+  {"transform": "split_map", "params": {"map": "mult_map", "factor": "W"}},
+  {
+   "transform": "bind",
+   "params": {
+    "node": "mult",
+    "brm": "simd",
+    "implementation": "chisel_tiled_spatial",
+    "instance": "acc"
+   }
+  }
+ ]
+}

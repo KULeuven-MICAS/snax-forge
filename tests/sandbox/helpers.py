@@ -2,11 +2,11 @@
 
 The graphs are the SNAX-DFG fixtures of tests/dfg/fixtures (vecadd as
 imported, split, accelerated); the recipe is the checked-in
-``recipes/elementwise/vecadd.json``. ``restricted_brm`` is ``simd`` with W
+``recipes/elementwise/vecadd_v1.json``. ``restricted_brm`` is ``simd`` with W
 limited to 4 and 8, for the "a W the BRM does not allow" case.
 
 For the sites: ``recipe_graphs(name)``, every recipe's graphs from its
-input to its last step (``vecadd_undo`` from vecadd's last, as README.md runs
+input to its last step (``vecadd_v1_4`` from vecadd's last, as README.md runs
 it), ``SELECTED``, the param each transform's site fills from the selection,
 and ``default_calls``, a transform's params with the user's ones at defaults.
 
@@ -28,7 +28,7 @@ from snax_forge.sandbox.recipe import recipe_paths
 from snax_forge.sandbox.transforms import _locate
 from tests.helpers import FIXTURES, recipe_path
 
-RECIPE = recipe_path("vecadd")
+RECIPE = recipe_path("vecadd_v1")
 
 
 def graph(name: str) -> Graph:
@@ -46,7 +46,7 @@ def restricted_brm() -> Brm:
 
 
 RECIPES = sorted(recipe_paths())  # every recipe's name, from every folder (find_recipe)
-START = {"vecadd_undo": "vecadd"}  # starts from that recipe's last graph
+START = {"vecadd_v1_4": "vecadd_v1"}  # starts from that recipe's last graph
 
 # The param a transform's site fills from the selected node or container
 SELECTED = {
@@ -62,7 +62,7 @@ SELECTED = {
     "name_block": "nodes",
 }  # fmt: skip
 DEFAULTS = {"factor": 4, "kind": "temporal", "depth": 1, "group": "g", "accelerator": "acc",
-            "value": 3, "kernel": "dot", "recipe": "dot/dot_3", "name": "block"}  # fmt: skip
+            "value": 3, "kernel": "dot", "recipe": "dot/dot_v3", "name": "block"}  # fmt: skip
 
 
 @cache

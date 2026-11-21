@@ -33,7 +33,7 @@ CLUSTER_HEADERS = ["snitch_cluster_cfg.h", "snitch_cluster_addrmap.h"]
 # snax_cluster ry/slot1's StreamerSwHeaderGen (Streamer.scala's writeCsrAddrMap at 7e97280e) on
 # its snaxgen test's two sets (util/snaxgen/test_streamer_sets.hjson): vmul, three movers, with
 # --csr-base 960 --macro-prefix VMUL_ --header-name streamer_vmul_csr_addr_map.h; vsum, two,
-# with --csr-base 982 --macro-prefix VSUM_; dot_serial's mul and sum have their shapes
+# with --csr-base 982 --macro-prefix VSUM_; dot_v7's mul and sum have their shapes
 SNAX_CLUSTER = Path(__file__).parent / "fixtures" / "snax_cluster"
 
 # vecadd at W = 4 on snax_forge: three movers of one spatial and one temporal dimension
@@ -96,10 +96,8 @@ def test_the_streamer_header_is_the_chisel_ones(include):
 
 
 def _serial_movers(tmp_path) -> dict[str, list[dict]]:
-    """dot_serial's two sets' movers (csrs.movers of each set's template), by set."""
-    p = DesignPoint.load(
-        point(tmp_path, name="dot_serial", graph=bound_recipe("dot_serial", "dot"))
-    )
+    """dot_v7's two sets' movers (csrs.movers of each set's template), by set."""
+    p = DesignPoint.load(point(tmp_path, name="dot_v7", graph=bound_recipe("dot_v7", "dot")))
     return {a: movers(streamer_template(p, mine)) for a, mine in units(p).items()}
 
 
@@ -120,11 +118,11 @@ def test_a_sets_header_is_snax_clusters_byte_for_byte(tmp_path, ours, first, the
 
 
 def test_dot_serials_headers_are_c16s_table(tmp_path):
-    """dot_serial, two sets: mul's streamer 960-977 and own CSRs 978-981, sum's
+    """dot_v7, two sets: mul's streamer 960-977 and own CSRs 978-981, sum's
     982-994 and 995-999; each set's header its own prefix, each accelerator's its own names."""
     from .helpers import designed
 
-    path = designed(tmp_path, "dot_serial", "dot_serial")
+    path = designed(tmp_path, "dot_v7", "dot_v7")
     m = generate(tmp_path / path, tmp_path / "gen", root=tmp_path)
     inc = tmp_path / "gen" / "include"
     assert [f for f in m.files if f.startswith("include/")][:4] == [
@@ -187,7 +185,7 @@ def test_more_dimensions_follow_streamer_scalas_loops():
 
 
 def test_two_groups_name_their_group():
-    """dot_1_enc (groups vmul and vsum of accelerator dot) from CSR 978: the group
+    """dot_v1_1 (groups vmul and vsum of accelerator dot) from CSR 978: the group
     part kept, the unit part dropped (one unit per group)."""
     desc = dot()
     text = accelerator_header(

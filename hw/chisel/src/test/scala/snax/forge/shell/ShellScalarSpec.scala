@@ -47,7 +47,7 @@ class ShellScalarSpec extends AnyFlatSpec with ForgeTester {
     )
     AcceleratorSpec(
       "p",
-      "snax_forge_axpy",
+      "snax_forge_axpy_v1",
       Seq("acc" -> "a", "acc" -> "b"),
       Seq("acc" -> "out"),
       Seq(

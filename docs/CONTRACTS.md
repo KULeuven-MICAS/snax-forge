@@ -99,7 +99,7 @@ A bound graph nests accelerator ⊃ groups ⊃ units and links (D146, D148):
 - A **unit** is an accelerated node. A **group** is a connected set of units and links (`link`, section 4); an unlinked unit is a group of its own, named after its instance; a linked group's units carry its name in `group`. A link node sits before its reader in the body the two share.
 - By default each group is its own **accelerator**, named after it; `encapsulate` puts several into one, which shares one streamer set (section 9), each group still a task of its own. The nodes of one instance carry the same `accelerator` or none, and an accelerator's name is no instance's.
 - A **fused map** (`fuse_map`) is one nest of two tasklets; the transient between them becomes a local value, no longer in L1 (the container carries `loop.local`, the map records its two nests in `loop.fused`). `bind` on the nest keeps the local in the node's `locals`, so `unbind` then `unfuse_map` give the graph before `fuse_map` exactly. `split_reduce` records its partials and final sum in `loop.split_reduce`.
-- **Shared instances** (D165): several nodes may share one instance, one BRM, implementation and params, run once per node in body order (mvt's variant 1, `recipes/mvt/mvt_1.json`). LOWER gives each node its own task on the same streamers; the estimate counts the area once and each run's cycles. A linked group is shared by `share`: a node per nest and a link node per nest on the same ports (`design/streamers.py`'s `group_links`), run once per set of nodes its links join (`group_runs`).
+- **Shared instances** (D165): several nodes may share one instance, one BRM, implementation and params, run once per node in body order (mvt's variant 1, `recipes/mvt/mvt_v1.json`). LOWER gives each node its own task on the same streamers; the estimate counts the area once and each run's cycles. A linked group is shared by `share`: a node per nest and a link node per nest on the same ports (`design/streamers.py`'s `group_links`), run once per set of nodes its links join (`group_runs`).
 
 ### A transposed read
 
@@ -153,7 +153,7 @@ The first four are shared: designs that differ only in timing, supported values 
 |---|---|
 | `name` | not a Python keyword, not starting with `_`; by convention `a`, `b`, ... in, `out` out |
 | `rate` | a beat every `rate` firings, an int or a runtime param's name: an input at firings `0, r, 2r, ...`, an output at `r-1, 2r-1, ...` (a SIMD block 1 everywhere; a reduction 1 in, `T` out) |
-| `when` | `{param: value, ...}` over design params: the port exists only when every one holds (`simd`'s `b` only at `streams` 2, `accumulate`'s `seed` only at `seed` 1) |
+| `when` | `{param: value, ...}` over design params: the port exists only when every one holds (`simd`'s `b` only at `streams` 2, `accumulate`'s and `mac`'s `seed` only at `seed` 1) |
 | `dtypes` | the dtypes the port takes (`brm/dtypes.py`); every integer dtype by default, written only when narrowed |
 
 ### Timing and params
@@ -200,15 +200,19 @@ The library's BRMs:
 | `simd` | `chisel_tiled_spatial` | `SimdLanes` (`lanes` W, `op`) | |
 | `accumulate` | `chisel_adder_tree` | `TreeAccumulate` (`a` → `in`) | `seed` 0 or 1 adds the input `seed`, one lane at rate T, read once per job (D163) |
 | `accumulate` | `chisel_serial` | `SerialAccumulate` | one lane a cycle, so `span` = lanes |
-| `mac` | `chisel_mac` | `Mac` (`accumulate` true, `regOut` false) | `out = a * b` folded per lane over T beats (D149) |
+| `mac` | `chisel_mac` | `Mac` (`accumulate` true, `regOut` false) | `out = a * b` folded per lane over T beats (D149); `seed` 0 or 1 adds the input `seed`, W lanes at rate T, read once per job (D187); a `b` bound as one lane is given to every lane (D186) |
 | `lane_accumulate` | `chisel_lane_accumulate` | `LaneAccumulate` | rowsum 2: `out = a`, each lane folding its own element over T beats; a front op is refused (bind `mac`) |
 
 `mac`'s pattern, `lane_fold`, is a fused nest (section 4): a multiply and a reduce joined by a local value, the fold indexed by the spatial variable:
 
 <!-- snippet: snax_forge/brm/library/mac.json -->
 ```json
- "function": {"accel": "mac", "params": {"lanes": "W", "op": "op"}, "code": "out = a * b"},
- "dataflow": {"notation": "stream", "ports": {"a": {}, "b": {}, "out": {}}},
+ "function": {
+  "accel": "mac",
+  "params": {"lanes": "W", "op": "op", "seed": "seed"},
+  "code": "out = a * b"
+ },
+ "dataflow": {"notation": "stream", "ports": {"a": {}, "b": {}, "seed": {}, "out": {}}},
  "pattern": {"family": "lane_fold", "attrs": {"op": "mul", "fold": "add"}},
 ```
 
@@ -224,16 +228,18 @@ SNAX-SANDBOX's ordered list of transforms (D72): a JSON file in a category folde
 | Field | Holds |
 |---|---|
 | `name` | the recipe; its steps are written to `out/sandbox/<name>/` |
+| `id` | optional, what it builds in `recipes/README.md`'s words (`mvt_dot2seed_colseed_i8_o32`); a checked-in recipe has one, the editor shows it beside the step and in the recipe list; recipes that build the same units share one (D188) |
+| `description` | optional, the same in one to three sentences (the id's tooltip) |
 | `kernel` | the kernel whose import it starts from |
 | `params` | recipe params, each an int or a string; `--set NAME=VALUE` overrides one |
 | `types` | optional, one of the kernel's type presets (its `SPEC.presets`: `i8`, `i16`, `i32`), the dtypes of its containers and type parameters (`OP_TYPE`) at once (D113 · D173); `--set types=i8` |
 | `symbols` | a value per graph symbol: an int or an expression over the params |
-| `dtypes` | optional, container or type parameter → NumPy integer dtype in place of the kernel's, on top of `types` (D113): applied before DaCe builds the SDFG, the inputs cast to it (`vecadd_i32`: A, B, C and OP_TYPE `int32`); `--set dtypes.C=int16` |
+| `dtypes` | optional, container or type parameter → NumPy integer dtype in place of the kernel's, on top of `types` (D113): applied before DaCe builds the SDFG, the inputs cast to it (`vecadd_v1_1`: A, B, C and OP_TYPE `int32`); `--set dtypes.C=int16` |
 | `steps` | in order: `transform` (a registered name) and its `params`; an int param takes an int or an expression over the recipe params (`"factor": "W"`) |
 
-Running a recipe binds the symbols (step 0), applies the steps and checks each against the reference executor on the same seeded inputs, writing `<i>_<transform>.snaxdfg` and `recipe.json`. vecadd's, `recipes/elementwise/vecadd.json`:
+Running a recipe binds the symbols (step 0), applies the steps and checks each against the reference executor on the same seeded inputs, writing `<i>_<transform>.snaxdfg` and `recipe.json`. vecadd's, `recipes/elementwise/vecadd_v1.json`:
 
-<!-- snippet: recipes/elementwise/vecadd.json -->
+<!-- snippet: recipes/elementwise/vecadd_v1.json -->
 ```json
  "params": {"W": 4, "N": 64},
  "symbols": {"N": "N"},
@@ -260,7 +266,7 @@ Each has an inverse, and each refuses with the fix named. The loop names follow 
 | `bind` / `unbind` | `node`, `brm`, `implementation`, `instance`, `params` | the tasklet (or a fused nest's spatial map, or a folding spatial map for `lane_accumulate`) and its spatial map become an accelerated node (below); `unbind` gives back what it `replaced` |
 | `encapsulate` / `unencapsulate` | `accelerator`, `units` | the units' groups become one accelerator sharing one streamer set (D148), in graph order |
 | `split_reduce` / `join_reduce` | `map`, `factor` | a folding map is split as `split_map` splits it, each lane writing a partial into `<output>_partial`; a final sum `<tasklet>_final` in a spatial map `<map>_final` over `0:factor` folds them (a seed stays on the final sum) |
-| `fuse_map` / `unfuse_map` | `first`, `second` | two nests with the same ranges and tags down to one tasklet each, joined by a transient at the same index, become one nest of two tasklets; the transient becomes a local value. An untagged level takes the other's tag; a split on one side only is refused with the split that fixes it (D150) |
+| `fuse_map` / `unfuse_map` | `first`, `second` | two nests with the same ranges and tags down to one tasklet each, joined by a transient at the same index, become one nest of two tasklets; the transient becomes a local value. An untagged level takes the other's tag; a split on one side only is refused with the split that fixes it (D150), and lanes on different dimensions of the transient (one nest in the row form, the other in the column form) naming both dimensions |
 | `fuse_seed` / `unfuse_seed` | `first`, `second` | a fold writing t with ⊕, read only by a nest computing `t ⊕ x` in place over t: the nest and t go and the fold starts from x (`reduce.seed`, D163; matvec_acc's q += A p). Refused for another reader, op, subset, a float or a bound fold |
 | `bake_scalar` / `unbake_scalar` | `container`, `value` (an int or `csr`) | at an int the scalar becomes a literal and the container goes (axpy's alpha 3: `bind` bakes `k1 = 3`); at `csr` the tasklet names the container, read at run time (D161) |
 | `interchange_map` | `map`, `with` | two maps of one perfect nest trade places, each keeping id, variable, range and tag; its own inverse. Refused when a range would name an inner variable or the swap reorders an order-dependent fold (rowsum 2: `sum_map_s` with `sum_map_1`) |
@@ -270,21 +276,21 @@ Each has an inverse, and each refuses with the fix named. The loop names follow 
 | `share_ports` / `unshare_ports` | `container`, `accelerator` | the container's writer's and reader's groups go on one accelerator whose movers they share, the k-th widest port of each on mover k (D169); the container is marked `hw.share_ports` |
 | `link` / `unlink` | `container`, `depth`, `group` | a transient between two bound units becomes a link node, their groups merge under `group`, and the transient leaves L1. Refused: not one writer and one reader (`link.container`), an end not bound (`link.unbound`), the beats not in the same order (`link.order`), a clashing name (`link.group`) |
 | `lift` / `unlift` | `kernel`, `at` | the region matching a kernel's import becomes a block, `sandbox.block` = `{name, kernel, heads}` (D166) |
-| `apply_recipe` / `unapply` | `recipe`, `region` or `block`, `params`, `name` | another recipe's steps run on the region, its names renamed onto it (`_1`, `_2` on a clash); one step, one reference check (D166) |
+| `apply_recipe` / `unapply` | `recipe`, `region` or `block`, `params`, `name` | another recipe's steps run on the region, its names renamed onto it (`_1`, `_2` on a clash); a param its symbols name is the region's, refused in `params`; one step, one reference check (D166) |
 | `name_block` | `nodes`, `name` | a region becomes a block by hand, with no kernel or recipe |
 
 What `bind` checks:
 
 - Every map around the spatial map is `temporal` (an untagged one names `tag_map`; `tile` is not lowered yet). The lanes param comes from the spatial bound, and the dimension over the spatial variable becomes the lanes' range.
-- The tasklet's code on the port names equals the BRM's `function.code` (section 3). A folding output without the spatial variable becomes one lane (D102).
+- The tasklet's code on the port names equals the BRM's `function.code` (section 3). A folding output without the spatial variable becomes one lane (D102). An input without it is a broadcast (D186): one lane a beat, given to every lane, taken only on a lane-wise datapath (`SimdLanes`, `Mac`); elsewhere it is refused, naming `mac` and `simd`. A seed (D163 · D187) has its output's lanes.
 - A fused nest binds as one: as a fold (`lane_fold`) or, when the second tasklet is plain, as one code with the first's expression in place of the local value (axpy's `y + alpha * x`).
 - A tasklet that needs a fused map or a split reduction is refused with the fix ("fuse_map first", "split_reduce first", D150).
 
 ### The library's recipes
 
-- `vecadd_undo` takes vecadd's last step back to the first.
-- dot binds the multiply to `simd` and the sum to `accumulate`'s `chisel_adder_tree`, whose `out` is one lane every `T = N / W` firings. `dot_1` has two accelerators, `vmul` and `vsum`, run one after the other (D157, D158); `dot_1_enc` encapsulates them as `dot`, each group's task setting the other's movers idle (section 8). dot 2 and 3 link `tmp0` at depth 1 and 0; dot 4–6 `split_reduce` the sum, fuse the nests and bind `mac`, dot 5 and 6 with `chisel_serial`. `matvec_1`–`matvec_6` do the same on each row.
-- **Recipes of recipes** (D166): `matvec_dot1`–`matvec_dot6` apply `dot/dot_<k>` on each row; `mvt_1_reuse`, `mvt_1_dot2_reuse` and `mvt_2_reuse` apply a matvec recipe on each half, the `vadd` and the sharing by hand.
+- `vecadd_v1_4` takes vecadd's last step back to the first.
+- dot binds the multiply to `simd` and the sum to `accumulate`'s `chisel_adder_tree`, whose `out` is one lane every `T = N / W` firings. `dot_v1` has two accelerators, `vmul` and `vsum`, run one after the other (D157, D158); `dot_v1_1` encapsulates them as `dot`, each group's task setting the other's movers idle (section 8). dot 2 and 3 link `tmp0` at depth 1 and 0; dot 4–6 `split_reduce` the sum, fuse the nests and bind `mac`, dot 5 and 6 with `chisel_serial`. `matvec_1`–`matvec_v6` do the same on each row.
+- **Recipes of recipes** (D166): `matvec_v1_1`–`matvec_v6_1` apply `dot/dot_<k>` on each row; `mvt_v1_1`, `mvt_v1_2_1` and `mvt_v2_1` apply a matvec recipe on each half, the `vadd` and the sharing by hand.
 
 ### The editor's session
 
@@ -296,7 +302,7 @@ What `bind` checks:
 | `session.json` | `cursor` (the step shown; undo and redo move it) and `platform` |
 | `export/<k>_<transform>.snaxdfg` | a step's graph, written by Export |
 
-- **Params**: a session from a kernel starts from its symbols, each a param (`edit-dfg --kernel K --set N=…`). Every factor and depth the editor writes names a param: the form defaults to `W`, `W_2`, … and `D`, `D_2`, …, and a number given instead becomes a new param at that value (`fresh_param`). `POST /api/apply`'s `new_params` (`{"W_mul": 8}`) adds them before the step.
+- **Params**: a session from a kernel starts from its symbols, each a param (`edit-dfg --kernel K --set N=…`). Every factor and depth the editor writes names a param: the form defaults to `W`, `W_2`, … and `D`, `D_2`, …, and a number given instead becomes a new param at that value (`fresh_param`). `POST /api/apply`'s `new_params` (`{"W_mul": 8}`) adds them before the step. `POST /api/params` with `{"rename": {"from": "W_x1", "to": "W"}}` renames one in the params, the symbols and every step (inside `apply_recipe`'s `params` too) and replays (`params.rename` refuses a taken name); with `{"drop": "K"}` drops one that no step, symbol or other param names (`params.drop` names what does). The left column lists an `apply_recipe` step whose `params` name the session's params as an entry of its own, so they are not listed unused.
 - **Renames**: when its map is bound, an editor-named factor is renamed to `W_<instance>` through the session (dot 1's `W_mul` and `W_sum`), unless several units share it (dot 2–6's `W`). `bind`'s default instance is `acc_N`, N the bind's order in the session.
 - **Replay**: a step applied before the last is refused (`session.drop`) until the later ones are dropped. A param change (`POST /api/params`) replays up to the cursor; the later steps are replayed when the cursor reaches them.
 - **Checks**: every apply and param change runs Save's design checks; the step view's `problems` and `notes` each are `{code, where, message, fix, before_save}`. `graph.unbound` while building is a note, but Save refuses it.
@@ -334,6 +340,7 @@ The `drawing` is `{nodes, edges, outlines, tasks}`; positions are the page's, ne
 - **Blocks** (D166): a closed block is drawn as one box inside its firing loops, its ports `in:A`, `out:x`, each edge's memlet the slice one firing takes (`A[m_t, 0:N]`).
 - **Packers and slicers** (D174, D180): a packed output's `FifoPacker` and a sliced input's `FifoSlicer` are boxes of their own on the unit's port, inside its group's outline; they are the view's, not nodes of the graph, and appear from `bind` on, where `design/streamers.py`'s `packed` and `sliced` place them.
 - **Partners**: a selected map's partners for `fuse_map`, `fuse_seed` and `interchange_map`, from the transforms' own sites, a fuse's marker on the transient's box, and a near partner with its refusal and fix.
+- **Preview**: `lift`'s and `apply_recipe`'s choices (`preview` on the field) each give what they would change: a kernel its region's node ids (`nodes`) and every region of it (`every`), a recipe the block's node ids and name, with the outer maps its `fuse_map` takes along (`nodes`), and what it makes (`hint`, `8 steps → mul, sum, link`). The page lists them as rows and lights the boxes of the choice under the pointer (else the one ticked), the edges between them and, dimmer, the edges from or to them.
 
 ## 5. Platform
 
@@ -459,7 +466,7 @@ A note is registered (`register_note(code, fn)`) and runs once the checks passed
 | Code | Noted when |
 |---|---|
 | `design.serial_one_lane` | a unit bound to `SerialAccumulate` at lanes 1, the same work as `TreeAccumulate` at lanes 1; the fix binds `chisel_adder_tree` |
-| `design.xbar_inputs` | more crossbar inputs than `l1.warn_xbar_inputs`: "85 TCDM crossbar inputs, above 64 (l1.warn_xbar_inputs): beyond SNAX's own crossbar, its cost extrapolated from the tables" (mvt_2 at W = 8) |
+| `design.xbar_inputs` | more crossbar inputs than `l1.warn_xbar_inputs`: "85 TCDM crossbar inputs, above 64 (l1.warn_xbar_inputs): beyond SNAX's own crossbar, its cost extrapolated from the tables" (mvt_v2 at W = 8) |
 | `char.missing` | a unit or buffer link the technology does not characterize (section 14): its comb part costs 0 |
 | `cost.extrapolated` | a streamer or the crossbar priced outside the tables' grid, "streamer outside the table's grid on channels 32 (grid 1–16)", or an L1 bank the table does not hold (the memory costed 0) |
 
@@ -550,15 +557,15 @@ flowchart TD
   S --> ST["store_C (after add_acc_out)"] --> SY[sync store_C]
 ```
 
-- **Encapsulated** (several groups on one streamer set): each task also configures the other groups' movers idle, and its `start` launches every mover. `dot_1_enc`'s `mult_vmul` starts `vmul_a`, `vmul_b`, `vmul_out`, with `vsum_a`, `vsum_out` idle.
+- **Encapsulated** (several groups on one streamer set): each task also configures the other groups' movers idle, and its `start` launches every mover. `dot_v1_1`'s `mult_vmul` starts `vmul_a`, `vmul_b`, `vmul_out`, with `vsum_a`, `vsum_out` idle.
 - **A linked group** is one task at its first unit's node, `<node>_<group>`, on the group as its component: streamers only on the ports on no link (a link's container is never loaded or stored), and one accelerator task whose `values` are each unit's, by unit. Dot 6's `mult_dot`: `{"mac": {"n": 128, "T": 128}, "sum": {"n": 1, "T": 1}}`. The program writes the group's JOBS = n_u / ∏ T_v over its first unit u and its folds v, then each fold's JOB_BEATS (section 10).
 - **Chains through L1** (D105): `after` holds data dependences only, so two groups chain with one wait, on the first's writer.
 - **In place**: a writer never waits for a reader it starts with. That is an in-place update, allowed only when the reader is a port of its own unit visiting the same addresses in the same order (axpy's `y`, a fold's seed), and refused by name otherwise.
-- **A packed output** (D174): its writer's innermost loop of n pushes at stride s = W · b / 8 bytes becomes $(\lceil n / d_{out} \rceil, d_{out}\thinspace s)$, one write per 8-byte word, its spatial bounds `[1]`, the outer loops and the base unchanged. matvec at i8, M = 10 int32 outputs at W = 1: (10, 4 B) becomes (5, 8 B). A sliced input's reader (D180) the same with d_in: vecadd_i32 at W = 1, N = 64: (64, 4 B) becomes (32, 8 B).
+- **A packed output** (D174): its writer's innermost loop of n pushes at stride s = W · b / 8 bytes becomes $(\lceil n / d_{out} \rceil, d_{out}\thinspace s)$, one write per 8-byte word, its spatial bounds `[1]`, the outer loops and the base unchanged. matvec at i8, M = 10 int32 outputs at W = 1: (10, 4 B) becomes (5, 8 B). A sliced input's reader (D180) the same with d_in: vecadd_v1_1 at W = 1, N = 64: (64, 4 B) becomes (32, 8 B).
 - **A copy** (D182): a `transpose` node is the DMA task `transpose_<dst>`, `l1_to_l1`, where a load of its destination would be (with the loads of the first node that reads it), `after` what put the source in L1 (its load, made first if none did). Its loops are the destination's dimensions, the last innermost, each moving the source along the dimension `perm` maps there, one burst of an element a step (`size`); the strides come from both L1 layouts, so `padded_rows` needs nothing of its own. The reader's `after` holds it, so the DMA wait (D135) comes before the reader's start. Rank 2 only; another rank, or `by` other than `dma`, is refused by name. A 64 × 64 int8 A, contiguous: `size` 1, `src` strides [64, 1], `dst` [1, 64], so `for k: snrt_dma_start_2d(A_T + 64·k, A + k, 1, 1, 64, 64)`; at int64 `size` 8 and strides of 512 (520 under `padded_rows`).
-- **In series** (D158, the `serial` schedule): before each accelerator's `start`, one `sync` on the previous accelerator's task, its own configures placed before it, so it is set up while the previous one runs. None when an `after` already holds that task, and none between the groups of one encapsulated accelerator. dot_serial: `sum_sum`'s configures, `sync mult_mul`, its start.
-- **Sequential** (D183, `sequential`): a `sync` right after every start, on its accelerator task, else its DMA task, so each step, configures included, begins after the previous one has ended; a later `sync` on a task already synced is left out. mvt_4_i64_dma_AT: each load and its sync, conf half 1, start, sync, `store_x1` and its sync, `transpose_A_T` and its sync, the loads of half 2 each with its sync, conf half 2, start, sync, `store_x2` and its sync.
-- **Pipelined** (D179): `pipeline` adds no serial sync, so a start waits only for its tasks' `after` and its components' previous tasks. Each store (its configure and start) moves down past the later blocks of other accelerators (a block: the loads, configures and start of one accelerator task), stopping before a block of its own accelerator, else going to before the final syncs. `pipeline_compute` also gathers consecutive blocks whose tasks' `after` are DMA tasks only and that share no component (the first may open with stores): their loads, then their configures, then their starts back to back. A shared form (mvt_3) gives one list under all three schedules. mvt_3_split, its halves `mvt` and `mvt_1`:
+- **In series** (D158, the `serial` schedule): before each accelerator's `start`, one `sync` on the previous accelerator's task, its own configures placed before it, so it is set up while the previous one runs. None when an `after` already holds that task, and none between the groups of one encapsulated accelerator. dot_v7: `sum_sum`'s configures, `sync mult_mul`, its start.
+- **Sequential** (D183, `sequential`): a `sync` right after every start, on its accelerator task, else its DMA task, so each step, configures included, begins after the previous one has ended; a later `sync` on a task already synced is left out. mvt_v4_1: each load and its sync, conf half 1, start, sync, `store_x1` and its sync, `transpose_A_T` and its sync, the loads of half 2 each with its sync, conf half 2, start, sync, `store_x2` and its sync.
+- **Pipelined** (D179): `pipeline` adds no serial sync, so a start waits only for its tasks' `after` and its components' previous tasks. Each store (its configure and start) moves down past the later blocks of other accelerators (a block: the loads, configures and start of one accelerator task), stopping before a block of its own accelerator, else going to before the final syncs. `pipeline_compute` also gathers consecutive blocks whose tasks' `after` are DMA tasks only and that share no component (the first may open with stores): their loads, then their configures, then their starts back to back. A shared form (mvt_v3) gives one list under all three schedules. mvt_v3_1, its halves `mvt` and `mvt_1`:
 
 | Schedule | Order |
 |---|---|
@@ -566,9 +573,9 @@ flowchart TD
 | `pipeline` | loads of half 1, conf `mvt`, start, loads of half 2, conf `mvt_1`, start, `store_x1`, `store_x2`, syncs |
 | `pipeline_compute` | loads of both halves, conf `mvt`, conf `mvt_1`, start `mvt`, start `mvt_1`, `store_x1`, `store_x2`, syncs |
 
-vecadd's design point on `platforms/snax_forge.json` gives `tests/run/fixtures/vecadd/tasks.json` exactly; its end:
+vecadd's design point on `platforms/snax_forge.json` gives `tests/run/fixtures/vecadd_v1/tasks.json` exactly; its end:
 
-<!-- snippet: tests/run/fixtures/vecadd/tasks.json -->
+<!-- snippet: tests/run/fixtures/vecadd_v1/tasks.json -->
 ```json
   {
    "op": "configure",
@@ -684,7 +691,7 @@ A unit:
 | Key | Holds |
 |---|---|
 | `name`, `brm`, `datapath` | the bind's instance, its BRM, a catalogue datapath |
-| `ports` | per BRM port, in its order: `port` (the datapath's), `dir`, `dtype`, `lanes`; an outer output that a packer feeds also `d_out`, an outer input that a slicer feeds `d_in` (each absent at 1, D174 · D180) |
+| `ports` | per BRM port, in its order: `port` (the datapath's), `dir`, `dtype`, `lanes`; an outer output that a packer feeds also `d_out`, an outer input that a slicer feeds `d_in` (each absent at 1, D174 · D180); a broadcast input `broadcast` true (absent when false, D186): its lanes stay the unit's, its stream carries one |
 | `opType` | a SIMD or `Mac` unit's op type, NumPy's result type of its inputs or of the kernel's casts (D143 · D175) |
 | `params` | only what the ports do not give: `op`, a baked slot (relu's `k`), a `Mac`'s `accumulate` and `regOut`, `T` when fixed at design time (then no JOB_BEATS) |
 | `scalars` | each slot read from a scalar and its type (axpy's `{"k1": "int32"}`), each an R/W CSR with its datapath `pin` |
@@ -695,15 +702,15 @@ A CSR is `name`, `access` (`rw`, `ro`), `offset` from the shell's first CSR, `wi
 
 - **`movers`**, with `share_ports`: per mover in the streamer's order `{name (reader<k>, writer<k>), role, num_channel, masked, users}`, each user `{group, port, num_channel}`.
 - **`port_mux`**: `{groups (in PORT_MUX_SEL's order), csr}`; PORT_MUX_SEL is the accelerator's last CSR, R/W, as wide as a group's index.
-- **Derived, never stored**: each port's num_slc and num_ch (D142; 1 for a packed output or a sliced input, whose `d_out` or `d_in` a reader checks against num_slc / W), each link's kind and `to_input` (the fed port's place among its unit's inputs), every unit's firings.
+- **Derived, never stored**: each port's num_slc and num_ch (D142; 1 for a packed output or a sliced input, whose `d_out` or `d_in` a reader checks against num_slc / W, W being 1 for a broadcast), each link's kind and `to_input` (the fed port's place among its unit's inputs), every unit's firings.
 
 dot 4's file, one accelerator `dot` of one group `dot`, the MAC's lane partials wired into the tree:
 
-<!-- snippet: gvsoc/snax-gvsoc/forge/dot_4/accelerator.json -->
+<!-- snippet: gvsoc/snax-gvsoc/forge/dot_v4/accelerator.json -->
 ```json
 {
- "design_point": "out/design/dot_4/design_point.json",
- "tag": "snax_forge_dot_4",
+ "design_point": "out/design/dot_v4/design_point.json",
+ "tag": "snax_forge_dot_v4",
  "accelerators": [
   {
    "name": "dot",
@@ -765,8 +772,8 @@ dot 4's file, one accelerator `dot` of one group `dot`, the MAC's lane partials 
 Each a `GenError`, before anything is written:
 
 - **The entry**: a tag that is not an identifier, or a platform without an `accelerator_slot` (`gen.tag`: a design named `dot-1`).
-- **A unit**: a null binding (`gen.binding`), an unregistered datapath (`gen.datapath`), a controller other than `counted` (`gen.controller`), a drain other than 0 (`gen.drain`), timing other than the catalogue's (`gen.timing`), and what the datapath refuses: args (`gen.args`), op (`gen.op`), ports (`gen.ports`), rates (`gen.rate`), a port's lanes neither whole 64-bit channels nor sliced (an input) or packed (an output) (`gen.lanes`), a dtype not intN or uintN (`gen.dtype`).
-- **Links and groups**: a link not from an `out` to an `in` of the same dtype and lanes, or an end with `d_in` or `d_out` (`gen.link`), a port on two links (`gen.link_port`), `inputs` or `outputs` not exactly the unlinked ports (`gen.outer`), a group not connected (`gen.group`), a shared accelerator not as `movers` and `port_mux` say (`gen.share`).
+- **A unit**: a null binding (`gen.binding`), an unregistered datapath (`gen.datapath`), a controller other than `counted` (`gen.controller`), a drain other than 0 (`gen.drain`), timing other than the catalogue's (`gen.timing`), and what the datapath refuses: args (`gen.args`), op (`gen.op`), ports (`gen.ports`), rates (`gen.rate`), a port's lanes neither whole 64-bit channels nor sliced (an input) or packed (an output) (`gen.lanes`), a dtype not intN or uintN (`gen.dtype`), a seed on a `Mac` without `accumulate` (`gen.seed`), a broadcast into a datapath whose lanes are not lane-wise (`gen.broadcast`).
+- **Links and groups**: a link not from an `out` to an `in` of the same dtype and lanes, or an end with `d_in`, `d_out` or `broadcast` (`gen.link`), a port on two links (`gen.link_port`), `inputs` or `outputs` not exactly the unlinked ports (`gen.outer`), a group not connected (`gen.group`), a shared accelerator not as `movers` and `port_mux` say (`gen.share`).
 - **Until the phase that lifts it**: a group that is not a chain in unit order, only the last unit's output outer (`gen.chain`, until tier A), and a unit of span > 1 on an outer input (`gen.span`, until B2).
 
 ### Types, groups and firings
@@ -786,19 +793,19 @@ They are the accelerator's interface, all in `<tag>_csr`, BUSY_COUNTER in its su
 - **A busy group holds its writes**: while it runs, a write to any of its R/W CSRs waits (`csr_req_ready_o` low) until E + 1, E the cycle its run ends, so its settings stay constant (D168). Writes to other groups and every read go through. Programming the next task during a run is open item 123.
 - **An empty run**, JOBS 0 or any JOB_BEATS 0, ends in the cycle it starts: busy never rises, BUSY_COUNTER is 0, and it ends in a done.
 - **STATUS**: bit 0 busy, bit 1 done (sticky: set by the done pulse in E, cleared by an accepted start). The program polls bit 0.
-- **BUSY_COUNTER**: the busy cycles after the accepted start, held after the run, saturating at 2^busy_counter_width − 1. On snax_cluster's RTL it may differ from SNAX-GVSoC's by up to the group's streamer fill (3, or 2 with one outer input, D123): the streamer's head start before START counts, which the core's timing sets (`dot_1_enc` at N = 512: `vmul` 128 on the RTL against 131).
+- **BUSY_COUNTER**: the busy cycles after the accepted start, held after the run, saturating at 2^busy_counter_width − 1. On snax_cluster's RTL it may differ from SNAX-GVSoC's by up to the group's streamer fill (3, or 2 with one outer input, D123): the streamer's head start before START counts, which the core's timing sets (`dot_v1_1` at N = 512: `vmul` 128 on the RTL against 131).
 - **Pins**: `<group>_busy_o` (STATUS bit 0) and `<group>_done_o` (the done pulse, high in E + 1), which snax_cluster leaves unconnected (open item 92).
 
-The header names a CSR `<ACC>_<RW|RO>_[<GROUP>_][<UNIT>_]<NAME>` (`Accelerator.define`, for the header and the program), without the group when the accelerator has one, without the unit when the group has one: vecadd's `ACC_RW_START`, dot 4's `DOT_RW_MAC_JOB_BEATS`, dot 1's `VSUM_RW_JOB_BEATS`, `dot_1_enc`'s `DOT_RW_VSUM_JOB_BEATS`.
+The header names a CSR `<ACC>_<RW|RO>_[<GROUP>_][<UNIT>_]<NAME>` (`Accelerator.define`, for the header and the program), without the group when the accelerator has one, without the unit when the group has one: vecadd's `ACC_RW_START`, dot 4's `DOT_RW_MAC_JOB_BEATS`, dot 1's `VSUM_RW_JOB_BEATS`, `dot_v1_1`'s `DOT_RW_VSUM_JOB_BEATS`.
 
 | Design | Offsets | rw, ro | Task values |
 |---|---|---|---|
 | vecadd | START 0, JOBS 1, STATUS 2, BUSY_COUNTER 3 | 2, 2 | JOBS 16 |
-| vsum_tree_i32 | START 0, JOBS 1, JOB_BEATS 2, STATUS 3, BUSY_COUNTER 4 | 3, 2 | JOBS 1, JOB_BEATS 16 |
+| vsum_v1_1_1 | START 0, JOBS 1, JOB_BEATS 2, STATUS 3, BUSY_COUNTER 4 | 3, 2 | JOBS 1, JOB_BEATS 16 |
 | dot 1 (vmul, vsum) | VMUL: START 0, JOBS 1, STATUS 2, BUSY_COUNTER 3; VSUM: START 4, JOBS 5, JOB_BEATS 6, STATUS 7, BUSY_COUNTER 8 | 5, 4 | VMUL JOBS 16; VSUM JOBS 1, JOB_BEATS 16 |
 | dot 2–6, matvec 2–6 | START 0, JOBS 1, JOB_BEATS 2, STATUS 3, BUSY_COUNTER 4 | 3, 2 | dot JOBS 1, matvec 16; JOB_BEATS T = N / W (128 at N = 512, W = 4) |
 | axpy (`k1` from alpha; at int64 K1_LO 2, K1_HI 3) | START 0, JOBS 1, K1 2, STATUS 3, BUSY_COUNTER 4 | 3, 2 | JOBS 16, K1 alpha[0] |
-| matvec_seed (groups mul, sum; the seed has no CSR) | as dot 1 | 5, 4 | MUL JOBS 1024; SUM JOBS 8, JOB_BEATS 128 (M = 8, N = 512, W = 4) |
+| matvec_acc_v1 (groups mul, sum; the seed has no CSR) | as dot 1 | 5, 4 | MUL JOBS 1024; SUM JOBS 8, JOB_BEATS 128 (M = 8, N = 512, W = 4) |
 
 ### The datapath catalogue
 
@@ -808,7 +815,7 @@ The header names a CSR `<ACC>_<RW|RO>_[<GROUP>_][<UNIT>_]<NAME>` (`Accelerator.d
 |---|---|---|---|---|
 | `SimdLanes(inTypes, opType, outType, lanes, op, streams, k)` | per lane `a op b`; at one stream `k` (a `const`) drives `b`, the module name ending `_k<k>` (`_km3` for −3); axpby `k1 * a + k2 * b`; a slot read from a scalar is a pin (`_k1r`) | 0 | | 0 |
 | `TreeAccumulate(inType, outType, lanes, op, seed)` | acc ← (first ? seed : acc) + tree(in); unseeded, acc ← first ? tree(in) : acc + tree(in) | 1 | `fire`, `first` | `width(outType)` |
-| `Mac(inTypes, opType, outType, lanes, accumulate, regOut)` | with `accumulate`, per lane s ← first ? a·b : s + a·b; otherwise a·b + c | 1 (0, or 1 with `regOut` and pin `en`) | `fire`, `first` | `lanes * width(outType) * max(accumulate, regOut)` |
+| `Mac(inTypes, opType, outType, lanes, accumulate, regOut, seed)` | with `accumulate`, per lane s ← first ? a·b : s + a·b; seeded (`seed`, only with `accumulate`), s ← (first ? seed : s) + a·b, the seed of the output's type and lanes (D187); otherwise a·b + c | 1 (0, or 1 with `regOut` and pin `en`) | `fire`, `first` | `lanes * width(outType) * max(accumulate, regOut)` |
 | `LaneAccumulate(inType, outType, lanes)` | per lane s ← first ? a : s + a | 1 | `fire`, `first` | `lanes * width(outType)` |
 | `SerialAccumulate(inType, outType, lanes, seed)` | lane k in cycle k, acc ← (first ∧ k = 0) ? x_k : acc + x_k; span = lanes | 1 | `read`, `lane`, `first` | `width(outType)` |
 | `LinkBuffer(depth, lanes, dtype)` | D beats, depth ≥ 1 | 1 | `load`, `wslot`, `rslot` | `depth * lanes * width(dtype)` |
@@ -868,6 +875,7 @@ $$C_2 = JT + 2, \quad C_3 = JT + 1, \quad C_4 = JT + 2, \quad C_5 = J(T + W - 1)
 - Per input port k, numbered across the sets in set order, `stream2acc_<k>_data_i`, `_valid_i`, `_ready_o`; per output port `acc2stream_<k>_data_o`, `_valid_o`, `_ready_i`, in the order of `inputs` and `outputs`. Data is `num_channel × 64` bits, lane i at bits `[w(i+1)-1 : wi]` (D142).
 - **A packed output** (D174): a `FifoPacker` of depth d_out (`<unit>_<port>_packer`) sits between the unit's output and `acc2stream_<k>`, on the group's side of a shared set's port mux; the port is one 64-bit word. Its slice pointer clears when the group's START is accepted; each push fills the next slice, and the word goes to the writer when the slice is d_out − 1 or the push is the run's last (the control unit's `last`: the done condition without the push, from the counters only), the slices above zero; only a sending push waits for the writer's ready, so no cycle is added.
 - **A sliced input** (D180): a `FifoSlicer` of d_in pops a word (`<unit>_<port>_slicer`) sits between `stream2acc_<k>` and the unit's input, on the group's side of a shared set's port mux; the port is one 64-bit word. The unit's input handshake is its pops, slice `count` at the low bits, low slice first; it takes the reader's word when empty or on its last pop, only while the group is busy (`enable`), and drops what it holds when the group's START is accepted (`clear`). Its output is registered, so a run takes one cycle more.
+- **A broadcast input** (D186): its reader, or its slicer, moves one lane a beat, so the port is that lane, at least one 64-bit word, and a slicer's d_in is that lane's; `<unit>_<port>_bcast` gives the lane to every lane of the unit's input, wires only.
 - Per group `<group>_busy_o` and `<group>_done_o`.
 - **A shared accelerator** (D169) has its movers at the wrapper instead, readers then writers, and its port mux between them and its groups' ports, pure wires selected by PORT_MUX_SEL (reset 0, never held): a reader's data to each user, its valid and ready the selected group's only; a writer the selected user's data, zero-padded. snax-gvsoc's `SnaxPortMuxRule` without its fatal cases.
 
@@ -1008,7 +1016,7 @@ Names, ports and FIFO depths come from the hjson files and the design point.
 
 `report/run.md` and `pixi run view` read the files above.
 
-- **Accelerators**: a row per accelerator (its streamer set, D157) with its groups, its CSRs, its streamer's busy windows (one per start) and each group's BUSY_COUNTER. Example, dot 1 at N = 64: `vmul` 960–981 and `vsum` 982–999; `dot_1_enc`'s `dot` 960–996 in two windows.
+- **Accelerators**: a row per accelerator (its streamer set, D157) with its groups, its CSRs, its streamer's busy windows (one per start) and each group's BUSY_COUNTER. Example, dot 1 at N = 64: `vmul` 960–981 and `vsum` 982–999; `dot_v1_1`'s `dot` 960–996 in two windows.
 - **Units and movers**: a row per unit (a linked group under its name); the movers in a drop-down per group, `vmul ▸ vmul_a, vmul_b, vmul_out`, with each mover's port, direction, num_ch, busy, stalls and FIFO highest against depth.
 - **Idle tasks**: a streamer task whose temporal bounds are all 0, started only because an encapsulated set's movers share one start, is marked idle (`mult_vsum_a (idle)`), its schedule bar dashed (`viz/index.py`'s `idle_tasks`).
 - **BUSY_COUNTER**: shown beside its expected value, a guide and not a check (`mult_mul 256 (expected 259, a guide)`, D155).
@@ -1086,9 +1094,9 @@ How the cycles grow along dot's recipe at N = 512:
 
 A run's BUSY_COUNTER counts from its group's START every cycle until busy drops (section 10), so it includes bank conflicts and is shortened by the streamers' head start: the program starts the streamers, then the accelerator, so a stream may have data waiting. `counter` is a guide that the viewer and `run.md` show beside the measured value, not a check.
 
-- dot 1 at N = 2048, W = 8: `dot_1_enc`'s vmul 256 against 259 (its START 10 cycles after the shared streamer's), `dot_1`'s vmul and vsum 259 against 259; vecmul at W = 1: 2048 against 2051.
-- `tests/estimate/` holds it equal to the SNAX-GVSoC counter of the designs in open item 95 it matches (`COUNTERS`). It does not match rowsum_2's contiguous layout (131 against 134, bank conflicts), the seeded sums (matvec_seed's 1028 against 1027) and rowsum_serial (67 against 65).
-- Pipelined, `design.md` notes when runs of different accelerators, each started as soon as its `after` allow, move more words a cycle at once than there are banks: `mvt and mvt_1 run at once under pipeline: their streams move 32.3 words a cycle over 32 banks, so bank conflicts stretch them beyond the ideal` (mvt_3_split at W = 8). The longest path holds no core configuration, so both pipelined schedules give it the same cycles.
+- dot 1 at N = 2048, W = 8: `dot_v1_1`'s vmul 256 against 259 (its START 10 cycles after the shared streamer's), `dot_v1`'s vmul and vsum 259 against 259; vecmul at W = 1: 2048 against 2051.
+- `tests/estimate/` holds it equal to the SNAX-GVSoC counter of the designs in open item 95 it matches (`COUNTERS`). It does not match rowsum_v2's contiguous layout (131 against 134, bank conflicts), the seeded sums (matvec_acc_v1's 1028 against 1027) and rowsum_v3 (67 against 65).
+- Pipelined, `design.md` notes when runs of different accelerators, each started as soon as its `after` allow, move more words a cycle at once than there are banks: `mvt and mvt_1 run at once under pipeline: their streams move 32.3 words a cycle over 32 banks, so bank conflicts stretch them beyond the ideal` (mvt_v3_1 at W = 8). The longest path holds no core configuration, so both pipelined schedules give it the same cycles.
 - `bank_bound` is noted in the page, `design.md` and `run.md` when it exceeds `cycles`, over one group's streamers: `mul: the streams move 6144 words over 32 banks, at least 192 cycles of L1 time against the ideal 128` (dot 1 at W_mul = 16, whose streams took 211 cycles and BUSY_COUNTER 186).
 - Against SYN2's 48 synthesized points (`tests/estimate/fixtures/syn2_flops.json`), each datapath's `bits` matches the flops DC kept and `ctrl_bits` is held within 10 %: a check of the counts, not of the cost's accuracy (section 14).
 
@@ -1122,7 +1130,7 @@ What a design costs in area and energy before any synthesis, beside the estimate
 | `<tech>/ram_table.csv` | CACTI 7: depth 32–4096 × width 8–256, `area_um2`, `e_rd_pj`, `e_wr_pj` | X47, X48 |
 
 - `pixi run import-costs` copies the five files as they are, with `<tech>/SOURCE` naming the commit and each file's path and sha256; never run in CI. `tests/char/` checks every block entry against the catalogue and the tables against `SOURCE`.
-- **Block lookup** (`lookup(table, datapath, params, lanes, depth=None)`, D176): the entry whose params equal the block's at its width pair (`pair_params`: lanes, depth and unset constants aside; the widest input, a SimdLanes' output at most its op's width, unsigned as signed; a packer by its lane type and d_out, a slicer by its lane type, lanes and d_in), then a point at these lanes as is (`measured`); else under `copy` lanes / W0 × the point at the smallest lanes W0; under `interpolate` linear between the two measured lanes around it; under `slope` the nearest point plus the entry's slope per lane; a LinkBuffer depth linear between two measured depths, a narrower dtype the int64 entry × width / 64 (`width`); a seeded fold its unseeded entry (`unseeded`). Anything else is None (a form the table does not hold, lanes outside the range): the comb part counts 0 and `char.missing` names it.
+- **Block lookup** (`lookup(table, datapath, params, lanes, depth=None)`, D176): the entry whose params equal the block's at its width pair (`pair_params`: lanes, depth and unset constants aside; the widest input, a SimdLanes' output at most its op's width, unsigned as signed; a packer by its lane type and d_out, a slicer by its lane type, lanes and d_in), then a point at these lanes as is (`measured`); else under `copy` lanes / W0 × the point at the smallest lanes W0; under `interpolate` linear between the two measured lanes around it; under `slope` the nearest point plus the entry's slope per lane; a LinkBuffer depth linear between two measured depths, a narrower dtype the int64 entry × width / 64 (`width`); a seeded fold its unseeded entry (`unseeded`), a block whose entries have no `seed` key (a Mac, measured before it took one) its entry without it. Anything else is None (a form the table does not hold, lanes outside the range): the comb part counts 0 and `char.missing` names it.
 - **Table lookup** (`tables.py`'s `streamer_cost`, `xbar_cost`, `bank`): linear along one axis at a time between the two grid values around the query, the crossbar's energy in 1/inputs, and where inputs > banks its value at inputs = banks. Outside the grid, linear through the two nearest grid values, clamped at zero, with `cost.extrapolated`. The banks are a lookup, never interpolated: a bank off the grid costs 0 and is noted. A writer is priced as a reader.
 
 ### The model
@@ -1142,7 +1150,7 @@ $$A = \sum_b A_b + \sum_g A_{\mathit{ctrl},g} + \sum_p A_{\mathit{strm}}(D_p, L_
 $$E = \sum_b E_b + \sum_g E_{\mathit{ctrl},g} + \sum_p \frac{W_p}{C_p}\thinspace e_{\mathit{beat}}(D_p, L_p, C_p) + e_{\mathit{acc}}(n_{\mathit{banks}}, n_{\mathit{banks}})\thinspace\big(N_{\mathit{rd}}\thinspace(1 - g_{\mathit{ro}}) + N_{\mathit{wr}}\thinspace(1 - g_{\mathit{wo}})\big) + N_{\mathit{rd}}\thinspace e_{\mathit{rd}} + N_{\mathit{wr}}\thinspace e_{\mathit{wr}}$$
 
 - **The five parts** (`PARTS`): datapath (the units and buffer links, b), control (g), streamers, crossbar, memory (the banks). The csr, the cores, the I-cache and the DMA are not costed: the DMA's loads and stores are the same for every variant, and the cores' and AXI's ports enter only as crossbar inputs.
-- **A copy** (section 13's `copies`, D184) is one beat read and one beat written on L1's superbank port per burst, whatever its size (a one-element burst never crosses a superbank line; `Estimate.copy_bursts`): in the crossbar part a read at a read-only input's price and a write at a write-only one's, and in the memory part a read and a write on each of the superbank's S banks (S = `superbank_banks`), added to N_rd and N_wr. The DMA engine is not priced. mvt_4 at 64 × 64 on 32 banks (S = 8): 8 × 4096 × (3.538 + 6.468) pJ = 327.87 nJ in the banks and 4096 × (1.839 + 1.455) pJ = 13.49 nJ in the crossbar.
+- **A copy** (section 13's `copies`, D184) is one beat read and one beat written on L1's superbank port per burst, whatever its size (a one-element burst never crosses a superbank line; `Estimate.copy_bursts`): in the crossbar part a read at a read-only input's price and a write at a write-only one's, and in the memory part a read and a write on each of the superbank's S banks (S = `superbank_banks`), added to N_rd and N_wr. The DMA engine is not priced. mvt_v4 at 64 × 64 on 32 banks (S = 8): 8 × 4096 × (3.538 + 6.468) pJ = 327.87 nJ in the banks and 4096 × (1.839 + 1.455) pJ = 13.49 nJ in the crossbar.
 - **The crossbar's energy** has one price per access for a bank count, a full crossbar's ($e_{\mathit{acc}}$ at inputs = banks, 2.752585 pJ on 32 banks), so it follows the accesses alone: dot 5 linked (19 inputs, 4097 accesses) costs 59.656 nJ against 59.811 nJ unlinked (35 inputs, 4113).
 - **By input kind** (D178, X93): a read is priced as a read-only input's and a write as a write-only one's, $e_{\mathit{acc}}(1 - g_k)$, with $g_k$ at the design's bank count (linear in it between 16, 32 and 64 banks, the nearest one's outside). On 32 banks a read costs 2.752585 × (1 − 0.331792) = 1.839299 pJ and a write 2.752585 × (1 − 0.471583) = 1.454513 pJ; `xbar` gives both as `e_ro` and `e_wo`.
 - **The crossbar's area** prices a reader's channel as a read-only input and a writer's as write-only, since synthesis removes what their constant bits make dead (X70, X71). The factor form above is the default; the crosspoint form, $b\thinspace(c_{\mathit{rw}}\thinspace n_{\mathit{rw}} + c_{\mathit{ro}}\thinspace n_{\mathit{ro}} + c_{\mathit{wo}}\thinspace n_{\mathit{wo}}) + d\thinspace n_{\mathit{in}} + e\thinspace b + g$, is an option (`Estimate.xbar_in("crosspoint")`). dot 3 at W = 16 on the one-core cluster (35 inputs, 32 read-only, 1 write-only): 113 891 µm², where every input read-write gives 182 006; the synthesized gated cluster has 103 257 µm².
@@ -1245,7 +1253,7 @@ The static identity: `graph_counts` puts the graph's counts in this form (a unit
 
 ### The checks and the known limits
 
-- `tests/estimate/test_cost.py` checks consistency, not accuracy: dot 3 at W = 2 to 32, N = 2048, each of the five parts within 1e-6 of snax-forge-experiments' own pricing on the same gated tables (`tests/estimate/fixtures/dot3_gated.json`). It also prices vecmul at W = 8, dot 4 and mvt_1_dot2 by hand from the tables' rows, and vecmul at W = 32 off the grid. `tests/char/test_tables.py` checks the lookup rule against `cost_tables.md`'s six worked examples.
+- `tests/estimate/test_cost.py` checks consistency, not accuracy: dot 3 at W = 2 to 32, N = 2048, each of the five parts within 1e-6 of snax-forge-experiments' own pricing on the same gated tables (`tests/estimate/fixtures/dot3_gated.json`). It also prices vecmul at W = 8, dot 4 and mvt_v1_2 by hand from the tables' rows, and vecmul at W = 32 off the grid. `tests/char/test_tables.py` checks the lookup rule against `cost_tables.md`'s six worked examples.
 - **Limits**:
   - The control unit's comb area is only its 1 : 1 estimate.
   - A streamer is priced per beat and a crossbar access at one price per input kind: a streamer's clock while it waits and the crossbar's per-cycle part are not counted, and a writer's streamer is priced as a reader. The static estimate does not see conflicts; the dynamic energy counts each refused request at a granted one's price.

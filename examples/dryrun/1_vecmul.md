@@ -213,7 +213,7 @@ Turn Compare on and pick `vecmul_w4/4_bind` and `vecmul_w8/4_bind`: Details and 
 
 ## 8. What was generated
 
-The flow wrote the design point's files to `out/flow/vecmul_dry/gen/`: the cluster file `snax_forge.hjson` and its streamer file `snax_forge_vecmul_dry_streamer_acc.hjson`, which SNAX-GVSoC reads, the headers, the program `main.c` with its `data.h`, `manifest.json`, and `accelerator.json`, the one description both SNAX-GVSoC and the RTL are built from (D134, C§10). The design is one snax_cluster entry with one streamer set, `acc` (D157). The entry's name is the design's tag, `snax_forge_<design>` with the design named after its recipe, so Save's `vecmul_dry` gives `snax_forge_vecmul_dry` here and in the RTL's module names (a recipe `vecmul` would give `snax_forge_vecmul`):
+The flow wrote the design point's files to `out/flow/vecmul_dry/gen/`: the cluster file `snax_forge.hjson` and its streamer file `snax_forge_vecmul_dry_streamer_acc.hjson`, which SNAX-GVSoC reads, the headers, the program `main.c` with its `data.h`, `manifest.json`, and `accelerator.json`, the one description both SNAX-GVSoC and the RTL are built from (D134, C§10). The design is one snax_cluster entry with one streamer set, `acc` (D157). The entry's name is the design's tag, `snax_forge_<design>` with the design named after its recipe, so Save's `vecmul_dry` gives `snax_forge_vecmul_dry` here and in the RTL's module names (the recipe `vecmul_v1` gives `snax_forge_vecmul_v1`):
 
 ```json
     "snax_acc_name": "snax_forge_vecmul_dry",

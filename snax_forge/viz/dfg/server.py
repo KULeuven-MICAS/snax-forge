@@ -10,7 +10,8 @@ static files, the page ``dfg.html`` at ``/``. ``GET /api/mode`` gives the mode, 
 and ``POST /api/reload``, each an api.py function. ``make_edit_server`` (edit mode,
 ``edit-dfg``) serves one session (sandbox/session.py): ``/api/kernels``, ``/api/recipes``,
 ``/api/sessions``, ``/api/session``, ``/api/step/<k>`` and its ``/site``, ``/api/compare/<j>/<k>``,
-and the POSTs ``apply``, ``cursor``, ``params``, ``save`` and ``export``, each a ``Session`` method.
+and the POSTs ``apply``, ``cursor``, ``params`` (set, ``drop`` or ``rename`` one), ``save`` and
+``export``, each a ``Session`` method.
 
 Every POST needs ``Content-Type: application/json`` and a JSON object body, and every answer to
 one carries ``log``, the page's log line. A refusal is a 400 ``{code, message}``, a route before a
@@ -99,7 +100,7 @@ class EditState:
                 r = Recipe.load(p)
                 out.append({"name": r.name, "path": str(p), "folder": p.parent.name,
                             "kernel": r.kernel, "params": dict(r.params), "steps": len(r.steps),
-                            "error": None})  # fmt: skip
+                            "id": r.id, "description": r.description, "error": None})  # fmt: skip
             except (OSError, ValueError, KeyError, TypeError) as e:
                 out.append({"name": p.stem, "path": str(p), "folder": p.parent.name,
                             "error": str(e)})  # fmt: skip
@@ -393,6 +394,21 @@ class DfgHandler(Handler):
                               f"{out['message']}"}  # fmt: skip
             again = f" · replayed {', '.join(map(str, out['replayed']))}" if out["replayed"] else ""
             return out | {"log": f"cursor → step {out['cursor']}{again}"}
+        if route == "params" and "drop" in body:
+            out = s.drop_param(body["drop"])
+            if out["ok"]:
+                return out | {"log": f"params: {body['drop']} dropped"}
+            return out | {"log": f"params: drop {body['drop']}  {out['code']}: {out['message']}"}
+        if route == "params" and "rename" in body:
+            ren = body["rename"]
+            if not isinstance(ren, dict) or set(ren) != {"from", "to"}:
+                raise _Refused("request.body", 'rename must be {"from": NAME, "to": NAME}')
+            out = s.rename_param(ren["from"], ren["to"])
+            what = f"params: {ren['from']} → {ren['to']}"
+            if out["ok"]:
+                return out | {"log": f"{what}  ok · {out['replayed']} steps replayed"}
+            where = f"step {out['index']} " if out.get("index") else ""
+            return out | {"log": f"{what}  {where}{out['code']}: {out['message']}"}
         if route == "params":
             _needs(body, "params")
             out = s.set_params(dict(body["params"]))

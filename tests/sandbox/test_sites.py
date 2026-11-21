@@ -42,8 +42,11 @@ FIXTURES = [
 # Params a site fills with a suggested name only (link's group: the ends' group, else the next
 # free one); the editor's form lets the user type another, which the transform accepts when
 # it is free, so a saved recipe may hold any such name (Ryan's ry_mvt_1: "mvt2" for "mvt_1");
-# share_ports' accelerator likewise (dot_1_shared's "dot" for "vmul_vsum").
-FREE_NAMES = {("link", "group"), ("share_ports", "accelerator")}
+# share_ports' accelerator likewise (dot_v1_2's "dot" for "vmul_vsum"); lift's kernel and
+# apply_recipe's recipe are the first that fit, the editor listing the others
+# (mvt_v5_1's matvec_acc and matvec_acc_v3).
+FREE_NAMES = {("link", "group"), ("share_ports", "accelerator"), ("lift", "kernel"),
+              ("apply_recipe", "recipe"), ("apply_recipe", "params")}  # fmt: skip
 
 
 def test_every_transform_has_a_site():

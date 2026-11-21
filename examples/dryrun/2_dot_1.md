@@ -2,7 +2,7 @@
 
 Every number on this page is what the tools printed when it was written; no test checks them (D98), so they can drift as the code moves.
 
-dot is $\mathit{out} = \sum_i A_i \cdot B_i$ over N int64 elements (`kernels/polybench/dot.py`). dot 1 is its plainest hardware: a multiplier `acc_1` writes the N products to a transient `tmp0` in L1, then an adder tree `acc_2` reads them back and sums them. These are two accelerators, each a streamer set of the design's one snax_cluster entry, `snax_forge_<design>`, with its own streamer, START and CSRs (D157). The core runs them in series (D158): it sets up `acc_2` while `acc_1` runs, waits for `acc_1`, then starts `acc_2`. Encapsulating the two puts them on one shared streamer set, `dot_1_enc` (section 9); dot 2 to 6 instead join the two units in one group with a link (section 7).
+dot is $\mathit{out} = \sum_i A_i \cdot B_i$ over N int64 elements (`kernels/polybench/dot.py`). dot 1 is its plainest hardware: a multiplier `acc_1` writes the N products to a transient `tmp0` in L1, then an adder tree `acc_2` reads them back and sums them. These are two accelerators, each a streamer set of the design's one snax_cluster entry, `snax_forge_<design>`, with its own streamer, START and CSRs (D157). The core runs them in series (D158): it sets up `acc_2` while `acc_1` runs, waits for `acc_1`, then starts `acc_2`. Encapsulating the two puts them on one shared streamer set, `dot_v1_1` (section 9); dot 2 to 6 instead join the two units in one group with a link (section 7).
 
 The designer's questions: what does it cost to pass the products through L1 between two accelerators, should the two get different lanes, and is one streamer set or two the better shell? The path is `1_vecmul.md`'s: the editor, the steps, the saved recipe, a sweep, the run on SNAX-GVSoC, the reports and the cluster viewer, what a link would change, what was generated, then the encapsulated form.
 
@@ -112,7 +112,7 @@ Save recipe, as `dot_1_dry`, runs the design checks and writes `recipes/custom/d
 }
 ```
 
-It keeps only the params its steps and symbols use. The log lists `pixi run sandbox`, `pixi run flow` and `pixi run forge` on it, each with what it does, as in `1_vecmul.md` section 3. `recipes/dot/dot_1.json` builds the same structure at W = 4 and N = 64 with `split_map` and one shared `W`, its instances named `vmul` and `vsum`.
+It keeps only the params its steps and symbols use. The log lists `pixi run sandbox`, `pixi run flow` and `pixi run forge` on it, each with what it does, as in `1_vecmul.md` section 3. `recipes/dot/dot_v1.json` builds the same structure at W = 4 and N = 64 with `split_map` and one shared `W`, its instances named `vmul` and `vsum`.
 
 ## 4. Sweep the two widths in Bindings
 
@@ -262,7 +262,7 @@ The cycles do not move: both units take one beat a cycle, so a deeper buffer has
 
 ## 8. What was generated
 
-The flow wrote the design point's files to `out/flow/dot_1_dry/gen/`: the cluster file, a streamer file per set, `accelerator.json`, the headers, `main.c`, `data.h` and `manifest.json`. The cluster file's slot is the one entry `snax_forge_dot_1_dry` with its two streamer sets (`snax_forge.hjson`). The entry's name is the design's tag, `snax_forge_<design>` with the design named after its recipe, so Save's `dot_1_dry` gives `snax_forge_dot_1_dry` here and in the RTL's module names, where the checked-in `recipes/dot/dot_1.json` gives `snax_forge_dot_1`:
+The flow wrote the design point's files to `out/flow/dot_1_dry/gen/`: the cluster file, a streamer file per set, `accelerator.json`, the headers, `main.c`, `data.h` and `manifest.json`. The cluster file's slot is the one entry `snax_forge_dot_1_dry` with its two streamer sets (`snax_forge.hjson`). The entry's name is the design's tag, `snax_forge_<design>` with the design named after its recipe, so Save's `dot_1_dry` gives `snax_forge_dot_1_dry` here and in the RTL's module names, where the checked-in `recipes/dot/dot_v1.json` gives `snax_forge_dot_v1`:
 
 ```json
   "snax_acc_cfg": [
@@ -491,11 +491,11 @@ Both START offsets (0 and 4) read 0: a start is a strobe (D152). Each BUSY_COUNT
 
 **The control.** The two control units come from each group's description in `accelerator.json`, not written per kernel. `acc_1`'s takes a beat when both inputs are valid and the output is ready (`acc_1_offer` and not `acc_1_frozen`); `acc_2`'s when its one input is valid, and it holds the beat's result for one cycle in `acc_2_v_0`, the tree's latency of 1, until the output is ready. Their registers are what the cost model counts (`estimate/bits.py`): `acc_1`'s 66 bits are `busy` (1), `acc_1_jobs` (32), `acc_1_jobs_counter` (32) and `io_done_REG` (1, the done pulse a cycle later); `acc_2`'s 131 add `acc_2_job_beats` (32, JOB_BEATS as the start gave it), `acc_2_job_beats_counter` (32) and `acc_2_v_0` (1) to the same four (`acc_2_jobs`, `acc_2_jobs_counter`).
 
-## 9. One streamer set: dot_1_enc
+## 9. One streamer set: dot_v1_1
 
 Back at step 8, click `acc_1`'s dashed outline and shift-click `acc_2`'s: on the two the sidebar offers only `encapsulate` (every one-item transform says `takes one selection, not 2`), with accelerator `dot` and units `acc_1` and `acc_2` both ticked. Applied at step 8 it first asks `Drop steps 9..9?`, the link of section 7; then step 9 is `encapsulate dot units=['acc_1', 'acc_2']`, `C 513 → 513`, 0 problems, 0 notes. Bindings reads as a tree, `accelerator dot ▸ group acc_1 ▸ acc_1 · simd · W_acc_1 = 8` and `group acc_2 ▸ acc_2 · accumulate · W_acc_2 = 8`. The two groups keep their own START, JOBS, STATUS, BUSY_COUNTER and control unit; what they now share is one streamer set, with one streamer and one STREAMER_START.
 
-What changes in the Estimate: nothing in the groups' cycles or cost (513, 60 100 µm², 61.144 nJ, now in one table for `dot`), and the streamers line reads `1 streamer (not costed, open item 110) · 37 CSRs`, `dot`'s set from 960 to 996. Saved as `dot_1_enc_dry`, the recipe is section 3's with one more step, `{"transform": "encapsulate", "params": {"accelerator": "dot", "units": ["acc_1", "acc_2"]}}`; `recipes/dot/dot_1_enc.json` is the same on `recipes/dot/dot_1.json`.
+What changes in the Estimate: nothing in the groups' cycles or cost (513, 60 100 µm², 61.144 nJ, now in one table for `dot`), and the streamers line reads `1 streamer (not costed, open item 110) · 37 CSRs`, `dot`'s set from 960 to 996. Saved as `dot_1_enc_dry`, the recipe is section 3's with one more step, `{"transform": "encapsulate", "params": {"accelerator": "dot", "units": ["acc_1", "acc_2"]}}`; `recipes/dot/dot_v1_1.json` is the same on `recipes/dot/dot_v1.json`.
 
 What changes in the program and the run:
 
@@ -505,18 +505,18 @@ What changes in the program and the run:
 
 At N = 2048 and W = 8 the encapsulated run's window is 1230 against `dot_1_dry`'s 1218, its COUNTERs 256 and 259 against 259 and 259: `acc_1`'s START lands 10 cycles after the streamer's (608, 618), so its BUSY_COUNTER drops the fill (section 5), and `acc_1` finishes 6 cycles later.
 
-**Two sets against one, on the model and the RTL.** The checked-in recipes name their instances `vmul` and `vsum`, so this table and the two paragraphs under it use those names. The recipes `dot_1` and `dot_1_enc` (W = 4), each through `pixi run forge` at N = 64 and with `--set N=512`, then the four bundles through snax_cluster's `snax-forge-check` on vsim:
+**Two sets against one, on the model and the RTL.** The checked-in recipes name their instances `vmul` and `vsum`, so this table and the two paragraphs under it use those names. The recipes `dot_v1` and `dot_v1_1` (W = 4), each through `pixi run forge` at N = 64 and with `--set N=512`, then the four bundles through snax_cluster's `snax-forge-check` on vsim:
 
 | N | Design | Window, SNAX-GVSoC | Window, RTL (vsim) | BUSY_COUNTER vmul, vsum, SNAX-GVSoC | BUSY_COUNTER, RTL | Streamers | CSRs | Estimate (nangate45) |
 |---:|---|---:|---:|---|---|---:|---|---|
-| 64 | dot_1 | 264 | 282 | 19, 19 | 19, 19 | 2 | 40 (960–999) | 31 400 µm², 1.953 nJ |
-| 64 | dot_1_enc | 304 | 302 | 19, 19 | 19, 19 | 1 | 37 (960–996) | 31 400 µm², 1.953 nJ |
-| 512 | dot_1 | 584 | 597 | 131, 131 | 131, 131 | 2 | 40 (960–999) | 31 400 µm², 15.576 nJ |
-| 512 | dot_1_enc | 586 | 609 | 131, 131 | 128, 131 | 1 | 37 (960–996) | 31 400 µm², 15.576 nJ |
+| 64 | dot_v1 | 264 | 282 | 19, 19 | 19, 19 | 2 | 40 (960–999) | 31 400 µm², 1.953 nJ |
+| 64 | dot_v1_1 | 304 | 302 | 19, 19 | 19, 19 | 1 | 37 (960–996) | 31 400 µm², 1.953 nJ |
+| 512 | dot_v1 | 584 | 597 | 131, 131 | 131, 131 | 2 | 40 (960–999) | 31 400 µm², 15.576 nJ |
+| 512 | dot_v1_1 | 586 | 609 | 131, 131 | 128, 131 | 1 | 37 (960–996) | 31 400 µm², 15.576 nJ |
 
-Every RTL run passes: `forge data: 0 errors`, and each BUSY_COUNTER within its group's streamer fill of SNAX-GVSoC's (D123; `forge_expected.txt` gives each counter's `forge fill`). Three print SNAX-GVSoC's COUNTERs exactly; `dot_1_enc` at N = 512 passes with a note, `mult_vmul: counter 128 against 131, within its fill 3`, because on the RTL's core its STREAMER_START and START land 6 cycles apart (cycles 1174 and 1180 in core 0's trace), so the streamer's FIFOs are full when `vmul` starts and its BUSY_COUNTER leaves out the fill (section 5's head start). The Estimate's cost is equal for both forms, since it leaves out the streamers (open item 110).
+Every RTL run passes: `forge data: 0 errors`, and each BUSY_COUNTER within its group's streamer fill of SNAX-GVSoC's (D123; `forge_expected.txt` gives each counter's `forge fill`). Three print SNAX-GVSoC's COUNTERs exactly; `dot_v1_1` at N = 512 passes with a note, `mult_vmul: counter 128 against 131, within its fill 3`, because on the RTL's core its STREAMER_START and START land 6 cycles apart (cycles 1174 and 1180 in core 0's trace), so the streamer's FIFOs are full when `vmul` starts and its BUSY_COUNTER leaves out the fill (section 5's head start). The Estimate's cost is equal for both forms, since it leaves out the streamers (open item 110).
 
-**Why two accelerators are faster.** `vsum`'s own set takes 12 CSR writes, where the shared streamer rewrites all five movers (27), and in both forms the writes overlap `vmul`'s run. At N = 64 `vmul` runs only 20 cycles (120 to 140 in `--trace beat`), shorter than either set-up: `dot_1`'s twelve writes end at 154 and `vsum` starts at 175, `dot_1_enc`'s 27 end at 189 and `vsum` starts at 209. So two sets save 40 cycles on SNAX-GVSoC and 20 on the RTL at N = 64. At N = 512 `vmul` runs about 130 cycles, longer than either set-up (the 27 writes took 67 cycles at N = 64), and the saving shrinks to 2 cycles on SNAX-GVSoC and 12 on the RTL. The gap between the model and the RTL is the core's timing, which SNAX-GVSoC does not model (open items 65, 67): the CSR writes and the handover take a different number of cycles on the RTL's core.
+**Why two accelerators are faster.** `vsum`'s own set takes 12 CSR writes, where the shared streamer rewrites all five movers (27), and in both forms the writes overlap `vmul`'s run. At N = 64 `vmul` runs only 20 cycles (120 to 140 in `--trace beat`), shorter than either set-up: `dot_v1`'s twelve writes end at 154 and `vsum` starts at 175, `dot_v1_1`'s 27 end at 189 and `vsum` starts at 209. So two sets save 40 cycles on SNAX-GVSoC and 20 on the RTL at N = 64. At N = 512 `vmul` runs about 130 cycles, longer than either set-up (the 27 writes took 67 cycles at N = 64), and the saving shrinks to 2 cycles on SNAX-GVSoC and 12 on the RTL. The gap between the model and the RTL is the core's timing, which SNAX-GVSoC does not model (open items 65, 67): the CSR writes and the handover take a different number of cycles on the RTL's core.
 
 ## 10. What this gives the designer
 

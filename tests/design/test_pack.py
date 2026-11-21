@@ -56,8 +56,8 @@ def _narrow_out(d: dict) -> dict:
 
 
 def _vsum(dtypes: dict[str, str]) -> Graph:
-    """vsum bound by recipes/reduce/vsum_tree.json (accumulate, adder tree, W = 4), of ``dtypes``."""
-    recipe = Recipe.load(recipe_path("vsum_tree"))
+    """vsum bound by recipes/reduce/vsum_v1_1.json (accumulate, adder tree, W = 4), of ``dtypes``."""
+    recipe = Recipe.load(recipe_path("vsum_v1_1"))
     d = apply_recipe(recipe, import_kernel("vsum"))[-1].graph.to_dict()
     for c, dt in dtypes.items():
         d["containers"][c]["dtype"] = dt
@@ -129,7 +129,7 @@ def test_a_4x6_int32_output_at_w_1_is_packed():
 
 def test_vecadd_i32_at_w_1_slices_its_inputs_and_packs_its_output():
     """One int32 lane a beat: a and b sliced 2 from a word, out packed 2 to one, num_ch 1."""
-    g = _recipe("vecadd_i32", W=1)
+    g = _recipe("vecadd_v1_1", W=1)
     assert problems(paired(g)) == []
     assert _shell(g) == {p: ("int32", 2, 1) for p in ("acc_a", "acc_b", "acc_out")}
     assert _d_in(g) == {"acc_a": 2, "acc_b": 2, "acc_out": 1}
@@ -137,7 +137,7 @@ def test_vecadd_i32_at_w_1_slices_its_inputs_and_packs_its_output():
 
 
 def test_a_narrow_input_is_sliced():
-    """vsum_tree at int8, W = 4: its input sliced 2 from a word, its int32 sum packed 2."""
+    """vsum_v1_1 at int8, W = 4: its input sliced 2 from a word, its int32 sum packed 2."""
     g = _vsum({"A": "int8", "out": "int32"})
     assert _pack(g) == []
     assert _d_in(g) == {"acc_a": 2, "acc_out": 1}
@@ -211,7 +211,7 @@ def test_a_column_does_not_run_along_contiguous_elements():
 def test_vecadd_i8_at_w_3_is_neither_sliced_nor_packed():
     """W = 3 neither divides nor is a multiple of num_slc: int8 inputs (8 a word) and the int32
     output (2 a word) are refused, with the fix."""
-    got = _pack(_recipe("vecadd", types="i8", W=3))
+    got = _pack(_recipe("vecadd_v1", types="i8", W=3))
     assert [p.where for p in got] == ["node add.a", "node add.b", "node add.out"]
     assert got[0].message == (
         "W = 3 lanes < num_slc = 8 (int8, num_slc = 8 slices per word) and does not divide it: a "

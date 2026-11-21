@@ -1,0 +1,21 @@
+{
+ "name": "matvec_v7",
+ "id": "matvec_col",
+ "description": "The column form: one `Mac` with its W lanes on q's index, A read a strip of W columns at a time, p broadcast to the lanes (D186), each sum folded over time.",
+ "kernel": "matvec",
+ "params": {"W": 4, "M": 8, "N": 512},
+ "symbols": {"M": "M", "N": "N"},
+ "steps": [
+  {"transform": "tag_map", "params": {"map": "mult_map_1", "kind": "temporal"}},
+  {"transform": "split_map", "params": {"map": "mult_map", "factor": "W"}},
+  {"transform": "interchange_map", "params": {"map": "mult_map_1", "with": "mult_map_s"}},
+  {"transform": "tag_map", "params": {"map": "sum_map_1", "kind": "temporal"}},
+  {"transform": "split_map", "params": {"map": "sum_map", "factor": "W"}},
+  {"transform": "interchange_map", "params": {"map": "sum_map_s", "with": "sum_map_1"}},
+  {"transform": "fuse_map", "params": {"first": "mult_map", "second": "sum_map"}},
+  {
+   "transform": "bind",
+   "params": {"node": "mult_map_s", "brm": "mac", "implementation": "chisel_mac", "instance": "mac"}
+  }
+ ]
+}

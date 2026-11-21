@@ -1,0 +1,15 @@
+{
+ "name": "dot_v3",
+ "id": "dot3",
+ "description": "`dot_v2` with a link of depth 0, a wire: the fold takes each product in the cycle it is made.",
+ "kernel": "dot",
+ "params": {"W": 4, "N": 512},
+ "symbols": {"N": "N"},
+ "steps": [
+  {"transform": "split_map", "params": {"map": "mult_map", "factor": "W"}},
+  {"transform": "bind", "params": {"node": "mult", "brm": "simd", "implementation": "chisel_tiled_spatial", "instance": "mul"}},
+  {"transform": "split_map", "params": {"map": "sum_map", "factor": "W"}},
+  {"transform": "bind", "params": {"node": "sum", "brm": "accumulate", "implementation": "chisel_adder_tree", "instance": "sum"}},
+  {"transform": "link", "params": {"container": "tmp0", "depth": 0, "group": "dot"}}
+ ]
+}

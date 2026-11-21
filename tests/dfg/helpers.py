@@ -3,7 +3,7 @@
 The fixtures (``fixture``) are graphs in the form ``Graph.to_json`` writes, among them vecadd as
 imported, after ``split_map`` (W = 4, N = 64) and after ``bind`` to simd
 (``vecadd_accelerated.snaxdfg``); dot as imported (a multiply map into ``tmp0``, then a sum map
-folding into ``out[0]``) and after ``recipes/dot/dot_1.json``'s binds; vecmul and vsum as
+folding into ``out[0]``) and after ``recipes/dot/dot_v1.json``'s binds; vecmul and vsum as
 imported. Graphs in the error tests are a fixture as a dict changed by one edit (``edited``),
 the way a person or an LLM edits the file.
 """

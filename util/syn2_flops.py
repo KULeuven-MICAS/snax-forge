@@ -29,6 +29,15 @@ TAG = "snax_forge_"
 INSTANCE = re.compile(r"dp/(blocks|bufs)_\d+_\d+")
 
 
+# The recipes SYN2 measured, by the names they have had since (D188)
+RENAMED = {
+    "vecadd": "vecadd_v1",
+    "vecmul": "vecmul_v1",
+    "vsum_tree": "vsum_v1_1",
+    **{f"dot_{k}": f"dot_v{k}" for k in range(2, 7)},
+}
+
+
 def flops(row: dict, what: str) -> int:
     n = float(row["seq_um2"]) / FLOP_UM2
     if abs(n - round(n)) > 1e-3:
@@ -70,7 +79,7 @@ def main(argv: list[str] | None = None) -> int:
                 inst[m["design"].removeprefix(TAG)] = {
                     "kind": "unit" if k.group(1) == "blocks" else "link",
                     "module": block["design"], "flops": flops(block, m["path"])}  # fmt: skip
-        points.append({"point": p, "recipe": r["recipe"], "W": int(r["W"]),
+        points.append({"point": p, "recipe": RENAMED.get(r["recipe"], r["recipe"]), "W": int(r["W"]),
                        "ctrl": flops(ctrls[0], ctrls[0]["path"]), "instances": inst})  # fmt: skip
     points.sort(key=lambda x: (x["recipe"], x["W"]))
     doc = {

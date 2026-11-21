@@ -1,0 +1,18 @@
+{
+ "name": "mvt_v1_2_1",
+ "id": "mvt_dot2add_shared",
+ "description": "`mvt_v1_2` by reuse: `matvec/matvec_v2_1` applied to each half.",
+ "kernel": "mvt",
+ "params": {"W": 4, "M": 64, "N": 64},
+ "symbols": {"M": "M", "N": "N"},
+ "steps": [
+  {"transform": "mark_transpose", "params": {"node": "tmp2_mult_map", "container": "A"}},
+  {"transform": "apply_recipe", "params": {"recipe": "matvec/matvec_v2_1", "region": ["tmp0_mult_map", "sum_map"], "params": {"W": "W"}}},
+  {"transform": "split_map", "params": {"map": "augassign_18_4_map", "factor": "W"}},
+  {"transform": "bind", "params": {"node": "augassign_18_4", "brm": "simd", "implementation": "chisel_tiled_spatial", "instance": "vadd"}},
+  {"transform": "apply_recipe", "params": {"recipe": "matvec/matvec_v2_1", "region": ["tmp2_mult_map", "sum_map_2"], "params": {"W": "W"}}},
+  {"transform": "split_map", "params": {"map": "augassign_19_4_map", "factor": "W"}},
+  {"transform": "bind", "params": {"node": "augassign_19_4", "brm": "simd", "implementation": "chisel_tiled_spatial", "instance": "vadd"}},
+  {"transform": "share", "params": {"group": "dot_1", "with": "dot"}}
+ ]
+}

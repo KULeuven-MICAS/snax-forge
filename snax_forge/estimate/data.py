@@ -29,6 +29,7 @@ from snax_forge.design.streamers import (
     per_word,
     port_loops,
     slices_per_word,
+    stream_lanes,
     unplaced,
 )
 from snax_forge.dfg import Graph, Node
@@ -112,14 +113,15 @@ def outer_ports(graph: Graph) -> list[tuple[Node, str, PortData]]:
             m = (n.inputs | n.outputs)[p.name]
             mine = port_loops(inst, p.name, m, loops)
             counts = [lp.count for lp in mine]
-            d = per_word(graph.containers[m.data].dtype, inst.lanes(p.name), WORD_BITS)
+            lanes = stream_lanes(graph, n, inst, p.name)  # one for a broadcast (D186)
+            d = per_word(graph.containers[m.data].dtype, lanes, WORD_BITS)
             if d > 1:  # words: the innermost loop of more than one push or pop over d_out, d_in
                 k = next((i for i in range(len(counts) - 1, -1, -1) if counts[i] > 1), None)
                 if k is not None:
                     counts[k] = -(-counts[k] // d)
             out.append((n, p.name, PortData(m.data, [(lp.var, lp.count) for lp in mine],
                                             prod(counts),
-                                            _num_ch(graph, m.data, inst.lanes(p.name)))))  # fmt: skip
+                                            _num_ch(graph, m.data, lanes))))  # fmt: skip
     return out
 
 

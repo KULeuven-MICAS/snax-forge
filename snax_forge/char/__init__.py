@@ -182,6 +182,9 @@ def lookup(table: Table, datapath: str, params: Mapping[str, Any], lanes: int,
     def key(e: Mapping[str, Any]) -> dict[str, Any]:
         return {k: v for k, v in e["params"].items() if v is not None}
 
+    keyed = any("seed" in e["params"] for e in entries)
+    if want.get("seed") is False and not keyed:  # measured before it took a seed (a Mac, D187)
+        want = {k: v for k, v in want.items() if k != "seed"}
     entry = next((e for e in entries if key(e) == want), None)
     if datapath in ("FifoPacker", "FifoSlicer"):
         if entry is None:
@@ -197,8 +200,11 @@ def lookup(table: Table, datapath: str, params: Mapping[str, Any], lanes: int,
         return _scaled(_over_lanes(base, lanes, depth), _width(want["dtype"]) / 64, "width")
     if entry is None and want.get("seed") is True:
         # a seeded fold: the unseeded entry, the same adder and register, the first beat's mux
-        # choosing the seed for the register instead of 0 for the sum
-        base = next((e for e in entries if key(e) == {**want, "seed": False}), None)
+        # choosing the seed for the register instead of 0 for the sum; a block measured before
+        # it took a seed (a Mac, D187) has no seed key in any entry
+        unseeded = {**want, "seed": False} if keyed else {k: v for k, v in want.items()
+                                                          if k != "seed"}  # fmt: skip
+        base = next((e for e in entries if key(e) == unseeded), None)
         if base is None:
             return None
         return _scaled(_over_lanes(base, lanes, depth), 1.0, "unseeded")

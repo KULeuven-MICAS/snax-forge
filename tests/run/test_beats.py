@@ -214,7 +214,7 @@ def test_vecadd_i32s_first_firing_two_words_per_port(cluster):
 
 
 def test_a_fold_two_words_in_one_out(cluster):
-    """vsum_tree_i32's shape: a reader of 2 words, a writer of 1 (the fold's one word)."""
+    """vsum_v1_1_1's shape: a reader of 2 words, a writer of 1 (the fold's one word)."""
     fire, push = _packed(cluster, {"acc_a": 2, "acc_out": 1}, [
         "2613 fire n=0 b=0 value=0x111000002bd,0xfffffe3300000016",
         "2613 push n=0 first=0 last=0 value=0xffffffffffffffbd",

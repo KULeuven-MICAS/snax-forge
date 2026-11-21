@@ -28,26 +28,26 @@ def _inputs(name: str, **params: int) -> tuple[int, int]:
 
 
 @pytest.mark.parametrize(
-    "name, params, dedicated, shared",
+    "name, both, params, dedicated, shared",
     [
-        ("dot_1", {"W": 4}, 19, 14),
-        ("mvt_1_dot2", {"W": 8}, 43, 26),
-        ("mvt_2", {"W_x1": 8, "W_x2": 8}, 84, 50),
+        ("dot_v1", "dot_v1_2", {"W": 4}, 19, 14),
+        ("mvt_v1_2", "mvt_v1_2_2", {"W": 8}, 43, 26),
+        ("mvt_v2", "mvt_v2_2", {"W_x1": 8, "W_x2": 8}, 84, 50),
     ],
 )  # fmt: skip
-def test_the_crossbar_inputs_by_hand(name, params, dedicated, shared):
+def test_the_crossbar_inputs_by_hand(name, both, params, dedicated, shared):
     """n_in = Σ movers' channels + the core (one) + AXI: dot 1 at W = 4 is 4 + 4 + 4
     (reader0 vmul.a /
-    vsum.a, reader1 vmul.b, writer0 vmul.out / vsum.out) against 4 · 3 + 4 + 1; mvt_1_dot2 at
-    W = 8 is 8 · 3 against 8 · 5 + 1; mvt_2 two such sets against twice 41."""
+    vsum.a, reader1 vmul.b, writer0 vmul.out / vsum.out) against 4 · 3 + 4 + 1; mvt_v1_2 at
+    W = 8 is 8 · 3 against 8 · 5 + 1; mvt_v2 two such sets against twice 41."""
     assert sum(_inputs(name, **params)) == dedicated
-    assert sum(_inputs(f"{name}_shared", **params)) == shared
+    assert sum(_inputs(both, **params)) == shared
 
 
 def test_the_movers_and_their_masks():
-    """mvt_1_dot2_shared at W = 8: per role the k-th widest port of each group on mover k; the
+    """mvt_v1_2_2 at W = 8: per role the k-th widest port of each group on mover k; the
     writer masked, vsum_x1.out taking 1 of its 8 channels."""
-    g = steps("mvt_1_dot2_shared", W=8)[-1]
+    g = steps("mvt_v1_2_2", W=8)[-1]
     found = resolve(Platform.load(SNAX_FORGE), g, instances(g))
     (movers,) = shared_movers(g, found).values()
     assert [
@@ -65,7 +65,7 @@ def test_the_movers_and_their_masks():
 def test_a_port_that_does_not_fit_its_mover_is_refused():
     """A user's spatial bounds must be the mover's but the slowest: vsum.a as [2, 2] on reader0's
     [4] does not fit (share.shape)."""
-    g = steps("dot_1_shared", W=4)[-1]
+    g = steps("dot_v1_2", W=4)[-1]
     found = resolve(Platform.load(SNAX_FORGE), g, instances(g))
     found["vsum_a"] = replace(found["vsum_a"], spatial_bounds=(2, 2))
     with pytest.raises(ShareError, match=r"vsum_a's spatial bounds \[2, 2\] \(in words\) do not "
@@ -75,7 +75,7 @@ def test_a_port_that_does_not_fit_its_mover_is_refused():
 
 def test_unshared_designs_pass_unchanged():
     """No marker, no shared accelerator: every port its own mover, as before."""
-    g = steps("dot_1", W=4)[-1]
+    g = steps("dot_v1", W=4)[-1]
     found = resolve(Platform.load(SNAX_FORGE), g, instances(g))
     assert shared_movers(g, found) == {}
     assert set_channels(g, found) == {"vmul": 12, "vsum": 5}
@@ -84,18 +84,18 @@ def test_unshared_designs_pass_unchanged():
 @pytest.mark.slow
 def test_above_64_inputs_a_note_above_128_a_refusal():
     """Mvt_2 at W = 8 (84 inputs) and vecmul at W = 32 (98) pass with the note
-    design.xbar_inputs; vecmul at W = 64 (194) is refused (connect.xbar_inputs); shared, mvt_2
+    design.xbar_inputs; vecmul at W = 64 (194) is refused (connect.xbar_inputs); shared, mvt_v2
     takes 50 and gets no note."""
     pf = Platform.load(SNAX_FORGE)
-    for name, params, n in (("mvt_2", {"W_x1": 8, "W_x2": 8}, 84),
-                            ("vecmul", {"W": 32, "N": 2048}, 98)):  # fmt: skip
+    for name, params, n in (("mvt_v2", {"W_x1": 8, "W_x2": 8}, 84),
+                            ("vecmul_v1", {"W": 32, "N": 2048}, 98)):  # fmt: skip
         d = Design(pf, steps(name, **params)[-1])
         assert run_checks(d) == []
         (note,) = NOTES["design.xbar_inputs"](d)
         assert note.message.startswith(f"{n} TCDM crossbar inputs, above 64 (l1.warn_xbar_inputs)")
-    d = Design(pf, steps("mvt_2_shared", W_x1=8, W_x2=8)[-1])
+    d = Design(pf, steps("mvt_v2_2", W_x1=8, W_x2=8)[-1])
     assert list(NOTES["design.xbar_inputs"](d)) == []
-    wide = Design(pf, steps("vecmul", W=64, N=2048)[-1])
+    wide = Design(pf, steps("vecmul_v1", W=64, N=2048)[-1])
     (p,) = [p for p in run_checks(wide) if p.code == "connect.xbar_inputs"]
     assert p.message.startswith("194 TCDM crossbar inputs, the platform takes at most 128")
     assert p.fix == "fewer lanes, or share_ports on a container between two accelerators"

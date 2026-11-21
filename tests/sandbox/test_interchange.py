@@ -3,7 +3,7 @@ range and tag, the maps between them and the inner one's body where they are; th
 in either order, undoes it.
 
 rowsum imports as ``sum_map`` (m) around ``sum_map_1`` (n) around ``sum``. Its lane accumulator
-(rowsum_2) splits the row map by W, tags the column map temporal and puts the spatial row map
+(rowsum_v2) splits the row map by W, tags the column map temporal and puts the spatial row map
 inside it (``{"map": "sum_map_s", "with": "sum_map_1"}``, the innermost map with its parent):
 ``sum_map`` (m_1_t) -> ``sum_map_1`` (n_t) -> ``sum_map_s`` (m_2_s) -> ``sum``. Every step is
 checked against the reference executor (run.py's ``checked_step``).
@@ -47,7 +47,7 @@ def nest(g: Graph) -> list[tuple]:
 
 
 def test_the_innermost_map_with_its_parent():
-    """rowsum_2's step: the spatial row map and the innermost column map trade places."""
+    """rowsum_v2's step: the spatial row map and the innermost column map trade places."""
     *_, before, g = run([SPLIT, TAG, swap("sum_map_s", "sum_map_1")])
     assert nest(g) == [
         ("sum_map", "m_1_t", "0:M // 4", "temporal"),
@@ -191,7 +191,7 @@ def test_refused_a_fused_nests_outer_map():
     """dot 4's recipe fuses the split multiply and partial-sum nests into ``mult_map``
     (``loop.fused``) around ``mult_map_s``; a map put around it by hand has the fused nest as
     its only child."""
-    _, graphs = recipe_graphs("dot_4")
+    _, graphs = recipe_graphs("dot_v4")
     fused = next(g for g in graphs[1:] if any("loop.fused" in n.attrs for n, _ in g.walk()))
     (top,) = [n for n in fused.body if n.attrs.get("loop.fused")]
     (inner,) = top.body

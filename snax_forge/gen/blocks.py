@@ -11,8 +11,11 @@ The args each adapter reads: ``simd_lanes`` lanes, op, streams (2 by default) an
 k2 for axpby, each baked (an int that fits opType, else ``gen.k``) or read from a container (a
 CSR); ``tree_accumulate`` and ``serial_accumulate`` lanes, op add only, a seed port when the
 BRM's design param ``seed`` is 1; ``mac`` lanes, ``accumulate`` and ``regOut``;
-``lane_accumulate`` lanes. Every port is whole 64-bit channels, a packed output (D174) or a
-sliced input (D180). An instance judged without a graph (brm/instance.py's check) has no
+``lane_accumulate`` lanes. ``mac`` takes a seed port of its lanes when the BRM's design param
+``seed`` is 1 (D187). Every port is whole 64-bit channels, a packed output (D174) or a sliced
+input (D180). A datapath registered ``lanewise`` (SimdLanes, Mac: each lane on its own) takes
+a broadcast input (D186), one lane its reader moves given to every lane: the port keeps the
+unit's lanes and carries ``broadcast``. An instance judged without a graph (brm/instance.py's check) has no
 dtypes: its adapter checks all but the widths.
 """
 
@@ -46,16 +49,23 @@ class Port:
     lanes: int
     d_out: int = 1  # an outer output's results per word through its packer (D174)
     d_in: int = 1  # an outer input's pops per word through its slicer (D180)
+    broadcast: bool = False  # an outer input whose reader moves one lane for all (D186)
+
+    @property
+    def stream_lanes(self) -> int:
+        """The lanes its reader or writer moves a beat: one for a broadcast, else its lanes."""
+        return 1 if self.broadcast else self.lanes
 
     def to_dict(self) -> dict[str, Any]:
         d = {"port": self.port, "dir": self.dir, "dtype": self.dtype, "lanes": self.lanes}
         d |= {"d_out": self.d_out} if self.d_out > 1 else {}
-        return d | ({"d_in": self.d_in} if self.d_in > 1 else {})
+        d |= {"d_in": self.d_in} if self.d_in > 1 else {}
+        return d | ({"broadcast": True} if self.broadcast else {})
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> Port:
         return cls(d["port"], d["dir"], d["dtype"], d["lanes"], d.get("d_out", 1),
-                   d.get("d_in", 1))  # fmt: skip
+                   d.get("d_in", 1), d.get("broadcast", False))  # fmt: skip
 
 
 @dataclass(frozen=True)
@@ -75,11 +85,13 @@ Adapter = Callable[..., Fill]  # (inst, dtypes=None) -> Fill
 
 @dataclass(frozen=True)
 class Datapath:
-    """A registered datapath: its latency L, its adapter and its span (module doc)."""
+    """A registered datapath: its latency L, its adapter, its span and whether each lane
+    computes on its own (``lanewise``, so an input may be a broadcast; module doc)."""
 
     latency: int | str
     fill: Adapter
     span: int | str = 1
+    lanewise: bool = False
 
     def timing(self, filled: Fill) -> tuple[int, int]:
         """``(L, span)`` for the unit ``filled`` gives (module doc)."""
@@ -107,12 +119,13 @@ def fill_node(datapath: str, inst: Instance, graph: Any, node: Any) -> Fill:
     return replace(f, op_type=op_type, scalars={s: op_type for s in f.scalars})
 
 
-def register_datapath(name: str, latency: int | str, adapter: Adapter, span: int | str = 1) -> None:
-    """Add the datapath ``name`` (a binding's ``datapath``) of latency ``latency`` and span
-    ``span`` (module doc)."""
+def register_datapath(name: str, latency: int | str, adapter: Adapter, span: int | str = 1,
+                      lanewise: bool = False) -> None:  # fmt: skip
+    """Add the datapath ``name`` (a binding's ``datapath``) of latency ``latency``, span
+    ``span`` and, ``lanewise``, lanes that compute on their own (module doc)."""
     if name in DATAPATHS:
         raise ValueError(f"datapath {name!r} already registered")
-    DATAPATHS[name] = Datapath(latency, adapter, span)
+    DATAPATHS[name] = Datapath(latency, adapter, span, lanewise)
 
 
 # ElementwiseOp in ElementwiseAlu.scala
@@ -244,7 +257,7 @@ def _read_arg(inst: Instance, name: str) -> bool:
     return arg is not None and bool(expr.names(arg) & set(inst.read))
 
 
-register_datapath("SimdLanes", 0, simd_lanes)
+register_datapath("SimdLanes", 0, simd_lanes, lanewise=True)
 
 
 def tree_accumulate(inst: Instance, dtypes: Mapping[str, str] | None = None,
@@ -298,7 +311,15 @@ def mac(inst: Instance, dtypes: Mapping[str, str] | None = None) -> Fill:
         raise GenError("gen.args", f"{what}: accumulate {accumulate!r}, regOut {reg_out!r}; "
                        "each is true or false")  # fmt: skip
     lanes = _lanes_arg(inst, what)
-    ins, (out,) = _ports(inst, 2 if accumulate else 3, 1, "Mac", what)
+    seeded = any(p.name == SEED for p in inst.ports)
+    if seeded and not accumulate:
+        raise GenError("gen.seed", f"{what}: a seed port, but accumulate is false; Mac takes a "
+                       "seed only as a fold")  # fmt: skip
+    ins, (out,) = _ports(inst, 3 if seeded or not accumulate else 2, 1, "Mac", what)
+    if seeded and inst.brm.port(SEED).rate != out.rate:
+        raise GenError("gen.rate", f"{what}: the seed's rate {inst.brm.port(SEED).rate!r}, the "
+                       f"output's {out.rate!r}; Mac reads one seed per sum")  # fmt: skip
+    ins = [p for p in ins if p.name != SEED]
     if any(p.rate != 1 for p in ins) or isinstance(out.rate, str) != accumulate:
         raise GenError("gen.rate", f"{what}: rates {[p.rate for p in ins]} in and {out.rate!r} "
                        "out; Mac takes 1 in and, accumulating, a named rate out (one sum per T "
@@ -313,7 +334,7 @@ def mac(inst: Instance, dtypes: Mapping[str, str] | None = None) -> Fill:
     return Fill(ports, op_type, {"accumulate": accumulate, "regOut": reg_out})
 
 
-register_datapath("Mac", "max(accumulate, regOut)", mac)
+register_datapath("Mac", "max(accumulate, regOut)", mac, lanewise=True)
 
 
 def lane_accumulate(inst: Instance, dtypes: Mapping[str, str] | None = None) -> Fill:

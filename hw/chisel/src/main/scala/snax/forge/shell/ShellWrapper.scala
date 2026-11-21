@@ -76,6 +76,10 @@ class ShellPorts(val readers: Seq[Int], val writers: Seq[Int], val groups: Seq[S
   * are its input, its pops the group's outer handshake and the datapath's data. It takes a word only while the group is
   * busy and drops what it holds when the group's start is accepted; the port is one 64-bit word.
   *
+  * A broadcast input (`broadcast` in its port, D186) is one lane a beat from its reader, or from its slicer, a
+  * `FifoSlicer(1, dtype, 1)` whose r is its `d_in`: `<unit>_<port>_bcast` gives that lane to every lane of the unit's
+  * input, wires only. Its port is that lane, at least one 64-bit word.
+  *
   * Clock `clk_i`, reset `rst_ni` active low and asynchronous, as snax_cluster's (`RequireAsyncReset` in ReqRspManager).
   */
 class ShellWrapper(spec: AcceleratorSpec) extends RawModule {
@@ -84,10 +88,10 @@ class ShellWrapper(spec: AcceleratorSpec) extends RawModule {
   val clk_i  = IO(Input(Clock()))
   val rst_ni = IO(Input(Bool()))
 
-  /** A port's data width: its lanes at its dtype's width, at least one 64-bit word. */
+  /** A port's data width: its stream's lanes (one for a broadcast) at its dtype's width, at least one 64-bit word. */
   private def width(unit: String, brm: String): Int = {
     val p = spec.unit(unit).port(brm)
-    math.max(64, p.lanes * snax.forge.IntType(p.dtype).width)
+    math.max(64, p.streamLanes * snax.forge.IntType(p.dtype).width)
   }
 
   /** The sets, or one holding every port and group for a spec read without them. */
@@ -212,17 +216,30 @@ class ShellWrapper(spec: AcceleratorSpec) extends RawModule {
         for ((j, brm)    <- spec.ins(u.name)) {
           val (data, valid, ready) = inPort(j)
           val p                    = u.port(brm)
+          // The stream's lanes into the unit's port: as they are, or a broadcast's one lane to every lane
+          def feed(x: Data): Unit =
+            if (!p.broadcast) d(brm) := x.asTypeOf(d(brm))
+            else { // NB (D186): wires only, lane 0 of the stream (its one lane) on all the unit's lanes
+              val bcast = Wire(chiselTypeOf(d(brm))).suggestName(s"${u.name}_${brm}_bcast")
+              val lanes = bcast match {
+                case v: Vec[_] => v
+                case other => throw new IllegalArgumentException(s"${u.name}.$brm: a broadcast into $other")
+              }
+              val w     = snax.forge.IntType(p.dtype).width
+              for (l <- 0 until p.lanes) lanes(l) := x.asUInt(w - 1, 0).asTypeOf(lanes(l))
+              d(brm) := dontTouch(bcast) // kept by name in the SV, as the slicer and packer are
+            }
           if (p.dIn == 1) {
-            d(brm)         := data.asTypeOf(d(brm))
+            feed(data)
             c.in(at).valid := valid
             ready          := c.in(at).ready
           } else { // sliced (D180): the slicer between the reader and the unit, after a shared set's mux
-            val slicer = Module(new FifoSlicer(1, p.dtype, p.lanes)).suggestName(s"${u.name}_${brm}_slicer")
+            val slicer = Module(new FifoSlicer(1, p.dtype, p.streamLanes)).suggestName(s"${u.name}_${brm}_slicer")
             require(slicer.r == p.dIn, s"${u.name}.$brm: d_in ${p.dIn}, its slicer's r ${slicer.r}")
             slicer.io.in.bits   := data.asTypeOf(slicer.io.in.bits)
             slicer.io.in.valid  := valid
             ready               := slicer.io.in.ready
-            d(brm)              := slicer.io.out.bits.asTypeOf(d(brm))
+            feed(slicer.io.out.bits)
             c.in(at).valid      := slicer.io.out.valid
             slicer.io.out.ready := c.in(at).ready
             slicer.io.enable    := c.busy

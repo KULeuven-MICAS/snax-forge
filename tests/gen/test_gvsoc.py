@@ -326,9 +326,9 @@ def test_vsum_is_the_tree_accumulate(tmp_path):
 def test_vsum_at_w4_is_the_adder_tree(tmp_path):
     """accumulate's adder tree at W = 4 is TreeAccumulate with 4 input lanes, one task of 16
     beats of 4 lanes summing all 64 (T = n)."""
-    out = tmp_path / "gvsoc" / "vsum_tree"
+    out = tmp_path / "gvsoc" / "vsum_v1_1"
     graph = bound_vsum(4, "chisel_adder_tree")
-    m = generate(point(tmp_path, name="vsum_tree", graph=graph), out, root=tmp_path)
+    m = generate(point(tmp_path, name="vsum_v1_1", graph=graph), out, root=tmp_path)
     (unit,) = json.loads((out / "accelerator.json").read_text())["accelerators"][0]["groups"][0][
         "units"
     ]
@@ -612,7 +612,7 @@ def test_relu_is_one_unit_of_one_input_and_k(tmp_path):
     from .helpers import bound_recipe
 
     out = tmp_path / "gvsoc" / "relu"
-    m = generate(point(tmp_path, name="relu", graph=bound_recipe("relu", "relu")), out,
+    m = generate(point(tmp_path, name="relu", graph=bound_recipe("relu_v1", "relu")), out,
                  root=tmp_path)  # fmt: skip
     (unit,) = json.loads((out / "accelerator.json").read_text())["accelerators"][0]["groups"][0][
         "units"]  # fmt: skip
@@ -777,16 +777,16 @@ def _narrow(tmp_path, recipe: str, sets: tuple[str, ...] = ()) -> Path:
 
 @requires_submodule
 def test_vecadd_i32_at_w_1_slices_its_inputs(tmp_path):
-    """vecadd_i32 at W = 1 (D180): each int32 reader one channel of one word, its port d_in 2,
+    """vecadd_v1_1 at W = 1 (D180): each int32 reader one channel of one word, its port d_in 2,
     the writer packed d_out 2, which snax-gvsoc's reader takes."""
-    out = _narrow(tmp_path, "vecadd_i32", ("W=1",))
+    out = _narrow(tmp_path, "vecadd_v1_1", ("W=1",))
     acc = json.loads((out / "accelerator.json").read_text())
     (unit,) = acc["accelerators"][0]["groups"][0]["units"]
     for p in ("a", "b"):
         assert unit["ports"][p] == {"port": p, "dir": "in", "dtype": "int32", "lanes": 1,
                                     "d_in": 2}  # fmt: skip
     assert unit["ports"]["out"]["d_out"] == 2 and "d_in" not in unit["ports"]["out"]
-    s = parsed(out / streamer_file("vecadd_i32"))
+    s = parsed(out / streamer_file("vecadd_v1_1"))
     assert (s["data_reader_params"]["spatial_bounds"], s["data_reader_params"]["num_channel"]) == (
         [[1], [1]], [1, 1]
     )  # fmt: skip
@@ -796,8 +796,8 @@ def test_vecadd_i32_at_w_1_slices_its_inputs(tmp_path):
 
 
 def test_vecadd_i32_two_channels_per_port(tmp_path):
-    out = _narrow(tmp_path, "vecadd_i32")
-    s = parsed(out / streamer_file("vecadd_i32"))
+    out = _narrow(tmp_path, "vecadd_v1_1")
+    s = parsed(out / streamer_file("vecadd_v1_1"))
     assert (s["data_reader_params"]["spatial_bounds"], s["data_reader_params"]["num_channel"]) == (
         [[2], [2]], [2, 2]
     )  # fmt: skip
@@ -816,8 +816,8 @@ def test_vecadd_i32_two_channels_per_port(tmp_path):
 
 
 def test_vsum_tree_i32_int32_in_int64_out(tmp_path):
-    out = _narrow(tmp_path, "vsum_tree_i32")
-    s = parsed(out / streamer_file("vsum_tree_i32"))
+    out = _narrow(tmp_path, "vsum_v1_1_1")
+    s = parsed(out / streamer_file("vsum_v1_1_1"))
     assert s["data_reader_params"]["spatial_bounds"] == [[2]]
     assert s["data_reader_params"]["num_channel"] == [2]
     assert (s["data_writer_params"]["spatial_bounds"], s["data_writer_params"]["num_channel"]) == (
@@ -832,7 +832,7 @@ def test_vsum_tree_i32_int32_in_int64_out(tmp_path):
 
 
 def test_vecadd_i8_one_channel_per_port(tmp_path):
-    s = parsed(_narrow(tmp_path, "vecadd_i8") / streamer_file("vecadd_i8"))
+    s = parsed(_narrow(tmp_path, "vecadd_v1_2") / streamer_file("vecadd_v1_2"))
     for group in ("data_reader_params", "data_writer_params"):
         assert all(b == [1] for b in s[group]["spatial_bounds"])
         assert all(c == 1 for c in s[group]["num_channel"])
@@ -840,7 +840,7 @@ def test_vecadd_i8_one_channel_per_port(tmp_path):
 
 def test_matadd_int32_bounds_in_words(tmp_path):
     """matadd (int32 again, its recipe's 1 x 4 tiles of W = 4): 4 lanes of int32, 2 words."""
-    s = parsed(_narrow(tmp_path, "matadd") / streamer_file("matadd"))
+    s = parsed(_narrow(tmp_path, "matadd_v1") / streamer_file("matadd_v1"))
     assert s["data_reader_params"]["spatial_bounds"] == [[2], [2]]
     assert s["data_reader_params"]["num_channel"] == [2, 2]
     assert s["data_writer_params"]["num_channel"] == [2]
@@ -882,13 +882,13 @@ def test_a_packed_output_is_one_word_with_its_d_out(tmp_path):
     """vsum at i8, W = 8: the int8 reader one channel of 8 lanes, the int32 sum packed 2 to a word
     (D174): its writer one channel of one word, its port d_out 2, which snax-gvsoc's reader
     takes."""
-    out = _narrow(tmp_path, "vsum_tree", ("types=i8", "W=8"))
+    out = _narrow(tmp_path, "vsum_v1_1", ("types=i8", "W=8"))
     acc = json.loads((out / "accelerator.json").read_text())
     (unit,) = acc["accelerators"][0]["groups"][0]["units"]
     assert unit["ports"]["out"] == {"port": "out", "dir": "out", "dtype": "int32", "lanes": 1,
                                     "d_out": 2}  # fmt: skip
     assert "d_out" not in unit["ports"]["a"]
-    writer = parsed(out / streamer_file("vsum_tree"))["data_writer_params"]
+    writer = parsed(out / streamer_file("vsum_v1_1"))["data_writer_params"]
     assert (writer["spatial_bounds"], writer["num_channel"]) == ([[1]], [1])
     (a,) = snax_cfg().load(out / "snax_forge.hjson").cores[0].accelerators
     (u,) = a.description.accelerators[0].groups[0].units

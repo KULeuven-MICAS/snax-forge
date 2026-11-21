@@ -266,12 +266,18 @@ def drawing(g: Graph, tops: Sequence[Node], placed: dict[str, Any] | None = None
                   width_of=ub if sl is None else None)  # fmt: skip
             d.edge(mid, port, *wire_to, once=True, style="wire")
             if sl is not None:
-                d.edge(sl, "out", ub, port, once=True, style="seed" if port == SEED else "wire")
+                d.edge(sl, "out", ub, port, once=True, style="seed" if port == SEED else "wire",
+                       **bcast(n, port))  # fmt: skip
             return mid, f"{port}·{task_of[n.id]}"
         if sl is not None:
-            d.edge(sl, "out", ub, port, once=True, style="seed" if port == SEED else "wire")
+            d.edge(sl, "out", ub, port, once=True, style="seed" if port == SEED else "wire",
+                   **bcast(n, port))  # fmt: skip
             return sl, "in"
         return ub, port
+
+    def bcast(n: Node, port: str) -> dict[str, Any]:
+        """A broadcast input's wire into its unit (D186): labelled ``<port> · broadcast``."""
+        return {"mark": port, "broadcast": True} if api.broadcast_port(g, n, port) else {}
 
     def slicer_any(inst: str, port: str) -> str | None:
         for x in by_inst[inst]:
@@ -414,7 +420,9 @@ def drawing(g: Graph, tops: Sequence[Node], placed: dict[str, Any] | None = None
                 d.edge(a, ap, tgt, tp, task=task, skip=skipped_all, data=m.data,
                        style="seed" if seeded else "data", sub=api.memlet_text(m), node=n.id, port=port,
                        mark=api.transpose_label(m.data, perm) if perm is not None else None,
-                       transpose=perm is not None, broadcast=m.data in scalars and not m.names)  # fmt: skip
+                       transpose=perm is not None,
+                       broadcast=(m.data in scalars and not m.names)
+                       or (tgt.startswith("unit:") and api.broadcast_port(g, n, port)))  # fmt: skip
             for c, m in n.outputs.items():
                 if m.data in local:
                     local_writer[m.data] = (nb, c)

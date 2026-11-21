@@ -17,12 +17,12 @@ def test_names_and_cores(cluster):
     c = cluster
     a = c.accelerator
     assert (c.design, c.nb_cores, c.dma_core, a.name, a.core, a.slot) == (
-        "vecadd",
+        "vecadd_v1",
         2,
         1,
         "acc",
         0,
-        "snax_forge_vecadd",
+        "snax_forge_vecadd_v1",
     )
     assert c.cores == ["core0", "core1"]
     assert c.sources == ["acc", "acc_a", "acc_b", "acc_out", "dma", "core0", "core1"]
@@ -166,7 +166,7 @@ def test_the_old_one_streamer_slot_is_refused(tmp_path):
 
 
 def test_two_sets_read_set_by_set(tmp_path):
-    """dot_serial as the generator writes it: two streamer sets of the one entry, each its movers
+    """dot_v7 as the generator writes it: two streamer sets of the one entry, each its movers
     counted from reader0 and writer0 within the set, its streamer range (mul 960-977, sum
     982-994), each mover's CSRs from its own set's first (beats.py's mover_csrs)."""
     from snax_forge.gen import generate
@@ -174,11 +174,11 @@ def test_two_sets_read_set_by_set(tmp_path):
     from tests.gen.helpers import bound_recipe
     from tests.gen.helpers import point as gen_point
 
-    path = gen_point(tmp_path, name="dot_serial", graph=bound_recipe("dot_serial", "dot"))
+    path = gen_point(tmp_path, name="dot_v7", graph=bound_recipe("dot_v7", "dot"))
     generate(path, tmp_path / "gen", tmp_path)
     c = load_cluster(tmp_path / "gen" / "snax_forge.hjson", path)
     a = c.accelerator
-    assert (a.name, a.slot) == ("snax_forge_dot_serial", "snax_forge_dot_serial")
+    assert (a.name, a.slot) == ("snax_forge_dot_v7", "snax_forge_dot_v7")
     assert [(m.name, m.gvsoc, m.set) for m in a.movers] == [
         ("mul_a", "reader0", "mul"), ("mul_b", "reader1", "mul"), ("mul_out", "writer0", "mul"),
         ("sum_a", "reader0", "sum"), ("sum_out", "writer0", "sum"),

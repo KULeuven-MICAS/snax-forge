@@ -1,7 +1,7 @@
 """One L2 size per container (``lower.layout.l2_bytes``): data.h's array, the ELF's symbol
 (run/elf.py) and the DMA's copies (run/convert.py) agree, a tail's padded rows included.
 
-rowsum_3x7 splits A's rows of 7 by W = 4, so they are padded to 8: A, M x 7 int64, takes
+rowsum_v1_1 splits A's rows of 7 by W = 4, so they are padded to 8: A, M x 7 int64, takes
 M x 8 words in whole 64-byte beats. At M = 3 that is 192 bytes, as the 168 unpadded ones in
 beats are; from M = 8 the padded rows take more.
 """
@@ -27,10 +27,10 @@ SIZES = {3: 192, 8: 512, 16: 1024}  # M -> A's L2 bytes
 
 @pytest.fixture(scope="module", params=sorted(SIZES))
 def rowsum(request, tmp_path_factory):
-    """(M, the design point of rowsum_3x7 at M)."""
+    """(M, the design point of rowsum_v1_1 at M)."""
     m = request.param
     tmp = tmp_path_factory.mktemp(f"rowsum_m{m}")
-    return m, DesignPoint.load(tmp / designed(tmp, "rowsum_3x7", f"rowsum_m{m}", [f"M={m}"]))
+    return m, DesignPoint.load(tmp / designed(tmp, "rowsum_v1_1", f"rowsum_m{m}", [f"M={m}"]))
 
 
 def linked(point):

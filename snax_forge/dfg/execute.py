@@ -480,7 +480,7 @@ def _run_accelerated(node: Node, ctx: Context) -> None:
                 idx, ok = _beat_indices(m, env, ctx, in_what[name], plans["in", name], tails)
                 beat = np.array(ctx.data[m.data][idx])
                 beat[~ok] = pads.get(m.data, 0)  # a pad lane reads the pad
-                ins[name] = _lanes(beat, p, what)
+                ins[name] = _lanes(_broadcast(beat, p), p, what)
             outs = cfg.fn(k, ins, state, params)
             due = cfg.due(k, rate, "out")
             if sorted(outs) != sorted(due):
@@ -498,6 +498,14 @@ def _run_accelerated(node: Node, ctx: Context) -> None:
                     )
                 written[m.data][at] = True
                 arr[at] = beat_out[ok].astype(arr.dtype)
+
+
+def _broadcast(x: np.ndarray, port: Any) -> np.ndarray:
+    """An input beat of one element on a port of more lanes given to every lane (D186: bind
+    reads an input that does not use the lane variable as one lane, on a datapath whose lanes
+    compute on their own); any other beat as it is."""
+    flat = np.asarray(x).reshape(-1)
+    return np.repeat(flat, port.lanes) if flat.size == 1 and port.lanes > 1 else x
 
 
 def _lanes(x: np.ndarray, port: Any, what: str) -> np.ndarray:

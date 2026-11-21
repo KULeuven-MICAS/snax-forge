@@ -42,15 +42,15 @@ def summary(f) -> str:
 
 
 def test_the_worked_example(tmp_path, worked):
-    f = run_flow(recipe_path("rowsum_2"), SNAX_FORGE, recipe_sets={"W": 2, "M": 4, "N": 3},
-                 out=tmp_path / "rowsum_2")  # fmt: skip
+    f = run_flow(recipe_path("rowsum_v2"), SNAX_FORGE, recipe_sets={"W": 2, "M": 4, "N": 3},
+                 out=tmp_path / "rowsum_v2")  # fmt: skip
     assert f.passed, summary(f)
     assert f.check["exit_code"] == 0 and (f.check["data_errors"], f.check["words"]) == (0, 4)
     sound(f)
     assert {t: (x["beats"], x["group"]) for t, x in f.check["tasks"].items()} == {
         "sum_acc": (6, "acc")
     }
-    data = (tmp_path / "rowsum_2" / "gen" / "data.h").read_text()
+    data = (tmp_path / "rowsum_v2" / "gen" / "data.h").read_text()
     golden = data.split(" y_golden[", 1)[1].split("{", 1)[1].split("}", 1)[0]
     assert [int(v) for v in golden.replace(",", " ").split()][:4] == [6, 15, 24, 33]
 
@@ -59,8 +59,8 @@ def test_the_worked_example(tmp_path, worked):
     "memory_sets", [(), (("passes.layout", "padded_rows"),)], ids=["contiguous", "padded_rows"]
 )  # fmt: skip
 def test_rowsum_2_at_its_defaults(tmp_path, memory_sets):
-    f = run_flow(recipe_path("rowsum_2"), SNAX_FORGE, memory_sets=memory_sets,
-                 out=tmp_path / "rowsum_2")  # fmt: skip
+    f = run_flow(recipe_path("rowsum_v2"), SNAX_FORGE, memory_sets=memory_sets,
+                 out=tmp_path / "rowsum_v2")  # fmt: skip
     assert f.passed, summary(f)
     assert f.check["exit_code"] == 0 and (f.check["data_errors"], f.check["words"]) == (0, 8)
     sound(f)

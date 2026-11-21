@@ -199,11 +199,11 @@ def recipe_view(tmp_path: Path, recipe: str, params: dict | None = None) -> dict
     ("recipe", "want"),
     [
         # int32, W = 4: two to a word, two channels a port
-        ("vecadd_i32", {"A": "int32 · num_slc 2 · num_ch 2", "B": "int32 · num_slc 2 · num_ch 2", "C": "int32 · num_slc 2 · num_ch 2"}),
+        ("vecadd_v1_1", {"A": "int32 · num_slc 2 · num_ch 2", "B": "int32 · num_slc 2 · num_ch 2", "C": "int32 · num_slc 2 · num_ch 2"}),
         # a fold's one-lane output shows its own type: one int64, one word
-        ("vsum_tree_i32", {"A": "int32 · num_slc 2 · num_ch 2", "out": "int64 · num_slc 1 · num_ch 1"}),
+        ("vsum_v1_1_1", {"A": "int32 · num_slc 2 · num_ch 2", "out": "int64 · num_slc 1 · num_ch 1"}),
         # int32 in, the int64 product out: 4 lanes take two words in and four out
-        ("vecmul_i32_i64", {"A": "int32 · num_slc 2 · num_ch 2", "B": "int32 · num_slc 2 · num_ch 2", "C": "int64 · num_slc 1 · num_ch 4"}),
+        ("vecmul_v1_1_1", {"A": "int32 · num_slc 2 · num_ch 2", "B": "int32 · num_slc 2 · num_ch 2", "C": "int64 · num_slc 1 · num_ch 4"}),
     ],
 )  # fmt: skip
 def test_a_port_edge_labels_its_packing(tmp_path, recipe, want):
@@ -216,7 +216,7 @@ def test_a_port_edge_labels_its_packing(tmp_path, recipe, want):
 def test_a_packed_output_draws_its_packer(tmp_path):
     """vsum at i8, W = 8: a FifoPacker box between the sum's output and out (D174); at int64
     the output is wired, no packer."""
-    v = recipe_view(tmp_path, "vsum_tree", {"types": "i8", "W": 8})
+    v = recipe_view(tmp_path, "vsum_v1_1", {"types": "i8", "W": 8})
     pk = boxes(v)["packer:acc.out"]
     assert (pk["kind"], pk["text"]) == ("packer", "FifoPacker · d_out 2")
     assert ends(v, "out") == [
@@ -226,14 +226,14 @@ def test_a_packed_output_draws_its_packer(tmp_path):
     d = v["details"]["node:packer:acc.out"]
     assert (d["kind"], d["unit"], d["port"], d["lanes"], d["d_out"], d["bits"]) == (
         "packer", "acc", "out", 1, 2, 33)  # fmt: skip
-    plain = recipe_view(tmp_path, "vsum_tree")
+    plain = recipe_view(tmp_path, "vsum_v1_1")
     assert not [b for b in boxes(plain).values() if b["kind"] == "packer"]
 
 
 def test_a_sliced_input_draws_its_slicer(tmp_path):
-    """vecadd_i32 at W = 1: a FifoSlicer box between A's loop and the unit's a, and one for B
+    """vecadd_v1_1 at W = 1: a FifoSlicer box between A's loop and the unit's a, and one for B
     (D180), the edge into each the port's packing; the packer below."""
-    v = recipe_view(tmp_path, "vecadd_i32", {"W": 1})
+    v = recipe_view(tmp_path, "vecadd_v1_1", {"W": 1})
     assert {k: b["kind"] for k, b in boxes(v).items() if b["kind"] in ("slicer", "packer")} == {
         "slicer:acc.a": "slicer", "slicer:acc.b": "slicer", "packer:acc.out": "packer"}  # fmt: skip
     assert boxes(v)["slicer:acc.a"]["text"] == "FifoSlicer · d_in 2"
@@ -246,13 +246,13 @@ def test_a_sliced_input_draws_its_slicer(tmp_path):
         "slicer", "acc", "a", 1, 2, 66
     )  # fmt: skip
     assert "placed by the flow" in d["what"]
-    plain = recipe_view(tmp_path, "vecadd_i32")
+    plain = recipe_view(tmp_path, "vecadd_v1_1")
     assert not [b for b in boxes(plain).values() if b["kind"] in ("slicer", "packer")]
 
 
 def test_a_packed_output_edge_shows_its_d_out(tmp_path):
     """vsum at i8, W = 8: the int32 sum packed 2 to a word on one channel (D174)."""
-    v = recipe_view(tmp_path, "vsum_tree", {"types": "i8", "W": 8})
+    v = recipe_view(tmp_path, "vsum_v1_1", {"types": "i8", "W": 8})
     edges = [v["details"][f"edge:{e['id']}"] for e in v["drawing"]["edges"]]
     assert {e["data"]: e["packing"] for e in edges if e.get("packing")} == {
         "A": "int8 · num_slc 8 · num_ch 1", "out": "int32 · num_slc 2 · d_out 2 · num_ch 1"
@@ -284,12 +284,12 @@ def test_the_bound_dot_shows_both_accelerators():
 
 
 def test_dot_1_enc_draws_one_accelerator_of_two_groups(tmp_path):
-    """dot_1_enc: the accelerator dot, its groups vmul and vsum in the graph's order, each unit
+    """dot_v1_1: the accelerator dot, its groups vmul and vsum in the graph's order, each unit
     inside the accelerator's outline (a group of one unit and no link has none); each unit's
     Details name its group and accelerator. dot 1 has two accelerators and no outline."""
     from tests.gen.helpers import bound_dot1, bound_dot1_enc
 
-    path = tmp_path / "dot_1_enc.snaxdfg"
+    path = tmp_path / "dot_v1_1.snaxdfg"
     path.write_text(bound_dot1_enc().to_json())
     v = view(path)
     assert [(o["id"], o["text"], o["sel"]) for o in v["drawing"]["outlines"]] == [
@@ -323,7 +323,7 @@ def test_a_loop_box_names_its_map_kind_variable_and_iterations():
     from snax_forge.viz.dfg.api import Entry
     from tests.helpers import steps
 
-    g = steps("vecmul", N=2048)[0]
+    g = steps("vecmul_v1", N=2048)[0]
     v = graph_view(Entry("0_input", Path("0_input.snaxdfg"), g, None))
     b = boxes(v)["mult_map"]
     assert (b["text"], b["sub"]) == ("mult_map · untagged", "n · 2048")
@@ -340,13 +340,13 @@ def test_the_containers_section_of_vecmul_and_matvec():
     from tests.helpers import steps
 
     platform = Platform.load(SNAX_FORGE)
-    g = steps("vecmul", N=2048, W=8)[-1]
+    g = steps("vecmul_v1", N=2048, W=8)[-1]
     got = containers_section(g, estimate(g, platform))
     keys = ("name", "shape_text", "sizes", "dtype", "bytes", "bytes_text", "placement", "symbols")
     assert [tuple(c[k] for k in keys) for c in got] == [
         (x, "N", [2048], "int64", 16384, "16 KiB", "l1", ["N"]) for x in "ABC"]  # fmt: skip
     assert got[0]["dims"] == [{"parts": [{"text": "N", "symbol": "N"}]}]
-    m = steps("matvec_1")[-1]
+    m = steps("matvec_v1")[-1]
     mv = {c["name"]: c for c in containers_section(m, estimate(m, platform))}
     assert (mv["A"]["shape_text"], mv["A"]["sizes"], mv["A"]["symbols"]) == (
         "M × N",
@@ -376,7 +376,7 @@ def test_the_cost_tables_of_vecmul_and_dot_1():
     total, one table per accelerator: vecmul at W = 8 (N = 2048) its unit 55 300 µm², 23.137 nJ,
     its control unit 362 µm² (flops and an equal comb, 34 bits: no copy of JOBS), 0.047 nJ,
     three streamers of 8 channels,
-    its 4096 reads and 2048 writes 38.251 nJ; dot_1_enc at W = 8 one table for its two groups,
+    its 4096 reads and 2048 writes 38.251 nJ; dot_v1_1 at W = 8 one table for its two groups,
     tmp0's round trip in its L1 row; Compare's cells before → after."""
     from snax_forge.design import Platform
     from snax_forge.estimate import estimate
@@ -385,7 +385,7 @@ def test_the_cost_tables_of_vecmul_and_dot_1():
     from tests.helpers import steps
 
     platform = Platform.load(SNAX_FORGE)
-    g = steps("vecmul", N=2048, W=8)[-1]
+    g = steps("vecmul_v1", N=2048, W=8)[-1]
     (t,) = cost_tables(estimate(g, platform), g)
     strm = "streamer · FIFO 8, 1 loop, 8 ch"
     assert t["accelerator"] == "acc" and _cost_rows(t) == [
@@ -404,7 +404,7 @@ def test_the_cost_tables_of_vecmul_and_dot_1():
                      ("streamers", "95 200 µm²", "14.2%", "17.279 nJ", "22.0%"),
                      ("crossbar", "84 600 µm²", "12.7%", "10.513 nJ", "13.4%"),
                      ("memory", "433 000 µm²", "64.8%", "27.738 nJ", "35.2%")]  # fmt: skip
-    d = steps("dot_1_enc", N=2048, W=8)[-1]
+    d = steps("dot_v1_1", N=2048, W=8)[-1]
     (t,) = cost_tables(estimate(d, platform), d)
     assert t["accelerator"] == "dot" and _cost_rows(t) == [
         ("vmul", "SimdLanes", "55 300", "23.137", "23.9%"),
@@ -420,7 +420,7 @@ def test_the_cost_tables_of_vecmul_and_dot_1():
         ("total", "", "190 000", "96.766", "100.0%")]  # fmt: skip
     v = step_view(Entry("2_bind", Path("2_bind.snaxdfg"), g, None), "2 bind", platform)
     assert v["summary"]["cost"]["tables"][0]["rows"][0]["area_text"] == "55 300"
-    w16 = steps("vecmul", N=2048, W=16)[-1]
+    w16 = steps("vecmul_v1", N=2048, W=16)[-1]
     c = compare_view(Entry("w8", Path("w8"), g, None), Entry("w16", Path("w16"), w16, None),
                      platform)["columns"]["cost_tables"]  # fmt: skip
     (unit, ctrl, *strm, l1, total) = [*c[0]["rows"], c[0]["total"]]
@@ -442,7 +442,7 @@ def test_the_bank_note_under_its_group():
 
     platform = Platform.load(SNAX_FORGE)
     w8, w16 = (
-        Entry(f"w{w}", Path(f"w{w}"), steps("vecmul", N=2048, W=w)[-1], None) for w in (8, 16)
+        Entry(f"w{w}", Path(f"w{w}"), steps("vecmul_v1", N=2048, W=w)[-1], None) for w in (8, 16)
     )
     note = ("acc: the streams move 6144 words over 32 banks, at least 192 cycles of L1 time "
             "against the ideal 128")  # fmt: skip
@@ -464,7 +464,7 @@ def test_the_estimate_panel_gives_the_unmapped_and_total_cycles():
     from tests.helpers import steps
 
     platform = Platform.load(SNAX_FORGE)
-    g0, g1, g2 = steps("vecmul", N=2048, W=8)
+    g0, g1, g2 = steps("vecmul_v1", N=2048, W=8)
     a, b = Entry("0_input", Path("0"), g0, None), Entry("2_bind", Path("2"), g2, None)
     tagged = step_view(Entry("1_split_map", Path("1"), g1, None), "1 split_map", platform)
     assert [c["value"] for c in tagged["summary"]["cycles"]] == [
@@ -503,15 +503,15 @@ def test_the_symbols_section():
     from snax_forge.viz.dfg.api import symbols_section
     from tests.helpers import steps
 
-    g = steps("vecmul", N=2048, W=8)[-1]
-    r = Recipe.load(recipe_path("vecmul")).with_params({"N": 2048, "W": 8})
+    g = steps("vecmul_v1", N=2048, W=8)[-1]
+    r = Recipe.load(recipe_path("vecmul_v1")).with_params({"N": 2048, "W": 8})
     assert symbols_section(g, r, editable=True) == [
         {"name": "N", "value": 2048, "param": "N", "editable": True, "containers": ["A", "B", "C"]}
     ]
     (ro,) = symbols_section(g)
     assert (ro["param"], ro["editable"]) == (None, False)
     assert not symbols_section(g, r)[0]["editable"]  # view mode: the folder's recipe, read only
-    m = steps("matvec_1")[-1]
+    m = steps("matvec_v1")[-1]
     got = {x["name"]: x for x in symbols_section(m)}
     assert (got["M"]["value"], got["M"]["containers"]) == (8, ["A", "q", "tmp0"])
     assert (got["N"]["value"], got["N"]["containers"]) == (512, ["A", "p", "tmp0"])
@@ -536,6 +536,23 @@ def _entries(b):
 
 
 @pytest.mark.slow
+def test_an_apply_recipes_params_are_bindings_not_unused():
+    """mvt_v5_1: each apply_recipe step naming the session's params is an entry
+    (``matvec_acc_v3 on matvec_acc · W_x1 = 8 · D_2 = 1``), so nothing is unused."""
+    from snax_forge.sandbox import Recipe
+    from snax_forge.viz.dfg.api import bindings_section
+    from tests.helpers import steps
+
+    r = Recipe.load(recipe_path("mvt_v5_1"))
+    b = bindings_section(steps("mvt_v5_1")[-1], r, editable=True)
+    recipes = [(e["label"], [(p["name"], p["value"]) for p in e["params"]])
+               for e in b["entries"] if e["kind"] == "recipe"]  # fmt: skip
+    assert recipes == [("matvec_acc_v3 on matvec_acc", [("D_2", 1), ("W_x1", 8)]),
+                       ("matvec_acc_v4 on matvec_acc_1", [("W_x1", 8)])]  # fmt: skip
+    assert b["unused"] == []
+
+
+@pytest.mark.slow
 def test_the_bindings_of_vecmul_dot_1_and_dot_4():
     """the Bindings: vecmul's split before its bind (``mult_map split · W = 8 · not bound``),
     then the unit (``acc · simd · W = 8``); dot 1 with W_mul and W_sum, two entries,
@@ -557,7 +574,7 @@ def test_the_bindings_of_vecmul_dot_1_and_dot_4():
         four["unused"] == []
         and not bindings_section(gs[4], r)["entries"][0]["params"][0]["editable"]
     )
-    d = Recipe.load(recipe_path("dot_1"))
+    d = Recipe.load(recipe_path("dot_v1"))
     factor = {"mult_map": "W_mul", "sum_map": "W_sum"}
     d = Recipe(d.name, d.kernel, {"N": 2048, "W_mul": 8, "W_sum": 4}, d.symbols,
                [Step(x.transform, {**x.params, "factor": factor[x.params["map"]]})
@@ -565,14 +582,14 @@ def test_the_bindings_of_vecmul_dot_1_and_dot_4():
     dot1 = bindings_section(apply_recipe(d, imported("dot"))[-1].graph, d, editable=True)
     assert _entries(dot1) == [("unit", "vmul · simd", [("W_mul", 8, True, [])], None),
                               ("unit", "vsum · accumulate", [("W_sum", 4, True, [])], None)]  # fmt: skip
-    d4 = Recipe.load(recipe_path("dot_4"))
-    dot4 = bindings_section(steps("dot_4")[-1], d4, editable=True)
+    d4 = Recipe.load(recipe_path("dot_v4"))
+    dot4 = bindings_section(steps("dot_v4")[-1], d4, editable=True)
     assert _entries(dot4) == [("unit", "mac · mac", [("W", 4, True, ["sum · accumulate"])], None),
                               ("unit", "sum · accumulate", [("W", 4, True, ["mac · mac"])], None)]  # fmt: skip
     spare = replace(d4, params={**d4.params, "K": 3})
-    assert bindings_section(steps("dot_4")[-1], spare, editable=True)["unused"] == [
+    assert bindings_section(steps("dot_v4")[-1], spare, editable=True)["unused"] == [
         {"name": "K", "value": 3, "editable": True}]  # fmt: skip
-    bare = bindings_section(steps("dot_4")[-1])  # no recipe: the design params, read only
+    bare = bindings_section(steps("dot_v4")[-1])  # no recipe: the design params, read only
     assert [(e["label"], e["params"][0]["name"], e["params"][0]["editable"]) for e in bare["entries"]] == [
         ("mac · mac", "W", False), ("sum · accumulate", "W", False)]  # fmt: skip
 
@@ -700,7 +717,7 @@ def test_the_run_viewer_still_serves_its_own_page(tmp_path):
     from .helpers import run_dir
     from .helpers import serving as run_serving
 
-    with run_serving([run_dir(tmp_path / "vecadd", "vecadd", "off")]) as srv:
+    with run_serving([run_dir(tmp_path / "vecadd_v1", "vecadd_v1", "off")]) as srv:
         assert b"app.js" in get(srv, "/")[2]
 
 
@@ -719,7 +736,7 @@ def test_dot4_draws_its_wire_and_boxes_its_group(tmp_path):
     """dot 4: the link box ``out_partial · wire`` keyed by its ports, mac, the link and sum in
     one group outline; out_partial and the fused nest's tmp0 get no box, the edges run through
     the link."""
-    v = recipe_view(tmp_path, "dot_4")
+    v = recipe_view(tmp_path, "dot_v4")
     link, outlines = _link_and_group(v)
     assert (link["id"], link["text"], link["sel"]) == (
         "link:mac.out>sum.a",
@@ -757,9 +774,9 @@ def test_a_fused_nests_local_value_is_an_edge_inside_the_map_not_a_box():
     from tests.helpers import steps
 
     platform = Platform.load(SNAX_FORGE)
-    names = [s.transform for s in Recipe.load(recipe_path("dot_4")).steps]
+    names = [s.transform for s in Recipe.load(recipe_path("dot_v4")).steps]
     k = names.index("fuse_map") + 1
-    g = steps("dot_4")[k]
+    g = steps("dot_v4")[k]
     v = step_view(Entry("3_fuse_map", Path("3_fuse_map.snaxdfg"), g, None), "3 fuse_map", platform)
     assert not any(c.startswith("tmp0@") for c in containers(v))
     (edge,) = [e for e in v["drawing"]["edges"] if e.get("data") == "tmp0"]
@@ -774,14 +791,14 @@ def test_a_fused_nests_local_value_is_an_edge_inside_the_map_not_a_box():
     assert (d["placement"], d["bytes"], d["writers"], d["readers"]) == (
         "local to mult_map, no memory", None, ["mult"], ["sum"])  # fmt: skip
     assert estimate(g, platform).containers["tmp0"].placement == "local"  # the estimate's own
-    one = steps("dot_1")[-1]
+    one = steps("dot_v1")[-1]
     w = step_view(Entry("8_bind", Path("8_bind.snaxdfg"), one, None), "8 bind", platform)
     assert "tmp0@1" in containers(w)
     assert not [e for e in w["drawing"]["edges"] if e["style"] == "local"]
 
 
 def test_dot6_draws_a_buffer_with_its_depth(tmp_path):
-    v = recipe_view(tmp_path, "dot_6")
+    v = recipe_view(tmp_path, "dot_v6")
     link, outlines = _link_and_group(v)
     assert (link["text"], v["details"][f"node:{link['sel']}"]["depth"]) == (
         "out_partial · FIFO 1",
@@ -800,7 +817,7 @@ def _dot5_steps():
     from snax_forge.viz.dfg.api import Entry
     from tests.helpers import steps
 
-    gs = steps("dot_5", W=8, N=2048)
+    gs = steps("dot_v5", W=8, N=2048)
     return [Entry(str(k), REPO, g, None) for k, g in enumerate(gs)], Platform.load(
         REPO / "platforms" / "snax_forge.json")  # fmt: skip
 
@@ -885,7 +902,7 @@ def test_compare_gives_two_columns_for_the_same_group():
     from tests.helpers import steps
 
     e, platform = _dot5_steps()
-    w4 = Entry("w4", REPO, steps("dot_5", W=4, N=2048)[-1], None)
+    w4 = Entry("w4", REPO, steps("dot_v5", W=4, N=2048)[-1], None)
     rows = compare_view(e[6], w4, platform)["columns"]["estimate"]
     assert _rows(rows, "group dot") == {
         "cycles": ("265 = 256 + 9", "517 = 512 + 5", True), "expected BUSY_COUNTER": ("268", "520", True),
@@ -907,7 +924,7 @@ def test_a_block_with_no_flops_has_no_flop_area():
     from snax_forge.viz.dfg.api import Entry, step_view
     from tests.helpers import steps
 
-    v = step_view(Entry("v", REPO, steps("vecmul", W=8)[-1], None), "v",
+    v = step_view(Entry("v", REPO, steps("vecmul_v1", W=8)[-1], None), "v",
                   Platform.load(REPO / "platforms" / "snax_forge.json"))  # fmt: skip
     cost = v["details"]["node:mult"]["cost"]
     assert "flops 0)" in cost["area"] and cost["per task"].endswith("(8 fires, 0 bits)")
@@ -935,18 +952,18 @@ def test_the_bindings_tree():
         b = bindings_section(steps(name)[k], replace(r, steps=r.steps[:k]))
         return b["tree"], [e["label"] for e in b["entries"]]
 
-    assert tree("dot_1_enc") == ([{"kind": "accelerator", "name": "dot", "children": [
+    assert tree("dot_v1_1") == ([{"kind": "accelerator", "name": "dot", "children": [
         {"kind": "group", "name": "vmul", "children": [{"kind": "entry", "index": 0}]},
         {"kind": "group", "name": "vsum", "children": [{"kind": "entry", "index": 1}]}]}],
         ["vmul · simd", "vsum · accumulate"])  # fmt: skip
     # dot 1, two accelerators of one group of one unit each: both at the top
-    assert tree("dot_1") == ([{"kind": "entry", "index": 0}, {"kind": "entry", "index": 1}],
+    assert tree("dot_v1") == ([{"kind": "entry", "index": 0}, {"kind": "entry", "index": 1}],
                              ["vmul · simd", "vsum · accumulate"])  # fmt: skip
-    assert tree("dot_2")[0] == [{"kind": "group", "name": "dot", "children": [
+    assert tree("dot_v2")[0] == [{"kind": "group", "name": "dot", "children": [
         {"kind": "entry", "index": 0}, {"kind": "entry", "index": 1}]}]  # fmt: skip
-    assert tree("vecmul")[0] == [{"kind": "entry", "index": 0}]
+    assert tree("vecmul_v1")[0] == [{"kind": "entry", "index": 0}]
     # dot 1 at its step 3: vmul bound, sum_map split, nothing encapsulated: both at the top
-    t, labels = tree("dot_1", 3)
+    t, labels = tree("dot_v1", 3)
     assert t == [{"kind": "entry", "index": 0}, {"kind": "entry", "index": 1}]
     assert labels == ["vmul · simd", "sum_map split_map"]
 
@@ -974,7 +991,7 @@ def test_the_recipes_param_names_in_the_boxes_and_details():
     assert map_ranges(gt, tail)["mult_map"] == "0:(N + W_mul - 1) // W_mul = 205"
     plain = step_view(Entry("5", Path("5"), g, None), "5", Platform.load(SNAX_FORGE))
     assert "vmul · a * b · W 8" in json.dumps(plain["drawing"], ensure_ascii=False)
-    two = Recipe.load(recipe_path("dot_2")).with_params({"N": 2048, "W": 8})
+    two = Recipe.load(recipe_path("dot_v2")).with_params({"N": 2048, "W": 8})
     g2 = apply_recipe(two, imported("dot"))[-1].graph
     assert unit_params(g2, two) == {"mul": ["W"], "sum": ["W"]}
 
@@ -987,7 +1004,7 @@ def test_a_unit_with_a_slot_shows_it():
     from snax_forge.viz.dfg.api import bindings_section, compact_text
     from tests.helpers import FIXTURES, recipe_path
 
-    r = Recipe.load(recipe_path("relu"))
+    r = Recipe.load(recipe_path("relu_v1"))
     g = apply_recipe(r, Graph.load(FIXTURES / "relu.snaxdfg"))[-1].graph
     assert compact_text(g, g.node("numpy_maximum")) == "acc · max(a, k) · W 4 · k 0"
     for recipe in (r, None):
@@ -1025,7 +1042,7 @@ def _node_in(view: dict, node_id: str) -> dict:
 def test_a_scalar_is_a_parameter_hexagon_its_edge_broadcast():
     """alpha before any bake: listed ``scalar · int32``, its box marked scalar (the hexagon), its
     edge straight into mult's port (no loop: alpha[0] uses none) labelled broadcast."""
-    r, graphs = _axpy("axpy")
+    r, graphs = _axpy("axpy_v1")
     (v,) = _views(r, graphs[:1])
     line = {c["name"]: c["line"] for c in v["containers_section"]}
     assert line["alpha"] == "scalar · int32" and line["x"] == "N · L1 · 256 B"
@@ -1036,14 +1053,29 @@ def test_a_scalar_is_a_parameter_hexagon_its_edge_broadcast():
     assert b["mult"]["ins"] == ["in1", "in2"]
 
 
+def test_a_broadcast_input_is_labelled_on_its_wire_into_the_unit():
+    """mvt's column-form mac (D186): y2's slicer feeds mac_x2's b, labelled ``b · broadcast``;
+    A and the seed come in unlabelled."""
+    from snax_forge.viz.dfg.api import fold
+    from snax_forge.viz.dfg.drawing import drawing
+    from tests.helpers import bound_mvt_column
+
+    g = bound_mvt_column()
+    tops, blocks = fold(g)
+    d = drawing(g, tops, None, blocks)
+    got = {e["to_port"]: (e["from"], e["label"]) for e in d["edges"] if e["to"] == "unit:mac_x2"}
+    assert got == {"a": ("tmp4_mult_map_1", None), "b": ("slicer:mac_x2.b", "b · broadcast"),
+                   "seed": ("tmp4_mult_map", None)}  # fmt: skip
+
+
 def test_a_scalar_read_as_csr_is_drawn_like_a_baked_one():
     """axpy's recipe: bake_scalar alpha csr first, so mult reads ``csr(alpha) * in2`` where
-    axpy_baked's reads ``3 * in2``: alpha gets no box, edge or port, through the fuse and the
+    axpy_v1_1's reads ``3 * in2``: alpha gets no box, edge or port, through the fuse and the
     split, and the bound unit reads ``k1 csr(alpha)``; Containers still lists alpha."""
     from snax_forge.viz.dfg.api import compact_text
 
-    r, graphs = _axpy("axpy")
-    rb, baked = _axpy("axpy_baked")
+    r, graphs = _axpy("axpy_v1")
+    rb, baked = _axpy("axpy_v1_1")
     assert r.steps[0].params == {"container": "alpha", "value": "csr"}
     assert compact_text(graphs[1], graphs[1].node("mult")) == "mult · csr(alpha) * in2"
     for v, vb in zip(_views(r, graphs[1:]), _views(rb, baked[1:]), strict=True):
@@ -1059,7 +1091,7 @@ def test_a_units_slots_show_csr_or_baked():
     or k1 3 baked; the Bindings the same, read only."""
     from snax_forge.viz.dfg.api import bindings_section, compact_text
 
-    for name, slot in (("axpy", "csr(alpha)"), ("axpy_baked", 3)):
+    for name, slot in (("axpy_v1", "csr(alpha)"), ("axpy_v1_1", 3)):
         r, graphs = _axpy(name)
         g = graphs[-1]
         assert compact_text(g, g.node("mult")) == f"acc · k1 * a + b · W 4 · k1 {slot}"
@@ -1076,7 +1108,7 @@ def test_a_container_box_names_its_shape():
 
     g = imported("rowsum")
     assert (container_text(g, "A"), container_text(g, "y")) == ("A[M, N]", "y[M]")
-    r, graphs = _axpy("axpy")
+    r, graphs = _axpy("axpy_v1")
     a = graphs[0]
     assert [container_text(a, c) for c in ("alpha", "x", "y")] == ["alpha", "x[N]", "y[N]"]
     (v,) = _views(r, graphs[:1])
@@ -1086,7 +1118,7 @@ def test_a_container_box_names_its_shape():
 
 def test_a_baked_tasklet_reads_the_value():
     """After bake_scalar 3 the tasklet reads ``mult · 3 * in2``, one input port, no alpha."""
-    r, graphs = _axpy("axpy_baked")
+    r, graphs = _axpy("axpy_v1_1")
     assert r.steps[0].params == {"container": "alpha", "value": 3}
     g = graphs[1]
     from snax_forge.viz.dfg.api import compact_text
@@ -1135,7 +1167,7 @@ def test_the_editor_offers_bake_unbake_and_fuse_map_on_axpy(tmp_path, monkeypatc
 
 
 def test_the_lane_accumulator_reads_as_a_fold():
-    """rowsum_2 bound: its unit reads ``acc · fold + · W 4`` over the column loop, under the row
+    """rowsum_v2 bound: its unit reads ``acc · fold + · W 4`` over the column loop, under the row
     block loop and the column loop; its Details give the W lanes down a column."""
     from snax_forge.design import Platform
     from snax_forge.sandbox import Recipe, apply_recipe
@@ -1143,7 +1175,7 @@ def test_the_lane_accumulator_reads_as_a_fold():
     from tests.design.helpers import SNAX_FORGE
     from tests.helpers import imported
 
-    r = Recipe.load(recipe_path("rowsum_2"))
+    r = Recipe.load(recipe_path("rowsum_v2"))
     g = apply_recipe(r, imported("rowsum"))[-1].graph
     v = step_view(Entry("4", Path("4"), g, None), "4", Platform.load(SNAX_FORGE), recipe=r)
     b = boxes(v)
@@ -1162,14 +1194,14 @@ def test_the_lane_accumulator_reads_as_a_fold():
 
 
 # =============================================================================
-# The fold's seed: matvec_seed
+# The fold's seed: matvec_acc_v1
 # =============================================================================
 
 
 def _matvec_seed():
     from snax_forge.sandbox import Recipe, apply_recipe
 
-    r = Recipe.load(recipe_path("matvec_seed"))
+    r = Recipe.load(recipe_path("matvec_acc_v1"))
     return r, [x.graph for x in apply_recipe(r, Graph.load(FIXTURES / "matvec_acc.snaxdfg"))]
 
 
@@ -1327,7 +1359,7 @@ def test_axpys_two_maps_fuse():
 
 
 def test_a_seeded_or_bound_graph_has_no_seed_partner():
-    """matvec_seed's last steps: the seed taken, so no fuse_seed partner is left."""
+    """matvec_acc_v1's last steps: the seed taken, so no fuse_seed partner is left."""
     _, graphs = _matvec_seed()
     for g in graphs[6:]:
         assert not [p for ps in _partners(g).values() for p in ps if p[1] == "fuse_seed"]
@@ -1357,10 +1389,10 @@ def test_a_folding_node_is_marked_fold():
     _, graphs = _matvec_seed()
     assert [_fold_nodes(view_of(g)) for g in graphs[5:]] == [["sum"]] * 4
     assert "fold" not in _node_in(view_of(graphs[-1]), "mult")
-    for name, want in (("dot_4", ["mult", "sum_final"]), ("rowsum_2", ["sum"]),
-                       ("axpy", [])):  # fmt: skip
+    for name, want in (("dot_v4", ["mult", "sum_final"]), ("rowsum_v2", ["sum"]),
+                       ("axpy_v1", [])):  # fmt: skip
         v = view_of(recipe_graphs(name)[1][-1])
         assert sorted(_fold_nodes(v)) == want, name
-    links = [b for b in view_of(recipe_graphs("dot_4")[1][-1])["drawing"]["nodes"]
+    links = [b for b in view_of(recipe_graphs("dot_v4")[1][-1])["drawing"]["nodes"]
              if b["kind"] == "link"]  # fmt: skip
     assert links and not any(b.get("fold") for b in links)

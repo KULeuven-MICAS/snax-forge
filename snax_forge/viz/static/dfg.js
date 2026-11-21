@@ -189,6 +189,7 @@ function panel(v, k, pick, seed = null, slot = "main") {
     v.folder ? h("span", { class: "muted" }, `${v.folder} · `) : null,
     pick ? stepSelect(k, pick) : h("b", {}, v.label),
     h("span", { class: "muted" }, v.graph ? ` ${v.graph}` : ""),
+    v.recipe_id ? h("span", { class: "c-recipe-id", title: v.recipe_description || "" }, v.recipe_id) : null,
     tasks.map((t, i) => h("span", { class: "c-task", style: { "--t": TASK_COLOURS[i % TASK_COLOURS.length] }, title: `task ${t}: its edges and chips in this colour` }, t)),
     tools);
   if (v.error || !v.drawing) return h("section", { class: "c-panel broken" }, head, h("p", { class: "load-error" }, v.error || "no drawing"));
@@ -333,7 +334,7 @@ async function toggleBlock(name) {
 }
 
 /** The Blocks section: each block indented under the block holding it, a toggle to open or
-close it, its name to select it and its text (``dot · dot/dot_3 · W = 4``). */
+close it, its name to select it and its text (``dot · dot/dot_v3 · W = 4``). */
 async function blocks() {
   const box = $("blocks");
   if (!box) return;
@@ -422,6 +423,37 @@ function outline() {
     }
   }
   showPartners();
+  showPreview();
+}
+
+// What an open lift or apply_recipe form would change (edit.js's ``preview``): the boxes of the
+// node ids it gives (a loop, a tasklet, a unit by its chips, a block folded or its outline),
+// the edges between them, and dimmer the edges from or to them.
+function preview(ids) {
+  state.preview = ids && ids.length ? new Set(ids) : null;
+  showPreview();
+}
+
+function showPreview() {
+  for (const el of document.querySelectorAll("#graphs .pv-on, #graphs .pv-edge, #graphs .pv-touch")) {
+    el.classList.remove("pv-on", "pv-edge", "pv-touch");
+  }
+  const ids = state.preview;
+  if (!ids) return;
+  for (const p of document.querySelectorAll("#graphs .c-panel")) {
+    if (!p._d) continue;
+    const lit = new Set(p._d.nodes.filter((n) => ids.has(n.id) || ids.has(n.sel)
+      || (n.chips || []).some((c) => ids.has(c[0]))).map((n) => n.id));
+    for (const id of lit) for (const el of p.querySelectorAll(`.c-box[data-id="${CSS.escape(id)}"]`)) el.classList.add("pv-on");
+    for (const o of p._d.outlines) {
+      if (o.block && ids.has(o.block)) for (const el of p.querySelectorAll(`rect[data-frame="${CSS.escape(o.id)}"]`)) el.classList.add("pv-on");
+    }
+    for (const e of p._d.edges) {
+      const both = lit.has(e.from) && lit.has(e.to), one = lit.has(e.from) || lit.has(e.to);
+      if (!one) continue;
+      for (const el of p.querySelectorAll(`path.edge[data-edge="${CSS.escape(e.id)}"]`)) el.classList.add(both ? "pv-edge" : "pv-touch");
+    }
+  }
 }
 
 // A selected map's partners (api.py's ``partners``, found by the transforms' own sites): each
@@ -614,7 +646,8 @@ function hlParam(name, on) {
 }
 
 /** One param of an entry: ``W = 8``, an input in edit mode (``POST /api/params``, every entry
-naming it changes with it), what it is shared with. */
+naming it changes with it), what it is shared with; in edit mode a ✎ that renames it through
+the session and, when nothing names it (``unused``), a × that drops it. */
 function paramEl(p) {
   const value = p.value === null || p.value === undefined ? "?" : String(p.value);
   const shared = p.shared_with && p.shared_with.length ? `shared with ${p.shared_with.join(", ")}` : "";
@@ -625,6 +658,10 @@ function paramEl(p) {
   p.editable
     ? h("input", { value, size: Math.max(3, value.length), "aria-label": `param ${p.name}`, onchange: (ev) => edit.setParam(p.name, ev.target) })
     : h("b", { class: "mono" }, value),
+  p.editable ? h("button", { type: "button", class: "param-act", title: `rename ${p.name} in every step`,
+    "aria-label": `rename ${p.name}`, onclick: () => edit.renameParam(p.name) }, "✎") : null,
+  p.editable && p.unused ? h("button", { type: "button", class: "param-act", title: `drop ${p.name}`,
+    "aria-label": `drop ${p.name}`, onclick: () => edit.dropParam(p.name) }, "×") : null,
   shared ? h("small", {}, ` · ${shared}`) : null);
 }
 
@@ -648,7 +685,7 @@ async function bindings() {
       h("div", { class: "dfg-bind-kids" }, n.children.map(branch))));
   const rows = b.tree ? b.tree.map(branch) : b.entries.map(entry);
   const unused = b.unused.length ? h("div", { class: "dfg-binding unused" }, h("span", { class: "muted" }, "unused: "),
-    b.unused.map((p, i) => [i ? ", " : "", paramEl({ ...p, shared_with: [] })])) : null;
+    b.unused.map((p, i) => [i ? ", " : "", paramEl({ ...p, shared_with: [], unused: true })])) : null;
   box.replaceChildren(...(rows.length || unused ? [...rows, unused].filter(Boolean) : [h("p", { class: "muted" }, "Nothing split or bound yet.")]));
 }
 
@@ -930,7 +967,7 @@ async function load() {
     techOptions();
     if (state.mode === "edit") {
       want = await resolve(want);
-      edit.init({ state, status, clear, show, view, writeHash, hover });
+      edit.init({ state, status, clear, show, view, writeHash, hover, preview });
       state.session = await edit.session();
       setSels(want.sel);
       state.t = want.t;

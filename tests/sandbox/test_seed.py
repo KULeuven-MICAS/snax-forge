@@ -56,7 +56,7 @@ def run(g: Graph) -> list[int]:
 
 
 def tagged(g: Graph, w: int = 2) -> Graph:
-    """The sum's row map temporal and its column map split by w (matvec_seed's steps)."""
+    """The sum's row map temporal and its column map split by w (matvec_acc_v1's steps)."""
     return split_map(tag_map(g, "sum_map", "temporal"), FOLD, w)
 
 

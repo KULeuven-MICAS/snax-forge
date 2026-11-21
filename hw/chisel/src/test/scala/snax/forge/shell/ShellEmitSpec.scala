@@ -27,8 +27,8 @@ import snax.forge.{Emit, SvHeader}
   * by group; each `<tag>_<unit>` its one catalogue datapath. Read off each module's instances in the SystemVerilog
   * (firtool's ` <module> <instance> (` lines); dot 1's (two groups), dot 4's (a wire) and dot 6's (a buffer) among
   * them. A set whose groups share its movers shows its movers at the wrapper (its hjson's `num_channel` are the
-  * movers') and adds `<tag>_<set>_port_mux`, which holds no module, after `<tag>_datapath`: dot_1_shared's and
-  * mvt_1_dot2_shared's.
+  * movers') and adds `<tag>_<set>_port_mux`, which holds no module, after `<tag>_datapath`: dot_v1_2's and
+  * mvt_v1_2_2's.
   *
   * `emitted.json` lists a file for every module the wrapper reaches, each file exists, and `sv/` holds those only.
   */
@@ -132,7 +132,7 @@ class ShellEmitSpec extends AnyFlatSpec {
 
   it should "have the fixtures of two accelerators, two groups in one, a wire, a buffer and shared movers" in
     assert(
-      Set("dot_1", "dot_1_enc", "dot_4", "dot_6", "dot_1_shared", "mvt_1_dot2_shared")
+      Set("dot_v1", "dot_v1_1", "dot_v4", "dot_v6", "dot_v1_2", "mvt_v1_2_2")
         .subsetOf(RtlFixtures.all.map(_.name).toSet)
     )
 }

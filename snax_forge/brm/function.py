@@ -8,7 +8,7 @@ runs an accelerated node through it; timing is the implementation's, not the kin
 ``simd`` (every rate 1; the inputs folded lane by lane at their dtype, or ``op(a, k)``, or
 ``axpby``), ``reduce`` (``a`` at rate 1, cast to the output's dtype and folded over T beats,
 the lanes too when ``lanes_out`` is 1; at ``seed`` 1 a ``seed`` input at rate T), ``mac`` (``a *
-b`` folded per lane over T beats) and ``lane_accumulate`` (``a`` folded per lane over T beats),
+b`` folded per lane over T beats; at ``seed`` 1 a ``seed`` input of its lanes at rate T) and ``lane_accumulate`` (``a`` folded per lane over T beats),
 each with an op registered by name (``register_op``). A slot read from a scalar is unset in the
 instance; the executor resolves it from the node's slot connector. ``function_of`` raises
 ``BrmError`` for an unregistered kind, params it rejects, or ports that are not the BRM's.
@@ -221,14 +221,19 @@ def reduce_kind(
 def mac_kind(
     lanes: int = 1,
     op: Callable[[Any, Any], Any] = np.add,
+    seed: int = 0,
     dtypes: Mapping[str, str] | None = None,
     op_type: str | None = None,
 ) -> AccelFunction:
     """T beats of ``a`` and ``b`` -> 1 beat of ``out``, each lane on its own: ``a * b`` at the
     inputs' result type, or at ``op_type`` when the kernel's casts set it, cast to the output's
     dtype (``dtypes["out"]``), folded with ``op`` over the T beats; without ``dtypes``, at the
-    product's."""
+    product's. A ``b`` of one lane is a broadcast (D186): every lane multiplies by it. With
+    ``seed`` 1 an input ``seed`` of ``lanes`` lanes at rate T (D187): a job's first firing
+    folds into it instead of starting from the product, cast to the output's dtype."""
     out_dtype = None if dtypes is None else dtypes.get("out")
+    if seed not in (0, 1):
+        raise ValueError("seed must be 0 or 1")
 
     def fn(k, ins, state, params):
         a, b = np.asarray(ins["a"]), np.asarray(ins["b"])
@@ -236,12 +241,19 @@ def mac_kind(
             a, b = a.astype(op_type), b.astype(op_type)
         x = np.multiply(a, b)
         x = x if out_dtype is None else np.asarray(x).astype(out_dtype)
-        state["acc"] = x.copy() if "acc" not in state else op(state["acc"], x)
+        if "acc" in state:
+            state["acc"] = op(state["acc"], x)
+        elif seed:  # a job's first firing: the seed in place of a sum of nothing
+            s = ins["seed"] if out_dtype is None else np.asarray(ins["seed"]).astype(out_dtype)
+            state["acc"] = op(s, x)
+        else:
+            state["acc"] = x.copy()
         if (k + 1) % params["T"] == 0:
             return {"out": state.pop("acc")}
         return {}
 
     ports = (AccelPort("a", "in", lanes, 1), AccelPort("b", "in", lanes, 1),
+             *((AccelPort("seed", "in", lanes, "T"),) if seed else ()),
              AccelPort("out", "out", lanes, "T"))  # fmt: skip
     return AccelFunction(ports, fn, "mac")
 

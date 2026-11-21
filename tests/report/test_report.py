@@ -34,14 +34,14 @@ from snax_forge.viz import api, movement, schedule
 from tests.flow.helpers import stubbed_flow
 from tests.helpers import recipe_path
 
-FIXTURE = Path(__file__).resolve().parents[1] / "run" / "fixtures" / "vecadd"
+FIXTURE = Path(__file__).resolve().parents[1] / "run" / "fixtures" / "vecadd_v1"
 
 
 @pytest.fixture(scope="module")
 def flows(tmp_path_factory):
     """vecadd at task and off and vsum at task, SNAX-GVSoC stubbed, as flow folders."""
     base = tmp_path_factory.mktemp("flows")
-    return {(d, lv): stubbed_flow(base, d, lv) for d, lv in
+    return {(d, lv): stubbed_flow(base, f"{d}_v1", lv) for d, lv in
             [("vecadd", "task"), ("vecadd", "off"), ("vsum", "task")]}  # fmt: skip
 
 
@@ -57,7 +57,7 @@ def test_the_design_report_equals_its_sources(flows, key):
     point = DesignPoint.load(folder / "design" / "design_point.json")
     cluster = api.load_run(folder).cluster
     h = r.header
-    assert (h.kernel, h.recipe, h.symbols) == (key[0], key[0], {"N": 64})
+    assert (h.kernel, h.recipe, h.symbols) == (key[0], f"{key[0]}_v1", {"N": 64})
     assert (h.platform, h.passes) == ("snax_forge", dict(point.memory.passes))
     assert [c.name for c in r.components] == cluster.sources
     (a,) = r.accelerators
@@ -221,7 +221,7 @@ def test_the_recorded_vecadd_run(flows, tmp_path):
     shutil.copytree(flows[("vecadd", "task")], folder)
     for f in (
         "snax_forge.hjson",
-        "snax_forge_vecadd_streamer_acc.hjson",
+        "snax_forge_vecadd_v1_streamer_acc.hjson",
         "accelerator.json",
         "manifest.json",
     ):
@@ -288,7 +288,7 @@ def test_the_movement_section_below_beat(recorded, flows):
 
 
 def test_a_filtered_trace_says_its_sources(tmp_path):
-    folder = stubbed_flow(tmp_path, "vecadd", "beat", trace_sources=["acc", "acc_a"])
+    folder = stubbed_flow(tmp_path, "vecadd_v1", "beat", trace_sources=["acc", "acc_a"])
     m = build_run(api.load_run(folder)).movement
     assert m.sources == ["acc", "acc_a"]
     assert render_movement(m)[0] == "The beat lines cover acc, acc_a only."
@@ -297,7 +297,7 @@ def test_a_filtered_trace_says_its_sources(tmp_path):
 def test_the_command_line(flows, tmp_path, capsys):
     folder = flows[("vecadd", "task")]
     assert main([str(folder), "--out", str(tmp_path / "r")]) == 0
-    assert "report vecadd_task:" in capsys.readouterr().out
+    assert "report vecadd_v1_task:" in capsys.readouterr().out
     assert (tmp_path / "r" / "run.md").is_file() and (tmp_path / "r" / "design.md").is_file()
     assert main([str(folder / "run"), "--out", str(tmp_path / "s")]) == 0  # its run/ too
     assert main([str(tmp_path)]) == 1
@@ -330,8 +330,8 @@ def designed_report(tmp_path, recipe, sets=()):
 
 
 def test_a_mover_shows_its_dtype_k_and_channels(tmp_path):
-    """vecadd_i32: int32, num_slc 2 to a 64-bit word, so 4 lanes take num_ch 2 (num_channel)."""
-    r = designed_report(tmp_path, "vecadd_i32")
+    """vecadd_v1_1: int32, num_slc 2 to a 64-bit word, so 4 lanes take num_ch 2 (num_channel)."""
+    r = designed_report(tmp_path, "vecadd_v1_1")
     assert [(s.port, s.dtype, s.num_slc, s.num_ch, s.d_out) for s in r.streamers] == [
         ("a", "int32", 2, 2, 1), ("b", "int32", 2, 2, 1), ("out", "int32", 2, 2, 1)
     ]  # fmt: skip
@@ -344,15 +344,15 @@ def test_a_mover_shows_its_dtype_k_and_channels(tmp_path):
 
 
 def test_a_packed_output_shows_its_d_out(tmp_path):
-    """matvec_3 at i8, W = 8: the sum's int32 output packed 2 to a word, on one channel."""
-    r = designed_report(tmp_path, "matvec_3", ["types=i8", "W=8"])
+    """matvec_v3 at i8, W = 8: the sum's int32 output packed 2 to a word, on one channel."""
+    r = designed_report(tmp_path, "matvec_v3", ["types=i8", "W=8"])
     assert [(s.port, s.dtype, s.num_slc, s.num_ch, s.d_out) for s in r.streamers
             if s.direction == "write"] == [("out", "int32", 2, 1, 2)]  # fmt: skip
 
 
 def test_a_sliced_input_shows_its_d_in(tmp_path):
-    """vecadd_i32 at W = 1: each int32 input sliced 2 from a word, on one channel (D180)."""
-    r = designed_report(tmp_path, "vecadd_i32", ["W=1"])
+    """vecadd_v1_1 at W = 1: each int32 input sliced 2 from a word, on one channel (D180)."""
+    r = designed_report(tmp_path, "vecadd_v1_1", ["W=1"])
     assert [(s.port, s.num_ch, s.d_out, s.d_in) for s in r.streamers] == [
         ("a", 1, 1, 2), ("b", 1, 1, 2), ("out", 1, 2, 1)
     ]  # fmt: skip
@@ -360,9 +360,9 @@ def test_a_sliced_input_shows_its_d_in(tmp_path):
 
 @pytest.mark.parametrize("w", [1, 4])
 def test_design_md_lists_the_design_notes(tmp_path, w):
-    """dot_5 at W = 1 binds SerialAccumulate at lanes 1: design.md's Notes start with the note
+    """dot_v5 at W = 1 binds SerialAccumulate at lanes 1: design.md's Notes start with the note
     design.serial_one_lane and its fix; at W = 4 there is none."""
-    r = designed_report(tmp_path, "dot_5", ["N=16", f"W={w}"])
+    r = designed_report(tmp_path, "dot_v5", ["N=16", f"W={w}"])
     note = ("note [design.serial_one_lane] sum: SerialAccumulate at lanes 1 reads one lane per "
             "beat, the same work as TreeAccumulate at lanes 1 Fix: bind chisel_adder_tree")  # fmt: skip
     assert (r.notes[:1] == [note]) == (w == 1)
@@ -374,7 +374,7 @@ def test_design_md_lists_the_design_notes(tmp_path, w):
 def test_the_bank_bound_notes_in_design_md_and_run_md(tmp_path, w):
     """vecmul at N = 2048: at W = 16 design.md's Estimate has the group's bank-bound note
     and run.md puts it beside the task's expected BUSY_COUNTER; at W = 8 neither has one."""
-    r = designed_report(tmp_path, "vecmul", ["N=2048", f"W={w}"])
+    r = designed_report(tmp_path, "vecmul_v1", ["N=2048", f"W={w}"])
     note = ("acc: the streams move 6144 words over 32 banks, at least 192 cycles of L1 time "
             "against the ideal 128")  # fmt: skip
     assert r.estimate.bank_notes == ([note] if w == 16 else [])
@@ -408,9 +408,9 @@ def test_design_md_counts_unmapped_work_as_cycles():
 
 
 def test_the_extents_include_the_padding(tmp_path):
-    """rowsum_3x7: A[3, 7] over its padded [3, 8] (three pads, 192 B, whole beats); y, three
+    """rowsum_v1_1: A[3, 7] over its padded [3, 8] (three pads, 192 B, whole beats); y, three
     int64 the DMA moves, kept free up to a whole 64-byte beat. The checks' extents."""
-    r = designed_report(tmp_path, "rowsum_3x7")
+    r = designed_report(tmp_path, "rowsum_v1_1")
     l1 = {x.name: x for x in next(m for m in r.memories if m.mem == "l1").regions}
     a, y = l1["A"], l1["y"]
     assert (a.end - a.base, a.data_end, a.pad_elements, a.beat_pad_bytes) == (192, a.end, 3, 0)
@@ -425,7 +425,7 @@ def test_the_extents_include_the_padding(tmp_path):
 
 
 # =============================================================================
-# Several groups: dot_1_enc's recorded run
+# Several groups: dot_v1_1's recorded run
 # =============================================================================
 
 
@@ -433,7 +433,7 @@ def test_the_extents_include_the_padding(tmp_path):
 def dot1(tmp_path_factory):
     from tests.viz.helpers import recorded_run
 
-    fixture = Path(__file__).resolve().parents[1] / "run" / "fixtures" / "dot_1_enc"
+    fixture = Path(__file__).resolve().parents[1] / "run" / "fixtures" / "dot_v1_1"
     return recorded_run(tmp_path_factory.mktemp("dot1") / "dot_1_enc_task", "task", fixture)
 
 
@@ -472,7 +472,7 @@ def test_the_port_table_leaves_out_the_idle_tasks(tmp_path):
     from tests.run.helpers import RECORDED
     from tests.viz.helpers import recorded_run
 
-    r = reports_of(recorded_run(tmp_path / "dot_1_enc_stall", "stall", RECORDED / "dot_1_enc")).run
+    r = reports_of(recorded_run(tmp_path / "dot_1_enc_stall", "stall", RECORDED / "dot_v1_1")).run
     tasks = {p.task for p in r.movement.patterns}
     assert tasks == {"mult_vmul_a", "mult_vmul_b", "mult_vmul_out", "sum_vsum_a", "sum_vsum_out"}
     assert r.movement.idle_left_out == 5
@@ -508,7 +508,7 @@ def test_the_design_report_has_a_row_per_unit(dot1):
 def dot4(tmp_path_factory):
     from tests.viz.helpers import recorded_run
 
-    fixture = Path(__file__).resolve().parents[1] / "run" / "fixtures" / "dot_4"
+    fixture = Path(__file__).resolve().parents[1] / "run" / "fixtures" / "dot_v4"
     return recorded_run(tmp_path_factory.mktemp("dot4") / "dot_4_task", "task", fixture)
 
 
@@ -528,7 +528,7 @@ def test_a_linked_groups_design_report_has_a_row_per_unit(dot4):
     group's control unit; an accelerator row per unit, each with its BRM and ports."""
     r = reports_of(dot4).design
     assert (r.components[0].name, r.components[0].detail) == (
-        "dot", "Mac → TreeAccumulate on core0, group control unit, slot snax_forge_dot_4")  # fmt: skip
+        "dot", "Mac → TreeAccumulate on core0, group control unit, slot snax_forge_dot_v4")  # fmt: skip
     assert [(a.instance, a.kind, a.brm, a.latency, a.ports) for a in r.accelerators] == [
         ("mac", "Mac", "mac", 1, ["a ← mac_a", "b ← mac_b"]),
         ("sum", "TreeAccumulate", "accumulate", 1, ["out ← sum_out"]),
@@ -616,7 +616,7 @@ def test_design_md_on_no_technology(dot1):
 def test_design_md_names_what_the_table_does_not_hold(tmp_path):
     """relu: a one-stream SimdLanes max, not in nangate45's table; its comb counted as 0,
     listed under the cost and noted (char.missing)."""
-    r = designed_report(tmp_path, "relu")
+    r = designed_report(tmp_path, "relu_v1")
     assert r.estimate.missing == ["acc"]
     text = render_design(r)
     assert "| acc | acc | SimdLanes | not characterized |" in text
@@ -644,7 +644,7 @@ def test_the_estimate_beside_the_counters(dot1, dot4):
 
 
 # =============================================================================
-# The accelerators, one streamer set each: dot_1 and dot_1_enc
+# The accelerators, one streamer set each: dot_1 and dot_v1_1
 # =============================================================================
 
 
@@ -655,15 +655,15 @@ def dot1_sets(tmp_path_factory):
 
     base = tmp_path_factory.mktemp("sets")
     return {
-        d: recorded_run(base / f"{d}_task", "task", RECORDED / d) for d in ("dot_1", "dot_1_enc")
+        d: recorded_run(base / f"{d}_task", "task", RECORDED / d) for d in ("dot_v1", "dot_v1_1")
     }
 
 
 def test_run_md_has_a_row_per_accelerator(dot1_sets):
     """dot_1: vmul 960-981 and vsum 982-999, each its own streamer busy window and BUSY_COUNTER;
-    dot_1_enc: one accelerator dot, 960-996, its streamer started twice; each task names its
+    dot_v1_1: one accelerator dot, 960-996, its streamer started twice; each task names its
     accelerator."""
-    one, enc = (reports_of(dot1_sets[d]).run for d in ("dot_1", "dot_1_enc"))
+    one, enc = (reports_of(dot1_sets[d]).run for d in ("dot_v1", "dot_v1_1"))
     assert [(a.name, a.groups, a.first, a.last, a.counters) for a in one.sets] == [
         ("vmul", ["vmul"], 960, 981, {"vmul": [19]}), ("vsum", ["vsum"], 982, 999, {"vsum": [19]})]  # fmt: skip
     assert [len(a.busy) for a in one.sets] == [1, 1]
@@ -683,8 +683,8 @@ def test_run_md_has_a_row_per_accelerator(dot1_sets):
 
 def test_design_md_has_a_row_per_accelerator_and_counts_the_streamers(dot1_sets):
     """The same rows from the design: each set's movers, channels, temporal dims, CSRs and its
-    groups' own CSRs; dot_1's 2 streamer sets (40 CSRs, not costed), dot_1_enc's 1 (37)."""
-    one, enc = (reports_of(dot1_sets[d]).design for d in ("dot_1", "dot_1_enc"))
+    groups' own CSRs; dot_1's 2 streamer sets (40 CSRs, not costed), dot_v1_1's 1 (37)."""
+    one, enc = (reports_of(dot1_sets[d]).design for d in ("dot_v1", "dot_v1_1"))
     assert [(x.name, x.movers, x.channels, x.temporal_dims, x.first, x.last, x.group_csrs)
             for x in one.sets] == [
         ("vmul", 3, 12, [1, 1, 1], 960, 981, {"vmul": [978, 981]}),

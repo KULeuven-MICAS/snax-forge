@@ -7,7 +7,7 @@ Rules (D117):
 - An entry is a choice with a real alternative that someone may want to reverse: direction, ownership, the interfaces between components, the order of work. Implementation details live in the module's docstring and its tests.
 - An entry says what was decided, why, and where the detail lives, in a few short bullets; an edge case only when there is one. A change is written into the entry, not chained after it.
 - Entries merged into one keep all their numbers in its heading, so a cite of any of them still finds it. A number is never changed or reused; the text of a removed entry is in git history.
-- A new decision gets the next free number, under the area it belongs to. Next free number: **D186**.
+- A new decision gets the next free number, under the area it belongs to. Next free number: **D189**.
 
 Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29–D45, D47–D50, D53, D54, D56, D58–D63, D65–D67, D69, D74, D76–D78, D80, D81, D83, D88–D97, D100, D101, D103, D104, D106, D107, D109, D110, D114, D115, D119, D124, D127, D128, D132, D133, D138–D141, D151, D156, D159, D160, D181.
 
@@ -122,11 +122,18 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 - **Why:** each block is the one the RTL has, so the cost of each is measured alone.
 - **Where:** CONTRACTS, "Accelerator RTL spec"; `hw/chisel/`.
 
-### D163 — A fold's seed is a port
+### D163 · D187 — A fold's seed is a port
 
-- **Decided:** a fold's result read only by an elementwise nest of the same op (mvt's x₁ + A y₁) is folded in as the fold's seed, a per-job port read on a job's first firing, by a step of its own, `fuse_seed` (inverse `unfuse_seed`). Only `TreeAccumulate` and `SerialAccumulate` take one; their unseeded RTL is unchanged.
-- **Why:** no vecadd after the fold and no "init" port on every block.
+- **Decided:** a fold's result read only by an elementwise nest of the same op (mvt's x₁ + A y₁) is folded in as the fold's seed, a per-job port read on a job's first firing, by a step of its own, `fuse_seed` (inverse `unfuse_seed`). A seed has its output's lanes: one for a lane fold (`TreeAccumulate`, `SerialAccumulate`), W for a `Mac`, whose lanes each fold over time (the BRM `mac`'s `seed` port at design param `seed` 1, its first firing `seed + a·b`). Only these three take one; their unseeded RTL is unchanged, and the group's rule is the same for all three.
+- **Why:** no vecadd after the fold and no "init" port on every block; the column form (mvt's x₂ + Aᵀ y₂) needs no link and no second unit.
 - **Where:** CONTRACTS, "Block runtime model" and "Recipe".
+
+### D186 — A broadcast input: one lane given to all
+
+- **Decided:** an input of a lane-wise datapath (`SimdLanes`, `Mac`) whose memlet does not use the nest's spatial variable is read as one lane a beat and given to all W lanes, by wires between the port and the datapath (`ShellWrapper`'s `<unit>_<port>_bcast`, `SnaxGroup` beside `SnaxSlicer`). `bind` works it out from the memlet, with no transform and no stored attribute, and refuses it on a datapath whose lanes do not compute on their own. `accelerator.json` keeps the port's lanes (the unit's) and marks it `"broadcast": true`; its stream is one lane, so its channels and d_in follow from one lane (D180). The page labels its edge `<port> · broadcast`. Priced as wires.
+- **Why:** the column form reads y₂[i] once a beat for all lanes; a W-lane stream of the same value would cost W times the reads and a copy, and a new block would add nothing the wires do not.
+- **Where:** `sandbox/transforms.py` (`_bind_lanes`), `design/streamers.py` (`stream_lanes`, `is_broadcast`); CONTRACTS, "Accelerator RTL spec".
+- **Edge:** a linked port is never one (it takes its lanes from the link), nor a seed or an output. A value read once a job (a hold) is not a broadcast.
 
 ## Sandbox and recipes
 
@@ -160,6 +167,12 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 - **Decided:** a recipe applies another on a region of its graph that matches the other's kernel (`apply_recipe`), so matvec is dot's variant on each row and mvt is matvec's on each half. The user lifts a kernel's regions as blocks by hand (`lift`), rather than a search applying recipes unasked. The match leaves the outer loops free; the editor draws a block as one box in its firing loops.
 - **Why:** a larger kernel is built from the smaller ones' recipes, and the user stays in charge of what is reused.
 - **Where:** CONTRACTS, "Recipe"; `sandbox/blocks.py`.
+
+### D188 — A recipe is named by version, and says what it builds
+
+- **Decided:** a checked-in recipe's `name` (its file's stem, and the design's) is `<kernel>_v<N>`, then `_<k>` per change from its parent (`mvt_v5_1`), the kernel's type presets counted as the kernel (`mvt_types` is `mvt`). `v<N>` is a new structure, each `_<k>` one change (reuse, sharing, type, layout, size); a number is never reused or renumbered. Its `id` says what it builds in a fixed vocabulary (`mvt_dot2seed_colseed_i8_o32`) and its `description` the same in one to three sentences. Recipes that build the same units share an id (a reuse twin and its hand-written recipe), the description saying how. `recipes/custom/`, where the editor saves, is free of the rule, and Save writes neither field.
+- **Why:** the names had grown round by round (`mvt_4_i8_col_vadd`) and no longer said what a recipe builds; a version keeps file, bundle and module names short and stable, the id carries the meaning, and the editor shows both.
+- **Where:** `recipes/README.md` (the vocabulary and every recipe); CONTRACTS, "Recipe".
 
 ## Accelerators
 
@@ -203,7 +216,7 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 - **Decided:** one streamer per accelerator port, named after it; a bank word packs num_slc = 64 / b elements of the container's dtype, little-endian as NumPy. An input is wire-sliced: num_slc divides its lanes W, and the hjson's `num_channel` is num_ch = W / num_slc; or sliced when W divides num_slc: a slicer between its reader and the unit takes one word on num_ch = 1 and gives d_in = num_slc / W pops of W lanes, low slice first; it takes words only while its group is busy, and the group's start drops what it holds. An output is wired the same way, or packed when W divides num_slc: a packer between the unit and its writer collects d_out = num_slc / W results per word on num_ch = 1, cleared at START, the word sent when full or on the run's last push, the slices above the last one zero. The flow derives d_in and d_out from the port's dtype, lanes and direction and places the slicer and the packer; a recipe never names them. `share_ports` on an L1 container one accelerator writes and another reads puts both on one streamer set whose movers they share; a data-side mux picks the group by `PORT_MUX_SEL`, which the core writes before each `STREAMER_START`.
 - **Why:** the streamer matches snax_cluster's, the platform keeps only the word, a one-lane output keeps that word without being widened or byte-masked, the slicer's gate and drop make it safe whatever the order of `STREAMER_START` and `START`, its registered output costs one cycle a run and keeps the reader's FIFO off the unit's path, and sharing movers saves crossbar inputs without new hardware between accelerators.
 - **Where:** `design/streamers.py`; `hw/chisel/`'s `FifoSlicer` and `FifoPacker`; snax-gvsoc's `SnaxSlicer` and `SnaxPacker`; CONTRACTS, "Platform", "Design checks" and "Accelerator RTL spec".
-- **Edge:** a port whose W neither divides nor is a multiple of num_slc is refused with the fix, on either side. With an outer loop, d_in or d_out divides the innermost count, since only the run's last word may be short. The program starts a set's streamer only after its group is idle (D179's polls); a word offered earlier is dropped by the start. `share_ports` is off by default and the sets still run in series (D158).
+- **Edge:** a port whose W neither divides nor is a multiple of num_slc is refused with the fix, on either side. A broadcast input (D186) is sliced or wired by its one stream lane, not the unit's W. With an outer loop, d_in or d_out divides the innermost count, since only the run's last word may be short. The program starts a set's streamer only after its group is idle (D179's polls); a word offered earlier is dropped by the start. `share_ports` is off by default and the sets still run in series (D158).
 
 ### D86 · D105 · D144 — Memory: planned by passes, chained through L1, padded in the data
 

@@ -1,0 +1,148 @@
+{
+ "name": "vecadd_v1",
+ "graph_from": "out/flow/vecadd_v1_task/sandbox/2_bind.snaxdfg",
+ "graph": {
+  "name": "vecadd",
+  "symbols": {"N": 64},
+  "containers": {
+   "A": {"shape": ["N"], "dtype": "int64", "transient": false, "attrs": {}},
+   "B": {"shape": ["N"], "dtype": "int64", "transient": false, "attrs": {}},
+   "C": {"shape": ["N"], "dtype": "int64", "transient": false, "attrs": {}}
+  },
+  "body": [
+   {
+    "id": "add_map",
+    "kind": "map",
+    "inputs": {},
+    "outputs": {},
+    "attrs": {
+     "var": "n_1_t",
+     "range": "0:N // 4",
+     "loop.dim": "n",
+     "loop.piece": 1,
+     "loop.kind": "temporal",
+     "loop.split": {"var": "n", "range": "0:N"}
+    },
+    "body": [
+     {
+      "id": "add",
+      "kind": "accelerated",
+      "inputs": {
+       "a": {"data": "A", "subset": ["4 * n_1_t:4 * n_1_t + 4"]},
+       "b": {"data": "B", "subset": ["4 * n_1_t:4 * n_1_t + 4"]}
+      },
+      "outputs": {"out": {"data": "C", "subset": ["4 * n_1_t:4 * n_1_t + 4"]}},
+      "attrs": {
+       "instance": "acc",
+       "brm": "simd",
+       "implementation": "chisel_tiled_spatial",
+       "code": "out = a + b",
+       "params": {"W": 4, "op": "add", "streams": 2},
+       "replaced": {
+        "id": "add_map_s",
+        "kind": "map",
+        "inputs": {},
+        "outputs": {},
+        "attrs": {
+         "var": "n_2_s",
+         "range": "0:4",
+         "loop.dim": "n",
+         "loop.piece": 2,
+         "loop.kind": "spatial"
+        },
+        "body": [
+         {
+          "id": "add",
+          "kind": "tasklet",
+          "inputs": {
+           "in1": {"data": "A", "subset": ["4 * n_1_t + n_2_s"]},
+           "in2": {"data": "B", "subset": ["4 * n_1_t + n_2_s"]}
+          },
+          "outputs": {"out": {"data": "C", "subset": ["4 * n_1_t + n_2_s"]}},
+          "attrs": {"code": "out = in1 + in2"}
+         }
+        ]
+       }
+      },
+      "body": []
+     }
+    ]
+   }
+  ]
+ },
+ "platform": {
+  "name": "snax_forge",
+  "base": "snax_forge",
+  "changes": {},
+  "hjson": "platforms/snax_forge_cluster.hjson",
+  "accelerator_slot": "snax_forge",
+  "acc_csr": {"job_width": 32, "busy_counter_width": null},
+  "l1": {
+   "n_banks": 32,
+   "width_bits": 64,
+   "rows": 512,
+   "base_addr": 268435456,
+   "wide_bits": 512,
+   "max_xbar_inputs": 64
+  },
+  "l2": {"size_bytes": 2147483648, "base_addr": 2147483648, "beat_bits": 512, "width_bits": 64},
+  "wait_mode": "poll",
+  "streamers": {"default": {"fifo_depth": 8}}
+ },
+ "streamers": {
+  "acc_a": {
+   "instance": "acc",
+   "port": "a",
+   "write": false,
+   "n_ports": 4,
+   "spatial_bounds": [4],
+   "temporal_dims": 1,
+   "dtype": "int64",
+   "num_slc": 1,
+   "num_ch": 4,
+   "fifo_depth": 8
+  },
+  "acc_b": {
+   "instance": "acc",
+   "port": "b",
+   "write": false,
+   "n_ports": 4,
+   "spatial_bounds": [4],
+   "temporal_dims": 1,
+   "dtype": "int64",
+   "num_slc": 1,
+   "num_ch": 4,
+   "fifo_depth": 8
+  },
+  "acc_out": {
+   "instance": "acc",
+   "port": "out",
+   "write": true,
+   "n_ports": 4,
+   "spatial_bounds": [4],
+   "temporal_dims": 1,
+   "dtype": "int64",
+   "num_slc": 1,
+   "num_ch": 4,
+   "fifo_depth": 8
+  }
+ },
+ "memory": {
+  "passes": {"residency": "default", "layout": "contiguous", "placement": "contiguous"},
+  "changes": {},
+  "layouts": {
+   "A": {
+    "l2": {"base": 0, "shape": [64], "strides": [8]},
+    "l1": {"base": 268435456, "shape": [64], "strides": [8]}
+   },
+   "B": {
+    "l2": {"base": 0, "shape": [64], "strides": [8]},
+    "l1": {"base": 268435968, "shape": [64], "strides": [8]}
+   },
+   "C": {
+    "l2": {"base": 0, "shape": [64], "strides": [8]},
+    "l1": {"base": 268436480, "shape": [64], "strides": [8]}
+   }
+  }
+ }
+}

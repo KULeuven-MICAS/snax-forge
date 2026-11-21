@@ -1,0 +1,34 @@
+{
+ "name": "matvec_acc_v1",
+ "id": "matvec_acc_dot1seed_enc",
+ "description": "`matvec_v1` with the fold starting from q (`fuse_seed`, D163), so no separate add: `mul` and `sum` encapsulated, the products through L1.",
+ "kernel": "matvec_acc",
+ "params": {"W": 4, "M": 8, "N": 512},
+ "symbols": {"M": "M", "N": "N"},
+ "steps": [
+  {"transform": "tag_map", "params": {"map": "mult_map", "kind": "temporal"}},
+  {"transform": "split_map", "params": {"map": "mult_map_1", "factor": "W"}},
+  {
+   "transform": "bind",
+   "params": {
+    "node": "mult",
+    "brm": "simd",
+    "implementation": "chisel_tiled_spatial",
+    "instance": "mul"
+   }
+  },
+  {"transform": "tag_map", "params": {"map": "sum_map", "kind": "temporal"}},
+  {"transform": "split_map", "params": {"map": "sum_map_1", "factor": "W"}},
+  {"transform": "fuse_seed", "params": {"first": "sum_map_1", "second": "augassign_19_4_map"}},
+  {
+   "transform": "bind",
+   "params": {
+    "node": "sum",
+    "brm": "accumulate",
+    "implementation": "chisel_adder_tree",
+    "instance": "sum"
+   }
+  },
+  {"transform": "encapsulate", "params": {"accelerator": "matvec", "units": ["mul", "sum"]}}
+ ]
+}

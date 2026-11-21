@@ -19,11 +19,10 @@ class PortMuxHarness(tag: String, set: SetSpec) extends Module {
   *
   * Per seed, `Shapes` random shared sets: 2 or 3 groups (PORT_MUX_SEL 1 or 2 bits), 1 to 3 reader and 1 to 3 writer
   * movers of 1 to 4 channels, each group a user on a mover with probability 0.6 (so some movers serve one group or
-  * none), a user of 1 to its mover's channels; and the sets of the shared fixtures, snax-gvsoc's `forge/dot_1_shared/`
-  * and `forge/mvt_1_dot2_shared/`. Each driven `Cycles` cycles with every input random each cycle: the select over all
-  * its values (2 or 3 groups, and 3 at 2 bits, which selects none), the movers' and users' data, valids and readies.
-  * Every output checked each cycle; then every ready flipped and every valid checked unchanged: `valid` never depends
-  * on `ready`.
+  * none), a user of 1 to its mover's channels; and the sets of the shared fixtures, snax-gvsoc's `forge/dot_v1_2/` and
+  * `forge/mvt_v1_2_2/`. Each driven `Cycles` cycles with every input random each cycle: the select over all its values
+  * (2 or 3 groups, and 3 at 2 bits, which selects none), the movers' and users' data, valids and readies. Every output
+  * checked each cycle; then every ready flipped and every valid checked unchanged: `valid` never depends on `ready`.
   */
 class PortMuxSpec extends AnyFlatSpec with ForgeTester {
 
@@ -127,12 +126,12 @@ class PortMuxSpec extends AnyFlatSpec with ForgeTester {
       }
     }
 
-  private lazy val shared = RtlFixtures.all.filter(_.name.endsWith("_shared"))
+  private lazy val shared = RtlFixtures.all.filter(_.spec.sets.exists(_.shared))
 
-  it should "have the shared fixtures dot_1_shared and mvt_1_dot2_shared" in
-    assert(shared.map(_.name) == Seq("dot_1_shared", "mvt_1_dot2_shared"))
+  it should "have the shared fixtures dot_v1_2 and mvt_v1_2_2" in
+    assert(shared.map(_.name) == Seq("dot_v1_2", "mvt_v1_2_2"))
 
-  for (name <- Seq("dot_1_shared", "mvt_1_dot2_shared"))
+  for (name <- Seq("dot_v1_2", "mvt_v1_2_2"))
     it should s"give every output as the mux's model on $name's set" in Seeds.run(Seeds().head) { r =>
       val f    = RtlFixtures.all.find(_.name == name).get
       val sets = f.spec.sets.filter(_.shared)

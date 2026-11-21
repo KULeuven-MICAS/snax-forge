@@ -91,7 +91,7 @@ def _fold(node: Node, arity: Any, brm: Any, what: str) -> tuple[str, dict[str, s
         raise SandboxError(
             f"{what}: the tasklet is {op} of {len(operands)}, the pattern takes {arity} inputs"
         )
-    ins = [p.name for p in brm.interface.ports if p.direction == "in"]
+    ins = [p.name for p in brm.interface.ports if p.direction == "in" and p.name != SEED]
     outs = [p.name for p in brm.interface.ports if p.direction == "out"]
     if len(ins) != len(operands) or len(outs) != 1:
         raise SandboxError(f"{what}: the BRM has ports {ins} -> {outs}")
@@ -132,7 +132,7 @@ def _simd(
     if unread := [c for c in node.inputs if c not in read]:
         raise SandboxError(f"{what}: {code!r} does not read the input {unread[0]}")
     arrays = [n for n in read if n not in scalars]
-    ins = [p.name for p in brm.interface.ports if p.direction == "in"]
+    ins = [p.name for p in brm.interface.ports if p.direction == "in" and p.name != SEED]
     outs = [p.name for p in brm.interface.ports if p.direction == "out"]
     if len(arrays) > len(ins) or len(outs) != 1:
         raise SandboxError(f"{what}: {len(arrays)} inputs; the BRM has ports {ins} -> {outs}")
@@ -270,7 +270,7 @@ def _lane_fold(
     if red is None or red.op != fold:
         raise SandboxError(f"{what}: {second.id} does not fold with {fold!r}")
     identity = REDUCE_OPS[fold].identity(np.dtype(dtypes[cout]))
-    if red.identity != identity:
+    if red.seed is None and red.identity != identity:  # a seed's fold starts from it (D187)
         raise SandboxError(f"{what}: {second.id}'s fold starts from {red.identity}, the BRM "
                            f"from {fold}'s identity {identity}")  # fmt: skip
     if node.attrs["var"] not in second.outputs[cout].names:
@@ -320,7 +320,7 @@ def _lane_accumulate(node: Node, attrs: Mapping[str, Any], brm: Any, dtypes: Map
                                "fold across the lanes binds accumulate")  # fmt: skip
         raise SandboxError(f"{what}: {t.id}'s output {m.data}{m.subset} is not indexed by the "
                            f"lane variable {var!r}; each lane folds its own element")  # fmt: skip
-    ins = [p.name for p in brm.interface.ports if p.direction == "in"]
+    ins = [p.name for p in brm.interface.ports if p.direction == "in" and p.name != SEED]
     outs = [p.name for p in brm.interface.ports if p.direction == "out"]
     if len(ins) != 1 or len(outs) != 1:
         raise SandboxError(f"{what}: the BRM has ports {ins} -> {outs}")

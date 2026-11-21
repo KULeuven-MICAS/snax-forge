@@ -16,12 +16,15 @@ I64 = {"inType": "int64", "outType": "int64"}
 def test_every_entry_is_a_catalogue_datapath_with_complete_params(tech):
     """Each entry's datapath is the catalogue's (or a stream block, FifoPacker or FifoSlicer), its params with
     each point's lanes (and depth) a valid and complete param set there, its rule known, its
-    points unique, a narrow fold's slope given."""
+    points unique, a narrow fold's slope given. A block measured before it took a seed (a Mac,
+    D187) has no seed key in any entry, its unseeded form."""
     cat, t = catalogue(), load(tech)
     assert t.tech == tech and t.source["snax_forge"] and t.source["snax_forge_experiments"]
     assert t.flop_um2 > 0 and t.e_load_pj > t.e_ctrl_pj > 0
     for dp, entries in t.blocks.items():
         sig = STREAM_BLOCKS[dp] if dp in STREAM_BLOCKS else cat[dp]["params"]
+        if "seed" in sig and not any("seed" in e["params"] for e in entries):
+            sig = {k: v for k, v in sig.items() if k != "seed"}
         for e in entries:
             rule = e["lanes_rule"]
             assert rule in ("copy", "interpolate", "slope", "none"), (dp, rule)
@@ -148,7 +151,21 @@ def test_a_seeded_fold_is_priced_as_its_unseeded_entry():
     assert seeded == Lookup(40.0, 3.0, "unseeded")
     got = lookup(table, "TreeAccumulate", {**tree, "seed": True}, 6)
     assert (got.comb_um2, got.found) == (50.0, "unseeded")
-    assert lookup(SMALL, "TreeAccumulate", {**tree, "seed": True}, 4) is None  # no unseeded entry
+    seeded_only = _table({"TreeAccumulate": [{**SMALL.blocks["TreeAccumulate"][0],
+                                              "params": {**tree, "seed": True, "op": "max"}}]})  # fmt: skip
+    assert lookup(seeded_only, "TreeAccumulate", {**tree, "seed": True}, 4) is None  # no unseeded
+
+
+def test_a_seeded_mac_is_priced_as_a_table_measured_before_the_seed():
+    """D187: no entry of the block has a seed key (measured before it took one), so a seeded
+    unit is priced at the entry without it, and an unseeded one (the catalogue's seed false) is
+    that entry, measured."""
+    assert lookup(SMALL, "Mac", {**MAC, "seed": True}, 8) == Lookup(70.0, 7.5, "unseeded")
+    assert lookup(SMALL, "Mac", {**MAC, "seed": False}, 8) == Lookup(70.0, 7.5, "measured")
+    assert lookup(SMALL, "Mac", MAC, 8) == Lookup(70.0, 7.5, "measured")
+    tree = {**I64, "op": "add"}
+    assert lookup(SMALL, "TreeAccumulate", {**tree, "seed": True}, 4) == Lookup(40.0, 3.0,
+                                                                              "unseeded")  # fmt: skip
 
 
 def test_simdlanes_is_priced_at_its_widest_input_and_its_op_or_output():

@@ -6,7 +6,9 @@
 //
 // Rows: every box on the row of its longest path from the kernel's inputs (ELK's partitions), the
 // front loops on the rows api.py gives (``row``), a group's temporal muxes on one row and its
-// demuxes on another (``rows``). An outline's title sits in its lower right corner.
+// demuxes on another (``rows``); at the top level the rows count an outline as one item
+// (``topRows``), so outlines fed from one row sit side by side. An outline's title sits in its
+// lower right corner.
 
 import { h } from "./dom.js";
 
@@ -153,6 +155,16 @@ function elkGraph(d, sizes, lanes = new Map(), forced = false, inOrder = new Map
     if (!top.includes(item)) top.push(item);
   }
   for (const o of d.outlines) if (!o.parent && !top.includes(made.get(o.id))) top.push(made.get(o.id)); // an empty one
+  // the top level's rows over its items, an outline as one item: ELK puts an outline whole after
+  // every item of a lower partition (an unpartitioned one after all of them), so an outline on
+  // its first box's row went under the whole of an outline one row higher (mvt's halves one
+  // under the other)
+  const itemOf = (id) => {
+    const n = nodes.get(id);
+    return n.parent && outline.has(n.parent) ? rootOf(n.parent) : id;
+  };
+  const item = topRows(d, itemOf);
+  for (const c of top) c.layoutOptions["elk.partitioning.partition"] = String(item.get(c.id) || 0);
   const edges = d.edges.map((e, i) => ({
     id: `e${i}`, sources: [ends[i][0]], targets: [ends[i][1]],
     labels: e.label ? [{ text: e.label, width: Math.ceil(textWidth(e.label) * (e.transpose ? 1.45 : 1)) + 6, height: e.transpose ? 20 : 15 }] : [],
@@ -286,6 +298,69 @@ function rows(d) {
     if (!moved) break;
   }
   return rank;
+}
+
+/** Each top-level item's row (``itemOf`` maps a box to its item: itself, or the outermost outline
+holding it): the longest path to it over the items, no less than the row api.py gives a front
+loop outside every outline. Inside an outline ELK compares partitions among siblings only, so the
+boxes there keep ``rows``. */
+function topRows(d, itemOf) {
+  const succs = new Map();
+  const least = new Map();
+  for (const n of d.nodes) {
+    const it = itemOf(n.id);
+    if (!succs.has(it)) succs.set(it, new Set());
+    if (it === n.id && n.row != null) least.set(it, n.row);
+  }
+  for (const e of d.edges) {
+    if (!succs.has(itemOf(e.from)) || !succs.has(itemOf(e.to))) continue;
+    const a = itemOf(e.from), b = itemOf(e.to);
+    if (a !== b) succs.get(a).add(b);
+  }
+  // an edge back into an outline from what it feeds (a container it writes and reads again, an
+  // `+=` nest beside its group) is not counted: what the outline writes comes after it
+  const boxes = new Set(d.nodes.map((n) => n.id));
+  const outlines = [...succs.keys()].filter((v) => !boxes.has(v));
+  for (const o of outlines) {
+    const reach = new Set();
+    const go = (v) => {
+      for (const w of succs.get(v)) if (w !== o && !reach.has(w)) { reach.add(w); go(w); }
+    };
+    go(o);
+    for (const v of reach) succs.get(v).delete(o);
+  }
+  // any cycle left (Tarjan's strongly connected components) is one item from here on
+  const comp = new Map(), index = new Map(), low = new Map(), stack = [];
+  const visit = (v) => {
+    index.set(v, index.size);
+    low.set(v, index.get(v));
+    stack.push(v);
+    for (const w of succs.get(v)) {
+      if (!index.has(w)) {
+        visit(w);
+        low.set(v, Math.min(low.get(v), low.get(w)));
+      } else if (!comp.has(w)) low.set(v, Math.min(low.get(v), index.get(w)));
+    }
+    if (low.get(v) === index.get(v)) {
+      for (let w = null; w !== v;) comp.set((w = stack.pop()), v);
+    }
+  };
+  for (const v of succs.keys()) if (!index.has(v)) visit(v);
+  const preds = new Map([...succs.keys()].map((v) => [comp.get(v), new Set()]));
+  const floor = new Map();
+  for (const [v, ws] of succs) {
+    const c = comp.get(v);
+    floor.set(c, Math.max(floor.get(c) || 0, least.get(v) || 0));
+    for (const w of ws) if (comp.get(w) !== c) preds.get(comp.get(w)).add(c);
+  }
+  const rank = new Map();
+  const of = (c) => {
+    if (rank.has(c)) return rank.get(c);
+    const r = Math.max(floor.get(c) || 0, ...[...preds.get(c)].map((p) => of(p) + 1));
+    rank.set(c, r);
+    return r;
+  };
+  return new Map([...succs.keys()].map((v) => [v, of(comp.get(v))]));
 }
 
 /** The edges (port to port) that put each temporal mux of a group on the row of the group's
@@ -513,6 +588,7 @@ function rounded(pts, r = 9) {
   for (let i = 1; i < pts.length - 1; i++) {
     const p = pts[i - 1], q = pts[i], n = pts[i + 1];
     const d1 = Math.hypot(q.x - p.x, q.y - p.y), d2 = Math.hypot(n.x - q.x, n.y - q.y);
+    if (!d1 || !d2) continue; // a point on its neighbour: no corner to round
     const rr = Math.min(r, d1 / 2, d2 / 2);
     const a = { x: q.x + ((p.x - q.x) * rr) / d1, y: q.y + ((p.y - q.y) * rr) / d1 };
     const b = { x: q.x + ((n.x - q.x) * rr) / d2, y: q.y + ((n.y - q.y) * rr) / d2 };
@@ -542,7 +618,7 @@ function reroute(a, b) {
 /** Drawing ``d`` with layout ``L`` into ``canvas`` (emptied first): the outlines and edges, the
 boxes, the port names. A box dragged moves by hand (``L.moves``, kept with the layout while the
 page is open): its edges are routed again as right angles and its outlines grow round it; an
-outline's title drags all it holds. ``scale()`` is the view's zoom, so a drag follows the
+outline's title, frame or empty inside drags all it holds. ``scale()`` is the view's zoom, so a drag follows the
 pointer. */
 export function render(canvas, d, L, scale = () => 1) {
   return new Drawn(canvas, d, L, scale);
@@ -585,7 +661,10 @@ class Drawn {
       const cls = { group: "group-box", accelerator: "acc-box", block: "block-box" }[o.kind] || "group-box";
       const g = svgEl("g", { class: cls, "data-sel": o.sel, "data-group": o.kind === "group" ? o.sel : null, "data-block": o.block || null });
       const rect = { x: b.x, y: b.y, width: b.w, height: b.h, rx: o.kind === "block" ? 10 : 6 };
-      const rects = [svgEl("rect", { ...rect, class: "outline-hit" }), svgEl("rect", rect)];
+      // its inside (a press there selects or drags it; inner outlines lie on top), the band a
+      // click on its frame hits, the frame drawn
+      const rects = [svgEl("rect", { ...rect, class: "outline-fill", "data-frame": o.id }),
+        svgEl("rect", { ...rect, class: "outline-hit", "data-frame": o.id }), svgEl("rect", rect)];
       const t = svgEl("text", { class: "c-title", "data-outline": o.id, "text-anchor": "end" });
       const lines = titleLines(o.text).map((line) => {
         const span = svgEl("tspan");
@@ -594,7 +673,7 @@ class Drawn {
         return span;
       });
       const tip = svgEl("title");
-      tip.textContent = `${o.kind === "block" ? "double-click to collapse; " : ""}drag the title to move what it holds`;
+      tip.textContent = `${o.kind === "block" ? "double-click to collapse; " : ""}drag it by its title, frame or inside to move what it holds`;
       t.append(tip);
       g.append(...rects, t);
       svg.append(g);
@@ -688,12 +767,16 @@ class Drawn {
     for (const x of this.edges) {
       if (!all && !touched.has(x.e.from) && !touched.has(x.e.to)) continue;
       const moved = L.moves.has(x.e.from) || L.moves.has(x.e.to);
-      x.pts = moved ? cleanPts(reroute(this.port(x.src, x.e.from), this.port(x.dst, x.e.to))) : x.base;
+      const [fx, fy] = L.moves.get(x.e.from) || [0, 0], [tx, ty] = L.moves.get(x.e.to) || [0, 0];
+      // both ends moved together (an outline dragged): the route as laid out, moved with them
+      x.pts = !moved ? x.base : fx === tx && fy === ty ? x.base.map((q) => ({ x: q.x + fx, y: q.y + fy }))
+        : cleanPts(reroute(this.port(x.src, x.e.from), this.port(x.dst, x.e.to)));
       const path = rounded(x.pts);
       x.path.setAttribute("d", path);
       x.hit.setAttribute("d", path);
       if (x.label) {
-        const at = moved ? { x: x.pts[0].x + 5, y: (x.pts[0].y + x.pts[1].y) / 2 + 4 } : x.lpos;
+        const at = !moved ? x.lpos : fx === tx && fy === ty ? { x: x.lpos.x + fx, y: x.lpos.y + fy }
+          : { x: x.pts[0].x + 5, y: (x.pts[0].y + x.pts[1].y) / 2 + 4 };
         x.label.setAttribute("x", at.x);
         x.label.setAttribute("y", at.y);
       }
@@ -768,9 +851,10 @@ class Drawn {
       addEventListener("pointerup", up);
     };
     this.canvas.addEventListener("pointerdown", (ev) => {
-      const t = ev.target.closest("[data-outline]");
+      const t = ev.target.closest("[data-outline]") || ev.target.closest("rect[data-frame]");
       if (t) {
-        const ol = this.outlines.find((x) => x.o.id === t.dataset.outline);
+        const id = t.dataset.outline || t.dataset.frame;
+        const ol = this.outlines.find((x) => x.o.id === id);
         if (ol) start(ev, ol.holds);
         return;
       }
@@ -901,7 +985,7 @@ const MIN_SCALE = 0.1;
 const MAX_SCALE = 3;
 
 /** A panel's view of its drawing: ``world`` (the canvas) moved and scaled inside ``vp``. Drag the
-empty canvas or scroll to pan, Ctrl (⌘) and scroll or pinch to zoom about the pointer. Below 42 %
+empty canvas outside every outline or scroll to pan, Ctrl (⌘) and scroll or pinch to zoom about the pointer. Below 42 %
 the edge labels and port names go, below 30 % the chips, dtypes and badges (level of detail). */
 export class Viewport {
   constructor(vp, world, onChange = () => {}) {

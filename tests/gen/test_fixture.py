@@ -24,21 +24,23 @@ from .helpers import SUB, designed, files
 FORGE = SUB / "forge"
 # Each fixture's design: its recipe, on platforms/snax_forge.json
 DESIGNS = [
-    "vecadd", "vecmul", "vsum", "vsum_tree", "matadd", "rowsum", "rowsum_serial",
-    "vecadd_i32", "vecmul_i32", "vsum_tree_i32", "vecadd_i8", "vsum_tree_i8",
-    "vecadd_n7", "vsum_tree_n21", "rowsum_3x7", "vecmul_i32_i64", "dot_1", "dot_1_enc",
-    "dot_2", "dot_3", "dot_4", "dot_5", "dot_6",
-    "matvec_1", "matvec_2", "matvec_3", "matvec_4", "matvec_5", "matvec_6", "relu",
-    "axpy", "axpy_baked", "rowsum_2", "rowsum_2_padded", "matvec_seed", "matvec_seed_serial",
-    "dot_1_shared", "mvt_1_dot2_shared", "vecadd_i32_w1", "mvt_4_i64_dma_AT_sequential",
-    "mvt_4_i8_dma_AT_sequential",
+    "vecadd_v1", "vecmul_v1", "vsum_v1", "vsum_v1_1", "matadd_v1", "rowsum_v1", "rowsum_v3",
+    "vecadd_v1_1", "vecmul_v1_1", "vsum_v1_1_1", "vecadd_v1_2", "vsum_v1_1_2",
+    "vecadd_v1_3", "vsum_v1_1_3", "rowsum_v1_1", "vecmul_v1_1_1", "dot_v1", "dot_v1_1",
+    "dot_v2", "dot_v3", "dot_v4", "dot_v5", "dot_v6",
+    "matvec_v1", "matvec_v2", "matvec_v3", "matvec_v4", "matvec_v5", "matvec_v6", "relu_v1",
+    "axpy_v1", "axpy_v1_1", "rowsum_v2", "rowsum_v2_padded", "matvec_acc_v1", "matvec_acc_v2",
+    "dot_v1_2", "mvt_v1_2_2", "vecadd_v1_1_w1", "mvt_v4_1_sequential",
+    "mvt_v4_1_1_sequential", "mvt_v5_sequential", "mvt_v5_2_sequential",
 ]  # fmt: skip
 # A fixture made from another recipe, or with --set values: its recipe and its sets
-FROM = {"rowsum_2_padded": ("rowsum_2", ("memory.passes.layout=padded_rows",)),
-        "mvt_1_dot2_shared": ("mvt_1_dot2_shared", ("W=8",)),
-        "vecadd_i32_w1": ("vecadd_i32", ("W=1",)),
-        "mvt_4_i64_dma_AT_sequential": ("mvt_4_i64_dma_AT", ("design.schedule=sequential",)),
-        "mvt_4_i8_dma_AT_sequential": ("mvt_4_i8_dma_AT", ("design.schedule=sequential",))}  # fmt: skip
+FROM = {"rowsum_v2_padded": ("rowsum_v2", ("memory.passes.layout=padded_rows",)),
+        "mvt_v1_2_2": ("mvt_v1_2_2", ("W=8",)),
+        "vecadd_v1_1_w1": ("vecadd_v1_1", ("W=1",)),
+        "mvt_v4_1_sequential": ("mvt_v4_1", ("design.schedule=sequential",)),
+        "mvt_v4_1_1_sequential": ("mvt_v4_1_1", ("design.schedule=sequential",)),
+        "mvt_v5_sequential": ("mvt_v5", ("design.schedule=sequential",)),
+        "mvt_v5_2_sequential": ("mvt_v5_2", ("design.schedule=sequential",))}  # fmt: skip
 
 pytestmark = requires_submodule
 

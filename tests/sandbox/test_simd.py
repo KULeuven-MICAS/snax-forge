@@ -113,10 +113,11 @@ def test_a_slot_takes_a_constant_expression():
 
 
 @pytest.mark.parametrize(
-    ("name", "node", "op"), [("vecadd", "add", "add"), ("vecmul", "mult", "mul")]
+    ("name", "kernel", "node", "op"),
+    [("vecadd_v1", "vecadd", "add", "add"), ("vecmul_v1", "vecmul", "mult", "mul")],
 )
-def test_vecadd_and_vecmul_bind_at_two_streams_with_no_k(name, node, op):
-    g = apply_recipe(Recipe.load(recipe_path(name)), Graph.load(FIXTURES / f"{name}.snaxdfg"))
+def test_vecadd_and_vecmul_bind_at_two_streams_with_no_k(name, kernel, node, op):
+    g = apply_recipe(Recipe.load(recipe_path(name)), Graph.load(FIXTURES / f"{kernel}.snaxdfg"))
     assert g[-1].graph.node(node).attrs["params"] == {"W": 4, "op": op, "streams": 2}
 
 

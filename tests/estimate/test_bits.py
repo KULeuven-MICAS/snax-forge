@@ -97,7 +97,7 @@ def test_the_rtl_fixtures_ctrl_registers_json_is_current():
         pytest.skip("gvsoc/snax-gvsoc is not checked out: the fixtures' accelerator.json")
     assert ctrl_regs.REGISTERS_JSON.read_text() == ctrl_regs.estimated()
     units = json.loads(ctrl_regs.REGISTERS_JSON.read_text())
-    assert units["dot_2"]["snax_forge_dot_2_dot_ctrl"][-2:] == [
+    assert units["dot_v2"]["snax_forge_dot_v2_dot_ctrl"][-2:] == [
         ["mul_sum_occupancy", 1],
         ["done", 1],
     ]
@@ -122,7 +122,7 @@ def syn2():
 @pytest.mark.slow
 def test_syn2_has_the_48_design_points():
     rows = json.loads(SYN2.read_text())["points"]
-    want = {(r, w) for r in ("vecadd", "vecmul", "vsum_tree", *(f"dot_{k}" for k in range(2, 7)))
+    want = {(r, w) for r in ("vecadd_v1", "vecmul_v1", "vsum_v1_1", *(f"dot_v{k}" for k in range(2, 7)))
             for w in (1, 2, 4, 8, 16, 32)}  # fmt: skip
     assert {(r["recipe"], r["W"]) for r in rows} == want
 

@@ -212,10 +212,55 @@ def _range_refusal(g: Graph, f: Node, s: Node, what: str) -> SandboxError:
                         "ranges")  # fmt: skip
 
 
+def _lane_dims(n: Node) -> tuple[Node, str, Node] | None:
+    """A nest's spatial map, the variable it was split from, and its tasklet; None without one
+    spatial map or one tasklet at the bottom."""
+    maps = []
+    while n.kind == "map" and len(n.body or []) == 1:
+        maps.append(n)
+        n = n.body[0]
+    spatial = [m for m in maps if m.attrs.get("loop.kind") == "spatial"]
+    if n.kind != "tasklet" or len(spatial) != 1:
+        return None
+    (s,) = spatial
+    split = next((m.attrs["loop.split"] for m in maps if m.id + "_s" == s.id
+                  and isinstance(m.attrs.get("loop.split"), dict)), {})  # fmt: skip
+    return s, split.get("var", s.attrs["var"]), n
+
+
+def _lanes_refusal(first: Node, second: Node, what: str) -> SandboxError | None:
+    """The two nests' lanes on different dimensions of the transient that joins them (the row
+    form on one side, the column form on the other), or None."""
+    a, b = _lane_dims(first), _lane_dims(second)
+    if a is None or b is None:
+        return None
+    (sf, vf, tf), (ss, vs, ts) = a, b
+    writes = list(tf.outputs.values())
+    reads = [m for m in ts.inputs.values() if writes and m.data == writes[0].data]
+    if len(writes) != 1 or len(reads) != 1:
+        return None
+
+    def dim(m: Memlet, var: str) -> int | None:
+        hits = [i for i, d in enumerate(m.subset) if var in dim_names(d)]
+        return hits[0] if len(hits) == 1 else None
+
+    df, ds = dim(writes[0], sf.attrs["var"]), dim(reads[0], ss.attrs["var"])
+    if df is None or ds is None or df == ds:
+        return None
+    local = writes[0].data
+    return SandboxError(f"{what}: {sf.id} puts the lanes on {local}'s dimension {df} ({vf}), "
+                        f"{ss.id} on its dimension {ds} ({vs}); fused nests put their lanes on "
+                        f"one dimension: split the map over {vs} in the first nest, or over {vf} "
+                        "in the second")  # fmt: skip
+
+
 def _fuse(g: Graph, first: Node, second: Node, what: str) -> tuple[Node, str, list[list[str]]]:
     """``first`` and ``second`` fused (CONTRACTS, "Recipe"), the local container and the tags an
     untagged side takes first (``[map, kind]`` each; the fused node is then the first's
     untagged at those levels: fuse_map tags and fuses again); SandboxError."""
+    lanes = _lanes_refusal(first, second, what)
+    if lanes is not None:
+        raise lanes
     rename: dict[str, str] = {}
     pairs: list[tuple[Node, Node]] = []
     f, s = first, second
@@ -546,7 +591,7 @@ def _ends(g: Graph, container: str) -> tuple[Node, Node]:
 
 def _link_site(g: Graph, container: str) -> dict[str, Any]:
     """``container`` and a ``group``: an end's group name, else the graph's, or the next free
-    one (``mvt_2``) when another unit's instance or group has it (mvt's second half)."""
+    one (``mvt_v2``) when another unit's instance or group has it (mvt's second half)."""
     w, r = _ends(g, container)
     named = w.attrs.get("group", r.attrs.get("group"))
     if named is not None:

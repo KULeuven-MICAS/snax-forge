@@ -304,11 +304,11 @@ def test_several_accelerators_share_the_one_slot():
 
 
 def _vecmul(w: int) -> Graph:
-    """``recipes/elementwise/vecmul.json`` at N = 2048 and W = ``w``."""
+    """``recipes/elementwise/vecmul_v1.json`` at N = 2048 and W = ``w``."""
     from snax_forge.sandbox import Recipe, apply_recipe
     from tests.helpers import imported
 
-    r = Recipe.load(recipe_path("vecmul")).with_params({"N": 2048, "W": w})
+    r = Recipe.load(recipe_path("vecmul_v1")).with_params({"N": 2048, "W": w})
     return apply_recipe(r, imported("vecmul"))[-1].graph
 
 
@@ -627,19 +627,19 @@ def test_a_block_the_table_does_not_hold_is_noted():
     it does (D176)."""
     from tests.helpers import steps
 
-    assert _missing(steps("relu")[-1]) == [
+    assert _missing(steps("relu_v1")[-1]) == [
         "[char.missing] acc: not characterized: SimdLanes at lanes 4 on nangate45"]  # fmt: skip
-    assert _missing(steps("vecadd_i32")[-1]) == []
+    assert _missing(steps("vecadd_v1_1")[-1]) == []
 
 
 def test_only_the_block_outside_the_measured_lanes_is_noted():
-    """dot_2 at W = 64: the sum's TreeAccumulate interpolates up to 32 lanes only; the
+    """dot_v2 at W = 64: the sum's TreeAccumulate interpolates up to 32 lanes only; the
     elementwise mul and the depth-1 buffer are copied, so not noted. At W = 8 nothing is."""
     from tests.helpers import steps
 
-    assert _missing(steps("dot_2", W=64)[-1]) == [
+    assert _missing(steps("dot_v2", W=64)[-1]) == [
         "[char.missing] sum: not characterized: TreeAccumulate at lanes 64 on nangate45"]  # fmt: skip
-    assert _missing(steps("dot_2", W=8)[-1]) == []
+    assert _missing(steps("dot_v2", W=8)[-1]) == []
 
 
 def test_a_buffer_link_is_noted_with_its_depth(monkeypatch):
@@ -671,7 +671,7 @@ def test_a_streamer_and_the_crossbar_off_the_grid_are_noted():
     inputs (it stops at 64); at W = 8 nothing is noted."""
     from tests.helpers import steps
 
-    got = _extrapolated(steps("vecmul", W=32, N=2048)[-1])
+    got = _extrapolated(steps("vecmul_v1", W=32, N=2048)[-1])
     assert got[:3] == [f"[cost.extrapolated] acc_{p}: streamer outside the table's grid on "
                        "channels 32 (grid 1–16): its cost extrapolated on nangate45"
                        for p in ("a", "b", "out")]  # fmt: skip
@@ -679,11 +679,11 @@ def test_a_streamer_and_the_crossbar_off_the_grid_are_noted():
         "[cost.extrapolated] crossbar: crossbar outside the table's grid on inputs "
         "98 (grid 4–64): its cost extrapolated on nangate45"
     )
-    assert _extrapolated(steps("vecmul", W=8, N=2048)[-1]) == []
+    assert _extrapolated(steps("vecmul_v1", W=8, N=2048)[-1]) == []
 
 
 def test_without_a_platform_nothing_is_noted():
     from snax_forge.design.check import NOTES, Design
     from tests.helpers import steps
 
-    assert list(NOTES["cost.extrapolated"](Design(None, steps("vecmul", W=32)[-1]))) == []
+    assert list(NOTES["cost.extrapolated"](Design(None, steps("vecmul_v1", W=32)[-1]))) == []

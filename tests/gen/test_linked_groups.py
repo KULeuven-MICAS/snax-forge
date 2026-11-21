@@ -33,7 +33,7 @@ def _core0(out: Path) -> list[str]:
 def test_dot6_writes_its_movers_jobs_and_the_macs_beats(tmp_path):
     """dot 6 at N = 512, W = 4: A, B and out on the contiguous plan; the writer's one beat at
     temporal stride 0 (its spatial stride is the word, 8)."""
-    out = _generated(tmp_path, "dot_6")
+    out = _generated(tmp_path, "dot_v6")
     assert _core0(out) == [
         "csrw_ss(DOT_BASE_PTR_READER_0_LOW, 0x10000000);", "csrw_ss(DOT_T_BOUND_READER_0_0, 128);",
         "csrw_ss(DOT_T_STRIDE_READER_0_0, 32);",
@@ -63,7 +63,7 @@ def test_dot6_writes_its_movers_jobs_and_the_macs_beats(tmp_path):
 def test_matvec6_rereads_p_for_every_row(tmp_path):
     """matvec 6, 16 x 512, W = 4: A's reader a second loop over the rows (4096 B), p's the
     same loop at stride 0, the writer 16 words at stride 8; JOBS 16."""
-    out = _generated(tmp_path, "matvec_6")
+    out = _generated(tmp_path, "matvec_v6")
     assert _core0(out) == [
         "csrw_ss(MATVEC_BASE_PTR_READER_0_LOW, 0x10000000);", "csrw_ss(MATVEC_T_BOUND_READER_0_0, 128);",
         "csrw_ss(MATVEC_T_BOUND_READER_0_1, 16);", "csrw_ss(MATVEC_T_STRIDE_READER_0_0, 32);",
@@ -78,7 +78,7 @@ def test_matvec6_rereads_p_for_every_row(tmp_path):
 
 
 @pytest.mark.parametrize(
-    ("recipe", "fold"), [("dot_2", "SUM"), ("dot_3", "SUM"), ("dot_4", "MAC"), ("dot_5", "MAC")]
+    ("recipe", "fold"), [("dot_v2", "SUM"), ("dot_v3", "SUM"), ("dot_v4", "MAC"), ("dot_v5", "MAC")]
 )
 def test_one_group_names_one_fold_csr(tmp_path, recipe, fold):
     """the table: START 0, JOBS 1, the fold's JOB_BEATS 2, STATUS 3, BUSY_COUNTER 4; the tree or

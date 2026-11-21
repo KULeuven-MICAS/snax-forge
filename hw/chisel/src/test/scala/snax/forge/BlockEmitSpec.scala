@@ -76,7 +76,12 @@ class BlockEmitSpec extends AnyFlatSpec {
       Set.empty,
       registered = true
     )
-  } ++ Seq((true, false, true), (false, false, false), (false, true, true)).map { case (acc, reg, registered) =>
+  } ++ Seq(
+    (true, false, false, true),
+    (true, false, true, true),
+    (false, false, false, false),
+    (false, true, false, true)
+  ).map { case (acc, reg, seed, registered) => // seeded, the port seed
     Case(
       "Mac",
       ujson.Obj(
@@ -85,7 +90,8 @@ class BlockEmitSpec extends AnyFlatSpec {
         "outType"    -> "int64",
         "lanes"      -> Lanes,
         "accumulate" -> acc,
-        "regOut"     -> reg
+        "regOut"     -> reg,
+        "seed"       -> seed
       ),
       Set.empty,
       registered
@@ -207,8 +213,8 @@ class BlockEmitSpec extends AnyFlatSpec {
     }
 
   it should "emit FifoPacker as the module it is inside an accelerator, byte for byte" in {
-    // ShellPackedSpec's accelerator: vsum_tree_i32's sum at int32, d_out 2, its packer FifoPacker(1, int32, 1)
-    val base   = shell.RtlFixtures.all.find(_.name == "vsum_tree_i32").get.spec
+    // ShellPackedSpec's accelerator: vsum_v1_1_1's sum at int32, d_out 2, its packer FifoPacker(1, int32, 1)
+    val base   = shell.RtlFixtures.all.find(_.name == "vsum_v1_1_1").get.spec
     val spec   = base.copy(groups = base.groups.map { g =>
       g.copy(units = g.units.map { u =>
         u.copy(ports = u.ports.map {
@@ -267,8 +273,8 @@ class BlockEmitSpec extends AnyFlatSpec {
     }
 
   it should "emit FifoSlicer as the module it is inside an accelerator, byte for byte" in {
-    // ShellSlicedSpec's accelerator: vecadd_i32_w1, a and b at int32 d_in 2, each slicer FifoSlicer(1, int32, 1)
-    val spec   = shell.RtlFixtures.all.find(_.name == "vecadd_i32_w1").get.spec
+    // ShellSlicedSpec's accelerator: vecadd_v1_1_w1, a and b at int32 d_in 2, each slicer FifoSlicer(1, int32, 1)
+    val spec   = shell.RtlFixtures.all.find(_.name == "vecadd_v1_1_w1").get.spec
     val inside = Files.createTempDirectory("emit-sliced-shell")
     Emit.elaborate(new shell.ShellWrapper(spec), inside, split = true)
     val name = "FifoSlicer_w1_i32_n1.sv"
@@ -296,7 +302,8 @@ class BlockEmitSpec extends AnyFlatSpec {
       (
         "a bool that is not one",
         "Mac",
-        """{"inTypes":["int64","int64"],"opType":"int64","outType":"int64","lanes":1,"accumulate":1,"regOut":false}"""
+        """{"inTypes":["int64","int64"],"opType":"int64","outType":"int64","lanes":1,"accumulate":1,"regOut":false,""" +
+          """"seed":false}"""
       ),
       ("params that are not an object", "TreeAccumulate", "[]")
     )

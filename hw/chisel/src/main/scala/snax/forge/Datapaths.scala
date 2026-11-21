@@ -21,7 +21,8 @@ import snax.forge.shell.AcceleratorSpec
   * bits (`flops`), its pins (the enables it takes from the control unit: `fire`, `first`, `read`, `lane`, `en`, `load`,
   * the slots) and `fill`, how each param comes from the unit (or, for a `LinkBuffer`, the link) of `accelerator.json`:
   *
-  *   - `inputs.dtype`: the unit's input ports' dtypes, in order (a `dtypes` param), or the first input's (a `dtype`);
+  *   - `inputs.dtype`: the unit's input ports' dtypes but a seed's, in order (a `dtypes` param), or the first input's
+  *     (a `dtype`);
   *   - `outputs.dtype`: the output port's dtype;
   *   - `inputs.lanes`: the first input port's lanes;
   *   - `inputs.count`: the number of input ports (SimdLanes' `streams`);
@@ -85,7 +86,8 @@ object Datapaths {
       params.map { case (n, t, rule) =>
         val inPorts = unit.inPorts.map(unit.port)
         val value: ujson.Value = rule match {
-          case "inputs.dtype" if t == DtypesParam => ujson.Arr.from(inPorts.map(_.dtype))
+          case "inputs.dtype" if t == DtypesParam => // a seed is no operand (`unit.ports.seed` says it is there)
+            ujson.Arr.from(unit.inPorts.filterNot(_ == "seed").map(unit.port(_).dtype))
           case "inputs.dtype"                     => ujson.Str(inPorts.head.dtype)
           case "outputs.dtype"                    => ujson.Str(unit.port(unit.outPorts.head).dtype)
           case "inputs.lanes"                     => ujson.Num(inPorts.head.lanes)
@@ -260,12 +262,14 @@ object Datapaths {
         ("outType", DtypeParam, "outputs.dtype"),
         ("lanes", IntParam(1), "inputs.lanes"),
         ("accumulate", BoolParam, "unit.params.accumulate"),
-        ("regOut", BoolParam, "unit.params.regOut")
+        ("regOut", BoolParam, "unit.params.regOut"),
+        ("seed", BoolParam, "unit.ports.seed")
       ),
       Seq(
         Port("a", "in"),
         Port("b", "in"),
         Port("c", "in", Seq("accumulate" -> ujson.False)),
+        Port("seed", "in", Seq("seed" -> ujson.True)),
         Port("out", "out")
       ),
       ujson.Str("max(accumulate, regOut)"),
@@ -283,7 +287,8 @@ object Datapaths {
           str(p, "outType"),
           int(p, "lanes"),
           p("accumulate").bool,
-          p("regOut").bool
+          p("regOut").bool,
+          p("seed").bool
         )
       },
       Map(
@@ -292,7 +297,8 @@ object Datapaths {
         "outType"    -> ujson.Str("int64"),
         "lanes"      -> ujson.Num(4),
         "accumulate" -> ujson.True,
-        "regOut"     -> ujson.False
+        "regOut"     -> ujson.False,
+        "seed"       -> ujson.False
       )
     ),
     Datapath(

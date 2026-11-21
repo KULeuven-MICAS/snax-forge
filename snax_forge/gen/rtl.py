@@ -34,7 +34,7 @@ from typing import Any
 from snax_forge import expr
 from snax_forge.brm import SEED
 from snax_forge.common import c_name, cwd_relative, repo_root, to_json
-from snax_forge.design.streamers import instance_nodes
+from snax_forge.design.streamers import instance_nodes, stream_lanes
 from snax_forge.estimate.cycles import group_cycles
 from snax_forge.lower.c import job_values, job_writes
 from snax_forge.lower.derive import task_list
@@ -64,8 +64,9 @@ def _ports(unit: Unit, direction: str) -> list[Any]:
 
 
 def _input_dtypes(unit: Unit, kind: str) -> Any:
-    """The inputs' dtypes for a ``dtypes`` param, else the first input's."""
-    dtypes = [p.dtype for p in _ports(unit, "in")]
+    """The inputs' dtypes for a ``dtypes`` param, else the first input's; a seed is no
+    operand (``unit.ports.seed`` says it is there)."""
+    dtypes = [p.dtype for k, p in unit.ports.items() if p.dir == "in" and k != SEED]
     return dtypes if kind == "dtypes" else dtypes[0]
 
 
@@ -344,7 +345,8 @@ def vectors(design_point: str | Path, root: str | Path | None = None) -> dict:
         c = (node.inputs if p.direction == "in" else node.outputs)[p.name].data
         array = c_name(c) if p.direction == "in" else f"{c_name(c)}_golden"
         rate = 1 if p.rate == 1 else values[p.rate]
-        ports.append({"port": p.name, "array": array, "lanes": inst.lanes(p.name),
+        ports.append({"port": p.name, "array": array,
+                      "lanes": stream_lanes(point.graph, node, inst, p.name),
                       "beats": values["n"] // rate, "values": list(data[array].values)})  # fmt: skip
     if linked:
         writes = job_writes(found, task.values, acc.fixed_folds)

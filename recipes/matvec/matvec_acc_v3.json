@@ -1,0 +1,34 @@
+{
+ "name": "matvec_acc_v3",
+ "id": "matvec_acc_dot2seed",
+ "description": "A seeded `dot_v2` on each row: `mul → link → sum` in one group, the fold starting from q[i]. mvt's half 1 in `mvt_v4` and `mvt_v5`.",
+ "kernel": "matvec_acc",
+ "params": {"W": 4, "M": 8, "N": 512, "D": 1},
+ "symbols": {"M": "M", "N": "N"},
+ "steps": [
+  {"transform": "tag_map", "params": {"map": "mult_map", "kind": "temporal"}},
+  {"transform": "split_map", "params": {"map": "mult_map_1", "factor": "W"}},
+  {
+   "transform": "bind",
+   "params": {
+    "node": "mult",
+    "brm": "simd",
+    "implementation": "chisel_tiled_spatial",
+    "instance": "mul"
+   }
+  },
+  {"transform": "tag_map", "params": {"map": "sum_map", "kind": "temporal"}},
+  {"transform": "split_map", "params": {"map": "sum_map_1", "factor": "W"}},
+  {"transform": "fuse_seed", "params": {"first": "sum_map_1_s", "second": "augassign_19_4_map"}},
+  {
+   "transform": "bind",
+   "params": {
+    "node": "sum",
+    "brm": "accumulate",
+    "implementation": "chisel_adder_tree",
+    "instance": "sum"
+   }
+  },
+  {"transform": "link", "params": {"container": "tmp0", "depth": "D", "group": "matvec_acc"}}
+ ]
+}

@@ -1,0 +1,30 @@
+{
+ "name": "dot_v7",
+ "id": "dotser",
+ "description": "A `mul` of W lanes and a serial fold of one lane as two accelerators, the products through L1.",
+ "kernel": "dot",
+ "params": {"W": 4},
+ "symbols": {"N": 64},
+ "steps": [
+  {"transform": "split_map", "params": {"map": "mult_map", "factor": "W"}},
+  {
+   "transform": "bind",
+   "params": {
+    "node": "mult",
+    "brm": "simd",
+    "implementation": "chisel_tiled_spatial",
+    "instance": "mul"
+   }
+  },
+  {"transform": "split_map", "params": {"map": "sum_map", "factor": 1}},
+  {
+   "transform": "bind",
+   "params": {
+    "node": "sum",
+    "brm": "accumulate",
+    "implementation": "chisel_serial",
+    "instance": "sum"
+   }
+  }
+ ]
+}

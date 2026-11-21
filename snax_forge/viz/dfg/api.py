@@ -35,9 +35,11 @@ from snax_forge.design.streamers import (
     firing_loops,
     group_of,
     instance_of,
+    is_broadcast,
     packed,
     port_loops,
     sliced,
+    stream_lanes,
 )
 from snax_forge.dfg import DfgError, Graph, Memlet, Node
 from snax_forge.dfg.graph import BAKED, SCALAR, TRANSPOSE
@@ -206,6 +208,8 @@ def step_view(e: Entry, label: str, platform: Any = None, marks: dict[str, list[
     out["bindings_section"] = bindings_section(e.graph, recipe, editable)
     if recipe is not None:  # the recipe's param names in the boxes and Details
         _name_params(out, e.graph, recipe)
+        if recipe.id is not None:  # what the recipe builds (D188)
+            out["recipe_id"], out["recipe_description"] = recipe.id, recipe.description
     if marks is None:
         from snax_forge.sandbox.session import marks_of
 
@@ -360,6 +364,8 @@ def bindings_section(g: Graph, recipe: Any = None, editable: bool = False) -> di
                 the splits of every one its own
         split   a split whose map is not bound yet: its factor's params (``not bound``)
         link    a link whose depth a step gives as a param
+        recipe  an ``apply_recipe`` step whose ``params`` name the session's params
+                (``matvec_acc_v4 on matvec_acc_1 · W_x1 = 8``)
 
     Each param ``{name, value, editable, shared_with}``: an input in edit mode
     (``POST /api/params``), ``shared_with`` the other entries naming it (dot 2–6's ``W``, the
@@ -406,6 +412,16 @@ def bindings_section(g: Graph, recipe: Any = None, editable: bool = False) -> di
             c = n.attrs["container"]
             entries.append({"kind": "link", "id": c, "label": f"link {c} · depth",
                             "names": links[c], "lanes": {}, "note": None})  # fmt: skip
+    for st in list(recipe.steps) if recipe is not None else []:  # a sub-recipe's params
+        p = st.params
+        if st.transform != "apply_recipe" or not isinstance(p.get("params"), dict):
+            continue
+        names = sorted({x for v in p["params"].values() for x in _param_names(v, params)})
+        if names:
+            on = p.get("block") or (p.get("region") or ["?"])[0]
+            short = str(p.get("recipe")).rpartition("/")[2]  # the stem: the folder adds little
+            entries.append({"kind": "recipe", "id": on, "label": f"{short} on {on}",
+                            "names": names, "lanes": {}, "note": None})  # fmt: skip
     for i, (m, transform, ps, _, _) in enumerate(splits):
         node = next((x for x, _ in g.walk() if x.id == m and x.kind == "map"), None)
         if i in used or node is None or "loop.split" not in node.attrs:
@@ -1312,22 +1328,34 @@ def _container(g: Graph, name: str, placed: Any = None) -> dict[str, Any]:
             "transient": c.transient, "scalar": bool(c.attrs.get(SCALAR))} | shared  # fmt: skip
 
 
-def _lanes(n: Node, port: str) -> int | None:
-    """An accelerated node's lanes on ``port``; None for any other node, or an instance the BRM
-    library does not resolve."""
+def _lanes(g: Graph, n: Node, port: str) -> int | None:
+    """The lanes an accelerated node's ``port`` moves a beat (one for a broadcast input, D186);
+    None for any other node, or an instance the BRM library does not resolve."""
     if n.kind != "accelerated":
         return None
     try:
-        return instance_of(n).lanes(port)
-    except (BrmError, ExprError, KeyError):
+        return stream_lanes(g, n, instance_of(n), port)
+    except (BrmError, ExprError, KeyError, ValueError):
         return None
+
+
+def broadcast_port(g: Graph, n: Node, port: str) -> bool:
+    """Whether an accelerated node's ``port`` is a broadcast input (D186), one lane its reader
+    moves given to every lane; False for any other node, or an instance the BRM library does not
+    resolve."""
+    if n.kind != "accelerated":
+        return False
+    try:
+        return is_broadcast(g, n, instance_of(n), port)
+    except (BrmError, ExprError, KeyError, ValueError):
+        return False
 
 
 def packer_node(g: Graph, n: Node, port: str, data: str) -> dict[str, Any] | None:
     """The ``FifoPacker`` the flow places on accelerated node ``n``'s output ``port`` when its
     lanes fill less than a word (D174, design/streamers.py's ``packed``): its text, d_out, lanes
     and dtype; None where the port is wired."""
-    lanes = _lanes(n, port) if port in n.outputs else None
+    lanes = _lanes(g, n, port) if port in n.outputs else None
     if lanes is None:
         return None
     dtype = g.containers[data].dtype
@@ -1341,7 +1369,7 @@ def slicer_node(g: Graph, n: Node, port: str, data: str) -> dict[str, Any] | Non
     """The ``FifoSlicer`` the flow places on accelerated node ``n``'s input ``port`` when its
     lanes fill less than a word (D180, design/streamers.py's ``sliced``): its text, d_in, lanes
     and dtype; None where the port is wired."""
-    lanes = _lanes(n, port) if port in n.inputs else None
+    lanes = _lanes(g, n, port) if port in n.inputs else None
     if lanes is None:
         return None
     dtype = g.containers[data].dtype
@@ -1505,7 +1533,7 @@ def packing(g: Graph, n: Node, port: str, data: str) -> str | None:
     """``int32 · num_slc 2 · num_ch 2`` for an accelerated node's port (``int32 · num_slc 2 ·
     d_out 2 · num_ch 1`` for a packed output, D174, ``d_in 2`` for a sliced input, D180); None for
     any other node, or an instance the BRM library does not resolve."""
-    lanes = _lanes(n, port)
+    lanes = _lanes(g, n, port)
     if lanes is None:
         return None
     dtype = g.containers[data].dtype
@@ -1561,7 +1589,7 @@ def _held(top: Node) -> list[str]:
 
 
 def block_text(rec: dict[str, Any]) -> str:
-    """A block's text: ``dot · dot/dot_3 · W = 4``, a lifted one ``dot · dot · no recipe``, one
+    """A block's text: ``dot · dot/dot_v3 · W = 4``, a lifted one ``dot · dot · no recipe``, one
     named by hand ``half1 · by hand``."""
     if rec.get("kernel") is None:
         return f"{rec['name']} · by hand"

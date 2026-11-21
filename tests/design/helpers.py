@@ -24,7 +24,7 @@ from tests.helpers import FIXTURES, REPO, graph_dict, recipe_path
 
 SMALL16 = REPO / "platforms" / "small16.json"
 SNAX_FORGE = REPO / "platforms" / "snax_forge.json"
-RECIPE = recipe_path("vecadd")
+RECIPE = recipe_path("vecadd_v1")
 BOUND = FIXTURES / "vecadd_accelerated.snaxdfg"
 
 Edit = Callable[[dict[str, Any]], Any]
@@ -46,7 +46,7 @@ def bound_w8() -> Graph:
 
 
 # matadd at W = 4, M = 8, N = 16: the row map tagged temporal, the column map split
-MATADD_RECIPE = json.loads((recipe_path("matadd")).read_text())
+MATADD_RECIPE = json.loads((recipe_path("matadd_v1")).read_text())
 
 
 @cache
@@ -61,7 +61,7 @@ def bound_matadd() -> Graph:
 def bound_rowsum(name: str = "rowsum", **sizes: int) -> Graph:
     """rowsum bound by ``recipes/<folder>/<name>.json`` (``rowsum``: adder tree, W = 4, M = 8, N =
     64;
-    ``rowsum_serial``: accumulator, W = 1, M = 4, N = 16), ``sizes`` overriding its params:
+    ``rowsum_v3``: accumulator, W = 1, M = 4, N = 16), ``sizes`` overriding its params:
     a restart every T = N / W beats."""
     from snax_forge.dfg.import_sdfg import import_kernel
 

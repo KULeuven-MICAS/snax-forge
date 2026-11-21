@@ -1,6 +1,6 @@
 """run/ on an accelerator of one linked group: dot 4, whose units mac and sum are one
 SNAX-GVSoC component, ``snax_acc0/group_dot``, under one control model (snax-gvsoc's
-SnaxGroup). The recorded run (fixtures/dot_4/README.md: dot 4 at N = 512, W = 4) converts
+SnaxGroup). The recorded run (fixtures/dot_v4/README.md: dot 4 at N = 512, W = 4) converts
 without GVSoC: the converter names the group's lines after the group, matches the start to the
 group's task and gives the done its run's classes; beat levels are refused.
 """
@@ -13,13 +13,13 @@ from snax_forge.run.convert import convert, invariants
 from .helpers import load_recorded
 
 # =============================================================================
-# The recorded run (fixtures/dot_4)
+# The recorded run (fixtures/dot_v4)
 # =============================================================================
 
 
 @pytest.fixture(scope="module")
 def recorded():
-    return load_recorded("dot_4")
+    return load_recorded("dot_v4")
 
 
 def test_the_recorded_run_converts_the_group_as_one_unit(recorded):

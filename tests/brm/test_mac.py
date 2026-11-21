@@ -25,6 +25,26 @@ def test_the_mac_folds_each_lanes_products_over_t_beats():
     assert outs[2]["out"].dtype == np.int64
 
 
+def test_a_seeded_mac_starts_each_job_from_its_seed():
+    """seed 1 (D187): a seed port of the output's W lanes at rate T, added once per job; a 1-lane b
+    (a broadcast, D186) is given to every lane."""
+    inst = load_brm("mac").resolve("chisel_mac", {"W": 2, "seed": 1})
+    fn = function_of(inst, {"a": "int8", "b": "int8", "seed": "int32", "out": "int32"})
+    assert [(p.name, p.lanes, p.rate) for p in fn.ports] == [
+        ("a", 2, 1), ("b", 2, 1), ("seed", 2, "T"), ("out", 2, "T")]  # fmt: skip
+    state: dict = {}
+    a = np.array([[1, 2], [3, 4]], np.int8)
+    seed = np.array([100, -100], np.int32)
+    outs = [fn.fn(k, {"a": a[k], "b": np.array([5 + k], np.int8)} | ({"seed": seed} if k == 0 else {}),
+                  state, {"n": 2, "T": 2}) for k in range(2)]  # fmt: skip
+    assert outs[1]["out"].tolist() == [100 + 1 * 5 + 3 * 6, -100 + 2 * 5 + 4 * 6]
+    assert [p.name for p in load_brm("mac").resolve("chisel_mac", {"W": 2}).ports] == [
+        "a",
+        "b",
+        "out",
+    ]
+
+
 def test_the_mac_and_the_serial_sum_are_bound_to_their_datapaths():
     mac = load_brm("mac").resolve("chisel_mac", {"W": 4})
     assert (mac.latency, mac.initiation_interval, mac.drain, mac.span) == (1, 1, 0, 1)

@@ -405,6 +405,7 @@ class _Bound:
     code: str  # the matched code entry's
     scalars: dict[str, Memlet]  # slot -> the scalar operand it is read from (a CSR)
     op_type: str | None = None  # the op's type set by the kernel's casts, when not its inputs'
+    broadcasts: frozenset[str] = frozenset()  # inputs read as one lane for all (D186)
 
 
 def _bind_site(g: Graph, node: str, what: str) -> _Site:
@@ -489,7 +490,9 @@ def _bind_check(g: Graph, site: _Site, brm: str, implementation: str,
     op_type, cast_op_type = _op_types(tasklet, ports, conn_dtypes, casts)
     from_scalar = _bind_slots(b, brm, entry, tasklet, ports, slots, names, conn_dtypes, given,
                               computes, cast_op_type or op_type, what)  # fmt: skip
-    var_s, end, memlets, folds = _bind_lanes(g, site, b, ports, given, what)
+    var_s, end, memlets, folds, broadcasts = _bind_lanes(
+        g, site, b, ports, given, _lanewise(b, implementation), what
+    )
     try:
         inst = b.resolve(implementation, given, from_scalar)
     except BrmError as e:
@@ -501,7 +504,7 @@ def _bind_check(g: Graph, site: _Site, brm: str, implementation: str,
             f"tasklet computes {computes!r}, {brm!r}'s {entry.code!r}, which leaves "
             f"{' and '.join(extra)} unset"
         )
-    lane_port = next(ports[c] for c in memlets if c not in folds)
+    lane_port = next(ports[c] for c in memlets if c not in folds | broadcasts)
     if inst.lanes(lane_port) != end:
         raise SandboxError(f"{what}: the BRM has {inst.lanes(lane_port)} lanes, the map {end}")
     for c in folds:
@@ -511,7 +514,20 @@ def _bind_check(g: Graph, site: _Site, brm: str, implementation: str,
                 f"{inst.lanes(ports[c])} lanes"
             )
     kept = cast_op_type if cast_op_type != op_type else None
-    return _Bound(b, ports, inst, var_s, end, memlets, folds, entry.code, from_scalar, kept)
+    return _Bound(b, ports, inst, var_s, end, memlets, folds, entry.code, from_scalar, kept,
+                  frozenset(broadcasts))  # fmt: skip
+
+
+def _lanewise(b: Any, implementation: str) -> bool:
+    """Whether the implementation's datapath computes each lane on its own (``gen``'s
+    registry), so an input may be a broadcast (D186)."""
+    from snax_forge.gen.blocks import DATAPATHS  # gen imports brm
+
+    impl = b.implementations.get(implementation)
+    if impl is None or impl.binding is None:
+        return False
+    dp = DATAPATHS.get(impl.binding.get("datapath"))
+    return dp is not None and dp.lanewise
 
 
 def _without_casts(site: _Site, conn_dtypes: Mapping[str, str],
@@ -583,7 +599,7 @@ def _bind_seeds(site: _Site, b: Any, brm: str, given: Mapping[str, Any],
     if seeds and not any(p.name == SEED for p in b.interface.ports):
         (s,) = seeds.values()
         raise SandboxError(f"{what}: the fold is seeded from {s.data}; {brm!r} has no seed port "
-                           "(TreeAccumulate and SerialAccumulate take one): unfuse_seed "
+                           "(TreeAccumulate, SerialAccumulate and Mac take one): unfuse_seed "
                            "first")  # fmt: skip
     if given_seed is not None and given_seed != int(bool(seeds)):
         raise SandboxError(f"{what}: seed = {given_seed!r} given, but the fold is "
@@ -662,9 +678,12 @@ def _bind_slots(b: Any, brm: str, entry: Any, tasklet: Node, ports: dict[str, st
 
 
 def _bind_lanes(g: Graph, site: _Site, b: Any, ports: dict[str, str], given: dict[str, Any],
-                what: str) -> tuple[str, int, dict[str, Memlet], set[str]]:  # fmt: skip
-    """The spatial map's variable and bound, the bound memlets and the folding outputs; the
-    lanes param set to the bound in ``given``."""
+                lanewise: bool, what: str,
+                ) -> tuple[str, int, dict[str, Memlet], set[str], set[str]]:  # fmt: skip
+    """The spatial map's variable and bound, the bound memlets, the folding outputs and the
+    broadcast inputs; the lanes param set to the bound in ``given``. An input that does not
+    use the spatial variable is a broadcast (D186) on a ``lanewise`` datapath, one lane given
+    to all, and refused on any other."""
     tasklet, smap = site.tasklet, site.smap
     begin, end, step = parse_dim(smap.attrs["range"], what)
     if begin != 0 or step != 1:
@@ -676,11 +695,22 @@ def _bind_lanes(g: Graph, site: _Site, b: Any, ports: dict[str, str], given: dic
     memlets = {c: m for c, m in (tasklet.inputs | tasklet.outputs).items() if c in ports}
     # a folding output that does not use the spatial variable takes one lane
     folds = {c for c, m in tasklet.outputs.items() if m.reduce is not None and var_s not in m.names}
+    broadcasts = set()
     for c, m in memlets.items():
-        if c not in folds and var_s not in m.names:
-            raise SandboxError(
-                f"{what}: {c} {m.data}{m.subset} does not use the spatial variable {var_s!r}"
+        if c in folds or var_s in m.names:
+            continue
+        if c in tasklet.inputs and lanewise:
+            broadcasts.add(c)
+            continue
+        raise SandboxError(
+            f"{what}: {c} {m.data}{m.subset} does not use the spatial variable {var_s!r}"
+            + (
+                "; only an input of a datapath whose lanes compute on their own (SimdLanes, "
+                "Mac) is read as a broadcast, one lane for all of them: bind it as mac or simd"
+                if c in tasklet.inputs
+                else ""
             )
+        )
     lanes = {b.port(ports[c]).lanes for c in memlets if c not in folds}
     if len(lanes) != 1:
         raise SandboxError(
@@ -693,7 +723,7 @@ def _bind_lanes(g: Graph, site: _Site, b: Any, ports: dict[str, str], given: dic
                 f"{what}: {lanes_v} = {given[lanes_v]} given, the spatial bound is {end}"
             )
         given[lanes_v] = end
-    return var_s, end, memlets, folds
+    return var_s, end, memlets, folds, broadcasts
 
 
 def _seeds(site: _Site) -> dict[str, Any]:
@@ -828,7 +858,7 @@ def _bind_rewrite(g: Graph, site: _Site, bound: _Bound, brm: str, implementation
                     nest = task_nest(inst, port, task)
                 except ValueError as e:
                     raise SandboxError(f"{what}: {e}") from None
-            if c in folds:  # one lane: the last index becomes a range of one
+            if c in folds or c in bound.broadcasts:  # one lane: the last index a range of one
                 dims = [*m.subset[:-1], _one_lane(m.subset[-1], f"{what}.{side}.{c}")]
                 out[port] = Memlet(m.data, dims)
                 beats = [lp for lp in temporal if lp.attrs["var"] in m.names]
@@ -838,10 +868,14 @@ def _bind_rewrite(g: Graph, site: _Site, bound: _Bound, brm: str, implementation
             out[port] = Memlet(m.data, _lanes_dims(m, bound.var_s, bound.end, f"{what}.{side}.{c}"))
             if nest is not None:
                 _check_order(g, m, temporal, smap, nest.indices(), f"{what} port {port!r}")
-    for seed in _seeds(site).values():  # the seed's element, one lane as its fold's output
+    for seed in _seeds(site).values():  # the seed's elements, its fold's output's lanes (D187)
         sm = Memlet(seed.data, list(seed.subset))
-        new_in[SEED] = Memlet(seed.data, [*sm.subset[:-1], _one_lane(sm.subset[-1],
-                                                                      f"{what}.seed")])  # fmt: skip
+        if bound.var_s in sm.names:  # a lane fold's (Mac): the lanes' range
+            new_in[SEED] = Memlet(seed.data, _lanes_dims(sm, bound.var_s, bound.end,
+                                                         f"{what}.seed"))  # fmt: skip
+        else:  # a fold that sums its lanes: one lane
+            new_in[SEED] = Memlet(seed.data, [*sm.subset[:-1], _one_lane(sm.subset[-1],
+                                                                          f"{what}.seed")])  # fmt: skip
     for slot, m in bound.scalars.items():  # a slot read from a scalar: a connector of its name
         new_in[slot] = Memlet(m.data, list(m.subset))
     acc = Node(

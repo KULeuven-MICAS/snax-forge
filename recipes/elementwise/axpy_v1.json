@@ -1,0 +1,22 @@
+{
+ "name": "axpy_v1",
+ "id": "axpy_csr_i32",
+ "description": "y += alpha x in one `simd` unit of W lanes, alpha a CSR scalar the program writes.",
+ "kernel": "axpy",
+ "params": {"W": 4, "N": 64},
+ "symbols": {"N": "N"},
+ "steps": [
+  {"transform": "bake_scalar", "params": {"container": "alpha", "value": "csr"}},
+  {"transform": "fuse_map", "params": {"first": "mult_map", "second": "augassign_19_4_map"}},
+  {"transform": "split_map", "params": {"map": "mult_map", "factor": "W"}},
+  {
+   "transform": "bind",
+   "params": {
+    "node": "mult_map_s",
+    "brm": "simd",
+    "implementation": "chisel_tiled_spatial",
+    "instance": "acc"
+   }
+  }
+ ]
+}

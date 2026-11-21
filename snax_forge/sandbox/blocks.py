@@ -15,7 +15,8 @@ CONTRACTS, "Recipe". ``apply_recipe`` runs the sub-recipe's steps on the region 
 step's names renamed onto the region's by running the same steps on the pattern side by side;
 the whole is one step, checked against the reference once. ``unapply`` reads the record
 (``sandbox.applied``) on the first top-level node the recipe made. ``reusable``,
-``lift_choices`` and ``recipes_for`` give the kernels and recipes the sites offer.
+``lift_choices``, ``lift_regions``, ``block_ids`` and ``recipes_for`` give the kernels, regions and
+recipes the sites offer.
 """
 
 from __future__ import annotations
@@ -48,7 +49,7 @@ def pattern(kernel: str) -> Graph:
 
 
 def recipe_path(ref: str) -> Any:
-    """``category/name`` (``dot/dot_3``) as ``recipes/<category>/<name>.json``; a bare name is
+    """``category/name`` (``dot/dot_v3``) as ``recipes/<category>/<name>.json``; a bare name is
     looked up across the folders (recipe.py's ``find_recipe``); a path to a ``.json`` is that
     file."""
     from .recipe import find_recipe
@@ -90,10 +91,17 @@ class Match:
     perms: dict[str, list[int]] = field(default_factory=dict)  # R container -> π (not identity)
     outer: dict[str, list[str]] = field(default_factory=dict)  # R head -> its outer map ids
     nodes: list[str] = field(default_factory=list)  # every node id of the region's chains
+    # R container -> (its dimensions on outer loops, π): one layout for every use
+    layouts: dict[str, tuple] = field(default_factory=dict, repr=False, compare=False)
 
 
 class _NoMatch(Exception):
     pass
+
+
+def _changed_since_lift(chain_nodes: list[Node]) -> bool:
+    """A chain a transform touched (split, tagged, fused, seeded): a lifted block changed."""
+    return any(k in n.attrs for n in chain_nodes for k in TOUCHED)
 
 
 def _outer_of(g: Graph, node_id: str) -> list[Node]:
@@ -145,10 +153,12 @@ def _memlet(p: Memlet, r: Memlet, var: dict[str, str], outer_vars: set[str], pg:
           if not (expr.constant(d) is not None and shape[k] == 1)]  # fmt: skip
     pd = [expr.canonical(expr.substitute(d, var)) for d in pd]
     rd = []
+    at_outer = []
     rshape = g.containers[r.data].shape
     for k, d in enumerate(r.subset):
         names = dim_names(d)
         if names and names <= outer_vars:
+            at_outer.append(k)
             continue  # indexed by the outer loops only: R2
         if expr.constant(d) is not None and rshape[k] == 1:
             continue  # a size-1 dimension at a constant, as P's
@@ -163,6 +173,8 @@ def _memlet(p: Memlet, r: Memlet, var: dict[str, str], outer_vars: set[str], pg:
             raise _NoMatch(f"{r.data}{r.subset}: no dimension for {p.data}'s {d}")
         left.remove(k)
         perm.append(k)
+    if m.layouts.setdefault(r.data, (at_outer, perm)) != (at_outer, perm):
+        raise _NoMatch(f"{r.data} is used in two orders, the pattern's {p.data} in one")
     if perm != sorted(perm):
         m.perms[r.data] = perm
     if m.containers.get(p.data, r.data) != r.data:
@@ -255,9 +267,20 @@ def match(g: Graph, kernel: str, heads: list[str], partial: bool = False,
             if rc is None:
                 raise _NoMatch(f"{h} is not a chain of maps down to one tasklet")
             for n in rc:
-                if any(b["kernel"] == kernel and b["name"] != block for b in _blocks_of(n)):
-                    raise _NoMatch(f"{n.id} is in a {kernel} block already")
-            _chain(pc, rc, g, pg, m, _outer_of(g, h))
+                held = [b["name"] for b in _blocks_of(n)
+                        if b["kernel"] == kernel and b["name"] != block]  # fmt: skip
+                if held:
+                    raise _NoMatch(f"{n.id} is in block {held[0]} already: give block "
+                                   f"{held[0]!r} instead of the region")  # fmt: skip
+            try:
+                _chain(pc, rc, g, pg, m, _outer_of(g, h))
+            except _NoMatch as e:
+                if block is not None and _changed_since_lift(rc):
+                    raise _NoMatch(
+                        f"{e} (block {block} was transformed since its lift: "
+                        "unlift it, or apply the recipe before transforming)"
+                    ) from None
+                raise
         if not partial:
             _transients(g, pg, m)
     except (_NoMatch, DfgError, ExprError, KeyError) as e:
@@ -430,12 +453,33 @@ def lift_choices(g: Graph, at: str) -> list[str]:
     return list(dict.fromkeys(k for k, _ in _lift_choices(g, at)))
 
 
+def lift_regions(g: Graph, at: str) -> dict[str, dict[str, list[str]]]:
+    """Per kernel ``lift`` takes at ``at``, the node ids it would make a block of: ``here`` the
+    region holding ``at``, ``every`` every region of the kernel (the editor lights them)."""
+    out: dict[str, dict[str, list[str]]] = {}
+    for k, m in _lift_choices(g, at):
+        here = out.setdefault(k, {"here": [], "every": []})["here"]
+        here += [n.id for n in _region_nodes(g, m) if n.id not in here]
+    for k, d in out.items():
+        for m in _found(g)[k]:
+            d["every"] += [n.id for n in _region_nodes(g, m) if n.id not in d["every"]]
+    return out
+
+
+def block_ids(g: Graph, name: str) -> list[str]:
+    """The node ids block ``name`` holds, in the graph's order (the editor lights them)."""
+    return [n.id for n, _ in g.walk() if any(b["name"] == name for b in _blocks_of(n))]
+
+
 def lift(g: Graph, kernel: str, at: str | None = None) -> Graph:
     """The regions matching ``kernel``'s pattern made blocks (module doc): every one, or with
     ``at`` the one holding node ``at``."""
     if at:
         found = [m for k, m in _lift_choices(g, at) if k == kernel]
         if not found:
+            held = [b["name"] for b in _blocks_of(g.node(at)) if b["kernel"] == kernel]
+            if held:
+                raise SandboxError(f"lift at {at!r}: already in block {held[0]}, a {kernel}")
             raise SandboxError(f"lift at {at!r}: {kernel} does not match here (here: "
                                f"{', '.join(lift_choices(g, at))})")  # fmt: skip
     else:
@@ -531,6 +575,12 @@ NAMED = ("instance", "group", "accelerator")
 BLOCK_PARAMS = {"apply_recipe": "block", "unapply": "block", "unlift": "name"}
 
 
+def _unit_names(g: Graph) -> list[str]:
+    """Every unit's, group's and accelerator's name in ``g``, in the graph's order."""
+    names = (n.attrs.get(k) for n, _ in g.walk() if n.kind == "accelerated" for k in NAMED)
+    return list(dict.fromkeys(x for x in names if isinstance(x, str)))
+
+
 def _ids(g: Graph) -> list[str]:
     return [n.id for n, _ in g.walk()]
 
@@ -622,6 +672,12 @@ def apply_recipe(g: Graph, recipe: str, region: list[str] | None = None,
         new_blocks = _pair(pbb, _block_order(pg2), rbb, _block_order(out2), step_what)
         blocks |= new_blocks
         taken |= set(new_blocks.values())
+        # names a nested apply_recipe made (a later share names its groups): paired in order
+        new_p = [x for x in _unit_names(pg2) if x not in set(_unit_names(pg))]
+        new_r = [x for x in _unit_names(out2) if x not in set(_unit_names(out))]
+        if len(new_p) == len(new_r):
+            for a, b in zip(new_p, new_r, strict=True):
+                units.setdefault(a, b)
         made += [x for x in _ids(out2) if x not in set(rb)]
         pg, out = pg2, out2
     out = _copy(out)
@@ -645,6 +701,8 @@ def _bound_recipe(g: Graph, recipe: str, region: list[str] | None, block: str | 
     """The sub-recipe on its region of ``g``: its params and symbols the region's, the match,
     the region's heads, the block and its name; and the pattern graph at the region's
     symbols."""
+    if block is not None and region:
+        raise SandboxError(f"{what}: give region or block, not both")
     if block is not None:  # the site's checks first, its messages
         _apply_site(g, block)
     sub = Recipe.load(recipe_path(recipe))
@@ -669,9 +727,13 @@ def _bound_recipe(g: Graph, recipe: str, region: list[str] | None, block: str | 
     for s, v in sub.symbols.items():  # a param a symbol names takes the region's value
         if isinstance(v, str) and expr.is_name(v) and s in sigma:
             values[v] = sigma[s]
+    region_params = {v for s, v in sub.symbols.items()
+                     if isinstance(v, str) and expr.is_name(v) and s in sigma}  # fmt: skip
     for k, v in (params or {}).items():
         if k not in sub.params:
             raise SandboxError(f"{what}: {sub.name} has no param {k!r} ({list(sub.params)})")
+        if k in region_params:
+            raise SandboxError(f"{what}: {k} is the region's ({values[k]}): leave it out of params")
         values[k] = v
     sub = replace(sub, params=values, symbols={s: sigma[s] for s in sub.symbols if s in sigma})
     # the pattern side, its symbols the region's
@@ -689,7 +751,7 @@ def _outer_step(tname: str, sp: dict[str, Any], units: dict[str, str], blocks: d
     for k in NAMED:  # a unit's, group's or accelerator's name: free in the outer graph
         v = sp.get(k)
         if isinstance(v, str) and v not in units:
-            # a group or accelerator named after the kernel (dot_3's group dot): the block's
+            # a group or accelerator named after the kernel (dot_v3's group dot): the block's
             units[v] = name if k in ("group", "accelerator") and v == kernel else fresh(v, taken)
     for v in sp.get("units") or []:
         if v not in units:
@@ -698,7 +760,8 @@ def _outer_step(tname: str, sp: dict[str, Any], units: dict[str, str], blocks: d
     for k, v in sp.items():
         if k in ("brm", "implementation", "kind", "recipe", "params"):
             rp[k] = v
-        elif k in NAMED or k == "units":  # their own namespace: dot's tasklet sum, unit sum
+        elif k in NAMED or k == "units" or (tname == "share" and k == "with"):
+            # their own namespace (dot's tasklet sum, unit sum); share's with is a group
             rp[k] = _renamed(v, units)
         elif BLOCK_PARAMS.get(tname) == k:  # a block the sub-recipe made (lift, name_block)
             rp[k] = blocks.get(v, v)

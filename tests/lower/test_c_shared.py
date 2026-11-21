@@ -16,11 +16,11 @@ from .test_c import text
 
 
 def mvt(tmp_path, **kw) -> str:
-    return text(tmp_path, graph=steps("mvt_1_dot2_shared", W=8)[-1], name="mvt_1_dot2_shared", **kw)
+    return text(tmp_path, graph=steps("mvt_v1_2_2", W=8)[-1], name="mvt_v1_2_2", **kw)
 
 
 def test_the_select_follows_the_tasks_after_their_waits(tmp_path):
-    """mvt_1_dot2_shared at W = 8: dot for x1 (0), vadd for x1 (1), dot for x2 (0), vadd for x2
+    """mvt_v1_2_2 at W = 8: dot for x1 (0), vadd for x1 (1), dot for x2 (0), vadd for x2
     (1); each select after the wait on the streamer, then STREAMER_START, then the group's START."""
     lines = [x.strip() for x in mvt(tmp_path).splitlines()]
     sel = [i for i, x in enumerate(lines) if "MVT_VADD_RW_PORT_MUX_SEL" in x]

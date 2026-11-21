@@ -1,7 +1,7 @@
 """The energy run (flow/energy.py, D177) and its report (report/energy.py): vecadd's quiet build
 written by hand, its snapshots priced by window.
 
-On SNAX-GVSoC (marker ``gvsoc``: in the image), vecadd and dot_3 at N = 2048, W = 8 run with
+On SNAX-GVSoC (marker ``gvsoc``: in the image), vecadd and dot_v3 at N = 2048, W = 8 run with
 ``energy``: the counts of the ``run`` window that the program fixes are the static estimate's
 (each mover's grants its words, each unit's firings times its span its fires), every mover's
 requests are at least its grants, and the windows' energies add up to the run's total.
@@ -31,7 +31,10 @@ MARKS = [{"mark": 1, "kind": "acc_config", "label": "acc config acc"},
          {"mark": 2, "kind": "run", "label": "run acc"},
          {"mark": 3, "kind": "dma_out", "label": "dma store_out"}]  # fmt: skip
 MOVERS = ("acc_a", "acc_b", "acc_out")
-REAL = {"vecadd": {}, "dot_3": {"N": 2048, "W": 8}}  # the recipes run on SNAX-GVSoC, their --set
+REAL = {
+    "vecadd_v1": {},
+    "dot_v3": {"N": 2048, "W": 8},
+}  # the recipes run on SNAX-GVSoC, their --set
 
 
 def totals(grants: int, stalls: int, firings: int, busy: int) -> dict:
@@ -47,7 +50,7 @@ def run(stalls: int = 0) -> EnergyRun:
     """vecadd at N = 64, W = 4: its run window as the static estimate counts it (16 grants per lane,
     16 firings, 16 busy cycles), with ``stalls`` refusals per lane."""
     cluster = cluster_from(*files())
-    graph = steps("vecadd")[-1]
+    graph = steps("vecadd_v1")[-1]
     snaps = [(1, 50, totals(0, 0, 0, 0)), (2, 70, totals(0, 0, 0, 0)),
              (3, 100, totals(16, stalls, 16, 16)), (-1, 140, totals(16, stalls, 16, 16))]  # fmt: skip
     lines = [parse_line(x) for x in snap_lines(cluster, snaps)]
@@ -82,7 +85,7 @@ def test_a_copy_window_costs_its_beats_at_the_crossbar_and_its_superbanks_banks(
     beat read a crossbar read and a read on every bank of the superbank, each beat written a
     crossbar write and a write on every bank of it."""
     cluster = cluster_from(*files())
-    graph = steps("vecadd")[-1]
+    graph = steps("vecadd_v1")[-1]
     snaps = [(1, 50, totals(0, 0, 0, 0) | {"copies": (0, 0)}),
              (2, 70, totals(0, 0, 0, 0) | {"copies": (64, 32)}),
              (3, 100, totals(0, 0, 0, 0) | {"copies": (64, 32)}),
@@ -112,7 +115,7 @@ def test_the_energy_run_round_trips_and_reports():
 
 def test_a_run_without_snapshots_is_refused():
     cluster = cluster_from(*files())
-    graph = steps("vecadd")[-1]
+    graph = steps("vecadd_v1")[-1]
     with pytest.raises(RunError, match="energy.snapshots"):
         energy_of([], cluster, MARKS, graph, estimate(graph, Platform.load(SNAX_FORGE)))
 
