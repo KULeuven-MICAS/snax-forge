@@ -64,8 +64,10 @@ object SnaxDatapathVectors {
             "seed"    -> ujson.Bool(header.get("seed").contains(Seq("1")))
           )
         case "Mac"              =>
+          // a seeded Mac's vectors name the seed's type too (the C++ reader needs it); the block names a and b
+          val seeded = header.get("seed").contains(Seq("1"))
           Map(
-            "inTypes"    -> ujson.Arr.from(ins),
+            "inTypes"    -> ujson.Arr.from(if (seeded) ins.take(2) else ins),
             "opType"     -> ujson.Str(one("optype")),
             "outType"    -> ujson.Str(one("out")),
             "lanes"      -> ujson.Num(one("lanes").toInt),
