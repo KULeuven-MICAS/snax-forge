@@ -9,8 +9,9 @@ import json
 
 import pytest
 
+from snax_forge.dfg import Graph
 from snax_forge.sandbox import Recipe, SandboxError, apply_recipe
-from snax_forge.sandbox.blocks import APPLIED, BLOCK, lift, matches, unlift
+from snax_forge.sandbox.blocks import APPLIED, BLOCK, lift, matches, name_block, unlift
 from snax_forge.sandbox.blocks import apply_recipe as apply_block
 from snax_forge.sandbox.transforms import tag_map
 from tests.helpers import imported, recipe_path
@@ -261,15 +262,58 @@ def test_a_sub_recipe_lifts_and_applies_by_the_blocks_name(tmp_path):
     assert p["tmp2_mult"] == ["matvec", "dot_1"] and p["tmp0_mult"] == ["dot"]
 
 
+def test_apply_recipe_refuses_a_param_the_region_sets():
+    """N is the region's row length: a value for it in params would change the splits only."""
+    r = Recipe.from_dict({"name": "t", "kernel": "matvec", "params": {"W": 4, "M": 8, "N": 64},
+                          "symbols": {"M": "M", "N": "N"}, "steps": [
+        {"transform": "tag_map", "params": {"map": "mult_map", "kind": "temporal"}},
+        {"transform": "tag_map", "params": {"map": "sum_map", "kind": "temporal"}},
+        {"transform": "apply_recipe", "params": {"recipe": "dot/dot_v1", "region": ["mult_map_1", "sum_map_1"],
+                                                 "params": {"W": "W", "N": 16}}}]})  # fmt: skip
+    with pytest.raises(SandboxError, match=r"N is the region's \(64\): leave it out of params"):
+        apply_recipe(r, imported("matvec"))
+
+
+def test_a_sub_recipes_share_follows_its_renamed_group():
+    """vmul is taken by a block named by hand, so mvt_v1_1's halves bind vmul_1 and vmul_2
+    there, and its step share vmul_1 with vmul shares half 2's into half 1's."""
+    g = name_block(mvt(), ["augassign_18_4_map"], "vmul")
+    g = apply_block(g, "mvt/mvt_v1_1", region=[n.id for n in g.body], params={"W": 4})
+    units = {n.id: n.attrs["instance"] for n, _ in g.walk() if n.kind == "accelerated"}
+    assert units["tmp0_mult"] == units["tmp2_mult"] == "vmul_1"
+
+
+def test_a_container_used_in_two_orders_is_not_the_pattern():
+    """The products written [m, n] and read [n, m]: no mat-vec, nor a dot per row, in half 1."""
+    d = mvt().to_dict()
+
+    def walk(x):
+        if isinstance(x, dict):
+            if x.get("id") == "sum":
+                x["inputs"]["in1"]["subset"] = ["n", "m"]
+            for v in x.values():
+                walk(v)
+        elif isinstance(x, list):
+            for v in x:
+                walk(v)
+
+    walk(d)
+    g = Graph.from_dict(d)
+    for kernel, head in (("matvec", "tmp2_mult_map"), ("dot", "tmp2_mult_map_1")):
+        assert [m.heads[0] for m in matches(g, kernel)] == [head]
+
+
 @pytest.mark.slow
 @pytest.mark.parametrize(("reuse", "hand"), [("mvt_v1_1", "mvt_v1"),
                                              ("mvt_v1_2_1", "mvt_v1_2"),
                                              ("mvt_v2_1", "mvt_v2"),
                                              ("mvt_v5_1", "mvt_v5")])  # fmt: skip
-def test_mvt_from_matvec_recipes_is_the_hand_written_mvt(reuse, hand):
+@pytest.mark.parametrize("size", [None, {"M": 16, "N": 32}])
+def test_mvt_from_matvec_recipes_is_the_hand_written_mvt(reuse, hand, size):
     """Both halves from matvec_v1_1 or matvec_v2_1, the vadd and the sharing by hand, or from
     matvec_acc_v3 and matvec_acc_v4 on two lifted blocks: the graph of the
-    hand-written recipe, the units' and groups' names aside."""
+    hand-written recipe, the units' and groups' names aside; also with M ≠ N, which half 2
+    swaps."""
 
     def names(g):
         d = g.to_dict()
@@ -292,6 +336,8 @@ def test_mvt_from_matvec_recipes_is_the_hand_written_mvt(reuse, hand):
         return d
 
     recipes = [Recipe.load(recipe_path(x)) for x in (reuse, hand)]
+    if size:
+        recipes = [r.with_params(size) for r in recipes]
     graphs = [apply_recipe(r, imported(r.kernel, types=r.types))[-1].graph for r in recipes]
     assert names(graphs[0]) == names(graphs[1])
 

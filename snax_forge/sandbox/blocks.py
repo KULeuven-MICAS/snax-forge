@@ -91,6 +91,8 @@ class Match:
     perms: dict[str, list[int]] = field(default_factory=dict)  # R container -> π (not identity)
     outer: dict[str, list[str]] = field(default_factory=dict)  # R head -> its outer map ids
     nodes: list[str] = field(default_factory=list)  # every node id of the region's chains
+    # R container -> (its dimensions on outer loops, π): one layout for every use
+    layouts: dict[str, tuple] = field(default_factory=dict, repr=False, compare=False)
 
 
 class _NoMatch(Exception):
@@ -146,10 +148,12 @@ def _memlet(p: Memlet, r: Memlet, var: dict[str, str], outer_vars: set[str], pg:
           if not (expr.constant(d) is not None and shape[k] == 1)]  # fmt: skip
     pd = [expr.canonical(expr.substitute(d, var)) for d in pd]
     rd = []
+    at_outer = []
     rshape = g.containers[r.data].shape
     for k, d in enumerate(r.subset):
         names = dim_names(d)
         if names and names <= outer_vars:
+            at_outer.append(k)
             continue  # indexed by the outer loops only: R2
         if expr.constant(d) is not None and rshape[k] == 1:
             continue  # a size-1 dimension at a constant, as P's
@@ -164,6 +168,8 @@ def _memlet(p: Memlet, r: Memlet, var: dict[str, str], outer_vars: set[str], pg:
             raise _NoMatch(f"{r.data}{r.subset}: no dimension for {p.data}'s {d}")
         left.remove(k)
         perm.append(k)
+    if m.layouts.setdefault(r.data, (at_outer, perm)) != (at_outer, perm):
+        raise _NoMatch(f"{r.data} is used in two orders, the pattern's {p.data} in one")
     if perm != sorted(perm):
         m.perms[r.data] = perm
     if m.containers.get(p.data, r.data) != r.data:
@@ -550,6 +556,12 @@ NAMED = ("instance", "group", "accelerator")
 BLOCK_PARAMS = {"apply_recipe": "block", "unapply": "block", "unlift": "name"}
 
 
+def _unit_names(g: Graph) -> list[str]:
+    """Every unit's, group's and accelerator's name in ``g``, in the graph's order."""
+    names = (n.attrs.get(k) for n, _ in g.walk() if n.kind == "accelerated" for k in NAMED)
+    return list(dict.fromkeys(x for x in names if isinstance(x, str)))
+
+
 def _ids(g: Graph) -> list[str]:
     return [n.id for n, _ in g.walk()]
 
@@ -641,6 +653,12 @@ def apply_recipe(g: Graph, recipe: str, region: list[str] | None = None,
         new_blocks = _pair(pbb, _block_order(pg2), rbb, _block_order(out2), step_what)
         blocks |= new_blocks
         taken |= set(new_blocks.values())
+        # names a nested apply_recipe made (a later share names its groups): paired in order
+        new_p = [x for x in _unit_names(pg2) if x not in set(_unit_names(pg))]
+        new_r = [x for x in _unit_names(out2) if x not in set(_unit_names(out))]
+        if len(new_p) == len(new_r):
+            for a, b in zip(new_p, new_r, strict=True):
+                units.setdefault(a, b)
         made += [x for x in _ids(out2) if x not in set(rb)]
         pg, out = pg2, out2
     out = _copy(out)
@@ -688,9 +706,13 @@ def _bound_recipe(g: Graph, recipe: str, region: list[str] | None, block: str | 
     for s, v in sub.symbols.items():  # a param a symbol names takes the region's value
         if isinstance(v, str) and expr.is_name(v) and s in sigma:
             values[v] = sigma[s]
+    region_params = {v for s, v in sub.symbols.items()
+                     if isinstance(v, str) and expr.is_name(v) and s in sigma}  # fmt: skip
     for k, v in (params or {}).items():
         if k not in sub.params:
             raise SandboxError(f"{what}: {sub.name} has no param {k!r} ({list(sub.params)})")
+        if k in region_params:
+            raise SandboxError(f"{what}: {k} is the region's ({values[k]}): leave it out of params")
         values[k] = v
     sub = replace(sub, params=values, symbols={s: sigma[s] for s in sub.symbols if s in sigma})
     # the pattern side, its symbols the region's
@@ -717,7 +739,8 @@ def _outer_step(tname: str, sp: dict[str, Any], units: dict[str, str], blocks: d
     for k, v in sp.items():
         if k in ("brm", "implementation", "kind", "recipe", "params"):
             rp[k] = v
-        elif k in NAMED or k == "units":  # their own namespace: dot's tasklet sum, unit sum
+        elif k in NAMED or k == "units" or (tname == "share" and k == "with"):
+            # their own namespace (dot's tasklet sum, unit sum); share's with is a group
             rp[k] = _renamed(v, units)
         elif BLOCK_PARAMS.get(tname) == k:  # a block the sub-recipe made (lift, name_block)
             rp[k] = blocks.get(v, v)
