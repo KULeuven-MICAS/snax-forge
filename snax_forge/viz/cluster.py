@@ -9,9 +9,7 @@ Queries on the run's index (index.py); the viewer only draws them.
 
 A field the run's trace level cannot give is absent and ``needs`` names its level: open tasks
 from ``task``; classes, grants, firings and returning reads from ``beat``; stalls, FIFO counts
-and conflicts from ``stall``. ``linked`` says the accelerator has a group of several linked
-units, whose beat lines the converter refuses, so its runs stop at ``task``. A shared mover's
-lanes name the ``user`` (``<instance>_<port>``) its port mux serves: the one whose unit's task
+and conflicts from ``stall``. A shared mover's lanes name the ``user`` (``<instance>_<port>``) its port mux serves: the one whose unit's task
 its open task was launched with, None between tasks. ``acc`` and ``streamers`` are in
 CONTRACTS, "Profile and trace".
 """
@@ -21,7 +19,7 @@ from __future__ import annotations
 from bisect import bisect_left, bisect_right
 from typing import Any
 
-from snax_forge.run.cluster import DMA, Mover, linked
+from snax_forge.run.cluster import DMA, Mover
 
 from .index import Event, RunIndex
 from .schedule import window
@@ -122,7 +120,8 @@ def cluster_at(index: RunIndex, t: int) -> dict[str, Any]:
         if beat:
             x["class"] = class_at(index, u.name, t)
             x["fire"] = next((e for e in of["fire"] if e["src"] == u.name), None)
-            x["push"] = next((e for e in of["push"] if e["src"] == u.name), None)
+            x["pushes"] = [e for e in of["push"] if e["src"] == u.name]  # one per output at most
+            x["push"] = x["pushes"][0] if x["pushes"] else None
         units.append(x)
     active = next((x for x in units if x["task"] is not None), units[0] if units else {})
     unit: dict[str, Any] = {**active, "accelerator": acc.name, "units": units}
@@ -168,7 +167,6 @@ def cluster_at(index: RunIndex, t: int) -> dict[str, Any]:
 
     needs = {k: v for k, v in NEEDS.items() if not index.on(v)}
     return {"t": t, "level": index.level, "filtered": index.filtered, "needs": needs,
-            "linked": linked(acc.description),
             "dma": {"copies": copies}, "movers": movers, "acc": unit, "streamers": streamers,
             "banks": banks,
             "interconnect": xbar, "events": here}  # fmt: skip

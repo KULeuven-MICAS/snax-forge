@@ -118,7 +118,7 @@ pixi run flow recipes/dot/dot_v3.json --platform platforms/snax_forge.json --set
 | `stall` | every refused request and queue count | the task level's |
 | `finegrained` | every core instruction | the task level's |
 
-From `beat` on, the traced sources are the accelerator, its movers and the DMA unless `:SOURCES` names others (`--trace stall:acc,acc_a`). `t = 0` is the program's `mcycle` read in main. A group of linked units only goes to `task`: the converter reads its task lines only (open item 96). snax-gvsoc's `docs/EVENTS.md` lists every line.
+From `beat` on, the traced sources are the accelerator, its movers and the DMA unless `:SOURCES` names others (`--trace stall:acc,acc_a`). `t = 0` is the program's `mcycle` read in main. A linked group's beat lines are its boundary's: its firings the head unit's, each push its output's, named by `unit` when there are two or more (CONTRACTS, "Profile and trace"). snax-gvsoc's `docs/EVENTS.md` lists every line.
 
 ```bash
 pixi run flow recipes/elementwise/vecadd_v1.json --platform platforms/snax_forge.json --trace stall

@@ -265,7 +265,6 @@ function build(detail, first) {
     let msg = "";
     if (!on) msg = "Select a cycle in the schedule, or step with the arrow keys.";
     else if (a.level === "off") msg = "This run was traced at level off: only the cluster's structure is shown.";
-    else if (needs.length && a.linked) msg = `Traced at ${a.level}: this accelerator has a group of several linked units, whose beat lines are not read yet, so a run of it stops at --trace task; the banks, the interconnect, the lanes and the firings stay empty.`;
     else if (needs.length) msg = `Traced at ${a.level}: ${needs.join(", ")} need${needs.length === 1 ? "s" : ""} --trace ${[...new Set(Object.values(a.needs))].join(" or ")}.`;
     if (on && a.filtered) msg += `${msg ? " " : ""}The beat lines cover ${a.filtered.sources.join(", ")} only.`;
     setText(note, msg);
@@ -388,7 +387,7 @@ function build(detail, first) {
     setText(unitLines.task, open.map((u) => named(u, `task ${u.task}`)).join("; ") || (on ? "no task" : ""));
     const vals = (v) => Object.entries(v ?? {}).map(([k, xs]) => `${k} ${(xs ?? []).join(", ")}`).join("; ");
     setText(unitLines.fire, all.filter((u) => u.fire).map((u) => named(u, `fire ${u.fire.n}: ${vals(u.fire.vals)}`)).join("\n"), "resp");
-    setText(unitLines.push, all.filter((u) => u.push).map((u) => named(u, `push ${u.push.n}: ${(u.push.vals ?? []).join(", ")}`)).join("\n"), "resp");
+    setText(unitLines.push, all.flatMap((u) => (u.pushes ?? []).map((p) => named(u, `push ${p.unit ? `${p.unit} ` : ""}${p.n}: ${(p.vals ?? []).join(", ")}`))).join("\n"), "resp");
   }
 
   update(null);

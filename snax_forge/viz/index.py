@@ -56,8 +56,9 @@ class RunIndex:
     fired: dict[tuple[str, str, int], list[Event]] = field(
         default_factory=lambda: defaultdict(list)
     )
-    push: dict[tuple[str, int], Event] = field(default_factory=dict)
-    folded: dict[tuple[str, int], Event] = field(default_factory=dict)
+    # (task, its sink with two or more outputs, else None, n): a push; a firing's folding push
+    push: dict[tuple[str, str | None, int], Event] = field(default_factory=dict)
+    folded: dict[tuple[str, str | None, int], Event] = field(default_factory=dict)
     returns: dict[int, list[Event]] = field(default_factory=lambda: defaultdict(list))
     dma: dict[tuple[int, int], Event] = field(default_factory=dict)
     burst: dict[int, list[Event]] = field(default_factory=lambda: defaultdict(list))
@@ -184,9 +185,9 @@ class RunIndex:
                 for mover, b in e["b"].items():
                     idx.fired[(e["task"], mover, b)].append(e)
             elif k == "push":
-                once(idx.push, (e["task"], e["n"]), e, "push")
+                once(idx.push, (e["task"], e.get("unit"), e["n"]), e, "push")
                 for n in range(e["first"], e["last"] + 1):
-                    once(idx.folded, (e["task"], n), e, "firing folded")
+                    once(idx.folded, (e["task"], e.get("unit"), n), e, "firing folded")
             elif k == "csr":
                 idx.csr[e["block"]].append(e)
             elif k == "start":

@@ -62,6 +62,6 @@ export function hopText(x) {
 export function operandsText(f) {
   const vals = (xs) => (xs && xs.length ? ` (${xs.join(", ")})` : "");
   const ins = Object.entries(f.inputs).map(([m, xs]) => `${m} ${xs.join(", ")}${vals(f.operands?.[m]?.vals)}`).join("; ");
-  const outs = Object.entries(f.outputs).map(([m, xs]) => `${m} ${xs.join(", ")}${vals(f.push?.vals)}`).join("; ");
+  const outs = Object.entries(f.outputs).map(([m, xs]) => `${m} ${xs.join(", ")}${vals((f.pushes?.[m] ?? f.push)?.vals)}`).join("; ");
   return `${ins}${outs ? ` → ${outs}` : ""}`;
 }

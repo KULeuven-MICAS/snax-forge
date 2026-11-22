@@ -9,6 +9,8 @@ on the run index.
    profile's stalls
 4. conflicts placed on the layout, in a window, with counts per word, bank and port
 5. what a run below a level, or a filtered one, gets
+6. a group of two outputs on a forked input (bicg_v3): each firing's push per output, a packed
+   word's results
 
 Most cases run on the recorded vecadd run (tests/run/fixtures/vecadd, converted by
 helpers.recorded_run), the rest on hand-written events (helpers.Events).
@@ -325,3 +327,36 @@ def test_a_filtered_trace_says_so(tmp_path):
     assert (
         build_movement(api.load_run(run_dir(tmp_path / "w", "vecadd_v1", "beat"))).sources is None
     )
+
+
+# =============================================================================
+# 6. A group of two outputs (tests/run/fixtures/bicg_v3)
+# =============================================================================
+
+
+@pytest.fixture(scope="module")
+def fork(tmp_path_factory):
+    from tests.run.helpers import RECORDED
+
+    base = tmp_path_factory.mktemp("fork")
+    return api.load_run(recorded_run(base / "rec", "stall", RECORDED / "bicg_v3"), "rec")
+
+
+def test_a_firing_has_a_push_per_output(fork):
+    """A[0, 5] feeds firing 0, which q's push 0 (rate 1) and s's one push (firings 0 to 63)
+    fold: each output with its writer's elements."""
+    (f,) = api.journey_view(fork, "A", [0, 5])["firings"]
+    assert (f["role"], f["n"], f["push"]["unit"]) == ("consumed", 0, "sum")
+    got = {w: (p["unit"], p["n"], p["first"], p["last"]) for w, p in f["pushes"].items()}
+    assert got == {"sum_out": ("sum", 0, 0, 0), "mac_out": ("mac", 0, 0, 63)}
+    assert f["outputs"]["sum_out"] == ["q[0]"] and len(f["outputs"]["mac_out"]) == 32
+
+
+def test_a_packed_words_result_comes_from_its_own_firing(fork):
+    """q[3] is slice 1 of sum_out's word 1 (two int32 a word, D174): produced by firing 3 only;
+    s[1] by all 64."""
+    j = api.journey_view(fork, "q", 3)
+    assert [h["by"] for h in j["hops"] if h["k"] == "grant"] == ["sum_out.lane0"]
+    assert [(f["role"], f["n"]) for f in j["firings"]] == [("produced", 3)]
+    assert j["firings"][0]["outputs"]["sum_out"] == ["q[3]"]
+    assert [f["n"] for f in api.journey_view(fork, "s", 1)["firings"]] == list(range(64))

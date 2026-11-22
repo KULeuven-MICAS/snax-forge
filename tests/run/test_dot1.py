@@ -12,7 +12,7 @@ import json
 
 import pytest
 
-from snax_forge.run import RunError, Unit
+from snax_forge.run import Unit
 from snax_forge.run.convert import convert, invariants
 
 from .helpers import load_recorded
@@ -111,15 +111,6 @@ def test_both_groups_convert_at_the_beat_levels(stalled, recorded):
                               rcheck["functional_check"], rregions)  # fmt: skip
     assert {k: (a.firings, a.cycles) for k, a in profile.accelerators.items()} == {
         k: (a.firings, a.cycles) for k, a in task_profile.accelerators.items()}  # fmt: skip
-
-
-def test_beat_levels_are_refused_for_a_linked_group():
-    """A group of several linked units (dot 4) stays refused above task."""
-    cluster, tasks, check, lines, regions, _ = load_recorded("dot_v4")
-    with pytest.raises(RunError) as e:
-        convert(lines, cluster, tasks, check["total_cycles"], "beat", None, regions, [])
-    assert e.value.code == "convert.level" and "not read yet" in str(e.value)
-    assert "several linked units" in str(e.value)
 
 
 def test_the_cluster_round_trips(recorded):

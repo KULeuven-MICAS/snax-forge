@@ -69,9 +69,9 @@ def test_the_ids():
     idx = vecadd_beat0().index()
     assert [e["src"] for e in idx.beat[("add_acc_a", "acc_a", 0)].values()] == ["acc_a.lane0"]
     assert list(idx.beat[("add_acc_out", "acc_out", 0)]) == [0]  # by lane
-    fire, push = idx.fire[("add_acc", 0)], idx.push[("add_acc", 0)]
+    fire, push = idx.fire[("add_acc", 0)], idx.push[("add_acc", None, 0)]
     assert fire["b"] == {"acc_a": 0, "acc_b": 0} and push["vals"] == [101]
-    assert idx.folded[("add_acc", 0)] is push
+    assert idx.folded[("add_acc", None, 0)] is push
     assert idx.fired[("add_acc", "acc_a", 0)] == [fire]
     assert ("add_acc", "acc_a", 1) not in idx.fired
     assert idx.dma[(2, 0)]["elems"] == list(range(8)) and idx.dma[(4, 0)]["op"] == "r"
@@ -101,9 +101,9 @@ def test_a_push_folds_its_firings():
         ev.fire(n, n, {"acc_a": n}, {"acc_a": [n]})
     ev.push(4, 0, 0, 3, [6])
     idx = ev.index()
-    push = idx.push[("add_acc", 0)]
-    assert all(idx.folded[("add_acc", n)] is push for n in range(4))
-    assert ("add_acc", 4) not in idx.folded
+    push = idx.push[("add_acc", None, 0)]
+    assert all(idx.folded[("add_acc", None, n)] is push for n in range(4))
+    assert ("add_acc", None, 4) not in idx.folded
 
 
 def test_no_trace_gives_an_empty_index():
@@ -143,7 +143,7 @@ def test_two_runs_of_a_component_have_their_own_keys():
     assert idx.beat[("add_acc_a", "acc_a", 0)][0]["elems"] == [0]
     assert idx.beat[("add2_acc_a", "acc_a", 0)][0]["elems"] == [1]
     assert idx.fire[("add_acc", 0)]["t"] == 3 and idx.fire[("add2_acc", 0)]["t"] == 103
-    assert idx.folded[("add2_acc", 0)] is idx.push[("add2_acc", 0)]
+    assert idx.folded[("add2_acc", None, 0)] is idx.push[("add2_acc", None, 0)]
     assert idx.accel["add2_acc_out"] == "add2_acc"
     assert idx.streamers["add2_acc"]["acc_a"] == "add2_acc_a"
 

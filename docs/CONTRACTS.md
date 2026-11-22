@@ -938,7 +938,7 @@ What the reports and the viewers read of a flow run (D137). SNAX-GVSoC writes it
 
 - **The folder's name** (`flow/run.py`'s `default_name`): the recipe's name, each `--set` appended as `_<path><value>` (`vecmul_dry_W4`), a `-` between the two where the path ends in a digit (`dot_1_dry_W_acc_1-10`), then `_<level>` above `off`.
 - **The window**: `total_cycles` is the program's `mcycle` in `forge_check()` minus its read in main (the `forge cycles:` line). The converter finds both reads in the core's events, checks they are `total_cycles` apart, shifts every cycle so t = 0 is the read in main (the shift is `boot`), and drops events outside `[0, total_cycles)`.
-- **Refusals**, each a `RunError`: `convert.path` (a line of no component or port), `convert.window` (the two `mcycle` reads not found or not `total_cycles` apart), `convert.summary`, `convert.tasks` (starts and copies against the task list), `convert.beats`, `convert.kind`, `convert.invariant` (a count that does not add up), `convert.level` (a level a design's events do not support).
+- **Refusals**, each a `RunError`: `convert.path` (a line of no component or port), `convert.window` (the two `mcycle` reads not found or not `total_cycles` apart), `convert.summary`, `convert.tasks` (starts and copies against the task list), `convert.beats`, `convert.kind`, `convert.invariant` (a count that does not add up).
 - **A failed run**: when SNAX-GVSoC exits non-zero or prints no `forge cycles:` line, the flow's error adds `; SNAX-GVSoC: <line>`, the first error line of `stdout.txt`, then `stderr.txt` (`first_error`). Example, vecmul at W = 32: `check: no 'forge cycles:' line in the program's output; SNAX-GVSoC: nb_inputs must be in (0, 64], got 99`. The `sw` step first checks that `clang` and `ld.lld` are on PATH.
 
 ### Profile
@@ -993,7 +993,8 @@ Names, ports and FIFO depths come from the hjson files and the design point.
                           elems, vals; back (a read's)  (a DMA beat on L1)
     beat         burst    task, id, op, mem, addr, size, back, region, elems  (a request to AXI)
     beat         fire     task, n, b, value, vals  (b, value, vals keyed by reader mover)
-    beat         push     task, n, first, last, value, vals
+    beat         push     task, n, first, last, value, vals; unit (its sink, with two
+                          or more outputs)
     beat         class    task, mode  (src = acc or the mover; t = the first cycle in it)
     stall        stall    task, addr, bank, row, by, by_addr, region, elems; b (a SNAX
                           port's)  (src = the port; one per cycle refused)
@@ -1002,10 +1003,10 @@ Names, ports and FIFO depths come from the hjson files and the design point.
 ```
 
 - **`src`**: a unit (`acc`; with several groups each unit, `mul`, `sum`), a linked group (`dot`, SNAX-GVSoC's one component for its units), a mover (`acc_a`), `dma`, `core0`, or for a `grant` or `stall` the crossbar port (`acc_a.lane0`, `core0`, `axi`).
-  - A linked group's lines are its boundary's: `count` and `firings` are the head unit's, a `push`'s `first` and `last` the head's firings it folds. Its beat lines are not read yet, so its runs stop at `task` (open item 96).
+  - A linked group's lines are its boundary's: `count` and `firings` are the head unit's, a `fire`'s beats the head's outer inputs (a forked one by its one reader, D189), a `push` its chain's last unit's, its `first` and `last` the head's firings it folds. With two or more outputs a `push` names its sink (`unit`), and each output is checked on its own: its pushes against its `rate`, its writer's grants against its pushes. No line names the pops of an outer input past the head, so its FIFO counts are checked against its depth and `qmax` only. Per-unit and per-link events are open item 96.
   - Each streamer set is read at the manifest's `csrs.streamers[].trace` (`snax_acc<i>/streamer_<set>`), its movers numbered within the set (`reader0` of `streamer_vsum` is `vsum_a`); the crossbar's inputs are `snax_acc<i>.streamer_<set>.<mover>.lane<l>`.
 - **`block`**: the component whose CSR it is: `acc`, a unit or linked group, or `<accelerator>_streamer`.
-- **Ids link lines, never order**: a streamer beat is its mover and `b` (a reader's numbered in its AGU's order per run, a writer's in hand-over order; a repeated beat is one `b`); a firing's `n` is its index in the run, a push's its index among the results, equal to the writer's `b`; a DMA beat is its copy's `id` and `i`.
+- **Ids link lines, never order**: a streamer beat is its mover and `b` (a reader's numbered in its AGU's order per run, a writer's in hand-over order; a repeated beat is one `b`); a firing's `n` is its index in the run, a push's its index among its output's results, equal to the writer's `b` (packed, D174: result n is slice n mod d_out, slice 0 lowest, of word `b` = n div d_out); a DMA beat is its copy's `id` and `i`.
 - **Pairing**: a streamer line's `task` is its mover's task, paired with the unit task its start launched it with (`run/beats.py`'s `pairing`), so a firing's operands are the grants of the streamer tasks launched with it.
 - **DMA copies**: `dir` (`l2_to_l1`, `l1_to_l2`) comes from the addresses; copies match the task list's `load_<C>` and `store_<C>` in issue order.
 - **Added by the converter**: `task` (the task bracketing the line on its component; null for a core's or AXI's access), `mem` and the absolute `addr`, `region` (the container the address is in), `elems` (the flat indexes of its elements in the word), `vals` (their values by the region's dtype), an `insn`'s `func`. The raw words stay: `value`, `bank` and `row`, `back`.

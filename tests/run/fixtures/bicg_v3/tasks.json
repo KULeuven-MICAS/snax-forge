@@ -1,0 +1,160 @@
+{
+ "name": "bicg_v3",
+ "steps": [
+  {
+   "op": "configure",
+   "task_name": "load_A",
+   "type": "dma",
+   "component": "dma",
+   "after": [],
+   "wait_mode": "poll",
+   "values": {
+    "direction": "l2_to_l1",
+    "src": {"symbol": "A", "bounds": [32], "strides": [64]},
+    "dst": {"base": 268435456, "bounds": [32], "strides": [64]}
+   }
+  },
+  {"op": "start", "tasks": ["load_A"]},
+  {
+   "op": "configure",
+   "task_name": "load_p",
+   "type": "dma",
+   "component": "dma",
+   "after": [],
+   "wait_mode": "poll",
+   "values": {
+    "direction": "l2_to_l1",
+    "src": {"symbol": "p", "bounds": [1], "strides": [64]},
+    "dst": {"base": 268437504, "bounds": [1], "strides": [64]}
+   }
+  },
+  {"op": "start", "tasks": ["load_p"]},
+  {
+   "op": "configure",
+   "task_name": "load_r",
+   "type": "dma",
+   "component": "dma",
+   "after": [],
+   "wait_mode": "poll",
+   "values": {
+    "direction": "l2_to_l1",
+    "src": {"symbol": "r", "bounds": [1], "strides": [64]},
+    "dst": {"base": 268437824, "bounds": [1], "strides": [64]}
+   }
+  },
+  {"op": "start", "tasks": ["load_r"]},
+  {
+   "op": "configure",
+   "task_name": "q_mult_mul_a",
+   "type": "streamer",
+   "component": "mul_a",
+   "after": ["load_A"],
+   "wait_mode": "poll",
+   "values": {
+    "base": 268435456,
+    "temporal_bounds": [1, 64],
+    "temporal_strides": [32, 32],
+    "spatial_strides": [8]
+   }
+  },
+  {
+   "op": "configure",
+   "task_name": "q_mult_mul_b",
+   "type": "streamer",
+   "component": "mul_b",
+   "after": ["load_p"],
+   "wait_mode": "poll",
+   "values": {
+    "base": 268437504,
+    "temporal_bounds": [1, 64],
+    "temporal_strides": [32, 0],
+    "spatial_strides": [8]
+   }
+  },
+  {
+   "op": "configure",
+   "task_name": "sum_sum_out",
+   "type": "streamer",
+   "component": "sum_out",
+   "after": [],
+   "wait_mode": "poll",
+   "values": {
+    "base": 268437568,
+    "temporal_bounds": [32],
+    "temporal_strides": [8],
+    "spatial_strides": [8]
+   }
+  },
+  {
+   "op": "configure",
+   "task_name": "s_mult_mac_b",
+   "type": "streamer",
+   "component": "mac_b",
+   "after": ["load_r"],
+   "wait_mode": "poll",
+   "values": {
+    "base": 268437824,
+    "temporal_bounds": [8, 1],
+    "temporal_strides": [8, 0],
+    "spatial_strides": [8]
+   }
+  },
+  {
+   "op": "configure",
+   "task_name": "s_mult_mac_out",
+   "type": "streamer",
+   "component": "mac_out",
+   "after": [],
+   "wait_mode": "poll",
+   "values": {
+    "base": 268437888,
+    "temporal_bounds": [1],
+    "temporal_strides": [128],
+    "spatial_strides": [8]
+   }
+  },
+  {
+   "op": "configure",
+   "task_name": "q_mult_bicg_types",
+   "type": "accel",
+   "component": "bicg_types",
+   "after": [],
+   "wait_mode": "poll",
+   "values": {"mul": {"n": 64}, "sum": {"n": 64, "T": 1}, "mac": {"n": 64, "T": 64}}
+  },
+  {
+   "op": "start",
+   "tasks": ["q_mult_mul_a", "q_mult_mul_b", "sum_sum_out", "s_mult_mac_b", "s_mult_mac_out", "q_mult_bicg_types"]
+  },
+  {
+   "op": "configure",
+   "task_name": "store_q",
+   "type": "dma",
+   "component": "dma",
+   "after": ["sum_sum_out"],
+   "wait_mode": "poll",
+   "values": {
+    "direction": "l1_to_l2",
+    "src": {"base": 268437568, "bounds": [4], "strides": [64]},
+    "dst": {"symbol": "q", "bounds": [4], "strides": [64]}
+   }
+  },
+  {"op": "start", "tasks": ["store_q"]},
+  {
+   "op": "configure",
+   "task_name": "store_s",
+   "type": "dma",
+   "component": "dma",
+   "after": ["s_mult_mac_out"],
+   "wait_mode": "poll",
+   "values": {
+    "direction": "l1_to_l2",
+    "src": {"base": 268437888, "bounds": [2], "strides": [64]},
+    "dst": {"symbol": "s", "bounds": [2], "strides": [64]}
+   }
+  },
+  {"op": "start", "tasks": ["store_s"]},
+  {"op": "sync", "task": "store_q", "mode": "poll"},
+  {"op": "sync", "task": "store_s", "mode": "poll"}
+ ]
+}
