@@ -245,7 +245,7 @@ def test_an_access_costs_the_same_whatever_the_inputs():
     assert (two.xbar.inputs, one.xbar.inputs) == (35, 19)
     assert two.xbar.e_access_pj == one.xbar.e_access_pj == 2.752585
     assert (two.xbar.accesses, one.xbar.accesses) == (4113, 4097)
-    assert (dec3(two.energy), dec3(one.energy)) == ("59.811", "59.656")
+    assert (dec3(two.energy), dec3(one.energy)) == ("59.755", "59.656")
 
 
 def test_the_cost_round_trips():

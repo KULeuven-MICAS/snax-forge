@@ -168,3 +168,18 @@ def test_the_mvt_set_is_its_own():
     ]  # fmt: skip
     assert len(names) == 42
     assert not {d.recipe for d in fs.SETS["mvt"]} & {d.recipe for d in fs.SETS["full"]}
+
+
+def test_the_bicg_set_is_its_own():
+    """bicg at 64 x 64, W = 8: bicg_v1 contiguous and padded_rows, bicg_v2, and bicg_v2_1
+    (int8 in, int32 out) at its defaults and at 40 x 64, each sequential and pipeline; in no
+    other set."""
+    names = [d.name for d in fs.SETS["bicg"]]
+    pad = "_passes.layoutpadded_rows"
+    assert names == [
+        *(f"bicg_v1{p}_schedule{s}" for p in ("", pad) for s in ("sequential", "pipeline")),
+        *(f"bicg_v2_schedule{s}" for s in ("sequential", "pipeline")),
+        *(f"bicg_v2_1{m}_schedule{s}" for m in ("", "_M40") for s in ("sequential", "pipeline")),
+    ]  # fmt: skip
+    others = {d.recipe for k, ds in fs.SETS.items() if k != "bicg" for d in ds}
+    assert not {d.recipe for d in fs.SETS["bicg"]} & others

@@ -79,13 +79,19 @@ def mover_specs(cluster: Cluster) -> list[MoverSpec]:
 
 def counts_of(w: Window, cluster: Cluster) -> Counts:
     """A window's counts as the pricing reads them: per unit its firings and pushes, the groups'
-    busy cycles added up, per mover its lanes' grants and stalls (requests) and grants, and the
-    crossbar's counts of the DMA's copies inside L1 (D184)."""
+    busy cycles added up and per group (a group's line is written by one of its units), per mover
+    its lanes' grants and stalls (requests) and grants, and the crossbar's counts of the DMA's
+    copies inside L1 (D184)."""
     movers = {}
     for m in cluster.accelerator.movers:
         lanes = [w.counters.inputs[p] for p in m.ports if p in w.counters.inputs]
         movers[m.name] = (sum(g + s for g, s in lanes), sum(g for g, _ in lanes))
-    return Counts(dict(w.counters.units), w.counters.busy(), movers, w.counters.copies)
+    group = {u.name: u.group for u in cluster.accelerator.units}
+    groups: dict[str, int] = {}
+    for k, c in w.counters.groups.items():
+        g = group.get(k, k)
+        groups[g] = groups.get(g, 0) + sum(c.values())
+    return Counts(dict(w.counters.units), w.counters.busy(), movers, w.counters.copies, groups)
 
 
 def energy_of(lines: Sequence[Line], cluster: Cluster, marks: Sequence[dict[str, Any]],

@@ -30,7 +30,7 @@ An id is the kernel, then words in this order, each from the lists below; a word
 | | `add` | a separate `vadd` reading q through L1 |
 | | `chain` | the `vadd` linked into the same group |
 | | `seed` | the fold starts from x (D163, D187) |
-| Half 2 | a second form word | mvt's half 2 when it differs from half 1 |
+| Half 2 | a second form word | mvt's or bicg's half 2 when it differs from half 1 |
 | Sharing | (none) | each half or unit its own accelerator |
 | | `shared` | both halves on one set of units (D165) |
 | | `ports` | a container on ports its writer and reader share (`share_ports`) |
@@ -47,6 +47,9 @@ The one-unit kernels take a word for their fold or scalar instead of a form: `tr
 
 | Recipe | Folder | id | What it builds |
 |---|---|---|---|
+| `bicg_v1` | bicg | `bicg_dot2` | Each half a `dot_v2` group per row, by reuse: `lift matvec` at each half, then `matvec/matvec_v2` on both. Half 2 reads A down its columns, so its banks follow the layout (`padded_rows`). |
+| `bicg_v2` | bicg | `bicg_dot2_col` | q a `dot_v2` group per row and s the column form, by reuse: `matvec/matvec_v2` on q and `matvec/matvec_v7` on s, r broadcast to the `Mac`'s lanes (D186). Both halves read A along its rows. |
+| `bicg_v2_1` | bicg | `bicg_dot2_col_i8_o32` | `bicg_v2` at int8 in, int32 out (`types` i8). |
 | `dot_v1` | dot | `dot1` | A `vmul` and a `vsum` as two accelerators, the products written to L1 and read back. The first of the six dot variants, the one the others are measured against. |
 | `dot_v1_1` | dot | `dot1_enc` | `dot_v1` with its two units encapsulated as one accelerator: one streamer set, two tasks. |
 | `dot_v1_2` | dot | `dot1_ports` | `dot_v1` with the products' container on shared ports (`share_ports`): `vmul`'s writer and `vsum`'s reader on one streamer set. |

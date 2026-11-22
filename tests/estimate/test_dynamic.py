@@ -39,6 +39,28 @@ def test_the_graphs_counts_give_the_static_estimate(name, params):
         assert got.parts[part] == pytest.approx(want.energy_nj, rel=1e-12), part
 
 
+def test_each_control_unit_clocks_its_own_groups_cycles():
+    """dot_v1, two groups in two accelerators: each control unit priced over its own group's
+    cycles (D154 · D172), statically and with a run's counts; a group busy alone costs only its
+    own control bits."""
+    graph = steps("dot_v1", W=8, N=2048)[-1]
+    est = estimated("dot_v1", W=8, N=2048)
+    p, c = _static(graph, est)
+    assert c.groups == {g.name: g.cycles for g in est.groups} and len(c.groups) == 2
+    assert p.group_bits == {g.name: g.cost.ctrl_bits for g in est.groups}
+    want = sum(g.cost.ctrl_bits * g.cycles for g in est.groups) * p.e_ctrl_pj / 1000
+    assert price(p, c).parts["control"] == pytest.approx(want, rel=1e-12)
+    assert sum(g.cost.ctrl_nj for g in est.groups) == pytest.approx(want, rel=1e-12)
+    first = est.groups[0]
+    alone = Counts(c.units, 100, c.movers, groups={first.name: 100})
+    assert price(p, alone).parts["control"] == pytest.approx(
+        first.cost.ctrl_bits * 100 * p.e_ctrl_pj / 1000
+    )
+    assert Counts.from_dict(c.to_dict()) == c and Prices.from_dict(p.to_dict()) == p
+    with pytest.raises(ValueError, match="have counts and no price"):
+        price(p, Counts(groups={"nope": 1}))
+
+
 def test_a_packed_outputs_packer_pushes_its_owners_pushes(tmp_path):
     """matvec_v3 at i8, W = 8: the sum's int32 results packed 2 to a word."""
     from tests.gen.helpers import designed
@@ -69,6 +91,7 @@ def test_a_sliced_inputs_slicer_pops_its_units_firings(tmp_path):
         assert base.parts[part] == pytest.approx(want.energy_nj, rel=1e-12), part
     assert base.fires == 64 + 64 + 2 * 64  # the unit's, the packer's pushes, the slicers' pops
     c.busy += 10
+    c.groups = {g: n + 10 for g, n in c.groups.items()}
     more = price(p, c)
     assert more.parts["datapath"] == base.parts["datapath"]
     assert more.parts["control"] - base.parts["control"] == pytest.approx(

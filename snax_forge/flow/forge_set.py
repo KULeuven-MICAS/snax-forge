@@ -1,6 +1,6 @@
 """A set of bundles for the local RTL check, in one command.
 
-    python -m snax_forge.flow.forge_set quick|full|mvt|pack [--sim vsim|vlt] [-j N]    (pixi forge-set)
+    python -m snax_forge.flow.forge_set quick|full|mvt|pack|bicg [--sim vsim|vlt] [-j N]    (pixi forge-set)
 
 ``forge_set`` runs ``pixi run forge`` (flow/forge.py) on each ``Design`` of the set in ``SETS``
 (a recipe and its ``--set`` values, named as forge's folder), ``-j`` at a time (default the CPU
@@ -130,6 +130,13 @@ SETS = {
         Design("mvt_v5_2", ("design.schedule=sequential",)),
     ],
     "pack": PACK,
+    "bicg": [
+        *(Design("bicg_v1", lay + (f"design.schedule={s}",)) for lay in ((), (PADDED,))
+          for s in ("sequential", "pipeline")),
+        *(Design("bicg_v2", (f"design.schedule={s}",)) for s in ("sequential", "pipeline")),
+        *(Design("bicg_v2_1", size + (f"design.schedule={s}",)) for size in ((), ("M=40",))
+          for s in ("sequential", "pipeline")),
+    ],
 }  # fmt: skip
 
 

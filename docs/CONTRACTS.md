@@ -1135,9 +1135,9 @@ What a design costs in area and energy before any synthesis, beside the estimate
 
 ### The model
 
-Per unit and per buffer link over one run of the accelerator: n_fire its fires (a unit's firings times its span; a buffer's loads), n_bits its `bits` (section 13); per group n_bits^ctrl its `ctrl_bits` and C_acc the `accelerator_cycles`. A flop that holds costs nothing (clock-gated, D154 · D172):
+Per unit and per buffer link over one run of the accelerator: n_fire its fires (a unit's firings times its span; a buffer's loads), n_bits its `bits` (section 13); per group n_bits^ctrl its `ctrl_bits` and C_g its own `cycles`. A flop that holds costs nothing (clock-gated, D154 · D172), a control unit included while its group is idle:
 
-$$E_{\mathit{unit}} = n_{\mathit{fire}}\thinspace(e_{\mathit{comb}} + n_{\mathit{bits}}\thinspace e_{\mathit{load}}), \qquad E_{\mathit{ctrl}} = e_{\mathit{ctrl}}\thinspace n_{\mathit{bits}}^{\mathit{ctrl}}\thinspace C_{\mathit{acc}}$$
+$$E_{\mathit{unit}} = n_{\mathit{fire}}\thinspace(e_{\mathit{comb}} + n_{\mathit{bits}}\thinspace e_{\mathit{load}}), \qquad E_{\mathit{ctrl}} = e_{\mathit{ctrl}}\thinspace n_{\mathit{bits}}^{\mathit{ctrl}}\thinspace C_g$$
 
 $$A_{\mathit{unit}} = A_{\mathit{comb}} + n_{\mathit{bits}}\thinspace A_{\mathit{flop}}, \qquad A_{\mathit{ctrl}} = 2\thinspace n_{\mathit{bits}}^{\mathit{ctrl}}\thinspace A_{\mathit{flop}}$$
 
@@ -1151,7 +1151,7 @@ $$E = \sum_b E_b + \sum_g E_{\mathit{ctrl},g} + \sum_p \frac{W_p}{C_p}\thinspace
 
 - **The five parts** (`PARTS`): datapath (the units and buffer links, b), control (g), streamers, crossbar, memory (the banks). The csr, the cores, the I-cache and the DMA are not costed: the DMA's loads and stores are the same for every variant, and the cores' and AXI's ports enter only as crossbar inputs.
 - **A copy** (section 13's `copies`, D184) is one beat read and one beat written on L1's superbank port per burst, whatever its size (a one-element burst never crosses a superbank line; `Estimate.copy_bursts`): in the crossbar part a read at a read-only input's price and a write at a write-only one's, and in the memory part a read and a write on each of the superbank's S banks (S = `superbank_banks`), added to N_rd and N_wr. The DMA engine is not priced. mvt_v4 at 64 × 64 on 32 banks (S = 8): 8 × 4096 × (3.538 + 6.468) pJ = 327.87 nJ in the banks and 4096 × (1.839 + 1.455) pJ = 13.49 nJ in the crossbar.
-- **The crossbar's energy** has one price per access for a bank count, a full crossbar's ($e_{\mathit{acc}}$ at inputs = banks, 2.752585 pJ on 32 banks), so it follows the accesses alone: dot 5 linked (19 inputs, 4097 accesses) costs 59.656 nJ against 59.811 nJ unlinked (35 inputs, 4113).
+- **The crossbar's energy** has one price per access for a bank count, a full crossbar's ($e_{\mathit{acc}}$ at inputs = banks, 2.752585 pJ on 32 banks), so it follows the accesses alone: dot 5 linked (19 inputs, 4097 accesses) costs 59.656 nJ against 59.755 nJ unlinked (35 inputs, 4113).
 - **By input kind** (D178, X93): a read is priced as a read-only input's and a write as a write-only one's, $e_{\mathit{acc}}(1 - g_k)$, with $g_k$ at the design's bank count (linear in it between 16, 32 and 64 banks, the nearest one's outside). On 32 banks a read costs 2.752585 × (1 − 0.331792) = 1.839299 pJ and a write 2.752585 × (1 − 0.471583) = 1.454513 pJ; `xbar` gives both as `e_ro` and `e_wo`.
 - **The crossbar's area** prices a reader's channel as a read-only input and a writer's as write-only, since synthesis removes what their constant bits make dead (X70, X71). The factor form above is the default; the crosspoint form, $b\thinspace(c_{\mathit{rw}}\thinspace n_{\mathit{rw}} + c_{\mathit{ro}}\thinspace n_{\mathit{ro}} + c_{\mathit{wo}}\thinspace n_{\mathit{wo}}) + d\thinspace n_{\mathit{in}} + e\thinspace b + g$, is an option (`Estimate.xbar_in("crosspoint")`). dot 3 at W = 16 on the one-core cluster (35 inputs, 32 read-only, 1 write-only): 113 891 µm², where every input read-write gives 182 006; the synthesized gated cluster has 103 257 µm².
 - **A shared set's movers** (D169) are priced once each: each user's beats at its own C_p, the area only at the mover's first user, at the mover's channels (`StreamerCounts`' `mover`, `mover_channels`, `area`). The port mux costs nothing.
@@ -1216,7 +1216,7 @@ The five parts:
 
 $$E_{dp}(j) = \sum_u f_u(j)\thinspace S_u\thinspace e_{fire,u} + \sum_{\ell} p_{src(\ell)}(j)\thinspace e_{fire,\ell} + \sum_{s} f_{u(s)}(j)\thinspace e_{fire,s}$$
 
-$$E_{ctrl}(j) = e_{ctrl}\thinspace\Big(\sum_h n_h^{ctrl}\Big) \sum_h b_h(j)$$
+$$E_{ctrl}(j) = e_{ctrl} \sum_h n_h^{ctrl}\thinspace b_h(j)$$
 
 $$E_{strm}(j) = \sum_m \frac{\sum_{i \in I_m} r_i(j)}{C_m}\thinspace e_{beat}(D_m, L_m, C_m)$$
 
@@ -1227,14 +1227,14 @@ $$E_{mem}(j) = e_{rd} \sum_{m \in rd} \sum_{i \in I_m} a_i(j) + e_{wr} \sum_{m \
 How to read them:
 
 - **Datapath:** a unit fires its firings times its span; a buffer link loads, and a packer pushes, on each push of its producer; a slicer s pops on each firing of its unit u(s) (a seed's on each push, one a job). The count is fixed by the program, so it equals the static one.
-- **Control:** every group's control unit clocks on every busy-flag cycle of every group, as the static estimate's $C_{acc}$ adds every group's cycles.
+- **Control:** each group's control unit clocks on its own group's busy-flag cycles and holds otherwise, as the static estimate clocks it over its group's cycles (D154 · D172), so control does not depend on the schedule. A group's `snap` line is written by one of its units and counted to its group (`Counts.groups`).
 - **Streamers:** a mover moves its requests over its channels, one beat per C_m requests; a refused request costs a granted one's beat.
 - **Crossbar:** every request, granted or refused, costs one access at its input's kind: a reader's channel read-only, a writer's write-only (D178).
 - **Memory:** only a grant reaches a bank. The cores', AXI's and the DMA's loads and stores are not priced (D167).
 - **A copy** (D184): the beats the DMA's copies inside L1 read, $c_{rd}(j)$, and write, $c_{wr}(j)$, on the superbank port in the window (the crossbar's `copy_reads` and `copy_writes`, the window's `copies`, passed to `Counts.copies`) add $c_{rd}\thinspace(e_{acc}(1 - g_{ro}) + S\thinspace e_{rd}) + c_{wr}\thinspace(e_{acc}(1 - g_{wo}) + S\thinspace e_{wr})$ to the crossbar and memory parts: each beat a reader's or a writer's crossbar access and a read or a write on each of the superbank's $S$ banks (`Prices.superbank_banks`); the DMA engine costs nothing.
 - **Held and idle cycles cost nothing,** as under clock gating (D154 · D172).
 
-The static identity: `graph_counts` puts the graph's counts in this form (a unit's fires over its span, its links' loads as pushes, the groups' cycles, each port's words as requests and grants, none refused, the copies' bursts as their beats read and written). Priced with each port's streamer as a mover, every part equals the static estimate's (`tests/estimate/test_dynamic.py`, to 1e-12).
+The static identity: `graph_counts` puts the graph's counts in this form (a unit's fires over its span, its links' loads as pushes, each group's cycles, each port's words as requests and grants, none refused, the copies' bursts as their beats read and written). Priced with each port's streamer as a mover, every part equals the static estimate's (`tests/estimate/test_dynamic.py`, to 1e-12).
 
 **Example 1, dot 3 at W = 8, N = 2048** (one group of `mul` and `sum`, 67 control bits, readers `mul_a` and `mul_b` of 8 channels, writer `sum_out` of 1, 32 banks). SNAX-GVSoC's `run` window: 256 firings of each unit, 260 busy-flag cycles (256 busy, 3 stall_in, 1 flush), `mul_a` 2048 requests, `mul_b` 2056 (8 refused), `sum_out` 1.
 
