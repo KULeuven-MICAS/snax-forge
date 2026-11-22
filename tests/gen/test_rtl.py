@@ -76,6 +76,7 @@ DESIGNS = {
     "dot_v1_2": ("dot_v1_2", []),
     "mvt_v1_2_2": ("mvt_v1_2_2", ["W=8"]),
     "vecadd_v1_1_w1": ("vecadd_v1_1", ["W=1"]),
+    "bicg_v3": ("bicg_v3", ["M=64", "N=64", "W=64"]),  # two chains on a forked A (D189)
 }
 
 # SimdLanes' slot params of a unit with none (axpby's k1 and k2, each slot from its CSR or not)

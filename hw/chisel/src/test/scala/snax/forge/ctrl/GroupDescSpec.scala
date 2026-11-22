@@ -2,9 +2,10 @@ package snax.forge.ctrl
 
 import org.scalatest.flatspec.AnyFlatSpec
 
-/** `GroupDesc` over edges: its topological order, head and owner, and the graphs it refuses with SnaxGroupRule's
-  * reasons (a fork, a join, a cycle, two chains) or snax_group.cpp's (a link on an outer input, two links on one input,
-  * an input left to a link that none feeds).
+/** `GroupDesc` over edges: its topological order, head and owner, two chains on a fork (D189) with their outputs and
+  * chains, and the graphs it refuses with SnaxGroupRule's reasons (a fork or a join of links, a cycle, two chains no
+  * fork joins, a fork onto a unit a link feeds or of one unit) or snax_group.cpp's (a link on an outer input, two links
+  * on one input, an input left to a link that none feeds).
   */
 class GroupDescSpec extends AnyFlatSpec {
 
@@ -25,8 +26,17 @@ class GroupDescSpec extends AnyFlatSpec {
     assert(d.buffers == Seq(1))
   }
 
-  private def refused(units: Seq[UnitDesc], links: Seq[Link], why: String): Unit = {
-    val e = intercept[IllegalArgumentException](GroupDesc("g", units, links))
+  it should "give bicg's one pass two outputs, a chain each, joined by its fork" in {
+    // mul -> sum, and mac; mul.a and mac.a forked
+    val d =
+      GroupDesc("g", Seq(unit("mul", 2), unit("sum", 0, Seq(0)), unit("mac", 2)), Seq(Link(0, 1, 0, 1)), Seq(Seq(0, 2)))
+    assert(d.order == Seq(0, 2, 1) && d.head == 0)
+    assert(d.outputs == Seq(1, 2)  && d.output == 1)
+    assert(d.chain == Seq(0, 0, 1))
+  }
+
+  private def refused(units: Seq[UnitDesc], links: Seq[Link], why: String, forks: Seq[Seq[Int]] = Nil): Unit = {
+    val e = intercept[IllegalArgumentException](GroupDesc("g", units, links, forks))
     assert(e.getMessage.contains(why), e.getMessage)
   }
 
@@ -36,12 +46,12 @@ class GroupDescSpec extends AnyFlatSpec {
     refused(
       three,
       Seq(Link(0, 1, 0, 0), Link(0, 2, 0, 0)),
-      "unit 0 has 2 out-edges (a fork): until tier A a group is a chain"
+      "unit 0 has 2 out-edges (a fork): a chain has neither"
     )
     refused(
       Seq(unit("a", 1), unit("b", 1), unit("c", 0, Seq(0, 1))),
       Seq(Link(0, 2, 0, 0), Link(1, 2, 1, 0)),
-      "unit 2 has 2 in-edges (a join): until tier A a group is a chain"
+      "unit 2 has 2 in-edges (a join): a chain has neither"
     )
     refused(
       Seq(unit("a", 1, Seq(1)), unit("b", 0, Seq(0))),
@@ -51,8 +61,16 @@ class GroupDescSpec extends AnyFlatSpec {
     refused(
       Seq(unit("a", 1), unit("b", 0, Seq(0)), unit("c", 1), unit("d", 0, Seq(0))),
       Seq(Link(0, 1, 0, 0), Link(2, 3, 0, 0)),
-      "2 units have no out-edge: until tier A a group is one chain"
+      "the chains ending at b and d: no fork joins them; a group's chains share an input"
     )
+  }
+
+  it should "refuse a fork onto a unit a link feeds, of one unit or of a unit of span 2" in {
+    val two  = Seq(unit("a", 1), unit("b", 1, Seq(1)), unit("c", 1))
+    refused(two, Seq(Link(0, 1, 1, 0)), "fork: unit 1 is not a chain's head of span 1", Seq(Seq(2, 1)))
+    refused(two, Seq(Link(0, 1, 1, 0)), "a fork gives one input to two or more units", Seq(Seq(0)))
+    val wide = Seq(unit("a", 1), unit("b", 0, Seq(0)), UnitDesc("c", 1, 1, 2, 1, Some(1)))
+    refused(wide, Seq(Link(0, 1, 0, 0)), "fork: unit 2 is not a chain's head of span 1", Seq(Seq(0, 2)))
   }
 
   it should "refuse a link to no unit, on an outer input or on an input another link feeds, and an unfed input" in {

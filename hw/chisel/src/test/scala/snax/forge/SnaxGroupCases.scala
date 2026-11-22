@@ -24,20 +24,23 @@ object SnaxGroupCases {
     seed:     Boolean = false
   )
 
-  /** A cycle line: the outer inputs' valids (unit by unit; a sliced input's its reader's), the output's ready; per unit
-    * fire and give; per buffer its occupancy after the cycle; with `din`, per sliced input whether its slicer took a
-    * word (`took`); with `dout`, whether the packer sent a word to the writer (`sent`); busy.
+  /** A cycle line: the outer inputs' valids (unit by unit; a sliced input's its reader's; a forked input's once, at its
+    * first unit's place), each output's ready (`readies`, `ready` the first's); per unit fire and give; per buffer its
+    * occupancy after the cycle; with `din`, per sliced input whether its slicer took a word (`took`); with `dout`,
+    * whether the packer sent a word to the writer (`sent`); busy.
     */
   case class Cycle(
     valids:    Seq[Boolean],
-    ready:     Boolean,
+    readies:   Seq[Boolean],
     fire:      Seq[Boolean],
     give:      Seq[Boolean],
     occupancy: Seq[Int],
     busy:      Boolean,
     sent:      Boolean      = false,
     took:      Seq[Boolean] = Seq.empty
-  )
+  ) {
+    def ready: Boolean = readies.head
+  }
 
   /** A link line: its producer's and its consumer's names, its depth. */
   case class LinkLine(from: String, to: String, depth: Int)
@@ -47,31 +50,55 @@ object SnaxGroupCases {
     */
   case class Data(lanes: Int, a: Seq[BigInt], b: Seq[BigInt], sums: Seq[BigInt])
 
-  /** A case; `dOut`, its outer output packed that many results to a 64-bit word (`dout`, 1 without), and `words`, the
+  /** A case; `forks`, each fork's (unit, outer input) pairs, its first the reader's place (`fork U.I ...`, D189);
+    * `outputs`, the sinks in the order of `jobs` and the readies (`outputs U...`; none: the one sink); `jobs`, one per
+    * output; `dOut`, its outer output packed that many results to a 64-bit word (`dout`, 1 without), and `words`, the
     * words its packer sends (push n's result -(n + 1), D174); `dIn`, per sliced input its index among the outer inputs
     * and its pops per word (`din I D`, D180).
     */
   case class Case(
-    name:   String,
-    units:  Seq[UnitLine],
-    links:  Seq[LinkLine],
-    jobs:   Int,
-    start:  (Int, String),
-    runs:   Seq[RunLine],
-    cycles: Seq[Cycle],
-    data:   Option[Data],
-    dOut:   Int             = 1,
-    words:  Seq[BigInt]     = Seq.empty,
-    dIn:    Seq[(Int, Int)] = Seq.empty
+    name:    String,
+    units:   Seq[UnitLine],
+    links:   Seq[LinkLine],
+    jobsAll: Seq[Int],
+    start:   (Int, String),
+    runs:    Seq[RunLine],
+    cycles:  Seq[Cycle],
+    data:    Option[Data],
+    dOut:    Int                     = 1,
+    words:   Seq[BigInt]             = Seq.empty,
+    dIn:     Seq[(Int, Int)]         = Seq.empty,
+    forks:   Seq[Seq[(String, Int)]] = Seq.empty,
+    outputs: Seq[String]             = Seq.empty
   ) {
     def depths: Seq[Int] = links.map(_.depth)
+
+    /** The first output's JOBS. */
+    def jobs: Int = jobsAll.head
+
+    /** Per unit and outer input, its column among the cycle line's valids: a forked input at its first unit's. */
+    def place: Seq[Seq[Int]] = {
+      var at   = 0
+      val cols = scala.collection.mutable.Map.empty[(String, Int), Int]
+      units.map { u =>
+        (0 until u.inputs).map { j =>
+          val first = forks.find(_.tail.contains(u.name -> j)).map(_.head)
+          first.flatMap(cols.get).getOrElse { cols(u.name -> j) = at; at += 1; at - 1 }
+        }
+      }
+    }
+
+    /** The cycle line's valid columns. */
+    def columns: Int = place.flatten.distinct.size
   }
 
   def parse(path: Path): Case = {
     val (header, rows) = CaseFile.read(path)
     var units          = Vector.empty[UnitLine]
     var links          = Vector.empty[LinkLine]
-    var jobs           = 1
+    var jobs           = Seq(1)
+    var forks          = Vector.empty[Seq[(String, Int)]]
+    var outputs        = Seq.empty[String]
     var start          = (-1, "")
     var runs           = Vector.empty[RunLine]
     var lanes          = 0
@@ -83,8 +110,14 @@ object SnaxGroupCases {
       case "unit" :: n :: d :: "latency" :: l :: "ii" :: ii :: "span" :: s :: "t" :: t :: "inputs" :: i :: seed
           if seed.isEmpty || seed == List("seed", "0") || seed == List("seed", "1") =>
         units :+= UnitLine(n, d, l.toInt, ii.toInt, s.toInt, t.toInt, i.toInt, seed == List("seed", "1"))
-      case "link" :: f :: t :: "depth" :: d :: Nil         => links :+= LinkLine(f, t, d.toInt)
-      case "jobs" :: j :: Nil                              => jobs  = j.toInt
+      case "link" :: f :: t :: "depth" :: d :: Nil => links :+= LinkLine(f, t, d.toInt)
+      case "jobs" :: j if j.nonEmpty               => jobs = j.map(_.toInt)
+      case "fork" :: ms if ms.size >= 2 =>
+        forks :+= ms.map { m =>
+          val Array(u, i) = m.split("\\.", 2)
+          u -> i.toInt
+        }
+      case "outputs" :: os if os.nonEmpty => outputs = os
       case "start" :: c :: a :: Nil                        => start = (c.toInt, a)
       case "expect" :: "run" :: RunLine.Fields(_, run)     => runs :+= run
       case "lanes" :: l :: Nil                             => lanes = l.toInt
@@ -97,7 +130,10 @@ object SnaxGroupCases {
     }
     require(dOut == 1 || words.nonEmpty, s"$path: dout $dOut without words")
     val buffers = links.count(_.depth > 0)
-    val ins    = units.map(_.inputs).sum
+    val shape  = Case("", units, links, jobs, start, Nil, Nil, None, forks = forks, outputs = outputs)
+    val ins    = shape.columns
+    val outs   = outputs.size max 1
+    require(jobs.size == outs, s"$path: jobs $jobs, one per output ($outs)")
     val packed = dOut > 1
     val cycles = rows.map { line =>
       val cols   = line.split("\\|").map(_.trim.split("\\s+").filter(_.nonEmpty).map(_.toInt).toSeq).toSeq
@@ -108,9 +144,10 @@ object SnaxGroupCases {
       )
       val head   = cols.head
       val fg     = cols.slice(1, 1 + units.size)
+      require(head.size == ins + outs, s"$path: `$line`: $ins valids and $outs readies")
       Cycle(
         head.take(ins).map(_ == 1),
-        head(ins) == 1,
+        head.drop(ins).map(_ == 1),
         fg.map(_(0) == 1),
         fg.map(_(1) == 1),
         if (buffers > 0) cols(1 + units.size) else Seq.empty,
@@ -120,7 +157,7 @@ object SnaxGroupCases {
       )
     }
     val own    = Option.when(lanes > 0)(Data(lanes, data("a"), data("b"), data("sums")))
-    Case(CaseFile.name(path), units, links, jobs, start, runs, cycles, own, dOut, words, dIn)
+    Case(CaseFile.name(path), units, links, jobs, start, runs, cycles, own, dOut, words, dIn, forks, outputs)
   }
 
   /** Every case of the folder `Env` names (`CaseFile.all`). */

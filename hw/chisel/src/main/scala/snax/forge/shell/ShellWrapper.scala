@@ -80,6 +80,11 @@ class ShellPorts(val readers: Seq[Int], val writers: Seq[Int], val groups: Seq[S
   * `FifoSlicer(1, dtype, 1)` whose r is its `d_in`: `<unit>_<port>_bcast` gives that lane to every lane of the unit's
   * input, wires only. Its port is that lane, at least one 64-bit word.
   *
+  * A forked input (D189), one reader for the heads of several chains of a group, is one `stream2acc_<k>`, its reader's:
+  * its data (or its slicer's, one for the fork, named after the reader's port) goes to each unit's port and its valid
+  * to each unit's handshake, and its ready is the AND of their readies, so a beat is taken only when every unit fires.
+  * Each chain's sink has its own outer output, and each its packer when packed.
+  *
   * Clock `clk_i`, reset `rst_ni` active low and asynchronous, as snax_cluster's (`RequireAsyncReset` in ReqRspManager).
   */
 class ShellWrapper(spec: AcceleratorSpec) extends RawModule {
@@ -208,14 +213,16 @@ class ShellWrapper(spec: AcceleratorSpec) extends RawModule {
       io(s"${g.name}_done_o") := c.done
 
       // The outer ports, unit by unit in the streamer's order: data to the unit's datapath, handshake to the group's
-      // control unit (its inputs flat in unit order, its output its owner's)
-      val desc = AccCtrl.desc(spec, g)
-      var at   = 0
+      // control unit (its inputs flat in unit order, its outputs its sinks'). NB (D189): a forked input's reader (and
+      // slicer) once, its data and valid to each of its units, its ready the AND of theirs, set after the last unit
+      val desc   = AccCtrl.desc(spec, g)
+      var at     = 0
+      val forks  = spec.forks.map(f => spec.inputs.indexOf(f.head)).toSet
+      val shared = scala.collection.mutable.LinkedHashMap.empty[Int, (Data, Bool, Bool, Seq[Bool])]
       for ((u, k) <- g.units.zipWithIndex) {
         val d = dp.io.units(spec.units.indexOf(u))
         for ((j, brm)    <- spec.ins(u.name)) {
-          val (data, valid, ready) = inPort(j)
-          val p                    = u.port(brm)
+          val p = u.port(brm)
           // The stream's lanes into the unit's port: as they are, or a broadcast's one lane to every lane
           def feed(x: Data): Unit =
             if (!p.broadcast) d(brm) := x.asTypeOf(d(brm))
@@ -229,11 +236,33 @@ class ShellWrapper(spec: AcceleratorSpec) extends RawModule {
               for (l <- 0 until p.lanes) lanes(l) := x.asUInt(w - 1, 0).asTypeOf(lanes(l))
               d(brm) := dontTouch(bcast) // kept by name in the SV, as the slicer and packer are
             }
-          if (p.dIn == 1) {
+          if (forks(j)) {
+            val (data, valid, ready)  = inPort(j)
+            val (bits, v, r, readies) = shared.getOrElseUpdate(
+              j,
+              if (p.dIn == 1) (data, valid, ready, Seq.empty)
+              else { // one slicer for the fork, named after its reader's port
+                val (ru, rp) = spec.inputs(j)
+                val slicer   = Module(new FifoSlicer(1, p.dtype, p.streamLanes)).suggestName(s"${ru}_${rp}_slicer")
+                require(slicer.r == p.dIn, s"${u.name}.$brm: d_in ${p.dIn}, its slicer's r ${slicer.r}")
+                slicer.io.in.bits  := data.asTypeOf(slicer.io.in.bits)
+                slicer.io.in.valid := valid
+                ready              := slicer.io.in.ready
+                slicer.io.enable   := c.busy
+                slicer.io.clear    := c.start.fire
+                (slicer.io.out.bits, slicer.io.out.valid, slicer.io.out.ready, Seq.empty)
+              }
+            )
+            feed(bits)
+            c.in(at).valid := v
+            shared(j) = (bits, v, r, readies :+ c.in(at).ready)
+          } else if (p.dIn == 1) {
+            val (data, valid, ready) = inPort(j)
             feed(data)
             c.in(at).valid := valid
             ready          := c.in(at).ready
           } else { // sliced (D180): the slicer between the reader and the unit, after a shared set's mux
+            val (data, valid, ready) = inPort(j)
             val slicer = Module(new FifoSlicer(1, p.dtype, p.streamLanes)).suggestName(s"${u.name}_${brm}_slicer")
             require(slicer.r == p.dIn, s"${u.name}.$brm: d_in ${p.dIn}, its slicer's r ${slicer.r}")
             slicer.io.in.bits   := data.asTypeOf(slicer.io.in.bits)
@@ -248,24 +277,25 @@ class ShellWrapper(spec: AcceleratorSpec) extends RawModule {
           at += 1
         }
         for ((j, brm)    <- spec.outs(u.name)) {
-          require(k == desc.output, s"${u.name}.$brm: an outer output of a unit that has an out-edge")
+          require(desc.outputs.contains(k), s"${u.name}.$brm: an outer output of a unit that has an out-edge")
           val (data, valid, ready) = outPort(j)
           val p                    = u.port(brm)
+          val o                    = c.output(desc.outputs.indexOf(k))
           if (p.dOut == 1) {
-            data        := d(brm).asUInt
-            valid       := c.out.valid
-            c.out.ready := ready
+            data    := d(brm).asUInt
+            valid   := o.valid
+            o.ready := ready
           } else { // packed (D174): the packer between the port and its writer, before a shared set's mux
             val packer = Module(new FifoPacker(p.lanes, p.dtype, 1)).suggestName(s"${u.name}_${brm}_packer")
             require(packer.r == p.dOut, s"${u.name}.$brm: d_out ${p.dOut}, its packer's r ${packer.r}")
-            packer.io.in.valid  := c.out.valid
-            c.out.ready         := packer.io.in.ready
+            packer.io.in.valid  := o.valid
+            o.ready             := packer.io.in.ready
             packer.io.in.bits   := d(brm).asTypeOf(packer.io.in.bits)
             data                := packer.io.out.bits.asUInt
             valid               := packer.io.out.valid
             packer.io.out.ready := ready
             packer.io.clear     := c.start.fire
-            packer.io.last      := c.last
+            packer.io.last      := c.lastOf(desc.outputs.indexOf(k))
           }
         }
         val e = c.units(k)
@@ -279,6 +309,9 @@ class ShellWrapper(spec: AcceleratorSpec) extends RawModule {
             case other => throw new IllegalArgumentException(s"${u.datapath}: unknown pin $other")
           })
       }
+
+      // A forked input's ready: every unit's taking its beat
+      for ((_, (_, _, ready, readies)) <- shared) ready := readies.reduce(_ && _)
 
       // The buffers' pins, from the group's control unit (its buffers in link order, as GroupDesc.buffers)
       for ((l, n) <- g.links.filter(_.depth > 0).zipWithIndex) {

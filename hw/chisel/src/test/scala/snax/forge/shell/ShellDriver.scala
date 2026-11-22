@@ -16,8 +16,16 @@ class ShellHarness(val spec: AcceleratorSpec) extends Module {
   val io = IO(chiselTypeOf(wrapper.io))
   io <> wrapper.io
 
-  /** A CSR's offset by name in a group (the first group by default). */
-  def csr(name: String, group: Int = 0): Int = spec.groups(group).csr(name).get.offset
+  /** A CSR's offset by name in a group (the first group by default): its own name, or a unit's CSR as the program names
+    * it with several chains (`<UNIT>_JOB_BEATS`, D189).
+    */
+  def csr(name: String, group: Int = 0): Int = {
+    val g = spec.groups(group)
+    g.csr(name)
+      .orElse(g.units.flatMap(u => u.csrs.find(c => s"${u.name.toUpperCase}_${c.name}" == name)).headOption)
+      .getOrElse(throw new IllegalArgumentException(s"group ${g.name}: no CSR $name"))
+      .offset
+  }
 }
 
 /** A core and a streamer around a `ShellHarness`, one call per cycle.

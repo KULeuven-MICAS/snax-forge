@@ -341,7 +341,9 @@ class Description(JsonFile):
                 raise ValueError(f"{self.tag}: CSR {c.name} has width {c.width}, not "
                                  f"{FIXED_WIDTH[c.name]}")  # fmt: skip
         for names in (("JOBS", "JOB_BEATS"), ("BUSY_COUNTER",)):
-            widths = {c.width for _, _, c in self.csrs() if c.name in names}
+            # a chain's JOBS_<SINK> (D189) is a JOBS
+            widths = {c.width for _, _, c in self.csrs()
+                      if c.name in names or ("JOBS" in names and c.name.startswith("JOBS_"))}  # fmt: skip
             if len(widths) > 1:
                 raise ValueError(f"{self.tag}: {' and '.join(names)} have the widths "
                                  f"{sorted(widths)}; they share one")  # fmt: skip
@@ -412,8 +414,9 @@ class Description(JsonFile):
 
     @property
     def job_width(self) -> int:
-        """JOBS's and every JOB_BEATS's width (the platform's ``acc_csr.job_width``)."""
-        return next(c.width for _, _, c in self.csrs() if c.name == "JOBS")
+        """Every JOBS's (a chain's JOBS_<SINK> too) and JOB_BEATS's width (the platform's
+        ``acc_csr.job_width``)."""
+        return next(c.width for _, _, c in self.csrs() if c.name.startswith("JOBS"))
 
     def accelerator(self, unit: str) -> Accelerator:
         """The accelerator that holds the unit ``unit``."""

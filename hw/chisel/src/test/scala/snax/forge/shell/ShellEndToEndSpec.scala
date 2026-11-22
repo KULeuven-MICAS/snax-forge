@@ -43,9 +43,10 @@ class ShellEndToEndSpec extends AnyFlatSpec with ForgeTester {
     val ports = (spec.inputs ++ spec.outputs).map { case (u, p) => spec.unit(u).port(p) }
     val ins   = ports.take(spec.inputs.size)
     val outs  = ports.drop(spec.inputs.size)
-    // A port's elements per word on its streamer: its lanes, d_in (sliced) or d_out (packed) times
-    def per(p: AcceleratorSpec.PortSpec): Int = p.lanes * p.dIn * p.dOut
-    val words = run.beats.zip(ins).map { case (b, p) => -(-b * p.lanes / per(p)) }
+    // A port's elements per word on its streamer: its stream's lanes (one for a broadcast), d_in (sliced) or d_out
+    // (packed) times
+    def per(p: AcceleratorSpec.PortSpec): Int = p.streamLanes * p.dIn * p.dOut
+    val words = run.beats.zip(ins).map { case (b, p) => -(-b * p.streamLanes / per(p)) }
     test(new ShellHarness(spec)) { dut =>
       // Word t of a port: its elements packed at the port's dtype width; past the last, an input's wrap and an
       // output's are zero (a short last word)

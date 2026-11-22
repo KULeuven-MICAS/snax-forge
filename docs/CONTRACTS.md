@@ -781,19 +781,19 @@ Each a `GenError`, before anything is written:
 ### Types, groups and firings
 
 - **Types** (D142, D143): a unit's types are its ports' dtypes, fixed at elaboration. Each input is extended to `opType` by its own signedness (a fold's lanes to its output's type before its tree), and the result is extended or wrapped into the output's type; a `Mac` forms the product at `opType`, casts it to `outType` and folds there. Python decides every type; the datapaths only construct.
-- **Firings** (D146): a group has one JOBS. The sink gives R = JOBS results; a unit k before its successor s gives R_k = R_s · T_s, one on every T_k-th firing, so it fires n_k = R_k · T_k times, every T in beats (the one-lane vsum's `SerialAccumulate` has T = 1 and span W).
+- **Firings** (D146): a group has one JOBS per chain (D189; one chain, JOBS). A sink gives R = its chain's JOBS results; a unit k before its successor s gives R_k = R_s · T_s, one on every T_k-th firing, so it fires n_k = R_k · T_k times, every T in beats (the one-lane vsum's `SerialAccumulate` has T = 1 and span W).
 
 ### The CSRs
 
-Per accelerator and per group in order, from offset 0 (D146): START (R/W), JOBS (R/W), each unit's R/W CSRs (JOB_BEATS for a fold without `params.T`, then its scalars, a 64-bit one as two, low word first), STATUS (R/O), BUSY_COUNTER (R/O). With f_u = 1 for a fold without `params.T` and k_u a unit's scalar CSRs:
+Per accelerator and per group in order, from offset 0 (D146): START (R/W), JOBS (R/W; with several chains a `JOBS_<SINK>` per chain, D189), each unit's R/W CSRs (JOB_BEATS for a fold without `params.T`, then its scalars, a 64-bit one as two, low word first), STATUS (R/O), BUSY_COUNTER (R/O). With c_g a group's chains, f_u = 1 for a fold without `params.T` and k_u a unit's scalar CSRs:
 
-$$rw = \sum_g \Big(2 + \sum_u (f_u + k_u)\Big), \qquad ro = 2G$$
+$$rw = \sum_g \Big(1 + c_g + \sum_u (f_u + k_u)\Big), \qquad ro = 2G$$
 
 They are the accelerator's interface, all in `<tag>_csr`, BUSY_COUNTER in its submodule `<tag>_peripherals` (D152, D168). A read gives a CSR's bits, the upper ones 0. Per group:
 
 - **START** is a strobe: no register, it reads 0. A write with bit 0 set starts the group; the accepted start is a bare strobe to its control unit, which reads JOBS and each JOB_BEATS from `<tag>_csr` as wires through the run (a unit without JOB_BEATS has T 1, or its `params.T`).
 - **A busy group holds its writes**: while it runs, a write to any of its R/W CSRs waits (`csr_req_ready_o` low) until E + 1, E the cycle its run ends, so its settings stay constant (D168). Writes to other groups and every read go through. Programming the next task during a run is open item 123.
-- **An empty run**, JOBS 0 or any JOB_BEATS 0, ends in the cycle it starts: busy never rises, BUSY_COUNTER is 0, and it ends in a done.
+- **An empty run**, any JOBS 0 or any JOB_BEATS 0, ends in the cycle it starts: busy never rises, BUSY_COUNTER is 0, and it ends in a done.
 - **STATUS**: bit 0 busy, bit 1 done (sticky: set by the done pulse in E, cleared by an accepted start). The program polls bit 0.
 - **BUSY_COUNTER**: the busy cycles after the accepted start, held after the run, saturating at 2^busy_counter_width − 1. On snax_cluster's RTL it may differ from SNAX-GVSoC's by up to the group's streamer fill (3, or 2 with one outer input, D123): the streamer's head start before START counts, which the core's timing sets (`dot_v1_1` at N = 512: `vmul` 128 on the RTL against 131).
 - **Pins**: `<group>_busy_o` (STATUS bit 0) and `<group>_done_o` (the done pulse, high in E + 1), which snax_cluster leaves unconnected (open item 92).
@@ -849,7 +849,7 @@ A group's control unit is generated from the description (D147). Its rule is sna
 - A unit of T ≠ 1 keeps its beat counter d (`<unit>_job_beats_counter`): first = (d = 0), last = (d + 1 = JOB_BEATS); a fixed T a ⌈log₂ T⌉-bit counter.
 - A unit at L 0 whose out-link is a wire borrows its consumer's test, since its giving firing is the consumer's firing.
 - Any other unit counts its giving firings up in mixed radix, a digit per later unit with T ≠ 1 (`<unit>_<downstream>_job_beats_counter`), then a jobs digit g (`<unit>_jobs_counter`); it has finished when g equals JOBS.
-- Done is the sink's JOBS-th push, read off its jobs digit and its pipeline. The empty run is tested on the csr's wires in the start's cycle.
+- Done is the sink's JOBS-th push, read off its jobs digit and its pipeline; with several chains (D189) the last chain's, a chain that ended earlier holding its jobs digit at its JOBS and its pipeline empty. The empty run is tested on the csr's wires in the start's cycle.
 - Every counter is job_width bits; LOWER refuses a JOBS or JOB_BEATS above 2^job_width − 1 (`lower/tasks.py`'s `_check_widths`).
 
 ### Cycles
@@ -878,6 +878,7 @@ $$C_2 = JT + 2, \quad C_3 = JT + 1, \quad C_4 = JT + 2, \quad C_5 = J(T + W - 1)
 - **A packed output** (D174): a `FifoPacker` of depth d_out (`<unit>_<port>_packer`) sits between the unit's output and `acc2stream_<k>`, on the group's side of a shared set's port mux; the port is one 64-bit word. Its slice pointer clears when the group's START is accepted; each push fills the next slice, and the word goes to the writer when the slice is d_out − 1 or the push is the run's last (the control unit's `last`: the done condition without the push, from the counters only), the slices above zero; only a sending push waits for the writer's ready, so no cycle is added.
 - **A sliced input** (D180): a `FifoSlicer` of d_in pops a word (`<unit>_<port>_slicer`) sits between `stream2acc_<k>` and the unit's input, on the group's side of a shared set's port mux; the port is one 64-bit word. The unit's input handshake is its pops, slice `count` at the low bits, low slice first; it takes the reader's word when empty or on its last pop, only while the group is busy (`enable`), and drops what it holds when the group's START is accepted (`clear`). Its output is registered, so a run takes one cycle more.
 - **A broadcast input** (D186): its reader, or its slicer, moves one lane a beat, so the port is that lane, at least one 64-bit word, and a slicer's d_in is that lane's; `<unit>_<port>_bcast` gives the lane to every lane of the unit's input, wires only.
+- **A forked input** (D189): one `stream2acc_<k>`, its reader's (the first port of its `inputs` entry); its data, or its one slicer's (`<reader unit>_<port>_slicer`), goes to each of its units' ports and its valid to each unit's handshake, and its ready is the AND of their readies. Each chain's sink has its own `acc2stream_<k>`.
 - Per group `<group>_busy_o` and `<group>_done_o`.
 - **A shared accelerator** (D169) has its movers at the wrapper instead, readers then writers, and its port mux between them and its groups' ports, pure wires selected by PORT_MUX_SEL (reset 0, never held): a reader's data to each user, its valid and ready the selected group's only; a writer the selected user's data, zero-padded. snax-gvsoc's `SnaxPortMuxRule` without its fatal cases.
 

@@ -28,7 +28,7 @@ import snax.forge.{Emit, SvHeader}
   * (firtool's ` <module> <instance> (` lines); dot 1's (two groups), dot 4's (a wire) and dot 6's (a buffer) among
   * them. A set whose groups share its movers shows its movers at the wrapper (its hjson's `num_channel` are the
   * movers') and adds `<tag>_<set>_port_mux`, which holds no module, after `<tag>_datapath`: dot_v1_2's and
-  * mvt_v1_2_2's.
+  * mvt_v1_2_2's. bicg_v3's two chains on a forked A (D189) have one reader for A and an output per chain.
   *
   * `emitted.json` lists a file for every module the wrapper reaches, each file exists, and `sv/` holds those only.
   */
@@ -77,8 +77,8 @@ class ShellEmitSpec extends AnyFlatSpec {
   def children(sv: Path, module: String): Seq[String] =
     Files.readAllLines(sv.resolve(s"$module.sv")).asScala.toSeq.collect { case Instance(m) => m }
 
-  /** `bundle.py`'s `module_tree`: then each stream block once, unit by unit, a sliced input's `FifoSlicer` and a packed
-    * output's `FifoPacker`.
+  /** `bundle.py`'s `module_tree`: then each stream block once, unit by unit, a sliced input's `FifoSlicer` (its out
+    * lanes the stream's, one for a broadcast, D186) and a packed output's `FifoPacker`.
     */
   def tree(spec: AcceleratorSpec): Seq[(String, Seq[String])] = {
     val t      = spec.tag
@@ -86,7 +86,7 @@ class ShellEmitSpec extends AnyFlatSpec {
       val ports = u.ports.map(_._2)
       (ports.filter(_.dir == "in") ++ ports.filter(_.dir == "out")).flatMap { p =>
         val w = snax.forge.IntType(p.dtype).tag
-        Option.when(p.dIn > 1)(s"FifoSlicer_w1_${w}_n${p.lanes}") ++
+        Option.when(p.dIn > 1)(s"FifoSlicer_w1_${w}_n${p.streamLanes}") ++
           Option.when(p.dOut > 1)(s"FifoPacker_n${p.lanes}_${w}_w1")
       }
     }
@@ -130,9 +130,9 @@ class ShellEmitSpec extends AnyFlatSpec {
       assert(svs == listed, s"sv/ holds ${svs -- listed} besides emitted.json's files")
     }
 
-  it should "have the fixtures of two accelerators, two groups in one, a wire, a buffer and shared movers" in
+  it should "have the fixtures of two accelerators, two groups in one, a wire, a buffer, shared movers and a fork" in
     assert(
-      Set("dot_v1", "dot_v1_1", "dot_v4", "dot_v6", "dot_v1_2", "mvt_v1_2_2")
+      Set("dot_v1", "dot_v1_1", "dot_v4", "dot_v6", "dot_v1_2", "mvt_v1_2_2", "bicg_v3")
         .subsetOf(RtlFixtures.all.map(_.name).toSet)
     )
 }
