@@ -270,13 +270,13 @@ def _join() -> Graph:
     return Graph.from_dict(d)
 
 
-def test_link_refuses_a_join_until_tier_a():
+def test_link_refuses_a_join():
     """link.chain: mul2 into the add's other input makes {mul1, mul2, add} a join, not a chain
-    (SNAX-GVSoC's limit, gen.chain's check made early)."""
+    (SNAX-GVSoC's limit, gen.chain's check made early; chains meet only at a fork, D189)."""
     g = link(_join(), "t1", 0, "j")
     with pytest.raises(LinkError) as e:
         link(g, "t2", 0, "j")
-    assert e.value.code == "link.chain" and "until tier A" in str(e.value)
+    assert e.value.code == "link.chain" and "one chain, or chains joined by a fork" in str(e.value)
 
 
 # =============================================================================

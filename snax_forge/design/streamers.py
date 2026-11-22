@@ -8,7 +8,9 @@ D174) or sliced (an input, ``sliced``, D180), one rule (``per_word``); ``stream_
 lanes a streamer moves, one for a broadcast input (``is_broadcast``, D186).
 ``instances``, ``groups`` and ``accelerators`` read the instances off the graph and put them
 into groups and accelerators; ``links``, ``linked_ports``, ``unplaced`` and ``slot_containers``
-read the links, the containers with no L1 space and those read only through a slot connector. Nothing here checks the pairing: check.py runs first and reports
+read the links, the containers with no L1 space and those read only through a slot connector;
+``forks``, ``forked_ports``, ``no_streamer``, ``group_chains`` and ``jobs_csr`` read the forks
+(D189): one streamer for a fork's ports, a group's chains and each one's JOBS CSR. Nothing here checks the pairing: check.py runs first and reports
 every problem, so ``resolve`` raises on the first thing that does not fit.
 
 Shared movers (a container marked ``hw.share_ports``, sandbox/share_ports.py):
@@ -167,6 +169,39 @@ def link_ends(graph: Graph, link: Node) -> tuple[str, str]:
     return ends[0], ends[1]
 
 
+def forks(graph: Graph) -> list[Node]:
+    """The fork nodes (D189), in execution order: each one read given to several units."""
+    return [n for n, _ in graph.walk() if n.kind == "fork"]
+
+
+def forked_ports(graph: Graph) -> dict[str, str]:
+    """Each forked port but a fork's first, ``"<instance>.<port>"``, to the first's: the
+    ports that take their beat from another's streamer and have none of their own."""
+    return {r: f.attrs["readers"][0] for f in forks(graph) for r in f.attrs["readers"][1:]}
+
+
+def group_chains(graph: Graph, members: list[str]) -> list[list[str]]:
+    """A group's chains, each its units from head to sink along its links, in the order of
+    their sinks among ``members``: one chain for a group a fork does not join (D189)."""
+    nxt = {k.attrs["from"]: k.attrs["to"] for k in links(graph) if k.attrs["from"] in members}
+    prev = {b: a for a, b in nxt.items()}
+    out = []
+    for u in members:
+        if u in nxt:
+            continue
+        chain = [u]
+        while chain[0] in prev:
+            chain.insert(0, prev[chain[0]])
+        out.append(chain)
+    return out
+
+
+def jobs_csr(chains: list[list[str]], chain: list[str]) -> str:
+    """The JOBS CSR of ``chain`` among a group's ``chains``: ``JOBS`` for a group of one,
+    ``JOBS_<SINK>`` for each of several (D189)."""
+    return "JOBS" if len(chains) == 1 else f"JOBS_{chain[-1].upper()}"
+
+
 def group_links(graph: Graph, members: list[str]) -> list[tuple[Node, str, str]]:
     """A group's links as ``(link node, from, to)``, one per pair of ports: a group several nests
     share has a link node per nest on the same ports (mvt's tmp0_prod and tmp2_prod), one
@@ -210,6 +245,12 @@ def group_runs(graph: Graph) -> dict[str, list[dict[str, Node]]]:
         for m in n.inputs.values():
             if m.data in writer:
                 parent[root(n.id)] = root(writer[m.data])
+    for f in forks(graph):  # a fork's readers run together (D189)
+        units = {r.split(".")[0] for r in f.attrs["readers"]}
+        ids = [n.id for n in mine if n.attrs["instance"] in units
+               and any(m.data == f.attrs["container"] for m in n.inputs.values())]  # fmt: skip
+        for x in ids[1:]:
+            parent[root(x)] = root(ids[0])
     runs: dict[str, dict[str, Node]] = {}
     for n in mine:
         run = runs.setdefault(root(n.id), {})
@@ -233,6 +274,12 @@ def group_runs(graph: Graph) -> dict[str, list[dict[str, Node]]]:
 def linked_ports(graph: Graph) -> set[str]:
     """Every port on a link, ``"<instance>.<port>"``: it has no streamer."""
     return {end for k in links(graph) for end in link_ends(graph, k)}
+
+
+def no_streamer(graph: Graph) -> set[str]:
+    """Every port without a streamer of its own: on a link, or a fork's but its first (it
+    takes the first's beats, D189)."""
+    return linked_ports(graph) | set(forked_ports(graph))
 
 
 def unplaced(graph: Graph) -> set[str]:
@@ -517,7 +564,7 @@ def resolve(platform: Platform, graph: Graph, insts: dict[str, Instance]) -> dic
     out: dict[str, Streamer] = {}
     symbols = graph.bound_symbols
     nodes = accelerated(graph)
-    linked = linked_ports(graph)
+    linked = no_streamer(graph)
     for name, inst in insts.items():
         mine = [n for n in nodes if n.attrs["instance"] == name]
         loops = {n.id: firing_loops(graph, n) for n in mine}

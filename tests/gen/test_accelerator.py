@@ -267,14 +267,14 @@ def test_a_reader_checks_the_links(edit, code):
     assert e.value.code == code
 
 
-def test_a_group_is_a_chain_until_tier_a():
+def test_a_group_is_a_chain_or_chains_a_fork_joins():
     """gen.chain: dot 4's units in the other order, the link going back (SNAX-GVSoC's SnaxGroup
-    models a chain in unit order)."""
+    models a chain in unit order, or chains a fork joins, D189)."""
     acc = dot4()
     (g,) = acc.groups
     with pytest.raises(GenError) as e:
         with_groups(acc, [replace(g, units=g.units[::-1])])
-    assert e.value.code == "gen.chain" and "until tier A" in str(e.value)
+    assert e.value.code == "gen.chain" and "chains a fork joins" in str(e.value)
 
 
 def test_a_span_unit_reads_from_a_link_until_b2():

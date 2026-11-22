@@ -69,6 +69,7 @@ Every node has `id` (unique: task names are built from it, D75), `kind`, `inputs
 | `map` | `var`, `range`; `loop.kind` (absent, `tile`, `temporal`, `spatial`); `loop.dim`, `loop.piece` (D162); `loop.split` (the `var` and `range` before a split, and `valid`, the iteration count, when it is not a multiple of the factor: the lanes past it are padding, D144) | runs once per value of `var` |
 | `tasklet` | `code`: one `output = expression` per output connector; its connectors are single elements | none |
 | `link` | `container` (the transient it replaced, which writer and reader still name), `depth` (0 a wire, ≥ 1 a buffer), `from`, `to` (the units' instances) | none |
+| `fork` | `container` (read by every reader), `readers` (`"<instance>.<port>"`, the graph's order, the first's streamer reading for all), `groups` (each member's group before, null for none) | none (D189) |
 | `transpose` | `perm` (a permutation of its input's dimensions), `by` (`dma` or `core`: what makes the copy); one input `src` and one output `dst`, each its whole container (`0:<extent>` in every dimension), the output's shape the input's permuted by `perm`, the same dtype; the reference executor copies `np.transpose(src, perm)` into it | none |
 | `accelerated` | `instance`, `brm`, `implementation`, `code` (the BRM's matched entry), `params` (design params), `replaced` (the subtree `bind` replaced), `locals`, `accelerator`, `group`, `opType` (the last four only when set; `opType` the op's type where the tasklet's casts set it, D143 · D175) | empty for a leaf block |
 
@@ -96,7 +97,7 @@ A tasklet's output memlet may hold `"reduce": {"op": ..., "identity": ...}` (D10
 
 A bound graph nests accelerator ⊃ groups ⊃ units and links (D146, D148):
 
-- A **unit** is an accelerated node. A **group** is a connected set of units and links (`link`, section 4); an unlinked unit is a group of its own, named after its instance; a linked group's units carry its name in `group`. A link node sits before its reader in the body the two share.
+- A **unit** is an accelerated node. A **group** is a connected set of units and links (`link`, section 4), one chain or several a fork joins (`fork_read`, D189); an unlinked unit is a group of its own, named after its instance; a linked group's units carry its name in `group`. A link node sits before its reader in the body the two share, a fork node before its last reader's nest.
 - By default each group is its own **accelerator**, named after it; `encapsulate` puts several into one, which shares one streamer set (section 9), each group still a task of its own. The nodes of one instance carry the same `accelerator` or none, and an accelerator's name is no instance's.
 - A **fused map** (`fuse_map`) is one nest of two tasklets; the transient between them becomes a local value, no longer in L1 (the container carries `loop.local`, the map records its two nests in `loop.fused`). `bind` on the nest keeps the local in the node's `locals`, so `unbind` then `unfuse_map` give the graph before `fuse_map` exactly. `split_reduce` records its partials and final sum in `loop.split_reduce`.
 - **Shared instances** (D165): several nodes may share one instance, one BRM, implementation and params, run once per node in body order (mvt's variant 1, `recipes/mvt/mvt_v1.json`). LOWER gives each node its own task on the same streamers; the estimate counts the area once and each run's cycles. A linked group is shared by `share`: a node per nest and a link node per nest on the same ports (`design/streamers.py`'s `group_links`), run once per set of nodes its links join (`group_runs`).
@@ -274,7 +275,8 @@ Each has an inverse, and each refuses with the fix named. The loop names follow 
 | `data_transpose` | `node`, `container`, `by` (`dma`; `core` refused, not built yet) | the container copied transposed into `<container>_T` by a `transpose` node before the nest, which reads the copy in loop order (section 2, D182). Its sites are `mark_transpose`'s. Refused: an existing `<container>_T`, a nest reading the container in two orders. No inverse yet: the step is undone by removing it |
 | `share` / `unshare` | `group`, `with` | `group` runs on `with`'s units: the same shape unit by unit (BRM, implementation, params, links and depths), its nodes renamed to `with`'s (D165). Refused naming what differs (`vmul_x2 and vmul_x1 differ: W = 4 against 8`) |
 | `share_ports` / `unshare_ports` | `container`, `accelerator` | the container's writer's and reader's groups go on one accelerator whose movers they share, the k-th widest port of each on mover k (D169); the container is marked `hw.share_ports` |
-| `link` / `unlink` | `container`, `depth`, `group` | a transient between two bound units becomes a link node, their groups merge under `group`, and the transient leaves L1. Refused: not one writer and one reader (`link.container`), an end not bound (`link.unbound`), the beats not in the same order (`link.order`), a clashing name (`link.group`) |
+| `link` / `unlink` | `container`, `depth`, `group` | a transient between two bound units becomes a link node, their groups merge under `group`, and the transient leaves L1. Refused: not one writer and one reader (`link.container`), an end not bound (`link.unbound`), the beats not in the same order (`link.order`), a clashing name (`link.group`), a fork or join of links (`link.chain`) |
+| `fork_read` / `unfork_read` | `container`, `group` | the bound units reading the container (each a chain's head, one port each) get one reader, a fork node recording them and their groups, which merge under `group` (D189). Refused: fewer than two readers, a reader not bound, a seed or two ports of one unit (`fork.container`, `fork.unbound`, `fork.port`), other beats or the same in another order (`fork.order`, naming `interchange_map`), a head fed by a link (`fork.head`), a shared unit (`fork.shared`), a clashing name (`fork.group`); `unfork_read` after the group changed (`fork.changed`) |
 | `lift` / `unlift` | `kernel`, `at` | the region matching a kernel's import becomes a block, `sandbox.block` = `{name, kernel, heads}` (D166) |
 | `apply_recipe` / `unapply` | `recipe`, `region` or `block`, `params`, `name` | another recipe's steps run on the region, its names renamed onto it (`_1`, `_2` on a clash); a param its symbols name is the region's, refused in `params`; one step, one reference check (D166) |
 | `name_block` | `nodes`, `name` | a region becomes a block by hand, with no kernel or recipe |
@@ -558,7 +560,7 @@ flowchart TD
 ```
 
 - **Encapsulated** (several groups on one streamer set): each task also configures the other groups' movers idle, and its `start` launches every mover. `dot_v1_1`'s `mult_vmul` starts `vmul_a`, `vmul_b`, `vmul_out`, with `vsum_a`, `vsum_out` idle.
-- **A linked group** is one task at its first unit's node, `<node>_<group>`, on the group as its component: streamers only on the ports on no link (a link's container is never loaded or stored), and one accelerator task whose `values` are each unit's, by unit. Dot 6's `mult_dot`: `{"mac": {"n": 128, "T": 128}, "sum": {"n": 1, "T": 1}}`. The program writes the group's JOBS = n_u / ∏ T_v over its first unit u and its folds v, then each fold's JOB_BEATS (section 10).
+- **A linked group** is one task at its first unit's node, `<node>_<group>`, on the group as its component: streamers only on the ports on no link (a link's container is never loaded or stored), and one accelerator task whose `values` are each unit's, by unit. Dot 6's `mult_dot`: `{"mac": {"n": 128, "T": 128}, "sum": {"n": 1, "T": 1}}`. The program writes the group's JOBS = n_u / ∏ T_v over its first unit u and its folds v, then each fold's JOB_BEATS (section 10). A group of several chains (D189) writes a `JOBS_<SINK>` per chain, n_head / ∏ T over the chain's folds; a fork's ports but the first have no streamer, and its heads must fire alike (`ValueError` otherwise).
 - **Chains through L1** (D105): `after` holds data dependences only, so two groups chain with one wait, on the first's writer.
 - **In place**: a writer never waits for a reader it starts with. That is an in-place update, allowed only when the reader is a port of its own unit visiting the same addresses in the same order (axpy's `y`, a fold's seed), and refused by name otherwise.
 - **A packed output** (D174): its writer's innermost loop of n pushes at stride s = W · b / 8 bytes becomes $(\lceil n / d_{out} \rceil, d_{out}\thinspace s)$, one write per 8-byte word, its spatial bounds `[1]`, the outer loops and the base unchanged. matvec at i8, M = 10 int32 outputs at W = 1: (10, 4 B) becomes (5, 8 B). A sliced input's reader (D180) the same with d_in: vecadd_v1_1 at W = 1, N = 64: (64, 4 B) becomes (32, 8 B).
@@ -663,7 +665,7 @@ The quiet build (`-DFORGE_QUIET`): every start waited on right after it, each se
 |---|---|
 | `trace` | the trace path: a unit's `snax_acc0/unit`, a linked group's `snax_acc0/group_<group>`, with several groups the accelerator's `snax_acc0` |
 | `csrs` | `streamers`, one `{name, first, last, trace}` per set (`snax_acc0/streamer_<set>`), and `accelerator`, each CSR's header name → its number |
-| `tasks` | per accelerator task in order: its `beats` (a linked group's most firing unit's n), its group's CSR values (JOBS = n / T, and JOB_BEATS = T for a fold without `params.T`, named with its unit in a linked group, `MAC_JOB_BEATS`), with several groups its group's `trace` |
+| `tasks` | per accelerator task in order: its `beats` (a linked group's most firing unit's n), its group's CSR values (JOBS = n / T, and JOB_BEATS = T for a fold without `params.T`, named with its unit in a linked group, `MAC_JOB_BEATS`; a `JOBS_<SINK>` per chain in a group of several, D189), with several groups its group's `trace` |
 
 ### Checks
 
@@ -683,8 +685,8 @@ The quiet build (`-DFORGE_QUIET`): every start waited on right after it, each se
 |---|---|
 | `design_point` | the design point's path, as section 9's files name it |
 | `tag` | the generated entry's name, `<accelerator_slot>_<design>` (D131); the modules are named after it |
-| `accelerators` | in CSR order, each one streamer set (D157): `name`, `inputs` and `outputs` (its outer ports as `"<unit>.<port>"`, in reader and writer order), `groups`; with `share_ports` (D169) also `movers` and `port_mux` (below) |
-| a group | `name`, `csrs` (its own), `units`, `links`, each link `{name, from, to, depth}` from an `out` port to an `in` port (depth 0 a wire, ≥ 1 a buffer of that many beats) |
+| `accelerators` | in CSR order, each one streamer set (D157): `name`, `inputs` and `outputs` (its outer ports as `"<unit>.<port>"`, in reader and writer order; a forked input one entry, the list of the ports its reader feeds, the first the reader's, D189), `groups`; with `share_ports` (D169) also `movers` and `port_mux` (below) |
+| a group | `name`, `csrs` (its own: START, JOBS, STATUS, BUSY_COUNTER; with several chains a `JOBS_<SINK>` per chain in place of JOBS, in the order of their sinks, D189), `units`, `links`, each link `{name, from, to, depth}` from an `out` port to an `in` port (depth 0 a wire, ≥ 1 a buffer of that many beats) |
 
 A unit:
 
@@ -773,8 +775,8 @@ Each a `GenError`, before anything is written:
 
 - **The entry**: a tag that is not an identifier, or a platform without an `accelerator_slot` (`gen.tag`: a design named `dot-1`).
 - **A unit**: a null binding (`gen.binding`), an unregistered datapath (`gen.datapath`), a controller other than `counted` (`gen.controller`), a drain other than 0 (`gen.drain`), timing other than the catalogue's (`gen.timing`), and what the datapath refuses: args (`gen.args`), op (`gen.op`), ports (`gen.ports`), rates (`gen.rate`), a port's lanes neither whole 64-bit channels nor sliced (an input) or packed (an output) (`gen.lanes`), a dtype not intN or uintN (`gen.dtype`), a seed on a `Mac` without `accumulate` (`gen.seed`), a broadcast into a datapath whose lanes are not lane-wise (`gen.broadcast`).
-- **Links and groups**: a link not from an `out` to an `in` of the same dtype and lanes, or an end with `d_in`, `d_out` or `broadcast` (`gen.link`), a port on two links (`gen.link_port`), `inputs` or `outputs` not exactly the unlinked ports (`gen.outer`), a group not connected (`gen.group`), a shared accelerator not as `movers` and `port_mux` say (`gen.share`).
-- **Until the phase that lifts it**: a group that is not a chain in unit order, only the last unit's output outer (`gen.chain`, until tier A), and a unit of span > 1 on an outer input (`gen.span`, until B2).
+- **Links and groups**: a link not from an `out` to an `in` of the same dtype and lanes, or an end with `d_in`, `d_out` or `broadcast` (`gen.link`), a port on two links (`gen.link_port`), `inputs` or `outputs` not exactly the unlinked ports (`gen.outer`), a group not connected by its links and forks (`gen.group`), a fork of fewer than two outer inputs, over two groups, onto a unit a link feeds or over ports unlike in dtype, lanes, `d_in` or `broadcast` (`gen.fork`), a shared accelerator not as `movers` and `port_mux` say, or one with a fork (`gen.share`).
+- **Until the phase that lifts it**: a group that is not a chain in unit order, only the last unit's output outer, or chains a fork joins, each going forward in unit order with only its sink's output outer (`gen.chain`), and a unit of span > 1 on an outer input (`gen.span`, until B2).
 
 ### Types, groups and firings
 
@@ -838,9 +840,9 @@ A group's control unit is generated from the description (D147). Its rule is sna
 
 - **Each cycle**: a forward pass over the units in topological order gives what each offers whatever its room (its outer valids and every in-edge's offer; a wire its producer's offer, a buffer occupancy > 0), and a backward pass gives its room (its outer output's ready, and every out-edge's take), whether it is frozen, fires and reads.
 - **Outer ports**: a unit fires only with every one of its outer valids (ready_k = fire_{u(k)}), so valid never depends on ready. A seed is taken on a job's first firing only: fire = a.valid ∧ (¬first ∨ seed.valid).
-- **Classes**, at the unit owning the outer output: stall_out (it is frozen) > busy (a unit fires, reads or is in its II gap) > stall_in (a unit wants to fire and an outer input has no beat) > flush.
+- **Classes**, at the units owning the outer outputs: stall_out (one is frozen) > busy (a unit fires, reads or is in its II gap) > stall_in (a unit wants to fire and an outer input has no beat) > flush.
 - **Span**: a unit reads lane l in place at span S, firing on lane S − 1; a frozen unit reads nothing; busy counts every read.
-- A fork, a join, a cycle or two chains are refused until tier A.
+- **Chains** (D189): several chains meet only at a forked outer input, one reader for their heads; its beat is taken when every head fires, ready = ∧ fire of the heads, so a head that could fire waits while another cannot. Each chain counts its own JOBS; the group is done when every chain is. A fork, a join or a cycle of links is refused, and chains no fork joins.
 
 **Counting** (D153, D168): a register only for what a firing changes, counting up with no product and no copy of a setting (the tests read the csr's JOBS and JOB_BEATS live).
 
@@ -1071,7 +1073,7 @@ A group's fields:
 | Field | Holds |
 |---|---|
 | `name`, `units`, `links` | the group (one unit, or linked units, D146) |
-| `cycles` | snax-gvsoc's group rule (`snax_group_rule.py`) stepped by `estimate/cycles.py`'s `group_cycles`, every input valid and the output ready, JOBS and each T as the program writes them, a sliced input through its slicer (one cycle more a run, D180) |
+| `cycles` | snax-gvsoc's group rule (`snax_group_rule.py`) stepped by `estimate/cycles.py`'s `group_cycles`, every input valid and every output ready, JOBS (one per chain, D189) and each T as the program writes them, a forked input once, a sliced input through its slicer (one cycle more a run, D180) |
 | `bottleneck` | the max over its units of n · max(II, span), summed over the runs when several nests share the group (D165) |
 | `ramp` | the sum over its units of L + span − 1, plus 1 per buffer link, once per run |
 | `stall` | `cycles` − `bottleneck` − `ramp` |

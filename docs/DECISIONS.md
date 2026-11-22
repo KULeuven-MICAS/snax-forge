@@ -7,7 +7,7 @@ Rules (D117):
 - An entry is a choice with a real alternative that someone may want to reverse: direction, ownership, the interfaces between components, the order of work. Implementation details live in the module's docstring and its tests.
 - An entry says what was decided, why, and where the detail lives, in a few short bullets; an edge case only when there is one. A change is written into the entry, not chained after it.
 - Entries merged into one keep all their numbers in its heading, so a cite of any of them still finds it. A number is never changed or reused; the text of a removed entry is in git history.
-- A new decision gets the next free number, under the area it belongs to. Next free number: **D189**.
+- A new decision gets the next free number, under the area it belongs to. Next free number: **D190**.
 
 Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29–D45, D47–D50, D53, D54, D56, D58–D63, D65–D67, D69, D74, D76–D78, D80, D81, D83, D88–D97, D100, D101, D103, D104, D106, D107, D109, D110, D114, D115, D119, D124, D127, D128, D132, D133, D138–D141, D151, D156, D159, D160, D181.
 
@@ -178,7 +178,7 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 
 ### D112 · D145 · D146 · D148 — An accelerator is groups of linked units, described once
 
-- **Decided:** a bound graph nests accelerator ⊃ groups ⊃ units and links. A group is a stand-alone accelerator with its own START, JOBS, STATUS, BUSY_COUNTER and control unit; its units are joined by links of a depth (0 a wire, ≥ 1 a buffer of that many beats), with streamers on the outer ports only. A unit fires JOBS · ∏ T over itself and the folds downstream. `link` merges two bound units' groups; `encapsulate` puts several groups in one accelerator. One description per design point, `accelerator.json`, nested the same way, is what Emit, the catalogue check and SNAX-GVSoC all read.
+- **Decided:** a bound graph nests accelerator ⊃ groups ⊃ units and links. A group is a stand-alone accelerator with its own START, JOBS (one per chain, D189), STATUS, BUSY_COUNTER and control unit; its units are joined by links of a depth (0 a wire, ≥ 1 a buffer of that many beats) into chains, with streamers on the outer ports only. A unit fires JOBS · ∏ T over itself and the folds downstream. `link` merges two bound units' groups, `fork_read` two chains reading one container (D189); `encapsulate` puts several groups in one accelerator. One description per design point, `accelerator.json`, nested the same way, is what Emit, the catalogue check and SNAX-GVSoC all read.
 - **Why:** a composition is one accelerator with one register window and one wrapper, groups run apart, and the model and the RTL cannot be configured apart.
 - **Where:** CONTRACTS, "SNAX-DFG" and "Accelerator RTL spec".
 - **Edge:** an empty run still ends in a done, so there is no ERROR CSR. Links between accelerators stay parked (open item 53).
@@ -189,6 +189,13 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 - **Why:** control is written once for model and RTL, never per variant, and `<tag>_ctrl` plus `<tag>_datapath` compare with a whole HLS block. SnaxGroupRule's flat count of firings stays the spec.
 - **Where:** CONTRACTS, "Accelerator RTL spec"; `GroupRule.scala`.
 - **Edge:** programming the next task during a run is open item 123.
+
+### D189 — Chains share a read: one reader, one group
+
+- **Decided:** a group may hold several chains whose heads read one container with the same beats in the same order. `fork_read` gives them one reader: a beat is taken only when every head fires (their readies ANDed), so a head that could fire waits while another cannot. The chains are one group: one START, STATUS, BUSY_COUNTER and control unit, done when every chain is, a frozen output stalling it; each chain has its own JOBS (`JOBS_<SINK>`) and its sink its own output. Chains meet only at a fork: no link or join between them. LOWER refuses a fork whose heads fire unlike, since the group would never end.
+- **Why:** one pass over A (bicg, mvt, later atax) reads A once for both halves; the fork is flow control, not a datapath. A JOBS per chain because each chain's results come at their own rate (q a row, s once), and one control unit because a shared beat ties the chains to one schedule anyway.
+- **Where:** CONTRACTS, "SNAX-DFG", "Recipe", "Task list" and "Accelerator RTL spec"; snax-gvsoc's `snax/snax_group_rule.py`.
+- **Edge:** a forked unit of span > 1 and a fork beside shared movers (`share_ports`) are refused for now.
 
 ### D157 — A design's accelerators are streamer sets of one entry
 

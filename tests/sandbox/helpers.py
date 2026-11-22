@@ -58,6 +58,7 @@ SELECTED = {
     "mark_transpose": "node", "unmark_transpose": "node", "data_transpose": "node",
     "share": "group", "unshare": "group",
     "share_ports": "container", "unshare_ports": "container",
+    "fork_read": "container", "unfork_read": "container",
     "lift": "at", "unlift": "name", "apply_recipe": "block", "unapply": "block",
     "name_block": "nodes",
 }  # fmt: skip

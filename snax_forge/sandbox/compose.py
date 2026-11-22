@@ -651,9 +651,10 @@ def link(g: Graph, container: str, depth: int, group: str) -> Graph:
     hops = [(k.attrs["from"], k.attrs["to"]) for k, _ in g.walk()
             if k.kind == "link" and k.attrs["from"] in members]  # fmt: skip
     hops.append((w.attrs["instance"], r.attrs["instance"]))
-    if sorted(hops) != sorted(pairwise(order)):
+    problem = chains_problem(order, hops, fork_sets(g, members))
+    if problem is not None:
         raise LinkError("link.chain", f"{what}: the group's links {hops} over its units {order}: "
-                        "a group is a chain until tier A (fork and join)")  # fmt: skip
+                        f"{problem}")  # fmt: skip
     for n in nodes:
         if n.attrs["instance"] in members:
             n.attrs["group"] = group
@@ -662,6 +663,48 @@ def link(g: Graph, container: str, depth: int, group: str) -> Graph:
                 "from": w.attrs["instance"], "to": r.attrs["instance"]})  # fmt: skip
     shared.insert(ri, node)
     return _result(g)
+
+
+def fork_sets(g: Graph, members: set[str]) -> list[set[str]]:
+    """The instances each fork node (D189) joins, those among ``members``."""
+    return [{r.split(".")[0] for r in n.attrs["readers"]} & members
+            for n, _ in g.walk() if n.kind == "fork"]  # fmt: skip
+
+
+def chains_problem(order: list[str], hops: list[tuple[str, str]],
+                   forked: list[set[str]]) -> str | None:  # fmt: skip
+    """Why a group's units ``order`` (the graph's order) and links ``hops`` are not one chain,
+    or, with forks (``forked``, the units each joins), not chains a fork joins (D189); None
+    when they are. Without a fork: the links join each unit to the next. With one: each unit
+    has at most one link in and one out, each goes forward, and the forks join every chain."""
+    if not any(len(f) > 1 for f in forked):
+        if sorted(hops) == sorted(pairwise(order)):
+            return None
+        return "a group is one chain, or chains joined by a fork (fork_read)"
+    at = {u: k for k, u in enumerate(order)}
+    for side in (0, 1):
+        ends = [h[side] for h in hops]
+        twice = sorted({u for u in ends if ends.count(u) > 1})
+        if twice:
+            return f"{twice} {'give to' if side == 0 else 'take from'} two links; a chain has no fork or join of links"
+    if any(at[a] >= at[b] for a, b in hops):
+        return "a link goes back in the graph's order"
+    parent = {u: u for u in order}
+
+    def root(u: str) -> str:
+        while parent[u] != u:
+            u = parent[u]
+        return u
+
+    for a, b in hops:
+        parent[root(a)] = root(b)
+    for f in forked:
+        f = sorted(f)
+        for u in f[1:]:
+            parent[root(u)] = root(f[0])
+    if len({root(u) for u in order}) > 1:
+        return "its chains are not joined by a fork"
+    return None
 
 
 def _unlink_site(g: Graph, selected: str) -> dict[str, Any]:
@@ -694,6 +737,10 @@ def unlink(g: Graph, container: str) -> Graph:
     for n, _ in g.walk():
         if n.kind == "link" and n.attrs["from"] in members:
             parent[root(n.attrs["from"])] = root(n.attrs["to"])
+    for f in fork_sets(g, members):
+        f = sorted(f)
+        for u in f[1:]:
+            parent[root(u)] = root(f[0])
     parts: dict[str, set[str]] = {}
     for u in members:
         parts.setdefault(root(u), set()).add(u)

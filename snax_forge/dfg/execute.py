@@ -521,6 +521,8 @@ register_executor("tasklet", _run_tasklet)
 register_executor("accelerated", _run_accelerated)
 # A link runs as the transient it replaced: its writer and reader still name it
 register_executor("link", lambda node, ctx: None)
+# A fork is one read given to several units (D189); each still names the container
+register_executor("fork", lambda node, ctx: None)
 
 
 def _run_transpose(node: Node, ctx: Context) -> None:

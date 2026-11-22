@@ -6,7 +6,7 @@ to an imported graph (CONTRACTS, "Recipe"). Each transform has its inverse and a
 graph-shape test of where it applies: split, tag, bind, interchange and encapsulate
 (transforms.py); split_reduce, fuse_map and link (compose.py); bake_scalar (scalar.py);
 fuse_seed (seed.py); mark_transpose and data_transpose (transpose.py); share (share.py); share_ports
-(share_ports.py); lift and apply_recipe (blocks.py). ``bind`` recognises a BRM's pattern
+(share_ports.py); fork_read (fork.py); lift and apply_recipe (blocks.py). ``bind`` recognises a BRM's pattern
 through the matchers of patterns.py. The runner (run.py) binds the recipe's symbols, applies
 every step, checks each against the reference executor and writes every step's graph. The
 command line is ``python -m snax_forge.sandbox RECIPE`` (pixi ``sandbox``); the editor's
@@ -15,6 +15,7 @@ session is session.py.
 
 from .blocks import lift, unlift
 from .compose import fuse_map, join_reduce, link, split_reduce, unfuse_map, unlink
+from .fork import fork_read, unfork_read
 from .patterns import PATTERNS, match, register_pattern
 from .recipe import Recipe, SandboxError, Step
 from .run import Result, apply_recipe, bind_recipe_symbols, write_steps
@@ -49,6 +50,7 @@ __all__ = [
     "bind_recipe_symbols",
     "data_transpose",
     "encapsulate",
+    "fork_read",
     "fuse_map",
     "fuse_seed",
     "interchange_map",
@@ -68,6 +70,7 @@ __all__ = [
     "unbake_scalar",
     "unbind",
     "unencapsulate",
+    "unfork_read",
     "unfuse_map",
     "unfuse_seed",
     "unlift",

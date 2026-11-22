@@ -272,11 +272,13 @@ def counter(unit: Unit, n: int) -> tuple[int, str]:
     )
 
 
-def rule_graph(group: Group) -> tuple[list[dict[str, Any]], list[dict[str, Any]], str]:
+def rule_graph(group: Group, forked: list[list[str]] = ()) -> tuple[
+        list[dict[str, Any]], list[dict[str, Any]], str | list[str], list[list[tuple[str, int]]]]:  # fmt: skip
     """``group`` as snax_group_rule's GroupRule takes it: per unit its name, L, II, span and
     outer inputs (its ``in`` ports no link feeds); per link ``{from, to, to_input, depth}``,
-    ``to_input`` the fed port's place among its unit's ``in`` ports; and
-    the unit owning the outer output (the one with an ``out`` port no link takes)."""
+    ``to_input`` the fed port's place among its unit's ``in`` ports; the unit owning the outer
+    output (the one with an ``out`` port no link takes), with several chains each in unit
+    order; and the forks (``forked``, the accelerator's, D189) as ``(unit, outer input)``."""
     fed = {link.to for link in group.links}
     taken = {link.from_ for link in group.links}
 
@@ -294,26 +296,37 @@ def rule_graph(group: Group) -> tuple[list[dict[str, Any]], list[dict[str, Any]]
         dst, port = link.to.split(".", 1)
         links.append({"from": src, "to": dst, "to_input": ins(by_name[dst]).index(port),
                       "depth": link.depth})  # fmt: skip
-    (owner,) = (u.name for u in group.units
-                for name, p in u.ports.items() if p.dir == "out" and f"{u.name}.{name}" not in taken)  # fmt: skip
-    return units, links, owner
+    owners = [u.name for u in group.units
+              for name, p in u.ports.items() if p.dir == "out" and f"{u.name}.{name}" not in taken]  # fmt: skip
+    rule_forks = []
+    for f in forked:
+        mine = []
+        for x in f:
+            u, port = x.split(".", 1)
+            if u in by_name:
+                outer = [q for q in ins(by_name[u]) if f"{u}.{q}" not in fed]
+                mine.append((u, outer.index(port)))
+        if len(mine) > 1:
+            rule_forks.append(mine)
+    return units, links, owners[0] if len(owners) == 1 else owners, rule_forks
 
 
-def group_counter(group: Group, jobs: int, beats: Mapping[str, int]) -> tuple[int, str]:
+def group_counter(group: Group, jobs: int | list[int], beats: Mapping[str, int],
+                  forked: list[list[str]] = ()) -> tuple[int, str]:  # fmt: skip
     """The counter of a linked group's task with an always-ready streamer, from the group rule
     (snax-gvsoc's snax_group_rule.py, estimate/cycles.py's ``group_cycles``) stepped with every
     input
     valid and the output ready, and the working: JOBS ``jobs``, each unit's T its JOB_BEATS
     (``beats``, by unit) or its fixed T (``params.T``, else 1). BUSY_COUNTER counts the busy cycles,
     E - s: the rule starts the run in cycle 0. A run that does not end is ``gen.counter``."""
-    units, links, owner = rule_graph(group)
+    units, links, owner, forks = rule_graph(group, forked)
     ts = [beats.get(u.name, u.params.get("T", 1)) for u in group.units]
-    if jobs == 0 or 0 in ts:
+    if 0 in (jobs if isinstance(jobs, list) else [jobs]) or 0 in ts:
         return (
             0,
             "The group's BUSY_COUNTER counts its busy cycles: JOBS or a T 0 is the empty run, none",
         )
-    end = group_cycles(units, links, owner, jobs, ts)
+    end = group_cycles(units, links, owner, jobs, ts, forks)
     if end is None:
         raise GenError("gen.counter", f"group {group.name}: the rule does not end")
     t = ", ".join(f"{u.name} {x}" for u, x in zip(group.units, ts, strict=True))
@@ -337,7 +350,7 @@ def vectors(design_point: str | Path, root: str | Path | None = None) -> dict:
     linked = len(group.units) > 1
     data = {a.name: a for a in arrays(point)}
     ports = []
-    for end in [*acc.inputs, *acc.outputs]:
+    for end in [*acc.readers, *acc.outputs]:  # a fork's by its reader's port (D189)
         name, port = end.split(".", 1)
         inst, node = found[name], instance_nodes(point.graph)[name]
         values = task.values[name] if linked else task.values
@@ -349,11 +362,16 @@ def vectors(design_point: str | Path, root: str | Path | None = None) -> dict:
                       "lanes": stream_lanes(point.graph, node, inst, p.name),
                       "beats": values["n"] // rate, "values": list(data[array].values)})  # fmt: skip
     if linked:
-        writes = job_writes(found, task.values, acc.fixed_folds)
-        csrs = {k: v for _, k, v in writes}
+        chains = group.chains()
+        writes = job_writes(found, task.values, acc.fixed_folds, chains)
+        # several chains (D189): a unit's CSR by unit, as the program names it (MAC_JOB_BEATS)
+        csrs = {(k if len(chains) == 1 or k.startswith("JOBS") else f"{u.upper()}_{k}"): v
+                for u, k, v in writes}  # fmt: skip
         n = task.values[group.units[0].name]["n"]
         beats = {u: v for u, k, v in writes if k == "JOB_BEATS"}
-        value, working = group_counter(group, csrs["JOBS"], beats)
+        jobs = [v for _, k, v in writes if k.startswith("JOBS")]
+        value, working = group_counter(group, jobs[0] if len(jobs) == 1 else jobs, beats,
+                                       acc.forks)  # fmt: skip
     else:
         csrs = job_values(found[task.component], task.values)
         n = task.values["n"]

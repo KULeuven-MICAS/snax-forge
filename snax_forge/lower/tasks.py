@@ -23,7 +23,14 @@ import numpy as np
 
 from snax_forge.common import JsonFile, check_keys, plain
 from snax_forge.design.platform import WAIT_MODES
-from snax_forge.design.streamers import groups, instance_nodes, instances, streamer_name
+from snax_forge.design.streamers import (
+    forks,
+    group_chains,
+    groups,
+    instance_nodes,
+    instances,
+    streamer_name,
+)
 
 if TYPE_CHECKING:
     from snax_forge.design.point import DesignPoint
@@ -394,17 +401,30 @@ def _check_widths(s: Configure, point: DesignPoint, units: list[str]) -> None:
 
     found, nodes = instances(point.graph), instance_nodes(point.graph)
     fixed = {u for u in units if fixed_fold(point.graph, nodes[u], found[u]) is not None}
-    writes = job_writes({u: found[u] for u in units}, s.values, fixed)
+    chains = group_chains(point.graph, units) if len(units) > 1 else None
+    writes = job_writes({u: found[u] for u in units}, s.values, fixed, chains)
     width = point.platform.acc_csr.job_width
     for unit, csr, value in writes:
         if value > (1 << width) - 1:
             raise ValueError(f"{s.component}: {csr} {value} (unit {unit}) is past "
                              f"acc_csr.job_width = {width} bits, at most {(1 << width) - 1}")  # fmt: skip
     by_unit = s.values if len(units) > 1 else {units[0]: s.values}
-    firings = writes[0][2]
-    for u in units:
-        rate = fold_rate(found[u])
-        firings *= 1 if rate is None else by_unit[u][rate]
+    # NB (D189): a fork's units take each beat together, so they fire alike or the group
+    # never ends (the members of the longer chain wait for the others for ever)
+    for f in forks(point.graph):
+        mine = [r.split(".")[0] for r in f.attrs["readers"]]
+        if set(mine) <= set(units) and len({by_unit[u]["n"] for u in mine}) > 1:
+            fired = ", ".join(f"{u} {by_unit[u]['n']}" for u in mine)
+            raise ValueError(f"{s.component}: the fork of {f.attrs['container']} gives its beats "
+                             f"to units that fire {fired} times; a fork's units fire alike "
+                             "(change the nests so each reads every beat once)")  # fmt: skip
+    firings = 0
+    for chain in chains or [units]:  # each chain's head, JOBS · ∏T over the chain
+        jobs = next(v for u, k, v in writes if k.startswith("JOBS") and u in (chain[0], chain[-1]))
+        for u in chain:
+            rate = fold_rate(found[u])
+            jobs *= 1 if rate is None else by_unit[u][rate]
+        firings = max(firings, jobs)
     if firings >= HEAD_FIRINGS:
         raise ValueError(f"{s.component}: the head fires JOBS · ∏T = {firings} times, 2^32 or "
                          "more (SNAX-GVSoC counts a run's firings in 32 bits)")  # fmt: skip

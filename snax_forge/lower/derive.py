@@ -38,7 +38,7 @@ from snax_forge.design.streamers import (
     firing_loops,
     group_runs,
     instances,
-    linked_ports,
+    no_streamer,
     port_loops,
     streamer_name,
 )
@@ -350,7 +350,7 @@ class _Derivation:
         self.runs = {
             m.id: run for runs in group_runs(g).values() for run in runs for m in run.values()
         }  # a linked group's runs
-        self.linked_ports = linked_ports(g)
+        self.linked_ports = no_streamer(g)  # a link's ports and a fork's but its first
         self.last_write = {m.data: n.id for n in self.nodes for m in n.outputs.values()}
         self.steps: list[Any] = []
         self.in_l1: dict[str, str] = {}  # container -> task that last put it in L1

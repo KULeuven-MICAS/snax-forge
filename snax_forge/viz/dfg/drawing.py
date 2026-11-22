@@ -138,6 +138,7 @@ def drawing(g: Graph, tops: Sequence[Node], placed: dict[str, Any] | None = None
     scalars = {c for c, cont in g.containers.items() if cont.attrs.get(SCALAR)}
     local = {c for c, cont in g.containers.items() if "loop.local" in cont.attrs}
     linked: dict[str, Node] = {n.attrs["container"]: n for n, _ in g.walk() if n.kind == "link"}
+    forked = {r for n, _ in g.walk() if n.kind == "fork" for r in n.attrs["readers"]}  # D189
     nested = [_maps_to(t) for t in tops]
     top_of = {n.id: t.id for t, under in zip(tops, nested, strict=True) for n, _ in under}
     maps_of = {n.id: maps for under in nested for n, maps in under}
@@ -417,9 +418,12 @@ def drawing(g: Graph, tops: Sequence[Node], placed: dict[str, Any] | None = None
                            node=n.id, port=port)  # fmt: skip
                     a, ap = b, None
                 tgt, tp = into(n, port, m.data, task)
+                fork = n.kind == "accelerated" and f"{n.attrs['instance']}.{port}" in forked
                 d.edge(a, ap, tgt, tp, task=task, skip=skipped_all, data=m.data,
-                       style="seed" if seeded else "data", sub=api.memlet_text(m), node=n.id, port=port,
-                       mark=api.transpose_label(m.data, perm) if perm is not None else None,
+                       style="seed" if seeded else "fork" if fork else "data",
+                       sub=api.memlet_text(m), node=n.id, port=port,
+                       mark=(api.transpose_label(m.data, perm) if perm is not None
+                             else "fork" if fork else None),
                        transpose=perm is not None,
                        broadcast=(m.data in scalars and not m.names)
                        or (tgt.startswith("unit:") and api.broadcast_port(g, n, port)))  # fmt: skip

@@ -24,8 +24,8 @@ from snax_forge import expr
 from snax_forge.design.streamers import (
     firing_loops,
     instance_of,
-    linked_ports,
     links,
+    no_streamer,
     per_word,
     port_loops,
     slices_per_word,
@@ -100,8 +100,9 @@ def _num_ch(graph: Graph, c: str, lanes: int) -> int:
 
 
 def outer_ports(graph: Graph) -> list[tuple[Node, str, PortData]]:
-    """Every bound node's ports on no link, each with what it moves in one task."""
-    linked = linked_ports(graph)
+    """Every bound node's ports with a streamer (on no link, not a fork's but its first, D189),
+    each with what it moves in one task."""
+    linked = no_streamer(graph)
     out = []
     for n, _ in graph.walk():
         if n.kind != "accelerated":

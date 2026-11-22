@@ -24,6 +24,9 @@ from typing import Any
 from snax_forge.brm import SEED
 from snax_forge.common import CodedError, repo_root
 from snax_forge.design.streamers import (
+    forked_ports,
+    forks,
+    group_chains,
     group_links,
     group_runs,
     instance_nodes,
@@ -66,22 +69,46 @@ def group_rule() -> ModuleType:
     return mod
 
 
-def group_cycles(units: list[dict[str, Any]], links: list[dict[str, Any]], owner: str,
-                 jobs: int, ts: list[int]) -> int | None:  # fmt: skip
+def group_cycles(units: list[dict[str, Any]], links: list[dict[str, Any]],
+                 owner: str | list[str], jobs: int | list[int], ts: list[int],
+                 forks: list[list[tuple[str, int]]] | None = None) -> int | None:  # fmt: skip
     """The busy cycles of one run of a group, E - s: the group rule (``units`` with ``name``,
     ``L``, ``ii``, ``span`` and ``inputs``, its outer inputs, and optionally ``d_in``, their pops
     per word in port order, absent all 1; ``links`` ``{from, to, to_input, depth}``; ``owner``
-    the unit with the outer output) stepped with every input valid and the output ready, JOBS
-    ``jobs`` and each unit's T ``ts``; 0 for the empty run (JOBS or a T 0), None for a run that
-    does not end."""
-    if jobs == 0 or 0 in ts:
+    the unit with the outer output, or with several chains each sink in unit order, ``jobs``
+    then one per chain, and ``forks`` each ``(unit, outer input)`` one reader feeds, D189)
+    stepped with every input valid and every output ready, JOBS ``jobs`` and each unit's T
+    ``ts``; 0 for the empty run (a JOBS or a T 0), None for a run that does not end."""
+    several = not isinstance(jobs, int)
+    if 0 in (jobs if several else [jobs]) or 0 in ts:
         return 0
-    rule = group_rule().GroupRule(units, links, owner)
+    rule = group_rule().GroupRule(units, links, owner, forks or ())
     n = rule.firings_per_run(jobs, ts)
-    d_in = [d for u in units for d in u.get("d_in", [1] * u["inputs"])]
+    d_in = [1] * rule.n_valid
+    for u, places in zip(units, rule.place, strict=True):
+        for d, i in zip(u.get("d_in", [1] * u["inputs"]), places, strict=True):
+            d_in[i] = max(d_in[i], d)  # a forked input: its reader's slicer, at its first
+    ready = (lambda c: [True] * len(rule.outputs)) if several else (lambda c: True)
     bound = sum(n) * max(u["ii"] * u["span"] for u in units) + sum(u["L"] for u in units) + 16
-    _, end = rule.run(jobs, ts, lambda c: [True] * len(d_in), lambda c: True, bound, 1, d_in)
+    _, end = rule.run(jobs, ts, lambda c: [True] * len(d_in), ready, bound, 1, d_in)
     return end
+
+
+def rule_forks(graph: Graph, members: list[str], insts: dict[str, Any],
+               fed: set[str]) -> list[list[tuple[str, int]]]:  # fmt: skip
+    """The group's forks (D189) as the group rule takes them: per fork each reader's unit and
+    the place of its port among the unit's outer inputs (its ``in`` ports no link feeds)."""
+    out = []
+    for f in forks(graph):
+        mine = []
+        for r in f.attrs["readers"]:
+            u, p = r.split(".")
+            if u in members:
+                outer = [q for q in _ins(insts[u]) if f"{u}.{q}" not in fed]
+                mine.append((u, outer.index(p)))
+        if len(mine) > 1:
+            out.append(mine)
+    return out
 
 
 @dataclass
@@ -212,7 +239,7 @@ def _slicers(graph: Graph, insts: dict[str, Any], members: list[str],
              ends: list[tuple[Node, str, str]]) -> dict[str, Block]:  # fmt: skip
     """Each sliced outer input's ``FifoSlicer`` (D180) by ``<unit>.<port>``: its ``d_in``, lanes
     and dtype, no fires (``_datapath_blocks`` gives its pops)."""
-    fed, nodes, out = {to for _, _, to in ends}, {}, {}
+    fed, nodes, out = {to for _, _, to in ends} | set(forked_ports(graph)), {}, {}
     for n, _ in graph.walk():
         if n.kind == "accelerated":
             nodes.setdefault(n.attrs["instance"], []).append(n)
@@ -289,8 +316,11 @@ def group_blocks(graph: Graph, job_width: int = 32,
         rule_links = [{"from": frm.split(".")[0], "to": to.split(".")[0],
                        "to_input": _ins(insts[to.split(".")[0]]).index(to.split(".")[1]),
                        "depth": k.attrs["depth"]} for k, frm, to in ends]  # fmt: skip
-        (owner,) = {u for u in members for p in insts[u].ports
-                    if p.direction == "out" and f"{u}.{p.name}" not in taken}  # fmt: skip
+        owners = [u for u in members for p in insts[u].ports
+                  if p.direction == "out" and f"{u}.{p.name}" not in taken]  # fmt: skip
+        owner: str | list[str] = owners[0] if len(owners) == 1 else owners
+        chains = group_chains(graph, members) if len(owners) > 1 else None
+        rule_fork = rule_forks(graph, members, insts, fed)
         tasks = (  # a linked group once per run (several when nests share it)
             runs[name] if len(members) > 1 else [{members[0]: n} for n in nodes[members[0]]]
         )
@@ -300,10 +330,11 @@ def group_blocks(graph: Graph, job_width: int = 32,
         for task in tasks:
             values = {u: unit_firings(graph, n, insts[u])[0] for u, n in task.items()}
             writes = job_writes({u: insts[u] for u in task}, values if len(task) > 1 else
-                                values[members[0]], set())  # fmt: skip
-            jobs = next(v for _, k, v in writes if k == "JOBS")
+                                values[members[0]], set(), chains)  # fmt: skip
+            all_jobs = [v for _, k, v in writes if k.startswith("JOBS")]
+            jobs: int | list[int] = all_jobs[0] if chains is None else all_jobs
             ts = [values[u][r] if (r := fold_rate(insts[u])) else 1 for u in members]
-            end = group_cycles(rule_units, rule_links, owner, jobs, ts)
+            end = group_cycles(rule_units, rule_links, owner, jobs, ts, rule_fork)
             if end is None:
                 raise EstimateError("estimate.counter", f"group {name}: the group rule does not "
                                     "end")  # fmt: skip

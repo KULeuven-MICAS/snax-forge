@@ -48,6 +48,7 @@ from .streamers import (
     linked_ports,
     memlet_spatial_bounds,
     nest_spatial_bounds,
+    no_streamer,
     per_word,
     port_loops,
     resolve,
@@ -227,7 +228,7 @@ def _subtree(node: Node) -> Iterator[Node]:
 def _streamers(design: Design) -> dict[str, tuple[str, str]]:
     """Every streamer the graph needs, one per port not on a link: name -> (instance,
     port)."""
-    linked = linked_ports(design.graph)
+    linked = no_streamer(design.graph)
     return {
         streamer_name(i, p.name): (i, p.name)
         for i, inst in design.instances.items()

@@ -35,6 +35,7 @@ An id is the kernel, then words in this order, each from the lists below; a word
 | | `shared` | both halves on one set of units (D165) |
 | | `ports` | a container on ports its writer and reader share (`share_ports`) |
 | | `enc` | a group's units encapsulated as one accelerator |
+| | `fork` | both halves read A through one reader, in one group of two chains (`fork_read`, D189) |
 | Type | (none) | int64 |
 | | `i<b>` | inputs of b bits |
 | | `o<b>` | the output of b bits, when it differs from the inputs |
@@ -50,6 +51,7 @@ The one-unit kernels take a word for their fold or scalar instead of a form: `tr
 | `bicg_v1` | bicg | `bicg_dot2` | Each half a `dot_v2` group per row, by reuse: `lift matvec` at each half, then `matvec/matvec_v2` on both. Half 2 reads A down its columns, so its banks follow the layout (`padded_rows`). |
 | `bicg_v2` | bicg | `bicg_dot2_col` | q a `dot_v2` group per row and s the column form, by reuse: `matvec/matvec_v2` on q and `matvec/matvec_v7` on s, r broadcast to the `Mac`'s lanes (D186). Both halves read A along its rows. |
 | `bicg_v2_1` | bicg | `bicg_dot2_col_i8_o32` | `bicg_v2` at int8 in, int32 out (`types` i8). |
+| `bicg_v3` | bicg | `bicg_dot2_col_fork_i8_o32` | One pass over A at N = W: `bicg_v2_1`'s halves by reuse, then `fork_read` A, so one reader gives each beat of A to q's `dot_v2` group and s's `Mac` in one group of two chains (D189). M = 64, N = W = 32; the bank for N > W comes with D191. |
 | `dot_v1` | dot | `dot1` | A `vmul` and a `vsum` as two accelerators, the products written to L1 and read back. The first of the six dot variants, the one the others are measured against. |
 | `dot_v1_1` | dot | `dot1_enc` | `dot_v1` with its two units encapsulated as one accelerator: one streamer set, two tasks. |
 | `dot_v1_2` | dot | `dot1_ports` | `dot_v1` with the products' container on shared ports (`share_ports`): `vmul`'s writer and `vsum`'s reader on one streamer set. |

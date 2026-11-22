@@ -6,7 +6,9 @@ snax-forge writes it once (gvsoc.py; rtl.py writes the same bytes), and SNAX-GVS
 (snax-gvsoc ``snax/snax_cfg.py``) and Emit (``hw/chisel/``) read it. The accelerators come in
 the order the graph first uses them (design/streamers.py's ``accelerators``), each with its
 groups in the graph's order: a unit alone, named after its instance, or the units ``link``
-joins, named by its ``group``. Group and accelerator names are unique over the design: they name
+and ``fork_read`` join, named by their ``group``. A group of several chains (D189) has a
+``JOBS_<SINK>`` per chain in place of ``JOBS``, and its forked input is one entry of
+``inputs``, a list of the ports it feeds, the reader's first. Group and accelerator names are unique over the design: they name
 the control units and the streamer sets. ``Accelerator.define`` names a CSR as the header does.
 
 ``from_dict`` and every construction check what a reader needs (links, outer ports, groups,
@@ -29,15 +31,18 @@ import numpy as np
 from snax_forge import expr
 from snax_forge.brm import Instance
 from snax_forge.common import JsonFile
-from snax_forge.design.streamers import group_links as shared_links
-from snax_forge.design.streamers import groups as graph_groups
 from snax_forge.design.streamers import (
+    forked_ports,
+    group_chains,
     instance_nodes,
     is_broadcast,
+    jobs_csr,
     linked_ports,
     shared_movers,
     streamer_name,
 )
+from snax_forge.design.streamers import group_links as shared_links
+from snax_forge.design.streamers import groups as graph_groups
 from snax_forge.dfg import Graph, Node
 from snax_forge.dfg.subset import map_range, parse_dim
 from snax_forge.lower.c import accelerators as c_accelerators
@@ -161,6 +166,21 @@ class Group:
                    [Unit.from_dict(u) for u in d["units"]],
                    [Link.from_dict(k) for k in d["links"]])  # fmt: skip
 
+    def chains(self) -> list[list[str]]:
+        """Its chains, each its units from head to sink along its links, in the order of their
+        sinks among its units (one for a group a fork does not join, D189)."""
+        nxt = {k.from_.split(".")[0]: k.to.split(".")[0] for k in self.links}
+        prev = {b: a for a, b in nxt.items()}
+        out = []
+        for u in self.units:
+            if u.name in nxt:
+                continue
+            chain = [u.name]
+            while chain[0] in prev:
+                chain.insert(0, prev[chain[0]])
+            out.append(chain)
+        return out
+
     def in_order(self) -> list[tuple[Unit | None, Csr]]:
         """Its CSRs in CSR order, each with its unit (None for the group's own): START, JOBS,
         the units' R/W, STATUS, BUSY_COUNTER."""
@@ -229,14 +249,16 @@ class Accelerator:
     and, encapsulated, its start, and with ``share_ports`` its movers too."""
 
     name: str
-    inputs: list[str]
+    inputs: list[str | list[str]]  # a fork's ports (D189) as one entry, the reader's first
     outputs: list[str]
     groups: list[Group]
     movers: list[Mover] = field(default_factory=list)
     port_mux: PortMux | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        d = {"name": self.name, "inputs": list(self.inputs), "outputs": list(self.outputs),
+        d = {"name": self.name,
+             "inputs": [x if isinstance(x, str) else list(x) for x in self.inputs],
+             "outputs": list(self.outputs),
              "groups": [g.to_dict() for g in self.groups]}  # fmt: skip
         if self.port_mux is not None:
             d |= {"movers": [m.to_dict() for m in self.movers],
@@ -246,7 +268,8 @@ class Accelerator:
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> Accelerator:
         mux = d.get("port_mux")
-        return cls(d["name"], list(d["inputs"]), list(d["outputs"]),
+        return cls(d["name"], [x if isinstance(x, str) else list(x) for x in d["inputs"]],
+                   list(d["outputs"]),
                    [Group.from_dict(g) for g in d["groups"]],
                    [Mover.from_dict(m) for m in d.get("movers", [])],
                    None if mux is None else PortMux.from_dict(mux))  # fmt: skip
@@ -270,6 +293,16 @@ class Accelerator:
     @property
     def units(self) -> list[Unit]:
         return [u for g in self.groups for u in g.units]
+
+    @property
+    def readers(self) -> list[str]:
+        """Its input ports with a reader of their own, a fork's by its first port."""
+        return [x if isinstance(x, str) else x[0] for x in self.inputs]
+
+    @property
+    def forks(self) -> list[list[str]]:
+        """Its forked inputs (D189), each the ports one reader feeds, the reader's first."""
+        return [list(x) for x in self.inputs if not isinstance(x, str)]
 
     def define(self, group: Group | None, unit: Unit | None, csr: Csr) -> str:
         """A CSR's name in the header and the program (CONTRACTS, "Accelerator RTL spec")."""
@@ -347,9 +380,20 @@ class Description(JsonFile):
         return [u for g in self.groups for u in g.units]
 
     @property
-    def inputs(self) -> list[str]:
-        """Every outer input port, set after set: the wrapper's ``stream2acc_<k>`` order."""
+    def inputs(self) -> list[str | list[str]]:
+        """Every outer input, set after set (a fork's ports as one entry, D189): the wrapper's
+        ``stream2acc_<k>`` order."""
         return [p for a in self.accelerators for p in a.inputs]
+
+    @property
+    def readers(self) -> list[str]:
+        """Every outer input with a reader of its own, a fork's by its first port."""
+        return [p for a in self.accelerators for p in a.readers]
+
+    @property
+    def forks(self) -> list[list[str]]:
+        """Every forked input (D189), the ports one reader feeds, the reader's first."""
+        return [f for a in self.accelerators for f in a.forks]
 
     @property
     def outputs(self) -> list[str]:
@@ -414,6 +458,10 @@ def _check_links(acc: Accelerator) -> None:
     """The links, the outer ports and each group's connectedness; see the module doc."""
     linked: set[str] = set()
     outer: dict[str, list[str]] = {"in": [], "out": []}
+    for f in acc.forks:
+        if len(f) < 2 or len(set(f)) != len(f):
+            raise GenError("gen.fork", f"accelerator {acc.name}: the fork {f}: a fork gives one "
+                           "reader to two or more outer input ports of its units")  # fmt: skip
     for g in acc.groups:
         ports = {f"{u.name}.{k}": p for u in g.units for k, p in u.ports.items()}
         parent = {u.name: u.name for u in g.units}
@@ -444,6 +492,10 @@ def _check_links(acc: Accelerator) -> None:
                     raise GenError("gen.link_port", f"{what}: port {end} is on another link too")
                 linked.add(end)
             parent[root(k.from_.split(".")[0])] = root(k.to.split(".")[0])
+        for f in acc.forks:
+            mine = [x.split(".")[0] for x in f if x.split(".")[0] in parent]
+            for u in mine[1:]:
+                parent[root(u)] = root(mine[0])
         if len({root(u.name) for u in g.units}) > 1:
             raise GenError("gen.group", f"accelerator {acc.name}: group {g.name}'s units "
                            f"{[u.name for u in g.units]} are not connected by its links")  # fmt: skip
@@ -451,8 +503,12 @@ def _check_links(acc: Accelerator) -> None:
         for name, p in ports.items():
             if name not in linked:
                 outer[p.dir].append(name)
+    want_in: list[str | list[str]] = list(outer["in"])
+    for f in acc.forks:
+        _check_fork(acc, f, outer["in"])
+        want_in = [list(f) if x == f[0] else x for x in want_in if x not in f[1:]]
     for key, have, want in (
-        ("inputs", acc.inputs, outer["in"]),
+        ("inputs", acc.inputs, want_in),
         ("outputs", acc.outputs, outer["out"]),
     ):
         if list(have) != want:
@@ -460,9 +516,35 @@ def _check_links(acc: Accelerator) -> None:
                            f"unlinked ports are {want}, in group, unit and port order")  # fmt: skip
 
 
+def _check_fork(acc: Accelerator, f: list[str], outer: list[str]) -> None:
+    """``gen.fork``: a forked input's ports (D189), two or more outer inputs of one group's
+    chain heads, alike in dtype, lanes, slicing and broadcast."""
+    what = f"accelerator {acc.name}: the fork {f}"
+    group_of = {u.name: g for g in acc.groups for u in g.units}
+    port = {f"{u.name}.{k}": p for u in acc.units for k, p in u.ports.items()}
+    if len(f) < 2 or len(set(f)) != len(f) or any(x not in outer for x in f):
+        raise GenError("gen.fork", f"{what}: a fork gives one reader to two or more outer "
+                       f"input ports of its units ({outer})")  # fmt: skip
+    if len({group_of[x.split(".")[0]].name for x in f}) > 1:
+        raise GenError("gen.fork", f"{what}: its ports are in several groups; a fork feeds "
+                       "the chains of one group")  # fmt: skip
+    fed = {k.to.split(".")[0] for g in acc.groups for k in g.links}
+    for x in f:
+        if x.split(".")[0] in fed:
+            raise GenError("gen.fork", f"{what}: {x}'s unit is fed by a link; a fork feeds the "
+                           "heads of chains")  # fmt: skip
+    kinds = {(port[x].dtype, port[x].lanes, port[x].d_in, port[x].broadcast) for x in f}
+    if len(kinds) > 1:
+        raise GenError("gen.fork", f"{what}: its ports differ in dtype, lanes, d_in or "
+                       "broadcast; one reader's beat is the same for all")  # fmt: skip
+
+
 def _check_shared(acc: Accelerator) -> None:
     """``gen.share``: a shared accelerator's movers and port mux (module doc)."""
     what = f"accelerator {acc.name}"
+    if acc.forks:
+        raise GenError("gen.share", f"{what}: a fork and shared movers in one accelerator; "
+                       "share_ports or fork_read, not both")  # fmt: skip
     if acc.port_mux is None or not acc.movers:
         raise GenError("gen.share", f"{what}: movers and port_mux come together")
     names = [g.name for g in acc.groups]
@@ -493,19 +575,32 @@ def _check_shared(acc: Accelerator) -> None:
 
 
 def _check_chain(acc: Accelerator, g: Group) -> None:
-    """``gen.chain`` and ``gen.span``, SNAX-GVSoC's limits (module doc)."""
+    """``gen.chain`` and ``gen.span``, SNAX-GVSoC's limits (module doc): a chain in unit order
+    whose last unit's output alone is outer, or with a fork (D189) chains it joins, each
+    going forward in unit order with its sink's output outer."""
     names = [u.name for u in g.units]
     hops = [(k.from_.split(".")[0], k.to.split(".")[0]) for k in g.links]
-    chain = sorted(hops) == sorted(pairwise(names))
     outs = {u.name: [f"{u.name}.{p}" for p, x in u.ports.items() if x.dir == "out"]
             for u in g.units}  # fmt: skip
     linked = {k.from_ for k in g.links}
-    for i, u in enumerate(g.units):
-        outer = [p for p in outs[u.name] if p not in linked]
-        chain = chain and bool(outer) == (i == len(g.units) - 1)
+    forked = [{x.split(".")[0] for x in f} & set(names) for f in acc.forks]
+    if not any(len(f) > 1 for f in forked):
+        chain = sorted(hops) == sorted(pairwise(names))
+        for i, u in enumerate(g.units):
+            outer = [p for p in outs[u.name] if p not in linked]
+            chain = chain and bool(outer) == (i == len(g.units) - 1)
+    else:
+        at = {u: k for k, u in enumerate(names)}
+        froms, tos = [a for a, _ in hops], [b for _, b in hops]
+        chain = (len(set(froms)) == len(froms) and len(set(tos)) == len(tos)
+                 and all(at[a] < at[b] for a, b in hops))  # fmt: skip
+        for u in names:
+            outer = [p for p in outs[u] if p not in linked]
+            chain = chain and bool(outer) == (u not in froms)
     if not chain:
         raise GenError("gen.chain", f"accelerator {acc.name}: group {g.name}'s links {hops} over "
-                       f"its units {names}: a group is a chain until tier A (fork and join)")  # fmt: skip
+                       f"its units {names}: a group is a chain, or chains a fork joins "
+                       "(fork_read)")  # fmt: skip
     to = {k.to for k in g.links}
     for u in g.units:
         outer_in = [p for p, x in u.ports.items() if x.dir == "in" and f"{u.name}.{p}" not in to]
@@ -578,6 +673,7 @@ def describe(point: DesignPoint, point_path: str) -> Description:
     found = units(point)
     g = point.graph
     linked = linked_ports(g)
+    forked = forked_ports(g)
     offsets = iter(range(1 << 16))  # contiguous over the accelerators and groups, in CSR order
     widths = point.platform.acc_csr
     accs = []
@@ -588,18 +684,28 @@ def describe(point: DesignPoint, point_path: str) -> Description:
             if members[0] not in mine:
                 continue
             start = Csr("START", "rw", next(offsets), FIXED_WIDTH["START"])
-            jobs = Csr("JOBS", "rw", next(offsets), widths.job_width)
+            chains = group_chains(g, members)
+            jobs = [Csr(jobs_csr(chains, c), "rw", next(offsets), widths.job_width)
+                    for c in chains]  # fmt: skip
             group_units = [_unit(point, u, mine[u], offsets) for u in members]
             status = Csr("STATUS", "ro", next(offsets), FIXED_WIDTH["STATUS"])
             counter = Csr("BUSY_COUNTER", "ro", next(offsets), widths.counter)
             group_links = [Link(k.attrs["container"], end_from, end_to, k.attrs["depth"])
                            for k, end_from, end_to in shared_links(g, members)]  # fmt: skip
-            groups.append(Group(group_name, [start, jobs, status, counter], group_units,
+            groups.append(Group(group_name, [start, *jobs, status, counter], group_units,
                                 group_links))  # fmt: skip
             for u in members:
                 ports = [p for p in mine[u].ports if f"{u}.{p.name}" not in linked]
-                inputs += [f"{u}.{p.name}" for p in ports if p.direction == "in"]
-                outputs += [f"{u}.{p.name}" for p in ports if p.direction == "out"]
+                for p in ports:
+                    name = f"{u}.{p.name}"
+                    if p.direction == "out":
+                        outputs.append(name)
+                    elif name in forked:  # a fork's port: on its reader's entry
+                        continue
+                    elif name in forked.values():
+                        inputs.append([name, *(x for x, y in forked.items() if y == name)])
+                    else:
+                        inputs.append(name)
         movers, mux = [], None
         if acc_name in shared:
             movers = [Mover(m.name, "write" if m.write else "read", m.num_ch, m.masked,

@@ -137,6 +137,8 @@ SETS = {
         Design("bicg_v2", (PADDED, "design.schedule=pipeline")),  # the halves on spread banks
         *(Design("bicg_v2_1", size + (f"design.schedule={s}",)) for size in ((), ("M=40",))
           for s in ("sequential", "pipeline")),
+        Design("bicg_v2_1", ("N=32", "W=32", "design.schedule=pipeline")),  # the one pass's twin
+        Design("bicg_v3"),  # one pass over A at N = W (D189)
     ],
 }  # fmt: skip
 

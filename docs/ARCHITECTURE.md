@@ -122,7 +122,7 @@ One hand-written JSON file per block in `snax_forge/brm/library/` (D68, `brm/`; 
 
 **SNAX-SANDBOX** (D72, `sandbox/`; C§4): registered transforms rewrite a `.snaxdfg`, in the order a recipe names them, and the reference executor checks every step. `--set W=8` runs one point of a sweep.
 
-- The transforms and their inverses are C§4's table: splitting and tagging (D73), `bind` (D82, D161), composition (`encapsulate`, `link`, `fuse_map`, `split_reduce`, D148, D150), `fuse_seed` (D163), `mark_transpose` (D164), sharing (`share`, `share_ports`, D165, D169), and recipe reuse (`lift`, `apply_recipe`, D166). **[PLANNED]** a tile transform (M15).
+- The transforms and their inverses are C§4's table: splitting and tagging (D73), `bind` (D82, D161), composition (`encapsulate`, `link`, `fuse_map`, `split_reduce`, D148, D150), `fuse_seed` (D163), `mark_transpose` (D164), sharing (`share`, `share_ports`, `fork_read`, D165, D169, D189), and recipe reuse (`lift`, `apply_recipe`, D166). **[PLANNED]** a tile transform (M15).
 - Each transform may give a `site(g, selected)`, the graph-shape test of where it applies, which it calls first and the editor lists from (D72).
 - The editor's session (`sandbox/session.py`) is a working recipe replayed in memory with a cursor for undo and redo; per step it gives the sites, the bind list, the marks, the diff, the estimate and the design checks, and Save writes a recipe after those checks.
 
