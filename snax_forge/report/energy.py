@@ -1,8 +1,9 @@
 """``energy.md``: a flow's energy run (flow/energy.py, D177) for people and LLMs.
 
-``render_energy(run)`` gives each window of the quiet build with its energy in the five parts,
+``render_energy(run)`` gives each window of the energy run with its energy in the five parts,
 the static estimate's one run of the accelerator beside it, and the counts each part was priced
-on, the run windows' against the static estimate's. Every number is ``energy.json``'s.
+on, the run windows' (or the whole run's) against the static estimate's. Every number is
+``energy.json``'s.
 """
 
 from __future__ import annotations
@@ -45,10 +46,11 @@ def render_energy(run: EnergyRun) -> str:
     s = run.static
     out.append(_row(["static", "", "one run of the accelerator", str(s.cycles)]
                     + [dec3(s.parts[k]) or "" for k in PARTS] + [dec3(s.total) or ""]))  # fmt: skip
-    runs = run.of_kind("run")
+    runs = run.runs()
     if runs:
         heads = ["Count", *(f"window {w.index}" for w, _ in runs), "static"]
-        out += ["", "## The counts the run windows were priced on", "",
+        what = "the run windows were" if runs[0][0].kind == "run" else "the whole run was"
+        out += ["", f"## The counts {what} priced on", "",
                 _row(heads), _row(["---"] * len(heads))]  # fmt: skip
         for key, label in COUNTS:
             out.append(_row([label, *(_count(getattr(e, key)) for _, e in runs),

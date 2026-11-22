@@ -10,7 +10,8 @@ were taken, every component's k-th set of lines being snapshot k, named as the c
 them: the crossbar's inputs by port (``acc_a.lane0``, ``core0``, ``axi``), each group by its
 unit's trace name, each unit by its instance, each mover by its trace name. ``windows`` subtracts
 consecutive snapshots, boot's (all 0) first; window k takes its kind and label from the quiet
-build's ``obs_marks.json`` row of its mark (window 0 is ``boot``). Nothing is recounted (D137).
+build's ``obs_marks.json`` row of its mark (window 0 is ``boot``, or ``first``'s: ``WHOLE`` for a
+run that wrote no mark, its one window boot to the end). Nothing is recounted (D137).
 """
 
 from __future__ import annotations
@@ -26,6 +27,8 @@ from .events import Line, RunError
 GROUP_CLASSES = ("busy", "stall_in", "stall_out", "flush")
 MOVER_CLASSES = ("busy", "stall_xbar", "stall_fifo", "idle")
 END = -1  # the mark of the end of the simulation's snapshot
+BOOT = ("boot", "boot")  # window 0's kind and label
+WHOLE = ("whole", "the whole run")  # window 0 of a run that wrote no mark: boot to the end
 
 
 @dataclass
@@ -212,16 +215,18 @@ def _check_end(lines: Sequence[Line], end: Snapshot, inputs: dict[int, str]) -> 
         )
 
 
-def windows(snaps: Sequence[Snapshot], marks: Sequence[dict[str, Any]]) -> list[Window]:
+def windows(snaps: Sequence[Snapshot], marks: Sequence[dict[str, Any]],
+            first: tuple[str, str] = BOOT) -> list[Window]:  # fmt: skip
     """The windows between consecutive snapshots, boot's first (module doc); ``marks`` are
-    ``obs_marks.json``'s rows (``mark``, ``kind``, ``label``). Empty without snapshots."""
+    ``obs_marks.json``'s rows (``mark``, ``kind``, ``label``), ``first`` window 0's kind and
+    label. Empty without snapshots."""
     if not snaps:
         return []
     named = {m["mark"]: m for m in marks}
     boot = Snapshot(0, 0, snaps[0].counters.zero())
     out = []
     for k, (a, b) in enumerate(zip([boot, *snaps[:-1]], snaps, strict=True)):
-        row = named.get(a.mark) if k else {"kind": "boot", "label": "boot"}
+        row = named.get(a.mark) if k else {"kind": first[0], "label": first[1]}
         kind, label = (row["kind"], row["label"]) if row else ("mark", f"mark {a.mark}")
         out.append(Window(k, a.mark, kind, label, a.cycle, b.cycle, b.counters.minus(a.counters)))
     return out

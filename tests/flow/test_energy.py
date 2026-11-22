@@ -4,7 +4,9 @@ written by hand, its snapshots priced by window.
 On SNAX-GVSoC (marker ``gvsoc``: in the image), vecadd and dot_v3 at N = 2048, W = 8 run with
 ``energy``: the counts of the ``run`` window that the program fixes are the static estimate's
 (each mover's grants its words, each unit's firings times its span its fires), every mover's
-requests are at least its grants, and the windows' energies add up to the run's total.
+requests are at least its grants, and the windows' energies add up to the run's total. A
+pipelined schedule (bicg_v2_1's ``pipeline``) is priced in one window of the default build, its
+control part the static estimate's within 10 %.
 """
 
 from __future__ import annotations
@@ -120,6 +122,30 @@ def test_a_run_without_snapshots_is_refused():
         energy_of([], cluster, MARKS, graph, estimate(graph, Platform.load(SNAX_FORGE)))
 
 
+def test_a_run_without_marks_is_priced_in_one_window_of_the_whole_run():
+    """The default build's end snapshot alone, priced with no marks: one window, boot to the end,
+    named the whole run, costing what the quiet build's run window costs."""
+    cluster = cluster_from(*files())
+    graph = steps("vecadd_v1")[-1]
+    lines = [parse_line(x) for x in snap_lines(cluster, [(-1, 140, totals(16, 2, 16, 16))])]
+    e = energy_of(lines, cluster, None, graph, estimate(graph, Platform.load(SNAX_FORGE)))
+    assert [(w.kind, w.label, w.first, w.last) for w in e.windows] == [
+        ("whole", "the whole run", 0, 140)]  # fmt: skip
+    ((_, got),) = e.runs()
+    ((_, want),) = run(stalls=2).of_kind("run")
+    assert got.parts == pytest.approx(want.parts, rel=1e-12)
+    assert "## The counts the whole run was priced on" in render_energy(e)
+
+
+def test_a_default_build_that_wrote_marks_is_refused():
+    cluster = cluster_from(*files())
+    graph = steps("vecadd_v1")[-1]
+    snaps = [(1, 50, totals(0, 0, 0, 0)), (-1, 140, totals(16, 0, 16, 16))]
+    lines = [parse_line(x) for x in snap_lines(cluster, snaps)]
+    with pytest.raises(RunError, match="energy.marks"):
+        energy_of(lines, cluster, None, graph, estimate(graph, Platform.load(SNAX_FORGE)))
+
+
 def test_the_flow_runs_the_quiet_build_again_and_prices_it(tmp_path, monkeypatch):
     """vecadd through the flow with --energy, SNAX-GVSoC stubbed: the quiet build's run window
     counted as the static estimate counts it costs the static estimate's five parts."""
@@ -144,6 +170,26 @@ def test_the_flow_runs_the_quiet_build_again_and_prices_it(tmp_path, monkeypatch
         summary(f)
     )
     assert "energy" in f.times
+
+
+def test_a_pipelined_flow_prices_the_default_build_in_one_window(tmp_path, monkeypatch):
+    """vecadd at ``pipeline`` through the flow with --energy, SNAX-GVSoC stubbed: the energy run
+    is the default build with the summary traces, priced in one window of the whole run."""
+    from snax_forge.flow import summary
+
+    from .helpers import stub
+    from .test_flow import flow
+
+    fake = stub(monkeypatch, tmp_path)
+    f = flow(tmp_path, energy=True, design_sets=[("schedule", "pipeline")])
+    goal, v = fake.calls[-1]
+    assert goal == "run" and v["ELF"].endswith("sw/forge.elf") and v["TRACES"] == "summary"
+    assert v["EVENTS"].endswith("energy/events.log")
+    ((w, got),) = f.energy.runs()
+    assert len(f.energy.windows) == 1 and (w.kind, w.label) == ("whole", "the whole run")
+    for part, want in f.energy.static.parts.items():
+        assert got.parts[part] == pytest.approx(want, rel=1e-12), part
+    assert "energy    sw/forge.elf, 1 window; window 0 " in summary(f)
 
 
 @pytest.fixture(scope="module", params=sorted(REAL))
@@ -187,3 +233,25 @@ def test_a_real_runs_windows_add_up_to_its_total(real):
     for part, total in d["total"].items():
         assert sum(w["energy"]["parts"][part] for w in ws) == pytest.approx(total), part
     assert d["total"]["memory"] > 0
+
+
+@pytest.fixture(scope="module")
+def pipelined(tmp_path_factory):
+    """bicg_v2_1 at ``pipeline`` (64 x 64, W = 8, int8) through the flow on SNAX-GVSoC with
+    ``energy``."""
+    return run_flow(recipe_path("bicg_v2_1"), SNAX_FORGE, design_sets=[("schedule", "pipeline")],
+                    out=tmp_path_factory.mktemp("bicg_v2_1") / "flow", energy=True)  # fmt: skip
+
+
+@pytest.mark.gvsoc
+@needs_gvsoc
+def test_a_real_pipelined_run_is_priced_in_one_window_of_the_default_build(pipelined):
+    """The run is sound, energy.json holds one window, the whole run, and its control part, each
+    group's busy cycles at its own control bits, is the static estimate's within 10 %."""
+    f = pipelined
+    assert f.passed and f.check["data_errors"] == 0, f.check
+    d = json.loads((f.out / "energy" / "energy.json").read_text())
+    ((w,),) = [d["windows"]]
+    assert (w["kind"], w["label"], w["first"]) == ("whole", "the whole run", 0)
+    got, want = w["energy"]["parts"]["control"], d["static"]["parts"]["control"]
+    assert got == pytest.approx(want, rel=0.10), (got, want)
