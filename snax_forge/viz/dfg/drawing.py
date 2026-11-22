@@ -1,7 +1,10 @@
 """The DFG page's drawing of one step (D185): boxes with ports, edges and outlines, as a flat
 graph the page lays out with ELK. Loops are a chain of boxes from the outermost down; an edge
 from a container passes through exactly the loops its subset uses, a loop it skips on the way
-in marked ``↻``; a link's reader nest is drawn on its writer's chain when their loops match;
+in marked ``↻``; a link's reader nest is drawn on its writer's chain when their loops match, a
+fork's other readers on its first's (D189), their read one edge that splits at the unit; a
+group is drawn as one box holding its hardware and the loops that drive only it, one loop chain
+per configuration, and a block whose boxes all land in groups is named on them instead;
 hardware is keyed by what it is (``unit:<instance>``, ``link:<from>.<port>><to>.<port>``,
 ``slicer:<instance>.<port>``), so a unit shared between tasks is one box, a temporal mux in front
 of its inputs per task. Python decides every box, edge, text and hint; the page measures and
@@ -198,6 +201,48 @@ def drawing(g: Graph, tops: Sequence[Node], placed: dict[str, Any] | None = None
                 if find(b.id) != find(a.id):
                     alias[b.id] = find(a.id)
                     also.setdefault(find(a.id), []).append(b.id)
+
+    # a fork's other readers' nests drawn on its first reader's chain (D189): each loop onto the
+    # first's of the same range and kind, else level by level; their read of the container one
+    # edge, from the first's innermost loop it passes
+    fork_tail: dict[
+        str, tuple[str, str]
+    ] = {}  # "<instance>.<port>" -> (the first's node, the data)
+    for f, _ in g.walk():
+        if f.kind != "fork":
+            continue
+        reader = {}
+        for under in nested:
+            for n, _ in under:
+                if n.kind == "accelerated":
+                    for p, m in n.inputs.items():
+                        if m.data == f.attrs["container"]:
+                            reader[f"{n.attrs['instance']}.{p}"] = n
+        first = reader.get(f.attrs["readers"][0])
+        if first is None:
+            continue
+        c0 = maps_of[first.id]
+        for r in f.attrs["readers"][1:]:
+            n = reader.get(r)
+            if n is None or top_of[n.id] == top_of[first.id]:
+                continue
+            ci = maps_of[n.id]
+            if not c0 or len(ci) != len(c0) or not all(len(mp.body or []) == 1 for mp in ci):
+                continue
+            key = [(mp.attrs["range"], mp.attrs.get("loop.kind")) for mp in c0]
+            pairs = [(key.index(k), b) for b in ci
+                     if key.count(k := (b.attrs["range"], b.attrs.get("loop.kind"))) == 1]  # fmt: skip
+            if len(pairs) != len(ci) or len({i for i, _ in pairs}) != len(ci):
+                if key != [(mp.attrs["range"], mp.attrs.get("loop.kind")) for mp in ci]:
+                    continue
+                pairs = list(enumerate(ci))
+            for i, b in pairs:
+                if find(b.id) != find(c0[i].id):
+                    alias[b.id] = find(c0[i].id)
+                    also.setdefault(find(c0[i].id), []).append(b.id)
+            fork_tail[r] = (first.id, f.attrs["container"])
+    depth = {find(mp.id): i for n in nodes.values() for i, mp in enumerate(maps_of[n.id])
+             if mp.id not in alias}  # fmt: skip
 
     # hardware: a unit's ports, its slicers, packers, temporal muxes
     def unit_ports(inst: str) -> tuple[list[str], list[str]]:
@@ -412,6 +457,11 @@ def drawing(g: Graph, tops: Sequence[Node], placed: dict[str, Any] | None = None
                 seeded = port == SEED
                 perm = n.attrs.get(TRANSPOSE, {}).get(c)
                 a, ap = src, None
+                tail = fork_tail.get(f"{n.attrs.get('instance')}.{port}")
+                if tail is not None and tail[1] == m.data:  # the first reader's edge carries it
+                    hops = []
+                    if passed:
+                        a = max((chain[i] for i in passed), key=lambda b: depth.get(b, 0))
                 for b, skipped, i in hops:  # the subset as known at the loop's entry
                     d.edge(a, ap, b, None, task=task, skip=skipped, data=m.data,
                            sub=api.memlet_text(api._projected(g, m, _vars_before(maps, i))),
@@ -489,7 +539,13 @@ def drawing(g: Graph, tops: Sequence[Node], placed: dict[str, Any] | None = None
         if c not in used and c not in linked and c not in local and c not in csr_read:
             d.container(c, first=True)
     _rows(d, nodes, alias)
-    outlines = _outlines(g, d, by_inst, shared, blocks, nodes)
+    drives: dict[str, set[str | None]] = {}  # a loop box: the groups of the leaves under it
+    for n in nodes.values():
+        if n.kind in LEAVES:
+            for mp in maps_of[n.id]:
+                drives.setdefault(find(mp.id), set()).add(
+                    group_of(n) if n.kind == "accelerated" else None)  # fmt: skip
+    outlines = _outlines(g, d, by_inst, shared, blocks, nodes, drives)
     for n in d.nodes.values():  # a mux's or packer's outline is its unit's
         if n["kind"] in ("mux", "demux", "slicer", "packer") and "parent" not in n:
             n["parent"] = d.nodes[f"unit:{n['unit']}"].get("parent")
@@ -557,10 +613,14 @@ def _rows(d: _Drawing, nodes: dict[str, Node], alias: dict[str, str]) -> None:
 
 
 def _outlines(g: Graph, d: _Drawing, by_inst: dict[str, list[Node]], shared: dict[str, list[str]],
-              blocks: Sequence[dict[str, Any]], nodes: dict[str, Node]) -> list[dict[str, Any]]:  # fmt: skip
-    """Groups and accelerators around their hardware, open blocks around their nests. A group
-    is drawn when it has a link or more than one unit; an accelerator when it holds more than
-    one drawn group, or one group of another name."""
+              blocks: Sequence[dict[str, Any]], nodes: dict[str, Node],
+              drives: dict[str, set[str | None]]) -> list[dict[str, Any]]:  # fmt: skip
+    """Groups and accelerators around their hardware, open blocks around their nests. Every
+    group is drawn, one box per configuration the program writes: its units, links, slicers
+    and packers, and the loops that drive only it (``drives``, a loop box's groups, None for a
+    leaf that is not a unit). An accelerator is drawn when it holds more than one group, or one
+    group of another name. An open block whose boxes all land in groups is not drawn: each
+    group it fed names it."""
     groups: dict[str, dict[str, Any]] = {}
     for inst, ns in by_inst.items():
         n = ns[0]
@@ -575,7 +635,7 @@ def _outlines(g: Graph, d: _Drawing, by_inst: dict[str, list[Node]], shared: dic
                 if inst in grp["units"]:
                     grp["links"] = True
     out: list[dict[str, Any]] = []
-    drawn_grp = {k for k, grp in groups.items() if grp["links"] or len(grp["units"]) > 1}
+    drawn_grp = set(groups)
     accs: dict[str, list[str]] = {}
     for k, grp in groups.items():
         accs.setdefault(grp["acc"], []).append(k)
@@ -635,6 +695,53 @@ def _outlines(g: Graph, d: _Drawing, by_inst: dict[str, list[Node]], shared: dic
             blk = innermost(n) if n is not None else None
             if blk is not None:
                 box["parent"] = f"block:{blk}"
+            mine = drives.get(bid, set()) if box["kind"] == "loop" else set()
+            if len(mine) == 1 and None not in mine:
+                box["parent"] = f"grp:{next(iter(mine))}"
+    # folded blocks one group spans (a fork across lifted blocks, D189): its box around them
+    folded: dict[str, list[str]] = {}
+    for bid, box in d.nodes.items():
+        n = nodes.get(bid)
+        if box["kind"] != "block" or n is None:
+            continue
+        name = n.attrs["block"]["name"]
+        mine = {group_of(x) for x, _ in g.walk() if x.kind == "accelerated"
+                and name in [b["name"] for b in x.attrs.get(BLOCK) or []]}  # fmt: skip
+        if len(mine) == 1:
+            folded.setdefault(mine.pop(), []).append(bid)
+    for k, bids in folded.items():
+        if len(bids) > 1 and f"grp:{k}" not in {o["id"] for o in out}:
+            ups = {d.nodes[b].get("parent") for b in bids}
+            out.append({"id": f"grp:{k}", "kind": "group", "text": f"group {k}", "sel": k,
+                        "parent": ups.pop() if len(ups) == 1 else None})  # fmt: skip
+            for b in bids:
+                d.nodes[b]["parent"] = f"grp:{k}"
+    # an open block none of whose boxes stayed in it: named on the groups it fed instead
+    for b in sorted(open_, key=lambda b: -len(_ancestors(blocks, b))):  # innermost first
+        oid = f"block:{b['name']}"
+        content = [bid for bid, box in d.nodes.items() if box["kind"] in
+                   ("loop", "tasklet", "copy", "block", "unit")
+                   and (n := nodes.get(bid) or (by_inst.get(bid.split(":", 1)[1], [None])[0]
+                                                if bid.startswith("unit:") else None)) is not None
+                   and innermost(n) == b["name"]]  # fmt: skip
+        if not content or any(d.nodes[x].get("parent") == oid for x in content):
+            continue
+        if any(o["parent"] == oid and o["kind"] not in ("group", "accelerator") for o in out):
+            continue
+        fed = {d.nodes[x].get("parent") for x in content}
+        up = next(o["parent"] for o in out if o["id"] == oid)
+        out = [o for o in out if o["id"] != oid]
+        for o in out:
+            if o["parent"] == oid:
+                o["parent"] = up
+            if o["id"] in fed and o["kind"] == "group":
+                if b["name"] != o["sel"]:
+                    sep = ", " if "· from " in o["text"] else " · from "
+                    o["text"] += sep + b["name"]
+                o.setdefault("block", b["name"])
+        for box in d.nodes.values():
+            if box.get("parent") == oid:
+                box["parent"] = up
     return out
 
 
