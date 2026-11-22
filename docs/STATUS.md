@@ -158,7 +158,7 @@ Dates: 20 Nov, track A's target (fine if it slips); 27 Nov, the softmax gate (so
 
 ## Open Items
 
-Questions not decided yet. Numbers are never reused; a closed item is removed, and where it closed is in git history. Next free number: 155.
+Questions not decided yet. Numbers are never reused; a closed item is removed, and where it closed is in git history. Next free number: 156.
 
 1. BRM dataflow notation: `affine` and `stream` (D70), frozen in M6.
 2. What automated search reads and how a sweep is configured (DSE1, M8).
@@ -361,6 +361,7 @@ Questions not decided yet. Numbers are never reused; a closed item is removed, a
 152. i16 and i32 for the type-preset kernels of tier A: `mvt_types` and `bicg_types` define the presets, only `i8` has run (TIERA1, TIERA2); their forms at `i16` and `i32` on SNAX-GVSoC and vsim, at the widths the bank bound allows.
 153. A pattern library for `lift`: today `matches` searches the import of every kernel some recipe is written on (12, imported through DaCe once per process, 0.75 s), and grows a match of several nests only through containers an earlier chain wrote, so it finds neither bicg nor mvt on itself (`lift … at=` does). Proposed: stored `.snaxdfg` patterns in a base set (elementwise, reductions, dot, matvec) and opt-in extension sets (two-half kernels, later tiers), matched bottom-up; a later chain may also join through a container an earlier one reads (tried in TIERA2's brainstorm: finds bicg and mvt on themselves, refuses bicg in gesummv and atax). With the reuse path's leftovers: a sub-recipe's `types` dropped without a word, the span check skipping spans it cannot evaluate; and the bank form as a matvec recipe, so the one pass can be built by reuse. Brainstormed at TIERA2's close.
 154. One pass over A for N beyond the bank: strips of S columns outer, the other output's partials through L1 between strips (hw-tier-a's bicg variants 5 and 7), with M15's tiling.
+155. The estimate's check on accelerators that run at once (D179's note) adds their words a cycle against the bank count, but not which banks they reach. bicg_v2 at int64 under `pipeline` reads 25 words a cycle over 32 banks (no note) and loses 44–63 % on SNAX-GVSoC: in the contiguous layout the column form reads a strip of A from the same 8 banks for its 64 beats while the row form's A and p pass over them. A check by the banks each stream reaches (from its base, strides and the row pitch, as D86 counts a column's banks) would name such pairs; `bicg_v2` `padded_rows` under `pipeline` shows what spreading the strip buys.
 
 ## Sync Reminders
 

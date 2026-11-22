@@ -134,6 +134,7 @@ SETS = {
         *(Design("bicg_v1", lay + (f"design.schedule={s}",)) for lay in ((), (PADDED,))
           for s in ("sequential", "pipeline")),
         *(Design("bicg_v2", (f"design.schedule={s}",)) for s in ("sequential", "pipeline")),
+        Design("bicg_v2", (PADDED, "design.schedule=pipeline")),  # the halves on spread banks
         *(Design("bicg_v2_1", size + (f"design.schedule={s}",)) for size in ((), ("M=40",))
           for s in ("sequential", "pipeline")),
     ],
