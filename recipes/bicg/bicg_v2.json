@@ -1,0 +1,20 @@
+{
+ "name": "bicg_v2",
+ "id": "bicg_dot2_col",
+ "description": "q a `dot_v2` group per row and s the column form, by reuse: `matvec/matvec_v2` on q and `matvec/matvec_v7` on s, r broadcast to the `Mac`'s lanes (D186). Both halves read A along its rows.",
+ "kernel": "bicg",
+ "params": {"M": 64, "N": 64, "W": 8},
+ "symbols": {"M": "M", "N": "N"},
+ "steps": [
+  {"transform": "lift", "params": {"kernel": "matvec", "at": "q_mult_map"}},
+  {
+   "transform": "apply_recipe",
+   "params": {"block": "matvec", "recipe": "matvec/matvec_v2", "params": {"W": "W"}}
+  },
+  {"transform": "lift", "params": {"kernel": "matvec", "at": "s_mult_map"}},
+  {
+   "transform": "apply_recipe",
+   "params": {"block": "matvec_1", "recipe": "matvec/matvec_v7", "params": {"W": "W"}}
+  }
+ ]
+}

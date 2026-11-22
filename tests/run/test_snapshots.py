@@ -4,7 +4,7 @@ them named by the quiet build's marks."""
 import pytest
 
 from snax_forge.run import RunError, parse_line
-from snax_forge.run.snapshots import Window, snapshots, windows
+from snax_forge.run.snapshots import WHOLE, Window, snapshots, windows
 
 from .helpers import line, snap_lines
 
@@ -79,6 +79,16 @@ def test_a_copy_window_counts_the_copys_bank_words_and_a_run_without_them_none(c
     assert Window.from_dict(old).counters.copies == (0, 0)
     plain = windows(snapshots(read(cluster), cluster), copy)
     assert all(w.counters.copies == (0, 0) for w in plain)
+
+
+def test_a_run_without_marks_is_one_window_of_the_whole_run(cluster):
+    """The default build writes no mark: its one snapshot, the end's, is one window from boot,
+    named the whole run."""
+    end = RUN[-1:]
+    (w,) = windows(snapshots(read(cluster, end), cluster), [], WHOLE)
+    assert (w.index, w.mark, w.kind, w.label, w.first, w.last) == (
+        0, 0, "whole", "the whole run", 0, 600)  # fmt: skip
+    assert w.counters.units == {"acc": (16, 16)} and w.counters.inputs["acc_a.lane0"] == (16, 2)
 
 
 def test_a_mark_the_marks_file_lacks_is_named_by_its_value(cluster):

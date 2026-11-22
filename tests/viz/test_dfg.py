@@ -408,16 +408,16 @@ def test_the_cost_tables_of_vecmul_and_dot_1():
     (t,) = cost_tables(estimate(d, platform), d)
     assert t["accelerator"] == "dot" and _cost_rows(t) == [
         ("vmul", "SimdLanes", "55 300", "23.137", "23.9%"),
-        ("vmul ctrl", "control unit", "360", "0.095", "0.1%"),
+        ("vmul ctrl", "control unit", "360", "0.047", "0.0%"),
         ("vsum", "TreeAccumulate", "2 550", "1.033", "1.1%"),
-        ("vsum ctrl", "control unit", "710", "0.187", "0.2%"),
+        ("vsum ctrl", "control unit", "710", "0.094", "0.1%"),
         ("vmul_a", strm, "31 700", "5.760", "6.0%"),
         ("vmul_b", strm, "31 700", "5.760", "6.0%"),
         ("vmul_out", strm, "31 700", "5.760", "6.0%"),
         ("vsum_a", strm, "31 700", "5.760", "6.0%"),
         ("vsum_out", "streamer · FIFO 8, 1 loop, 1 ch", "4 560", "0.003", "0.0%"),
-        (L1_LABEL, "6 144 reads, 2 049 writes", "–", "49.272", "50.9%"),
-        ("total", "", "190 000", "96.766", "100.0%")]  # fmt: skip
+        (L1_LABEL, "6 144 reads, 2 049 writes", "–", "49.272", "51.0%"),
+        ("total", "", "190 000", "96.625", "100.0%")]  # fmt: skip
     v = step_view(Entry("2_bind", Path("2_bind.snaxdfg"), g, None), "2 bind", platform)
     assert v["summary"]["cost"]["tables"][0]["rows"][0]["area_text"] == "55 300"
     w16 = steps("vecmul_v1", N=2048, W=16)[-1]
@@ -848,7 +848,7 @@ def test_compare_gives_two_columns_when_the_groups_differ():
                                               "2 streamer sets · 40 CSRs",
                                               "1 streamer set · 23 CSRs",
                                               True)}  # fmt: skip
-    assert _rows(rows, "group mac")["energy"] == ("26.030 nJ", "–", True)
+    assert _rows(rows, "group mac")["energy"] == ("26.027 nJ", "–", True)
     assert _rows(rows, "group dot")["cycles"] == ("–", "265 = 256 + 9", True)
     # The link drops a streamer set (two streamers and 16 crossbar inputs), the banks the
     # same;
@@ -864,9 +864,9 @@ def test_compare_gives_two_columns_when_the_groups_differ():
     assert _rows(rows, "Cost estimate (first-order) on nangate45") == {
         "area": ("740 000 µm²", "626 000 µm²", True),
         "area without the banks": ("307 000 µm²", "194 000 µm²", True),
-        "energy per run": ("59.811 nJ", "59.656 nJ", True),
+        "energy per run": ("59.755 nJ", "59.656 nJ", True),
         "datapath": ("61 000 µm² · 25.951 nJ", "61 000 µm² · 25.951 nJ", False),
-        "control": ("1 110 µm² · 0.152 nJ", "1 090 µm² · 0.149 nJ", True),
+        "control": ("1 110 µm² · 0.096 nJ", "1 090 µm² · 0.149 nJ", True),
         "streamers": ("132 000 µm² · 11.568 nJ", "68 000 µm² · 11.523 nJ", True),
         "crossbar": ("113 000 µm² · 7.562 nJ", "63 500 µm² · 7.535 nJ", True),
         "memory (banks)": ("433 000 µm² · 14.579 nJ", "433 000 µm² · 14.499 nJ", True),

@@ -1,13 +1,15 @@
-"""The energy run (D177; CONTRACTS, "Profile and trace"): the quiet build's snapshots priced.
+"""The energy run (D177; CONTRACTS, "Profile and trace"): a run's snapshots priced.
 
     energy_of(lines, cluster, marks, graph, est) -> EnergyRun
 
-``lines`` are the quiet build's events (``forge_quiet.elf`` on SNAX-GVSoC, its ``summary``
-lines), ``marks`` its ``obs_marks.json``, ``est`` the design's costed estimate. Each window
-between two snapshots (run/snapshots.py) is priced at the instances' prices
-(estimate/dynamic.py): its units' firings and pushes, its groups' busy cycles, its movers'
-requests and grants, the crossbar's counts of the DMA's copies inside L1. ``static`` is the estimate's own five parts with the counts they were
-priced on, for comparison. ``EnergyRun`` round-trips through ``to_dict`` / ``from_dict``.
+``lines`` are a run's ``summary`` events on SNAX-GVSoC: the quiet build's (``forge_quiet.elf``)
+with ``marks`` its ``obs_marks.json``, or, ``marks`` None, the default build's (``forge.elf``),
+which writes no mark: one window, the whole run (a pipelined schedule's, D179). ``est`` is the
+design's costed estimate. Each window between two snapshots (run/snapshots.py) is priced at the
+instances' prices (estimate/dynamic.py): its units' firings and pushes, its groups' busy cycles,
+its movers' requests and grants, the crossbar's counts of the DMA's copies inside L1. ``static``
+is the estimate's own five parts with the counts they were priced on, for comparison.
+``EnergyRun`` round-trips through ``to_dict`` / ``from_dict``.
 """
 
 from __future__ import annotations
@@ -28,7 +30,7 @@ from snax_forge.estimate.dynamic import (
     prices_of,
 )
 from snax_forge.run import Cluster, RunError
-from snax_forge.run.snapshots import Window, snapshots, windows
+from snax_forge.run.snapshots import BOOT, WHOLE, Window, snapshots, windows
 
 if TYPE_CHECKING:
     from snax_forge.dfg import Graph
@@ -57,6 +59,11 @@ class EnergyRun(JsonFile):
     def of_kind(self, kind: str) -> list[tuple[Window, Energy]]:
         return [(w, e) for w, e in zip(self.windows, self.energies, strict=True) if w.kind == kind]
 
+    def runs(self) -> list[tuple[Window, Energy]]:
+        """The accelerators' windows: the quiet build's ``run`` windows, or the default build's
+        one window of the whole run."""
+        return self.of_kind("run") or self.of_kind(WHOLE[0])
+
     def to_dict(self) -> dict[str, Any]:
         return {"tech": self.tech, "source": dict(self.source), "prices": self.prices.to_dict(),
                 "windows": [w.to_dict() | {"energy": e.to_dict()}
@@ -79,24 +86,35 @@ def mover_specs(cluster: Cluster) -> list[MoverSpec]:
 
 def counts_of(w: Window, cluster: Cluster) -> Counts:
     """A window's counts as the pricing reads them: per unit its firings and pushes, the groups'
-    busy cycles added up, per mover its lanes' grants and stalls (requests) and grants, and the
-    crossbar's counts of the DMA's copies inside L1 (D184)."""
+    busy cycles added up and per group (a group's line is written by one of its units), per mover
+    its lanes' grants and stalls (requests) and grants, and the crossbar's counts of the DMA's
+    copies inside L1 (D184)."""
     movers = {}
     for m in cluster.accelerator.movers:
         lanes = [w.counters.inputs[p] for p in m.ports if p in w.counters.inputs]
         movers[m.name] = (sum(g + s for g, s in lanes), sum(g for g, _ in lanes))
-    return Counts(dict(w.counters.units), w.counters.busy(), movers, w.counters.copies)
+    group = {u.name: u.group for u in cluster.accelerator.units}
+    groups: dict[str, int] = {}
+    for k, c in w.counters.groups.items():
+        g = group.get(k, k)
+        groups[g] = groups.get(g, 0) + sum(c.values())
+    return Counts(dict(w.counters.units), w.counters.busy(), movers, w.counters.copies, groups)
 
 
-def energy_of(lines: Sequence[Line], cluster: Cluster, marks: Sequence[dict[str, Any]],
+def energy_of(lines: Sequence[Line], cluster: Cluster, marks: Sequence[dict[str, Any]] | None,
               graph: Graph, est: Estimate) -> EnergyRun:  # fmt: skip
-    """The windows of a quiet run, priced (module doc). A ``RunError`` (``energy.snapshots``)
-    when the run wrote no snapshot."""
+    """The windows of a run, priced (module doc): the quiet build's by its ``marks``, the default
+    build's (``marks`` None) in one. A ``RunError`` (``energy.snapshots``) when the run wrote no
+    snapshot, or (``energy.marks``) a mark the default build should not have written."""
     snaps = snapshots(lines, cluster)
     if not snaps:
         raise RunError("energy.snapshots", "the run wrote no `snap` lines: SNAX-GVSoC is older "
                        "than its snapshots (the submodule)")  # fmt: skip
-    ws = windows(snaps, marks)
+    if marks is None and len(snaps) > 1:
+        raise RunError("energy.marks", f"the default build wrote marks {[s.mark for s in snaps]}: "
+                       "only the quiet build marks its sections; price that with its "
+                       "obs_marks.json")  # fmt: skip
+    ws = windows(snaps, marks or [], WHOLE if marks is None else BOOT)
     p = prices_of(graph, est, mover_specs(cluster))
     static = price(prices_of(graph, est, port_movers(est)), graph_counts(graph, est))
     return EnergyRun(est.tech or "", dict(est.char_source or {}), p, ws,

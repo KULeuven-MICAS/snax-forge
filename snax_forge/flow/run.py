@@ -4,8 +4,9 @@
 as its command line would be: import and sandbox, design, lower, gen (gen/gvsoc.py: description
 files, headers, data.h, main.c), build, sw, gvsoc (``run_gvsoc``: ``make`` on gvsoc/Makefile),
 check (the program's own, ``check_output``), convert (CONTRACTS, "Profile and trace") and report;
-with ``energy`` the quiet build ``forge_quiet.elf`` runs again into energy/, its snapshots priced
-by window (flow/energy.py, D177) into ``energy.json`` and ``report/energy.md``.
+with ``energy`` the program runs again into energy/, its snapshots priced by window (flow/energy.py,
+D177) into ``energy.json`` and ``report/energy.md``: the quiet build ``forge_quiet.elf`` by its
+marks for a schedule in series, the default build ``forge.elf`` in one window for a pipelined one.
 ``run_bound(graph, platform, ...)`` starts at design from a bound ``.snaxdfg``: no recipe, no
 sandbox/ and no per-step reference check. Before writing data.h's goldens, gen checks the
 reference executor against the kernel's reference.
@@ -36,7 +37,7 @@ from typing import IO, TYPE_CHECKING, Any
 
 from snax_forge.common import cwd_relative, git, repo_root, to_json
 from snax_forge.design import DesignError, DesignPoint, design_name, design_of, load, run_checks
-from snax_forge.design.check import CHECKS, STAGES
+from snax_forge.design.check import CHECKS, IN_SERIES, STAGES
 from snax_forge.dfg import DfgError, Graph
 from snax_forge.dfg.reference import KernelError, kernel_spec, reference_check
 from snax_forge.flow.energy import ENERGY_JSON, EnergyRun, energy_of
@@ -98,6 +99,12 @@ def description_files(files: list[str]) -> list[str]:
 
 ELF = "forge.elf"
 VCD, GTKW = "all.vcd", "view.gtkw"
+
+
+def energy_elf(schedule: str) -> str:
+    """The build the energy run prices: the quiet one for a schedule in series; a pipelined one's
+    own, in one window, as the quiet build waits on every start at once and so runs it serially."""
+    return QUIET_ELF if schedule in IN_SERIES else ELF
 
 
 class FlowError(ValueError):
@@ -507,9 +514,10 @@ def summary(f: Flow) -> str:
     lines.append(f"  report    {REPORT}/design.md, {REPORT}/run.md")
     if f.energy is not None:
         e = f.energy
-        runs = e.of_kind("run")
-        got = ", ".join(f"window {w.index} {x.total:.3f} nJ" for w, x in runs) or "no run window"
-        lines.append(f"  energy    sw/{QUIET_ELF}, {len(e.windows)} windows; {got} (static "
+        got = ", ".join(f"window {w.index} {x.total:.3f} nJ" for w, x in e.runs())
+        got = got or "no run window"
+        n = f"{len(e.windows)} window" + "s" * (len(e.windows) != 1)
+        lines.append(f"  energy    sw/{energy_elf(f.point.schedule)}, {n}; {got} (static "
                      f"{e.static.total:.3f} nJ) -> {ENERGY}/{ENERGY_JSON}, "
                      f"{REPORT}/energy.md")  # fmt: skip
     lines += [f"  WARNING   {w}" for w in f.warnings]
@@ -850,14 +858,16 @@ def _from_graph(
 
 def _energy(out: Path, sw: Path, gen: Path, point: DesignPoint, cluster: Any, name: str,
             args: str, o: FlowOptions) -> EnergyRun:  # fmt: skip
-    """The energy run (module doc): the quiet build on SNAX-GVSoC with the ``summary`` traces
-    only, its snapshots priced by window into energy/energy.json and report/energy.md."""
+    """The energy run (module doc): ``energy_elf``'s build on SNAX-GVSoC with the ``summary``
+    traces only, its snapshots priced by window into energy/energy.json and report/energy.md."""
     from snax_forge.estimate import estimate
     from snax_forge.lower.c import OBS_MARKS
     from snax_forge.report.energy import ENERGY_MD, render_energy
 
-    elf, marks = sw / QUIET_ELF, gen / OBS_MARKS
-    for p, what in ((elf, "the quiet build"), (marks, "its marks")):
+    quiet = energy_elf(point.schedule) == QUIET_ELF
+    elf, marks = sw / energy_elf(point.schedule), gen / OBS_MARKS
+    need = ((elf, "the quiet build"), (marks, "its marks")) if quiet else ((elf, "the program"),)
+    for p, what in need:
         if not p.is_file():
             raise FlowError(f"energy: no {cwd_relative(p)}, {what}")
     folder = out / ENERGY
@@ -869,11 +879,12 @@ def _energy(out: Path, sw: Path, gen: Path, point: DesignPoint, cluster: Any, na
     exit_code = run_exit_code(rc, stderr)
     if exit_code != 0:
         why = first_error(stdout, stderr)
-        raise FlowError(f"energy: {QUIET_ELF} exited {exit_code}"
+        raise FlowError(f"energy: {elf.name} exited {exit_code}"
                         + (f"; SNAX-GVSoC: {why}" if why else ""))  # fmt: skip
     try:
-        run = energy_of(read_events(folder / EVENTS_FILE), cluster, json.loads(marks.read_text()),
-                        point.graph, estimate(point.graph, point.platform, schedule=point.schedule))  # fmt: skip
+        run = energy_of(read_events(folder / EVENTS_FILE), cluster,
+                        json.loads(marks.read_text()) if quiet else None, point.graph,
+                        estimate(point.graph, point.platform, schedule=point.schedule))  # fmt: skip
     except (RunError, ValueError) as e:
         raise FlowError(f"energy: {e}") from None
     run.save(folder / ENERGY_JSON)

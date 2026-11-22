@@ -368,10 +368,9 @@ def estimate(graph: Graph, platform: Platform | None = None,
     in_l1 = {c for c, x in data.items() if x.placement == "l1"}
     run_list = group_runs(graph, found, in_l1, node_words)
     table = None if tech is None else load(tech)
-    if table is not None:  # every control unit clocked over the accelerator's cycles
-        c_acc = Estimate(found, 0, {}, schedule=schedule, runs=run_list).accelerator_cycles
+    if table is not None:  # each control unit clocked over its own group's cycles (D154 · D172)
         for g, units, bufs in blocks:
-            g.cost = group_cost(table, units, bufs, g.bits, g.ctrl_bits, c_acc)
+            g.cost = group_cost(table, units, bufs, g.bits, g.ctrl_bits, g.cycles)
     unit_group = {u: g for g in found for u in g.units}
     words = dict.fromkeys((g.name for g in found), 0)
     l1_words: dict[str, int] = {}

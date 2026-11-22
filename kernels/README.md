@@ -9,7 +9,7 @@ The PolyBench and DL kernels are NPBench's DaCe sources (BSD-3, `NPBENCH_LICENSE
 - they are `int64` where the kernel is integer arithmetic, at PolyBench's MINI sizes; `softmax`, `mlp`, `lenet` and `resnet` keep NPBench's `float32` (`float-staged`) until their tier decides the integer form;
 - the tiers are PAPER §6.1's.
 
-The kernels that run at narrow types (`vecadd`, `vecmul`, `matadd`, `relu`, `axpy`, `vsum`, `rowsum`, `dot`, `matvec`, `mvt_types`) list type presets in their `SPEC` (`presets`), chosen with `--set types=` (D113 · D173):
+The kernels that run at narrow types (`vecadd`, `vecmul`, `matadd`, `relu`, `axpy`, `vsum`, `rowsum`, `dot`, `matvec`, `mvt_types`, `bicg_types`) list type presets in their `SPEC` (`presets`), chosen with `--set types=` (D113 · D173):
 
 | Preset | Inputs | Outputs and `OP_TYPE` |
 |---|---|---|
@@ -149,6 +149,15 @@ $$q = A p, \qquad s = A^T r$$
 
 - `atax`'s control: the same two products, independent, so no barrier.
 - One pass over `A` could feed both, each element used twice.
+
+### bicg_types
+
+`polybench/bicg_types.py` · tier A · int64, presets `i8`, `i16`, `i32`
+
+bicg with each product at `OP_TYPE`: `q[:] = A @ p.astype(OP_TYPE)`, `s[:] = A.T @ r.astype(OP_TYPE)`.
+
+- The products keep bicg's names (`q_mult_map`, `s_mult_map`, ...): they come from the assigned outputs, so bicg's recipes run on it as they are, with `types` given.
+- p and r are cast, not `A.T`, which would make a Transpose the importer refuses; one cast per product is enough, as in `mvt_types`.
 
 ### mvt
 

@@ -71,7 +71,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--keep-work", action="store_true",
                     help="keep gvrun's run/work/ after a passing run")  # fmt: skip
     ap.add_argument("--energy", action="store_true",
-                    help="run forge_quiet.elf again and price its windows (energy/energy.json)")  # fmt: skip
+                    help="run the program again and price its windows (energy/energy.json): "
+                         "forge_quiet.elf for serial and sequential, forge.elf in one window "
+                         "for a pipelined schedule")  # fmt: skip
     args = ap.parse_args(argv)
     try:
         level, sources = parse_trace(args.trace)

@@ -4,8 +4,9 @@ CI never builds SNAX-GVSoC, so it runs the flow for real up to the generator and
 through ``stub``: ``run_gvsoc`` becomes a ``FakeMake`` that records each call, makes the install
 on ``build`` (its lines on the terminal too when ``live``), an ELF on ``sw``, and on ``run``
 prints what the program would (a window, no data errors, each counter its beats plus 3), writes
-the events for the level (``tests/run/helpers.synthetic``) and exits 0. The checkout is a clean
-one pinned at ``COMMIT``, the GVSoC build's folder the test's own. The recipe flows start from
+the events for the level (``tests/run/helpers.synthetic``; an energy run's snapshots,
+``quiet_events`` or ``whole_events``) and exits 0. The checkout is a clean one pinned at
+``COMMIT``, the GVSoC build's folder the test's own. The recipe flows start from
 the import fixtures (``PLAIN``), so they need no DaCe; the full flow on SNAX-GVSoC is marked
 ``gvsoc`` and skipped where ``out/snax-gvsoc/install`` is missing.
 
@@ -150,6 +151,8 @@ def write_events(variables: dict[str, str]) -> None:
     link = {c: a for c, (a, _) in point_symbols(point).items()}  # the ELF's, as the sw goal links
     if variables["ELF"].endswith(QUIET_ELF):
         lines = quiet_events(cluster, json.loads((gen / "obs_marks.json").read_text()))
+    elif Path(variables["EVENTS"]).parent.name == "energy":  # the default build's energy run
+        lines = whole_events(cluster)
     else:
         lines = synthetic(cluster, tasks, level_of(variables), link=link)
     Path(variables["EVENTS"]).write_text("\n".join(lines) + "\n")
@@ -158,25 +161,35 @@ def write_events(variables: dict[str, str]) -> None:
 QUIET_GRANTS = 16  # a lane's grants in the quiet build's run window: vecadd's 64 words on 4 lanes
 
 
+def _totals(cluster: Any, n: int) -> dict[str, Any]:
+    """Running totals of vecadd's cluster: every mover lane ``n`` grants, the unit as many
+    firings and pushes, the group as many busy cycles."""
+    acc = cluster.accelerator
+    lanes = [p for m in acc.movers for p in m.ports]
+    return {"inputs": dict.fromkeys(lanes, (n, 0)),
+            "group": {"busy": n, "stall_in": 0, "stall_out": 0, "flush": 0},
+            "units": {acc.units[0].name: (n, n)}}  # fmt: skip
+
+
 def quiet_events(cluster: Any, marks: list[dict[str, Any]]) -> list[str]:
     """The quiet build's snapshots, one per mark 100 cycles apart and the end's: in the window of
     the first ``run`` mark every mover lane ``QUIET_GRANTS`` grants, the unit as many firings and
     pushes, the group as many busy cycles; nothing elsewhere (vecadd's static counts)."""
     from tests.run.helpers import snap_lines
 
-    acc = cluster.accelerator
-    unit = acc.units[0].name
     run = next(m["mark"] for m in marks if m["kind"] == "run")
-    lanes = [p for m in acc.movers for p in m.ports]
-
-    def totals(n: int) -> dict[str, Any]:
-        return {"inputs": dict.fromkeys(lanes, (n, 0)),
-                "group": {"busy": n, "stall_in": 0, "stall_out": 0, "flush": 0},
-                "units": {unit: (n, n)}}  # fmt: skip
-
-    snaps = [(m["mark"], 100 * (k + 1), totals(QUIET_GRANTS if m["mark"] > run else 0))
+    snaps = [(m["mark"], 100 * (k + 1), _totals(cluster, QUIET_GRANTS if m["mark"] > run else 0))
              for k, m in enumerate(marks)]  # fmt: skip
-    return snap_lines(cluster, [*snaps, (-1, 100 * (len(marks) + 1), totals(QUIET_GRANTS))])
+    end = (-1, 100 * (len(marks) + 1), _totals(cluster, QUIET_GRANTS))
+    return snap_lines(cluster, [*snaps, end])
+
+
+def whole_events(cluster: Any) -> list[str]:
+    """The default build's energy run: no mark, only the end's snapshot, with vecadd's static
+    counts (``quiet_events``' run window)."""
+    from tests.run.helpers import snap_lines
+
+    return snap_lines(cluster, [(-1, 400, _totals(cluster, QUIET_GRANTS))])
 
 
 def level_of(variables: dict[str, str]) -> str:

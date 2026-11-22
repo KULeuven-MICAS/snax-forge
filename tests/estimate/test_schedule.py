@@ -36,8 +36,8 @@ def test_mvt_3_split_adds_its_halves_serial_and_takes_the_slower_pipelined():
         assert e.overlap_note == (f"mvt and mvt_1 run at once under {schedule}: their streams "
                                   "move 32.3 words a cycle over 32 banks, so bank conflicts "
                                   "stretch them beyond the ideal")  # fmt: skip
-        # the control units clocked over the shorter run
-        assert e.groups[0].cost.ctrl_nj < serial.groups[0].cost.ctrl_nj
+        # each control unit clocked over its own group's run, whatever the schedule
+        assert [g.cost.ctrl_nj for g in e.groups] == [g.cost.ctrl_nj for g in serial.groups]
 
 
 @pytest.mark.parametrize("schedule", SCHEDULES)

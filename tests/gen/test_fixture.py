@@ -31,7 +31,7 @@ DESIGNS = [
     "matvec_v1", "matvec_v2", "matvec_v3", "matvec_v4", "matvec_v5", "matvec_v6", "relu_v1",
     "axpy_v1", "axpy_v1_1", "rowsum_v2", "rowsum_v2_padded", "matvec_acc_v1", "matvec_acc_v2",
     "dot_v1_2", "mvt_v1_2_2", "vecadd_v1_1_w1", "mvt_v4_1_sequential",
-    "mvt_v4_1_1_sequential", "mvt_v5_sequential", "mvt_v5_2_sequential",
+    "mvt_v4_1_1_sequential", "mvt_v5_sequential", "mvt_v5_2_sequential", "bicg_v2_1_sequential",
 ]  # fmt: skip
 # A fixture made from another recipe, or with --set values: its recipe and its sets
 FROM = {"rowsum_v2_padded": ("rowsum_v2", ("memory.passes.layout=padded_rows",)),
@@ -40,7 +40,8 @@ FROM = {"rowsum_v2_padded": ("rowsum_v2", ("memory.passes.layout=padded_rows",))
         "mvt_v4_1_sequential": ("mvt_v4_1", ("design.schedule=sequential",)),
         "mvt_v4_1_1_sequential": ("mvt_v4_1_1", ("design.schedule=sequential",)),
         "mvt_v5_sequential": ("mvt_v5", ("design.schedule=sequential",)),
-        "mvt_v5_2_sequential": ("mvt_v5_2", ("design.schedule=sequential",))}  # fmt: skip
+        "mvt_v5_2_sequential": ("mvt_v5_2", ("design.schedule=sequential",)),
+        "bicg_v2_1_sequential": ("bicg_v2_1", ("design.schedule=sequential",))}  # fmt: skip
 
 pytestmark = requires_submodule
 

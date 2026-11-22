@@ -392,10 +392,10 @@ def shares(parts: Mapping[str, Part]) -> dict[str, tuple[float | None, float | N
     return {k: (of(p.area_um2, area), of(p.energy_nj, energy)) for k, p in parts.items()}
 
 
-def block_cost(table: Table, block: Block, bits: int, c_acc: int) -> BlockCost:
+def block_cost(table: Table, block: Block, bits: int, cycles: int) -> BlockCost:
     """One block's cost on ``table`` (CONTRACTS, "Cost model"): its fires, each its comb energy
     and its bits loading (a packer's or a slicer's, the bits its table point says load per push or
-    pop); ``c_acc`` is not used, a held flop costing nothing."""
+    pop); ``cycles`` is not used, a held flop costing nothing."""
     p = block.params
     got = None
     if block.datapath is not None:
@@ -408,11 +408,12 @@ def block_cost(table: Table, block: Block, bits: int, c_acc: int) -> BlockCost:
 
 
 def group_cost(table: Table, units: Mapping[str, Block], links: Mapping[str, Block],
-               bits: Mapping[str, int], ctrl_bits: int | None, c_acc: int) -> GroupCost:  # fmt: skip
+               bits: Mapping[str, int], ctrl_bits: int | None, cycles: int) -> GroupCost:  # fmt: skip
     """A group's cost on ``table``: ``units`` by name and buffer ``links`` by container, their
-    ``bits`` the estimate's, ``ctrl_bits`` its control unit's (CONTRACTS, "Cost model")."""
+    ``bits`` the estimate's, ``ctrl_bits`` its control unit's, clocked over the group's own
+    ``cycles`` (CONTRACTS, "Cost model")."""
     n = ctrl_bits or 0
-    return GroupCost({k: block_cost(table, b, bits.get(k, 0), c_acc) for k, b in units.items()},
-                     {k: block_cost(table, b, bits.get(k, 0), c_acc) for k, b in links.items()},
+    return GroupCost({k: block_cost(table, b, bits.get(k, 0), cycles) for k, b in units.items()},
+                     {k: block_cost(table, b, bits.get(k, 0), cycles) for k, b in links.items()},
                      n, n * table.flop_um2,
-                     table.e_ctrl_pj * n * c_acc / 1000)  # fmt: skip
+                     table.e_ctrl_pj * n * cycles / 1000)  # fmt: skip

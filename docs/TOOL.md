@@ -58,7 +58,7 @@ flowchart TD
 | `--trace LEVEL[:SOURCES]` | how much of the run is traced (the table below); the level is added to the folder name |
 | `--vcd` | also writes gtkwave's `run/all.vcd` and `run/view.gtkw` of the traced sources |
 | `--keep-work` | keeps gvrun's `run/work/` after a passing run (a failing run always keeps it) |
-| `--energy` | runs the quiet build `sw/forge_quiet.elf` again into `energy/` and prices each window between its marks (D177): `energy/energy.json` and `report/energy.md`, beside the static estimate's five parts (section "The energy run" below) |
+| `--energy` | runs the program again into `energy/` and prices it (D177): under `serial` and `sequential` the quiet build `sw/forge_quiet.elf`, each window between its marks; under a pipelined schedule the default build `sw/forge.elf`, in one window of the whole run; `energy/energy.json` and `report/energy.md`, beside the static estimate's five parts (section "The energy run" below) |
 | `--graph G`, `--kernel K` | start from a bound `.snaxdfg` instead of the import; a recipe argument ending in `.snaxdfg` does the same and skips the sandbox |
 | `--name`, `--out`, `--seed`, `--memory` | the run's name and folder, the seed of the inputs, a memory working copy to start from |
 
@@ -98,14 +98,14 @@ Nothing is compiled per design point: SNAX-GVSoC's `snax_hjson` target reads the
 
 ### The energy run
 
-`--energy` prices what the run did with the static estimate's prices per transaction (D177; CONTRACTS, "Profile and trace", the energy run, and "Cost model", the dynamic energy). The quiet build marks each section of the program in CSR `0x7C5`; on each mark SNAX-GVSoC writes every SNAX counter as it stands, and each window between two marks is priced in the five parts. It reads the run's `summary` lines only, so it adds one quiet run's time to the flow.
+`--energy` prices what the run did with the static estimate's prices per transaction (D177; CONTRACTS, "Profile and trace", the energy run, and "Cost model", the dynamic energy). The quiet build marks each section of the program in CSR `0x7C5`; on each mark SNAX-GVSoC writes every SNAX counter as it stands, and each window between two marks is priced in the five parts. A pipelined schedule (`pipeline`, `pipeline_compute`) runs the default build `sw/forge.elf` instead, since the quiet build waits on every start at once and would run it serially: it writes no mark, so its one window, `the whole run`, goes from boot to the end of the simulation; the counts are per instance, so one window prices what the serial windows would add up to. It reads the run's `summary` lines only, so it adds one run's time to the flow.
 
 ```bash
 pixi run flow recipes/dot/dot_v3.json --platform platforms/snax_forge.json --set N=2048 --set W=8 --energy
 ```
 
-- The flow's output gains a line `energy    sw/forge_quiet.elf, <n> windows; window <k> <E> nJ (static <E> nJ) -> energy/energy.json, report/energy.md`, one entry per window of kind `run`.
-- `report/energy.md` lists every window (index, kind, label as in `gen/obs_marks.json`, cycles) with its five parts in nJ, all windows added up, and the static estimate's one run of the accelerator; then the counts the `run` windows and the static estimate were priced on (fires, busy cycles, beats, crossbar requests, bank reads and writes).
+- The flow's output gains a line `energy    sw/forge_quiet.elf, <n> windows; window <k> <E> nJ (static <E> nJ) -> energy/energy.json, report/energy.md`, one entry per window of kind `run`; a pipelined run's reads `energy    sw/forge.elf, 1 window; window 0 <E> nJ ...`, its one window the whole run.
+- `report/energy.md` lists every window (index, kind, label as in `gen/obs_marks.json`, cycles) with its five parts in nJ, all windows added up, and the static estimate's one run of the accelerator; then the counts the `run` windows (a pipelined run's whole run) and the static estimate were priced on (fires, busy cycles, beats, crossbar requests, bank reads and writes).
 - The numbers are first-order and aimed at trends over a sweep: a refused request costs a granted one's price, and the tables were measured on random data.
 
 ### The trace levels
@@ -281,7 +281,7 @@ One ELF, snax-forge's, runs on SNAX-GVSoC and on snax_cluster's RTL. The RTL run
 | Command | What it does | Writes |
 |---|---|---|
 | `pixi run forge RECIPE` | the flow, the bundle of its design point with `forge_expected.txt`, the bundle's ELF (checked to be the flow's), then snax_cluster's commands for the design | `out/forge/<name>/forge.log`, `out/bundle/<name>/` |
-| `pixi run forge-set quick\|full\|mvt\|pack` | forge on every recipe of a set at once | `out/forge-set/<set>.md`, `out/forge-set/<set>/<design>.txt`, and one line to run in snax_cluster |
+| `pixi run forge-set quick\|full\|mvt\|pack\|bicg` | forge on every recipe of a set at once | `out/forge-set/<set>.md`, `out/forge-set/<set>/<design>.txt`, and one line to run in snax_cluster |
 
 - `forge` takes `--platform` (default `platforms/snax_forge.json`), `--set` and `--trace`, passed to the flow. `forge-set` takes `--sim vsim|vlt` and `-j N`.
 - `forge_expected.txt` holds the run's counter and data lines, then each counter's `forge fill`, its group's streamer fill from the estimate.

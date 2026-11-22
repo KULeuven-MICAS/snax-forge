@@ -6,10 +6,10 @@ place of the graph's, each priced at the instance's existing price.
     graph_counts(graph, est) -> Counts          the static estimate's counts, for comparison
 
 ``Counts`` are what SNAX-GVSoC counts in a window (run/snapshots.py): per unit its firings and
-pushes, the groups' busy-flag cycles added up, per mover its crossbar requests (grants and
+pushes, each group's busy-flag cycles, per mover its crossbar requests (grants and
 stalls) and grants. A unit fires its firings times its span, a buffer link loads and a packer
 pushes its producer's pushes, a slicer pops on its unit's firings (a seed's on its pushes, one a
-job), the control units clock every group's busy cycle, a mover moves
+job), each control unit clocks its own group's busy cycles, a mover moves
 its requests over its channels, the crossbar serves every request at its mover's kind (a
 reader's read-only, a writer's write-only, D178) and the banks the grants. A copy's beats (the
 DMA's L1 → L1 transfers on the superbank port, D184) cost the crossbar an access each, as a
@@ -27,7 +27,6 @@ from typing import TYPE_CHECKING, Any
 from snax_forge.brm import SEED
 from snax_forge.char import load
 from snax_forge.char.tables import streamer_cost as _streamer
-from snax_forge.design.check import IN_SERIES
 from snax_forge.design.streamers import group_links, instances
 
 from .cost import PARTS
@@ -54,7 +53,7 @@ class MoverSpec:
 class Prices:
     """One transaction of each instance, in pJ: per unit its span and energy per fire, per buffer
     link or packer (``<unit>.<port>``) its producer and energy per load or push, the control
-    units' bits and e_ctrl, per mover whether it writes, its channels and its energy per beat,
+    units' bits (in all, and per group) and e_ctrl, per mover whether it writes, its channels and its energy per beat,
     the crossbar's per request of a read-only and of a write-only input (D178), a bank's per read
     and per write, the banks a DMA beat reads or writes (a superbank's, D184); per slicer (``<unit>.<port>``) its unit, the count it pops on (``firings``, a
     seed's ``pushes``) and its energy per pop."""
@@ -70,13 +69,15 @@ class Prices:
     e_wr_pj: float
     superbank_banks: int
     slicers: dict[str, tuple[str, str, float]] = field(default_factory=dict)
+    group_bits: dict[str, int] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {"units": {k: {"span": s, "e_fire": e} for k, (s, e) in self.units.items()},
                 "links": {k: {"from": u, "e_fire": e} for k, (u, e) in self.links.items()},
                 "slicers": {k: {"from": u, "count": n, "e_fire": e}
                             for k, (u, n, e) in self.slicers.items()},
-                "ctrl_bits": self.ctrl_bits, "e_ctrl": self.e_ctrl_pj,
+                "ctrl_bits": self.ctrl_bits, "group_ctrl_bits": dict(self.group_bits),
+                "e_ctrl": self.e_ctrl_pj,
                 "movers": {k: {"write": w, "channels": c, "e_beat": e}
                            for k, (w, c, e) in self.movers.items()},
                 "e_xbar_ro": self.e_xro_pj, "e_xbar_wo": self.e_xwo_pj, "e_rd": self.e_rd_pj,
@@ -91,23 +92,25 @@ class Prices:
                    d["e_xbar_ro"], d["e_xbar_wo"], d["e_rd"], d["e_wr"],
                    d.get("superbank_banks", 1),  # a run priced before D184's wide port: 1 bank
                    {k: (v["from"], v["count"], v["e_fire"])
-                    for k, v in d.get("slicers", {}).items()})  # fmt: skip
+                    for k, v in d.get("slicers", {}).items()},
+                   dict(d.get("group_ctrl_bits", {})))  # fmt: skip
 
 
 @dataclass
 class Counts:
     """A window's counts (module doc): per unit ``(firings, pushes)``, the groups' busy-flag cycles
-    added up, per mover ``(requests, grants)``, and the copies' beats on the superbank port
-    ``(reads, writes)`` (D184)."""
+    added up (``busy``) and per group (``groups``), per mover ``(requests, grants)``, and the
+    copies' beats on the superbank port ``(reads, writes)`` (D184)."""
 
     units: dict[str, tuple[int, int]] = field(default_factory=dict)
     busy: int = 0
     movers: dict[str, tuple[int, int]] = field(default_factory=dict)
     copies: tuple[int, int] = (0, 0)
+    groups: dict[str, int] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {"units": {k: {"firings": f, "pushes": p} for k, (f, p) in self.units.items()},
-                "busy": self.busy,
+                "busy": self.busy, "groups": dict(self.groups),
                 "movers": {k: {"requests": r, "grants": g}
                            for k, (r, g) in self.movers.items()},
                 "copies": {"reads": self.copies[0], "writes": self.copies[1]}}  # fmt: skip
@@ -117,7 +120,7 @@ class Counts:
         cp = d.get("copies", {"reads": 0, "writes": 0})  # none in a window written before D184
         return cls({k: (v["firings"], v["pushes"]) for k, v in d["units"].items()}, d["busy"],
                    {k: (v["requests"], v["grants"]) for k, v in d["movers"].items()},
-                   (cp["reads"], cp["writes"]))  # fmt: skip
+                   (cp["reads"], cp["writes"]), dict(d.get("groups", {})))  # fmt: skip
 
 
 @dataclass(frozen=True)
@@ -166,10 +169,12 @@ def prices_of(graph: Graph, est: Estimate, movers: Sequence[MoverSpec]) -> Price
     links: dict[str, tuple[str, float]] = {}
     slicers: dict[str, tuple[str, str, float]] = {}
     bits = 0
+    group_bits: dict[str, int] = {}
     for g in est.groups:
         if g.cost is None:
             raise ValueError(f"group {g.name} is not costed: no prices")
         bits += g.cost.ctrl_bits
+        group_bits[g.name] = g.cost.ctrl_bits
         for u, b in g.cost.units.items():
             units[u] = (insts[u].span, b.e_fire_pj)
         src = _producers(graph, g.units)
@@ -182,7 +187,7 @@ def prices_of(graph: Graph, est: Estimate, movers: Sequence[MoverSpec]) -> Price
     beat = {s.name: (s.write, s.channels, _streamer(costs, s.depth, s.loops, s.channels).energy_pj)
             for s in movers}  # fmt: skip
     return Prices(units, links, bits, load(est.tech or "").e_ctrl_pj, beat, x.e_ro_pj, x.e_wo_pj,
-                  m.e_rd_pj, m.e_wr_pj, est.superbank_banks, slicers)  # fmt: skip
+                  m.e_rd_pj, m.e_wr_pj, est.superbank_banks, slicers, group_bits)  # fmt: skip
 
 
 def _producers(graph: Graph, units: Sequence[str]) -> Callable[[str], str]:
@@ -224,9 +229,18 @@ def price(p: Prices, c: Counts) -> Energy:
     xbar += cr * p.e_xro_pj + cw * p.e_xwo_pj
     reads += cr * p.superbank_banks
     writes += cw * p.superbank_banks
+    # Each control unit over its own group's busy cycles (D154 · D172); a window counted before
+    # the groups were kept apart prices every control unit over all of them
+    if c.groups and p.group_bits:
+        unknown = sorted(set(c.groups) - set(p.group_bits))
+        if unknown:
+            raise ValueError(f"groups {unknown} have counts and no price")
+        ctrl = sum(p.group_bits[g] * n for g, n in c.groups.items())
+    else:
+        ctrl = p.ctrl_bits * c.busy
     parts = {
         "datapath": dp / 1000,
-        "control": p.e_ctrl_pj * p.ctrl_bits * c.busy / 1000,
+        "control": p.e_ctrl_pj * ctrl / 1000,
         "streamers": strm / 1000,
         "crossbar": xbar / 1000,
         "memory": (reads * p.e_rd_pj + writes * p.e_wr_pj) / 1000,
@@ -238,8 +252,8 @@ def price(p: Prices, c: Counts) -> Energy:
 
 def graph_counts(graph: Graph, est: Estimate) -> Counts:
     """The static estimate's counts in ``Counts``' form: a unit's firings (its fires over its
-    span) and its pushes (its links' and packer's loads, a seeded unit's seed pops), the groups' cycles (pipelined, the
-    accelerator's: the longest path, D179), per port's
+    span) and its pushes (its links' and packer's loads, a seeded unit's seed pops), each group's
+    cycles (whatever the schedule, D154 · D172), per port's
     streamer its words as requests and grants (none refused), the copies' bursts as their beats,
     one read and one write each. Priced at ``prices_of`` with the
     ports' streamers as movers, the parts are ``est.parts``' energies."""
@@ -249,6 +263,7 @@ def graph_counts(graph: Graph, est: Estimate) -> Counts:
         if g.cost is None:
             continue
         out.busy += g.cycles
+        out.groups[g.name] = g.cycles
         src = _producers(graph, g.units)
         pushes = {src(k): b.fires for k, b in g.cost.links.items() if b.datapath != "FifoSlicer"}
         for k, b in g.cost.links.items():  # a seed pops once a job, its unit's results
@@ -256,10 +271,6 @@ def graph_counts(graph: Graph, est: Estimate) -> Counts:
                 pushes.setdefault(k.split(".", 1)[0], b.fires)
         for u, b in g.cost.units.items():
             out.units[u] = (b.fires // insts[u].span, pushes.get(u, 0))
-    if (
-        est.schedule not in IN_SERIES
-    ):  # pipelined, the control units clock the overlapped cycles (D179)
-        out.busy = est.accelerator_cycles
     for s in est.streamer_counts:
         out.movers[s.name] = (s.words, s.words)
     out.copies = (est.copy_bursts, est.copy_bursts)
