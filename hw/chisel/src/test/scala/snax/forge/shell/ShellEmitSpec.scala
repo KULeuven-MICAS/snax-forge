@@ -132,7 +132,7 @@ class ShellEmitSpec extends AnyFlatSpec {
 
   it should "have the fixtures of two accelerators, two groups in one, a wire, a buffer, shared movers and a fork" in
     assert(
-      Set("dot_v1", "dot_v1_1", "dot_v4", "dot_v6", "dot_v1_2", "mvt_v1_2_2", "bicg_v3")
+      Set("dot_v1", "dot_v1_1", "dot_v4", "dot_v6", "dot_v1_2", "mvt_v1_2_2", "bicg_v3_w64")
         .subsetOf(RtlFixtures.all.map(_.name).toSet)
     )
 }

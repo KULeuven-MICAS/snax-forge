@@ -1,5 +1,5 @@
 {
- "design_point": "out/design/bicg_v3/design_point.json",
+ "design_point": "out/design/bicg_v3_w64/design_point.json",
  "ports": [
   {
    "port": "a",

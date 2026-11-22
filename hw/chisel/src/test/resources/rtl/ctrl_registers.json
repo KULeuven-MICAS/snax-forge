@@ -1,5 +1,5 @@
 {
-  "bicg_v3": {
+  "bicg_v3_w64": {
     "snax_forge_bicg_v3_bicg_types_ctrl": [["busy", 1], ["mul_sum_job_beats_counter", 32], ["mul_jobs_counter", 32], ["sum_job_beats_counter", 32], ["sum_jobs_counter", 32], ["sum_v", 1], ["mac_job_beats_counter", 32], ["mac_jobs_counter", 32], ["mac_v", 1], ["mul_sum_occupancy", 1], ["done", 1]]
   },
   "dot_v1": {
