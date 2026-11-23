@@ -252,9 +252,8 @@ def _datapath_blocks(graph: Graph, insts: dict[str, Any], members: list[str],
 
 def _bank_bits(graph: Graph, inst: Any, node: Node, unit: Any, flops: int) -> int:
     """A banked unit's register bits (D191): its rows of sums, ``flops`` (the catalogue's,
-    counting its ``rows``), and a register of the element's width per held input (D190). The
-    bank's read mux and row enables are not in: the bank's area is a lower bound until the
-    ``Mac`` is characterized at its rows."""
+    counting its ``rows``), and a register of the element's width per held input (D190); its
+    read muxes are its lookup's comb (D193)."""
     from snax_forge.gen.blocks import port_dtype as width_of
 
     loops = firing_loops(graph, node)

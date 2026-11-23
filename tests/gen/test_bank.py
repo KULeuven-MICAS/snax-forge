@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from snax_forge.design.point import DesignPoint
+from snax_forge.estimate import estimate
 from snax_forge.estimate.bits import accelerator_registers
 from snax_forge.estimate.cycles import groups
 from snax_forge.gen import generate
@@ -124,3 +125,15 @@ def test_the_strips_cost_no_cycle(strips):
     tmp, path = strips
     (g,) = groups(DesignPoint.load(tmp / path).graph)
     assert g.cycles == 1027 and g.bits["mac"] == 8 * 4 * 32 + 8
+
+
+def test_the_bank_is_priced_by_its_forms(generated):
+    """D193: the rows-1 Mac entry plus X97's forms, one row loading a fire; X97 measured the same
+    bank alone at 16 515 um2 and 11.43 pJ a fire."""
+    tmp, path = generated
+    p = DesignPoint.load(tmp / path)
+    (g,) = estimate(p.graph, p.platform).groups
+    b = g.cost.units["mac"]
+    assert b.found == "bank"
+    assert 0.98 < (b.comb_um2 + b.flops_um2) / 16515 < 1.0
+    assert 0.95 < b.e_fire_pj / 11.43 < 1.0

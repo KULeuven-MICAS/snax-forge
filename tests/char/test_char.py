@@ -260,4 +260,22 @@ def test_the_real_tables_on_chars_named_cases(tech):
     assert (seeded.comb_um2, seeded.e_comb_pj, seeded.found) == (
         plain.comb_um2, plain.e_comb_pj, "unseeded"
     )  # fmt: skip
-    assert set(FOUND) == {"measured", "copy", "interpolate", "slope", "width", "unseeded"}
+    assert set(FOUND) == {"measured", "copy", "interpolate", "slope", "width", "unseeded", "bank",
+                          "bank_beyond"}  # fmt: skip
+
+
+def test_a_bank_is_its_rows_1_entry_plus_the_forms():
+    """D193: a Mac of rows R over the rows-1 entry, X97's forms in comb and energy, one row loading;
+    past the largest mux the forms were fitted to, bank_beyond."""
+    t = load("nangate45")
+    mac = {"inTypes": ["int8", "int8"], "opType": "int32", "outType": "int32", "accumulate": True,
+           "regOut": False, "seed": False}  # fmt: skip
+    one, b = lookup(t, "Mac", mac, 4), t.bank
+    assert b is not None
+    got = lookup(t, "Mac", {**mac, "rows": 16}, 4)
+    assert (got.found, got.load_bits) == ("bank", 4 * 32)
+    assert got.comb_um2 == pytest.approx(one.comb_um2 + b["comb_um2_lane_row"] * 64)
+    assert got.e_comb_pj == pytest.approx(one.e_comb_pj + 4 * (b["e_pj_lane_log2_rows"] * 4
+                                                               + b["e_pj_lane"]))  # fmt: skip
+    assert lookup(t, "Mac", {**mac, "rows": 16}, 8).found == "bank_beyond"
+    assert lookup(t, "Mac", {**mac, "rows": 1}, 4) == one

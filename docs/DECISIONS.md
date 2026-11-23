@@ -7,7 +7,7 @@ Rules (D117):
 - An entry is a choice with a real alternative that someone may want to reverse: direction, ownership, the interfaces between components, the order of work. Implementation details live in the module's docstring and its tests.
 - An entry says what was decided, why, and where the detail lives, in a few short bullets; an edge case only when there is one. A change is written into the entry, not chained after it.
 - Entries merged into one keep all their numbers in its heading, so a cite of any of them still finds it. A number is never changed or reused; the text of a removed entry is in git history.
-- A new decision gets the next free number, under the area it belongs to. Next free number: **D193**.
+- A new decision gets the next free number, under the area it belongs to. Next free number: **D194**.
 
 Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29–D45, D47–D50, D53, D54, D56, D58–D63, D65–D67, D69, D74, D76–D78, D80, D81, D83, D88–D97, D100, D101, D103, D104, D106, D107, D109, D110, D114, D115, D119, D124, D127, D128, D132, D133, D138–D141, D151, D156, D159, D160, D181.
 
@@ -209,7 +209,14 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 - **Decided:** a `Mac` may keep R rows of W sums (`rows` R, a design param, default 1, the plain `Mac`), one row a firing in turn: a job of T firings starts each row on its first R firings and gives R results, one on each of its last R. `bind` takes it as an option (the editor's "bank rows", offered where the output's index changes along loops inside its sum loop, its rows those loops' counts) and refuses an R the loops do not give, naming the split. The rows are registers; a `ROWS` CSR (at most R) sets the rows a pass uses, the control's `row` the beat mod `ROWS`. The `Mac` takes two row pins from the control, `row` (the row a firing adds into) and `drain` (the row its last firing wrote, pushed a cycle later while the next firing adds), both comparisons, so the `Mac` keeps no row of its own. A wider output than R·W is cut into strips, a design knob: r read once a strip (D190), q carried across them (D192), N a multiple of R·W for now. A seeded bank is refused for now.
 - **Why:** bicg's one pass reads A along its rows, so s's N sums are unfinished until the last row; keeping them in the unit sends nothing back to L1, and the row form of q stays as built. One `Mac` with a row of registers per R costs only flops where R `Mac`s would cost R datapaths.
 - **Where:** CONTRACTS, "Block runtime model" and "Accelerator RTL spec"; `brm/function.py` (`mac_kind`), `dfg/execute.py` (`named_rates`), `design/streamers.py` (`bank_loops`); snax-gvsoc's `snax/snax_group_rule.py`.
-- **Edge:** the bank as a memory (one read a cycle, latency 2) is open item 158. The price leaves out the bank's read mux and row enables until the `Mac` is characterized at its rows (X97): a lower bound.
+- **Edge:** the bank as a memory (one read a cycle, latency 2) is open item 158. Its price is D193's.
+
+### D193 — A bank's price: one row loads a fire, its muxes by X97's forms
+
+- **Decided:** a `Mac` bank of R rows is priced from the table's rows-1 entry at its lanes plus snax-forge-experiments' `bank` forms in `char.json` (X97): its comb area grows by 59.8 µm² per lane and row (the two R:1 read muxes and the row enables), a fire's comb energy by W · (0.343 log₂ R + 0.316) pJ, and a fire loads one row of W · 32 bits, not R. Its flops stay the catalogue's (all R rows). Past the largest read mux the forms were fitted to (2 048 bits) the lookup says `bank_beyond`: DC builds a larger mux there (about 2× at 4 096 bits), which the forms do not see.
+- **Why:** the first price, the rows-1 comb with every row loading, gave 0.76 to 0.87 of DC's area and 1.05 to 3.37 times the energy; with the forms the area is 0.99 to 1.01 and the energy 0.90 to 1.06 on X97's points. The numbers live in the table, which `import-costs` copies, not in the code.
+- **Where:** `char/__init__.py` (`lookup`, `_banked`); CONTRACTS, "Cost model".
+- **Edge:** a held input's register loading once a row and the clock gates' idle energy (R × 4.9 fJ a cycle) are left out.
 
 ### D192 — A fold carried across strips through L1
 
