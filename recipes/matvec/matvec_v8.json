@@ -1,0 +1,33 @@
+{
+ "name": "matvec_v8",
+ "id": "matvec_colbank",
+ "description": "The column form rows outer: q in strips of R·W outputs, a strip's sums kept in a `Mac` bank of R rows of W (D191) while A is read along its rows, p read once a row and held (D190).",
+ "kernel": "matvec",
+ "params": {"W": 4, "M": 64, "N": 64, "R": 8},
+ "symbols": {"M": "M", "N": "N"},
+ "steps": [
+  {"transform": "tag_map", "params": {"map": "mult_map_1", "kind": "temporal"}},
+  {"transform": "split", "params": {"map": "mult_map", "factor": "R * W"}},
+  {"transform": "tag_map", "params": {"map": "mult_map", "kind": "temporal"}},
+  {"transform": "split_map", "params": {"map": "mult_map_inner", "factor": "W"}},
+  {"transform": "interchange_map", "params": {"map": "mult_map_1", "with": "mult_map_inner_s"}},
+  {"transform": "interchange_map", "params": {"map": "mult_map_inner", "with": "mult_map_1"}},
+  {"transform": "tag_map", "params": {"map": "sum_map_1", "kind": "temporal"}},
+  {"transform": "split", "params": {"map": "sum_map", "factor": "R * W"}},
+  {"transform": "tag_map", "params": {"map": "sum_map", "kind": "temporal"}},
+  {"transform": "split_map", "params": {"map": "sum_map_inner", "factor": "W"}},
+  {"transform": "interchange_map", "params": {"map": "sum_map_1", "with": "sum_map_inner_s"}},
+  {"transform": "interchange_map", "params": {"map": "sum_map_inner", "with": "sum_map_1"}},
+  {"transform": "fuse_map", "params": {"first": "mult_map", "second": "sum_map"}},
+  {
+   "transform": "bind",
+   "params": {
+    "node": "mult_map_inner_s",
+    "brm": "mac",
+    "implementation": "chisel_mac",
+    "instance": "mac",
+    "params": {"rows": "R"}
+   }
+  }
+ ]
+}

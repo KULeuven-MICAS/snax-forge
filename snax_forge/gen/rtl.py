@@ -278,7 +278,8 @@ def rule_graph(group: Group, forked: list[list[str]] = ()) -> tuple[
     outer inputs (its ``in`` ports no link feeds); per link ``{from, to, to_input, depth}``,
     ``to_input`` the fed port's place among its unit's ``in`` ports; the unit owning the outer
     output (the one with an ``out`` port no link takes), with several chains each in unit
-    order; and the forks (``forked``, the accelerator's, D189) as ``(unit, outer input)``."""
+    order; and the forks (``forked``, the accelerator's, D189) as ``(unit, outer input)``. A
+    banked unit adds its ``rows`` and its held inputs' places, ``hold`` (D190, D191)."""
     fed = {link.to for link in group.links}
     taken = {link.from_ for link in group.links}
 
@@ -288,6 +289,7 @@ def rule_graph(group: Group, forked: list[list[str]] = ()) -> tuple[
     units = [{"name": u.name, "L": u.latency, "ii": u.ii, "span": u.span,
               "inputs": sum(f"{u.name}.{p}" not in fed for p in ins(u)),
               "d_in": [u.ports[p].d_in for p in ins(u) if f"{u.name}.{p}" not in fed]}
+             | rule_bank(u, [p for p in ins(u) if f"{u.name}.{p}" not in fed])
              for u in group.units]  # fmt: skip
     by_name = {u.name: u for u in group.units}
     links = []
@@ -309,6 +311,14 @@ def rule_graph(group: Group, forked: list[list[str]] = ()) -> tuple[
         if len(mine) > 1:
             rule_forks.append(mine)
     return units, links, owners[0] if len(owners) == 1 else owners, rule_forks
+
+
+def rule_bank(u: Unit, outer: list[str]) -> dict[str, Any]:
+    """A banked unit's ``rows`` and ``hold`` (its held inputs' places among ``outer``) as the
+    group rule takes them; nothing without a bank."""
+    rows = u.params.get("rows", 1)
+    held = [i for i, p in enumerate(outer) if u.ports[p].hold]
+    return ({"rows": rows} if rows > 1 else {}) | ({"hold": held} if held else {})
 
 
 def group_counter(group: Group, jobs: int | list[int], beats: Mapping[str, int],

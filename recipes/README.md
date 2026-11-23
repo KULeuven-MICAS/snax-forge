@@ -26,6 +26,7 @@ An id is the kernel, then words in this order, each from the lists below; a word
 | | `dot6` | a `Mac` linked at depth 1 to a serial fold (dot 6) |
 | | `dotser` | multiply and a serial fold of one lane, the products through L1 |
 | | `col` | the column form: one `Mac` with its lanes on the output, the input broadcast (D186) |
+| | `colbank` | the column form rows outer: the `Mac`'s sums of a strip of R·W outputs in a bank of R rows (D191), the broadcast read once a row and held (D190) |
 | How x is added (q += A p), after the form | (none) | q = A p |
 | | `add` | a separate `vadd` reading q through L1 |
 | | `chain` | the `vadd` linked into the same group |
@@ -52,6 +53,7 @@ The one-unit kernels take a word for their fold or scalar instead of a form: `tr
 | `bicg_v2` | bicg | `bicg_dot2_col` | q a `dot_v2` group per row and s the column form, by reuse: `matvec/matvec_v2` on q and `matvec/matvec_v7` on s, r broadcast to the `Mac`'s lanes (D186). Both halves read A along its rows. |
 | `bicg_v2_1` | bicg | `bicg_dot2_col_i8_o32` | `bicg_v2` at int8 in, int32 out (`types` i8). |
 | `bicg_v3` | bicg | `bicg_dot2_col_fork_i8_o32` | One pass over A at N = W: `bicg_v2_1`'s halves by reuse, then `fork_read` A, so one reader gives each beat of A to q's `dot_v2` group and s's `Mac` in one group of two chains (D189). M = 64, N = W = 32; the bank for N > W comes with D191. |
+| `bicg_v3_1` | bicg | `bicg_dot2_colbank_fork_i8_o32` | One pass over A for any N: `bicg_v3` with s's half `matvec/matvec_v8`, so s's sums of a strip stay in the `Mac`'s bank of R rows (D191) and r is read once a row and held (D190); A is read once (`fork_read`, D189). N = R·W here, one strip. |
 | `dot_v1` | dot | `dot1` | A `vmul` and a `vsum` as two accelerators, the products written to L1 and read back. The first of the six dot variants, the one the others are measured against. |
 | `dot_v1_1` | dot | `dot1_enc` | `dot_v1` with its two units encapsulated as one accelerator: one streamer set, two tasks. |
 | `dot_v1_2` | dot | `dot1_ports` | `dot_v1` with the products' container on shared ports (`share_ports`): `vmul`'s writer and `vsum`'s reader on one streamer set. |
@@ -90,6 +92,7 @@ The one-unit kernels take a word for their fold or scalar instead of a form: `tr
 | `matvec_v6` | matvec | `matvec_dot6` | A `dot_v6` on each row: the `Mac` linked to the serial fold at depth 1. |
 | `matvec_v6_1` | matvec | `matvec_dot6` | `matvec_v6` by reuse: `dot/dot_v6` applied to the rows. |
 | `matvec_v7` | matvec | `matvec_col` | The column form: one `Mac` with its W lanes on q's index, A read a strip of W columns at a time, p broadcast to the lanes (D186), each sum folded over time. |
+| `matvec_v8` | matvec | `matvec_colbank` | The column form rows outer: q in strips of R·W outputs, a strip's sums kept in a `Mac` bank of R rows of W (D191) while A is read along its rows, p read once a row and held (D190). |
 | `mvt_v1` | mvt | `mvt_dot1add_shared` | Each half a `dot_v1` on each row, the products through L1, and a `vadd` adding x; both halves on the same `vmul`, `vsum` and `vadd`. Half 2 reads A down its columns (`mark_transpose`). |
 | `mvt_v1_1` | mvt | `mvt_dot1add_shared` | `mvt_v1` by reuse: `matvec/matvec_v1_1` applied to each half, then the `vadd`s, the halves' units shared. |
 | `mvt_v1_2` | mvt | `mvt_dot2add_shared` | `mvt_v1` with each half a `dot_v2` group (`vmul → link → vsum`), one group run for both halves (`share`, D165), and one `vadd`. |

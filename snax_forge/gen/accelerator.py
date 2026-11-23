@@ -32,10 +32,12 @@ from snax_forge import expr
 from snax_forge.brm import Instance
 from snax_forge.common import JsonFile
 from snax_forge.design.streamers import (
+    firing_loops,
     forked_ports,
     group_chains,
     instance_nodes,
     is_broadcast,
+    is_held,
     jobs_csr,
     linked_ports,
     shared_movers,
@@ -46,7 +48,7 @@ from snax_forge.design.streamers import groups as graph_groups
 from snax_forge.dfg import Graph, Node
 from snax_forge.dfg.subset import map_range, parse_dim
 from snax_forge.lower.c import accelerators as c_accelerators
-from snax_forge.lower.c import fold_rate
+from snax_forge.lower.c import bank_rows, fold_rate
 
 from .blocks import DATAPATHS, GenError, Port, fill_node, port_dtype
 
@@ -630,7 +632,10 @@ def fixed_fold(graph: Graph, node: Node, inst: Instance) -> int | None:
     port = next(p.name for p in inst.ports if p.direction == "out" and p.rate == rate)
     used = node.outputs[port].names
     loops = list(next(o for n, o in graph.walk() if n is node))
-    k = len(loops)
+    k, rows = len(loops), 1
+    while k and rows < bank_rows(inst):  # a bank's row loops first, as named_rates (D191)
+        k -= 1
+        rows *= len(map_range(loops[k].attrs["range"], graph.bound_symbols, loops[k].id))
     while k and loops[k - 1].attrs["var"] not in used:
         k -= 1
     folded = loops[k:]
@@ -745,8 +750,10 @@ def _unit(point: DesignPoint, name: str, inst: Instance, offsets: Iterator[int])
         )  # fmt: skip
     ports = dict(fill.ports)
     node = instance_nodes(point.graph)[name]
+    first = forked_ports(point.graph)  # a forked port takes its first's reader (D189)
     for p, port in ports.items():  # a packed outer output (D174), a sliced outer input (D180)
-        s = point.streamers.get(streamer_name(name, p))
+        u, q = first.get(f"{name}.{p}", f"{name}.{p}").split(".", 1)
+        s = point.streamers.get(streamer_name(u, q))
         if s is not None and max(s.d_out, s.d_in) > 1:
             ports[p] = replace(port, d_out=s.d_out, d_in=s.d_in)
         if s is not None and is_broadcast(point.graph, node, inst, p):  # one lane for all (D186)
@@ -755,11 +762,18 @@ def _unit(point: DesignPoint, name: str, inst: Instance, offsets: Iterator[int])
                                f"but {datapath} sums its lanes; a broadcast feeds a datapath "
                                "whose lanes compute on their own (SimdLanes, Mac)")  # fmt: skip
             ports[p] = replace(ports[p], broadcast=True)
+        if is_held(inst, p, (node.inputs | node.outputs)[p], firing_loops(point.graph, node)):
+            if not ports[p].broadcast:  # read once a row, held for the row (D190)
+                raise GenError("gen.hold", f"{what}: port {p} is held for a bank row but is not "
+                               "a broadcast; a held input is one lane for all for now")  # fmt: skip
+            ports[p] = replace(ports[p], hold=True)
     fixed = fixed_fold(point.graph, instance_nodes(point.graph)[name], inst)
     params = dict(fill.params) | ({} if fixed is None else {"T": fixed})
     unit_rw = ["JOB_BEATS"] if fold_rate(inst) is not None and fixed is None else []
     unit_csrs = [Csr(n, "rw", next(offsets), point.platform.acc_csr.job_width) for n in unit_rw]
-    for slot, dtype in fill.scalars.items():  # after JOB_BEATS, in slot order
+    if (rows := bank_rows(inst)) > 1:  # the rows a pass uses, at most the bank's (D191)
+        unit_csrs.append(Csr("ROWS", "rw", next(offsets), rows.bit_length()))
+    for slot, dtype in fill.scalars.items():  # after JOB_BEATS and ROWS, in slot order
         width = min(port_dtype(dtype, f"{what}.{slot}")[0], 32)
         unit_csrs += [Csr(c, "rw", next(offsets), width, slot) for c in scalar_csrs(slot, dtype)]
     return Unit(name, inst.brm.name, datapath, ports, params, inst.latency,

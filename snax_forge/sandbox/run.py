@@ -22,8 +22,10 @@ from typing import Any
 
 import numpy as np
 
+from snax_forge import expr
 from snax_forge.dfg import DfgError, Graph, execute
 from snax_forge.dfg.execute import bind_symbols
+from snax_forge.expr import ExprError
 
 from .recipe import Recipe, SandboxError
 from .transforms import TRANSFORMS
@@ -71,6 +73,12 @@ def step_params(recipe: Recipe, index: int) -> tuple[str, dict[str, Any]]:
         # a sub-recipe's params: ints, or expressions over this recipe's params (blocks.py)
         params["params"] = {k: recipe.value(v, f"{what}.params.params.{k}")
                             for k, v in params["params"].items()}  # fmt: skip
+    if step.transform == "bind" and isinstance(params.get("params"), dict):
+        # a BRM param over this recipe's params (a bank's rows R); a str param stays as given
+        params["params"] = {
+            k: recipe.value(v, f"{what}.params.params.{k}") if _over_params(recipe, v) else v
+            for k, v in params["params"].items()
+        }
     if spec.params is not None:  # params a signature cannot name (interchange_map's with)
         if set(params) != set(spec.params):
             raise SandboxError(f"{what}: takes {list(spec.params)}, got {sorted(params)}")
@@ -82,12 +90,20 @@ def step_params(recipe: Recipe, index: int) -> tuple[str, dict[str, Any]]:
     return step.transform, params
 
 
+def _over_params(recipe: Recipe, v: Any) -> bool:
+    """``v`` is an int expression whose names are all the recipe's params."""
+    if type(v) is int:
+        return False
+    try:
+        return bool(expr.names(v)) and expr.names(v) <= set(recipe.params)
+    except (ExprError, TypeError):
+        return False
+
+
 def random_inputs(g: Graph, seed: int) -> dict[str, np.ndarray]:
     """Seeded integers for every non-transient container, at the graph's bound sizes."""
     rng = np.random.default_rng(seed)
     env = g.bound_symbols
-    from snax_forge import expr
-
     out = {}
     for name, c in g.containers.items():
         if c.transient:

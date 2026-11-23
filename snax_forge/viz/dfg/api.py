@@ -36,6 +36,7 @@ from snax_forge.design.streamers import (
     group_of,
     instance_of,
     is_broadcast,
+    is_held,
     packed,
     port_loops,
     sliced,
@@ -398,6 +399,12 @@ def bindings_section(g: Graph, recipe: Any = None, editable: bool = False) -> di
                 if any(inner.match(x) for x in ids):
                     used.add(i)
                     names += [x for x in ps if x not in names]
+            for st in list(recipe.steps) if recipe is not None else []:  # a bank's rows (D191)
+                p = st.params
+                if (st.transform == "bind" and p.get("instance") == a["instance"]
+                        and isinstance(p.get("params"), dict)):  # fmt: skip
+                    for v in p["params"].values():
+                        names += [x for x in _param_names(v, params) if x not in names]
             design = dict(a.get("params") or {})
             slots = slot_params(n)
             lanes = {k: v for k, v in design.items() if isinstance(v, int) and k not in slots
@@ -1084,7 +1091,9 @@ def compact_text(g: Graph, n: Node, param: str | None = None) -> str:
             inst = instance_of(n)
             first = next(p.name for p in inst.ports if p.direction == "in")  # a port, not a slot
             slots = "".join(f" · {k} {v}" for k, v in slot_params(n).items())
-            return f"{text} · {param or 'W'} {inst.lanes(first)}{slots}"
+            rows = inst.params.get("rows", 1)  # a bank's rows (D191)
+            bank = f" · bank {rows} rows" if rows > 1 else ""
+            return f"{text} · {param or 'W'} {inst.lanes(first)}{bank}{slots}"
         except (BrmError, ExprError, KeyError, StopIteration):
             return text
     if n.kind == "link":
@@ -1337,6 +1346,17 @@ def _lanes(g: Graph, n: Node, port: str) -> int | None:
         return stream_lanes(g, n, instance_of(n), port)
     except (BrmError, ExprError, KeyError, ValueError):
         return None
+
+
+def held_port(g: Graph, n: Node, port: str) -> bool:
+    """Whether an accelerated node's ``port`` is held (D190): read once a bank row and kept;
+    False for any other node, or an instance the BRM library does not resolve."""
+    if n.kind != "accelerated" or port not in n.inputs:
+        return False
+    try:
+        return is_held(instance_of(n), port, n.inputs[port], firing_loops(g, n))
+    except (BrmError, ExprError, KeyError, ValueError):
+        return False
 
 
 def broadcast_port(g: Graph, n: Node, port: str) -> bool:

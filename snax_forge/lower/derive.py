@@ -324,6 +324,11 @@ def unit_firings(g: Graph, node: Node, inst: Instance) -> tuple[dict[str, Any], 
             {p.name: (memlets[p.name], p.rate) for p in inst.ports},
             [(lp.var, lp.count) for lp in loops],
             what,
+            {
+                p.name: inst.params["rows"]
+                for p in inst.ports
+                if p.direction == "out" and inst.params.get("rows", 1) > 1
+            },  # a bank (D191)
         )
     except DfgError as e:
         raise LowerError(str(e)) from None

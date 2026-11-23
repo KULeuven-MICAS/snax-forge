@@ -39,12 +39,15 @@ AccelFn = Callable[
 
 @dataclass(frozen=True)
 class AccelPort:
-    """One data port: ``rate``, an int or the name of a runtime param, is firings per beat."""
+    """One data port: ``rate``, an int or the name of a runtime param, is firings per beat; an
+    output of a bank (D191) of ``rows`` gives ``rows`` beats per ``rate`` firings, one on each
+    of the last ``rows``."""
 
     name: str
     direction: str  # "in" or "out"
     lanes: int = 1
     rate: int | str = 1
+    rows: int = 1
 
     def __post_init__(self) -> None:
         if self.direction not in ("in", "out"):
@@ -110,7 +113,7 @@ class AccelFunction:
         model")."""
         if direction == "in":
             return [p.name for p in self.inputs if k % rates[p.name] == 0]
-        return [p.name for p in self.outputs if (k + 1) % rates[p.name] == 0]
+        return [p.name for p in self.outputs if k % rates[p.name] >= rates[p.name] - p.rows]
 
 
 # =============================================================================
@@ -224,16 +227,23 @@ def mac_kind(
     seed: int = 0,
     dtypes: Mapping[str, str] | None = None,
     op_type: str | None = None,
+    rows: int = 1,
 ) -> AccelFunction:
     """T beats of ``a`` and ``b`` -> 1 beat of ``out``, each lane on its own: ``a * b`` at the
     inputs' result type, or at ``op_type`` when the kernel's casts set it, cast to the output's
     dtype (``dtypes["out"]``), folded with ``op`` over the T beats; without ``dtypes``, at the
     product's. A ``b`` of one lane is a broadcast (D186): every lane multiplies by it. With
     ``seed`` 1 an input ``seed`` of ``lanes`` lanes at rate T (D187): a job's first firing
-    folds into it instead of starting from the product, cast to the output's dtype."""
+    folds into it instead of starting from the product, cast to the output's dtype. With
+    ``rows`` R > 1 a bank (D191): firing k adds into row k mod R, each row starting on a job's
+    first R firings and given out on its last R, so a job of T firings gives R beats."""
     out_dtype = None if dtypes is None else dtypes.get("out")
     if seed not in (0, 1):
         raise ValueError("seed must be 0 or 1")
+    if rows < 1:
+        raise ValueError("rows must be >= 1")
+    if seed and rows > 1:
+        raise ValueError("a seeded bank is not built yet (a seed per row)")
 
     def fn(k, ins, state, params):
         a, b = np.asarray(ins["a"]), np.asarray(ins["b"])
@@ -241,20 +251,23 @@ def mac_kind(
             a, b = a.astype(op_type), b.astype(op_type)
         x = np.multiply(a, b)
         x = x if out_dtype is None else np.asarray(x).astype(out_dtype)
-        if "acc" in state:
-            state["acc"] = op(state["acc"], x)
+        row, t = k % rows, params["T"]
+        if t % rows:
+            raise ValueError(f"T = {t} is not a multiple of the bank's {rows} rows")
+        if row in state:
+            state[row] = op(state[row], x)
         elif seed:  # a job's first firing: the seed in place of a sum of nothing
             s = ins["seed"] if out_dtype is None else np.asarray(ins["seed"]).astype(out_dtype)
-            state["acc"] = op(s, x)
+            state[row] = op(s, x)
         else:
-            state["acc"] = x.copy()
-        if (k + 1) % params["T"] == 0:
-            return {"out": state.pop("acc")}
+            state[row] = x.copy()
+        if k % t >= t - rows:  # a row is done when the job's last pass adds into it
+            return {"out": state.pop(row)}
         return {}
 
     ports = (AccelPort("a", "in", lanes, 1), AccelPort("b", "in", lanes, 1),
              *((AccelPort("seed", "in", lanes, "T"),) if seed else ()),
-             AccelPort("out", "out", lanes, "T"))  # fmt: skip
+             AccelPort("out", "out", lanes, "T", rows))  # fmt: skip
     return AccelFunction(ports, fn, "mac")
 
 

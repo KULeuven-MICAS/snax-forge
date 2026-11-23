@@ -277,10 +277,11 @@ function field(f) {
     return h("div", { class: "dfg-choices", ...attrs }, fit.map(([c, i]) => {
       const t = c.timing;
       const timing = t ? `II ${t.ii} · latency ${t.latency} · span ${t.span}` : "";
-      return h("label", { class: "dfg-choice" },
+      const label = h("label", { class: "dfg-choice" },
         h("input", { type: "radio", name: "binding", value: String(i), "data-brm": c.value.brm, "data-impl": c.value.implementation,
           checked: f.value && c.value.brm === f.value.brm && c.value.implementation === f.value.implementation }),
         h("span", {}, c.label), h("small", {}, timing));
+      return c.bank ? h("div", {}, label, bank(c, i)) : label;
     }));
   }
   if (f.type === "choice" && f.preview) { // lift's and apply_recipe's: a row each, lighting what it changes (preview)
@@ -329,6 +330,20 @@ function field(f) {
   return f.sweepable && !f.readonly ? sweepable(input, f.new_value) : input;
 }
 
+/** A Mac's "bank rows" box (D191): ticked, the unit keeps R rows of sums, R a param of its own
+(``sweepable``, its value the rows the site's loops give); unticked, one row, the plain Mac. */
+function bank(c, i) {
+  const rows = h("input", { "data-bank-rows": String(i), value: "R", size: 4,
+    title: "the bank's rows: a number, or a param (R) whose value is the rows the site's loops give" });
+  const box = h("input", { type: "checkbox", "data-bank": String(i), checked: true });
+  const el = h("div", { class: "dfg-bank", title: "keep the sums of R outputs, one row a beat, read out when the job ends (D191)" },
+    h("label", {}, box, " bank rows "), sweepable(rows, c.bank));
+  box.onchange = () => { // unticked: one row, and no new param
+    for (const x of el.querySelectorAll("input:not([data-bank])")) x.disabled = !box.checked;
+  };
+  return el;
+}
+
 // A name in an int field: a param, or one of the grammar's functions (expr.py)
 const NAMES = /[A-Za-z_][A-Za-z0-9_]*/g;
 const FUNCTIONS = new Set(["max", "min"]);
@@ -356,7 +371,7 @@ function sweepable(input, start = 4) {
 /** The new params a form's fields give (``sweepable``): name -> its value, an int. */
 function newParams(el) {
   const out = {};
-  for (const x of el.querySelectorAll("[data-new-param]")) {
+  for (const x of el.querySelectorAll("[data-new-param]:not(:disabled)")) {
     const raw = x.value.trim();
     if (/^-?\d+$/.test(raw)) out[x.dataset.newParam] = Number(raw); // else the server names it
   }
@@ -369,8 +384,13 @@ function params(form, el) {
   for (const f of form) {
     const node = el.querySelector(`[data-field="${CSS.escape(f.name)}"]`);
     if (f.name === "binding") {
-      const picked = node.querySelector("input:checked");
+      const picked = node.querySelector("input[name=binding]:checked");
       if (picked) Object.assign(out, f.choices[Number(picked.value)].value);
+      const box = picked && node.querySelector(`[data-bank="${picked.value}"]`);
+      if (box && box.checked) { // the bank's rows: a number or a param name
+        const raw = node.querySelector(`[data-bank-rows="${picked.value}"]`).value.trim();
+        out.params = { rows: /^-?\d+$/.test(raw) ? Number(raw) : raw };
+      }
     } else if (f.spread) {
       Object.assign(out, f.choices[Number(node.value)].value);
     } else if (f.type === "checklist") {

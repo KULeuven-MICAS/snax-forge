@@ -201,7 +201,7 @@ The library's BRMs:
 | `simd` | `chisel_tiled_spatial` | `SimdLanes` (`lanes` W, `op`) | |
 | `accumulate` | `chisel_adder_tree` | `TreeAccumulate` (`a` → `in`) | `seed` 0 or 1 adds the input `seed`, one lane at rate T, read once per job (D163) |
 | `accumulate` | `chisel_serial` | `SerialAccumulate` | one lane a cycle, so `span` = lanes |
-| `mac` | `chisel_mac` | `Mac` (`accumulate` true, `regOut` false) | `out = a * b` folded per lane over T beats (D149); `seed` 0 or 1 adds the input `seed`, W lanes at rate T, read once per job (D187); a `b` bound as one lane is given to every lane (D186) |
+| `mac` | `chisel_mac` | `Mac` (`accumulate` true, `regOut` false) | `out = a * b` folded per lane over T beats (D149); `seed` 0 or 1 adds the input `seed`, W lanes at rate T, read once per job (D187); a `b` bound as one lane is given to every lane (D186); `rows` R > 1 (default 1) keeps R rows of W sums, one a firing in turn, a job giving R results (D191), and a `b` whose memlet skips the rows' loops is read once a row and held (D190) |
 | `lane_accumulate` | `chisel_lane_accumulate` | `LaneAccumulate` | rowsum 2: `out = a`, each lane folding its own element over T beats; a front op is refused (bind `mac`) |
 
 `mac`'s pattern, `lane_fold`, is a fused nest (section 4): a multiply and a reduce joined by a local value, the fold indexed by the spatial variable:
@@ -210,7 +210,7 @@ The library's BRMs:
 ```json
  "function": {
   "accel": "mac",
-  "params": {"lanes": "W", "op": "op", "seed": "seed"},
+  "params": {"lanes": "W", "op": "op", "seed": "seed", "rows": "rows"},
   "code": "out = a * b"
  },
  "dataflow": {"notation": "stream", "ports": {"a": {}, "b": {}, "seed": {}, "out": {}}},
@@ -285,6 +285,7 @@ What `bind` checks:
 
 - Every map around the spatial map is `temporal` (an untagged one names `tag_map`; `tile` is not lowered yet). The lanes param comes from the spatial bound, and the dimension over the spatial variable becomes the lanes' range.
 - The tasklet's code on the port names equals the BRM's `function.code` (section 3). A folding output without the spatial variable becomes one lane (D102). An input without it is a broadcast (D186): one lane a beat, given to every lane, taken only on a lane-wise datapath (`SimdLanes`, `Mac`); elsewhere it is refused, naming `mac` and `simd`. A seed (D163 · D187) has its output's lanes.
+- A `Mac`'s `rows` R (D191) takes the innermost firing loops its output uses whose counts multiply to R as the bank's rows, then folds the loops its output skips outside them; other loops refuse it, naming the split. An input that uses none of the rows' loops is held (D190).
 - A fused nest binds as one: as a fold (`lane_fold`) or, when the second tasklet is plain, as one code with the first's expression in place of the local value (axpy's `y + alpha * x`).
 - A tasklet that needs a fused map or a split reduction is refused with the fix ("fuse_map first", "split_reduce first", D150).
 
@@ -305,7 +306,7 @@ What `bind` checks:
 | `export/<k>_<transform>.snaxdfg` | a step's graph, written by Export |
 
 - **Params**: a session from a kernel starts from its symbols, each a param (`edit-dfg --kernel K --set N=…`). Every factor and depth the editor writes names a param: the form defaults to `W`, `W_2`, … and `D`, `D_2`, …, and a number given instead becomes a new param at that value (`fresh_param`). `POST /api/apply`'s `new_params` (`{"W_mul": 8}`) adds them before the step. `POST /api/params` with `{"rename": {"from": "W_x1", "to": "W"}}` renames one in the params, the symbols and every step (inside `apply_recipe`'s `params` too) and replays (`params.rename` refuses a taken name); with `{"drop": "K"}` drops one that no step, symbol or other param names (`params.drop` names what does). The left column lists an `apply_recipe` step whose `params` name the session's params as an entry of its own, so they are not listed unused.
-- **Renames**: when its map is bound, an editor-named factor is renamed to `W_<instance>` through the session (dot 1's `W_mul` and `W_sum`), unless several units share it (dot 2–6's `W`). `bind`'s default instance is `acc_N`, N the bind's order in the session.
+- **Renames**: when its map is bound, an editor-named factor is renamed to `W_<instance>` through the session (dot 1's `W_mul` and `W_sum`), unless several units share it (dot 2–6's `W`). `bind`'s default instance is `acc_N`, N the bind's order in the session. Where a bank fits (`bank_hint`: the output's index changes along loops inside one it skips), the bind list tries a BRM with a `rows` param at those loops' rows, its entry's `bank`, and the page shows a "bank rows" box, ticked, whose value is a param of its own (`R`, at the hint), sent as `params.rows`; a name there must be a param, as `apply_recipe`'s.
 - **Replay**: a step applied before the last is refused (`session.drop`) until the later ones are dropped. A param change (`POST /api/params`) replays up to the cursor; the later steps are replayed when the cursor reaches them.
 - **Checks**: every apply and param change runs Save's design checks; the step view's `problems` and `notes` each are `{code, where, message, fix, before_save}`. `graph.unbound` while building is a note, but Save refuses it.
 - **Save** writes steps 1 to the cursor as `recipes/custom/<name>.json`, with only the params its steps and symbols use, and the steps to `out/sandbox/<name>/`. It never overwrites (`save.name`) and refuses a graph-stage problem (`save.graph`), any other design problem unless forced (`save.design`).
@@ -333,7 +334,7 @@ The `drawing` is `{nodes, edges, outlines, tasks}`; positions are the page's, ne
 | node `parent`, `chips` | its outline; `[node, task]` per node a unit runs, or a merged loop's other maps |
 | node `layer`, `row`, `port_tasks`, `width_of` | `first` for a kernel input; a front loop's row; a mux's port per task; the unit a mux is as wide as |
 | edge `from`, `from_port`, `to`, `to_port` | its ends |
-| edge `style`, `task`, `label` | data, seed, link, fork, local, wire or empty; its task after `share`; the dtype where it changes, `↻ var` for an outer loop skipped, `Aᵀ`, `broadcast` |
+| edge `style`, `task`, `label` | data, seed, link, fork, local, wire or empty; its task after `share`; the dtype where it changes, `↻ var` for an outer loop skipped, `Aᵀ`, `broadcast`, `held a row` (D190) |
 | edge `data`, `node`, `port`, `sub` | the container, the node and port it feeds or leaves, the memlet |
 | outline | `id` (`grp:`, `acc:`, `block:`), `kind`, `text`, `sel`, `parent`; a group that took an open block's boxes also `block` (the first), its text naming the others (`group bicg_types · from matvec, matvec_1`) |
 
@@ -561,7 +562,7 @@ flowchart TD
 ```
 
 - **Encapsulated** (several groups on one streamer set): each task also configures the other groups' movers idle, and its `start` launches every mover. `dot_v1_1`'s `mult_vmul` starts `vmul_a`, `vmul_b`, `vmul_out`, with `vsum_a`, `vsum_out` idle.
-- **A linked group** is one task at its first unit's node, `<node>_<group>`, on the group as its component: streamers only on the ports on no link (a link's container is never loaded or stored), and one accelerator task whose `values` are each unit's, by unit. Dot 6's `mult_dot`: `{"mac": {"n": 128, "T": 128}, "sum": {"n": 1, "T": 1}}`. The program writes the group's JOBS = n_u / ∏ T_v over its first unit u and its folds v, then each fold's JOB_BEATS (section 10). A group of several chains (D189) writes a `JOBS_<SINK>` per chain, n_head / ∏ T over the chain's folds; a fork's ports but the first have no streamer, and its heads must fire alike (`ValueError` otherwise).
+- **A linked group** is one task at its first unit's node, `<node>_<group>`, on the group as its component: streamers only on the ports on no link (a link's container is never loaded or stored), and one accelerator task whose `values` are each unit's, by unit. Dot 6's `mult_dot`: `{"mac": {"n": 128, "T": 128}, "sum": {"n": 1, "T": 1}}`. The program writes the group's JOBS = n_u / ∏ T_v over its first unit u and its folds v, then each fold's JOB_BEATS and each bank's ROWS, its `rows` (section 10, D191). A held input's streamer skips the bank's row loops (D190). A group of several chains (D189) writes a `JOBS_<SINK>` per chain, n_head / ∏ T over the chain's folds; a fork's ports but the first have no streamer, and its heads must fire alike (`ValueError` otherwise).
 - **Chains through L1** (D105): `after` holds data dependences only, so two groups chain with one wait, on the first's writer.
 - **In place**: a writer never waits for a reader it starts with. That is an in-place update, allowed only when the reader is a port of its own unit visiting the same addresses in the same order (axpy's `y`, a fold's seed), and refused by name otherwise.
 - **A packed output** (D174): its writer's innermost loop of n pushes at stride s = W · b / 8 bytes becomes $(\lceil n / d_{out} \rceil, d_{out}\thinspace s)$, one write per 8-byte word, its spatial bounds `[1]`, the outer loops and the base unchanged. matvec at i8, M = 10 int32 outputs at W = 1: (10, 4 B) becomes (5, 8 B). A sliced input's reader (D180) the same with d_in: vecadd_v1_1 at W = 1, N = 64: (64, 4 B) becomes (32, 8 B).
@@ -694,14 +695,14 @@ A unit:
 | Key | Holds |
 |---|---|
 | `name`, `brm`, `datapath` | the bind's instance, its BRM, a catalogue datapath |
-| `ports` | per BRM port, in its order: `port` (the datapath's), `dir`, `dtype`, `lanes`; an outer output that a packer feeds also `d_out`, an outer input that a slicer feeds `d_in` (each absent at 1, D174 · D180); a broadcast input `broadcast` true (absent when false, D186): its lanes stay the unit's, its stream carries one |
+| `ports` | per BRM port, in its order: `port` (the datapath's), `dir`, `dtype`, `lanes`; an outer output that a packer feeds also `d_out`, an outer input that a slicer feeds `d_in` (each absent at 1, D174 · D180); a broadcast input `broadcast` true (absent when false, D186): its lanes stay the unit's, its stream carries one; a held input `hold` true (absent when false, D190): read once a bank row |
 | `opType` | a SIMD or `Mac` unit's op type, NumPy's result type of its inputs or of the kernel's casts (D143 · D175) |
-| `params` | only what the ports do not give: `op`, a baked slot (relu's `k`), a `Mac`'s `accumulate` and `regOut`, `T` when fixed at design time (then no JOB_BEATS) |
+| `params` | only what the ports do not give: `op`, a baked slot (relu's `k`), a `Mac`'s `accumulate` and `regOut` and its bank's `rows` (absent at 1, D191), `T` when fixed at design time (then no JOB_BEATS) |
 | `scalars` | each slot read from a scalar and its type (axpy's `{"k1": "int32"}`), each an R/W CSR with its datapath `pin` |
 | `timing` | `latency`, `ii`, `span` (the cycles a unit reads one input in place; its throughput is one beat per max(ii, span)) |
 | `csrs` | its R/W CSRs |
 
-A CSR is `name`, `access` (`rw`, `ro`), `offset` from the shell's first CSR, `width` (START 1, JOBS and every JOB_BEATS `acc_csr.job_width`, STATUS 2, BUSY_COUNTER `busy_counter_width`), `pin` (a scalar's). snax-forge computes offsets and widths once; a reader checks them and never recomputes them.
+A CSR is `name`, `access` (`rw`, `ro`), `offset` from the shell's first CSR, `width` (START 1, JOBS and every JOB_BEATS `acc_csr.job_width`, ROWS the bits of `rows`, STATUS 2, BUSY_COUNTER `busy_counter_width`), `pin` (a scalar's). snax-forge computes offsets and widths once; a reader checks them and never recomputes them.
 
 - **`movers`**, with `share_ports`: per mover in the streamer's order `{name (reader<k>, writer<k>), role, num_channel, masked, users}`, each user `{group, port, num_channel}`.
 - **`port_mux`**: `{groups (in PORT_MUX_SEL's order), csr}`; PORT_MUX_SEL is the accelerator's last CSR, R/W, as wide as a group's index.
@@ -786,9 +787,9 @@ Each a `GenError`, before anything is written:
 
 ### The CSRs
 
-Per accelerator and per group in order, from offset 0 (D146): START (R/W), JOBS (R/W; with several chains a `JOBS_<SINK>` per chain, D189), each unit's R/W CSRs (JOB_BEATS for a fold without `params.T`, then its scalars, a 64-bit one as two, low word first), STATUS (R/O), BUSY_COUNTER (R/O). With c_g a group's chains, f_u = 1 for a fold without `params.T` and k_u a unit's scalar CSRs:
+Per accelerator and per group in order, from offset 0 (D146): START (R/W), JOBS (R/W; with several chains a `JOBS_<SINK>` per chain, D189), each unit's R/W CSRs (JOB_BEATS for a fold without `params.T`, ROWS for a bank, then its scalars, a 64-bit one as two, low word first), STATUS (R/O), BUSY_COUNTER (R/O). With c_g a group's chains, f_u = 1 for a fold without `params.T`, b_u = 1 for a bank and k_u a unit's scalar CSRs:
 
-$$rw = \sum_g \Big(1 + c_g + \sum_u (f_u + k_u)\Big), \qquad ro = 2G$$
+$$rw = \sum_g \Big(1 + c_g + \sum_u (f_u + b_u + k_u)\Big), \qquad ro = 2G$$
 
 They are the accelerator's interface, all in `<tag>_csr`, BUSY_COUNTER in its submodule `<tag>_peripherals` (D152, D168). A read gives a CSR's bits, the upper ones 0. Per group:
 
@@ -843,11 +844,13 @@ A group's control unit is generated from the description (D147). Its rule is sna
 - **Outer ports**: a unit fires only with every one of its outer valids (ready_k = fire_{u(k)}), so valid never depends on ready. A seed is taken on a job's first firing only: fire = a.valid ∧ (¬first ∨ seed.valid).
 - **Classes**, at the units owning the outer outputs: stall_out (one is frozen) > busy (a unit fires, reads or is in its II gap) > stall_in (a unit wants to fire and an outer input has no beat) > flush.
 - **Span**: a unit reads lane l in place at span S, firing on lane S − 1; a frozen unit reads nothing; busy counts every read.
+- **A bank** (D191): a unit of `rows` R keeps R rows of sums, one a firing in turn, the control's `row` = the beat mod ROWS (ROWS ≤ R, the rows a pass uses): `first` on a job's first ROWS firings, a result on each of its last ROWS (the drain overlaps the last row), so a job of T firings (T a multiple of ROWS) gives ROWS results. Only a chain's sink, and not seeded for now.
+- **A held input** (D190): read once a row and kept in a register of its element's width; it needs its beat, and its reader's (or slicer's) beat is taken, only on a firing where `row` = 0.
 - **Chains** (D189): several chains meet only at a forked outer input, one reader for their heads; its beat is taken when every head fires, ready = ∧ fire of the heads, so a head that could fire waits while another cannot. Each chain counts its own JOBS; the group is done when every chain is. A fork, a join or a cycle of links is refused, and chains no fork joins.
 
 **Counting** (D153, D168): a register only for what a firing changes, counting up with no product and no copy of a setting (the tests read the csr's JOBS and JOB_BEATS live).
 
-- A unit of T ≠ 1 keeps its beat counter d (`<unit>_job_beats_counter`): first = (d = 0), last = (d + 1 = JOB_BEATS); a fixed T a ⌈log₂ T⌉-bit counter.
+- A unit of T ≠ 1 keeps its beat counter d (`<unit>_job_beats_counter`): first = (d = 0), last = (d + 1 = JOB_BEATS); a fixed T a ⌈log₂ T⌉-bit counter. A bank adds its row ρ (`<unit>_row`, ⌈log₂ R⌉ bits, wrapping at ROWS): first = (d < ROWS), a result when d + ROWS ≥ JOB_BEATS, a held input's take when ρ = 0.
 - A unit at L 0 whose out-link is a wire borrows its consumer's test, since its giving firing is the consumer's firing.
 - Any other unit counts its giving firings up in mixed radix, a digit per later unit with T ≠ 1 (`<unit>_<downstream>_job_beats_counter`), then a jobs digit g (`<unit>_jobs_counter`); it has finished when g equals JOBS.
 - Done is the sink's JOBS-th push, read off its jobs digit and its pipeline; with several chains (D189) the last chain's, a chain that ended earlier holding its jobs digit at its JOBS and its pipeline empty. The empty run is tested on the csr's wires in the start's cycle.
@@ -1084,7 +1087,7 @@ A group's fields:
 | `counter` | `cycles` + `fill`: the expected BUSY_COUNTER (below) |
 | `bank_bound` | ⌈Σ over its outer ports of beats × num_ch / `l1.n_banks`⌉, the fewest cycles of L1 time its streams take (null without a platform) |
 | `channels`, `words_per_cycle` | the sum of num_ch over its outer ports; the 64-bit words they move per cycle |
-| `bits`, `ctrl_bits` | per unit and buffer link its datapath's register bits (the catalogue's `flops`), a packed output's `FifoPacker` by `<unit>.<port>` ((d_out − 1) · W · b held, ⌈log₂ d_out⌉ count; D174), a sliced input's `FifoSlicer` by `<unit>.<port>` (64 held, ⌈log₂ d_in⌉ count, 1 full; D180), and its control unit's (`estimate/bits.py`): the cost model's counts (D154) |
+| `bits`, `ctrl_bits` | per unit and buffer link its datapath's register bits (the catalogue's `flops`; a bank's R rows, while the catalogue's `Mac` has no `rows` its flops times R, and a held input's element, D190 · D191; the bank's read mux and row enables are not in, a lower bound until X97), a packed output's `FifoPacker` by `<unit>.<port>` ((d_out − 1) · W · b held, ⌈log₂ d_out⌉ count; D174), a sliced input's `FifoSlicer` by `<unit>.<port>` (64 held, ⌈log₂ d_in⌉ count, 1 full; D180), and its control unit's (`estimate/bits.py`): the cost model's counts (D154) |
 | `cost` | on a technology, its units', links' and control unit's area and energy, and the totals (section 14) |
 
 How the cycles grow along dot's recipe at N = 512:
@@ -1111,6 +1114,7 @@ A run's BUSY_COUNTER counts from its group's START every cycle until busy drops 
 |---|---|
 | per group `busy`, `done` | 1 each |
 | per unit `<u>_job_beats_counter` | a count of its T; none at a fixed T of 1 |
+| per bank `<u>_row` | ⌈log₂ R⌉ (D191) |
 | per unit `<u>_<j>_job_beats_counter` | a count of each later unit j's T but a fixed 1, unless the unit borrows its consumer's test |
 | per unit `jobs_counter` | `job_width`, unless the unit borrows |
 | per unit `gap` | ⌈log₂(II + 1)⌉ at II > 1 |

@@ -136,6 +136,10 @@ def tagged_names(g: Graph, map: str, factor: int) -> dict[str, str]:
 
 
 def renamed(g: Graph, names: dict[str, str]) -> str:
-    """``g``'s JSON with every whole name in ``names`` replaced."""
+    """``g``'s JSON with every whole name in ``names`` replaced, but in a ``loop.split`` record:
+    it keeps the variable the map had before its split, which a split of a split piece shares
+    with the piece's own (matvec_v8's ``m_2``)."""
     rx = re.compile(r"\b(" + "|".join(map(re.escape, names)) + r")\b")
-    return rx.sub(lambda m: names[m[1]], g.to_json())
+    parts = re.split(r'("loop\.split": \{[^}]*\})', g.to_json())
+    return "".join(p if p.startswith('"loop.split"') else rx.sub(lambda m: names[m[1]], p)
+                   for p in parts)  # fmt: skip

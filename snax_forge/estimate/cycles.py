@@ -24,6 +24,7 @@ from typing import Any
 from snax_forge.brm import SEED
 from snax_forge.common import CodedError, repo_root
 from snax_forge.design.streamers import (
+    firing_loops,
     forked_ports,
     forks,
     group_chains,
@@ -31,6 +32,7 @@ from snax_forge.design.streamers import (
     group_runs,
     instance_nodes,
     instances,
+    is_held,
     packed,
     port_dtype,
     sliced,
@@ -39,7 +41,7 @@ from snax_forge.design.streamers import (
 from snax_forge.design.streamers import groups as graph_groups
 from snax_forge.dfg import Graph, Node
 from snax_forge.dfg.subset import map_range
-from snax_forge.lower.c import fold_rate, job_writes
+from snax_forge.lower.c import bank_rows, fold_rate, job_writes
 from snax_forge.lower.derive import unit_firings
 
 from .bits import ctrl_bits, packer_bits, slicer_bits
@@ -175,6 +177,16 @@ def _ins(inst: Any) -> list[str]:
     return [p.name for p in inst.ports if p.direction == "in"]
 
 
+def _bank(graph: Graph, inst: Any, node: Node, outer: list[str]) -> dict[str, Any]:
+    """A banked unit's ``rows`` and ``hold`` as the group rule takes them (D190, D191): its rows
+    R and the places of its held inputs among its outer ones; nothing without a bank."""
+    if bank_rows(inst) == 1:
+        return {}
+    loops = firing_loops(graph, node)
+    held = [i for i, p in enumerate(outer) if is_held(inst, p, node.inputs[p], loops)]
+    return {"rows": bank_rows(inst)} | ({"hold": held} if held else {})
+
+
 def _datapath_blocks(graph: Graph, insts: dict[str, Any], members: list[str],
                      ends: list[tuple[Node, str, str]], firings: dict[str, int],
                      gives: dict[str, int],
@@ -206,6 +218,9 @@ def _datapath_blocks(graph: Graph, insts: dict[str, Any], members: list[str],
                          inst.initiation_interval, [], f.op_type, inst.span)  # fmt: skip
         units[u] = Block(dp, fill(None, filled[u], cat[dp]), firings[u] * inst.span)
     bits = {u: flops(b.datapath, b.params, cat) for u, b in units.items() if u in filled}
+    for u, unit in filled.items():
+        if bank_rows(insts[u]) > 1:
+            bits[u] = _bank_bits(graph, insts[u], nodes[u], unit, bits[u], cat)
     for k, frm, _ in ends:
         unit, port = frm.split(".", 1)
         if unit not in filled:
@@ -233,6 +248,21 @@ def _datapath_blocks(graph: Graph, insts: dict[str, Any], members: list[str],
         links[k] = Block("FifoSlicer", b.params, gives[u] if p == SEED else firings[u])
         bits[k] = slicer_bits(b.params["d_in"])
     return units, links, bits
+
+
+def _bank_bits(graph: Graph, inst: Any, node: Node, unit: Any, one_row: int,
+               cat: dict[str, Any]) -> int:  # fmt: skip
+    """A banked unit's register bits (D191): its rows of sums, ``one_row`` each while the
+    catalogue's datapath has no ``rows`` (until it does, its flops price one row), and a register
+    of the element's width per held input (D190). The bank's read mux and row enables are not
+    in: the bank's area is a lower bound until the ``Mac`` is characterized at its rows."""
+    from snax_forge.gen.blocks import port_dtype as width_of
+
+    rows = bank_rows(inst)
+    bits = one_row if "rows" in cat[unit.datapath]["params"] else one_row * rows
+    loops = firing_loops(graph, node)
+    held = [p for p in _ins(inst) if is_held(inst, p, node.inputs[p], loops)]
+    return bits + sum(width_of(unit.ports[p].dtype, p)[0] for p in held)
 
 
 def _slicers(graph: Graph, insts: dict[str, Any], members: list[str],
@@ -312,6 +342,8 @@ def group_blocks(graph: Graph, job_width: int = 32,
                        "inputs": sum(f"{u}.{p}" not in fed for p in _ins(insts[u])),
                        "d_in": [slicers[k].params["d_in"] if k in slicers else 1
                                 for p in _ins(insts[u]) if (k := f"{u}.{p}") not in fed]}
+                      | _bank(graph, insts[u], nodes[u][0], [p for p in _ins(insts[u])
+                                                             if f"{u}.{p}" not in fed])
                       for u in members]  # fmt: skip
         rule_links = [{"from": frm.split(".")[0], "to": to.split(".")[0],
                        "to_input": _ins(insts[to.split(".")[0]]).index(to.split(".")[1]),

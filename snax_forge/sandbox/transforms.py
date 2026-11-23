@@ -447,6 +447,23 @@ def _bind_site(g: Graph, node: str, what: str) -> _Site:
     return _Site(tasklet, pattern_node, smap, temporal)
 
 
+def bank_hint(g: Graph, site: _Site) -> int | None:
+    """The rows a bank (D191) at ``site`` would take: where the output's index changes along
+    temporal loops inside a loop it does not use (its sum), the product of those inner loops'
+    counts; None where no bank fits or a count is not bound."""
+    used = set().union(*(m.names for m in site.tasklet.outputs.values()))
+    loops, k, rows = site.temporal, len(site.temporal), 1
+    try:
+        while k and loops[k - 1].attrs["var"] in used:
+            k -= 1
+            rows *= len(map_range(loops[k].attrs["range"], g.bound_symbols, loops[k].id))
+    except (DfgError, ExprError, KeyError):
+        return None
+    if k == len(loops) or all(m.attrs["var"] in used for m in loops[:k]):
+        return None
+    return rows
+
+
 def _lane_fold_map(m: Node) -> bool:
     """A spatial map whose body is one tasklet with a folding output: ``bind`` takes the map
     (patterns.py's ``lane_fold`` without a front op)."""
@@ -836,8 +853,13 @@ def _bind_rewrite(g: Graph, site: _Site, bound: _Bound, brm: str, implementation
     with_seed = {ports[c]: (m, b.port(ports[c]).rate) for c, m in bound.memlets.items()}
     for seed in _seeds(site).values():  # one beat per job, as its fold's output
         with_seed[SEED] = (Memlet(seed.data, list(seed.subset)), b.port(SEED).rate)
+    banks = {
+        p: inst.params["rows"]
+        for p in with_seed
+        if inst.params.get("rows", 1) > 1 and b.port(p).direction == "out"
+    }  # D191
     try:
-        rates = named_rates(with_seed, loops, what)
+        rates = named_rates(with_seed, loops, what, banks)
     except DfgError as e:
         raise SandboxError(str(e)) from None
     task = {"n": n} | rates

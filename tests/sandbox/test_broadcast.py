@@ -46,7 +46,7 @@ def inputs() -> dict:
 def test_the_column_form_binds_a_seeded_mac_with_y2_broadcast():
     *_, g = graphs([*COLUMN, SEED, FUSE, step("bind", node="tmp2_mult_map_s", **MAC)])
     (node,) = (n for n, _ in g.walk() if n.kind == "accelerated")
-    assert node.attrs["params"] == {"W": 4, "op": "add", "seed": 1}
+    assert node.attrs["params"] == {"W": 4, "op": "add", "seed": 1, "rows": 1}
     assert node.inputs["a"].subset == ["m_t", "4 * n_1_t:4 * n_1_t + 4"]
     assert node.inputs["b"].subset == ["m_t:m_t + 1"]  # one lane, given to all four
     assert node.inputs["seed"].subset == ["4 * n_1_t:4 * n_1_t + 4"]  # the output's lanes

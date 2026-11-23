@@ -5,7 +5,8 @@ the graph first uses them and the BRM's port order, as CONTRACTS, "Platform" (th
 shell) and "Memory plan and design point" (the design point's ``streamers``) define them; a
 port on a link has none, an outer port narrower than a word is packed (an output, ``packed``,
 D174) or sliced (an input, ``sliced``, D180), one rule (``per_word``); ``stream_lanes`` gives the
-lanes a streamer moves, one for a broadcast input (``is_broadcast``, D186).
+lanes a streamer moves, one for a broadcast input (``is_broadcast``, D186); a banked unit's
+input that skips the bank's rows is read once a row and held (``is_held``, D190).
 ``instances``, ``groups`` and ``accelerators`` read the instances off the graph and put them
 into groups and accelerators; ``links``, ``linked_ports``, ``unplaced`` and ``slot_containers``
 read the links, the containers with no L1 space and those read only through a slot connector;
@@ -507,11 +508,35 @@ def firing_loops(graph: Graph, node: Node) -> list[Loop]:
 
 
 def port_loops(inst: Instance, port: str, memlet: Memlet, loops: list[Loop]) -> list[Loop]:
-    """The firing loops a port's streamer runs over: all of them at rate 1; for a named
-    rate, which moves one beat per T firings, the loops its memlet uses."""
+    """The firing loops a port's streamer runs over: all of them at rate 1 but a held input's
+    bank loops (D190); for a named rate, which moves one beat per T firings, the loops its
+    memlet uses."""
+    if is_held(inst, port, memlet, loops):
+        rows = bank_loops(inst, loops)
+        return [lp for lp in loops if lp not in rows]
     if inst.brm.port(port).rate == 1:
         return loops
     return [lp for lp in loops if lp.var in memlet.names]
+
+
+def bank_loops(inst: Instance, loops: list[Loop]) -> list[Loop]:
+    """A bank's row loops (D191): the innermost firing loops whose counts multiply to the
+    unit's ``rows``; none at one row or when they do not (``bind`` refuses that bank)."""
+    rows = inst.params.get("rows", 1)
+    k, got = len(loops), 1
+    while rows > 1 and k and got < rows:
+        k -= 1
+        got *= loops[k].count
+    return loops[k:] if rows > 1 and got == rows else []
+
+
+def is_held(inst: Instance, port: str, memlet: Memlet, loops: list[Loop]) -> bool:
+    """Whether ``port`` is held (D190): an input at rate 1, not the seed, of a banked unit whose
+    memlet uses none of the bank's row loops, so it is read once a row and kept."""
+    p = inst.brm.port(port)
+    rows = bank_loops(inst, loops)
+    return (p.direction == "in" and p.rate == 1 and port != SEED and bool(rows)
+            and not {lp.var for lp in rows} & memlet.names)  # fmt: skip
 
 
 def memlet_spatial_bounds(m: Memlet, symbols: dict[str, int], what: str) -> list[int]:

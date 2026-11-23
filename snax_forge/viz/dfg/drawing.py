@@ -123,7 +123,7 @@ class _Drawing:
         e = {"id": eid, "from": a, "from_port": ap, "to": b, "to_port": bp, "style": "data",
              "task": None, "dt": None, "skip": [], **kw}  # fmt: skip
         parts = [p for p in (e.pop("mark", None), e["dt"], "broadcast" if e.pop("broadcast", False)
-                             else None) if p]  # fmt: skip
+                             else None, "held a row" if e.pop("held", False) else None) if p]  # fmt: skip
         if e["skip"]:
             parts.append("↻ " + ", ".join(e["skip"]))
         e["label"] = " · ".join(parts) or None
@@ -322,8 +322,12 @@ def drawing(g: Graph, tops: Sequence[Node], placed: dict[str, Any] | None = None
         return ub, port
 
     def bcast(n: Node, port: str) -> dict[str, Any]:
-        """A broadcast input's wire into its unit (D186): labelled ``<port> · broadcast``."""
-        return {"mark": port, "broadcast": True} if api.broadcast_port(g, n, port) else {}
+        """A broadcast input's wire into its unit (D186): labelled ``<port> · broadcast``, and
+        ``held a row`` when it is read once a bank row and kept (D190)."""
+        if not api.broadcast_port(g, n, port):
+            return {}
+        return {"mark": port, "broadcast": True} | ({"held": True} if api.held_port(g, n, port)
+                                                    else {})  # fmt: skip
 
     def slicer_any(inst: str, port: str) -> str | None:
         for x in by_inst[inst]:
@@ -476,7 +480,8 @@ def drawing(g: Graph, tops: Sequence[Node], placed: dict[str, Any] | None = None
                              else "fork" if fork else None),
                        transpose=perm is not None,
                        broadcast=(m.data in scalars and not m.names)
-                       or (tgt.startswith("unit:") and api.broadcast_port(g, n, port)))  # fmt: skip
+                       or (tgt.startswith("unit:") and api.broadcast_port(g, n, port)),
+                       held=tgt.startswith("unit:") and api.held_port(g, n, port))  # fmt: skip
             for c, m in n.outputs.items():
                 if m.data in local:
                     local_writer[m.data] = (nb, c)

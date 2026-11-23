@@ -382,13 +382,18 @@ def _accel(node: Node, what: str, ctx: Context) -> tuple[Any, Any, list[str]]:
 
 
 def named_rates(
-    ports: Mapping[str, tuple[Memlet, int | str]], loops: list[tuple[str, int]], what: str
+    ports: Mapping[str, tuple[Memlet, int | str]],
+    loops: list[tuple[str, int]],
+    what: str,
+    banks: Mapping[str, int] | None = None,
 ) -> dict[str, int]:
     """Each named rate's value over the firing ``loops`` (var, count), outermost first.
 
     ``ports`` maps a port to its memlet and rate. For a named rate, the
     innermost loops its memlet does not use are the ones one beat folds over;
-    the rate is the product of their counts. Two ports naming one rate must
+    the rate is the product of their counts. A port of a bank of R rows (``banks``, D191)
+    first takes the innermost loops it uses whose counts multiply to R, its rows, then folds
+    the unused loops outside them; its rate counts both. Two ports naming one rate must
     agree. Raises ExecutionError naming the port.
     """
     out: dict[str, int] = {}
@@ -397,6 +402,19 @@ def named_rates(
             continue
         used = m.names
         k = len(loops)
+        rows = (banks or {}).get(port, 1)
+        if rows > 1:  # the bank's loops: innermost, used, their counts multiplying to R
+            got = 1
+            while k and loops[k - 1][0] in used and got < rows:
+                got *= loops[k - 1][1]
+                k -= 1
+            if got != rows:
+                inner = ", ".join(f"{v} {c}" for v, c in loops[k:]) or "none"
+                raise ExecutionError(
+                    f"{what}: port {port!r} ({m.data}{m.subset}) is a bank of {rows} rows, the "
+                    f"innermost loops it uses run {inner}: split its loop by {rows} times the "
+                    "lanes and move the fold's loop outside it"
+                )
         while k and loops[k - 1][0] not in used:
             k -= 1
         skipped = [var for var, _ in loops[:k] if var not in used]
@@ -455,6 +473,7 @@ def _run_accelerated(node: Node, ctx: Context) -> None:
         {p.name: (memlets[p.name], p.rate) for p in cfg.ports},
         [(loop.var, len(loop.values)) for loop in inner],
         what,
+        {p.name: p.rows for p in cfg.ports if p.rows > 1},
     )
     try:  # the kind's schedule (brm/function.py): rates, then the ports due at k
         rate = cfg.rates(params)

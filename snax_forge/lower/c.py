@@ -74,14 +74,19 @@ def fold_rate(inst: Instance) -> str | None:
 def job_values(inst: Instance, values: Mapping[str, int], fixed: bool = False) -> dict[str, int]:
     """An accelerator task's CSR values from its values (``n`` and the named rates):
     ``JOBS`` = n / T and, for a fold, ``JOB_BEATS`` = T, none when its T is ``fixed``
-    (the description's ``params.T``); T is 1 for a unit without a fold, and T = 0 is an empty
-    run (JOBS 0)."""
+    (the description's ``params.T``), then a bank's ``ROWS`` (D191); T is 1 for a unit without a
+    fold, and T = 0 is an empty run (JOBS 0)."""
     rate = fold_rate(inst)
     t = 1 if rate is None else values[rate]
     out = {"JOBS": values["n"] // t if t else 0}
     if rate is not None and not fixed:
         out["JOB_BEATS"] = t
-    return out
+    return out | ({"ROWS": rows} if (rows := bank_rows(inst)) > 1 else {})
+
+
+def bank_rows(inst: Instance) -> int:
+    """A unit's bank rows R (D191), 1 for a unit without a bank."""
+    return int(inst.params.get("rows", 1))
 
 
 def job_writes(units: Mapping[str, Instance], values: Mapping[str, Any], fixed: set[str],
@@ -90,8 +95,8 @@ def job_writes(units: Mapping[str, Instance], values: Mapping[str, Any], fixed: 
     (``units`` one, ``values`` its n and rates) as ``job_values``; a linked group's (``values``
     by unit, the group's units in order) JOBS = n_u / ∏ T_v over its first unit u and the
     group's folds v, then each fold's JOB_BEATS but those in ``fixed`` (CONTRACTS, "Task
-    list"). A group of several ``chains`` (each head to sink, D189) writes one JOBS per chain,
-    ``JOBS_<SINK>`` = n_head / ∏ T over the chain's folds, at its sink."""
+    list"), then each bank's ROWS. A group of several ``chains`` (each head to sink, D189) writes
+    one JOBS per chain, ``JOBS_<SINK>`` = n_head / ∏ T over the chain's folds, at its sink."""
     if "n" in values:
         ((unit, inst),) = units.items()
         return [(unit, k, v) for k, v in job_values(inst, values, unit in fixed).items()]
@@ -103,7 +108,8 @@ def job_writes(units: Mapping[str, Instance], values: Mapping[str, Any], fixed: 
         t = prod(folds[u] for u in chain if u in folds)
         out.append((chain[-1] if len(chains) > 1 else chain[0], jobs_csr(chains, chain),
                     values[chain[0]]["n"] // t if t else 0))  # fmt: skip
-    return out + [(u, "JOB_BEATS", v) for u, v in folds.items() if u not in fixed]
+    out += [(u, "JOB_BEATS", v) for u, v in folds.items() if u not in fixed]
+    return out + [(u, "ROWS", r) for u in values if (r := bank_rows(units[u])) > 1]
 
 
 def task_beats(values: Mapping[str, Any]) -> int:

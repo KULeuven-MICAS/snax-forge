@@ -7,7 +7,7 @@ Rules (D117):
 - An entry is a choice with a real alternative that someone may want to reverse: direction, ownership, the interfaces between components, the order of work. Implementation details live in the module's docstring and its tests.
 - An entry says what was decided, why, and where the detail lives, in a few short bullets; an edge case only when there is one. A change is written into the entry, not chained after it.
 - Entries merged into one keep all their numbers in its heading, so a cite of any of them still finds it. A number is never changed or reused; the text of a removed entry is in git history.
-- A new decision gets the next free number, under the area it belongs to. Next free number: **D190**.
+- A new decision gets the next free number, under the area it belongs to. Next free number: **D192**.
 
 Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29–D45, D47–D50, D53, D54, D56, D58–D63, D65–D67, D69, D74, D76–D78, D80, D81, D83, D88–D97, D100, D101, D103, D104, D106, D107, D109, D110, D114, D115, D119, D124, D127, D128, D132, D133, D138–D141, D151, D156, D159, D160, D181.
 
@@ -133,7 +133,7 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 - **Decided:** an input of a lane-wise datapath (`SimdLanes`, `Mac`) whose memlet does not use the nest's spatial variable is read as one lane a beat and given to all W lanes, by wires between the port and the datapath (`ShellWrapper`'s `<unit>_<port>_bcast`, `SnaxGroup` beside `SnaxSlicer`). `bind` works it out from the memlet, with no transform and no stored attribute, and refuses it on a datapath whose lanes do not compute on their own. `accelerator.json` keeps the port's lanes (the unit's) and marks it `"broadcast": true`; its stream is one lane, so its channels and d_in follow from one lane (D180). The page labels its edge `<port> · broadcast`. Priced as wires.
 - **Why:** the column form reads y₂[i] once a beat for all lanes; a W-lane stream of the same value would cost W times the reads and a copy, and a new block would add nothing the wires do not.
 - **Where:** `sandbox/transforms.py` (`_bind_lanes`), `design/streamers.py` (`stream_lanes`, `is_broadcast`); CONTRACTS, "Accelerator RTL spec".
-- **Edge:** a linked port is never one (it takes its lanes from the link), nor a seed or an output. A value read once a job (a hold) is not a broadcast.
+- **Edge:** a linked port is never one (it takes its lanes from the link), nor a seed or an output. A value read once a row and kept is a hold (D190), on top of the broadcast.
 
 ## Sandbox and recipes
 
@@ -196,6 +196,20 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 - **Why:** one pass over A (bicg, mvt, later atax) reads A once for both halves; the fork is flow control, not a datapath. A JOBS per chain because each chain's results come at their own rate (q a row, s once), and one control unit because a shared beat ties the chains to one schedule anyway.
 - **Where:** CONTRACTS, "SNAX-DFG", "Recipe", "Task list" and "Accelerator RTL spec"; snax-gvsoc's `snax/snax_group_rule.py`.
 - **Edge:** a forked unit of span > 1 and a fork beside shared movers (`share_ports`) are refused for now.
+
+### D190 — A held input: read once a row, kept for the row
+
+- **Decided:** a banked unit's input whose memlet uses none of the bank's row loops (bicg's r[i] across s's row) is read once every R firings and kept in a register of its element's width for the row: its streamer skips the row loops, and it needs its beat and is taken only on a row's first firing, when the bank's `row` wraps, so no CSR of its own. `bind` works it out from the memlet, as the broadcast (D186): no transform and no stored attribute. `accelerator.json` marks the port `"hold": true`; the page labels its edge `held a row`.
+- **Why:** r[i] is the same for the N/W beats of row i; read every beat it costs N/W times the reads and the slicer's pops.
+- **Where:** `design/streamers.py` (`is_held`, `port_loops`); CONTRACTS, "Accelerator RTL spec"; snax-gvsoc's `snax/snax_group_rule.py`.
+- **Edge:** only a broadcast input of a banked `Mac` for now; the generator refuses another.
+
+### D191 — A fold's unfinished outputs stay in a bank inside the unit
+
+- **Decided:** a `Mac` may keep R rows of W sums (`rows` R, a design param, default 1, the plain `Mac`), one row a firing in turn: a job of T firings starts each row on its first R firings and gives R results, one on each of its last R. `bind` takes it as an option (the editor's "bank rows", offered where the output's index changes along loops inside its sum loop, its rows those loops' counts) and refuses an R the loops do not give, naming the split. The rows are registers; a `ROWS` CSR (at most R) sets the rows a pass uses, the control's `row` the beat mod `ROWS`. A wider output than R·W is cut into strips, a design knob (D190's r read once a strip). A seeded bank is refused for now.
+- **Why:** bicg's one pass reads A along its rows, so s's N sums are unfinished until the last row; keeping them in the unit sends nothing back to L1, and the row form of q stays as built. One `Mac` with a row of registers per R costs only flops where R `Mac`s would cost R datapaths.
+- **Where:** CONTRACTS, "Block runtime model" and "Accelerator RTL spec"; `brm/function.py` (`mac_kind`), `dfg/execute.py` (`named_rates`), `design/streamers.py` (`bank_loops`); snax-gvsoc's `snax/snax_group_rule.py`.
+- **Edge:** the bank as a memory (one read a cycle, latency 2) is open item 158. The price leaves out the bank's read mux and row enables until the `Mac` is characterized at its rows (X97): a lower bound.
 
 ### D157 — A design's accelerators are streamer sets of one entry
 

@@ -41,7 +41,7 @@ class GenError(CodedError):
 class Port:
     """A unit's BRM port in ``accelerator.json``: the datapath's port, its direction (``in``
     or ``out``, the BRM port's), its dtype, its lanes; a packed outer output's d_out, a sliced
-    outer input's d_in."""
+    outer input's d_in; a broadcast and a held input marked."""
 
     port: str
     dir: str
@@ -50,6 +50,7 @@ class Port:
     d_out: int = 1  # an outer output's results per word through its packer (D174)
     d_in: int = 1  # an outer input's pops per word through its slicer (D180)
     broadcast: bool = False  # an outer input whose reader moves one lane for all (D186)
+    hold: bool = False  # an input read once a bank row and kept (D190)
 
     @property
     def stream_lanes(self) -> int:
@@ -60,12 +61,13 @@ class Port:
         d = {"port": self.port, "dir": self.dir, "dtype": self.dtype, "lanes": self.lanes}
         d |= {"d_out": self.d_out} if self.d_out > 1 else {}
         d |= {"d_in": self.d_in} if self.d_in > 1 else {}
-        return d | ({"broadcast": True} if self.broadcast else {})
+        d |= {"broadcast": True} if self.broadcast else {}
+        return d | ({"hold": True} if self.hold else {})
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> Port:
         return cls(d["port"], d["dir"], d["dtype"], d["lanes"], d.get("d_out", 1),
-                   d.get("d_in", 1), d.get("broadcast", False))  # fmt: skip
+                   d.get("d_in", 1), d.get("broadcast", False), d.get("hold", False))  # fmt: skip
 
 
 @dataclass(frozen=True)
@@ -303,10 +305,17 @@ def mac(inst: Instance, dtypes: Mapping[str, str] | None = None) -> Fill:
     """Mac's fill; see the module doc."""
     brm, b = inst.brm, inst.impl.binding
     what = f"{brm.name}.{inst.implementation}"
-    if set(b["args"]) != {"lanes", "accumulate", "regOut"}:
+    if (
+        not {"lanes", "accumulate", "regOut"}
+        <= set(b["args"])
+        <= {"lanes", "accumulate", "regOut", "rows"}
+    ):
         raise GenError("gen.args", f"{what}: args {sorted(b['args'])}; Mac takes lanes, "
-                       "accumulate and regOut")  # fmt: skip
+                       "accumulate and regOut, and rows")  # fmt: skip
     accumulate, reg_out = b["args"]["accumulate"], b["args"]["regOut"]
+    rows = inst.value(b["args"]["rows"]) if "rows" in b["args"] else 1
+    if type(rows) is not int or rows < 1:
+        raise GenError("gen.args", f"{what}: rows {rows!r}; a bank has one row or more")
     if type(accumulate) is not bool or type(reg_out) is not bool:
         raise GenError("gen.args", f"{what}: accumulate {accumulate!r}, regOut {reg_out!r}; "
                        "each is true or false")  # fmt: skip
@@ -330,8 +339,12 @@ def mac(inst: Instance, dtypes: Mapping[str, str] | None = None) -> Fill:
     if not accumulate and dtypes is not None and dtypes[ins[2].name] != dtypes[out.name]:
         raise GenError("gen.dtype", f"{what}: c is {dtypes[ins[2].name]}, out "
                        f"{dtypes[out.name]}; the plain form's c is out's dtype")  # fmt: skip
+    if rows > 1 and (not accumulate or seeded):
+        raise GenError("gen.args", f"{what}: rows {rows}; a bank (D191) is an unseeded "
+                       "accumulating Mac's")  # fmt: skip
     op_type = None if dtypes is None else result_type([dtypes[p.name] for p in ins[:2]])
-    return Fill(ports, op_type, {"accumulate": accumulate, "regOut": reg_out})
+    params = {"accumulate": accumulate, "regOut": reg_out} | ({"rows": rows} if rows > 1 else {})
+    return Fill(ports, op_type, params)
 
 
 register_datapath("Mac", "max(accumulate, regOut)", mac, lanewise=True)
