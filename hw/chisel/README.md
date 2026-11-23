@@ -51,7 +51,7 @@ The modules, whose behaviour C§10 states:
 
 - Only the outer ports reach the wrapper, which splits each Decoupled port: its data to its unit's datapath, its valid and ready to its group's control unit. A forked input is one reader: its data and valid to each of its units, its ready the AND of theirs. A shared set's outer ports are its movers, reached through the port mux.
 - `pixi run gen-rtl DESIGN_POINT` checks and elaborates (`docs/TOOL.md` section 3), running `Emit` with java on hw/chisel's runtime classpath, which sbt exports once into `target/emit-classpath-<hash>.txt`, again after a change under `src/main/` or to `build.sbt`.
-- The fixtures in `src/test/resources/rtl/<design>/` hold `vectors.json`; their `accelerator.json` and streamer hjsons are read from snax-gvsoc's `forge/<design>/` (a spec that needs one cancels without the submodule), but vsum_v1_1_w8, dot_v5_w1, bicg_v3_w64, bicg_v4 and bicg_v4_1, which `forge/` does not hold, keep them beside their vectors. `tests/gen/test_rtl.py` checks them byte for byte. Refresh one with:
+- The fixtures in `src/test/resources/rtl/<design>/` hold `vectors.json`; their `accelerator.json` and streamer hjsons are read from snax-gvsoc's `forge/<design>/` (a spec that needs one cancels without the submodule), but vsum_v1_1_w8, dot_v5_w1 and bicg_v3_w64, which `forge/` does not hold, keep them beside their vectors. `tests/gen/test_rtl.py` checks them byte for byte. Refresh one with:
 
 ```bash
 pixi run sandbox recipes/reduce/vsum_v1_1.json --set W=8 --out out/sandbox/vsum_v1_1_w8
