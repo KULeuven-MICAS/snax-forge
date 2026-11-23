@@ -77,11 +77,12 @@ class BlockEmitSpec extends AnyFlatSpec {
       registered = true
     )
   } ++ Seq(
-    (true, false, false, true),
-    (true, false, true, true),
-    (false, false, false, false),
-    (false, true, false, true)
-  ).map { case (acc, reg, seed, registered) => // seeded, the port seed
+    (true, false, false, true, 1),
+    (true, false, true, true, 1),
+    (false, false, false, false, 1),
+    (false, true, false, true, 1),
+    (true, false, false, true, 4)
+  ).map { case (acc, reg, seed, registered, rows) => // seeded, the port seed; banked, the pins row and drain
     Case(
       "Mac",
       ujson.Obj(
@@ -91,7 +92,8 @@ class BlockEmitSpec extends AnyFlatSpec {
         "lanes"      -> Lanes,
         "accumulate" -> acc,
         "regOut"     -> reg,
-        "seed"       -> seed
+        "seed"       -> seed,
+        "rows"       -> rows
       ),
       Set.empty,
       registered
@@ -303,7 +305,13 @@ class BlockEmitSpec extends AnyFlatSpec {
         "a bool that is not one",
         "Mac",
         """{"inTypes":["int64","int64"],"opType":"int64","outType":"int64","lanes":1,"accumulate":1,"regOut":false,""" +
-          """"seed":false}"""
+          """"seed":false,"rows":1}"""
+      ),
+      (
+        "a Mac without its rows",
+        "Mac",
+        """{"inTypes":["int64","int64"],"opType":"int64","outType":"int64","lanes":1,"accumulate":true,""" +
+          """"regOut":false,"seed":false}"""
       ),
       ("params that are not an object", "TreeAccumulate", "[]")
     )

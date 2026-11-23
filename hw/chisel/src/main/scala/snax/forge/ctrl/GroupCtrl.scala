@@ -5,13 +5,17 @@ import chisel3.util._
 
 /** A group's settings as `<tag>_csr` keeps them, wires to its control unit: JOBS (with `chains` chains, D189, the first
   * chain's, `more` the others' in the order of their sinks), then each of its `open` units' JOB_BEATS in unit order,
-  * each `bits` wide (the CSRs' job_width); constant through a run, since the csr holds their writes while the group is
-  * busy.
+  * each `bits` wide (the CSRs' job_width); each bank's ROWS (D191, `banks` their rows R, ROWS as wide as R's bits) and
+  * each carried seed's CARRY (D192, `carried` of them, `bits` wide), in unit order; constant through a run, since the
+  * csr holds their writes while the group is busy.
   */
-class GroupSettings(val open: Int, bits: Int = 32, val chains: Int = 1) extends Bundle {
+class GroupSettings(val open: Int, bits: Int = 32, val chains: Int = 1, banks: Seq[Int] = Nil, carried: Int = 0)
+    extends Bundle {
   val jobs  = UInt(bits.W)
   val more  = Option.when(chains > 1)(Vec(chains - 1, UInt(bits.W)))
   val beats = Vec(open, UInt(bits.W))
+  val rows  = Option.when(banks.nonEmpty)(MixedVec(banks.map(r => UInt(log2Ceil(r + 1).W))))
+  val carry = Option.when(carried > 0)(Vec(carried, UInt(bits.W)))
 
   /** Every JOBS, the first chain's first. */
   def allJobs: Seq[UInt] = jobs +: more.toSeq.flatten
@@ -24,11 +28,11 @@ class GroupSettings(val open: Int, bits: Int = 32, val chains: Int = 1) extends 
 class GroupCtrlIO(desc: GroupDesc, jobWidth: Int = 32) extends Bundle {
   private val outs = desc.outputs.size
   val start        = Flipped(Decoupled(UInt(0.W)))
-  val settings     = Input(new GroupSettings(desc.open.size, jobWidth, outs))
+  val settings     = Input(desc.settings(jobWidth))
   val in           = Vec(desc.units.map(_.inputs).sum, new Handshake)
   val out          = Flipped(new Handshake)
   val rest         = Option.when(outs > 1)(Flipped(Vec(outs - 1, new Handshake)))
-  val units        = MixedVec(desc.units.map(u => new UnitEnables(u.span)))
+  val units        = MixedVec(desc.units.map(u => new UnitEnables(u.span, u.rows, u.carry)))
   val links        = MixedVec(desc.buffers.map(i => new LinkEnables(desc.links(i).depth)))
   val busy         = Output(Bool())
   val pulse        = Output(Bool())
@@ -48,9 +52,9 @@ class GroupCtrlIO(desc: GroupDesc, jobWidth: Int = 32) extends Bundle {
   *
   *   - `start` is START written with bit 0 set, a bare strobe from `<tag>_csr`. It is ready when the group is idle (the
   *     csr holds a START while busy, the CSR request not ready, until E + 1); it is accepted in the cycle it fires, a.
-  *   - `settings`: JOBS and each JOB_BEATS in unit order, the csr's CSRs as wires, read live through the run with no
-  *     copy: the csr holds their writes while the group is busy, so they stay constant from a to E. A unit with
-  *     `params.T` has that fixed T.
+  *   - `settings`: JOBS and each JOB_BEATS in unit order (each bank's ROWS and each carried seed's CARRY too), the
+  *     csr's CSRs as wires, read live through the run with no copy: the csr holds their writes while the group is busy,
+  *     so they stay constant from a to E. A unit with `params.T` has that fixed T.
   *   - Any JOBS 0 or any JOB_BEATS 0 is the empty run, tested on the wires in a: it ends in a (E = a) without starting
   *     the model, so busy never rises.
   *   - `busy`: from a + 1 to E (STATUS bit 0).

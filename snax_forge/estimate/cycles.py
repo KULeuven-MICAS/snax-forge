@@ -220,7 +220,7 @@ def _datapath_blocks(graph: Graph, insts: dict[str, Any], members: list[str],
     bits = {u: flops(b.datapath, b.params, cat) for u, b in units.items() if u in filled}
     for u, unit in filled.items():
         if bank_rows(insts[u]) > 1:
-            bits[u] = _bank_bits(graph, insts[u], nodes[u], unit, bits[u], cat)
+            bits[u] = _bank_bits(graph, insts[u], nodes[u], unit, bits[u])
     for k, frm, _ in ends:
         unit, port = frm.split(".", 1)
         if unit not in filled:
@@ -250,19 +250,16 @@ def _datapath_blocks(graph: Graph, insts: dict[str, Any], members: list[str],
     return units, links, bits
 
 
-def _bank_bits(graph: Graph, inst: Any, node: Node, unit: Any, one_row: int,
-               cat: dict[str, Any]) -> int:  # fmt: skip
-    """A banked unit's register bits (D191): its rows of sums, ``one_row`` each while the
-    catalogue's datapath has no ``rows`` (until it does, its flops price one row), and a register
-    of the element's width per held input (D190). The bank's read mux and row enables are not
-    in: the bank's area is a lower bound until the ``Mac`` is characterized at its rows."""
+def _bank_bits(graph: Graph, inst: Any, node: Node, unit: Any, flops: int) -> int:
+    """A banked unit's register bits (D191): its rows of sums, ``flops`` (the catalogue's,
+    counting its ``rows``), and a register of the element's width per held input (D190). The
+    bank's read mux and row enables are not in: the bank's area is a lower bound until the
+    ``Mac`` is characterized at its rows."""
     from snax_forge.gen.blocks import port_dtype as width_of
 
-    rows = bank_rows(inst)
-    bits = one_row if "rows" in cat[unit.datapath]["params"] else one_row * rows
     loops = firing_loops(graph, node)
     held = [p for p in _ins(inst) if is_held(inst, p, node.inputs[p], loops)]
-    return bits + sum(width_of(unit.ports[p].dtype, p)[0] for p in held)
+    return flops + sum(width_of(unit.ports[p].dtype, p)[0] for p in held)
 
 
 def _slicers(graph: Graph, insts: dict[str, Any], members: list[str],

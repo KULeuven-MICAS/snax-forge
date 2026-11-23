@@ -12,7 +12,9 @@ object SnaxGroupCases {
 
   val Env = "SNAX_GVSOC_GROUP_CASES"
 
-  /** A unit line; `seed`, its last outer input a fold's seed, one beat per job (`seed 1`). */
+  /** A unit line; `seed`, its last outer input a fold's seed, one beat per job (`seed 1`); `rows`, a bank's rows (`rows
+    * R`, D191, 1 without); `hold`, its outer inputs read once every `rows` firings and kept (`hold J`, D190).
+    */
   case class UnitLine(
     name:     String,
     datapath: String,
@@ -21,7 +23,9 @@ object SnaxGroupCases {
     span:     Int,
     t:        Int,
     inputs:   Int,
-    seed:     Boolean = false
+    seed:     Boolean  = false,
+    rows:     Int      = 1,
+    hold:     Seq[Int] = Nil
   )
 
   /** A cycle line: the outer inputs' valids (unit by unit; a sliced input's its reader's; a forked input's once, at its
@@ -92,6 +96,23 @@ object SnaxGroupCases {
     def columns: Int = place.flatten.distinct.size
   }
 
+  /** A unit line's options after its inputs, `[seed 0|1] [rows R] [hold J]...`, or None. */
+  private case class Options(seed: Boolean = false, rows: Int = 1, hold: Seq[Int] = Nil)
+  private def options(rest: List[String]): Option[Options] = {
+    val (seed, more)  = rest match {
+      case "seed" :: x :: m if x == "0" || x == "1" => (x == "1", m)
+      case m                                        => (false, m)
+    }
+    val (rows, holds) = more match {
+      case "rows" :: r :: m if r.forall(_.isDigit) => (r.toInt, m)
+      case m                                       => (1, m)
+    }
+    val pairs         = holds.grouped(2).toList
+    Option.when(pairs.forall(p => p.size == 2 && p.head == "hold" && p(1).forall(_.isDigit)))(
+      Options(seed, rows, pairs.map(_(1).toInt))
+    )
+  }
+
   def parse(path: Path): Case = {
     val (header, rows) = CaseFile.read(path)
     var units          = Vector.empty[UnitLine]
@@ -107,9 +128,10 @@ object SnaxGroupCases {
     var words          = Seq.empty[BigInt]
     var dIn            = Vector.empty[(Int, Int)]
     for (line <- header) line.split("\\s+").toList match {
-      case "unit" :: n :: d :: "latency" :: l :: "ii" :: ii :: "span" :: s :: "t" :: t :: "inputs" :: i :: seed
-          if seed.isEmpty || seed == List("seed", "0") || seed == List("seed", "1") =>
-        units :+= UnitLine(n, d, l.toInt, ii.toInt, s.toInt, t.toInt, i.toInt, seed == List("seed", "1"))
+      case "unit" :: n :: d :: "latency" :: l :: "ii" :: ii :: "span" :: s :: "t" :: t :: "inputs" :: i :: rest
+          if options(rest).nonEmpty =>
+        val o = options(rest).get
+        units :+= UnitLine(n, d, l.toInt, ii.toInt, s.toInt, t.toInt, i.toInt, o.seed, o.rows, o.hold)
       case "link" :: f :: t :: "depth" :: d :: Nil => links :+= LinkLine(f, t, d.toInt)
       case "jobs" :: j if j.nonEmpty               => jobs = j.map(_.toInt)
       case "fork" :: ms if ms.size >= 2 =>

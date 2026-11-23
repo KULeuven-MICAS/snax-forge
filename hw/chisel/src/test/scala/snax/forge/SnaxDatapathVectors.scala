@@ -73,7 +73,8 @@ object SnaxDatapathVectors {
             "lanes"      -> ujson.Num(one("lanes").toInt),
             "accumulate" -> ujson.Bool(one("accumulate") == "1"),
             "regOut"     -> ujson.Bool(one("regOut") == "1"),
-            "seed"       -> ujson.Bool(header.get("seed").contains(Seq("1")))
+            "seed"       -> ujson.Bool(header.get("seed").contains(Seq("1"))),
+            "rows"       -> ujson.Num(header.get("rows").fold(1)(_.head.toInt)) // a bank's (D191), else 1
           )
         case "SerialAccumulate" =>
           Map(

@@ -91,7 +91,8 @@
    "lanes": {"type": "int", "min": 1},
    "accumulate": {"type": "bool"},
    "regOut": {"type": "bool"},
-   "seed": {"type": "bool"}
+   "seed": {"type": "bool"},
+   "rows": {"type": "int", "min": 1}
   },
   "ports": {
    "a": "in",
@@ -102,11 +103,13 @@
   },
   "latency": "max(accumulate, regOut)",
   "span": 1,
-  "flops": "lanes * width(outType) * max(accumulate, regOut)",
+  "flops": "lanes * width(outType) * max(accumulate, regOut) * rows",
   "pins": [
    {"name": "fire", "when": {"accumulate": true}},
    {"name": "first", "when": {"accumulate": true}},
-   {"name": "en", "when": {"accumulate": false, "regOut": true}}
+   {"name": "en", "when": {"accumulate": false, "regOut": true}},
+   {"name": "row", "when": {"rows": {"min": 2}}},
+   {"name": "drain", "when": {"rows": {"min": 2}}}
   ],
   "fill": {
    "inTypes": "inputs.dtype",
@@ -115,7 +118,8 @@
    "lanes": "inputs.lanes",
    "accumulate": "unit.params.accumulate",
    "regOut": "unit.params.regOut",
-   "seed": "unit.ports.seed"
+   "seed": "unit.ports.seed",
+   "rows": "unit.params.rows"
   }
  },
  "SerialAccumulate": {

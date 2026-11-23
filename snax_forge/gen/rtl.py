@@ -36,7 +36,7 @@ from snax_forge.brm import SEED
 from snax_forge.common import c_name, cwd_relative, repo_root, to_json
 from snax_forge.design.streamers import instance_nodes, stream_lanes
 from snax_forge.estimate.cycles import group_cycles
-from snax_forge.lower.c import job_values, job_writes
+from snax_forge.lower.c import bank_rows, job_values, job_writes
 from snax_forge.lower.derive import task_list
 
 from .accelerator import ACCELERATOR_JSON, Description, Group, Link, Unit, units
@@ -71,7 +71,7 @@ def _input_dtypes(unit: Unit, kind: str) -> Any:
 
 
 # The catalogue's fill rules (module doc): rule -> its value for a unit, given the param's type;
-# ``unit.params.<key>`` is the unit's param of that name
+# ``unit.params.<key>`` is the unit's param of that name, an ``int`` the unit lacks its min
 FILL_RULES: dict[str, Callable[[Unit, str], Any]] = {
     "inputs.dtype": _input_dtypes,
     "outputs.dtype": lambda u, kind: _ports(u, "out")[0].dtype,
@@ -91,8 +91,13 @@ def fill(acc: Description | None, unit: Unit, sig: Mapping[str, Any]) -> dict[st
     for name, rule in sig["fill"].items():
         if rule in FILL_RULES:
             out[name] = FILL_RULES[rule](unit, sig["params"][name]["type"])
-        elif rule.startswith(PARAMS_RULE):
-            out[name] = unit.params.get(rule.removeprefix(PARAMS_RULE))
+        elif rule.startswith(
+            PARAMS_RULE
+        ):  # an int the unit does not have: its min (a Mac's rows 1)
+            t = sig["params"][name]
+            out[name] = unit.params.get(
+                rule.removeprefix(PARAMS_RULE), t.get("min") if t["type"] == "int" else None
+            )
         elif rule.startswith(SCALARS_RULE):
             out[name] = rule.removeprefix(SCALARS_RULE) in unit.scalars
         else:
@@ -130,12 +135,20 @@ def live(entries: Any, params: Mapping[str, Any]) -> dict[str, Any]:
     out = {}
     for key, e in items:
         when = e.get("when", {}) if isinstance(e, Mapping) else {}
-        if all(k in params and params[k] == v for k, v in when.items()):
+        if all(_holds(params.get(k), v) if k in params else False for k, v in when.items()):
             if isinstance(entries, Mapping):
                 out[key] = e["dir"] if isinstance(e, Mapping) else e
             else:
                 out[e["name"] if isinstance(e, Mapping) else e] = None
     return out
+
+
+def _holds(x: Any, v: Any) -> bool:
+    """A ``when`` match: ``x`` equal to ``v``, or with ``v`` ``{"min": m}`` an int of at least m
+    (a ``Mac``'s ``row`` pin at ``rows`` 2 or more)."""
+    if isinstance(v, Mapping) and set(v) == {"min"}:
+        return type(x) is int and x >= v["min"]
+    return x == v
 
 
 def value(v: int | str, params: Mapping[str, Any]) -> int:
@@ -368,9 +381,15 @@ def vectors(design_point: str | Path, root: str | Path | None = None) -> dict:
         c = (node.inputs if p.direction == "in" else node.outputs)[p.name].data
         array = c_name(c) if p.direction == "in" else f"{c_name(c)}_golden"
         rate = 1 if p.rate == 1 else values[p.rate]
+        beats, rows = values["n"] // rate, bank_rows(inst)
+        if (
+            rows > 1
+        ):  # NB (D191, D190): a bank gives ROWS results a job; its held input, a pop a row
+            held = next(u for u in group.units if u.name == name).ports[port].hold
+            beats = beats * rows if p.direction == "out" else beats // rows if held else beats
         ports.append({"port": p.name, "array": array,
                       "lanes": stream_lanes(point.graph, node, inst, p.name),
-                      "beats": values["n"] // rate, "values": list(data[array].values)})  # fmt: skip
+                      "beats": beats, "values": list(data[array].values)})  # fmt: skip
     if linked:
         chains = group.chains()
         writes = job_writes(found, task.values, acc.fixed_folds, chains)

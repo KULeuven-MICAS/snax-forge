@@ -3,6 +3,7 @@ package snax.forge.shell
 import scala.collection.immutable.SeqMap
 
 import chisel3._
+import chisel3.util.{Fill, RegEnable}
 
 import snax.forge.stream.{FifoPacker, FifoSlicer}
 
@@ -84,6 +85,12 @@ class ShellPorts(val readers: Seq[Int], val writers: Seq[Int], val groups: Seq[S
   * its data (or its slicer's, one for the fork, named after the reader's port) goes to each unit's port and its valid
   * to each unit's handshake, and its ready is the AND of their readies, so a beat is taken only when every unit fires.
   * Each chain's sink has its own outer output, and each its packer when packed.
+  *
+  * A held input (`hold`, D190), a banked unit's broadcast input read once a row: its lane is kept in
+  * `<unit>_<port>_hold`, a register of the element's width loaded when the control takes its beat (a row's first
+  * firing), and the datapath sees the live lane on that firing and the held one on the row's others. A carried seed
+  * (`carry`, D192) reaches the datapath ANDed with its control unit's `<unit>_use_seed`, so 0 on the unit's first CARRY
+  * jobs; its reader runs every job.
   *
   * Clock `clk_i`, reset `rst_ni` active low and asynchronous, as snax_cluster's (`RequireAsyncReset` in ReqRspManager).
   */
@@ -221,10 +228,22 @@ class ShellWrapper(spec: AcceleratorSpec) extends RawModule {
       val shared = scala.collection.mutable.LinkedHashMap.empty[Int, (Data, Bool, Bool, Seq[Bool])]
       for ((u, k) <- g.units.zipWithIndex) {
         val d = dp.io.units(spec.units.indexOf(u))
+        val e = c.units(k)
         for ((j, brm)    <- spec.ins(u.name)) {
           val p = u.port(brm)
-          // The stream's lanes into the unit's port: as they are, or a broadcast's one lane to every lane
+          // The stream's lanes into the unit's port: a held lane or a carried seed first (below), then as they are, or a
+          // broadcast's one lane to every lane
           def feed(x: Data): Unit =
+            if (p.hold) { // NB (D190): the lane taken on a row's first firing, kept for the row's others
+              require(p.broadcast && !forks(j), s"${u.name}.$brm: a held input is a broadcast one, not forked")
+              val w    = snax.forge.IntType(p.dtype).width
+              val take = c.in(at).ready
+              val lane = x.asUInt(w - 1, 0)
+              into(Mux(take, lane, RegEnable(lane, 0.U(w.W), take).suggestName(s"${u.name}_${brm}_hold")))
+            } else if (p.carry) // NB (D192): 0 in the seed's place until the unit's CARRY-th job
+              into((x.asUInt & Fill(x.getWidth, e.useSeed.get)).asTypeOf(x))
+            else into(x)
+          def into(x: Data): Unit =
             if (!p.broadcast) d(brm) := x.asTypeOf(d(brm))
             else { // NB (D186): wires only, lane 0 of the stream (its one lane) on all the unit's lanes
               val bcast = Wire(chiselTypeOf(d(brm))).suggestName(s"${u.name}_${brm}_bcast")
@@ -298,13 +317,14 @@ class ShellWrapper(spec: AcceleratorSpec) extends RawModule {
             packer.io.last      := c.lastOf(desc.outputs.indexOf(k))
           }
         }
-        val e = c.units(k)
         for ((name, pin) <- d.elements if !u.ports.exists(_._1 == name))
           pin := (name match {
             case "fire" | "en"                    => e.fire
             case "first"                          => e.first
             case "read"                           => e.read
             case "lane"                           => e.lane
+            case "row"                            => e.row.get
+            case "drain"                          => e.drain.get
             case s if u.scalars.exists(_._1 == s) => scalar(csr, u, s).asTypeOf(pin)
             case other => throw new IllegalArgumentException(s"${u.datapath}: unknown pin $other")
           })

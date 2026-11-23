@@ -31,8 +31,9 @@ object AccCtrl {
 
   /** A group's description (CONTRACTS, "Accelerator RTL spec"): per unit, in the file's order, its L, II and span, its
     * outer inputs (a forked one's on each of its units), its T when fixed (`params.T`, or 1 without a JOB_BEATS) and
-    * its inputs no outer port takes; per link its ends by unit index, the `to` port's position among its unit's inputs
-    * (in port order) and its depth; per fork of the group (D189) its units by index.
+    * its inputs no outer port takes, its bank's rows, its held inputs and whether its seed is carried; per link its
+    * ends by unit index, the `to` port's position among its unit's inputs (in port order) and its depth; per fork of
+    * the group (D189) its units by index.
     */
   def desc(spec: AcceleratorSpec, g: AcceleratorSpec.GroupSpec): GroupDesc = {
     def at(unit: String) = g.units.indexWhere(_.name == unit)
@@ -48,7 +49,10 @@ object AccCtrl {
           outer.size,
           u.fixedT,
           u.inPorts.indices.filterNot(j => outer.contains(u.inPorts(j))),
-          outer.lastOption.contains("seed") // a fold's seed, its last outer input
+          outer.lastOption.contains("seed"), // a fold's seed, its last outer input
+          u.rows,
+          outer.indices.filter(j => u.port(outer(j)).hold),
+          outer.exists(p => u.port(p).carry)
         )
       },
       g.links.map { l =>

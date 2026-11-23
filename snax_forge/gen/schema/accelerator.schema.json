@@ -95,7 +95,9 @@
     "lanes": {"type": "integer", "minimum": 1},
     "d_out": {"description": "An outer output's results per 64-bit word through its packer; absent at 1.", "enum": [2, 4, 8]},
     "d_in": {"description": "An outer input's pops per 64-bit word through its slicer; absent at 1.", "enum": [2, 4, 8]},
-    "broadcast": {"description": "An input whose stream carries one lane, given to all its lanes (D186); absent when false.", "const": true}
+    "broadcast": {"description": "An input whose stream carries one lane, given to all its lanes (D186); absent when false.", "const": true},
+    "hold": {"description": "A banked unit's input read once a row and kept (D190); absent when false.", "const": true},
+    "carry": {"description": "A seed that is the unit's own output, carried across strips, 0 on its first CARRY jobs (D192); absent when false.", "const": true}
    },
    "required": ["port", "dir", "dtype", "lanes"],
    "additionalProperties": false
@@ -113,7 +115,7 @@
      "additionalProperties": {"$ref": "#/$defs/port"}
     },
     "opType": {"description": "A SIMD or Mac unit's: NumPy's result type of its inputs.", "$ref": "#/$defs/dtype"},
-    "params": {"description": "What the ports do not give (op, accumulate, regOut, a baked slot), and T, a fold's rate fixed at design time.", "type": "object"},
+    "params": {"description": "What the ports do not give (op, accumulate, regOut, a bank's rows, a baked slot), and T, a fold's rate fixed at design time.", "type": "object"},
     "scalars": {
      "description": "Each slot read from a container, in slot order, at its dtype: an R/W CSR the program writes (two at 64 bits, low word first), the datapath's pin.",
      "type": "object",

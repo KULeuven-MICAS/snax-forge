@@ -35,6 +35,12 @@ import snax.forge.elementwise.{ElementwiseModel, ElementwiseOp}
   * r_i to every lane of the Mac's b. The model: q, each job's Σ over its rows of A_i · p_i, and s, each job's Σ over
   * its rows of A_i · r_i lane by lane, wrapping at int32; q packed two to a word. Both outputs are checked, the run's
   * end E is the last chain's.
+  *
+  * The same with s's sums in a bank (bicg_v4, D191): per run ROWS in 1..R, the Mac's T a multiple of it, the heads'
+  * firings n a multiple of that and of the sum's T (its JOB_BEATS, or its fixed T); r is read once a row (D190), a beat
+  * on each firing where n mod ROWS = 0, and the Mac's sums are ROWS rows, firing f adding into row f mod ROWS, each job
+  * giving its rows in order. With q carried (bicg_v4_1, D192) the sum is seeded once a job from its seed's reader, the
+  * seed 0 in the sum on its first CARRY jobs (CARRY in 0..its JOBS).
   */
 class ShellRandomSpec extends AnyFlatSpec with ForgeTester {
 
@@ -68,6 +74,54 @@ class ShellRandomSpec extends AnyFlatSpec with ForgeTester {
     Run(csrs, rows == 0, Seq(a, p, x), Seq(packed, s))
   }
 
+  /** bicg_v4's run (the bank, its held r, and with a carried q bicg_v4_1's), or the empty run: its CSRs, every input's
+    * beats in the spec's order and q packed and s.
+    */
+  private def bankRun(spec: AcceleratorSpec, r: snax.forge.Rand, empty: Boolean): Run = {
+    val (mac, sum)    = (spec.unit("mac"), spec.unit("sum"))
+    val (i8, i32)     = (IntType("int8"), IntType("int32"))
+    val w             = mac.port("a").lanes
+    val carried       = sum.ports.exists(_._2.carry)
+    var (rows, tm, n) = (1, 1, 1)
+    do {
+      rows = r.between(1, mac.rows)
+      tm   = rows * r.between(1, 4)
+      n    = tm * r.between(1, 3)
+    } while (sum.fixedT.exists(t => t != 1 && n % t != 0))
+    val ts            = sum.fixedT.filter(_ != 1).getOrElse(r.pick((1 to n).filter(n % _ == 0)))
+    val js            = n / ts
+    val carry         = if (carried) r.between(0, js) else 0
+    def draw(k: Int, lanes: Int, bits: Int) = if (empty) Nil else Seq.fill(k)(Seq.fill(lanes)(r.word(bits)))
+    val (a, p, x, seeds) = (draw(n, w, 8), draw(n, w, 8), draw(n / rows, 1, 8), draw(js, 1, 32))
+    def wide(v: BigInt) = ElementwiseModel.cast(v, i8, i32)
+    val q      =
+      if (empty) Nil
+      else
+        (0 until n).grouped(ts).toSeq.zipWithIndex.map { case (job, j) =>
+          val dot = LaneBits.dot(job.flatMap(a(_).map(wide)), job.flatMap(p(_).map(wide)), 32)
+          (dot + (if (carried && j >= carry) seeds(j).head else BigInt(0))) & LaneBits.mask(32)
+        }
+    val s      =
+      if (empty) Nil
+      else
+        (0 until n).grouped(tm).toSeq.flatMap { job => // a job starts at a multiple of ROWS: its row f mod ROWS
+          (0 until rows).map { row =>
+            val fs = job.filter(_ % rows == row)
+            LaneBits.pack(
+              (0 until w).map(l => LaneBits.dot(fs.map(f => wide(a(f)(l))), fs.map(f => wide(x(f / rows).head)), 32)),
+              32
+            )
+          }
+        }
+    val jobs   = if (empty) Seq(0L, 0L) else Seq(js.toLong, (n / tm).toLong)
+    val csrs   = Seq("JOBS_SUM" -> jobs(0), "JOBS_MAC" -> jobs(1)) ++
+      Option.when(sum.fixedT.isEmpty)("SUM_JOB_BEATS" -> ts.toLong) ++
+      Seq("MAC_JOB_BEATS" -> tm.toLong, "MAC_ROWS" -> rows.toLong) ++ Option.when(carried)("SUM_CARRY" -> carry.toLong)
+    val beats  = Map(("mul", "a") -> a, ("mul", "b") -> p, ("sum", "seed") -> seeds, ("mac", "b") -> x)
+    val packed = q.grouped(2).map(_.zipWithIndex.map { case (o, k) => o << (k * 32) }.sum).toSeq
+    Run(csrs, empty, spec.inputs.map(beats), spec.outputs.map(Map(("sum", "out") -> packed, ("mac", "out") -> s)))
+  }
+
   behavior of "the shell wrapper under random data and stalls"
 
   for {
@@ -91,43 +145,48 @@ class ShellRandomSpec extends AnyFlatSpec with ForgeTester {
         val sliced  = dIn.exists(_ > 1)
         val forked  = spec.forks.nonEmpty
 
-        val runs = if (forked) Seq.tabulate(Runs) { i =>
-          val rows      = if (i > 0 && r.chance(0.125)) 0 else r.between(1, 16)
-          def divisor() = r.pick((1 to (rows max 1)).filter(t => (rows max 1) % t == 0))
-          forkRun(spec, r, rows, divisor(), divisor())
-        }
-        else
-          Seq.tabulate(Runs) { i =>
-            val jobs  = if (i > 0 && r.chance(0.125)) 0 else r.between(1, 32)
-            val t     = if (fold) r.between(1, 8) else 1
-            val n     = jobs * t
-            val ins   = inTypes.map(ty => Seq.fill(n)(Seq.fill(lanes)(r.word(ty.width))))
-            val outs  =
-              if (linked)
-                (0 until n).grouped(t max 1).toSeq.map { job =>
-                  def at(i: Int) = job.flatMap(k => ins(i)(k).map(ElementwiseModel.cast(_, inTypes(i), outType)))
-                  LaneBits.dot(at(0), at(1), outType.width)
-                }
-              else if (!fold)
-                (0 until n).map { k =>
-                  LaneBits.pack(
-                    ins(0)(k).zip(ins(1)(k)).map { case (a, b) =>
-                      ElementwiseModel.numpy(op.get, a, b, inTypes(0), inTypes(1), opType, outType)
-                    },
-                    outType.width
-                  )
-                }
-              else
-                ins(0)
-                  .map(_.map(ElementwiseModel.cast(_, inTypes(0), outType)).sum)
-                  .grouped(t max 1)
-                  .map(_.sum & LaneBits.mask(outType.width))
-                  .toSeq
-            // a packed output: d_out results (each its lanes) to a word, the last short
-            val bits  = outPort.lanes * outType.width
-            val words = outs.grouped(outPort.dOut).map(_.zipWithIndex.map { case (o, k) => o << (k * bits) }.sum).toSeq
-            Run(Seq("JOBS" -> jobs.toLong) ++ Option.when(fold)("JOB_BEATS" -> t.toLong), jobs == 0, ins, Seq(words))
+        val banked = spec.units.exists(_.rows > 1)
+
+        val runs =
+          if (banked) Seq.tabulate(Runs)(i => bankRun(spec, r, i > 0 && r.chance(0.125)))
+          else if (forked) Seq.tabulate(Runs) { i =>
+            val rows      = if (i > 0 && r.chance(0.125)) 0 else r.between(1, 16)
+            def divisor() = r.pick((1 to (rows max 1)).filter(t => (rows max 1) % t == 0))
+            forkRun(spec, r, rows, divisor(), divisor())
           }
+          else
+            Seq.tabulate(Runs) { i =>
+              val jobs  = if (i > 0 && r.chance(0.125)) 0 else r.between(1, 32)
+              val t     = if (fold) r.between(1, 8) else 1
+              val n     = jobs * t
+              val ins   = inTypes.map(ty => Seq.fill(n)(Seq.fill(lanes)(r.word(ty.width))))
+              val outs  =
+                if (linked)
+                  (0 until n).grouped(t max 1).toSeq.map { job =>
+                    def at(i: Int) = job.flatMap(k => ins(i)(k).map(ElementwiseModel.cast(_, inTypes(i), outType)))
+                    LaneBits.dot(at(0), at(1), outType.width)
+                  }
+                else if (!fold)
+                  (0 until n).map { k =>
+                    LaneBits.pack(
+                      ins(0)(k).zip(ins(1)(k)).map { case (a, b) =>
+                        ElementwiseModel.numpy(op.get, a, b, inTypes(0), inTypes(1), opType, outType)
+                      },
+                      outType.width
+                    )
+                  }
+                else
+                  ins(0)
+                    .map(_.map(ElementwiseModel.cast(_, inTypes(0), outType)).sum)
+                    .grouped(t max 1)
+                    .map(_.sum & LaneBits.mask(outType.width))
+                    .toSeq
+              // a packed output: d_out results (each its lanes) to a word, the last short
+              val bits  = outPort.lanes * outType.width
+              val words =
+                outs.grouped(outPort.dOut).map(_.zipWithIndex.map { case (o, k) => o << (k * bits) }.sum).toSeq
+              Run(Seq("JOBS" -> jobs.toLong) ++ Option.when(fold)("JOB_BEATS" -> t.toLong), jobs == 0, ins, Seq(words))
+            }
 
         var gap   = 0.0
         var stall = 0.0

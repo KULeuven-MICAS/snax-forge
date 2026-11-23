@@ -6,8 +6,9 @@ import chisel3.util._
 /** One unit of a group's description (`accelerator.json`): its name, its timing (L, II, span), its outer inputs (the
   * streamer's ports it reads), its T when fixed at design time (`params.T`; 1 for a unit without a fold), else None: a
   * JOB_BEATS read live from the csr; `linked`, the positions among its inputs (in port order) that no outer port takes,
-  * each fed by one link (snax_group.cpp's inputs left ""); and `seeded`, its last outer input a fold's seed, one beat
-  * per job.
+  * each fed by one link (snax_group.cpp's inputs left ""); `seeded`, its last outer input a fold's seed, one beat per
+  * job; `rows`, a bank's rows R (D191, 1 without one); `hold`, its outer inputs read once a row and kept (D190);
+  * `carry`, its seed carried, 0 on its first CARRY jobs (D192).
   */
 case class UnitDesc(
   name:    String,
@@ -17,13 +18,24 @@ case class UnitDesc(
   inputs:  Int,
   fixedT:  Option[Int],
   linked:  Seq[Int] = Nil,
-  seeded:  Boolean  = false
+  seeded:  Boolean  = false,
+  rows:    Int      = 1,
+  hold:    Seq[Int] = Nil,
+  carry:   Boolean  = false
 ) {
-  require(latency           >= 0, s"$name: latency must be 0 or more, got $latency")
-  require(ii                >= 1, s"$name: ii must be 1 or more, got $ii")
-  require(span              >= 1, s"$name: span must be 1 or more, got $span")
-  require(inputs            >= 0, s"$name: inputs must be 0 or more, got $inputs")
-  require(!seeded || inputs >= 1, s"$name: a seeded unit's seed is one of its outer inputs")
+  require(latency               >= 0, s"$name: latency must be 0 or more, got $latency")
+  require(ii                    >= 1, s"$name: ii must be 1 or more, got $ii")
+  require(span                  >= 1, s"$name: span must be 1 or more, got $span")
+  require(inputs                >= 0, s"$name: inputs must be 0 or more, got $inputs")
+  require(!seeded || inputs     >= 1, s"$name: a seeded unit's seed is one of its outer inputs")
+  require(rows                  >= 1, s"$name: rows must be 1 or more, got $rows")
+  require(rows == 1 || (!seeded && !fixedT.contains(1)), s"$name: a bank of $rows rows is unseeded, of T above 1")
+  require(hold.isEmpty || rows > 1, s"$name: inputs $hold held, but it has no bank; a hold counts the bank's rows")
+  require(
+    hold.forall(j => 0 <= j && j < inputs - (if (seeded) 1 else 0)),
+    s"$name: inputs $hold held are not outer inputs of its own (not its seed)"
+  )
+  require(!carry || seeded, s"$name: a carried seed is a seeded unit's")
 }
 
 /** A link of a group, by unit index (SnaxGroupRule's Link): unit `from`'s output into input `toInput` of unit `to` (its
@@ -124,6 +136,19 @@ case class GroupDesc(name: String, units: Seq[UnitDesc], links: Seq[Link], forks
   val head:   Int = order.head
   val output: Int = outputs.head
   require(units(head).inputs >= 1, s"group $name: the head ${units(head).name} has no outer input")
+  for ((u, k) <- units.zipWithIndex if u.rows > 1 || u.carry)
+    require(
+      outs(k).isEmpty,
+      s"group $name: ${u.name}, ${if (u.carry) "its seed carried" else s"a bank of ${u.rows} rows"}, is a chain's sink"
+    )
+
+  /** The banked units and the units with a carried seed, in unit order: their ROWS and CARRY in the settings. */
+  val banks:   Seq[Int] = units.indices.filter(units(_).rows > 1)
+  val carried: Seq[Int] = units.indices.filter(units(_).carry)
+
+  /** The settings its control unit reads from the csr, `bits` the job_width. */
+  def settings(bits: Int): GroupSettings =
+    new GroupSettings(open.size, bits, outputs.size, banks.map(units(_).rows), carried.size)
 
   /** The units whose T is a JOB_BEATS (the csr's, read live), in unit order. */
   def open: Seq[UnitDesc] = units.filter(_.fixedT.isEmpty)
@@ -142,15 +167,19 @@ class Handshake extends Bundle {
   * beat taken from every input; at span > 1 the last lane's read; a plain Mac's `en` too), `first` (the beat fired or
   * read is its job's first, d = 0), `read` and `lane` (lane `lane` read in place, at every span: at span 1 the read is
   * the firing), `adv` (its pipeline advances: not frozen) and `give` (a result pushed into its link or the outer
-  * output).
+  * output); a bank's (`rows` > 1, D191) `row`, the row its firing adds into, and `drain`, the row its output shows; a
+  * carried seed's (D192) `useSeed`, its seed given to the datapath, else 0.
   */
-class UnitEnables(span: Int) extends Bundle {
-  val fire  = Output(Bool())
-  val first = Output(Bool())
-  val read  = Output(Bool())
-  val lane  = Output(UInt(log2Ceil(span).W))
-  val adv   = Output(Bool())
-  val give  = Output(Bool())
+class UnitEnables(span: Int, rows: Int = 1, carry: Boolean = false) extends Bundle {
+  val fire    = Output(Bool())
+  val first   = Output(Bool())
+  val read    = Output(Bool())
+  val lane    = Output(UInt(log2Ceil(span).W))
+  val adv     = Output(Bool())
+  val give    = Output(Bool())
+  val row     = Option.when(rows > 1)(Output(UInt(log2Ceil(rows).W)))
+  val drain   = Option.when(rows > 1)(Output(UInt(log2Ceil(rows).W)))
+  val useSeed = Option.when(carry)(Output(Bool()))
 }
 
 /** A buffer's enables (`LinkBuffer`'s pins) and its occupancy after the cycle. */
@@ -194,6 +223,12 @@ class LinkEnables(depth: Int) extends Bundle {
   * pass, `<unit>_free_*`), and a unit of a fork that would fire there is held when another cannot (in the free pass),
   * then decided again with it held, as SnaxGroupRule's step() does; every chain is joined to the others by forks, so
   * one unit that cannot fire holds every fork's.
+  *
+  * A bank (`rows` R > 1, D191, a chain's sink): its row ρ (`<unit>_row`, the beat mod ROWS, the csr's) is its only
+  * register beyond the counters; `first` on a job's first ROWS firings (d < ROWS), a result on each of its last ROWS (d
+  * + ROWS ≥ T), d and the jobs digit wrapping and counting at d + 1 = T; the `Mac`'s `row` is ρ and its `drain` the row
+  * before (ROWS − 1 at 0). A held input (D190) needs its beat, and is ready, only at ρ = 0. A carried seed (D192) is
+  * taken every job as any seed; `useSeed` = (its jobs counter ≥ CARRY) for the wrapper, a comparison.
   */
 class GroupRule(val desc: GroupDesc, jobWidth: Int = 32) {
   // NB (D153): a unit counts its results in nested counters, never against n_k; snax-gvsoc's SnaxGroupRule must
@@ -231,11 +266,11 @@ class GroupRule(val desc: GroupDesc, jobWidth: Int = 32) {
 
   val io = Wire(new Bundle {
     val config   = Input(Bool())
-    val settings = Input(new GroupSettings(desc.open.size, jobWidth, outputs.size))
+    val settings = Input(desc.settings(jobWidth))
     val in       = MixedVec(descs.map(u => Vec(u.inputs, new Handshake)))
     val out      = Flipped(new Handshake)
     val rest     = Option.when(outputs.size > 1)(Flipped(Vec(outputs.size - 1, new Handshake)))
-    val units    = MixedVec(descs.map(u => new UnitEnables(u.span)))
+    val units    = MixedVec(descs.map(u => new UnitEnables(u.span, u.rows, u.carry)))
     val links    = MixedVec(desc.buffers.map(i => new LinkEnables(desc.links(i).depth)))
     val busy     = Output(Bool())
     val done     = Output(Bool())
@@ -258,6 +293,13 @@ class GroupRule(val desc: GroupDesc, jobWidth: Int = 32) {
 
   /** Unit k's T from the csr, its JOB_BEATS read live; None for a fixed T. */
   private def live(k: Int): Option[UInt] = Some(open.indexOf(k)).filter(_ >= 0).map(io.settings.beats(_))
+
+  /** A bank's ROWS and a carried seed's CARRY, the csr's, live. */
+  private def rowsOf(k:  Int): UInt = io.settings.rows.get(desc.banks.indexOf(k))
+  private def carryOf(k: Int): UInt = io.settings.carry.get(desc.carried.indexOf(k))
+
+  /** Unit k's T: its JOB_BEATS, or its fixed T. */
+  private def tOf(k: Int): UInt = live(k).getOrElse(descs(k).fixedT.get.U)
 
   /** Whether `c`, a count of unit k's T with `inc` = c + 1, is at its last value: inc = T for a T from the csr, c = T −
     * 1 for a fixed T.
@@ -297,8 +339,16 @@ class GroupRule(val desc: GroupDesc, jobWidth: Int = 32) {
     val gap    = if (u.ii == 1) 0.U(1.W) else RegInit(0.U(log2Ceil(u.ii + 1).W)).suggestName(s"${u.name}_gap")
     val v      = RegInit(VecInit(Seq.fill(u.latency max 1)(false.B))).suggestName(s"${u.name}_v")
     val lane   = RegInit(0.U(log2Ceil(u.span).W)).suggestName(s"${u.name}_lane")
+    // NB (D191): a bank's row, the beat mod ROWS, the only register a bank adds to the control
+    val row    = Option.when(u.rows > 1)(RegInit(0.U(log2Ceil(u.rows).W)).suggestName(s"${u.name}_row"))
   }
   private val st = descs.indices.map(new UnitState(_))
+
+  /** Unit k's `first`: its job's first beat (d = 0), a bank's each row's (d < ROWS). */
+  private def first(k: Int): Bool = if (descs(k).rows > 1) st(k).d < rowsOf(k) else st(k).d === 0.U
+
+  /** Whether outer input j of unit k is a held one at a row other than the first: its beat neither needed nor taken. */
+  private def heldOff(k: Int, j: Int): Bool = if (descs(k).hold.contains(j)) st(k).row.get =/= 0.U else false.B
 
   /** Whether unit k has results left to give (g_k != R_k): its own jobs digit's, or its consumer's test. */
   private def left(k: Int): Bool = st(k).g.map(_ =/= jobsOf(k)).getOrElse(left(succ(k).get))
@@ -325,15 +375,17 @@ class GroupRule(val desc: GroupDesc, jobWidth: Int = 32) {
     for (k <- desc.order) {
       val u = descs(k)
       val s = st(k)
-      inputs(k) := (if (!u.seeded) io.in(k).map(_.valid).foldLeft(true.B)(_ && _)
+      inputs(k)    := (if (u.hold.nonEmpty) // NB (D190): a held input's beat only on a row's first firing
+                      io.in(k).zipWithIndex.map { case (p, j) => p.valid || heldOff(k, j) }.reduce(_ && _)
+                    else if (!u.seeded) io.in(k).map(_.valid).foldLeft(true.B)(_ && _)
                     else // the seed only on the job's first beat
                       io.in(k).init.map(_.valid).foldLeft(true.B)(_ && _) && (s.d =/= 0.U || io.in(k).last.valid))
-      avail(k) := desc.ins(k).foldLeft(inputs(k)) { (a, i) =>
+      avail(k)     := desc.ins(k).foldLeft(inputs(k)) { (a, i) =>
         a && (if (links(i).depth == 0) offer(links(i).from) else occupancy(i) =/= 0.U)
       }
-      wants(k) := held.fold(busy && left(k) && s.gap === 0.U)(h => busy && left(k) && s.gap === 0.U && !h(k))
+      wants(k)     := held.fold(busy && left(k) && s.gap === 0.U)(h => busy && left(k) && s.gap === 0.U && !h(k))
       wouldFire(k) := wants(k)     && avail(k) && (if (u.span == 1) true.B else s.lane === (u.span - 1).U)
-      gives(k)     := wouldFire(k) && last(k, s.d, s.dInc)
+      gives(k)     := wouldFire(k) && (if (u.rows > 1) (s.d +& rowsOf(k)) >= tOf(k) else last(k, s.d, s.dInc))
       head(k)      := (if (u.latency > 0) s.v(u.latency - 1) else false.B)
       offer(k)     := (if (u.latency > 0) head(k) else gives(k))
       Seq(avail(k) -> "avail", wants(k) -> "wants", gives(k) -> "gives", offer(k) -> "offer").foreach { case (b, w) =>
@@ -380,18 +432,30 @@ class GroupRule(val desc: GroupDesc, jobWidth: Int = 32) {
   for {
     k      <- 0 until n
     (p, j) <- io.in(k).zipWithIndex
-  } p.ready := (if (descs(k).seeded && j == descs(k).inputs - 1) fire(k) && st(k).d === 0.U else fire(k))
+  } p.ready := (if (descs(k).seeded && j == descs(k).inputs - 1) fire(k) && st(k).d === 0.U
+                else if (descs(k).hold.contains(j)) fire(k) && !heldOff(k, j)
+                else fire(k))
   for ((k, o) <- outputs.zipWithIndex) outPort(o).valid := pass.offer(k)
 
   // The datapaths' enables and the buffers'
   for (k      <- 0 until n) {
     val e = io.units(k)
     e.fire  := fire(k)
-    e.first := st(k).d === 0.U
+    e.first := first(k)
     e.read  := read(k)
     e.lane  := st(k).lane
     e.adv   := !frozen(k)
     e.give  := give(k)
+    for {
+      r    <- e.row
+      d    <- e.drain
+      x    <- st(k).row
+    } {
+      r := x
+      d := WireDefault(Mux(x === 0.U, rowsOf(k) - 1.U, x - 1.U)).suggestName(s"${descs(k).name}_drain")
+    }
+    // NB (D192): the carried seed's value is the datapath's only from the CARRY-th job on, its jobs counter
+    for (u <- e.useSeed) u := WireDefault(st(k).g.get >= carryOf(k)).suggestName(s"${descs(k).name}_use_seed")
   }
   for ((i, b) <- desc.buffers.zipWithIndex) {
     val e = io.links(b)
@@ -472,24 +536,35 @@ class GroupRule(val desc: GroupDesc, jobWidth: Int = 32) {
       s.digits.foreach(_._2 := 0.U)
       s.g.foreach(_ := 0.U)
       s.lane                         := 0.U
+      s.row.foreach(_ := 0.U)
     }
   }.otherwise {
     for (k <- 0 until n) when(fire(k)) {
       val s = st(k)
-      if (descs(k).fixedT != Some(1)) s.d := Mux(gives(k), 0.U, s.dInc)
-      // A giving firing counts in mixed radix: each digit wraps at its unit's T and carries into the next, the last
-      // into the jobs digit
-      when(gives(k)) {
-        val carry = s.digits.foldLeft(true.B) { case (in, (j, digit)) =>
-          val inc  = digit + 1.U
-          val wrap = last(j, digit, inc)
-          when(in) { digit := Mux(wrap, 0.U, inc) }
-          in && wrap
-        }
+      if (descs(k).rows > 1) { // NB (D191): a bank gives on its job's last ROWS firings and counts its jobs
+        val wrap = last(k, s.d, s.dInc)
+        s.d := Mux(wrap, 0.U, s.dInc)
         for {
-          g <- s.g
-          inc <- s.gInc
-        } when(carry) { g := inc }
+          g    <- s.g
+          inc  <- s.gInc
+        } when(wrap) { g := inc }
+        for (r <- s.row) r := Mux(r +& 1.U === rowsOf(k), 0.U, r + 1.U)
+      } else {
+        if (descs(k).fixedT != Some(1)) s.d := Mux(gives(k), 0.U, s.dInc)
+        // A giving firing counts in mixed radix: each digit wraps at its unit's T and carries into the next, the last
+        // into the jobs digit
+        when(gives(k)) {
+          val carry = s.digits.foldLeft(true.B) { case (in, (j, digit)) =>
+            val inc  = digit + 1.U
+            val wrap = last(j, digit, inc)
+            when(in) { digit := Mux(wrap, 0.U, inc) }
+            in && wrap
+          }
+          for {
+            g <- s.g
+            inc <- s.gInc
+          } when(carry) { g := inc }
+        }
       }
     }
     when(done) { busy := false.B }

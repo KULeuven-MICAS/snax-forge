@@ -77,6 +77,8 @@ DESIGNS = {
     "mvt_v1_2_2": ("mvt_v1_2_2", ["W=8"]),
     "vecadd_v1_1_w1": ("vecadd_v1_1", ["W=1"]),
     "bicg_v3_w64": ("bicg_v3", ["M=64", "N=64", "W=64"]),  # two chains on a forked A (D189)
+    "bicg_v4": ("bicg_v4", []),  # s's bank of 16 rows, r held (D191, D190)
+    "bicg_v4_1": ("bicg_v4_1", []),  # two strips of a bank of 8, q carried (D192)
 }
 
 # SimdLanes' slot params of a unit with none (axpby's k1 and k2, each slot from its CSR or not)
@@ -371,6 +373,7 @@ def test_a_mac_unit_in_each_form_is_accepted(accumulate, reg_out):
     acc = _alone(unit)
     check_unit(acc, unit, catalogue())
     assert fill(acc, unit, catalogue()["Mac"])["inTypes"] == ["int64"] * (2 if accumulate else 3)
+    assert fill(acc, unit, catalogue()["Mac"])["rows"] == 1  # no params.rows: the plain Mac
 
 
 def _behind_mac(unit: Unit) -> Description:
@@ -425,7 +428,7 @@ def test_a_mac_unit_the_catalogue_refuses(unit, code):
 def test_the_catalogue_has_each_datapaths_flops():
     assert {k: v["flops"] for k, v in catalogue().items()} == {
         "SimdLanes": 0, "TreeAccumulate": "width(outType)",
-        "Mac": "lanes * width(outType) * max(accumulate, regOut)",
+        "Mac": "lanes * width(outType) * max(accumulate, regOut) * rows",
         "SerialAccumulate": "width(outType)", "LaneAccumulate": "lanes * width(outType)",
         "LinkBuffer": "depth * lanes * width(dtype)",
     }  # fmt: skip
@@ -437,15 +440,42 @@ def test_the_catalogue_has_each_datapaths_flops():
         ("SimdLanes", {"lanes": 8, "outType": "int64"}, 0),
         ("TreeAccumulate", {"inType": "int8", "outType": "int32", "lanes": 8}, 32),
         ("SerialAccumulate", {"inType": "int64", "outType": "int64", "lanes": 16}, 64),
-        ("Mac", {"outType": "int64", "lanes": 8, "accumulate": True, "regOut": False}, 512),
-        ("Mac", {"outType": "int16", "lanes": 4, "accumulate": False, "regOut": True}, 64),
-        ("Mac", {"outType": "int64", "lanes": 8, "accumulate": False, "regOut": False}, 0),
+        (
+            "Mac",
+            {"outType": "int64", "lanes": 8, "accumulate": True, "regOut": False, "rows": 1},
+            512,
+        ),
+        (
+            "Mac",
+            {"outType": "int16", "lanes": 4, "accumulate": False, "regOut": True, "rows": 1},
+            64,
+        ),
+        (
+            "Mac",
+            {"outType": "int64", "lanes": 8, "accumulate": False, "regOut": False, "rows": 1},
+            0,
+        ),
+        (
+            "Mac",
+            {"outType": "int32", "lanes": 4, "accumulate": True, "regOut": False, "rows": 16},
+            2048,
+        ),
         ("LaneAccumulate", {"inType": "int32", "outType": "int64", "lanes": 8}, 512),
         ("LinkBuffer", {"depth": 3, "lanes": 4, "dtype": "uint8"}, 96),
     ],
 )
 def test_flops_is_the_expression_on_the_params(datapath, params, bits):
     assert flops(datapath, params, catalogue()) == bits
+
+
+def test_a_macs_rows_fill_1_when_absent_and_a_bank_has_its_row_pins():
+    """A unit without ``params.rows`` fills the catalogue's int min (the plain ``Mac``); the pins
+    ``row`` and ``drain`` live from 2 rows on (D191)."""
+    sig = catalogue()["Mac"]
+    on = {"accumulate": True, "regOut": False}
+    assert live(sig["pins"], on | {"rows": 1}) == {"fire": None, "first": None}
+    assert live(sig["pins"], on | {"rows": 2}) == {"fire": None, "first": None, "row": None,
+                                                    "drain": None}  # fmt: skip
 
 
 @pytest.mark.parametrize(("accumulate", "reg_out", "bits"), [(True, False, 256), (False, False, 0),

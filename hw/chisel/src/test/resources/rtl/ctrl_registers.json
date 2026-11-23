@@ -2,6 +2,12 @@
   "bicg_v3_w64": {
     "snax_forge_bicg_v3_bicg_types_ctrl": [["busy", 1], ["mul_sum_job_beats_counter", 32], ["mul_jobs_counter", 32], ["sum_job_beats_counter", 32], ["sum_jobs_counter", 32], ["sum_v", 1], ["mac_job_beats_counter", 32], ["mac_jobs_counter", 32], ["mac_v", 1], ["mul_sum_occupancy", 1], ["done", 1]]
   },
+  "bicg_v4": {
+    "snax_forge_bicg_v4_bicg_types_ctrl": [["busy", 1], ["mul_sum_job_beats_counter", 32], ["mul_jobs_counter", 32], ["sum_job_beats_counter", 32], ["sum_jobs_counter", 32], ["sum_v", 1], ["mac_job_beats_counter", 32], ["mac_row", 4], ["mac_jobs_counter", 32], ["mac_v", 1], ["mul_sum_occupancy", 1], ["done", 1]]
+  },
+  "bicg_v4_1": {
+    "snax_forge_bicg_v4_1_bicg_types_ctrl": [["busy", 1], ["mul_sum_job_beats_counter", 3], ["mul_jobs_counter", 32], ["sum_job_beats_counter", 3], ["sum_jobs_counter", 32], ["sum_v", 1], ["mac_job_beats_counter", 32], ["mac_row", 3], ["mac_jobs_counter", 32], ["mac_v", 1], ["mul_sum_occupancy", 1], ["done", 1]]
+  },
   "dot_v1": {
     "snax_forge_dot_v1_vmul_ctrl": [["busy", 1], ["vmul_jobs_counter", 32], ["done", 1]],
     "snax_forge_dot_v1_vsum_ctrl": [["busy", 1], ["vsum_job_beats_counter", 32], ["vsum_jobs_counter", 32], ["vsum_v", 1], ["done", 1]]

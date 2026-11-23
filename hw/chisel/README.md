@@ -51,7 +51,7 @@ The modules, whose behaviour C§10 states:
 
 - Only the outer ports reach the wrapper, which splits each Decoupled port: its data to its unit's datapath, its valid and ready to its group's control unit. A forked input is one reader: its data and valid to each of its units, its ready the AND of theirs. A shared set's outer ports are its movers, reached through the port mux.
 - `pixi run gen-rtl DESIGN_POINT` checks and elaborates (`docs/TOOL.md` section 3), running `Emit` with java on hw/chisel's runtime classpath, which sbt exports once into `target/emit-classpath-<hash>.txt`, again after a change under `src/main/` or to `build.sbt`.
-- The fixtures in `src/test/resources/rtl/<design>/` hold `vectors.json`; their `accelerator.json` and streamer hjsons are read from snax-gvsoc's `forge/<design>/` (a spec that needs one cancels without the submodule), but vsum_v1_1_w8, dot_v5_w1 and bicg_v3_w64, which `forge/` does not hold, keep them beside their vectors. `tests/gen/test_rtl.py` checks them byte for byte. Refresh one with:
+- The fixtures in `src/test/resources/rtl/<design>/` hold `vectors.json`; their `accelerator.json` and streamer hjsons are read from snax-gvsoc's `forge/<design>/` (a spec that needs one cancels without the submodule), but vsum_v1_1_w8, dot_v5_w1, bicg_v3_w64, bicg_v4 and bicg_v4_1, which `forge/` does not hold, keep them beside their vectors. `tests/gen/test_rtl.py` checks them byte for byte. Refresh one with:
 
 ```bash
 pixi run sandbox recipes/reduce/vsum_v1_1.json --set W=8 --out out/sandbox/vsum_v1_1_w8
@@ -59,7 +59,7 @@ pixi run design out/sandbox/vsum_v1_1_w8/2_bind.snaxdfg --platform platforms/sna
 pixi run gen-rtl out/design/vsum_v1_1_w8/design_point.json --fixture hw/chisel/src/test/resources/rtl/vsum_v1_1_w8
 ```
 
-The others come from their recipe as it is, named after it; dot_v2 to dot_v6 with `--set N=16`, matvec_v4 to matvec_v6 with `--set M=2 --set N=16`, vecadd_v1_1_w1 from vecadd_v1_1 with `--set W=1`, and bicg_v3_w64 from bicg_v3 with `--set M=64 --set N=64 --set W=64` (`forge/bicg_v3` is the recipe's 64 × 32 at W = 32), so each of its int8 arrays fills whole DMA beats (the specs stream a re-read port's array modulo its size, which padding would break).
+The others come from their recipe as it is, named after it; dot_v2 to dot_v6 with `--set N=16`, matvec_v4 to matvec_v6 with `--set M=2 --set N=16`, vecadd_v1_1_w1 from vecadd_v1_1 with `--set W=1`, and bicg_v3_w64 from bicg_v3 with `--set M=64 --set N=64 --set W=64` (`forge/bicg_v3` is the recipe's 64 × 32 at W = 32), so each of its int8 arrays fills whole DMA beats (the specs stream a re-read port's array modulo its size, which padding would break). bicg_v4 (s's bank of 16 rows, r held, D191 · D190) and bicg_v4_1 (two strips of a bank of 8, q carried, D192) are their recipes at 64 × 64, W = 4; bicg_v4_1's readers go a strip at a time, not in its arrays' order, so ShellEndToEndSpec counts its words and ShellRandomSpec checks its values.
 
 The specs on the fixtures:
 

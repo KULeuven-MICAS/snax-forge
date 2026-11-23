@@ -34,9 +34,17 @@ import snax.forge.{ForgeTester, IntType, LaneBits, Seeds, Sink, SnaxGroupCases, 
 class ShellEndToEndSpec extends AnyFlatSpec with ForgeTester {
 
   /** A run: the CSR values, each input's elements and beats (pops) and each output's expected elements, by outer port
-    * in order.
+    * in order; `results`, per output the elements its writer gets when more than it expects (a carried output's earlier
+    * visits, D192, its last the expected); without `values` only the words are counted.
     */
-  case class Run(csrs: Seq[(String, Long)], ins: Seq[Seq[BigInt]], beats: Seq[Int], outs: Seq[Seq[BigInt]])
+  case class Run(
+    csrs:    Seq[(String, Long)],
+    ins:     Seq[Seq[BigInt]],
+    beats:   Seq[Int],
+    outs:    Seq[Seq[BigInt]],
+    results: Seq[Int] = Nil,
+    values:  Boolean  = true
+  )
 
   /** Run `run` on `spec`'s wrapper: the outputs and the counter (`counter`, when given) checked. */
   private def drive(spec: AcceleratorSpec, run: Run, counter: Option[Long], clue: String): Unit = {
@@ -68,13 +76,23 @@ class ShellEndToEndSpec extends AnyFlatSpec with ForgeTester {
       assert(d.read(dut.csr("STATUS")) == 2, s"$clue: STATUS after the run: done, not busy")
       for (((p, want), k) <- outs.zip(run.outs).zipWithIndex) {
         val beats = -(-want.size / per(p))
+        val all   = -(-run.results.lift(k).getOrElse(want.size) / per(p))
         val w     = IntType(p.dtype).width
         val got   = d.outputs(k).map(_ & LaneBits.mask(per(p) * w))
-        assert(got == (0 until beats).map(t => packed(p, want, t, zero = true)), s"$clue: output $k")
+        assert(got.size == all, s"$clue: output $k's words")
+        if (run.values)
+          assert(got.takeRight(beats) == (0 until beats).map(t => packed(p, want, t, zero = true)), s"$clue: output $k")
       }
       assert(d.taken.toSeq == words, s"$clue: every input word taken")
     }
   }
+
+  /** The fixtures whose readers do not stream their arrays in memory order, which `vectors.json` gives and `drive`
+    * streams: bicg_v4_1's strips (D192) read A, p and r a strip at a time, and its seed reads back q's writes through
+    * L1. Their counter, STATUS, input words and output words are checked; ShellRandomSpec checks their values on its
+    * model.
+    */
+  private val Strided = Set("bicg_v4_1")
 
   behavior of "the shell wrapper end to end"
 
@@ -86,7 +104,14 @@ class ShellEndToEndSpec extends AnyFlatSpec with ForgeTester {
       val ins   = f.ports.take(spec.inputs.size)
       val outs  = f.ports.drop(spec.inputs.size)
       for (task <- f.tasks) {
-        val run = Run(task.csrs, ins.map(_.values), ins.map(_.beats), outs.map(p => p.values.take(p.beats * p.lanes)))
+        val run = Run(
+          task.csrs,
+          ins.map(_.values),
+          ins.map(_.beats),
+          outs.map(p => p.values.take(p.beats * p.lanes)),
+          outs.map(p => p.beats * p.lanes),
+          !Strided(f.name)
+        )
         drive(spec, run, Some(task.counter), s"${f.name}, ${task.name}")
       }
     }
@@ -94,7 +119,7 @@ class ShellEndToEndSpec extends AnyFlatSpec with ForgeTester {
   /** The linked fixtures at `lanes` lanes (W): at 4 the variants dot 2–6 and matvec 4–6, at 1 dot 5. */
   private def linked(lanes: Int) =
     RtlFixtures.all.filter { f =>
-      f.spec.groups.exists(_.links.nonEmpty) && f.spec.units.head.port("a").lanes == lanes
+      f.spec.groups.exists(_.links.nonEmpty) && f.spec.forks.isEmpty && f.spec.units.head.port("a").lanes == lanes
     }
   private val variants           = linked(4)
 

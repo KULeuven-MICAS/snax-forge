@@ -31,7 +31,9 @@ object AcceleratorSpec {
     * `dOut`, on an outer output a packer feeds, its results per 64-bit word (`d_out`, written only when packed, else 1;
     * D174); `dIn`, on an outer input a slicer feeds, its pops per 64-bit word (`d_in`, written only when sliced, else
     * 1; D180); `broadcast`, an outer input whose stream is one lane, given to all its lanes (`broadcast`, written only
-    * when true; D186), its `dIn` that one lane's.
+    * when true; D186), its `dIn` that one lane's; `hold`, a banked unit's input read once a row and kept (`hold`,
+    * written only when true; D190); `carry`, a seed that is the unit's own output carried, 0 on its first CARRY jobs
+    * (`carry`, written only when true; D192).
     */
   case class PortSpec(
     port:      String,
@@ -40,7 +42,9 @@ object AcceleratorSpec {
     lanes:     Int,
     dOut:      Int     = 1,
     dIn:       Int     = 1,
-    broadcast: Boolean = false
+    broadcast: Boolean = false,
+    hold:      Boolean = false,
+    carry:     Boolean = false
   ) {
     require(dOut >= 1, s"port $port: d_out $dOut, must be 1 or more")
     require(dIn  >= 1, s"port $port: d_in $dIn, must be 1 or more")
@@ -85,6 +89,9 @@ object AcceleratorSpec {
 
     /** A scalar's CSRs, the pin's low word first. */
     def pinned(pin: String): Seq[CsrSpec] = csrs.filter(_.pin.contains(pin))
+
+    /** Its bank's rows (`params.rows`, D191; 1 without a bank). */
+    def rows: Int = params.get("rows").map(_.num.toInt).getOrElse(1)
   }
 
   case class GroupSpec(name: String, csrs: Seq[CsrSpec], units: Seq[UnitSpec], links: Seq[LinkSpec]) {
@@ -101,6 +108,10 @@ object AcceleratorSpec {
 
     /** Each JOB_BEATS in unit order: the control unit's `settings` after JOBS. */
     def jobBeats: Seq[CsrSpec] = units.flatMap(_.csrs.filter(_.name == "JOB_BEATS"))
+
+    /** Each bank's ROWS and each carried seed's CARRY in unit order: the control unit's `settings` after them. */
+    def rows:  Seq[CsrSpec] = units.flatMap(_.csrs.filter(_.name == "ROWS"))
+    def carry: Seq[CsrSpec] = units.flatMap(_.csrs.filter(_.name == "CARRY"))
   }
 
   /** A port of a group on a shared mover: the group, the port `(unit, port)`, its channels (at most the mover's). */
@@ -175,7 +186,9 @@ object AcceleratorSpec {
                   p("lanes").num.toInt,
                   p.obj.get("d_out").map(_.num.toInt).getOrElse(1),
                   p.obj.get("d_in").map(_.num.toInt).getOrElse(1),
-                  p.obj.get("broadcast").exists(_.bool)
+                  p.obj.get("broadcast").exists(_.bool),
+                  p.obj.get("hold").exists(_.bool),
+                  p.obj.get("carry").exists(_.bool)
                 )
               },
               u.obj.get("opType").map(_.str),

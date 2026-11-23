@@ -185,6 +185,9 @@ def lookup(table: Table, datapath: str, params: Mapping[str, Any], lanes: int,
     keyed = any("seed" in e["params"] for e in entries)
     if want.get("seed") is False and not keyed:  # measured before it took a seed (a Mac, D187)
         want = {k: v for k, v in want.items() if k != "seed"}
+    if "rows" in want and not any("rows" in e["params"] for e in entries):
+        # NB (D191): measured before it had a bank; a bank's comb is its one row's, a lower bound
+        want = {k: v for k, v in want.items() if k != "rows"}
     entry = next((e for e in entries if key(e) == want), None)
     if datapath in ("FifoPacker", "FifoSlicer"):
         if entry is None:
