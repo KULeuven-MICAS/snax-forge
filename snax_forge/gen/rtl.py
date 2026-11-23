@@ -107,6 +107,15 @@ def fill(acc: Description | None, unit: Unit, sig: Mapping[str, Any]) -> dict[st
     return out
 
 
+def at_min(params: Mapping[str, Any], sig: Mapping[str, Any]) -> dict[str, Any]:
+    """``params`` with each ``int`` the datapath fills from ``unit.params`` and ``params`` leaves
+    out at its min, as ``fill`` gives a unit without it (a ``Mac``'s ``rows`` 1; gen-block and
+    ``Emit --block``, ``Datapath.complete``)."""
+    return {**{name: sig["params"][name]["min"] for name, rule in sig["fill"].items()
+               if rule.startswith(PARAMS_RULE) and sig["params"][name]["type"] == "int"},
+            **params}  # fmt: skip
+
+
 def link_params(acc: Description, link: Link, sig: Mapping[str, Any]) -> dict[str, Any]:
     """A buffer's params by the catalogue's fill rule: its depth, and its ends' lanes and dtype
     (equal at both ends, a reader's check)."""

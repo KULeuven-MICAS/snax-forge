@@ -125,10 +125,19 @@ object Datapaths {
     /** The pins whose `when` holds on `p`. */
     def livePins(p: Map[String, ujson.Value]): Seq[Pin] = pins.filter(x => holds(x.when, p))
 
-    /** `p` as a full set of its params (`Emit --block`): each param once and nothing else, each value of its type (an
-      * int of at least `min`, a bool, one of an op's `values`, a dtype, a non-empty list of dtypes), as the Python side
-      * checks a unit's (`snax_forge/gen/rtl.py`'s `check_params`); an `IllegalArgumentException` otherwise. What only
-      * the constructor knows (an opType narrower than an input, a Mac's form and its types) is its own `require`.
+    /** `p` with each `int` param filled from `unit.params` that `p` leaves out at its `min`, as `fill` gives a unit
+      * without it (a `Mac`'s `rows` 1): what `Emit --block` checks and builds.
+      */
+    def complete(p: Map[String, ujson.Value]): Map[String, ujson.Value] =
+      p ++ params.collect {
+        case (n, IntParam(min), rule) if rule.startsWith("unit.params.") && !p.contains(n) => n -> ujson.Num(min)
+      }
+
+    /** `p` as a full set of its params (`Emit --block`, after `complete`): each param once and nothing else, each value
+      * of its type (an int of at least `min`, a bool, one of an op's `values`, a dtype, a non-empty list of dtypes), as
+      * the Python side checks a unit's (`snax_forge/gen/rtl.py`'s `check_params`); an `IllegalArgumentException`
+      * otherwise. What only the constructor knows (an opType narrower than an input, a Mac's form and its types) is its
+      * own `require`.
       */
     def check(p: Map[String, ujson.Value]): Unit = {
       val names            = params.map(_._1)
