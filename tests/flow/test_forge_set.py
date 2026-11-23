@@ -175,7 +175,8 @@ def test_the_bicg_set_is_its_own():
     under pipeline), and bicg_v2_1 (int8 in, int32 out) at its defaults and at 40 x 64, each
     sequential and pipeline; the one pass bicg_v3 (64 x 32, W = 32) and bicg_v2_1 at its size
     under pipeline; the one pass with the bank, bicg_v4, at 64 x 64 and 40 x 64 (W = 4,
-    R = 16) and at W = 8, R = 8, and in two strips, bicg_v4_1; in no other set."""
+    R = 16) and at W = 8, 16, 32 (R = 64 / W) against bicg_v2_1 under pipeline at the same W, and in two
+    strips, bicg_v4_1; in no other set."""
     names = [d.name for d in fs.SETS["bicg"]]
     pad = "_passes.layoutpadded_rows"
     assert names == [
@@ -184,7 +185,9 @@ def test_the_bicg_set_is_its_own():
         f"bicg_v2{pad}_schedulepipeline",
         *(f"bicg_v2_1{m}_schedule{s}" for m in ("", "_M40") for s in ("sequential", "pipeline")),
         "bicg_v2_1_N32_W32_schedulepipeline", "bicg_v3",
-        "bicg_v4", "bicg_v4_M40", "bicg_v4_W8_R8", "bicg_v4_1",
+        "bicg_v4", "bicg_v4_M40", "bicg_v4_W8_R8", "bicg_v4_W16_R4", "bicg_v4_W32_R2",
+        "bicg_v2_1_W16_schedulepipeline",
+        "bicg_v2_1_W32_schedulepipeline", "bicg_v4_1",
     ]  # fmt: skip
     others = {d.recipe for k, ds in fs.SETS.items() if k != "bicg" for d in ds}
     assert not {d.recipe for d in fs.SETS["bicg"]} & others

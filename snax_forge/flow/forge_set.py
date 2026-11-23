@@ -139,7 +139,9 @@ SETS = {
           for s in ("sequential", "pipeline")),
         Design("bicg_v2_1", ("N=32", "W=32", "design.schedule=pipeline")),  # the one pass's twin
         Design("bicg_v3"),  # one pass over A at N = W (D189)
-        *(Design("bicg_v4", size) for size in ((), ("M=40",), ("W=8", "R=8"))),  # the bank (D191)
+        *(Design("bicg_v4", size) for size in ((), ("M=40",), ("W=8", "R=8"), ("W=16", "R=4"),
+                                               ("W=32", "R=2"))),  # the bank (D191), by W
+        *(Design("bicg_v2_1", (f"W={w}", "design.schedule=pipeline")) for w in (16, 32)),  # its twins (W = 8 is above)
         Design("bicg_v4_1"),  # two strips, q carried across them (D192)
     ],
 }  # fmt: skip
