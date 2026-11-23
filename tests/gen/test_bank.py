@@ -1,4 +1,4 @@
-"""bicg_v3_1 on the generator: s's sums in a bank of R rows (D191), r read once a row and held
+"""bicg_v4 on the generator: s's sums in a bank of R rows (D191), r read once a row and held
 (D190), A read once (D189).
 
 accelerator.json's banked unit and held port, the program's ROWS and job writes, r's reader once
@@ -23,8 +23,8 @@ from .helpers import designed
 
 @pytest.fixture(scope="module")
 def generated(tmp_path_factory) -> tuple[Path, str]:
-    tmp = tmp_path_factory.mktemp("bicg_v3_1")
-    path = designed(tmp, "bicg_v3_1", "bicg_v3_1")
+    tmp = tmp_path_factory.mktemp("bicg_v4")
+    path = designed(tmp, "bicg_v4", "bicg_v4")
     with pytest.MonkeyPatch.context() as mp:
         mp.chdir(tmp)
         generate(path, tmp / "gvsoc", tmp)
@@ -93,9 +93,9 @@ def test_the_estimate_prices_the_bank_and_the_held_register(generated):
 
 @pytest.fixture(scope="module")
 def strips(tmp_path_factory) -> tuple[Path, str]:
-    """bicg_v3_2: two strips of 32 columns, q's sum carried across them (D192)."""
-    tmp = tmp_path_factory.mktemp("bicg_v3_2")
-    path = designed(tmp, "bicg_v3_2", "bicg_v3_2")
+    """bicg_v4_1: two strips of 32 columns, q's sum carried across them (D192)."""
+    tmp = tmp_path_factory.mktemp("bicg_v4_1")
+    path = designed(tmp, "bicg_v4_1", "bicg_v4_1")
     with pytest.MonkeyPatch.context() as mp:
         mp.chdir(tmp)
         generate(path, tmp / "gvsoc", tmp)

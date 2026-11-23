@@ -1,6 +1,6 @@
 """A Mac's bank of R rows (D191) and its held input (D190): ``bind``'s ``rows``, the editor's
 "bank rows" box, and what the design, LOWER, the generator and the estimate make of it, on
-``matvec_v8`` and ``bicg_v3_1``."""
+``matvec_v8`` and ``bicg_v4``."""
 
 from __future__ import annotations
 

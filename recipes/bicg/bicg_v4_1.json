@@ -1,7 +1,7 @@
 {
- "name": "bicg_v3_2",
+ "name": "bicg_v4_1",
  "id": "bicg_dot2strip_colbank_fork_i8_o32",
- "description": "`bicg_v3_1` for N beyond one bank, in strips of R·W columns outermost: q's half `matvec/matvec_v9`, its sum carried across the strips through L1 (D192), s's half `matvec/matvec_v8`; A still read once (`fork_read`, D189). Two strips at 64 × 64, W = 4, R = 8.",
+ "description": "`bicg_v4` for N beyond one bank, in strips of R·W columns outermost: q's half `matvec/matvec_v9`, each row's sum carried to the next strip through L1 as the tree's own seed, 0 on the first (D192); s's half `matvec/matvec_v8`, its bank one strip deep; A still read once (`fork_read`, D189). Two strips at 64 × 64, W = 4, R = 8.",
  "kernel": "bicg_types",
  "params": {"M": 64, "N": 64, "W": 4, "R": 8},
  "symbols": {"M": "M", "N": "N"},
