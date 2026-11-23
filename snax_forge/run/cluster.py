@@ -227,6 +227,83 @@ class Accelerator:
             (c for x, c in zip(m.user_units, m.user_channels, strict=True) if x in mine), m.lanes
         )
 
+    def _group_of(self, unit: str) -> dict[str, Any] | None:
+        """accelerator.json's group of ``unit`` (a unit's or a linked group's name)."""
+        return next((g for g in self.groups()
+                     if unit == g["name"] or unit in [u["name"] for u in g["units"]]), None)  # fmt: skip
+
+    def _serves(self, m: Mover, instance: str, port: str) -> bool:
+        """Mover ``m`` moves ``instance``'s port ``port`` (a shared mover: for one of its users)."""
+        if m.users:
+            return f"{instance}_{port}" in m.users
+        return (m.instance, m.port) == (instance, port)
+
+    def fire_readers(self, unit: str) -> list[Mover]:
+        """The readers a ``fire`` line of ``unit`` names, in its order (snax-gvsoc's
+        ``docs/EVENTS.md``): a unit's every reader; a linked group's head's, its first unit's
+        outer inputs, a forked one by its one reader, the fork's first port's (D189)."""
+        readers = [m for m in self.movers_of(unit) if not m.write]
+        g = self._group_of(unit)
+        if g is None or len(g["units"]) == 1:
+            return readers
+        head = g["units"][0]
+        fed = {x["to"] for x in g.get("links", [])}
+        forks = [x for a in self.description.get("accelerators", []) for x in a.get("inputs", [])
+                 if isinstance(x, list)]  # fmt: skip
+        ins = []
+        for p, d in head["ports"].items():
+            name = f"{head['name']}.{p}"
+            if d["dir"] == "in" and name not in fed:
+                ins.append(next((f[0] for f in forks if name in f), name).split(".", 1))
+        return [m for m in readers if any(self._serves(m, i, p) for i, p in ins)]
+
+    def sinks(self, unit: str) -> list[str]:
+        """The units whose results ``unit``'s ``push`` lines carry, one per output in unit order
+        (the order of a forked group's ``rate`` list and its ``JOBS_<SINK>`` CSRs): a unit
+        itself; a linked group's units with an outer output."""
+        g = self._group_of(unit)
+        if g is None or len(g["units"]) == 1:
+            return [unit]
+        linked = {x["from"] for x in g.get("links", [])}
+        return [u["name"] for u in g["units"]
+                if any(d["dir"] == "out" and f"{u['name']}.{p}" not in linked
+                       for p, d in u["ports"].items())]  # fmt: skip
+
+    def writer_of(self, unit: str, sink: str | None = None) -> Mover | None:
+        """The writer of ``sink``'s output in ``unit``'s group, or of its one output when
+        ``sink`` is None; None when no such writer."""
+        writers = [m for m in self.movers_of(unit) if m.write]
+        if sink is None:
+            return writers[0] if writers else None
+        g = self._group_of(unit)
+        ports = next((u["ports"] for u in (g["units"] if g else []) if u["name"] == sink), {})
+        return next((m for m in writers for p, d in ports.items()
+                     if d["dir"] == "out" and self._serves(m, sink, p)), None)  # fmt: skip
+
+    def d_out(self, m: Mover, unit: str) -> int:
+        """The results one word of writer ``m`` holds for ``unit``'s group: its port's ``d_out``
+        in accelerator.json (D174), 1 when not packed."""
+        return self._per_word(m, unit, "d_out")
+
+    def d_in(self, m: Mover, unit: str) -> int:
+        """The slices one word of reader ``m`` gives ``unit``'s group, one a pop: its port's
+        ``d_in`` in accelerator.json (D180), 1 when not sliced."""
+        return self._per_word(m, unit, "d_in")
+
+    def _per_word(self, m: Mover, unit: str, key: str) -> int:
+        """Mover ``m``'s port's ``key`` (``d_in`` or ``d_out``) in ``unit``'s group, 1 absent."""
+        instance, port = m.instance, m.port
+        if m.users:
+            mine = set(self.members(unit))
+            instance, user = next(((x, u) for u, x in zip(m.users, m.user_units, strict=True)
+                                   if x in mine), ("", ""))  # fmt: skip
+            port = user[len(instance) + 1 :]
+        for g in self.groups():
+            for u in g["units"]:
+                if u["name"] == instance:
+                    return int(u["ports"].get(port, {}).get(key, 1))
+        return 1
+
     def unit_of_mover(self, mover: str) -> str | None:
         """The unit (its trace name) a mover belongs to."""
         for u in self.units:

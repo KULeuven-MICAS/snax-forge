@@ -50,7 +50,7 @@ from .run import (
     step_params,
     write_steps,
 )
-from .transforms import TRANSFORMS, _bind_site, _bound, bind, site_of
+from .transforms import TRANSFORMS, _bind_site, _bound, bank_hint, bind, site_of
 
 ROOT = repo_root()
 PLATFORM = "platforms/snax_forge.json"
@@ -102,10 +102,13 @@ def _unknown_param(transform: str, params: dict[str, Any],
     """The first param name an int param uses that the session lacks, with the refusal's
     message; or None."""
     spec = TRANSFORMS.get(transform)
-    nested = params.get("params") if transform == "apply_recipe" else None
+    nested = params.get("params") if transform in ("apply_recipe", "bind") else None
+    ints = _bind_ints(params) if transform == "bind" else None
     for p, v in (nested or {}).items():  # the applied recipe's params name the session's
+        if ints is not None and p not in ints:
+            continue  # a BRM's str param (op) is no name
         if isinstance(v, str) and expr.is_name(v) and v not in known:
-            return v, f"apply_recipe: params.{p} {v!r} is not a param; give its value"
+            return v, f"{transform}: params.{p} {v!r} is not a param; give its value"
     for p, v in params.items():
         if spec is None or p not in spec.ints or not isinstance(v, str):
             continue
@@ -118,6 +121,17 @@ def _unknown_param(transform: str, params: dict[str, Any],
                 shown = repr(v) if expr.is_name(v) else f"{v!r} names {x!r}, which"
                 return x, f"{transform}: {p} {shown} is not a param; give its value"
     return None
+
+
+def _bind_ints(params: dict[str, Any]) -> set[str]:
+    """The int design params of bind's BRM (a bank's ``rows``), none for a BRM not found."""
+    from snax_forge.brm import BrmError, load_brm
+
+    try:
+        brm = load_brm(params.get("brm"))
+    except (BrmError, TypeError, ValueError):
+        return set()
+    return {k for k, p in brm.interface.params.items() if p.stage == "design" and p.type == "int"}
 
 
 class Session:
@@ -637,18 +651,24 @@ def _shown(p: Path) -> str:
 
 def bind_list(g: Graph, selected: str, order: int = 1) -> list[dict[str, Any]]:
     """Every (BRM, implementation) of the library tried as ``bind`` on ``selected``, the
-    instance the ``order``-th bind's default (CONTRACTS, "Recipe")."""
+    instance the ``order``-th bind's default (CONTRACTS, "Recipe"). Where a bank fits
+    (``bank_hint``, D191), a BRM with a ``rows`` param is tried with that many rows, its entry's
+    ``bank`` the rows, the page's "bank rows" box."""
     from snax_forge.brm import BrmError, library_names, load_brm
 
     site = _bind_site(g, selected, f"bind {selected!r}")
     w = _bound(g, parse_dim(site.smap.attrs["range"], site.smap.id)[1], f"bind {selected!r}")
     instance = default_instance(_taken(g), order)
+    rows = bank_hint(g, site)
     out = []
     for b in library_names():
         brm = load_brm(b)
+        bank = rows if rows is not None and "rows" in brm.params("design") else None
         for impl in brm.implementations:
             entry: dict[str, Any] = {"brm": b, "implementation": impl}
             params = {"node": selected, "brm": b, "implementation": impl, "instance": instance}
+            if bank is not None:
+                entry["bank"], params["params"] = bank, {"rows": bank}
             try:
                 bound = bind(g, **params)
                 entry |= {"ok": True, "params": params,
@@ -1185,6 +1205,7 @@ def form(
                       "choices": [{"value": {"brm": e["brm"], "implementation": e["implementation"]},
                                    "label": f"{e['brm']} / {e['implementation']}", "ok": e["ok"],
                                    "timing": e["timing"], "message": e.get("message")}
+                                  | ({"bank": e["bank"]} if "bank" in e else {})
                                   for e in entries]}  # fmt: skip
         elif name == "bind" and p == "instance":  # the bind list's default, made unique
             ok = [e for e in answer.get("list", []) if e["ok"]]

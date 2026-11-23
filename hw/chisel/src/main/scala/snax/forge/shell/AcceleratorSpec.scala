@@ -9,6 +9,10 @@ import java.nio.file.{Files, Path}
   * outputs set after set. Nothing is checked again here beyond what construction needs: the offsets as stored,
   * contiguous in CSR order from the shell's first CSR.
   *
+  * A forked input (D189) is one entry of an accelerator's `inputs`, the list of the ports one reader feeds, the
+  * reader's first: `inputs` keeps the reader's port, one per `stream2acc_<k>`, and `forks` every fork's ports. A group
+  * of several chains has a `JOBS_<SINK>` per chain in place of JOBS, in the order of their sinks.
+  *
   * A set whose groups share its movers (`share_ports`) has `movers` and `port_mux`: its outer ports at the wrapper are
   * its movers, readers then writers, each `num_channel * 64` bits, in place of its groups' inputs and outputs, which
   * reach the movers through `<tag>_<set>_port_mux` (`PortMux`); its PORT_MUX_SEL is its last CSR.
@@ -27,7 +31,9 @@ object AcceleratorSpec {
     * `dOut`, on an outer output a packer feeds, its results per 64-bit word (`d_out`, written only when packed, else 1;
     * D174); `dIn`, on an outer input a slicer feeds, its pops per 64-bit word (`d_in`, written only when sliced, else
     * 1; D180); `broadcast`, an outer input whose stream is one lane, given to all its lanes (`broadcast`, written only
-    * when true; D186), its `dIn` that one lane's.
+    * when true; D186), its `dIn` that one lane's; `hold`, a banked unit's input read once a row and kept (`hold`,
+    * written only when true; D190); `carry`, a seed that is the unit's own output carried, 0 on its first CARRY jobs
+    * (`carry`, written only when true; D192).
     */
   case class PortSpec(
     port:      String,
@@ -36,7 +42,9 @@ object AcceleratorSpec {
     lanes:     Int,
     dOut:      Int     = 1,
     dIn:       Int     = 1,
-    broadcast: Boolean = false
+    broadcast: Boolean = false,
+    hold:      Boolean = false,
+    carry:     Boolean = false
   ) {
     require(dOut >= 1, s"port $port: d_out $dOut, must be 1 or more")
     require(dIn  >= 1, s"port $port: d_in $dIn, must be 1 or more")
@@ -81,19 +89,29 @@ object AcceleratorSpec {
 
     /** A scalar's CSRs, the pin's low word first. */
     def pinned(pin: String): Seq[CsrSpec] = csrs.filter(_.pin.contains(pin))
+
+    /** Its bank's rows (`params.rows`, D191; 1 without a bank). */
+    def rows: Int = params.get("rows").map(_.num.toInt).getOrElse(1)
   }
 
   case class GroupSpec(name: String, csrs: Seq[CsrSpec], units: Seq[UnitSpec], links: Seq[LinkSpec]) {
     private def own(n: String): CsrSpec = csrs.find(_.name == n).get
 
-    /** Its CSRs in CSR order: START, JOBS, its units' read-write ones, STATUS, BUSY_COUNTER. */
+    /** Its JOBS: JOBS, or with several chains a `JOBS_<SINK>` per chain in the order of their sinks (D189). */
+    def jobs: Seq[CsrSpec] = csrs.filter(c => c.access == "rw" && AcceleratorSpec.isJobs(c.name))
+
+    /** Its CSRs in CSR order: START, its JOBS, its units' read-write ones, STATUS, BUSY_COUNTER. */
     def window: Seq[CsrSpec] =
-      Seq(own("START"), own("JOBS")) ++ units.flatMap(_.csrs) ++ Seq(own("STATUS"), own("BUSY_COUNTER"))
+      Seq(own("START")) ++ jobs ++ units.flatMap(_.csrs) ++ Seq(own("STATUS"), own("BUSY_COUNTER"))
 
     def csr(n: String): Option[CsrSpec] = window.find(_.name == n)
 
     /** Each JOB_BEATS in unit order: the control unit's `settings` after JOBS. */
     def jobBeats: Seq[CsrSpec] = units.flatMap(_.csrs.filter(_.name == "JOB_BEATS"))
+
+    /** Each bank's ROWS and each carried seed's CARRY in unit order: the control unit's `settings` after them. */
+    def rows:  Seq[CsrSpec] = units.flatMap(_.csrs.filter(_.name == "ROWS"))
+    def carry: Seq[CsrSpec] = units.flatMap(_.csrs.filter(_.name == "CARRY"))
   }
 
   /** A port of a group on a shared mover: the group, the port `(unit, port)`, its channels (at most the mover's). */
@@ -127,6 +145,9 @@ object AcceleratorSpec {
     def writers: Seq[MoverSpec] = movers.filterNot(_.reader)
   }
 
+  /** A group's JOBS CSR: JOBS, or a chain's `JOBS_<SINK>`. */
+  def isJobs(name: String): Boolean = name == "JOBS" || name.startsWith("JOBS_")
+
   def parse(text: String): AcceleratorSpec = {
     val d                   = ujson.read(text)
     def csr(c: ujson.Value) =
@@ -136,7 +157,13 @@ object AcceleratorSpec {
       u -> p
     }
     val accs                = d("accelerators").arr.toSeq
-    def outer(key: String) = accs.flatMap(a => a(key).arr.toSeq.map(e => end(e.str)))
+    // An entry: a port, or a fork's ports (D189), the reader's first
+    def entries(a: ujson.Value, key: String): Seq[Seq[(String, String)]] =
+      a(key).arr.toSeq.map {
+        case ujson.Arr(ports) => ports.toSeq.map(e => end(e.str))
+        case e                => Seq(end(e.str))
+      }
+    def outer(key: String) = accs.flatMap(entries(_, key).map(_.head))
     val spec    = AcceleratorSpec(
       d("design_point").str,
       d("tag").str,
@@ -159,7 +186,9 @@ object AcceleratorSpec {
                   p("lanes").num.toInt,
                   p.obj.get("d_out").map(_.num.toInt).getOrElse(1),
                   p.obj.get("d_in").map(_.num.toInt).getOrElse(1),
-                  p.obj.get("broadcast").exists(_.bool)
+                  p.obj.get("broadcast").exists(_.bool),
+                  p.obj.get("hold").exists(_.bool),
+                  p.obj.get("carry").exists(_.bool)
                 )
               },
               u.obj.get("opType").map(_.str),
@@ -190,13 +219,14 @@ object AcceleratorSpec {
         require(movers.isEmpty == mux.isEmpty, s"set ${a("name").str}: movers and port_mux come together")
         SetSpec(
           a("name").str,
-          a("inputs").arr.toSeq.map(e => end(e.str)),
-          a("outputs").arr.toSeq.map(e => end(e.str)),
+          entries(a, "inputs").map(_.head),
+          entries(a, "outputs").map(_.head),
           a("groups").arr.toSeq.map(_("name").str),
           movers,
           mux
         )
-      }
+      },
+      accs.flatMap(entries(_, "inputs").filter(_.size > 1))
     )
     val offsets = spec.csrs.map(_.offset)
     require(offsets == offsets.indices, s"CSR offsets $offsets in CSR order are not contiguous from 0")
@@ -217,7 +247,8 @@ case class AcceleratorSpec(
   inputs:      Seq[(String, String)],
   outputs:     Seq[(String, String)],
   groups:      Seq[AcceleratorSpec.GroupSpec],
-  sets:        Seq[AcceleratorSpec.SetSpec] = Seq.empty
+  sets:        Seq[AcceleratorSpec.SetSpec] = Seq.empty,
+  forks:       Seq[Seq[(String, String)]]   = Seq.empty
 ) {
 
   /** The shared sets' PORT_MUX_SEL CSRs, in set order. */
@@ -226,17 +257,17 @@ case class AcceleratorSpec(
   /** Every CSR in CSR order: the groups' windows and each shared set's PORT_MUX_SEL after its last group's. */
   def csrs: Seq[AcceleratorSpec.CsrSpec] = (groups.flatMap(_.window) ++ portMuxCsrs).sortBy(_.offset)
 
-  private def width(names: String*): Int = {
-    val ws = csrs.filter(c => names.contains(c.name)).map(_.width).distinct
-    require(ws.size == 1, s"${names.mkString(" and ")}: widths $ws, one width for all")
+  private def width(what: String, names: String => Boolean): Int = {
+    val ws = csrs.filter(c => names(c.name)).map(_.width).distinct
+    require(ws.size == 1, s"$what: widths $ws, one width for all")
     ws.head
   }
 
-  /** job_width: the width of JOBS and every JOB_BEATS, one for all, and of the control units' counters. */
-  lazy val jobWidth: Int = width("JOBS", "JOB_BEATS")
+  /** job_width: the width of every JOBS and JOB_BEATS, one for all, and of the control units' counters. */
+  lazy val jobWidth: Int = width("JOBS and JOB_BEATS", n => AcceleratorSpec.isJobs(n) || n == "JOB_BEATS")
 
   /** busy_counter_width: every BUSY_COUNTER's width. */
-  lazy val busyCounterWidth: Int = width("BUSY_COUNTER")
+  lazy val busyCounterWidth: Int = width("BUSY_COUNTER", _ == "BUSY_COUNTER")
 
   /** The widest CSR a read can give: the width of `<tag>_csr`'s kept answer. */
   def readWidth: Int = csrs.map(_.width).max
@@ -245,8 +276,18 @@ case class AcceleratorSpec(
 
   def unit(name: String): AcceleratorSpec.UnitSpec = units.find(_.name == name).get
 
-  /** The unit's input (or output) BRM ports in the streamer's order, each with its index among the outer ports. */
-  def ins(unit:  String): Seq[(Int, String)] = inputs.zipWithIndex.collect { case ((u, p), k) if u == unit => k -> p }
+  /** A forked port but its fork's first, to the first's: the ports that take their reader's beat (D189). */
+  lazy val forked: Map[(String, String), (String, String)] = forks.flatMap(f => f.tail.map(_ -> f.head)).toMap
+
+  /** The unit's outer input BRM ports in its port order, each with the index of its reader among the outer inputs (a
+    * forked port its fork's reader's).
+    */
+  def ins(unit: String): Seq[(Int, String)] = {
+    val own    = inputs.zipWithIndex.collect { case ((u, p), k) if u == unit => k -> p }
+    val shared = forked.toSeq.collect { case ((u, p), r) if u == unit => inputs.indexOf(r) -> p }
+    val ports  = this.unit(unit).inPorts
+    (own ++ shared).sortBy(x => ports.indexOf(x._2))
+  }
   def outs(unit: String): Seq[(Int, String)] = outputs.zipWithIndex.collect { case ((u, p), k) if u == unit => k -> p }
 
   /** The set that holds group `g`'s ports, when it shares its movers. */

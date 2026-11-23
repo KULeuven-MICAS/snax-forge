@@ -1,0 +1,22 @@
+{
+ "name": "bicg_v3",
+ "id": "bicg_dot2_col_fork_i8_o32",
+ "description": "One pass over A at N = W: `bicg_v2_1`'s halves by reuse, then `fork_read` A, so one reader gives each beat of A to q's `dot_v2` group and s's `Mac` in one group of two chains (D189). M = 64, N = W = 32; the bank for N > W is `bicg_v4` (D191).",
+ "kernel": "bicg_types",
+ "params": {"M": 64, "N": 32, "W": 32},
+ "symbols": {"M": "M", "N": "N"},
+ "types": "i8",
+ "steps": [
+  {"transform": "lift", "params": {"kernel": "matvec", "at": "q_mult_map"}},
+  {
+   "transform": "apply_recipe",
+   "params": {"block": "matvec", "recipe": "matvec/matvec_v2", "params": {"W": "W"}}
+  },
+  {"transform": "lift", "params": {"kernel": "matvec", "at": "s_mult_map"}},
+  {
+   "transform": "apply_recipe",
+   "params": {"block": "matvec_1", "recipe": "matvec/matvec_v7", "params": {"W": "W"}}
+  },
+  {"transform": "fork_read", "params": {"container": "A", "group": "bicg_types"}}
+ ]
+}

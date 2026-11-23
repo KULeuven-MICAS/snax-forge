@@ -13,11 +13,11 @@ import pytest
 from snax_forge.gen import GenError
 from snax_forge.gen import block as block_mod
 from snax_forge.gen.block import check_entry, emit_blocks, main
-from snax_forge.gen.rtl import EMITTED_JSON
+from snax_forge.gen.rtl import EMITTED_JSON, at_min, catalogue
 
 TREE = {"inType": "int64", "outType": "int64", "lanes": 8, "op": "add", "seed": False}
 MAC = {"inTypes": ["int64", "int64"], "opType": "int64", "outType": "int64", "lanes": 1,
-       "accumulate": True, "regOut": False, "seed": False}  # fmt: skip
+       "accumulate": True, "regOut": False, "seed": False, "rows": 1}  # fmt: skip
 PACKER = {"inLanes": 1, "laneType": "int32", "words": 1}
 SLICER = {"words": 1, "laneType": "int8", "outLanes": 4}
 
@@ -31,6 +31,16 @@ def test_a_good_entry_passes(tmp_path):
     check_entry(entry(tmp_path, "Mac", **MAC))
     check_entry(entry(tmp_path, "FifoPacker", **PACKER))
     check_entry(entry(tmp_path, "FifoSlicer", **SLICER))
+
+
+def test_a_mac_without_rows_passes_at_rows_1(tmp_path):
+    """An int filled from unit.params may be left out, at its min; a bad one still fails."""
+    bare = {k: v for k, v in MAC.items() if k != "rows"}
+    check_entry(entry(tmp_path, "Mac", **bare))
+    assert at_min(bare, catalogue()["Mac"]) == MAC
+    with pytest.raises(GenError) as e:
+        check_entry(entry(tmp_path, "Mac", **{**bare, "rows": 0}))
+    assert e.value.code == "gen.params"
 
 
 def test_a_packer_whose_lanes_do_not_divide_its_beat_is_refused(tmp_path):
@@ -111,11 +121,19 @@ def test_every_entry_goes_in_one_java_call(tmp_path, monkeypatch):
 
 @pytest.mark.skipif(shutil.which("sbt") is None, reason="no sbt: the hw environment's")
 def test_gen_block_writes_emitted_json(tmp_path, capsys):
-    """The real call, where sbt is: TreeAccumulate and dot 5's Mac, each its emitted.json."""
+    """The real call, where sbt is: TreeAccumulate and dot 5's Mac, each its emitted.json; a Mac
+    without rows lists rows 1 and gives the same SV."""
+    bare = {"datapath": "Mac", "params": {k: v for k, v in MAC.items() if k != "rows"},
+            "out": str(tmp_path / "bare")}  # fmt: skip
     entries = [entry(tmp_path), entry(tmp_path, "Mac", **MAC)]
     lst = tmp_path / "list.json"
-    lst.write_text(json.dumps(entries))
+    lst.write_text(json.dumps([*entries, bare]))
     assert main([str(lst)]) == 0
+    top = "Mac_i64xi64_i64_i64_n1_acc"
+    assert json.loads((Path(bare["out"]) / EMITTED_JSON).read_text())["params"] == MAC
+    assert (Path(bare["out"]) / "sv" / f"{top}.sv").read_text() == (
+        tmp_path / "Mac" / "sv" / f"{top}.sv"
+    ).read_text()
     printed = capsys.readouterr().out
     for e, top in zip(
         entries, ("TreeAccumulate_i64_i64_n8", "Mac_i64xi64_i64_i64_n1_acc"), strict=True

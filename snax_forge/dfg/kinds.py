@@ -233,6 +233,9 @@ def _check_accelerated(node: Node, scope: Scope, what: str) -> None:
         _check_locals(a["locals"], f"{what}.attrs.locals")
     if "opType" in a and a["opType"] not in INT_TYPES:
         raise DfgError(f"{what}.attrs.opType: must be an integer dtype, got {a['opType']!r}")
+    if "carry" in a and (a["carry"] is not True or "seed" not in node.inputs):
+        raise DfgError(f"{what}.attrs.carry: true on a unit whose seed is its own output (D192), "
+                       f"got {a['carry']!r}")  # fmt: skip
     # the replaced subtree itself is checked in graph.py, in this node's scope, with its locals
 
 
@@ -260,7 +263,7 @@ register_kind(
     "accelerated",
     required=("instance", "brm", "implementation", "code"),
     defaults={"params": {}, "replaced": None},
-    optional=("accelerator", "group", "locals", "opType"),
+    optional=("accelerator", "group", "locals", "opType", "carry"),
     body=True,
     normalize=_normalize_code,
     check=_check_accelerated,
@@ -285,6 +288,37 @@ def _check_link(node: Node, scope: Scope, what: str) -> None:
 
 
 register_kind("link", required=("container", "depth", "from", "to"), check=_check_link)
+
+
+# =============================================================================
+# fork
+# =============================================================================
+
+
+def _check_fork(node: Node, scope: Scope, what: str) -> None:
+    a = node.attrs
+    if node.inputs or node.outputs:
+        raise DfgError(f"{what}: a fork has no connectors; its units' memlets name the container")
+    if a["container"] not in scope.containers:
+        raise DfgError(f"{what}.attrs.container: {a['container']!r} is not a container")
+    readers = a["readers"]
+    if not isinstance(readers, list) or len(readers) < 2:
+        raise DfgError(f"{what}.attrs.readers: {readers!r}; a fork gives one read to two or "
+                       "more ports, each \"<instance>.<port>\"")  # fmt: skip
+    for k, r in enumerate(readers):
+        parts = r.split(".") if isinstance(r, str) else []
+        if len(parts) != 2:
+            raise DfgError(f'{what}.attrs.readers[{k}]: {r!r} is not "<instance>.<port>"')
+        for x in parts:
+            ident(x, f"{what}.attrs.readers[{k}]")
+    groups = a["groups"]
+    if not isinstance(groups, dict) or any(v is not None and not isinstance(v, str)
+                                           for v in groups.values()):  # fmt: skip
+        raise DfgError(f"{what}.attrs.groups: {groups!r}; each unit's group before the fork, "
+                       "a name or null")  # fmt: skip
+
+
+register_kind("fork", required=("container", "readers", "groups"), check=_check_fork)
 
 
 # =============================================================================

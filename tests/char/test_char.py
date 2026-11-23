@@ -17,14 +17,15 @@ def test_every_entry_is_a_catalogue_datapath_with_complete_params(tech):
     """Each entry's datapath is the catalogue's (or a stream block, FifoPacker or FifoSlicer), its params with
     each point's lanes (and depth) a valid and complete param set there, its rule known, its
     points unique, a narrow fold's slope given. A block measured before it took a seed (a Mac,
-    D187) has no seed key in any entry, its unseeded form."""
+    D187) or a bank (D191) has no seed or rows key in any entry, its unseeded one-row form."""
     cat, t = catalogue(), load(tech)
     assert t.tech == tech and t.source["snax_forge"] and t.source["snax_forge_experiments"]
     assert t.flop_um2 > 0 and t.e_load_pj > t.e_ctrl_pj > 0
     for dp, entries in t.blocks.items():
         sig = STREAM_BLOCKS[dp] if dp in STREAM_BLOCKS else cat[dp]["params"]
-        if "seed" in sig and not any("seed" in e["params"] for e in entries):
-            sig = {k: v for k, v in sig.items() if k != "seed"}
+        for key in ("seed", "rows"):
+            if key in sig and not any(key in e["params"] for e in entries):
+                sig = {k: v for k, v in sig.items() if k != key}
         for e in entries:
             rule = e["lanes_rule"]
             assert rule in ("copy", "interpolate", "slope", "none"), (dp, rule)
@@ -259,4 +260,22 @@ def test_the_real_tables_on_chars_named_cases(tech):
     assert (seeded.comb_um2, seeded.e_comb_pj, seeded.found) == (
         plain.comb_um2, plain.e_comb_pj, "unseeded"
     )  # fmt: skip
-    assert set(FOUND) == {"measured", "copy", "interpolate", "slope", "width", "unseeded"}
+    assert set(FOUND) == {"measured", "copy", "interpolate", "slope", "width", "unseeded", "bank",
+                          "bank_beyond"}  # fmt: skip
+
+
+def test_a_bank_is_its_rows_1_entry_plus_the_forms():
+    """D193: a Mac of rows R over the rows-1 entry, X97's forms in comb and energy, one row loading;
+    past the largest mux the forms were fitted to, bank_beyond."""
+    t = load("nangate45")
+    mac = {"inTypes": ["int8", "int8"], "opType": "int32", "outType": "int32", "accumulate": True,
+           "regOut": False, "seed": False}  # fmt: skip
+    one, b = lookup(t, "Mac", mac, 4), t.bank
+    assert b is not None
+    got = lookup(t, "Mac", {**mac, "rows": 16}, 4)
+    assert (got.found, got.load_bits) == ("bank", 4 * 32)
+    assert got.comb_um2 == pytest.approx(one.comb_um2 + b["comb_um2_lane_row"] * 64)
+    assert got.e_comb_pj == pytest.approx(one.e_comb_pj + 4 * (b["e_pj_lane_log2_rows"] * 4
+                                                               + b["e_pj_lane"]))  # fmt: skip
+    assert lookup(t, "Mac", {**mac, "rows": 16}, 8).found == "bank_beyond"
+    assert lookup(t, "Mac", {**mac, "rows": 1}, 4) == one

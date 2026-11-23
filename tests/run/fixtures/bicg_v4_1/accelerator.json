@@ -1,0 +1,85 @@
+{
+ "design_point": "design/design_point.json",
+ "tag": "snax_forge_bicg_v4_1",
+ "accelerators": [
+  {
+   "name": "bicg_types",
+   "inputs": [["mul.a", "mac.a"], "mul.b", "sum.seed", "mac.b"],
+   "outputs": ["sum.out", "mac.out"],
+   "groups": [
+    {
+     "name": "bicg_types",
+     "csrs": [
+      {"name": "START", "access": "rw", "offset": 0, "width": 1},
+      {"name": "JOBS_SUM", "access": "rw", "offset": 1, "width": 32},
+      {"name": "JOBS_MAC", "access": "rw", "offset": 2, "width": 32},
+      {"name": "STATUS", "access": "ro", "offset": 6, "width": 2},
+      {"name": "BUSY_COUNTER", "access": "ro", "offset": 7, "width": 32}
+     ],
+     "units": [
+      {
+       "name": "mul",
+       "brm": "simd",
+       "datapath": "SimdLanes",
+       "ports": {
+        "a": {"port": "a", "dir": "in", "dtype": "int8", "lanes": 4, "d_in": 2},
+        "b": {"port": "b", "dir": "in", "dtype": "int8", "lanes": 4, "d_in": 2},
+        "out": {"port": "out", "dir": "out", "dtype": "int32", "lanes": 4}
+       },
+       "opType": "int32",
+       "params": {"op": "mul"},
+       "timing": {"latency": 0, "ii": 1, "span": 1},
+       "csrs": []
+      },
+      {
+       "name": "sum",
+       "brm": "accumulate",
+       "datapath": "TreeAccumulate",
+       "ports": {
+        "a": {"port": "in", "dir": "in", "dtype": "int32", "lanes": 4},
+        "seed": {
+         "port": "seed",
+         "dir": "in",
+         "dtype": "int32",
+         "lanes": 1,
+         "d_in": 2,
+         "carry": true
+        },
+        "out": {"port": "out", "dir": "out", "dtype": "int32", "lanes": 1, "d_out": 2}
+       },
+       "params": {"op": "add", "T": 2},
+       "timing": {"latency": 1, "ii": 1, "span": 1},
+       "csrs": [{"name": "CARRY", "access": "rw", "offset": 3, "width": 32}]
+      },
+      {
+       "name": "mac",
+       "brm": "mac",
+       "datapath": "Mac",
+       "ports": {
+        "a": {"port": "a", "dir": "in", "dtype": "int8", "lanes": 4, "d_in": 2},
+        "b": {
+         "port": "b",
+         "dir": "in",
+         "dtype": "int8",
+         "lanes": 4,
+         "d_in": 8,
+         "broadcast": true,
+         "hold": true
+        },
+        "out": {"port": "out", "dir": "out", "dtype": "int32", "lanes": 4}
+       },
+       "opType": "int32",
+       "params": {"accumulate": true, "regOut": false, "rows": 2},
+       "timing": {"latency": 1, "ii": 1, "span": 1},
+       "csrs": [
+        {"name": "JOB_BEATS", "access": "rw", "offset": 4, "width": 32},
+        {"name": "ROWS", "access": "rw", "offset": 5, "width": 2}
+       ]
+      }
+     ],
+     "links": [{"name": "q_prod", "from": "mul.out", "to": "sum.a", "depth": 1}]
+    }
+   ]
+  }
+ ]
+}

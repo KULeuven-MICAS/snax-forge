@@ -42,4 +42,4 @@ What each builds:
 
 ## 3. What this does not show
 
-The counts are SNAX-GVSoC's; snax_cluster's RTL runs the same ELF from the bundle (`pixi run forge`, `docs/TOOL.md` section 6). Bank and port statistics per group and the beat-level trace of a linked group are parked to SYN1 (`docs/STATUS.md` open item 96): `--trace beat` is refused for dot 2 to dot 6 (`convert.level`).
+The counts are SNAX-GVSoC's; snax_cluster's RTL runs the same ELF from the bundle (`pixi run forge`, `docs/TOOL.md` section 6). Bank and port statistics per group are parked (`docs/STATUS.md` open item 96); from `--trace beat` on, dot 2 to dot 6 are read at the group's boundary (its firings the head unit's, its pushes the last unit's), not unit by unit.

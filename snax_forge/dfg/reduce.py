@@ -4,7 +4,10 @@ A tasklet output whose memlet has a ``reduce`` (``Reduction``) folds the value o
 iteration of the maps around it into its element, starting from ``identity``, so the node
 leaves the fold of exactly its own writes: what a DaCe ``Reduce`` and a hardware accumulator
 do. Its stored form, and the ``seed`` (``Seed``) that may take the identity's place, are in
-CONTRACTS, "SNAX-DFG"; a plain ``identity: null`` (DaCe's plain ``wcr``) is refused.
+CONTRACTS, "SNAX-DFG"; a plain ``identity: null`` (DaCe's plain ``wcr``) is refused. A
+``carry`` fold (D192) writes its element again under a loop outside the ones it moves with,
+each visit starting from what the last one wrote, the first from the identity: the same values
+as the plain fold, kept apart because the hardware runs it as a fold seeded from its own output.
 ``map_seed`` rewrites the seed's subset with the memlet's, so every transform moves both.
 
 An op is registered by name (``register_reduction``) with the NumPy ufunc that folds it and its
@@ -88,10 +91,14 @@ class Reduction:
     op: str
     identity: int | None = None
     seed: Seed | None = None
+    carry: bool = False  # each visit of the element from the last one's value (D192)
 
     def __post_init__(self) -> None:
         if self.op not in REDUCE_OPS:
             raise DfgError(f"reduce.op: {self.op!r} is not a registered op {sorted(REDUCE_OPS)}")
+        if self.carry and self.seed is not None:
+            raise DfgError("reduce: carry and seed are mutually exclusive (a carried fold "
+                           "starts from the identity, then from its own last value)")  # fmt: skip
         if self.seed is not None:
             if not isinstance(self.seed, Seed):
                 raise DfgError(f"reduce.seed: must be a Seed, got {self.seed!r}")
@@ -121,15 +128,19 @@ class Reduction:
     def to_dict(self) -> dict[str, Any]:
         if self.seed is not None:
             return {"op": self.op, "seed": self.seed.to_dict()}
-        return {"op": self.op, "identity": self.identity}
+        return {"op": self.op, "identity": self.identity} | ({"carry": True} if self.carry else {})
 
     @classmethod
     def from_dict(cls, d: Any, what: str) -> Reduction:
-        if not isinstance(d, Mapping) or set(d) not in ({"op", "identity"}, {"op", "seed"}):
-            raise DfgError(f"{what}: must be {{op, identity}} or {{op, seed}}, got {d!r}")
+        keys = ({"op", "identity"}, {"op", "seed"}, {"op", "identity", "carry"})
+        if not isinstance(d, Mapping) or set(d) not in keys:
+            raise DfgError(f"{what}: must be {{op, identity}}, {{op, seed}} or "
+                           f"{{op, identity, carry}}, got {d!r}")  # fmt: skip
+        if d.get("carry", True) is not True:
+            raise DfgError(f"{what}.carry: true when given, got {d['carry']!r}")
         try:
             if "seed" in d:
                 return cls(d["op"], None, Seed.from_dict(d["seed"], "seed"))
-            return cls(d["op"], d["identity"])
+            return cls(d["op"], d["identity"], None, "carry" in d)
         except DfgError as e:
             raise DfgError(f"{what}.{e}") from None

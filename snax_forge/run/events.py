@@ -95,7 +95,7 @@ GRAMMAR: dict[str, dict[str, list[tuple[Fields, Fields]]]] = {
         "dma": forms(({"id", "i", "op", "addr", "size", "bank", "row", "value", "l2"}, {"back"})),
         "burst": forms(({"id", "op", "addr", "size", "back"}, set())),
         "fire": forms(({"n", "b", "value"}, set())),
-        "push": forms(({"n", "first", "last", "value"}, set())),
+        "push": forms(({"n", "first", "last", "value"}, {"unit"})),
         "class": forms(({"mode"}, set()), ({"mover", "mode"}, set())),
     },
     "stalls": {
@@ -134,7 +134,7 @@ def _value(key: str, text: str, lists: set[str], where: str) -> Any:
             if not text:
                 raise ValueError
             return text
-        if key in lists:
+        if key in lists or (key == "rate" and "," in text):  # a rate per output (D189)
             return [int(x, 0) for x in text.split(",")]
         return int(text, 0)
     except ValueError:

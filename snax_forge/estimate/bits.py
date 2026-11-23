@@ -7,7 +7,7 @@
 per unit its T when fixed at design time, None when a JOB_BEATS CSR sets it. A count of T is
 ⌈log₂ T⌉ bits for a fixed T, ``job_width`` for one from a JOB_BEATS. Per group ``busy`` and
 ``done``; per unit its job-beats counters, ``jobs_counter`` (none when the unit borrows),
-``gap`` (at II > 1), ``v`` (max(L, 1) bits, dropped at L 0) and ``lane`` (at span > 1); per link
+``row`` (a bank's, D191), ``gap`` (at II > 1), ``v`` (max(L, 1) bits, dropped at L 0) and ``lane`` (at span > 1); per link
 ``occupancy`` and two slots (dropped for a wire and a depth-1 buffer). ``accelerator_registers``
 reads each group's description from an ``accelerator.json``, and ``registers_json`` gives the
 text of ``ctrl_registers.json``, which ``util/ctrl_regs.py --json`` writes beside the RTL
@@ -65,6 +65,8 @@ def ctrl_registers(units: Sequence[Mapping[str, Any]], links: Sequence[Mapping[s
         borrows = u["L"] == 0 and any(e["from"] == k and e["depth"] == 0 for e in links)
         if t != 1:
             regs.append((f"{k}_job_beats_counter", count(t)))
+        if u.get("rows", 1) > 1:  # a bank's row, the beat mod ROWS (D191)
+            regs.append((f"{k}_row", _log2_ceil(u["rows"])))
         if not borrows:
             regs += [(f"{k}_{j}_job_beats_counter", count(fixed[j])) for j in after(k)
                      if fixed[j] != 1]  # fmt: skip
@@ -100,18 +102,19 @@ def accelerator_registers(accelerator: Mapping[str, Any]) -> dict[str, list[tupl
     """Per group of an ``accelerator.json``, its control unit ``<tag>_<group>_ctrl`` and
     ``ctrl_registers`` on the group as the RTL reads it (hw/chisel's ``AccCtrl.desc``): each
     unit's timing, its T None with a JOB_BEATS CSR, else its ``params.T`` (1 without one), the
-    links by unit, and ``job_width`` the JOBS CSR's width."""
+    links by unit, and ``job_width`` the JOBS CSR's width (the first chain's, D189)."""
     out = {}
     for acc in accelerator["accelerators"]:
         for g in acc["groups"]:
             units = [{"name": u["name"], "L": u["timing"]["latency"], "ii": u["timing"]["ii"],
-                      "span": u["timing"]["span"]} for u in g["units"]]  # fmt: skip
+                      "span": u["timing"]["span"], "rows": u["params"].get("rows", 1)}
+                     for u in g["units"]]  # fmt: skip
             links = [{"from": e["from"].split(".")[0], "to": e["to"].split(".")[0],
                       "depth": e["depth"]} for e in g["links"]]  # fmt: skip
             fixed = {u["name"]: None if any(c["name"] == "JOB_BEATS" for c in u["csrs"])
                      else u.get("params", {}).get("T", 1) for u in g["units"]}  # fmt: skip
             owner = next(u["name"] for u in units if u["name"] not in {e["from"] for e in links})
-            job_width = next(c["width"] for c in g["csrs"] if c["name"] == "JOBS")
+            job_width = next(c["width"] for c in g["csrs"] if c["name"].startswith("JOBS"))
             regs = ctrl_registers(units, links, owner, fixed, job_width)
             out[f"{accelerator['tag']}_{g['name']}_ctrl"] = regs
     return out

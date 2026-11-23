@@ -1,6 +1,7 @@
 """The fold's seed: the reduction x' = x (+) fold_j(a_j) done in the fold itself.
 
-``fuse_seed(first, second)`` and ``unfuse_seed(map)``, as CONTRACTS, "Recipe" defines them.
+``fuse_seed(first, second)`` and ``unfuse_seed(map)``, as CONTRACTS, "Recipe" defines them;
+``carry_seed(map)`` and ``uncarry_seed(map)``, a fold carried across a strip loop (D192).
 ``first`` is a map of a fold's nest (``fold_of``), or a map ``split_reduce`` split, standing for
 its final sum; ``second`` a map of the elementwise nest that reads the fold's result. The
 fold's kept loops (those its output moves with) and the nest's loops must run over the same
@@ -434,5 +435,69 @@ def seed_link(g: Graph, first: str, second: str) -> dict[str, Any]:
             "loops": loops}  # fmt: skip
 
 
+def _carry_check(g: Graph, map: str, what: str, carried: bool) -> tuple[Node, str, Memlet]:
+    """The fold of ``map``'s nest, its output connector and memlet: for ``carry_seed`` an
+    unseeded fold whose output skips a map outside one it moves with (a strip loop), for
+    ``uncarry_seed`` a carried fold."""
+    fold, outer = fold_of(g, map, what)
+    ((cout, om),) = fold.outputs.items()
+    red = om.reduce
+    assert red is not None
+    if carried:
+        if not red.carry:
+            raise SandboxError(f"{what}: {fold.id}'s fold is not carried (carry_seed sets it)")
+        return fold, cout, om
+    if red.carry:
+        raise SandboxError(f"{what}: {fold.id}'s fold is carried already")
+    if red.seed is not None:
+        raise SandboxError(f"{what}: {fold.id}'s fold is seeded from {red.seed.data} "
+                           "(unfuse_seed first): a carried fold starts from the identity")  # fmt: skip
+    maps = [m for m in outer if m.kind == "map"]
+    used = [i for i, m in enumerate(maps) if m.attrs["var"] in om.names]
+    if not used or not any(m.attrs["var"] not in om.names for m in maps[: used[0]]):
+        raise SandboxError(f"{what}: {_text(om)} is written once per element: no map outside "
+                           "the ones it moves with revisits it (split the fold's loop and "
+                           "interchange_map its outer part outermost first)")  # fmt: skip
+    return fold, cout, om
+
+
+def _carry_site(g: Graph, map: str) -> dict[str, Any]:
+    _carry_check(g, map, f"carry_seed {map!r}", False)
+    return {"map": map}
+
+
+def _uncarry_site(g: Graph, map: str) -> dict[str, Any]:
+    _carry_check(g, map, f"uncarry_seed {map!r}", True)
+    return {"map": map}
+
+
+def carry_seed(g: Graph, map: str) -> Graph:
+    """The fold of ``map``'s nest carried (D192): its output, revisited by a map outside the
+    ones it moves with, starts each visit from the last one's value, the first from the
+    identity; ``bind`` gives the unit its own output as its seed."""
+    what = f"carry_seed {map!r}"
+    _carry_check(g, map, what, False)
+    g = _copy(g)
+    fold, cout, om = _carry_check(g, map, what, False)
+    assert om.reduce is not None
+    fold.outputs[cout] = Memlet(om.data, list(om.subset), Reduction(om.reduce.op,
+                                                                    om.reduce.identity, None, True))  # fmt: skip
+    return _result(g)
+
+
+def uncarry_seed(g: Graph, map: str) -> Graph:
+    """The inverse of carry_seed: the plain fold back."""
+    what = f"uncarry_seed {map!r}"
+    _carry_check(g, map, what, True)
+    g = _copy(g)
+    fold, cout, om = _carry_check(g, map, what, True)
+    assert om.reduce is not None
+    fold.outputs[cout] = Memlet(om.data, list(om.subset), Reduction(om.reduce.op,
+                                                                    om.reduce.identity))  # fmt: skip
+    return _result(g)
+
+
 register_transform("fuse_seed", fuse_seed, site=_site, multi=_multi)
 register_transform("unfuse_seed", unfuse_seed, site=_unseed_site)
+register_transform("carry_seed", carry_seed, site=_carry_site)
+register_transform("uncarry_seed", uncarry_seed, site=_uncarry_site)

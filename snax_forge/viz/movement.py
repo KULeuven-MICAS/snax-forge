@@ -135,8 +135,17 @@ def _lanes(idx: RunIndex, mover: str) -> int:
     return next(m.lanes for m in idx.cluster.accelerator.movers if m.name == mover)
 
 
-def _writer(idx: RunIndex) -> str | None:
-    return next((m.name for m in idx.cluster.accelerator.movers if m.write), None)
+def _outputs(idx: RunIndex, unit: str) -> list[tuple[str | None, str | None, int]]:
+    """Each output of ``unit``'s group: its pushes' ``unit`` (its sink with two or more
+    outputs, else None), its writer and the results a word of it holds (d_out, D174)."""
+    a = idx.cluster.accelerator
+    sinks = a.sinks(unit) if unit in a.unit_names else [unit]
+    out = []
+    for k in sinks:
+        key = k if len(sinks) > 1 else None
+        w = a.writer_of(unit, key) if unit in a.unit_names else None
+        out.append((key, w.name if w else None, a.d_out(w, unit) if w else 1))
+    return out
 
 
 def _results(idx: RunIndex, grant: Event) -> dict[str, list[dict[str, Any]]]:
@@ -157,28 +166,42 @@ def _results(idx: RunIndex, grant: Event) -> dict[str, list[dict[str, Any]]]:
 
 
 def firing(idx: RunIndex, f: Event) -> dict[str, Any]:
-    """A firing: its operands (each reader's beat), the push that folds it, the writer's
-    grants of that push and where each written element went."""
+    """A firing: its operands (each reader's beat), the push of each output that folds it
+    (``pushes`` by writer, ``push`` the first), each writer's grants of that push (a packed
+    one's slice of its word) and where each written element went."""
     mine = idx.streamers.get(f["task"], {})  # the streamer task of each mover
     operands = {m: {**_beat(idx, mine.get(m), m, b)[0], "vals": f["vals"].get(m)}
                 for m, b in f["b"].items()}  # fmt: skip
     d: dict[str, Any] = {"acc": f["src"], "task": f["task"], "n": f["n"], "t": f["t"],
                          "operands": operands,
                          "inputs": {m: o["elements"] for m, o in operands.items()},
-                         "push": None, "outputs": {}, "results": {}}  # fmt: skip
-    p = idx.folded.get((f["task"], f["n"]))
-    w = _writer(idx)
-    if p is not None:
-        d["push"] = {"n": p["n"], "t": p["t"], "first": p["first"], "last": p["last"],
-                     "vals": p["vals"]}  # fmt: skip
-        if w is not None:
-            beat, grants = _beat(idx, mine.get(w), w, p["n"])
-            d["push"]["writer"] = beat
-            d["outputs"] = {w: beat["elements"]}
-            for g in grants:
-                if g is not None:
-                    d["results"].update(_results(idx, g))
+                         "push": None, "pushes": {}, "outputs": {}, "results": {}}  # fmt: skip
+    for key, w, per in _outputs(idx, f["src"]):
+        p = idx.folded.get((f["task"], key, f["n"]))
+        if p is None:
+            continue
+        push = {"n": p["n"], "t": p["t"], "first": p["first"], "last": p["last"],
+                "vals": p["vals"], **({"unit": key} if key else {})}  # fmt: skip
+        if d["push"] is None:
+            d["push"] = push
+        if w is None:
+            continue
+        beat, grants = _beat(idx, mine.get(w), w, p["n"] // per)
+        if per > 1:  # its result is one slice of the word
+            beat["elements"] = beat["elements"][p["n"] % per : p["n"] % per + 1]
+        push["writer"] = beat
+        d["pushes"][w] = push
+        d["outputs"][w] = beat["elements"]
+        for g in grants:
+            if g is not None:
+                mine_g = _results(idx, g)
+                d["results"].update({k: v for k, v in mine_g.items() if k in beat["elements"]})
     return d
+
+
+def _slot(grant: Event, container: str, flat: int, per: int) -> int:
+    """The slice of a packed word ``grant`` that element ``flat`` of ``container`` is."""
+    return grant["elems"].index(flat) % per if grant["region"] == container else -1
 
 
 def journey(idx: RunIndex, container: str, index: Sequence[int] | int) -> dict[str, Any]:
@@ -198,12 +221,21 @@ def journey(idx: RunIndex, container: str, index: Sequence[int] | int) -> dict[s
             for f in idx.fired.get((acc, m.name, e["b"]), []):
                 firings.append({**firing(idx, f), "role": "consumed", "via": e["src"],
                                 "lane": lane})  # fmt: skip
-        elif (acc, e["b"]) in idx.push:
-            p = idx.push[(acc, e["b"])]
-            for n in range(p["first"], p["last"] + 1):
-                if (acc, n) in idx.fire:
-                    firings.append({**firing(idx, idx.fire[(acc, n)]), "role": "produced",
-                                    "via": e["src"], "lane": lane})  # fmt: skip
+        else:
+            # the pushes whose results this word holds: of the output m writes, d_out a word
+            for unit in idx.cluster.accelerator.unit_names:
+                for key, w, per in _outputs(idx, unit):
+                    if w != m.name:
+                        continue
+                    for r in range(e["b"] * per, (e["b"] + 1) * per):
+                        p = idx.push.get((acc, key, r))
+                        if p is None or (per > 1 and r % per != _slot(e, container, flat, per)):
+                            continue
+                        for n in range(p["first"], p["last"] + 1):
+                            if (acc, n) in idx.fire:
+                                firings.append({**firing(idx, idx.fire[(acc, n)]),
+                                                "role": "produced", "via": e["src"],
+                                                "lane": lane})  # fmt: skip
     return {
         "element": names(idx, container, [flat])[0],
         "region": container,

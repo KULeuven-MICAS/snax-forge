@@ -26,7 +26,14 @@ from snax_forge.common import CodedError, generated_header
 from snax_forge.design.hjson_platform import CoreCount, dma_and_owner
 from snax_forge.design.hjson_platform import cores as hjson_cores
 from snax_forge.design.problems import DesignError
-from snax_forge.design.streamers import SharedMover, groups, instances, shared_movers, streamer_name
+from snax_forge.design.streamers import (
+    SharedMover,
+    groups,
+    instances,
+    jobs_csr,
+    shared_movers,
+    streamer_name,
+)
 from snax_forge.design.streamers import accelerators as graph_accelerators
 
 from .tasks import Configure, Start, TaskList, TaskListError, check_values
@@ -67,30 +74,45 @@ def fold_rate(inst: Instance) -> str | None:
 def job_values(inst: Instance, values: Mapping[str, int], fixed: bool = False) -> dict[str, int]:
     """An accelerator task's CSR values from its values (``n`` and the named rates):
     ``JOBS`` = n / T and, for a fold, ``JOB_BEATS`` = T, none when its T is ``fixed``
-    (the description's ``params.T``); T is 1 for a unit without a fold, and T = 0 is an empty
-    run (JOBS 0)."""
+    (the description's ``params.T``), then a bank's ``ROWS`` (D191); T is 1 for a unit without a
+    fold, and T = 0 is an empty run (JOBS 0); a carried unit's ``CARRY``, its jobs before its first
+    revisit (D192)."""
     rate = fold_rate(inst)
     t = 1 if rate is None else values[rate]
     out = {"JOBS": values["n"] // t if t else 0}
     if rate is not None and not fixed:
         out["JOB_BEATS"] = t
-    return out
+    out |= {"ROWS": rows} if (rows := bank_rows(inst)) > 1 else {}
+    return out | ({"CARRY": values["carry"]} if "carry" in values else {})
 
 
-def job_writes(units: Mapping[str, Instance], values: Mapping[str, Any],
-               fixed: set[str]) -> list[tuple[str, str, int]]:  # fmt: skip
+def bank_rows(inst: Instance) -> int:
+    """A unit's bank rows R (D191), 1 for a unit without a bank."""
+    return int(inst.params.get("rows", 1))
+
+
+def job_writes(units: Mapping[str, Instance], values: Mapping[str, Any], fixed: set[str],
+               chains: list[list[str]] | None = None) -> list[tuple[str, str, int]]:  # fmt: skip
     """An accelerator task's CSR writes, ``(unit, CSR, value)`` in order: a unit's task
     (``units`` one, ``values`` its n and rates) as ``job_values``; a linked group's (``values``
     by unit, the group's units in order) JOBS = n_u / ∏ T_v over its first unit u and the
-    group's folds v, then each fold's JOB_BEATS but those in ``fixed`` (CONTRACTS, "Task list")."""
+    group's folds v, then each fold's JOB_BEATS but those in ``fixed`` (CONTRACTS, "Task
+    list"), then each bank's ROWS. A group of several ``chains`` (each head to sink, D189) writes
+    one JOBS per chain, ``JOBS_<SINK>`` = n_head / ∏ T over the chain's folds, at its sink."""
     if "n" in values:
         ((unit, inst),) = units.items()
         return [(unit, k, v) for k, v in job_values(inst, values, unit in fixed).items()]
-    first = next(iter(values))
     folds = {u: values[u][r] for u in values if (r := fold_rate(units[u])) is not None}
-    t = prod(folds.values())
-    out = [(first, "JOBS", values[first]["n"] // t if t else 0)]
-    return out + [(u, "JOB_BEATS", v) for u, v in folds.items() if u not in fixed]
+    if chains is None or len(chains) == 1:
+        chains = [list(values)]
+    out = []
+    for chain in chains:
+        t = prod(folds[u] for u in chain if u in folds)
+        out.append((chain[-1] if len(chains) > 1 else chain[0], jobs_csr(chains, chain),
+                    values[chain[0]]["n"] // t if t else 0))  # fmt: skip
+    out += [(u, "JOB_BEATS", v) for u, v in folds.items() if u not in fixed]
+    out += [(u, "ROWS", r) for u in values if (r := bank_rows(units[u])) > 1]
+    return out + [(u, "CARRY", v["carry"]) for u, v in values.items() if "carry" in v]
 
 
 def task_beats(values: Mapping[str, Any]) -> int:
@@ -298,7 +320,9 @@ class _Program:
         elif s.type == "accel":
             self.mark(core, "acc_config", f"acc config {s.component}", ("acc_config", s.component))
             mine = self.linked.get(s.component, [s.component])
-            for unit, k, v in job_writes({u: self.units[u] for u in mine}, s.values, self.fixed):
+            chains = self.acc.group(mine[0]).chains() if len(mine) > 1 else None
+            for unit, k, v in job_writes({u: self.units[u] for u in mine}, s.values, self.fixed,
+                                         chains):  # fmt: skip
                 self.emit(core, f"csrw_ss({self.csr(k, unit, s.task_name)}, {v});")
             by_unit = s.values if s.component in self.linked else {s.component: s.values}
             for unit in mine:

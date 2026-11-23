@@ -28,6 +28,7 @@ class DatapathVectorsSpec extends AnyFlatSpec with ForgeTester {
       for ((s, k) <- t.steps.zipWithIndex) {
         bool("fire", s.fire); bool("first", s.first); bool("read", s.read); bool("en", s.en)
         bool("load", s.load); slot("lane", s.lane); slot("wslot", s.wslot); slot("rslot", s.rslot)
+        slot("row", s.row); slot("drain", s.drain) // a bank's pins (D191), absent without one
         for ((pin, v) <- s.sets) LaneBits.poke(io(pin), v) // a CSR slot's pin, held until set again
         for {
           (lanes, i)  <- s.ins.zipWithIndex

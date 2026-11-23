@@ -15,6 +15,15 @@ def test_a_unit_start():
     assert got.fields == {"count": 16, "rate": 1}
 
 
+def test_a_group_of_chains_rates_each_output_and_names_its_pushes():
+    """A group of several chains on a forked input (D189, snax-gvsoc docs/EVENTS.md)."""
+    got = parse_line(line("snax_acc0/bicg_types", "events", "10 start count=64 rate=1,64", 10))
+    assert got.fields == {"count": 64, "rate": [1, 64]}
+    got = parse_line(line("snax_acc0/bicg_types", "beats",
+                          "80 push n=0 first=0 last=63 value=1,2 unit=mac", 80))  # fmt: skip
+    assert got.fields == {"n": 0, "first": 0, "last": 63, "value": [1, 2], "unit": "mac"}
+
+
 @pytest.mark.parametrize(
     "path, trace, text, fields",
     [

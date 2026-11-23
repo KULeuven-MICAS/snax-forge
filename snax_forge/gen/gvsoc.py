@@ -199,8 +199,9 @@ def acc_tasks(tasks: TaskList, found: Mapping[str, Instance], acc: Description) 
         mine = [u.name for u in group.units] if group else [s.component]
         if not set(mine) <= set(found):
             continue
-        writes = job_writes({u: found[u] for u in mine}, s.values, fixed)
-        csrs = {(k if group is None or k == "JOBS" else f"{u.upper()}_{k}"): v
+        writes = job_writes({u: found[u] for u in mine}, s.values, fixed,
+                            None if group is None else group.chains())  # fmt: skip
+        csrs = {(k if group is None or k.startswith("JOBS") else f"{u.upper()}_{k}"): v
                 for u, k, v in writes}  # fmt: skip
         trace = None if not several else (f"{ACC_TRACE}/unit_{s.component}" if group is None
                                           else f"{ACC_TRACE}/group_{group.name}")  # fmt: skip

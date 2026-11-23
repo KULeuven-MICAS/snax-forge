@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import functools
 import json
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 from itertools import pairwise
@@ -28,7 +29,7 @@ HERE = Path(__file__).parent
 # The technologies offered: nangate45 only (snax-forge-experiments synthesizes nothing else).
 TECHS = ("nangate45",)
 DEFAULT_TECH = "nangate45"
-FOUND = ("measured", "copy", "interpolate", "slope", "width", "unseeded")
+FOUND = ("measured", "copy", "interpolate", "slope", "width", "unseeded", "bank", "bank_beyond")
 # A control unit's comb area is CTRL_COMB_PER_FLOP × its flops' area, a rough early estimate (its
 # comb energy taken as negligible); not in the table, a byte copy of snax-forge-experiments'
 # char.json. The L1 side is tables.py's tables.
@@ -54,6 +55,7 @@ class Table:
     e_load_pj: float
     e_ctrl_pj: float
     blocks: dict[str, list[dict[str, Any]]]
+    bank: dict[str, float] | None = None  # a Mac bank's forms over its rows-1 entry (D193)
 
 
 @dataclass(frozen=True)
@@ -77,7 +79,8 @@ def load(tech: str) -> Table:
     d = json.loads(path.read_text())
     return Table(d["tech"], d["clock_ns"], dict(d["source"]), d["flop"]["area_um2"],
                  d["flop"]["e_load_fj"] / 1000,
-                 d["ctrl"]["counter_factor"] * d["flop"]["e_hold_fj"] / 1000, d["blocks"])  # fmt: skip
+                 d["ctrl"]["counter_factor"] * d["flop"]["e_hold_fj"] / 1000, d["blocks"],
+                 d.get("bank"))  # fmt: skip
 
 
 def _between(x: int, pts: list[tuple[int, Lookup]]) -> Lookup | None:
@@ -173,6 +176,22 @@ def _over_lanes(entry: dict[str, Any], lanes: int, depth: int | None) -> Lookup 
     return None
 
 
+def _banked(table: Table, one: Lookup, params: Mapping[str, Any], lanes: int, rows: int) -> Lookup:
+    """A ``Mac`` bank of ``rows`` R from its rows-1 entry ``one`` (D193): the comb grows by the
+    table's ``bank`` forms (X97: the two R:1 read muxes and the row enables), and a fire loads
+    one row of sums, not R. Without the forms, ``one`` (a lower bound, all rows loading). Past the
+    largest read mux the forms were fitted to, found ``bank_beyond`` (DC builds the mux otherwise
+    and costs more, about 2× at 4 096 bits; snax-forge-experiments' PITFALLS DC20)."""
+    b = table.bank
+    if b is None:
+        return one
+    row = lanes * _width(params["outType"])
+    e = lanes * (b["e_pj_lane_log2_rows"] * math.log2(rows) + b["e_pj_lane"])
+    found = "bank" if row * rows <= b["mux_bits_max"] else "bank_beyond"
+    return Lookup(one.comb_um2 + b["comb_um2_lane_row"] * lanes * rows, one.e_comb_pj + e, found,
+                  row)  # fmt: skip
+
+
 def lookup(table: Table, datapath: str, params: Mapping[str, Any], lanes: int,
            depth: int | None = None) -> Lookup | None:  # fmt: skip
     """A block's comb area and energy per fire on ``table`` (CONTRACTS, "Cost model"), or None."""
@@ -185,6 +204,13 @@ def lookup(table: Table, datapath: str, params: Mapping[str, Any], lanes: int,
     keyed = any("seed" in e["params"] for e in entries)
     if want.get("seed") is False and not keyed:  # measured before it took a seed (a Mac, D187)
         want = {k: v for k, v in want.items() if k != "seed"}
+    rows = int(want.get("rows") or 1)
+    if "rows" in want and not any("rows" in e["params"] for e in entries):
+        # measured without a bank: its rows-1 entry, then the bank's forms (D193)
+        want = {k: v for k, v in want.items() if k != "rows"}
+        if rows > 1:
+            one = lookup(table, datapath, want, lanes, depth)
+            return None if one is None else _banked(table, one, params, lanes, rows)
     entry = next((e for e in entries if key(e) == want), None)
     if datapath in ("FifoPacker", "FifoSlicer"):
         if entry is None:

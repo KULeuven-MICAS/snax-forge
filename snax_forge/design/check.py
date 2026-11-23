@@ -28,6 +28,7 @@ import numpy as np
 from snax_forge import expr
 from snax_forge.brm import BrmError, Instance, accepted, check_dtypes, memlet_ordered, port_dtypes
 from snax_forge.dfg import DfgError, Graph, Node
+from snax_forge.dfg.execute import carried_ports
 from snax_forge.dfg.pad import code_on_pads, fold_op, pad_value, padded_shape, tailed_split
 from snax_forge.dfg.reduce import REDUCE_OPS
 from snax_forge.dfg.subset import parse_dim
@@ -48,6 +49,7 @@ from .streamers import (
     linked_ports,
     memlet_spatial_bounds,
     nest_spatial_bounds,
+    no_streamer,
     per_word,
     port_loops,
     resolve,
@@ -227,7 +229,7 @@ def _subtree(node: Node) -> Iterator[Node]:
 def _streamers(design: Design) -> dict[str, tuple[str, str]]:
     """Every streamer the graph needs, one per port not on a link: name -> (instance,
     port)."""
-    linked = linked_ports(design.graph)
+    linked = no_streamer(design.graph)
     return {
         streamer_name(i, p.name): (i, p.name)
         for i, inst in design.instances.items()
@@ -569,7 +571,8 @@ def _connect_pack(design: Design) -> Iterable[Problem]:
             out = conn in n.outputs
             lanes = prod(b for _, b, _ in walk.spatial)
             if per_word(dtype, lanes, pf.l1.width_bits) > 1:
-                mine = port_loops(instance_of(n), conn, m, firing_loops(g, n))
+                mine = port_loops(instance_of(n), conn, m, firing_loops(g, n),
+                                  conn in carried_ports(n))  # fmt: skip
                 yield from _packed(f"node {n.id}.{conn}", m.data, dtype, num_slc, walk,
                                    {lp.var for lp in mine}, out)  # fmt: skip
                 continue

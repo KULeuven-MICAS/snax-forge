@@ -37,6 +37,7 @@ from snax_forge.dfg import (
     Graph,
     Memlet,
     Node,
+    Seed,
     loops,
     named_rates,
     parse_dim,
@@ -447,6 +448,23 @@ def _bind_site(g: Graph, node: str, what: str) -> _Site:
     return _Site(tasklet, pattern_node, smap, temporal)
 
 
+def bank_hint(g: Graph, site: _Site) -> int | None:
+    """The rows a bank (D191) at ``site`` would take: where the output's index changes along
+    temporal loops inside a loop it does not use (its sum), the product of those inner loops'
+    counts; None where no bank fits or a count is not bound."""
+    used = set().union(*(m.names for m in site.tasklet.outputs.values()))
+    loops, k, rows = site.temporal, len(site.temporal), 1
+    try:
+        while k and loops[k - 1].attrs["var"] in used:
+            k -= 1
+            rows *= len(map_range(loops[k].attrs["range"], g.bound_symbols, loops[k].id))
+    except (DfgError, ExprError, KeyError):
+        return None
+    if k == len(loops) or all(m.attrs["var"] in used for m in loops[:k]):
+        return None
+    return rows
+
+
 def _lane_fold_map(m: Node) -> bool:
     """A spatial map whose body is one tasklet with a folding output: ``bind`` takes the map
     (patterns.py's ``lane_fold`` without a front op)."""
@@ -734,7 +752,16 @@ def _seeds(site: _Site) -> dict[str, Any]:
         for c, m in t.outputs.items():
             if m.reduce is not None and m.reduce.seed is not None:
                 found[c] = m.reduce.seed
+            elif m.reduce is not None and m.reduce.carry:  # its own output (D192)
+                found[c] = Seed(m.data, tuple(m.subset))
     return found
+
+
+def _carried(site: _Site) -> bool:
+    """Whether the bind's fold is carried (D192): its seed is its own output."""
+    return any(m.reduce is not None and m.reduce.carry
+               for t in [site.tasklet, *(n for n in site.smap.body or [] if n.kind == "tasklet")]
+               for m in t.outputs.values())  # fmt: skip
 
 
 def _scalar_inputs(g: Graph, site: _Site, what: str) -> dict[str, Memlet]:
@@ -836,8 +863,16 @@ def _bind_rewrite(g: Graph, site: _Site, bound: _Bound, brm: str, implementation
     with_seed = {ports[c]: (m, b.port(ports[c]).rate) for c, m in bound.memlets.items()}
     for seed in _seeds(site).values():  # one beat per job, as its fold's output
         with_seed[SEED] = (Memlet(seed.data, list(seed.subset)), b.port(SEED).rate)
+    banks = {
+        p: inst.params["rows"]
+        for p in with_seed
+        if inst.params.get("rows", 1) > 1 and (b.port(p).direction == "out" or p == SEED)
+    }  # D191; a seeded bank's seed a beat a row (D194)
+    carried = (
+        {SEED, *(p for p in with_seed if b.port(p).direction == "out")} if _carried(site) else ()
+    )
     try:
-        rates = named_rates(with_seed, loops, what)
+        rates = named_rates(with_seed, loops, what, banks, carried)
     except DfgError as e:
         raise SandboxError(str(e)) from None
     task = {"n": n} | rates
@@ -895,6 +930,8 @@ def _bind_rewrite(g: Graph, site: _Site, bound: _Bound, brm: str, implementation
     )
     if bound.op_type is not None:  # the kernel's casts set the op's type (D143)
         acc.attrs["opType"] = bound.op_type
+    if _carried(site):  # the seed is its own output, the first visit the identity (D192)
+        acc.attrs["carry"] = True
     marks = tasklet.attrs.get(TRANSPOSE, {})  # mark_transpose's, onto the port (transpose.py)
     if any(c in ports for c in marks):
         acc.attrs[TRANSPOSE] = {ports[c]: list(p) for c, p in marks.items() if c in ports}

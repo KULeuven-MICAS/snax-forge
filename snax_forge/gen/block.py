@@ -5,7 +5,9 @@
 ``hw/chisel/blocks.json`` or a stream block of ``STREAM_BLOCKS`` (``FifoPacker``: ``inLanes``,
 ``laneType``, ``words``; ``FifoSlicer``: ``words``, ``laneType``, ``outLanes``), which is not in
 the catalogue: the flow places it on a port (a packed outer output, a sliced outer input, D142 ·
-D174 · D180) rather than binding it to a unit. ``check_entry`` checks every entry
+D174 · D180) rather than binding it to a unit. A datapath's ``int`` filled from ``unit.params``
+may be left out and takes its min (``rtl.at_min``, a ``Mac``'s ``rows`` 1), as Emit does.
+``check_entry`` checks every entry
 against its params before any is built (``gen.block``, ``gen.catalogue``, ``gen.params``, each a
 ``GenError``); ``emit_blocks`` builds them all in one java call on rtl.py's cached classpath,
 ``Emit --block`` each. The output is CONTRACTS, "Accelerator RTL spec". What only the Chisel
@@ -26,7 +28,7 @@ from snax_forge.common import cwd_relative
 
 from .blocks import GenError
 from .gvsoc import cli
-from .rtl import CHISEL, EMITTED_JSON, catalogue, check_params, emit_classpath, listed
+from .rtl import CHISEL, EMITTED_JSON, at_min, catalogue, check_params, emit_classpath, listed
 
 KEYS = {"datapath", "params", "out"}
 
@@ -76,6 +78,8 @@ def check_entry(entry: Any, cat: Mapping[str, Any] | None = None) -> None:
     if name not in cat and name not in STREAM_BLOCKS:
         raise GenError("gen.catalogue", f"datapath {name!r} is not in the catalogue {sorted(cat)} "
                        f"nor a stream block {sorted(STREAM_BLOCKS)}")  # fmt: skip
+    if name not in STREAM_BLOCKS:  # an int filled from unit.params may be left out: its min
+        params = at_min(params, cat[name])
     sig = STREAM_BLOCKS[name] if name in STREAM_BLOCKS else cat[name]["params"]
     missing, extra = sorted(set(sig) - set(params)), sorted(set(params) - set(sig))
     if missing or extra:

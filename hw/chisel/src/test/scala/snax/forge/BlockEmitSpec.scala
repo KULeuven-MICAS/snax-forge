@@ -17,7 +17,7 @@ import org.scalatest.flatspec.AnyFlatSpec
   * registered block (all but `SimdLanes` and the plain `Mac`) has every `always` block of its files on `posedge clock
   * or posedge reset`, a flop with an asynchronous reset; the others none. The stream blocks FifoPacker at its three
   * char configs and FifoSlicer at one word of int32 (1 lane), int16 (1, 2) and int8 (1, 2, 4), and at int32 the very
-  * modules `ShellWrapper` holds on a packed output and a sliced input.
+  * modules `ShellWrapper` holds on a packed output and a sliced input. A `Mac` without `rows` is built at rows 1.
   */
 class BlockEmitSpec extends AnyFlatSpec {
 
@@ -77,11 +77,13 @@ class BlockEmitSpec extends AnyFlatSpec {
       registered = true
     )
   } ++ Seq(
-    (true, false, false, true),
-    (true, false, true, true),
-    (false, false, false, false),
-    (false, true, false, true)
-  ).map { case (acc, reg, seed, registered) => // seeded, the port seed
+    (true, false, false, true, 1),
+    (true, false, true, true, 1),
+    (false, false, false, false, 1),
+    (false, true, false, true, 1),
+    (true, false, false, true, 4),
+    (true, false, true, true, 4) // a seeded bank (D194)
+  ).map { case (acc, reg, seed, registered, rows) => // seeded, the port seed; banked, the pins row and drain
     Case(
       "Mac",
       ujson.Obj(
@@ -91,7 +93,8 @@ class BlockEmitSpec extends AnyFlatSpec {
         "lanes"      -> Lanes,
         "accumulate" -> acc,
         "regOut"     -> reg,
-        "seed"       -> seed
+        "seed"       -> seed,
+        "rows"       -> rows
       ),
       Set.empty,
       registered
@@ -287,6 +290,38 @@ class BlockEmitSpec extends AnyFlatSpec {
   it should "refuse FifoPacker params whose inLanes does not divide the beat" in
     assertThrows[IllegalArgumentException](Emit.block("FifoPacker", """{"inLanes":3,"laneType":"int32","words":1}"""))
 
+  private val mac = """{"inTypes":["int64","int64"],"opType":"int64","outType":"int64","lanes":8,"accumulate":true,""" +
+    """"regOut":false,"seed":false"""
+
+  it should "take a Mac without its rows at rows 1, the SV and listing of one with rows 1" in {
+    val root                        = Files.createTempDirectory("emit-mac-rows")
+    val (bare, given)               = (root.resolve("bare"), root.resolve("given"))
+    Emit.main(
+      Array(
+        "--block",
+        "Mac",
+        "--params",
+        mac + "}",
+        "--out",
+        bare.toString,
+        "--block",
+        "Mac",
+        "--params",
+        mac + ""","rows":1}""",
+        "--out",
+        given.toString
+      )
+    )
+    def read(d: Path)               = {
+      val listing = ujson.read(Files.readString(d.resolve("emitted.json")))
+      (listing("params"), listing("files").arr.map(f => f.str -> Files.readString(d.resolve(f.str))).toMap)
+    }
+    val ((p, svBare), (q, svGiven)) = (read(bare), read(given))
+    assert(p("rows").num == 1              && ujson.write(p) == ujson.write(q))
+    assert(svBare.keySet == svGiven.keySet && svBare.keySet.exists(_.endsWith(".sv")))
+    assert(svBare.filter(_._1.endsWith(".sv")) == svGiven.filter(_._1.endsWith(".sv")))
+  }
+
   private val tree = """{"inType":"int64","outType":"int64","lanes":8,"op":"add","seed":false}"""
 
   for (
@@ -303,7 +338,7 @@ class BlockEmitSpec extends AnyFlatSpec {
         "a bool that is not one",
         "Mac",
         """{"inTypes":["int64","int64"],"opType":"int64","outType":"int64","lanes":1,"accumulate":1,"regOut":false,""" +
-          """"seed":false}"""
+          """"seed":false,"rows":1}"""
       ),
       ("params that are not an object", "TreeAccumulate", "[]")
     )

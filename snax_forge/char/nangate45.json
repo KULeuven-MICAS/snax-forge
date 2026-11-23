@@ -9,7 +9,7 @@
  "source": {
   "snax_forge": "04165576384c4f3031e3b2d27d0ee9c058498b51",
   "snax_forge_FifoSlicer": "c5c7d3bad1eb1ccf2e4e4a3d841fea749677d3f3",
-  "snax_forge_experiments": "b70af1908889ec9ac3b70a0a9cd0ca858e2e7481",
+  "snax_forge_experiments": "27ae64da92f7fe181890c7e6a8b150fd6dd3e8ef",
   "stimulus": "rand64 seed 0",
   "clk_gate": "1"
  },
@@ -20,6 +20,12 @@
  },
  "ctrl": {
   "counter_factor": 83.2
+ },
+ "bank": {
+  "comb_um2_lane_row": 59.7737,
+  "e_pj_lane_log2_rows": 0.34284,
+  "e_pj_lane": 0.3161,
+  "mux_bits_max": 2048
  },
  "blocks": {
   "SimdLanes": [

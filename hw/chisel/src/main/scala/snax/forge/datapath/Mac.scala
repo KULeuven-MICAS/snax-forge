@@ -1,6 +1,7 @@
 package snax.forge.datapath
 
 import chisel3._
+import chisel3.util.log2Ceil
 
 import snax.forge.IntType
 
@@ -15,7 +16,13 @@ import snax.forge.IntType
   *     in that cycle, since s changes only at the cycle's end. Seeded (`seed`), it has one more input, `seed`, of
   *     `out`'s type and lanes, read once per job: s ← `first` ? seed + p : s + p, so lane l's sum starts from seed(l)
   *     (D187). The control unit holds the first beat until the seed is valid and takes it with that firing
-  *     (`ctrl.GroupRule`); unseeded it is the block it was, the same RTL.
+  *     (`ctrl.GroupRule`); unseeded it is the block it was, the same RTL. A bank (`rows` R > 1, D191) keeps R rows of W
+  *     sums: a firing adds into row `row` (`first` starting it) and `out` is row `drain`, the row the last firing
+  *     wrote, so a result pushed a cycle after its firing is that row while the next firing adds into another. Both
+  *     pins are the control unit's (`<unit>_row`, the beat mod ROWS; `drain` the row before it, ROWS − 1 after 0), so
+  *     the block keeps no row of its own and its registers are the R rows only. A seeded bank (D194) takes a seed beat
+  *     on each of a job's first R firings, row ← (`first` ? seed : s[row]) + p: one W-lane mux before the adders,
+  *     shared by the rows.
   *   - plain: `out` = p + c at `outType` (`c` of `out`'s type and lanes), combinational (latency 0), or with `regOut` a
   *     register that takes it on `en` (latency 1, pin `en`: its firing).
   *
@@ -35,6 +42,8 @@ import snax.forge.IntType
   *   the plain form's output register (`regIn` is not built)
   * @param seed
   *   the accumulating form's seed port (the BRM's `seed`); refused on the plain form
+  * @param rows
+  *   the accumulating form's rows of sums, its bank (1: the plain `Mac`, no pin `row` or `drain`)
   */
 class Mac(
   val inTypes:    Seq[String] = Seq("int64", "int64"),
@@ -43,7 +52,8 @@ class Mac(
   val lanes:      Int         = 4,
   val accumulate: Boolean     = true,
   val regOut:     Boolean     = false,
-  val seed:       Boolean     = false
+  val seed:       Boolean     = false,
+  val rows:       Int         = 1
 ) extends DatapathModule {
   require(lanes > 0, s"lanes must be positive, got $lanes")
   require(
@@ -51,6 +61,8 @@ class Mac(
     "regOut is the plain form's output register; an accumulating Mac's s is its register"
   )
   require(!seed || accumulate, "seed is the accumulating form's start; a plain Mac adds c instead")
+  require(rows >= 1, s"rows must be 1 or more, got $rows")
+  require(rows == 1 || accumulate, s"rows $rows: a bank (D191) is an accumulating Mac's")
   require(
     inTypes.size == (if (accumulate) 2 else 3),
     s"inTypes must name a, b${if (accumulate) "" else " and c"}, got ${inTypes.mkString(", ")}"
@@ -64,7 +76,8 @@ class Mac(
   private val form = if (accumulate) "acc" else if (regOut) "reg" else "plain"
 
   override def desiredName: String =
-    s"Mac_${ins.take(2).map(_.tag).mkString("x")}_${opT.tag}_${outT.tag}_n${lanes}_$form${if (seed) "_seed" else ""}"
+    s"Mac_${ins.take(2).map(_.tag).mkString("x")}_${opT.tag}_${outT.tag}_n${lanes}_$form${if (seed) "_seed" else ""}" +
+      (if (rows > 1) s"_r$rows" else "")
 
   val io = IO(new Bundle {
     val a     = Input(Vec(lanes, ins(0).lane))
@@ -75,6 +88,8 @@ class Mac(
     val fire  = if (accumulate) Some(Input(Bool())) else None
     val first = if (accumulate) Some(Input(Bool())) else None
     val en    = if (!accumulate && regOut) Some(Input(Bool())) else None
+    val row   = Option.when(rows > 1)(Input(UInt(log2Ceil(rows).W)))
+    val drain = Option.when(rows > 1)(Input(UInt(log2Ceil(rows).W)))
   })
 
   // Per lane p = cast_out(cast_op(a) * cast_op(b)): an unsigned product's low opType bits are the signed one's too
@@ -84,7 +99,21 @@ class Mac(
     IntType.cast((x * y)(opT.width - 1, 0), opT, outT).asUInt
   }
 
-  if (accumulate) {
+  if (rows > 1) { // NB (D191): the bank's rows, written at `row` and read at `drain`; no register of a row
+    val s = RegInit(VecInit(Seq.fill(rows)(VecInit(Seq.fill(lanes)(0.U(outT.width.W))))))
+    io.seed match {
+      case None    =>
+        when(io.fire.get) {
+          for (l <- 0 until lanes) s(io.row.get)(l) := Mux(io.first.get, p(l), s(io.row.get)(l) + p(l))
+        }
+      case Some(q) => // NB (D194): each row's first firing in a job starts from the seed beat it takes
+        when(io.fire.get) {
+          for (l <- 0 until lanes)
+            s(io.row.get)(l) := Mux(io.first.get, IntType.cast(q(l), outT, outT).asUInt, s(io.row.get)(l)) + p(l)
+        }
+    }
+    for (l <- 0 until lanes) io.out(l) := IntType.cast(s(io.drain.get)(l), outT, outT)
+  } else if (accumulate) {
     val s = RegInit(VecInit(Seq.fill(lanes)(0.U(outT.width.W))))
     io.seed match {
       case None    =>

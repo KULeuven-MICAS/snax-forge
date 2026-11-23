@@ -36,7 +36,7 @@ from snax_forge.brm import SEED
 from snax_forge.common import c_name, cwd_relative, repo_root, to_json
 from snax_forge.design.streamers import instance_nodes, stream_lanes
 from snax_forge.estimate.cycles import group_cycles
-from snax_forge.lower.c import job_values, job_writes
+from snax_forge.lower.c import bank_rows, job_values, job_writes
 from snax_forge.lower.derive import task_list
 
 from .accelerator import ACCELERATOR_JSON, Description, Group, Link, Unit, units
@@ -71,7 +71,7 @@ def _input_dtypes(unit: Unit, kind: str) -> Any:
 
 
 # The catalogue's fill rules (module doc): rule -> its value for a unit, given the param's type;
-# ``unit.params.<key>`` is the unit's param of that name
+# ``unit.params.<key>`` is the unit's param of that name, an ``int`` the unit lacks its min
 FILL_RULES: dict[str, Callable[[Unit, str], Any]] = {
     "inputs.dtype": _input_dtypes,
     "outputs.dtype": lambda u, kind: _ports(u, "out")[0].dtype,
@@ -91,8 +91,13 @@ def fill(acc: Description | None, unit: Unit, sig: Mapping[str, Any]) -> dict[st
     for name, rule in sig["fill"].items():
         if rule in FILL_RULES:
             out[name] = FILL_RULES[rule](unit, sig["params"][name]["type"])
-        elif rule.startswith(PARAMS_RULE):
-            out[name] = unit.params.get(rule.removeprefix(PARAMS_RULE))
+        elif rule.startswith(
+            PARAMS_RULE
+        ):  # an int the unit does not have: its min (a Mac's rows 1)
+            t = sig["params"][name]
+            out[name] = unit.params.get(
+                rule.removeprefix(PARAMS_RULE), t.get("min") if t["type"] == "int" else None
+            )
         elif rule.startswith(SCALARS_RULE):
             out[name] = rule.removeprefix(SCALARS_RULE) in unit.scalars
         else:
@@ -100,6 +105,15 @@ def fill(acc: Description | None, unit: Unit, sig: Mapping[str, Any]) -> dict[st
                 "gen.catalogue", f"{unit.datapath}.{name}: the fill rule {rule!r} is unknown"
             )
     return out
+
+
+def at_min(params: Mapping[str, Any], sig: Mapping[str, Any]) -> dict[str, Any]:
+    """``params`` with each ``int`` the datapath fills from ``unit.params`` and ``params`` leaves
+    out at its min, as ``fill`` gives a unit without it (a ``Mac``'s ``rows`` 1; gen-block and
+    ``Emit --block``, ``Datapath.complete``)."""
+    return {**{name: sig["params"][name]["min"] for name, rule in sig["fill"].items()
+               if rule.startswith(PARAMS_RULE) and sig["params"][name]["type"] == "int"},
+            **params}  # fmt: skip
 
 
 def link_params(acc: Description, link: Link, sig: Mapping[str, Any]) -> dict[str, Any]:
@@ -130,12 +144,20 @@ def live(entries: Any, params: Mapping[str, Any]) -> dict[str, Any]:
     out = {}
     for key, e in items:
         when = e.get("when", {}) if isinstance(e, Mapping) else {}
-        if all(k in params and params[k] == v for k, v in when.items()):
+        if all(_holds(params.get(k), v) if k in params else False for k, v in when.items()):
             if isinstance(entries, Mapping):
                 out[key] = e["dir"] if isinstance(e, Mapping) else e
             else:
                 out[e["name"] if isinstance(e, Mapping) else e] = None
     return out
+
+
+def _holds(x: Any, v: Any) -> bool:
+    """A ``when`` match: ``x`` equal to ``v``, or with ``v`` ``{"min": m}`` an int of at least m
+    (a ``Mac``'s ``row`` pin at ``rows`` 2 or more)."""
+    if isinstance(v, Mapping) and set(v) == {"min"}:
+        return type(x) is int and x >= v["min"]
+    return x == v
 
 
 def value(v: int | str, params: Mapping[str, Any]) -> int:
@@ -272,11 +294,14 @@ def counter(unit: Unit, n: int) -> tuple[int, str]:
     )
 
 
-def rule_graph(group: Group) -> tuple[list[dict[str, Any]], list[dict[str, Any]], str]:
+def rule_graph(group: Group, forked: list[list[str]] = ()) -> tuple[
+        list[dict[str, Any]], list[dict[str, Any]], str | list[str], list[list[tuple[str, int]]]]:  # fmt: skip
     """``group`` as snax_group_rule's GroupRule takes it: per unit its name, L, II, span and
     outer inputs (its ``in`` ports no link feeds); per link ``{from, to, to_input, depth}``,
-    ``to_input`` the fed port's place among its unit's ``in`` ports; and
-    the unit owning the outer output (the one with an ``out`` port no link takes)."""
+    ``to_input`` the fed port's place among its unit's ``in`` ports; the unit owning the outer
+    output (the one with an ``out`` port no link takes), with several chains each in unit
+    order; and the forks (``forked``, the accelerator's, D189) as ``(unit, outer input)``. A
+    banked unit adds its ``rows`` and its held inputs' places, ``hold`` (D190, D191)."""
     fed = {link.to for link in group.links}
     taken = {link.from_ for link in group.links}
 
@@ -286,6 +311,7 @@ def rule_graph(group: Group) -> tuple[list[dict[str, Any]], list[dict[str, Any]]
     units = [{"name": u.name, "L": u.latency, "ii": u.ii, "span": u.span,
               "inputs": sum(f"{u.name}.{p}" not in fed for p in ins(u)),
               "d_in": [u.ports[p].d_in for p in ins(u) if f"{u.name}.{p}" not in fed]}
+             | rule_bank(u, [p for p in ins(u) if f"{u.name}.{p}" not in fed])
              for u in group.units]  # fmt: skip
     by_name = {u.name: u for u in group.units}
     links = []
@@ -294,26 +320,45 @@ def rule_graph(group: Group) -> tuple[list[dict[str, Any]], list[dict[str, Any]]
         dst, port = link.to.split(".", 1)
         links.append({"from": src, "to": dst, "to_input": ins(by_name[dst]).index(port),
                       "depth": link.depth})  # fmt: skip
-    (owner,) = (u.name for u in group.units
-                for name, p in u.ports.items() if p.dir == "out" and f"{u.name}.{name}" not in taken)  # fmt: skip
-    return units, links, owner
+    owners = [u.name for u in group.units
+              for name, p in u.ports.items() if p.dir == "out" and f"{u.name}.{name}" not in taken]  # fmt: skip
+    rule_forks = []
+    for f in forked:
+        mine = []
+        for x in f:
+            u, port = x.split(".", 1)
+            if u in by_name:
+                outer = [q for q in ins(by_name[u]) if f"{u}.{q}" not in fed]
+                mine.append((u, outer.index(port)))
+        if len(mine) > 1:
+            rule_forks.append(mine)
+    return units, links, owners[0] if len(owners) == 1 else owners, rule_forks
 
 
-def group_counter(group: Group, jobs: int, beats: Mapping[str, int]) -> tuple[int, str]:
+def rule_bank(u: Unit, outer: list[str]) -> dict[str, Any]:
+    """A banked unit's ``rows`` and ``hold`` (its held inputs' places among ``outer``) as the
+    group rule takes them; nothing without a bank."""
+    rows = u.params.get("rows", 1)
+    held = [i for i, p in enumerate(outer) if u.ports[p].hold]
+    return ({"rows": rows} if rows > 1 else {}) | ({"hold": held} if held else {})
+
+
+def group_counter(group: Group, jobs: int | list[int], beats: Mapping[str, int],
+                  forked: list[list[str]] = ()) -> tuple[int, str]:  # fmt: skip
     """The counter of a linked group's task with an always-ready streamer, from the group rule
     (snax-gvsoc's snax_group_rule.py, estimate/cycles.py's ``group_cycles``) stepped with every
     input
     valid and the output ready, and the working: JOBS ``jobs``, each unit's T its JOB_BEATS
     (``beats``, by unit) or its fixed T (``params.T``, else 1). BUSY_COUNTER counts the busy cycles,
     E - s: the rule starts the run in cycle 0. A run that does not end is ``gen.counter``."""
-    units, links, owner = rule_graph(group)
+    units, links, owner, forks = rule_graph(group, forked)
     ts = [beats.get(u.name, u.params.get("T", 1)) for u in group.units]
-    if jobs == 0 or 0 in ts:
+    if 0 in (jobs if isinstance(jobs, list) else [jobs]) or 0 in ts:
         return (
             0,
             "The group's BUSY_COUNTER counts its busy cycles: JOBS or a T 0 is the empty run, none",
         )
-    end = group_cycles(units, links, owner, jobs, ts)
+    end = group_cycles(units, links, owner, jobs, ts, forks)
     if end is None:
         raise GenError("gen.counter", f"group {group.name}: the rule does not end")
     t = ", ".join(f"{u.name} {x}" for u, x in zip(group.units, ts, strict=True))
@@ -337,7 +382,7 @@ def vectors(design_point: str | Path, root: str | Path | None = None) -> dict:
     linked = len(group.units) > 1
     data = {a.name: a for a in arrays(point)}
     ports = []
-    for end in [*acc.inputs, *acc.outputs]:
+    for end in [*acc.readers, *acc.outputs]:  # a fork's by its reader's port (D189)
         name, port = end.split(".", 1)
         inst, node = found[name], instance_nodes(point.graph)[name]
         values = task.values[name] if linked else task.values
@@ -345,15 +390,26 @@ def vectors(design_point: str | Path, root: str | Path | None = None) -> dict:
         c = (node.inputs if p.direction == "in" else node.outputs)[p.name].data
         array = c_name(c) if p.direction == "in" else f"{c_name(c)}_golden"
         rate = 1 if p.rate == 1 else values[p.rate]
+        beats, rows = values["n"] // rate, bank_rows(inst)
+        if rows > 1:  # NB (D191, D190, D194): a bank gives ROWS results a job and, seeded, takes
+            # ROWS seed beats; its held input, a pop a row
+            held = next(u for u in group.units if u.name == name).ports[port].hold
+            per_row = p.direction == "out" or p.name == SEED
+            beats = beats * rows if per_row else beats // rows if held else beats
         ports.append({"port": p.name, "array": array,
                       "lanes": stream_lanes(point.graph, node, inst, p.name),
-                      "beats": values["n"] // rate, "values": list(data[array].values)})  # fmt: skip
+                      "beats": beats, "values": list(data[array].values)})  # fmt: skip
     if linked:
-        writes = job_writes(found, task.values, acc.fixed_folds)
-        csrs = {k: v for _, k, v in writes}
+        chains = group.chains()
+        writes = job_writes(found, task.values, acc.fixed_folds, chains)
+        # several chains (D189): a unit's CSR by unit, as the program names it (MAC_JOB_BEATS)
+        csrs = {(k if len(chains) == 1 or k.startswith("JOBS") else f"{u.upper()}_{k}"): v
+                for u, k, v in writes}  # fmt: skip
         n = task.values[group.units[0].name]["n"]
         beats = {u: v for u, k, v in writes if k == "JOB_BEATS"}
-        value, working = group_counter(group, csrs["JOBS"], beats)
+        jobs = [v for _, k, v in writes if k.startswith("JOBS")]
+        value, working = group_counter(group, jobs[0] if len(jobs) == 1 else jobs, beats,
+                                       acc.forks)  # fmt: skip
     else:
         csrs = job_values(found[task.component], task.values)
         n = task.values["n"]

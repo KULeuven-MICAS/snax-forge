@@ -1,0 +1,22 @@
+{
+ "total_cycles": 489,
+ "functional_check": {
+  "kernel": "bicg_types",
+  "seed": 0,
+  "symbols": {
+   "M": 40,
+   "N": 16
+  },
+  "exit_code": 0,
+  "data_errors": 0,
+  "words": 56,
+  "tasks": {
+   "q_mult_bicg_types": {
+    "counter": 166,
+    "beats": 160,
+    "group": "bicg_types"
+   }
+  },
+  "passed": true
+ }
+}

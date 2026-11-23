@@ -1,0 +1,7 @@
+# bicg_v3 at trace level stall
+
+A recorded SNAX-GVSoC run of a group of two chains on a forked input (D189), so CI converts it without GVSoC (`tests/run/test_fork.py`, `tests/viz/test_movement.py`, `tests/viz/test_cluster.py`): bicg_v3 at M = 64, N = W = 32, int8 A, p and r, the group `bicg_types` of units `mul`, `sum` (q = A p, linked by `q_prod`, its output packed two int32 to a word, D174) and `mac` (s = Aᵀ r), one SNAX-GVSoC component `snax_acc0/group_bicg_types`, one reader of A forked to `mul` and `mac`, one task `q_mult_bicg_types`. Made in snax-forge's image at snax-forge `26f1a51` and snax-gvsoc `6644e8c5`:
+
+    pixi run flow recipes/bicg/bicg_v3.json --platform platforms/snax_forge.json --trace stall
+
+and copied from `out/flow/bicg_v3_stall/` as dot_1_shared's (`../dot_v1_2/README.md`): `run/events.log` as `events_stall.log`, the three description files of `gen/` (`snax_forge.hjson`, `snax_forge_bicg_v3_streamer_bicg_types.hjson`, `accelerator.json`) and its `manifest.json`, `tasks.json`, `design/design_point.json` (its `graph_from` made relative), `check.json` (the profile's `total_cycles` and `functional_check`, from the `--trace task` run of the same ELF) and `elf_symbols.json` (`run.json`'s, the ELF `sw/forge.elf` sha256 `a0bda54c52b9559b`). The run: 392 cycles, data 0 errors (96 words), COUNTER `q_mult_bicg_types` 72 (64 beats). Made again the same way when snax-gvsoc's grammar (`docs/EVENTS.md`) or the generated files change.

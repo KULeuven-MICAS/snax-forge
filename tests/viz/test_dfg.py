@@ -284,17 +284,22 @@ def test_the_bound_dot_shows_both_accelerators():
 
 
 def test_dot_1_enc_draws_one_accelerator_of_two_groups(tmp_path):
-    """dot_v1_1: the accelerator dot, its groups vmul and vsum in the graph's order, each unit
-    inside the accelerator's outline (a group of one unit and no link has none); each unit's
-    Details name its group and accelerator. dot 1 has two accelerators and no outline."""
+    """dot_v1_1: the accelerator dot, its groups vmul and vsum in the graph's order inside it,
+    each unit and the loops that drive only it inside its group's box (one box per
+    configuration); each unit's Details name its group and accelerator. dot 1 has two
+    accelerators of one group each: a group box each, no accelerator outline."""
     from tests.gen.helpers import bound_dot1, bound_dot1_enc
 
     path = tmp_path / "dot_v1_1.snaxdfg"
     path.write_text(bound_dot1_enc().to_json())
     v = view(path)
-    assert [(o["id"], o["text"], o["sel"]) for o in v["drawing"]["outlines"]] == [
-        ("acc:dot", "accelerator dot", "dot")]  # fmt: skip
-    assert [boxes(v)[u]["parent"] for u in ("unit:vmul", "unit:vsum")] == ["acc:dot", "acc:dot"]
+    assert [(o["id"], o["text"], o["sel"], o["parent"]) for o in v["drawing"]["outlines"]] == [
+        ("acc:dot", "accelerator dot", "dot", None),
+        ("grp:vmul", "group vmul", "vmul", "acc:dot"),
+        ("grp:vsum", "group vsum", "vsum", "acc:dot")]  # fmt: skip
+    assert [boxes(v)[u]["parent"] for u in ("unit:vmul", "unit:vsum")] == ["grp:vmul", "grp:vsum"]
+    loops = {b["parent"] for b in v["drawing"]["nodes"] if b["kind"] == "loop"}
+    assert loops == {"grp:vmul", "grp:vsum"}
     units = [v["details"][f"node:{n}"] for n in ("mult", "sum")]
     assert [(u["accelerator"], u["group"]) for u in units] == [("dot", "vmul"), ("dot", "vsum")]
     assert v["details"]["group:vmul"]["accelerator"] == "dot"
@@ -302,7 +307,7 @@ def test_dot_1_enc_draws_one_accelerator_of_two_groups(tmp_path):
     plain = tmp_path / "dot_1.snaxdfg"
     plain.write_text(bound_dot1().to_json())
     p = view(plain)
-    assert p["drawing"]["outlines"] == []
+    assert [o["id"] for o in p["drawing"]["outlines"]] == ["grp:vmul", "grp:vsum"]
     assert [k for k in p["details"] if k.startswith("accelerator:")] == [
         "accelerator:vmul",
         "accelerator:vsum",

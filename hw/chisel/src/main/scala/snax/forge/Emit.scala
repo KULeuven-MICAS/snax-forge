@@ -205,8 +205,9 @@ object Emit {
   case class Block(name: String, params: ujson.Obj, gen: () => RawModule)
 
   /** `--block NAME --params JSON`, checked: `NAME` a datapath of `Datapaths.all` or a stream block of `streamBlocks`,
-    * `JSON` its full params (a JSON object; a datapath's as `blocks.json` lists them, `Datapath.check`'s refusals); an
-    * unknown name, JSON that is not an object or a refused param an `IllegalArgumentException`.
+    * `JSON` its params (a JSON object; a datapath's as `blocks.json` lists them, an `int` filled from `unit.params`
+    * left out at its `min` by `Datapath.complete`, then `Datapath.check`'s refusals); an unknown name, JSON that is not
+    * an object or a refused param an `IllegalArgumentException`.
     */
   def block(name: String, json: String): Block = {
     val make = streamBlocks.get(name).orElse(Datapaths.all.find(_.name == name).map(d => datapath(d, _))).getOrElse {
@@ -219,10 +220,11 @@ object Emit {
     make(p)
   }
 
-  /** The datapath `d` on `params`, checked (`Datapath.check`), as a `Block`. */
+  /** The datapath `d` on `params`, completed (`Datapath.complete`) and checked (`Datapath.check`), as a `Block`. */
   def datapath(d: Datapaths.Datapath, params: Map[String, ujson.Value]): Block = {
-    d.check(params)
-    Block(d.name, ujson.Obj.from(d.params.map { case (n, _, _) => n -> params(n) }), () => d.make(params))
+    val p = d.complete(params)
+    d.check(p)
+    Block(d.name, ujson.Obj.from(d.params.map { case (n, _, _) => n -> p(n) }), () => d.make(p))
   }
 
   /** The stream blocks `--block` builds beside the catalogue's datapaths, by name, each from its params (checked, an

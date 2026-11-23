@@ -1,0 +1,22 @@
+{
+ "name": "bicg_v4",
+ "id": "bicg_dot2_colbank_fork_i8_o32",
+ "description": "The one pass over A with a bank: q's half `matvec/matvec_v2` (a `dot_v2` group per row), s's half `matvec/matvec_v8`, so s's N sums stay in the `Mac`'s bank of R rows of W (D191) and r is read once a row and held (D190); A is read once by both (`fork_read`, D189). One strip: N = R·W (64 × 64 at W = 4, R = 16).",
+ "kernel": "bicg_types",
+ "params": {"M": 64, "N": 64, "W": 4, "R": 16},
+ "symbols": {"M": "M", "N": "N"},
+ "types": "i8",
+ "steps": [
+  {"transform": "lift", "params": {"kernel": "matvec", "at": "q_mult_map"}},
+  {
+   "transform": "apply_recipe",
+   "params": {"block": "matvec", "recipe": "matvec/matvec_v2", "params": {"W": "W"}}
+  },
+  {"transform": "lift", "params": {"kernel": "matvec", "at": "s_mult_map"}},
+  {
+   "transform": "apply_recipe",
+   "params": {"block": "matvec_1", "recipe": "matvec/matvec_v8", "params": {"W": "W", "R": "R"}}
+  },
+  {"transform": "fork_read", "params": {"container": "A", "group": "bicg_types"}}
+ ]
+}

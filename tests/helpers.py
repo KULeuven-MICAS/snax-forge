@@ -85,9 +85,9 @@ def dot1_split(w_mul: int, w_sum: int, n: int = 2048) -> Recipe:
 @cache
 def steps(name: str, **params: int) -> tuple[Graph, ...]:
     """Every graph of recipe ``name`` at ``params`` (the recipe's defaults for the rest), the
-    import first."""
+    import first, at the recipe's ``types`` as the sandbox imports it."""
     r = Recipe.load(recipe_path(name)).with_params(params)
-    return tuple(x.graph for x in apply_recipe(r, imported(r.kernel, r.dtypes)))
+    return tuple(x.graph for x in apply_recipe(r, imported(r.kernel, r.dtypes, r.types)))
 
 
 def _step(transform: str, **params: Any) -> dict[str, Any]:

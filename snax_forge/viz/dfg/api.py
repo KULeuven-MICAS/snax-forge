@@ -36,12 +36,14 @@ from snax_forge.design.streamers import (
     group_of,
     instance_of,
     is_broadcast,
+    is_held,
     packed,
     port_loops,
     sliced,
     stream_lanes,
 )
 from snax_forge.dfg import DfgError, Graph, Memlet, Node
+from snax_forge.dfg.execute import carried_ports
 from snax_forge.dfg.graph import BAKED, SCALAR, TRANSPOSE
 from snax_forge.dfg.subset import dim_names, map_range, parse_dim
 from snax_forge.estimate.bits import packer_bits, slicer_bits
@@ -398,6 +400,12 @@ def bindings_section(g: Graph, recipe: Any = None, editable: bool = False) -> di
                 if any(inner.match(x) for x in ids):
                     used.add(i)
                     names += [x for x in ps if x not in names]
+            for st in list(recipe.steps) if recipe is not None else []:  # a bank's rows (D191)
+                p = st.params
+                if (st.transform == "bind" and p.get("instance") == a["instance"]
+                        and isinstance(p.get("params"), dict)):  # fmt: skip
+                    for v in p["params"].values():
+                        names += [x for x in _param_names(v, params) if x not in names]
             design = dict(a.get("params") or {})
             slots = slot_params(n)
             lanes = {k: v for k, v in design.items() if isinstance(v, int) and k not in slots
@@ -1084,7 +1092,9 @@ def compact_text(g: Graph, n: Node, param: str | None = None) -> str:
             inst = instance_of(n)
             first = next(p.name for p in inst.ports if p.direction == "in")  # a port, not a slot
             slots = "".join(f" · {k} {v}" for k, v in slot_params(n).items())
-            return f"{text} · {param or 'W'} {inst.lanes(first)}{slots}"
+            rows = inst.params.get("rows", 1)  # a bank's rows (D191)
+            bank = f" · bank {rows} rows" if rows > 1 else ""
+            return f"{text} · {param or 'W'} {inst.lanes(first)}{bank}{slots}"
         except (BrmError, ExprError, KeyError, StopIteration):
             return text
     if n.kind == "link":
@@ -1250,7 +1260,7 @@ def drawing_details(g: Graph, drawn: dict[str, Any], est: Any) -> dict[str, dict
             try:
                 if n.id not in loops_of:
                     loops_of[n.id] = firing_loops(g, n)
-                mine = port_loops(instance_of(n), port, m, loops_of[n.id])
+                mine = port_loops(instance_of(n), port, m, loops_of[n.id], port in carried_ports(n))
                 d["loops"] = [[lp.var, lp.count] for lp in mine]
                 d["beats"] = prod(lp.count for lp in mine)
             except (BrmError, ExprError, KeyError, ValueError):
@@ -1339,6 +1349,17 @@ def _lanes(g: Graph, n: Node, port: str) -> int | None:
         return None
 
 
+def held_port(g: Graph, n: Node, port: str) -> bool:
+    """Whether an accelerated node's ``port`` is held (D190): read once a bank row and kept;
+    False for any other node, or an instance the BRM library does not resolve."""
+    if n.kind != "accelerated" or port not in n.inputs:
+        return False
+    try:
+        return is_held(instance_of(n), port, n.inputs[port], firing_loops(g, n))
+    except (BrmError, ExprError, KeyError, ValueError):
+        return False
+
+
 def broadcast_port(g: Graph, n: Node, port: str) -> bool:
     """Whether an accelerated node's ``port`` is a broadcast input (D186), one lane its reader
     moves given to every lane; False for any other node, or an instance the BRM library does not
@@ -1389,7 +1410,8 @@ def memlet_text(m: Memlet) -> str:
 
 def seed_memlet(n: Node) -> Memlet | None:
     """The element a node's fold starts from (CONTRACTS, "SNAX-DFG"): a seeded tasklet's
-    reduce's seed, or a bound unit's ``seed`` port; None for any other node."""
+    reduce's seed, a carried fold's own output (D192), or a bound unit's ``seed`` port; None for
+    any other node."""
     if n.kind == "accelerated":
         return n.inputs.get(SEED)
     if n.kind != "tasklet":
@@ -1397,7 +1419,17 @@ def seed_memlet(n: Node) -> Memlet | None:
     for m in n.outputs.values():
         if m.reduce is not None and m.reduce.seed is not None:
             return Memlet(m.reduce.seed.data, list(m.reduce.seed.subset))
+        if m.reduce is not None and m.reduce.carry:
+            return Memlet(m.data, list(m.subset))
     return None
+
+
+def carried(n: Node) -> bool:
+    """Whether a node's fold is carried (D192): a tasklet's carry reduce, a unit's ``carry``."""
+    if n.kind == "accelerated":
+        return bool(n.attrs.get("carry"))
+    return n.kind == "tasklet" and any(m.reduce is not None and m.reduce.carry
+                                       for m in n.outputs.values())  # fmt: skip
 
 
 def _iterations(g: Graph, rng: str) -> int | None:

@@ -142,6 +142,7 @@ function legend() {
     h("li", {}, h("i", { class: "key c-unit" }), "unit"),
     h("li", {}, h("i", { class: "key c-fold" }), "fold"),
     h("li", {}, h("i", { class: "key c-link" }), "link"),
+    h("li", {}, h("i", { class: "key c-fork" }), "forked read (one reader)"),
     h("li", {}, h("i", { class: "key c-packer" }), "packer, slicer"),
     h("li", {}, h("i", { class: "key c-copy" }), "copy (transpose)"),
     h("li", {}, h("i", { class: "key c-mux" }), "temporal mux (shared unit)"),

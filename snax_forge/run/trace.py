@@ -19,7 +19,8 @@ SNAX-GVSoC's event lines renamed and cut to the program's window. Each event is 
                           elems, vals; back (a read's)  (a DMA beat on L1)
     beat         burst    task, id, op, mem, addr, size, back, region, elems  (a request to AXI)
     beat         fire     task, n, b, value, vals  (b, value, vals keyed by reader mover)
-    beat         push     task, n, first, last, value, vals
+    beat         push     task, n, first, last, value, vals; unit (its sink, with two
+                          or more outputs)
     beat         class    task, mode  (src = acc or the mover; t = the first cycle in it)
     stall        stall    task, addr, bank, row, by, by_addr, region, elems; b (a SNAX
                           port's)  (src = the port; one per cycle refused)
@@ -61,7 +62,7 @@ KINDS: dict[str, list[tuple[frozenset[str], frozenset[str]]]] = {
     "dma": forms(("task id i op mem addr size bank row value l2 region elems vals", "back")),
     "burst": forms(("task id op mem addr size back region elems", "")),
     "fire": forms(("task n b value vals", "")),
-    "push": forms(("task n first last value vals", "")),
+    "push": forms(("task n first last value vals", "unit")),
     "class": forms(("task mode", "")),
     "stall": forms(("task addr bank row by by_addr region elems", "b")),
     "fifo": forms(("task lane count", "")),

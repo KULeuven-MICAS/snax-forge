@@ -24,8 +24,8 @@ from snax_forge import expr
 from snax_forge.design.streamers import (
     firing_loops,
     instance_of,
-    linked_ports,
     links,
+    no_streamer,
     per_word,
     port_loops,
     slices_per_word,
@@ -33,6 +33,7 @@ from snax_forge.design.streamers import (
     unplaced,
 )
 from snax_forge.dfg import Graph, Node
+from snax_forge.dfg.execute import carried_ports
 from snax_forge.dfg.pad import padded_shape, split_factor, tailed_split
 from snax_forge.dfg.subset import map_range
 
@@ -100,8 +101,9 @@ def _num_ch(graph: Graph, c: str, lanes: int) -> int:
 
 
 def outer_ports(graph: Graph) -> list[tuple[Node, str, PortData]]:
-    """Every bound node's ports on no link, each with what it moves in one task."""
-    linked = linked_ports(graph)
+    """Every bound node's ports with a streamer (on no link, not a fork's but its first, D189),
+    each with what it moves in one task."""
+    linked = no_streamer(graph)
     out = []
     for n, _ in graph.walk():
         if n.kind != "accelerated":
@@ -111,7 +113,7 @@ def outer_ports(graph: Graph) -> list[tuple[Node, str, PortData]]:
             if f"{n.attrs['instance']}.{p.name}" in linked:
                 continue
             m = (n.inputs | n.outputs)[p.name]
-            mine = port_loops(inst, p.name, m, loops)
+            mine = port_loops(inst, p.name, m, loops, p.name in carried_ports(n))
             counts = [lp.count for lp in mine]
             lanes = stream_lanes(graph, n, inst, p.name)  # one for a broadcast (D186)
             d = per_word(graph.containers[m.data].dtype, lanes, WORD_BITS)

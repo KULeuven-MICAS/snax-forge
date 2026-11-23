@@ -7,7 +7,7 @@ Rules (D117):
 - An entry is a choice with a real alternative that someone may want to reverse: direction, ownership, the interfaces between components, the order of work. Implementation details live in the module's docstring and its tests.
 - An entry says what was decided, why, and where the detail lives, in a few short bullets; an edge case only when there is one. A change is written into the entry, not chained after it.
 - Entries merged into one keep all their numbers in its heading, so a cite of any of them still finds it. A number is never changed or reused; the text of a removed entry is in git history.
-- A new decision gets the next free number, under the area it belongs to. Next free number: **D189**.
+- A new decision gets the next free number, under the area it belongs to. Next free number: **D195**.
 
 Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29–D45, D47–D50, D53, D54, D56, D58–D63, D65–D67, D69, D74, D76–D78, D80, D81, D83, D88–D97, D100, D101, D103, D104, D106, D107, D109, D110, D114, D115, D119, D124, D127, D128, D132, D133, D138–D141, D151, D156, D159, D160, D181.
 
@@ -133,7 +133,7 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 - **Decided:** an input of a lane-wise datapath (`SimdLanes`, `Mac`) whose memlet does not use the nest's spatial variable is read as one lane a beat and given to all W lanes, by wires between the port and the datapath (`ShellWrapper`'s `<unit>_<port>_bcast`, `SnaxGroup` beside `SnaxSlicer`). `bind` works it out from the memlet, with no transform and no stored attribute, and refuses it on a datapath whose lanes do not compute on their own. `accelerator.json` keeps the port's lanes (the unit's) and marks it `"broadcast": true`; its stream is one lane, so its channels and d_in follow from one lane (D180). The page labels its edge `<port> · broadcast`. Priced as wires.
 - **Why:** the column form reads y₂[i] once a beat for all lanes; a W-lane stream of the same value would cost W times the reads and a copy, and a new block would add nothing the wires do not.
 - **Where:** `sandbox/transforms.py` (`_bind_lanes`), `design/streamers.py` (`stream_lanes`, `is_broadcast`); CONTRACTS, "Accelerator RTL spec".
-- **Edge:** a linked port is never one (it takes its lanes from the link), nor a seed or an output. A value read once a job (a hold) is not a broadcast.
+- **Edge:** a linked port is never one (it takes its lanes from the link), nor a seed or an output. A value read once a row and kept is a hold (D190), on top of the broadcast.
 
 ## Sandbox and recipes
 
@@ -178,7 +178,7 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 
 ### D112 · D145 · D146 · D148 — An accelerator is groups of linked units, described once
 
-- **Decided:** a bound graph nests accelerator ⊃ groups ⊃ units and links. A group is a stand-alone accelerator with its own START, JOBS, STATUS, BUSY_COUNTER and control unit; its units are joined by links of a depth (0 a wire, ≥ 1 a buffer of that many beats), with streamers on the outer ports only. A unit fires JOBS · ∏ T over itself and the folds downstream. `link` merges two bound units' groups; `encapsulate` puts several groups in one accelerator. One description per design point, `accelerator.json`, nested the same way, is what Emit, the catalogue check and SNAX-GVSoC all read.
+- **Decided:** a bound graph nests accelerator ⊃ groups ⊃ units and links. A group is a stand-alone accelerator with its own START, JOBS (one per chain, D189), STATUS, BUSY_COUNTER and control unit; its units are joined by links of a depth (0 a wire, ≥ 1 a buffer of that many beats) into chains, with streamers on the outer ports only. A unit fires JOBS · ∏ T over itself and the folds downstream. `link` merges two bound units' groups, `fork_read` two chains reading one container (D189); `encapsulate` puts several groups in one accelerator. One description per design point, `accelerator.json`, nested the same way, is what Emit, the catalogue check and SNAX-GVSoC all read.
 - **Why:** a composition is one accelerator with one register window and one wrapper, groups run apart, and the model and the RTL cannot be configured apart.
 - **Where:** CONTRACTS, "SNAX-DFG" and "Accelerator RTL spec".
 - **Edge:** an empty run still ends in a done, so there is no ERROR CSR. Links between accelerators stay parked (open item 53).
@@ -189,6 +189,48 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 - **Why:** control is written once for model and RTL, never per variant, and `<tag>_ctrl` plus `<tag>_datapath` compare with a whole HLS block. SnaxGroupRule's flat count of firings stays the spec.
 - **Where:** CONTRACTS, "Accelerator RTL spec"; `GroupRule.scala`.
 - **Edge:** programming the next task during a run is open item 123.
+
+### D189 — Chains share a read: one reader, one group
+
+- **Decided:** a group may hold several chains whose heads read one container with the same beats in the same order. `fork_read` gives them one reader: a beat is taken only when every head fires (their readies ANDed), so a head that could fire waits while another cannot. The chains are one group: one START, STATUS, BUSY_COUNTER and control unit, done when every chain is, a frozen output stalling it; each chain has its own JOBS (`JOBS_<SINK>`) and its sink its own output. Chains meet only at a fork: no link or join between them. LOWER refuses a fork whose heads fire unlike, since the group would never end.
+- **Why:** one pass over A (bicg, mvt, later atax) reads A once for both halves; the fork is flow control, not a datapath. A JOBS per chain because each chain's results come at their own rate (q a row, s once), and one control unit because a shared beat ties the chains to one schedule anyway.
+- **Where:** CONTRACTS, "SNAX-DFG", "Recipe", "Task list" and "Accelerator RTL spec"; snax-gvsoc's `snax/snax_group_rule.py`.
+- **Edge:** a forked unit of span > 1 and a fork beside shared movers (`share_ports`) are refused for now.
+
+### D190 — A held input: read once a row, kept for the row
+
+- **Decided:** a banked unit's input whose memlet uses none of the bank's row loops (bicg's r[i] across s's row) is read once every R firings and kept in a register of its element's width for the row: its streamer skips the row loops, and it needs its beat and is taken only on a row's first firing, when the bank's `row` wraps, so no CSR of its own. `bind` works it out from the memlet, as the broadcast (D186): no transform and no stored attribute. `accelerator.json` marks the port `"hold": true`; the page labels its edge `held a row`.
+- **Why:** r[i] is the same for the N/W beats of row i; read every beat it costs N/W times the reads and the slicer's pops.
+- **Where:** `design/streamers.py` (`is_held`, `port_loops`); CONTRACTS, "Accelerator RTL spec"; snax-gvsoc's `snax/snax_group_rule.py`.
+- **Edge:** only a broadcast input of a banked `Mac` for now; the generator refuses another.
+
+### D191 — A fold's unfinished outputs stay in a bank inside the unit
+
+- **Decided:** a `Mac` may keep R rows of W sums (`rows` R, a design param, default 1, the plain `Mac`), one row a firing in turn: a job of T firings starts each row on its first R firings and gives R results, one on each of its last R. `bind` takes it as an option (the editor's "bank rows", offered where the output's index changes along loops inside its sum loop, its rows those loops' counts) and refuses an R the loops do not give, naming the split. The rows are registers; a `ROWS` CSR (at most R) sets the rows a pass uses, the control's `row` the beat mod `ROWS`. The `Mac` takes two row pins from the control, `row` (the row a firing adds into) and `drain` (the row its last firing wrote, pushed a cycle later while the next firing adds), both comparisons, so the `Mac` keeps no row of its own. A wider output than R·W is cut into strips, a design knob: r read once a strip (D190), q carried across them (D192), N a multiple of R·W for now. A seeded bank is D194's.
+- **Why:** bicg's one pass reads A along its rows, so s's N sums are unfinished until the last row; keeping them in the unit sends nothing back to L1, and the row form of q stays as built. One `Mac` with a row of registers per R costs only flops where R `Mac`s would cost R datapaths.
+- **Where:** CONTRACTS, "Block runtime model" and "Accelerator RTL spec"; `brm/function.py` (`mac_kind`), `dfg/execute.py` (`named_rates`), `design/streamers.py` (`bank_loops`); snax-gvsoc's `snax/snax_group_rule.py`.
+- **Edge:** the bank as a memory (one read a cycle, latency 2) is open item 158. Its price is D193's.
+
+### D193 — A bank's price: one row loads a fire, its muxes by X97's forms
+
+- **Decided:** a `Mac` bank of R rows is priced from the table's rows-1 entry at its lanes plus snax-forge-experiments' `bank` forms in `char.json` (X97): its comb area grows by 59.8 µm² per lane and row (the two R:1 read muxes and the row enables), a fire's comb energy by W · (0.343 log₂ R + 0.316) pJ, and a fire loads one row of W · 32 bits, not R. Its flops stay the catalogue's (all R rows). Past the largest read mux the forms were fitted to (2 048 bits) the lookup says `bank_beyond`: DC builds a larger mux there (about 2× at 4 096 bits), which the forms do not see.
+- **Why:** the first price, the rows-1 comb with every row loading, gave 0.76 to 0.87 of DC's area and 1.05 to 3.37 times the energy; with the forms the area is 0.99 to 1.01 and the energy 0.90 to 1.06 on X97's points. The numbers live in the table, which `import-costs` copies, not in the code.
+- **Where:** `char/__init__.py` (`lookup`, `_banked`); CONTRACTS, "Cost model".
+- **Edge:** a held input's register loading once a row and the clock gates' idle energy (R × 4.9 fJ a cycle) are left out.
+
+### D194 — A seeded bank starts each row from its seed
+
+- **Decided:** a `Mac` bank may be seeded (D187): its `seed` port moves a beat a row, read on a job's first R firings with the first firing of each row, so row ρ starts from seed beat ρ: s[ρ] ← seed + a·b where the unseeded bank has a·b. The seed is neither held (D190) nor carried (D192): its streamer runs the loops its memlet uses, as the bank's output does, and it reads the words the output writes back at the job's end. The control's `first` already covers a bank's first R firings, so the seed is taken on `first`; the `Mac`'s seed adds through one W-lane mux before its adders, shared by every row. It is priced as D193's bank on the rows-1 `Mac`, whose seeded form is priced as unseeded (D187).
+- **Why:** mvt's one pass (x2 += Aᵀ y2) is bicg's with a start value; seeding the bank keeps x2's sums inside the unit, where an unseeded bank and a `vadd` after it would read x2 back and add a unit.
+- **Where:** `brm/function.py` (`mac_kind`, `AccelFunction.due`), `sandbox/transforms.py` and `lower/derive.py` (the seed's rows), `gen/rtl.py` (`vectors`, the seed's ROWS beats a job); CONTRACTS, "Block runtime model" and "Accelerator RTL spec"; `hw/chisel`'s `datapath/Mac.scala` (the seed's mux) and `ctrl/GroupRule.scala` (the seed needed and ready on `first`); snax-gvsoc's `snax/snax_group_rule.py`, `snax/snax_group.hpp` (`SnaxGroupRule`, already on `first`), `snax/snax_datapath.hpp` (`SnaxMac`) and `snax/snax_cfg.py`.
+- **Edge:** one strip (N = R·W) is what is built and measured; strips would carry x1's tree across them from L1 (D192 without its mask, since x1 starts from itself).
+
+### D192 — A fold carried across strips through L1
+
+- **Decided:** a fold whose output is revisited by loops outside the ones it moves with (q's rows, once per strip of columns) is carried: each visit starts from what the last wrote, the first from the identity. It is a step of its own, `carry_seed` (inverse `uncarry_seed`), recorded as `"carry": true` on the reduce; `bind` gives the unit its own output as its `seed` port (D163) and the node `"carry": true`, and the page draws the seed edge `carried, 0 first`. The seed reader runs every job, strips included; a `CARRY` CSR holds the jobs before the first revisit, and while the unit's jobs counter is below it the wrapper gives the datapath 0 in the seed's place. LOWER derives CARRY and refuses one the seed reader's and writer's queues could overtake.
+- **Why:** strips outermost make the row form read A in the order the bank's column form does (D191), so one pass reaches any N; the partial sum must leave the tree between strips because all M rows pass through it. Zeroing q before the task would add a task that is neither a load nor compute; masking the first strip's seed in the control is one comparison, and the reader still reads strip 0 so it never runs ahead of a write.
+- **Where:** CONTRACTS, "SNAX-DFG", "Recipe", "Task list" and "Accelerator RTL spec"; `sandbox/seed.py` (`carry_seed`), `dfg/execute.py` (`carried_ports`), `lower/derive.py` (`carry_jobs`, `carry_gap`).
+- **Edge:** only a fold that adds (every seeded datapath does); the revisiting loops outside every loop the output uses.
 
 ### D157 — A design's accelerators are streamer sets of one entry
 
@@ -349,7 +391,7 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 
 ### D185 — The DFG page: a flat graph laid out by ELK
 
-- **Decided:** the DFG page draws a step as a flat graph: loops as a chain of boxes, an edge through the loops its subset uses, one chain for a link whose loops match, hardware keyed by what it is (`unit:<instance>`, `link:<from port>><to port>`, `slicer:` and `packer:<instance>.<port>`) and drawn once, with a temporal mux and demux per task after `share`. Python decides every box, port, edge, text and id (`viz/dfg/drawing.py`); the page measures the boxes and lays them out with ELK (elkjs, vendored, in its worker): rows by ELK's partitions, edges routed as right angles. Moves by hand and the view last while the page is open.
+- **Decided:** the DFG page draws a step as a flat graph: loops as a chain of boxes, an edge through the loops its subset uses, one chain for a link whose loops match, hardware keyed by what it is (`unit:<instance>`, `link:<from port>><to port>`, `slicer:` and `packer:<instance>.<port>`) and drawn once, with a temporal mux and demux per task after `share`; every group one box with the loops that drive only it, one configuration the program writes once. Python decides every box, port, edge, text and id (`viz/dfg/drawing.py`); the page measures the boxes and lays them out with ELK (elkjs, vendored, in its worker): rows by ELK's partitions, edges routed as right angles. Moves by hand and the view last while the page is open.
 - **Why:** nested frames and CSS rows overlapped once links, slicers and packers sat together, and `share` made two halves' boxes one id; only the browser knows the text sizes. A library known for layered drawings beats hand-placed rows.
 - **Where:** CONTRACTS, "Recipe" (its viewer's API); `viz/dfg/drawing.py`, `viz/static/graph.js`, `viz/static/vendor/`.
 

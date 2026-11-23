@@ -4,8 +4,6 @@ import chisel3._
 import chisel3.experimental.noPrefix
 import chisel3.util._
 
-import snax.forge.ctrl.GroupSettings
-
 /** A CSR request after `snax_csr_mux_demux`: the offset from the accelerator's first CSR, the data, write or read. */
 class CsrReq extends Bundle {
   val addr  = UInt(32.W)
@@ -26,9 +24,10 @@ class CsrRsp extends Bundle {
   *     `starts(g)`, a bare strobe to its control unit, ready when the group is idle; one with bit 0 clear is taken and
   *     does nothing.
   *   - Every other read-write CSR is a register of its width (JOBS and JOB_BEATS: job_width, a unit's scalar its
-  *     dtype's bits), which takes a write's low bits when the request fires. Per group, JOBS and each JOB_BEATS in unit
-  *     order leave as wires (`settings(g)`) to its control unit, which reads them through the run with no copy, as a
-  *     scalar's CSRs (those with a `pin`, after its unit's JOB_BEATS) drive `scalars`, one element per CSR in CSR
+  *     dtype's bits, ROWS its bank's rows' bits), which takes a write's low bits when the request fires. Per group, its
+  *     JOBS (a `JOBS_<SINK>` per chain with several, D189), each JOB_BEATS, each ROWS (D191) and each CARRY (D192) in
+  *     unit order leave as wires (`settings(g)`) to its control unit, which reads them through the run with no copy, as
+  *     a scalar's CSRs (those with a `pin`, after its unit's JOB_BEATS) drive `scalars`, one element per CSR in CSR
   *     order, to the datapath: the wrapper joins a 64-bit one's two (low word first) onto its pin.
   *   - While a group is busy, a write to any of its read-write CSRs (START with bit 0 set or clear, JOBS, each
   *     JOB_BEATS, each scalar) is held, `req.ready` low, until E + 1, E the cycle its run ends, so its settings stay
@@ -58,7 +57,8 @@ class AccCsr(spec: AcceleratorSpec) extends Module {
     val req        = Flipped(Decoupled(new CsrReq))
     val rsp        = Decoupled(new CsrRsp)
     val starts     = Vec(groups.size, Decoupled(UInt(0.W)))
-    val settings   = Output(MixedVec(groups.map(g => new GroupSettings(g.jobBeats.size, spec.jobWidth))))
+    val settings   =
+      Output(MixedVec(groups.map(g => AccCtrl.desc(spec, g).settings(spec.jobWidth))))
     val busy       = Input(Vec(groups.size, Bool()))
     val done       = Input(Vec(groups.size, Bool()))
     val scalars    = Output(MixedVec(AccCsr.scalars(spec).map(c => UInt(c.width.W))))
@@ -72,7 +72,7 @@ class AccCsr(spec: AcceleratorSpec) extends Module {
   // The read-write CSRs but START, each a register of its width, named `<group>_[<unit>_]<csr>`
   private val regs: Map[Int, UInt] = (for {
     g      <- groups
-    (u, c) <- g.units.flatMap(u => u.csrs.map(Some(u) -> _)) :+ (None -> g.csr("JOBS").get)
+    (u, c) <- g.units.flatMap(u => u.csrs.map(Some(u) -> _)) ++ g.jobs.map(None -> _)
   } yield {
     val name = (Seq(g.name) ++ u.map(_.name) :+ c.name.toLowerCase).mkString("_")
     val reg  = RegInit(0.U(c.width.W)).suggestName(name)
@@ -99,8 +99,23 @@ class AccCsr(spec: AcceleratorSpec) extends Module {
     val at    = g.csr("START").get.offset
     val hit   = write        && io.req.bits.addr === at.U && io.req.bits.data(0)
     val mine  = write        && io.req.bits.addr          >= rw.min.U && io.req.bits.addr <= rw.max.U
-    io.settings(i).jobs := regs(g.csr("JOBS").get.offset)
+    io.settings(i).jobs := regs(g.jobs.head.offset)
+    for {
+      more   <- io.settings(i).more
+      (c, k) <- g.jobs.tail.zipWithIndex
+    } more(k) := regs(c.offset)
     for ((c, k) <- g.jobBeats.zipWithIndex) io.settings(i).beats(k) := regs(c.offset)
+    for {
+      rows      <- io.settings(i).rows
+      (c, k)    <- g.rows.zipWithIndex
+    } {
+      require(c.width == rows(k).getWidth, s"group ${g.name}: ROWS ${c.width} bits, its bank's ${rows(k).getWidth}")
+      rows(k) := regs(c.offset)
+    }
+    for {
+      carry     <- io.settings(i).carry
+      (c, k)    <- g.carry.zipWithIndex
+    } carry(k)         := regs(c.offset)
     io.starts(i).valid := writing             && hit
     io.starts(i).bits  := DontCare
     (mine              && io.busy(i)) || (hit && !io.starts(i).ready)

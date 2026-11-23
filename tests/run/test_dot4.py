@@ -2,12 +2,12 @@
 SNAX-GVSoC component, ``snax_acc0/group_dot``, under one control model (snax-gvsoc's
 SnaxGroup). The recorded run (fixtures/dot_v4/README.md: dot 4 at N = 512, W = 4) converts
 without GVSoC: the converter names the group's lines after the group, matches the start to the
-group's task and gives the done its run's classes; beat levels are refused.
+group's task and gives the done its run's classes (its beat lines: test_fork.py).
 """
 
 import pytest
 
-from snax_forge.run import RunError, Unit
+from snax_forge.run import Unit
 from snax_forge.run.convert import convert, invariants
 
 from .helpers import load_recorded
@@ -42,13 +42,6 @@ def test_the_recorded_run_converts_the_group_as_one_unit(recorded):
     starts = sorted((e["src"], e["task"]) for e in trace.of_kind("start") if e["src"] != "dma")
     assert starts == [("dot", "mult_dot"), ("mac_a", "mult_mac_a"), ("mac_b", "mult_mac_b"),
                       ("sum_out", "sum_final_sum_out")]  # fmt: skip
-
-
-def test_the_recorded_run_refuses_beat_levels(recorded):
-    cluster, tasks, check, lines, regions, _ = recorded
-    with pytest.raises(RunError) as e:
-        convert(lines, cluster, tasks, check["total_cycles"], "beat", None, regions, [])
-    assert e.value.code == "convert.level"
 
 
 def _csrs(cluster):

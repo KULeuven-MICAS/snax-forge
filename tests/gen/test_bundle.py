@@ -9,6 +9,7 @@ chisel job (``gen-rtl``) and by hand (``pixi run bundle``, docs/TOOL.md).
 from __future__ import annotations
 
 import json
+import subprocess
 from dataclasses import replace
 from pathlib import Path
 
@@ -100,6 +101,20 @@ def test_provenance_outside_git_and_in_this_checkout(tmp_path):
     commit, dirty = bundle_mod.provenance(gvsoc_mod.ROOT)
     assert commit is None or len(commit) == 40
     assert isinstance(dirty, bool)
+
+
+def test_an_untracked_file_leaves_a_checkout_clean(tmp_path):
+    run = lambda *a: subprocess.run(
+        ["git", "-C", str(tmp_path), *a], check=True, capture_output=True
+    )
+    run("init", "-q")
+    (tmp_path / "a.txt").write_text("a")
+    run("add", "a.txt")
+    run("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "a")
+    (tmp_path / "custom.json").write_text("{}")
+    assert bundle_mod.provenance(tmp_path)[1] is False
+    (tmp_path / "a.txt").write_text("b")
+    assert bundle_mod.provenance(tmp_path)[1] is True
 
 
 @pytest.mark.parametrize(

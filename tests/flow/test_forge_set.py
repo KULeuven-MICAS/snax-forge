@@ -82,7 +82,7 @@ def test_a_failing_forge_stops_the_set(tmp_path, stubbed, capsys):
 
 
 def test_the_full_set_holds_the_quick_one():
-    assert fs.SETS["full"][: len(fs.QUICK)] == fs.QUICK and len(fs.SETS["full"]) == 26
+    assert fs.SETS["full"][: len(fs.QUICK)] == fs.QUICK and len(fs.SETS["full"]) == 28
     assert fs.SETS["full"][-3] == fs.Design("relu_v1") and fs.Design("relu_v1") not in fs.QUICK
 
 
@@ -146,8 +146,9 @@ def test_the_mvt_set_is_its_own():
     mvt_v4_1 and mvt_v4_1_1 (int8 in, int32 out) at W = 8, contiguous and
     padded_rows, sequential (D183), and mvt_v5 (half 2 a seeded Mac, D186 · D187) at its
     defaults, sequential contiguous and padded_rows and pipeline contiguous, and
-    mvt_v5_2 (half 2 an unseeded Mac linked into a vadd) sequential contiguous; in
-    neither quick nor full."""
+    mvt_v5_2 (half 2 an unseeded Mac linked into a vadd) sequential contiguous, and the one
+    pass mvt_v6 (a seeded bank, D194) at W = 8, 16, 32 (R = 64 / W) against mvt_v5 under
+    pipeline at W = 16 and 32 (W = 8 is above); in neither quick nor full."""
     names = [d.name for d in fs.SETS["mvt"]]
     pad = "_passes.layoutpadded_rows"
     two = ["mvt_v2", "mvt_v2_2"]
@@ -165,15 +166,21 @@ def test_the_mvt_set_is_its_own():
         "mvt_v5_schedulesequential", f"mvt_v5{pad}_schedulesequential",
         "mvt_v5_schedulepipeline",
         "mvt_v5_2_schedulesequential",
+        "mvt_v6", "mvt_v6_W16_R4", "mvt_v6_W32_R2",
+        "mvt_v5_W_x1-16_schedulepipeline", "mvt_v5_W_x1-32_schedulepipeline",
     ]  # fmt: skip
-    assert len(names) == 42
-    assert not {d.recipe for d in fs.SETS["mvt"]} & {d.recipe for d in fs.SETS["full"]}
+    assert len(names) == 47
+    # the full set takes the one pass at its defaults, for its seeded bank (D194)
+    assert {d.recipe for d in fs.SETS["mvt"]} & {d.recipe for d in fs.SETS["full"]} == {"mvt_v6"}
 
 
 def test_the_bicg_set_is_its_own():
     """bicg at 64 x 64, W = 8: bicg_v1 contiguous and padded_rows, bicg_v2 (and padded_rows
     under pipeline), and bicg_v2_1 (int8 in, int32 out) at its defaults and at 40 x 64, each
-    sequential and pipeline; in no other set."""
+    sequential and pipeline; the one pass bicg_v3 (64 x 32, W = 32) and bicg_v2_1 at its size
+    under pipeline; the one pass with the bank, bicg_v4, at 64 x 64 and 40 x 64 (W = 4,
+    R = 16) and at W = 8, 16, 32 (R = 64 / W) against bicg_v2_1 under pipeline at the same W, and in two
+    strips, bicg_v4_1; in no other set."""
     names = [d.name for d in fs.SETS["bicg"]]
     pad = "_passes.layoutpadded_rows"
     assert names == [
@@ -181,6 +188,10 @@ def test_the_bicg_set_is_its_own():
         *(f"bicg_v2_schedule{s}" for s in ("sequential", "pipeline")),
         f"bicg_v2{pad}_schedulepipeline",
         *(f"bicg_v2_1{m}_schedule{s}" for m in ("", "_M40") for s in ("sequential", "pipeline")),
+        "bicg_v2_1_N32_W32_schedulepipeline", "bicg_v3",
+        "bicg_v4", "bicg_v4_M40", "bicg_v4_W8_R8", "bicg_v4_W16_R4", "bicg_v4_W32_R2",
+        "bicg_v2_1_W16_schedulepipeline",
+        "bicg_v2_1_W32_schedulepipeline", "bicg_v4_1",
     ]  # fmt: skip
     others = {d.recipe for k, ds in fs.SETS.items() if k != "bicg" for d in ds}
-    assert not {d.recipe for d in fs.SETS["bicg"]} & others
+    assert {d.recipe for d in fs.SETS["bicg"]} & others == {"bicg_v4_1"}  # in full too

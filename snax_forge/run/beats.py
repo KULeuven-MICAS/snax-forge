@@ -10,10 +10,13 @@ with their trace source (convert.py); ``ctx`` (``Context``) is the rest of the r
 the regions, the window, the filter and what the task level made of the events. A unit's lines
 are paired with its streamer's tasks by ``pairing``; a run's class runs (``class_runs``) go from
 each ``class`` line to the next of its task. The invariants, each checked where the trace has
-its lines: grants, bank accesses, DMA beats (as the iDMA counts them), firings, pushes and, at
+its lines: grants, bank accesses, DMA beats (as the iDMA counts them), firings, each output's
+pushes against its rate and its writer's words (a packed one d_out results a word) and, at
 ``stall``, stalls, conflicts and ``qmax`` match the summary; every fired ``b`` was granted on
-every lane; each L1 line's ``bank`` and ``row`` are its address's; class runs tile each run; and
-each mover's grant addresses are the nest its CSR writes gave the task (``agu_nest``).
+every lane (a sliced input's slice of it); each L1 line's ``bank`` and ``row`` are its address's;
+class runs tile each run; and each mover's grant addresses are the nest its CSR writes gave the
+task (``agu_nest``). A linked group is read at its boundary: its firings the head's, each push
+its sink's.
 """
 
 from __future__ import annotations
@@ -319,11 +322,9 @@ class _Beats:
         self.spans = brackets(ctx.task_events)
         self.dma_copies = copies(ctx.task_events)
         self.mover_of_port = {p: m for m in self.acc.movers for p in m.ports}
-        # per unit its readers and writers (a group's own), each beat its num_ch words
-        self.readers = {u: [m for m in self.acc.movers_of(u) if not m.write]
-                        for u in self.acc.unit_names}  # fmt: skip
-        self.writers = {u: [m for m in self.acc.movers_of(u) if m.write]
-                        for u in self.acc.unit_names}  # fmt: skip
+        # per unit the readers its firings name (a linked group's head's), each beat its num_ch
+        # words
+        self.readers = {u: self.acc.fire_readers(u) for u in self.acc.unit_names}
         self.words_in = {u: [self.acc.lanes_of(m, u) for m in rs] for u, rs in self.readers.items()}
         self.starts = {u: [sum(w[:i]) for i in range(len(w) + 1)] for u, w in self.words_in.items()}
         self.funcs: dict[str, list[tuple[int, str]]] = defaultdict(list)
@@ -438,18 +439,25 @@ class _Beats:
         return e
 
     def push(self, e: dict, src: str, f: dict) -> dict | None:
-        """A push of unit ``src``: the result's words; its values once the grants are known."""
+        """A push of unit ``src``: the result's words and, with several outputs, its sink
+        (``unit``); its values once the grants are known."""
         t = e["t"]
         if src not in self.ctx.filter:
             return None
-        writers = self.writers[src]
-        if writers and len(f["value"]) != self.acc.lanes_of(writers[0], src):
-            raise RunError("convert.beats", f"push at {t}: {len(f['value'])} words, {src}'s "
-                           f"writer moves {self.acc.lanes_of(writers[0], src)} (its num_channel, "
-                           "or on a shared mover its port's)")  # fmt: skip
+        sinks, sink = self.acc.sinks(src), f.get("unit")
+        if (sink is None) != (len(sinks) == 1) or (sink is not None and sink not in sinks):
+            raise RunError("convert.beats", f"push at {t}: unit {sink!r}, where {src}'s outputs "
+                           f"are {sinks}'s (a push names its unit when there are two or more)")  # fmt: skip
+        w = self.acc.writer_of(src, sink)
+        if w is not None and len(f["value"]) != self.acc.lanes_of(w, src):
+            raise RunError("convert.beats", f"push at {t}: {len(f['value'])} words, {sink or src}'s "
+                           f"writer moves {self.acc.lanes_of(w, src)} (its num_channel, or on a "
+                           "shared mover its port's)")  # fmt: skip
         run = self.task(src, t)
         e.update(src=src, task=run[1] if run else None, n=f["n"], first=f["first"],
                  last=f["last"], value=list(f["value"]))  # fmt: skip
+        if sink is not None:
+            e["unit"] = sink
         self.pushes.append((e, run))
         return e
 
@@ -507,9 +515,25 @@ class _Beats:
         for e, run in self.fires:
             e["vals"] = {m.name: vals_of(m, e["src"], run, e["b"][m.name], e["value"][m.name])
                          for m in self.readers[e["src"]]}  # fmt: skip
+
+        def slice_vals(mover: Mover, unit: str, run: tuple[int, str] | None, n: int, d: int,
+                       words: list[int]) -> Any:  # fmt: skip
+            """A packed push's values: result n is slice n % d of word n // d (D174)."""
+            task = paired.get(run[1], {}).get(mover.name) if run else None
+            g = grants.get((mover.name, task, n // d)) if task else None
+            if not g or len(g) != 1 or not words:
+                return None
+            size = self.word // d
+            addr = g[0]["addr"] + n % d * size
+            r = region_at(self.ctx.regions, "l1", addr)
+            return r.vals(addr, (words[0] & WORD_MASK).to_bytes(8, "little")[:size]) if r else []
+
         for e, run in self.pushes:
-            w = self.writers[e["src"]]
-            e["vals"] = vals_of(w[0], e["src"], run, e["n"], e["value"]) if w else None
+            w = self.acc.writer_of(e["src"], e.get("unit"))
+            d = self.acc.d_out(w, e["src"]) if w is not None else 1
+            e["vals"] = (None if w is None else
+                         vals_of(w, e["src"], run, e["n"], e["value"]) if d == 1 else
+                         slice_vals(w, e["src"], run, e["n"], d, e["value"]))  # fmt: skip
 
 
 # =============================================================================
@@ -640,31 +664,42 @@ def _dma_beats(s: _Seen) -> list[str]:
 
 
 def _firings(s: _Seen, unit: str) -> list[str]:
-    """Per run of ``unit``, its fire and push lines against its done, and its writers' grants
-    (the streamer tasks launched with its task) against its pushes; over all its runs, the
-    firings against its summary."""
+    """Per run of ``unit``, its fire lines against its done, each output's push lines against
+    its rate, and its writer's grants (the streamer task launched with its task) against those
+    pushes, d_out to a word; over all its runs, the firings against its summary."""
     ctx, acc, bad = s.ctx, s.ctx.cluster.accelerator, []
     rates = [x.fields["rate"] for src, x in ctx.lines if src == unit and x.trace == "events"
              and x.kind == "start" and 0 <= x.cycle - ctx.boot < ctx.width]  # fmt: skip
+    sinks = acc.sinks(unit)
+    outs = [(k, acc.writer_of(unit, k if len(sinks) > 1 else None)) for k in sinks]
     fired = 0
-    writers = [m for m in s.traced if m.write and m in acc.movers_of(unit)]
     for k, done in enumerate(e for e in s.ev if e["k"] == "done" and e["src"] == unit):
         task = done["task"]
         n_fire = sum(1 for e in s.of["fire"] if e["task"] == task)
-        n_push = sum(1 for e in s.of["push"] if e["task"] == task)
         fired += n_fire
         if n_fire != done["firings"]:
             bad.append(f"{task}: {n_fire} fire lines, its done says {done['firings']} firings")
         rate = rates[k] if k < len(rates) else 1
-        if n_push * rate != done["firings"]:
-            bad.append(f"{task}: {n_push} push lines, {done['firings']} firings at rate {rate}")
-        for m in writers:
+        rate = rate if isinstance(rate, list) else [rate]
+        if len(rate) != len(sinks):
+            bad.append(f"{task}: {len(rate)} rates at its start, {len(sinks)} outputs ({sinks})")
+            continue
+        for (sink, m), r in zip(outs, rate, strict=True):
+            mine = [e for e in s.of["push"] if e["task"] == task and e.get("unit", sink) == sink]
+            of = f" of {sink}" if len(sinks) > 1 else ""
+            if len(mine) * r != done["firings"]:
+                bad.append(f"{task}: {len(mine)} push lines{of}, {done['firings']} firings at rate "
+                           f"{r}")  # fmt: skip
+            if m is None or m not in s.traced:
+                continue
             wtask = _paired(ctx, task, m.name)
             got = sum(1 for e in s.of["grant"] if e["src"] in m.ports and e["task"] == wtask)
-            lanes = acc.lanes_of(m, unit)
-            if got != n_push * lanes:
-                bad.append(f"{m.name} ({wtask}): {got} grants, {n_push} pushes of {lanes} "
-                           "lanes")  # fmt: skip
+            lanes, d = acc.lanes_of(m, unit), acc.d_out(m, unit)
+            words = -(-len(mine) // d)
+            if got != words * lanes:
+                packed = f" in {words} words of {d}" if d > 1 else ""
+                bad.append(f"{m.name} ({wtask}): {got} grants, {len(mine)} pushes{of}{packed} of "
+                           f"{lanes} lanes")  # fmt: skip
     if fired != s.profile.accelerators[unit].firings:
         bad.append(f"{unit}: {fired} fire lines, {s.profile.accelerators[unit].firings} "
                    "firings in its summary")  # fmt: skip
@@ -672,8 +707,8 @@ def _firings(s: _Seen, unit: str) -> list[str]:
 
 
 def _fired_beats(s: _Seen, unit: str) -> list[str]:
-    """Every beat a firing of ``unit`` names, and every push, against the grants of the
-    streamer tasks launched with its task."""
+    """Every beat a firing of ``unit`` names (a sliced input's slice of its word), and every
+    push, against the grants of the streamer tasks launched with its task."""
     acc, bad = s.ctx.cluster.accelerator, []
     by_beat = beat_grants(s.of["grant"], s.traced)
     mine = acc.movers_of(unit)
@@ -682,20 +717,51 @@ def _fired_beats(s: _Seen, unit: str) -> list[str]:
         g = by_beat.get((m.name, _paired(s.ctx, task, m.name), b), {})
         return [g[lane]["value"] if lane in g else None for lane in range(acc.lanes_of(m, unit))]
 
+    pops: dict[tuple[str, str, int], int] = defaultdict(int)
     for e in (e for e in s.of["fire"] if e["src"] == unit):
         for m in s.traced:
             if m.write or m.name not in e["b"]:
                 continue
-            got = granted(m, e["task"], e["b"][m.name])
-            if got != e["value"][m.name]:
-                bad.append(f"fire {e['n']} at {e['t']}: {m.name}'s beat {e['b'][m.name]} "
-                           f"granted as {got}, fired as {e['value'][m.name]}")  # fmt: skip
+            b, fired = e["b"][m.name], e["value"][m.name]
+            d = acc.d_in(m, unit)
+            if d == 1 or b < 0:
+                got = granted(m, e["task"], b)
+                if got != fired:
+                    bad.append(f"fire {e['n']} at {e['t']}: {m.name}'s beat {b} granted as "
+                               f"{got}, fired as {fired}")  # fmt: skip
+                continue
+            # NB (D180): the k-th firing that names word b takes its slice k, slice 0 lowest
+            k = pops[(m.name, e["task"], b)]
+            pops[(m.name, e["task"], b)] += 1
+            if k >= d:
+                bad.append(f"fire {e['n']} at {e['t']}: {m.name}'s word {b} holds {d} slices, "
+                           f"this is firing {k + 1} to name it")  # fmt: skip
+                continue
+            bits = 64 // d
+            word = granted(m, e["task"], b)[0]
+            got = None if word is None else word >> (k * bits) & ((1 << bits) - 1)
+            if got != fired[0] & ((1 << bits) - 1):
+                bad.append(f"fire {e['n']} at {e['t']}: slice {k} of {m.name}'s word {b} is "
+                           f"{None if got is None else hex(got)}, fired as {hex(fired[0])}")  # fmt: skip
     for e in (e for e in s.of["push"] if e["src"] == unit):
-        for m in (m for m in s.traced if m.write and m in mine):
+        m = acc.writer_of(unit, e.get("unit"))
+        if m is None or m not in s.traced or m not in mine:
+            continue
+        d = acc.d_out(m, unit)
+        if d == 1:
             got = granted(m, e["task"], e["n"])
             if got != e["value"]:
                 bad.append(f"push {e['n']} at {e['t']}: written by {m.name} as {got}, "
                            f"pushed as {e['value']}")  # fmt: skip
+            continue
+        # NB (D174): result n is slice n % d of the writer's word n // d, slice 0 lowest
+        bits = 64 // d
+        word = granted(m, e["task"], e["n"] // d)[0]
+        got = None if word is None else word >> (e["n"] % d * bits) & ((1 << bits) - 1)
+        if got != e["value"][0] & ((1 << bits) - 1):
+            bad.append(f"push {e['n']} at {e['t']}: slice {e['n'] % d} of {m.name}'s word "
+                       f"{e['n'] // d} is {None if got is None else hex(got)}, pushed as "
+                       f"{hex(e['value'][0])}")  # fmt: skip
     return bad
 
 
@@ -811,7 +877,11 @@ def _stall_invariants(trace: Trace, profile: Profile, ctx: Context, of: dict[str
                 lanes[e["lane"]].append((e["t"], e["count"]))
         words: dict[int, list[tuple]] = defaultdict(list)
         unchecked: set[int] = set()
+        unpopped = False  # no line names its pops: its counts checked against depth and qmax only
         for unit in units:
+            if not m.write and m not in acc.fire_readers(unit):
+                unpopped = True  # a linked group's outer input past its head
+                continue
             for lane, ws in _words(m, of, ctx, unit).items():
                 words[lane] += ws
             on = acc.lanes_of(m, unit)
@@ -819,7 +889,7 @@ def _stall_invariants(trace: Trace, profile: Profile, ctx: Context, of: dict[str
                 # a lane ENABLED_CHANNEL leaves off sends no request: its word, visible the cycle
                 # after the push, is dropped in that cycle (snax-gvsoc's streamer)
                 for e in of["push"]:
-                    if e["src"] == unit:
+                    if e["src"] == unit and acc.writer_of(unit, e.get("unit")) == m:
                         for lane in range(on, m.lanes):
                             words[lane].append((e["t"] + 1, e["t"] + 1))
             elif on < m.lanes:
@@ -838,7 +908,7 @@ def _stall_invariants(trace: Trace, profile: Profile, ctx: Context, of: dict[str
                     if n != prev:
                         want.append((t, n))
                         prev = n
-            if seq != want:
+            if seq != want and not unpopped:
                 bad.append(f"{m.name} lane {lane}: fifo counts {seq[:6]}..., its words visible "
                            f"minus popped give {want[:6]}...")  # fmt: skip
             if seq and (max(n for _, n in seq) > m.fifo_depth or seq[-1][1] != 0):
@@ -853,8 +923,10 @@ def _stall_invariants(trace: Trace, profile: Profile, ctx: Context, of: dict[str
 
 def _words(m: Mover, of: dict[str, list], ctx: Context, unit: str) -> dict[int, list[tuple]]:
     """Each lane's words: the cycle each becomes visible and the cycle it is popped (by a
-    firing or push of ``unit``, its streamer task the one launched with the unit's)."""
+    firing of ``unit``, or the push of its sink that sends the word: a packed word's last, or
+    the run's; its streamer task the one launched with the unit's)."""
     out = defaultdict(list)
+    acc = ctx.cluster.accelerator
     if not m.write:
         popped: dict[tuple[str | None, int], int] = {}
         for e in of["fire"]:
@@ -869,8 +941,12 @@ def _words(m: Mover, of: dict[str, list], ctx: Context, unit: str) -> dict[int, 
                 if p is not None:
                     out[m.ports.index(e["src"])].append((e["back"] + 1, p))
     else:
-        pushed = {(_paired(ctx, e["task"], m.name), e["n"]): e["t"] for e in of["push"]
-                  if e["src"] == unit}  # fmt: skip
+        d = acc.d_out(m, unit)
+        pushed: dict[tuple[str | None, int], int] = {}
+        for e in of["push"]:
+            if e["src"] == unit and acc.writer_of(unit, e.get("unit")) == m:
+                key = (_paired(ctx, e["task"], m.name), e["n"] // d)
+                pushed[key] = max(pushed.get(key, -1), e["t"])
         for e in of["grant"]:
             if e["src"] in m.ports and "b" in e:
                 v = pushed.get((e["task"], e["b"]))

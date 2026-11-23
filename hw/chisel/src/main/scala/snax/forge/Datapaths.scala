@@ -19,25 +19,27 @@ import snax.forge.shell.AcceleratorSpec
   * The signature is what `hw/chisel/blocks.json` holds and `Emit --describe` prints: the params with their types and
   * limits, the data ports with their directions, the latency L and the span its control unit runs it at, its register
   * bits (`flops`), its pins (the enables it takes from the control unit: `fire`, `first`, `read`, `lane`, `en`, `load`,
-  * the slots) and `fill`, how each param comes from the unit (or, for a `LinkBuffer`, the link) of `accelerator.json`:
+  * `row`, `drain`, the slots) and `fill`, how each param comes from the unit (or, for a `LinkBuffer`, the link) of
+  * `accelerator.json`:
   *
   *   - `inputs.dtype`: the unit's input ports' dtypes but a seed's, in order (a `dtypes` param), or the first input's
   *     (a `dtype`);
   *   - `outputs.dtype`: the output port's dtype;
   *   - `inputs.lanes`: the first input port's lanes;
   *   - `inputs.count`: the number of input ports (SimdLanes' `streams`);
-  *   - `unit.opType`, `unit.params.<name>`: the unit's `opType` and its `params.<name>`;
+  *   - `unit.opType`, `unit.params.<name>`: the unit's `opType` and its `params.<name>` (an `int` the unit does not
+  *     have, its `min`: a `Mac`'s `rows` 1, the plain `Mac`);
   *   - `unit.scalars.<slot>`: whether the unit reads that slot from its CSR (a `bool`: its `scalars` has it);
   *   - `unit.ports.seed`: whether the unit has a seed port (a `bool`: a fold's start, read once per job);
   *   - `link.depth`, `link.lanes`, `link.dtype`: a buffer's link's depth and its ends' lanes and dtype.
   *
   * A port is `"in"` or `"out"`, or `{"dir": ..., "when": {param: value, ...}}`; a pin is a name, or `{"name": ...,
-  * "when": {...}}`. `when` is a match: the port or pin exists only when every listed param has that value, decided at
-  * elaboration (`holds`); one without `when` always does. A latency, a span or `flops` is an int or an expression over
-  * the params in `snax_forge/expr.py`'s grammar, a bool as 0 or 1 and `width(t)` a dtype param's bits, which the Python
-  * side evaluates (`snax_forge/gen/rtl.py`). `flops` is the block's register bits on its params, every flop it
-  * declares: the block cost model (`snax_forge/char`) prices a register as its bits; `BlockFlopsSpec` counts them in
-  * the emitted SV.
+  * "when": {...}}`. `when` is a match: the port or pin exists only when every listed param has that value, or, for a
+  * value `{"min": m}`, an int of at least m, decided at elaboration (`holds`); one without `when` always does. A
+  * latency, a span or `flops` is an int or an expression over the params in `snax_forge/expr.py`'s grammar, a bool as 0
+  * or 1 and `width(t)` a dtype param's bits, which the Python side evaluates (`snax_forge/gen/rtl.py`). `flops` is the
+  * block's register bits on its params, every flop it declares: the block cost model (`snax_forge/char`) prices a
+  * register as its bits; `BlockFlopsSpec` counts them in the emitted SV.
   *
   * The Python side (`snax_forge/gen/rtl.py`) checks each unit's timing and ports against it; `Emit --spec` builds from
   * the unit with `build`. A spec checks `describe` equal to `blocks.json`.
@@ -45,7 +47,7 @@ import snax.forge.shell.AcceleratorSpec
   * Param types: `int` (`min`), `bool`, `op` (one op name of `values`: SimdLanes takes every ElementwiseOp,
   * TreeAccumulate `add` only), `dtype` (an element type's NumPy name of `values`, `IntType`'s eight), `dtypes` (a list
   * of them) and `const` (an integer of any size or null, SimdLanes' `k`: null at two streams, where the unit has no
-  * such param; `const`). A `unit.params.<name>` the unit does not have fills null.
+  * such param; `const`). A `unit.params.<name>` the unit does not have fills null, or an `int`'s `min`.
   */
 object Datapaths {
 
@@ -93,7 +95,14 @@ object Datapaths {
           case "inputs.lanes"                     => ujson.Num(inPorts.head.lanes)
           case "inputs.count"                     => ujson.Num(inPorts.size)
           case "unit.opType"                      => ujson.Str(unit.opType.get)
-          case r if r.startsWith("unit.params.")  => unit.params.getOrElse(r.stripPrefix("unit.params."), ujson.Null)
+          case r if r.startsWith("unit.params.")  =>
+            unit.params.getOrElse(
+              r.stripPrefix("unit.params."),
+              t match {
+                case IntParam(min) => ujson.Num(min)
+                case _             => ujson.Null
+              }
+            )
           case r if r.startsWith("unit.scalars.") =>
             ujson.Bool(unit.scalars.exists(_._1 == r.stripPrefix("unit.scalars.")))
           case "unit.ports.seed"                  => ujson.Bool(unit.inPorts.contains("seed"))
@@ -116,10 +125,19 @@ object Datapaths {
     /** The pins whose `when` holds on `p`. */
     def livePins(p: Map[String, ujson.Value]): Seq[Pin] = pins.filter(x => holds(x.when, p))
 
-    /** `p` as a full set of its params (`Emit --block`): each param once and nothing else, each value of its type (an
-      * int of at least `min`, a bool, one of an op's `values`, a dtype, a non-empty list of dtypes), as the Python side
-      * checks a unit's (`snax_forge/gen/rtl.py`'s `check_params`); an `IllegalArgumentException` otherwise. What only
-      * the constructor knows (an opType narrower than an input, a Mac's form and its types) is its own `require`.
+    /** `p` with each `int` param filled from `unit.params` that `p` leaves out at its `min`, as `fill` gives a unit
+      * without it (a `Mac`'s `rows` 1): what `Emit --block` checks and builds.
+      */
+    def complete(p: Map[String, ujson.Value]): Map[String, ujson.Value] =
+      p ++ params.collect {
+        case (n, IntParam(min), rule) if rule.startsWith("unit.params.") && !p.contains(n) => n -> ujson.Num(min)
+      }
+
+    /** `p` as a full set of its params (`Emit --block`, after `complete`): each param once and nothing else, each value
+      * of its type (an int of at least `min`, a bool, one of an op's `values`, a dtype, a non-empty list of dtypes), as
+      * the Python side checks a unit's (`snax_forge/gen/rtl.py`'s `check_params`); an `IllegalArgumentException`
+      * otherwise. What only the constructor knows (an opType narrower than an input, a Mac's form and its types) is its
+      * own `require`.
       */
     def check(p: Map[String, ujson.Value]): Unit = {
       val names            = params.map(_._1)
@@ -145,7 +163,13 @@ object Datapaths {
   }
 
   def holds(when: Seq[(String, ujson.Value)], p: Map[String, ujson.Value]): Boolean =
-    when.forall { case (k, v) => p.get(k).contains(v) }
+    when.forall {
+      case (k, ujson.Obj(m)) if m.keySet == Set("min") => p.get(k).flatMap(_.numOpt).exists(_ >= m("min").num)
+      case (k, v)                                      => p.get(k).contains(v)
+    }
+
+  /** A `when` value that holds on an int of at least `m` (`holds`). */
+  private def atLeast(m: Int): ujson.Value = ujson.Obj("min" -> ujson.Num(m))
 
   /** A `const` param's value: null as None, else an integer, exact (a JSON number within ±2^53, the doubles' exact
     * integers, or a decimal string); an `IllegalArgumentException` otherwise.
@@ -263,7 +287,8 @@ object Datapaths {
         ("lanes", IntParam(1), "inputs.lanes"),
         ("accumulate", BoolParam, "unit.params.accumulate"),
         ("regOut", BoolParam, "unit.params.regOut"),
-        ("seed", BoolParam, "unit.ports.seed")
+        ("seed", BoolParam, "unit.ports.seed"),
+        ("rows", IntParam(1), "unit.params.rows")
       ),
       Seq(
         Port("a", "in"),
@@ -274,11 +299,13 @@ object Datapaths {
       ),
       ujson.Str("max(accumulate, regOut)"),
       ujson.Num(1),
-      ujson.Str("lanes * width(outType) * max(accumulate, regOut)"),
+      ujson.Str("lanes * width(outType) * max(accumulate, regOut) * rows"),
       Seq(
         Pin("fire", Seq("accumulate" -> ujson.True)),
         Pin("first", Seq("accumulate" -> ujson.True)),
-        Pin("en", Seq("accumulate" -> ujson.False, "regOut" -> ujson.True))
+        Pin("en", Seq("accumulate" -> ujson.False, "regOut" -> ujson.True)),
+        Pin("row", Seq("rows" -> atLeast(2))),
+        Pin("drain", Seq("rows" -> atLeast(2)))
       ),
       p => {
         new Mac(
@@ -288,7 +315,8 @@ object Datapaths {
           int(p, "lanes"),
           p("accumulate").bool,
           p("regOut").bool,
-          p("seed").bool
+          p("seed").bool,
+          int(p, "rows")
         )
       },
       Map(
@@ -298,7 +326,8 @@ object Datapaths {
         "lanes"      -> ujson.Num(4),
         "accumulate" -> ujson.True,
         "regOut"     -> ujson.False,
-        "seed"       -> ujson.False
+        "seed"       -> ujson.False,
+        "rows"       -> ujson.Num(1)
       )
     ),
     Datapath(

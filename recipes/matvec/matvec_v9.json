@@ -1,0 +1,40 @@
+{
+ "name": "matvec_v9",
+ "id": "matvec_dot2strip",
+ "description": "A `dot_v2` on each row, the columns in strips of S outermost: a row's sum over a strip is a job, carried to the next strip through L1 as the tree's seed, the first strip's seed 0 (D192). The row form that reads A in the order `matvec_v8`'s bank does.",
+ "kernel": "matvec",
+ "params": {"W": 4, "M": 64, "N": 64, "S": 16},
+ "symbols": {"M": "M", "N": "N"},
+ "steps": [
+  {"transform": "tag_map", "params": {"map": "mult_map", "kind": "temporal"}},
+  {"transform": "split", "params": {"map": "mult_map_1", "factor": "S"}},
+  {"transform": "tag_map", "params": {"map": "mult_map_1", "kind": "temporal"}},
+  {"transform": "split_map", "params": {"map": "mult_map_1_inner", "factor": "W"}},
+  {"transform": "interchange_map", "params": {"map": "mult_map", "with": "mult_map_1"}},
+  {
+   "transform": "bind",
+   "params": {
+    "node": "mult",
+    "brm": "simd",
+    "implementation": "chisel_tiled_spatial",
+    "instance": "mul"
+   }
+  },
+  {"transform": "tag_map", "params": {"map": "sum_map", "kind": "temporal"}},
+  {"transform": "split", "params": {"map": "sum_map_1", "factor": "S"}},
+  {"transform": "tag_map", "params": {"map": "sum_map_1", "kind": "temporal"}},
+  {"transform": "split_map", "params": {"map": "sum_map_1_inner", "factor": "W"}},
+  {"transform": "interchange_map", "params": {"map": "sum_map", "with": "sum_map_1"}},
+  {"transform": "carry_seed", "params": {"map": "sum_map_1_inner_s"}},
+  {
+   "transform": "bind",
+   "params": {
+    "node": "sum",
+    "brm": "accumulate",
+    "implementation": "chisel_adder_tree",
+    "instance": "sum"
+   }
+  },
+  {"transform": "link", "params": {"container": "tmp0", "depth": 1, "group": "matvec"}}
+ ]
+}

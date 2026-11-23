@@ -367,17 +367,28 @@ def unit_view(file: dict[str, Any], instance: str) -> tuple[str, str, int, int]:
     """The kind, the control, the latency and the II of ``instance`` in the slot's
     accelerator.json: its unit's datapath under the nest controller, or a linked group's
     datapaths in chain order, each link a wire or a buffer of its depth, under the group's
-    control unit (the latency the chain's)."""
+    control unit (the latency the chain's); a group of several chains (D189) each chain so,
+    joined by `‖`, the latency the longest chain's."""
     units = members(file, instance)
     if len(units) == 1:
         (u,) = units
         return u["datapath"], "nest controller", u["timing"]["latency"], u["timing"]["ii"]
     (g,) = (g for g in file_groups(file) if g["name"] == instance)
-    kind = units[0]["datapath"]
-    for link, u in zip(g["links"], units[1:], strict=True):
-        kind += f" → {u['datapath']}" if not link["depth"] else (
-            f" →[{link['depth']}] {u['datapath']}")  # fmt: skip
-    return kind, "group control unit", sum(u["timing"]["latency"] for u in units), 1
+    by_name = {u["name"]: u for u in units}
+    nxt = {k["from"].split(".")[0]: k for k in g["links"]}
+    fed = {k["to"].split(".")[0] for k in g["links"]}
+    kinds, latency = [], 0
+    for head in (u["name"] for u in units if u["name"] not in fed):
+        kind, at, lat = by_name[head]["datapath"], head, by_name[head]["timing"]["latency"]
+        while at in nxt:
+            link = nxt[at]
+            at = link["to"].split(".")[0]
+            kind += f" → {by_name[at]['datapath']}" if not link["depth"] else (
+                f" →[{link['depth']}] {by_name[at]['datapath']}")  # fmt: skip
+            lat += by_name[at]["timing"]["latency"]
+        kinds.append(kind)
+        latency = max(latency, lat)
+    return " ‖ ".join(kinds), "group control unit", latency, 1
 
 
 def build_design(

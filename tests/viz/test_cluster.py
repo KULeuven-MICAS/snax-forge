@@ -6,7 +6,7 @@
    cycle's lines; what a level lacks
 2. stepping: it skips empty cycles, goes both ways, stops at the window's ends
 3. recorded runs: an accelerator of two groups (dot 1), a shared mover's port mux (dot 1
-   shared), a linked group at task (dot 4)
+   shared), a linked group at task (dot 4), a group of two outputs (bicg_v3)
 """
 
 import pytest
@@ -123,7 +123,7 @@ def test_below_a_level_its_fields_are_absent_and_named():
     at = cv.cluster_at(run().index("task", total=30), 10)
     assert "grant" not in at["movers"]["acc_a.lane0"] and at["needs"]["grant"] == "beat"
     assert at["movers"]["acc_a.lane0"]["task"] == "add_acc_a"
-    assert at["filtered"] is None and at["linked"] is False  # no beat lines to cover
+    assert at["filtered"] is None  # no beat lines to cover
 
 
 # =============================================================================
@@ -284,10 +284,18 @@ def test_a_shared_movers_mux_serves_the_user_of_the_firing_unit(tmp_path_factory
     assert "user" not in cv.cluster_at(run().index("stall", total=30), 10)["movers"]["acc_a.lane0"]
 
 
-def test_a_linked_group_at_task_says_its_beat_lines_are_refused(tmp_path_factory):
-    """dot_v4 (mac → sum linked): at task the answer is ``linked``, with no ``filtered``."""
+def test_a_linked_group_at_task_says_what_needs_beat(tmp_path_factory):
+    """dot_v4 (mac → sum linked): at task the grants need beat, with no ``filtered``."""
     idx = _recorded(tmp_path_factory, "dot_v4", "task").index
     t = next(e["t"] for e in idx.events if e["k"] == "start" and e["src"] == "dot")
     at = cv.cluster_at(idx, t + 1)
-    assert at["linked"] is True and at["filtered"] is None and at["needs"]["grant"] == "beat"
+    assert at["filtered"] is None and at["needs"]["grant"] == "beat" and "linked" not in at
     assert at["acc"]["task"] == "mult_dot"
+
+
+def test_a_group_of_two_outputs_shows_each_push_of_a_cycle(tmp_path_factory):
+    """bicg_v3 at t = 266: q's push 62 and s's one push in one cycle, each with its sink."""
+    idx = _recorded(tmp_path_factory, "bicg_v3", "stall").index
+    (u,) = cv.cluster_at(idx, 266)["acc"]["units"]
+    assert [(p["unit"], p["n"]) for p in u["pushes"]] == [("sum", 62), ("mac", 0)]
+    assert u["push"] is u["pushes"][0]

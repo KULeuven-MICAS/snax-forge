@@ -13,8 +13,7 @@ lines too (beats.py). A DMA issue's ``direction`` comes from its
 addresses: ``l2_to_l1``, ``l1_to_l2``, ``l1_to_l1`` or ``l2_to_l2``. ``invariants`` hold on every
 conversion: every start and DMA issue has a done in the window, a core's classes add up to it,
 the accelerator's firings are its summary's, and each container's L2 copies touch its array's
-bytes exactly (``l2_copies``). Each failure is a ``RunError`` (``convert.<rule>``); a linked
-group's beat lines are one (``convert.level``), not read yet.
+bytes exactly (``l2_copies``). Each failure is a ``RunError`` (``convert.<rule>``).
 """
 
 from __future__ import annotations
@@ -27,7 +26,7 @@ from typing import Any
 from snax_forge.lower.tasks import TaskList
 
 from .beats import Context, beat_events, beat_invariants, mover_tasks, pairing
-from .cluster import DMA, Cluster, core_name, linked
+from .cluster import DMA, Cluster, core_name
 from .cores import core_counts, core_spans, merge_spans, start_mode
 from .events import Line, RunError
 from .profile import (
@@ -428,9 +427,6 @@ def convert(
     filter: list[str] | None = None,
 ) -> tuple[Profile, Trace | None]:
     """The profile and, above ``off``, the trace of a run (module doc)."""
-    if at_least(level, "beat") and linked(cluster.accelerator.description):
-        raise RunError("convert.level", f"trace {level}: the beat lines of a group of several "
-                       "linked units are not read yet; task and off are")  # fmt: skip
     named = [(source_of(x, cluster), x) for x in lines]
     profile = profile_of(named, cluster, total_cycles, functional_check)
     if level == "off":
