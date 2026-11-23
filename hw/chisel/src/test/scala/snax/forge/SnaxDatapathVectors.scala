@@ -12,8 +12,9 @@ object SnaxDatapathVectors {
 
   val Env = "SNAX_GVSOC_DATAPATH_VECTORS"
 
-  /** One step: fire, first, read, lane, en, load, wslot, rslot; each input's lanes; the output's lanes; the CSR slots
-    * set before it (`set SLOT V` lines: SimdLanes' `k`, `k1`, `k2` from their pins).
+  /** One step: fire, first, read, lane, en, load, wslot, rslot, and a bank's row and drain (D191, 0 without); each
+    * input's lanes; the output's lanes; the CSR slots set before it (`set SLOT V` lines: SimdLanes' `k`, `k1`, `k2`
+    * from their pins).
     */
   case class Step(
     fire:  Boolean,
@@ -26,7 +27,9 @@ object SnaxDatapathVectors {
     rslot: Int,
     ins:   Seq[Seq[BigInt]],
     out:   Seq[BigInt],
-    sets:  Seq[(String, BigInt)] = Seq.empty
+    sets:  Seq[(String, BigInt)] = Seq.empty,
+    row:   Int                   = 0,
+    drain: Int                   = 0
   )
 
   case class Test(name: String, datapath: String, header: Map[String, Seq[String]], steps: Seq[Step]) {
@@ -129,7 +132,9 @@ object SnaxDatapathVectors {
             e(7),
             ins.split(";").toSeq.map(numbers),
             numbers(out),
-            sets
+            sets,
+            if (e.length == 10) e(8) else 0,
+            if (e.length == 10) e(9) else 0
           )
           sets = Vector.empty
         case k :: vs                => header += k -> vs
