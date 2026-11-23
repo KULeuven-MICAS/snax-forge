@@ -33,6 +33,7 @@ from snax_forge.design.streamers import (
     unplaced,
 )
 from snax_forge.dfg import Graph, Node
+from snax_forge.dfg.execute import carried_ports
 from snax_forge.dfg.pad import padded_shape, split_factor, tailed_split
 from snax_forge.dfg.subset import map_range
 
@@ -112,7 +113,7 @@ def outer_ports(graph: Graph) -> list[tuple[Node, str, PortData]]:
             if f"{n.attrs['instance']}.{p.name}" in linked:
                 continue
             m = (n.inputs | n.outputs)[p.name]
-            mine = port_loops(inst, p.name, m, loops)
+            mine = port_loops(inst, p.name, m, loops, p.name in carried_ports(n))
             counts = [lp.count for lp in mine]
             lanes = stream_lanes(graph, n, inst, p.name)  # one for a broadcast (D186)
             d = per_word(graph.containers[m.data].dtype, lanes, WORD_BITS)

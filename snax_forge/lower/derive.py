@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from snax_forge import expr
-from snax_forge.brm import Instance, memlet_ordered
+from snax_forge.brm import SEED, Instance, memlet_ordered
 from snax_forge.design.streamers import (
     Loop,
     accelerated,
@@ -44,9 +44,11 @@ from snax_forge.design.streamers import (
 )
 from snax_forge.design.streamers import groups as unit_groups
 from snax_forge.dfg import DfgError, Graph, Memlet, Node, named_rates
+from snax_forge.dfg.execute import carried_ports
 from snax_forge.dfg.pad import padded_shape
 from snax_forge.dfg.subset import parse_dim
 
+from .c import fold_rate
 from .layout import Layout, dma_side, over
 from .streams import StreamError, in_words, streamer_values
 from .tasks import Configure, Start, Sync, TaskList
@@ -329,10 +331,31 @@ def unit_firings(g: Graph, node: Node, inst: Instance) -> tuple[dict[str, Any], 
                 for p in inst.ports
                 if p.direction == "out" and inst.params.get("rows", 1) > 1
             },  # a bank (D191)
+            carried_ports(node),  # a carried unit's seed and output revisit (D192)
         )
     except DfgError as e:
         raise LowerError(str(e)) from None
-    return {"n": prod(lp.count for lp in loops)} | rates, loops
+    out = {"n": prod(lp.count for lp in loops)} | rates
+    if node.attrs.get("carry"):  # the jobs before the first revisit (D192)
+        out["carry"] = carry_jobs(node, inst, loops, out, what)
+    return out, loops
+
+
+def carry_jobs(node: Node, inst: Instance, loops: list[Loop], values: dict[str, Any],
+               what: str) -> int:  # fmt: skip
+    """A carried unit's jobs before its output's first revisit (D192): its jobs over the counts
+    of the loops outside every one its output uses. A loop that revisits it between two it uses
+    is refused: the unit would take the identity on jobs that are not a block at the start."""
+    (m,) = node.outputs.values()
+    used = [i for i, lp in enumerate(loops) if lp.var in m.names]
+    inner = [lp.var for lp in loops[used[0] : used[-1]] if lp.var not in m.names]
+    if inner:
+        raise LowerError(f"{what}: its carried output {m.data} skips loop {inner[0]!r} between "
+                         "loops it uses; interchange_map the strip loops outermost")  # fmt: skip
+    rate = next((p.rate for p in inst.ports if p.direction == "out" and isinstance(p.rate, str)),
+                None)  # fmt: skip
+    jobs = values["n"] // (values[rate] if rate else 1)
+    return jobs // prod(lp.count for lp in loops[: used[0]])
 
 
 class _Derivation:
@@ -386,6 +409,8 @@ class _Derivation:
         then the writes in L1 and the stores."""
         unit_nodes = [n] if members is None else [self.unit_node(u) for u in members]
         starts, unit_loops = self.firings(unit_nodes)
+        for un in unit_nodes:
+            self.carry_gap(un, starts[un.attrs["instance"]])
         self.loads(unit_nodes)
         own = self.streamers(unit_nodes, starts, unit_loops)
         values = {u: v | self.slot_values(un) for (u, v), un in zip(starts.items(), unit_nodes,
@@ -439,6 +464,31 @@ class _Derivation:
                   "temporal_strides": [word] * s.temporal_dims,
                   "spatial_strides": [0] * len(s.spatial_bounds)}  # fmt: skip
         return Configure(f"{node}_{s.name}", "streamer", s.name, values, [], self.mode)
+
+    # NB (D192): a carried seed's reader runs ahead of the unit by its queue and slicer, and the
+    # write lands behind it by the writer's queue and packer; CARRY jobs must cover both.
+    def carry_gap(self, un: Any, values: dict[str, Any]) -> None:
+        """A carried unit whose output is revisited: its seed must be read after the write of
+        CARRY jobs before, which the reader's and the writer's queues could pass."""
+        u, inst = un.attrs["instance"], self.insts[un.attrs["instance"]]
+        rate = fold_rate(inst)
+        jobs = values["n"] // (values[rate] if rate else 1)
+        if "carry" not in values or values["carry"] >= jobs:  # no revisit in this run
+            return
+        (out,) = [p.name for p in inst.ports if p.direction == "out"]
+        r = self.point.streamers.get(streamer_name(u, SEED))
+        w = self.point.streamers.get(streamer_name(u, out))
+        if r is None or w is None:
+            raise LowerError(f"node {un.id}: a carried unit's seed and output need streamers of "
+                             "their own; a link or a fork on them is not lowered")  # fmt: skip
+        need = ((r.options.fifo_depth + 1) * r.d_in + (w.options.fifo_depth + 1) * w.d_out
+                + inst.latency + 2)  # fmt: skip
+        if values["carry"] < need:
+            raise LowerError(
+                f"node {un.id}: its output {un.outputs[out].data} is read back as its seed "
+                f"{values['carry']} jobs after it is written, under the {need} its seed reader "
+                "and writer may hold: more rows a strip, or a smaller streamer fifo_depth"
+            )
 
     # -- the phases of a group ----------------------------------------------------------------
 
@@ -521,7 +571,12 @@ class _Derivation:
                 if lay is None:
                     raise LowerError(f"{what}.{p}: container {m.data} has no L1 layout")
                 values, sb = memlet_values(
-                    m, port_loops(inst, p, m, loops), lay, self.symbols, f"{what}.{p}", s.num_slc
+                    m,
+                    port_loops(inst, p, m, loops, p in carried_ports(un)),
+                    lay,
+                    self.symbols,
+                    f"{what}.{p}",
+                    s.num_slc,
                 )
                 if sb != list(s.spatial_bounds):
                     raise LowerError(

@@ -89,3 +89,38 @@ def test_the_estimate_prices_the_bank_and_the_held_register(generated):
     (g,) = groups(DesignPoint.load(tmp / path).graph)
     assert g.cycles == 1027
     assert g.bits["mac"] == 16 * 4 * 32 + 8  # 16 rows of 4 int32 sums, r's int8 held
+
+
+@pytest.fixture(scope="module")
+def strips(tmp_path_factory) -> tuple[Path, str]:
+    """bicg_v3_2: two strips of 32 columns, q's sum carried across them (D192)."""
+    tmp = tmp_path_factory.mktemp("bicg_v3_2")
+    path = designed(tmp, "bicg_v3_2", "bicg_v3_2")
+    with pytest.MonkeyPatch.context() as mp:
+        mp.chdir(tmp)
+        generate(path, tmp / "gvsoc", tmp)
+    return tmp, path
+
+
+def test_q_is_carried_across_the_strips(strips):
+    tmp, path = strips
+    d = json.loads((tmp / "gvsoc" / "accelerator.json").read_text())
+    (g,) = d["accelerators"][0]["groups"]
+    s = next(u for u in g["units"] if u["name"] == "sum")
+    assert s["ports"]["seed"]["carry"] is True
+    assert [c["name"] for c in s["csrs"]] == ["CARRY"]  # T = 8 fixed
+    main = (tmp / "gvsoc" / "main.c").read_text()
+    for line in ("csrw_ss(BICG_TYPES_RW_JOBS_SUM, 128);", "csrw_ss(BICG_TYPES_RW_JOBS_MAC, 2);",
+                 "csrw_ss(BICG_TYPES_RW_MAC_JOB_BEATS, 512);", "csrw_ss(BICG_TYPES_RW_MAC_ROWS, 8);",
+                 "csrw_ss(BICG_TYPES_RW_SUM_CARRY, 64);"):  # fmt: skip
+        assert line in main
+    tl = task_list(DesignPoint.load(tmp / path))
+    (seed,) = [s for s in tl.steps if getattr(s, "task_name", "").endswith("_sum_seed")]
+    assert seed.values["temporal_bounds"] == [32, 2]  # q's 32 words, once a strip
+
+
+def test_the_strips_cost_no_cycle(strips):
+    """Two strips fire the heads 1 024 times, as one strip does; the bank is half as deep."""
+    tmp, path = strips
+    (g,) = groups(DesignPoint.load(tmp / path).graph)
+    assert g.cycles == 1027 and g.bits["mac"] == 8 * 4 * 32 + 8

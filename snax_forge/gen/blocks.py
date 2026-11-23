@@ -41,7 +41,7 @@ class GenError(CodedError):
 class Port:
     """A unit's BRM port in ``accelerator.json``: the datapath's port, its direction (``in``
     or ``out``, the BRM port's), its dtype, its lanes; a packed outer output's d_out, a sliced
-    outer input's d_in; a broadcast and a held input marked."""
+    outer input's d_in; a broadcast, a held input and a carried seed marked."""
 
     port: str
     dir: str
@@ -51,6 +51,7 @@ class Port:
     d_in: int = 1  # an outer input's pops per word through its slicer (D180)
     broadcast: bool = False  # an outer input whose reader moves one lane for all (D186)
     hold: bool = False  # an input read once a bank row and kept (D190)
+    carry: bool = False  # a seed that is its unit's own output, 0 before CARRY jobs (D192)
 
     @property
     def stream_lanes(self) -> int:
@@ -62,12 +63,14 @@ class Port:
         d |= {"d_out": self.d_out} if self.d_out > 1 else {}
         d |= {"d_in": self.d_in} if self.d_in > 1 else {}
         d |= {"broadcast": True} if self.broadcast else {}
-        return d | ({"hold": True} if self.hold else {})
+        d |= {"hold": True} if self.hold else {}
+        return d | ({"carry": True} if self.carry else {})
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> Port:
         return cls(d["port"], d["dir"], d["dtype"], d["lanes"], d.get("d_out", 1),
-                   d.get("d_in", 1), d.get("broadcast", False), d.get("hold", False))  # fmt: skip
+                   d.get("d_in", 1), d.get("broadcast", False), d.get("hold", False),
+                   d.get("carry", False))  # fmt: skip
 
 
 @dataclass(frozen=True)

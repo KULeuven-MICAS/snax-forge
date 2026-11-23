@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from snax_forge import expr
-from snax_forge.brm import Instance
+from snax_forge.brm import SEED, Instance
 from snax_forge.common import JsonFile
 from snax_forge.design.streamers import (
     firing_loops,
@@ -773,7 +773,10 @@ def _unit(point: DesignPoint, name: str, inst: Instance, offsets: Iterator[int])
     unit_csrs = [Csr(n, "rw", next(offsets), point.platform.acc_csr.job_width) for n in unit_rw]
     if (rows := bank_rows(inst)) > 1:  # the rows a pass uses, at most the bank's (D191)
         unit_csrs.append(Csr("ROWS", "rw", next(offsets), rows.bit_length()))
-    for slot, dtype in fill.scalars.items():  # after JOB_BEATS and ROWS, in slot order
+    if node.attrs.get("carry"):  # the jobs before the seed is used, its own output (D192)
+        unit_csrs.append(Csr("CARRY", "rw", next(offsets), point.platform.acc_csr.job_width))
+        ports[SEED] = replace(ports[SEED], carry=True)
+    for slot, dtype in fill.scalars.items():  # after JOB_BEATS, ROWS and CARRY, in slot order
         width = min(port_dtype(dtype, f"{what}.{slot}")[0], 32)
         unit_csrs += [Csr(c, "rw", next(offsets), width, slot) for c in scalar_csrs(slot, dtype)]
     return Unit(name, inst.brm.name, datapath, ports, params, inst.latency,

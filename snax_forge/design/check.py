@@ -28,6 +28,7 @@ import numpy as np
 from snax_forge import expr
 from snax_forge.brm import BrmError, Instance, accepted, check_dtypes, memlet_ordered, port_dtypes
 from snax_forge.dfg import DfgError, Graph, Node
+from snax_forge.dfg.execute import carried_ports
 from snax_forge.dfg.pad import code_on_pads, fold_op, pad_value, padded_shape, tailed_split
 from snax_forge.dfg.reduce import REDUCE_OPS
 from snax_forge.dfg.subset import parse_dim
@@ -570,7 +571,8 @@ def _connect_pack(design: Design) -> Iterable[Problem]:
             out = conn in n.outputs
             lanes = prod(b for _, b, _ in walk.spatial)
             if per_word(dtype, lanes, pf.l1.width_bits) > 1:
-                mine = port_loops(instance_of(n), conn, m, firing_loops(g, n))
+                mine = port_loops(instance_of(n), conn, m, firing_loops(g, n),
+                                  conn in carried_ports(n))  # fmt: skip
                 yield from _packed(f"node {n.id}.{conn}", m.data, dtype, num_slc, walk,
                                    {lp.var for lp in mine}, out)  # fmt: skip
                 continue

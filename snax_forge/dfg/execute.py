@@ -20,7 +20,7 @@ without a fold, or a spatial map around an accelerated node raise ``ExecutionErr
 from __future__ import annotations
 
 import itertools
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -386,6 +386,7 @@ def named_rates(
     loops: list[tuple[str, int]],
     what: str,
     banks: Mapping[str, int] | None = None,
+    carried: Collection[str] = (),
 ) -> dict[str, int]:
     """Each named rate's value over the firing ``loops`` (var, count), outermost first.
 
@@ -393,7 +394,8 @@ def named_rates(
     innermost loops its memlet does not use are the ones one beat folds over;
     the rate is the product of their counts. A port of a bank of R rows (``banks``, D191)
     first takes the innermost loops it uses whose counts multiply to R, its rows, then folds
-    the unused loops outside them; its rate counts both. Two ports naming one rate must
+    the unused loops outside them; its rate counts both. A ``carried`` port (D192) may skip a
+    loop outside one it uses: that loop revisits its elements. Two ports naming one rate must
     agree. Raises ExecutionError naming the port.
     """
     out: dict[str, int] = {}
@@ -418,7 +420,7 @@ def named_rates(
         while k and loops[k - 1][0] not in used:
             k -= 1
         skipped = [var for var, _ in loops[:k] if var not in used]
-        if skipped:
+        if skipped and port not in carried:
             raise ExecutionError(
                 f"{what}: port {port!r} ({m.data}{m.subset}) does not use loop {skipped[0]!r}, "
                 "which is outside a loop it uses: a named rate folds innermost loops only"
@@ -474,12 +476,14 @@ def _run_accelerated(node: Node, ctx: Context) -> None:
         [(loop.var, len(loop.values)) for loop in inner],
         what,
         {p.name: p.rows for p in cfg.ports if p.rows > 1},
+        carried_ports(node),
     )
     try:  # the kind's schedule (brm/function.py): rates, then the ports due at k
         rate = cfg.rates(params)
     except ValueError as e:
         raise ExecutionError(f"{what}: {e}") from None
     written = {m.data: np.zeros(ctx.data[m.data].shape, bool) for m in node.outputs.values()}
+    carry = node.attrs.get("carry", False)  # the seed its own output, first the identity (D192)
     tails = {lp.var: valid_count(ctx.graph, lp.node) for lp in inner if tailed_split(lp.node)}
     pads = {m.data: pad_value(ctx.graph, m.data) for m in node.inputs.values()} if tails else {}
     in_what = {name: f"{what}.inputs.{name}" for name in node.inputs}
@@ -499,6 +503,8 @@ def _run_accelerated(node: Node, ctx: Context) -> None:
                 idx, ok = _beat_indices(m, env, ctx, in_what[name], plans["in", name], tails)
                 beat = np.array(ctx.data[m.data][idx])
                 beat[~ok] = pads.get(m.data, 0)  # a pad lane reads the pad
+                if carry and name == "seed":  # not written by this unit yet: the identity, 0,
+                    beat[~written[m.data][idx]] = 0  # as every seeded datapath adds (D163)
                 ins[name] = _lanes(_broadcast(beat, p), p, what)
             outs = cfg.fn(k, ins, state, params)
             due = cfg.due(k, rate, "out")
@@ -511,12 +517,17 @@ def _run_accelerated(node: Node, ctx: Context) -> None:
                 arr = ctx.data[m.data]
                 beat_out = _lanes(np.asarray(outs[p.name]), p, what).reshape(ok.shape)
                 at = tuple(i[ok] for i in np.broadcast_arrays(*idx))  # the valid lanes only
-                if written[m.data][at].any():
+                if written[m.data][at].any() and not carry:
                     raise ExecutionError(
                         f"{what}.outputs.{p.name}: firing {k} writes an element twice"
                     )
                 written[m.data][at] = True
                 arr[at] = beat_out[ok].astype(arr.dtype)
+
+
+def carried_ports(node: Node) -> tuple[str, ...]:
+    """A carried unit's ports that revisit their elements (D192): its seed and its outputs."""
+    return ("seed", *node.outputs) if node.attrs.get("carry") else ()
 
 
 def _broadcast(x: np.ndarray, port: Any) -> np.ndarray:

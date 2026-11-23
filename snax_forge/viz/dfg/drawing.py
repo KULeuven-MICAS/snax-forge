@@ -477,7 +477,8 @@ def drawing(g: Graph, tops: Sequence[Node], placed: dict[str, Any] | None = None
                        style="seed" if seeded else "fork" if fork else "data",
                        sub=api.memlet_text(m), node=n.id, port=port,
                        mark=(api.transpose_label(m.data, perm) if perm is not None
-                             else "fork" if fork else None),
+                             else "fork" if fork
+                             else "carried, 0 first" if seeded and api.carried(n) else None),
                        transpose=perm is not None,
                        broadcast=(m.data in scalars and not m.names)
                        or (tgt.startswith("unit:") and api.broadcast_port(g, n, port)),

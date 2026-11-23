@@ -7,7 +7,7 @@ Rules (D117):
 - An entry is a choice with a real alternative that someone may want to reverse: direction, ownership, the interfaces between components, the order of work. Implementation details live in the module's docstring and its tests.
 - An entry says what was decided, why, and where the detail lives, in a few short bullets; an edge case only when there is one. A change is written into the entry, not chained after it.
 - Entries merged into one keep all their numbers in its heading, so a cite of any of them still finds it. A number is never changed or reused; the text of a removed entry is in git history.
-- A new decision gets the next free number, under the area it belongs to. Next free number: **D192**.
+- A new decision gets the next free number, under the area it belongs to. Next free number: **D193**.
 
 Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29–D45, D47–D50, D53, D54, D56, D58–D63, D65–D67, D69, D74, D76–D78, D80, D81, D83, D88–D97, D100, D101, D103, D104, D106, D107, D109, D110, D114, D115, D119, D124, D127, D128, D132, D133, D138–D141, D151, D156, D159, D160, D181.
 
@@ -206,10 +206,17 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 
 ### D191 — A fold's unfinished outputs stay in a bank inside the unit
 
-- **Decided:** a `Mac` may keep R rows of W sums (`rows` R, a design param, default 1, the plain `Mac`), one row a firing in turn: a job of T firings starts each row on its first R firings and gives R results, one on each of its last R. `bind` takes it as an option (the editor's "bank rows", offered where the output's index changes along loops inside its sum loop, its rows those loops' counts) and refuses an R the loops do not give, naming the split. The rows are registers; a `ROWS` CSR (at most R) sets the rows a pass uses, the control's `row` the beat mod `ROWS`. A wider output than R·W is cut into strips, a design knob (D190's r read once a strip). A seeded bank is refused for now.
+- **Decided:** a `Mac` may keep R rows of W sums (`rows` R, a design param, default 1, the plain `Mac`), one row a firing in turn: a job of T firings starts each row on its first R firings and gives R results, one on each of its last R. `bind` takes it as an option (the editor's "bank rows", offered where the output's index changes along loops inside its sum loop, its rows those loops' counts) and refuses an R the loops do not give, naming the split. The rows are registers; a `ROWS` CSR (at most R) sets the rows a pass uses, the control's `row` the beat mod `ROWS`. A wider output than R·W is cut into strips, a design knob: r read once a strip (D190), q carried across them (D192), N a multiple of R·W for now. A seeded bank is refused for now.
 - **Why:** bicg's one pass reads A along its rows, so s's N sums are unfinished until the last row; keeping them in the unit sends nothing back to L1, and the row form of q stays as built. One `Mac` with a row of registers per R costs only flops where R `Mac`s would cost R datapaths.
 - **Where:** CONTRACTS, "Block runtime model" and "Accelerator RTL spec"; `brm/function.py` (`mac_kind`), `dfg/execute.py` (`named_rates`), `design/streamers.py` (`bank_loops`); snax-gvsoc's `snax/snax_group_rule.py`.
 - **Edge:** the bank as a memory (one read a cycle, latency 2) is open item 158. The price leaves out the bank's read mux and row enables until the `Mac` is characterized at its rows (X97): a lower bound.
+
+### D192 — A fold carried across strips through L1
+
+- **Decided:** a fold whose output is revisited by loops outside the ones it moves with (q's rows, once per strip of columns) is carried: each visit starts from what the last wrote, the first from the identity. It is a step of its own, `carry_seed` (inverse `uncarry_seed`), recorded as `"carry": true` on the reduce; `bind` gives the unit its own output as its `seed` port (D163) and the node `"carry": true`, and the page draws the seed edge `carried, 0 first`. The seed reader runs every job, strips included; a `CARRY` CSR holds the jobs before the first revisit, and while the unit's jobs counter is below it the wrapper gives the datapath 0 in the seed's place. LOWER derives CARRY and refuses one the seed reader's and writer's queues could overtake.
+- **Why:** strips outermost make the row form read A in the order the bank's column form does (D191), so one pass reaches any N; the partial sum must leave the tree between strips because all M rows pass through it. Zeroing q before the task would add a task that is neither a load nor compute; masking the first strip's seed in the control is one comparison, and the reader still reads strip 0 so it never runs ahead of a write.
+- **Where:** CONTRACTS, "SNAX-DFG", "Recipe", "Task list" and "Accelerator RTL spec"; `sandbox/seed.py` (`carry_seed`), `dfg/execute.py` (`carried_ports`), `lower/derive.py` (`carry_jobs`, `carry_gap`).
+- **Edge:** only a fold that adds (every seeded datapath does); the revisiting loops outside every loop the output uses.
 
 ### D157 — A design's accelerators are streamer sets of one entry
 

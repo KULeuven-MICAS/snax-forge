@@ -1,0 +1,22 @@
+{
+ "name": "bicg_v3_2",
+ "id": "bicg_dot2strip_colbank_fork_i8_o32",
+ "description": "`bicg_v3_1` for N beyond one bank, in strips of R·W columns outermost: q's half `matvec/matvec_v9`, its sum carried across the strips through L1 (D192), s's half `matvec/matvec_v8`; A still read once (`fork_read`, D189). Two strips at 64 × 64, W = 4, R = 8.",
+ "kernel": "bicg_types",
+ "params": {"M": 64, "N": 64, "W": 4, "R": 8},
+ "symbols": {"M": "M", "N": "N"},
+ "types": "i8",
+ "steps": [
+  {"transform": "lift", "params": {"kernel": "matvec", "at": "q_mult_map"}},
+  {
+   "transform": "apply_recipe",
+   "params": {"block": "matvec", "recipe": "matvec/matvec_v9", "params": {"W": "W", "S": "R * W"}}
+  },
+  {"transform": "lift", "params": {"kernel": "matvec", "at": "s_mult_map"}},
+  {
+   "transform": "apply_recipe",
+   "params": {"block": "matvec_1", "recipe": "matvec/matvec_v8", "params": {"W": "W", "R": "R"}}
+  },
+  {"transform": "fork_read", "params": {"container": "A", "group": "bicg_types"}}
+ ]
+}

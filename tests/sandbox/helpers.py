@@ -54,7 +54,7 @@ SELECTED = {
     "split_reduce": "map", "join_reduce": "map", "fuse_map": "first", "unfuse_map": "map",
     "bind": "node", "unbind": "node", "link": "container", "unlink": "container",
     "encapsulate": "units", "unencapsulate": "accelerator", "bake_scalar": "container",
-    "unbake_scalar": "container", "interchange_map": "map", "fuse_seed": "first", "unfuse_seed": "map",
+    "unbake_scalar": "container", "interchange_map": "map", "fuse_seed": "first", "unfuse_seed": "map", "carry_seed": "map", "uncarry_seed": "map",
     "mark_transpose": "node", "unmark_transpose": "node", "data_transpose": "node",
     "share": "group", "unshare": "group",
     "share_ports": "container", "unshare_ports": "container",

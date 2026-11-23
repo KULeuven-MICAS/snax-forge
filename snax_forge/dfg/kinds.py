@@ -233,6 +233,9 @@ def _check_accelerated(node: Node, scope: Scope, what: str) -> None:
         _check_locals(a["locals"], f"{what}.attrs.locals")
     if "opType" in a and a["opType"] not in INT_TYPES:
         raise DfgError(f"{what}.attrs.opType: must be an integer dtype, got {a['opType']!r}")
+    if "carry" in a and (a["carry"] is not True or "seed" not in node.inputs):
+        raise DfgError(f"{what}.attrs.carry: true on a unit whose seed is its own output (D192), "
+                       f"got {a['carry']!r}")  # fmt: skip
     # the replaced subtree itself is checked in graph.py, in this node's scope, with its locals
 
 
@@ -260,7 +263,7 @@ register_kind(
     "accelerated",
     required=("instance", "brm", "implementation", "code"),
     defaults={"params": {}, "replaced": None},
-    optional=("accelerator", "group", "locals", "opType"),
+    optional=("accelerator", "group", "locals", "opType", "carry"),
     body=True,
     normalize=_normalize_code,
     check=_check_accelerated,

@@ -43,6 +43,7 @@ from snax_forge.design.streamers import (
     stream_lanes,
 )
 from snax_forge.dfg import DfgError, Graph, Memlet, Node
+from snax_forge.dfg.execute import carried_ports
 from snax_forge.dfg.graph import BAKED, SCALAR, TRANSPOSE
 from snax_forge.dfg.subset import dim_names, map_range, parse_dim
 from snax_forge.estimate.bits import packer_bits, slicer_bits
@@ -1259,7 +1260,7 @@ def drawing_details(g: Graph, drawn: dict[str, Any], est: Any) -> dict[str, dict
             try:
                 if n.id not in loops_of:
                     loops_of[n.id] = firing_loops(g, n)
-                mine = port_loops(instance_of(n), port, m, loops_of[n.id])
+                mine = port_loops(instance_of(n), port, m, loops_of[n.id], port in carried_ports(n))
                 d["loops"] = [[lp.var, lp.count] for lp in mine]
                 d["beats"] = prod(lp.count for lp in mine)
             except (BrmError, ExprError, KeyError, ValueError):
@@ -1409,7 +1410,8 @@ def memlet_text(m: Memlet) -> str:
 
 def seed_memlet(n: Node) -> Memlet | None:
     """The element a node's fold starts from (CONTRACTS, "SNAX-DFG"): a seeded tasklet's
-    reduce's seed, or a bound unit's ``seed`` port; None for any other node."""
+    reduce's seed, a carried fold's own output (D192), or a bound unit's ``seed`` port; None for
+    any other node."""
     if n.kind == "accelerated":
         return n.inputs.get(SEED)
     if n.kind != "tasklet":
@@ -1417,7 +1419,17 @@ def seed_memlet(n: Node) -> Memlet | None:
     for m in n.outputs.values():
         if m.reduce is not None and m.reduce.seed is not None:
             return Memlet(m.reduce.seed.data, list(m.reduce.seed.subset))
+        if m.reduce is not None and m.reduce.carry:
+            return Memlet(m.data, list(m.subset))
     return None
+
+
+def carried(n: Node) -> bool:
+    """Whether a node's fold is carried (D192): a tasklet's carry reduce, a unit's ``carry``."""
+    if n.kind == "accelerated":
+        return bool(n.attrs.get("carry"))
+    return n.kind == "tasklet" and any(m.reduce is not None and m.reduce.carry
+                                       for m in n.outputs.values())  # fmt: skip
 
 
 def _iterations(g: Graph, rng: str) -> int | None:

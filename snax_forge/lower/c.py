@@ -75,13 +75,15 @@ def job_values(inst: Instance, values: Mapping[str, int], fixed: bool = False) -
     """An accelerator task's CSR values from its values (``n`` and the named rates):
     ``JOBS`` = n / T and, for a fold, ``JOB_BEATS`` = T, none when its T is ``fixed``
     (the description's ``params.T``), then a bank's ``ROWS`` (D191); T is 1 for a unit without a
-    fold, and T = 0 is an empty run (JOBS 0)."""
+    fold, and T = 0 is an empty run (JOBS 0); a carried unit's ``CARRY``, its jobs before its first
+    revisit (D192)."""
     rate = fold_rate(inst)
     t = 1 if rate is None else values[rate]
     out = {"JOBS": values["n"] // t if t else 0}
     if rate is not None and not fixed:
         out["JOB_BEATS"] = t
-    return out | ({"ROWS": rows} if (rows := bank_rows(inst)) > 1 else {})
+    out |= {"ROWS": rows} if (rows := bank_rows(inst)) > 1 else {}
+    return out | ({"CARRY": values["carry"]} if "carry" in values else {})
 
 
 def bank_rows(inst: Instance) -> int:
@@ -109,7 +111,8 @@ def job_writes(units: Mapping[str, Instance], values: Mapping[str, Any], fixed: 
         out.append((chain[-1] if len(chains) > 1 else chain[0], jobs_csr(chains, chain),
                     values[chain[0]]["n"] // t if t else 0))  # fmt: skip
     out += [(u, "JOB_BEATS", v) for u, v in folds.items() if u not in fixed]
-    return out + [(u, "ROWS", r) for u in values if (r := bank_rows(units[u])) > 1]
+    out += [(u, "ROWS", r) for u in values if (r := bank_rows(units[u])) > 1]
+    return out + [(u, "CARRY", v["carry"]) for u, v in values.items() if "carry" in v]
 
 
 def task_beats(values: Mapping[str, Any]) -> int:

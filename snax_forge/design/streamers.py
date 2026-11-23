@@ -33,6 +33,7 @@ import numpy as np
 from snax_forge import expr
 from snax_forge.brm import SEED, Instance, load_brm, memlet_ordered, task_nest
 from snax_forge.dfg import Graph, Memlet, Node
+from snax_forge.dfg.execute import carried_ports
 from snax_forge.dfg.subset import map_range, parse_dim
 
 from .platform import Platform, StreamerOptions
@@ -507,15 +508,21 @@ def firing_loops(graph: Graph, node: Node) -> list[Loop]:
     return loops
 
 
-def port_loops(inst: Instance, port: str, memlet: Memlet, loops: list[Loop]) -> list[Loop]:
+def port_loops(inst: Instance, port: str, memlet: Memlet, loops: list[Loop],
+               carried: bool = False) -> list[Loop]:  # fmt: skip
     """The firing loops a port's streamer runs over: all of them at rate 1 but a held input's
     bank loops (D190); for a named rate, which moves one beat per T firings, the loops its
-    memlet uses."""
+    memlet uses, and a ``carried`` port's (D192) the loops that revisit it too."""
     if is_held(inst, port, memlet, loops):
         rows = bank_loops(inst, loops)
         return [lp for lp in loops if lp not in rows]
     if inst.brm.port(port).rate == 1:
         return loops
+    if carried:  # a carried seed or output: every loop but the folded ones, innermost (D192)
+        k = len(loops)
+        while k and loops[k - 1].var not in memlet.names:
+            k -= 1
+        return loops[:k]
     return [lp for lp in loops if lp.var in memlet.names]
 
 
@@ -604,7 +611,15 @@ def resolve(platform: Platform, graph: Graph, insts: dict[str, Instance]) -> dic
             if sb is None:
                 sb = nest_spatial_bounds(inst, p.name)
             dims = [
-                len(port_loops(inst, p.name, (n.inputs | n.outputs)[p.name], loops[n.id]))
+                len(
+                    port_loops(
+                        inst,
+                        p.name,
+                        (n.inputs | n.outputs)[p.name],
+                        loops[n.id],
+                        p.name in carried_ports(n),
+                    )
+                )
                 for n in mine
             ]
             dtype = port_dtype(graph, mine, p.name)
