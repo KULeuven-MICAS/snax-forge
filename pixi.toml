@@ -48,6 +48,7 @@ snax-forge = { path = ".", editable = true }
 [feature.dev.dependencies]
 pytest = ">=8.0"
 pytest-xdist = ">=3.5"
+pytest-cov = ">=5"
 ruff = ">=0.6"
 ipython = ">=8.0"
 
