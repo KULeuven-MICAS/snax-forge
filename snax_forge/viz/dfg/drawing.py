@@ -206,8 +206,8 @@ def drawing(g: Graph, tops: Sequence[Node], placed: dict[str, Any] | None = None
     # first's of the same range and kind, else level by level; their read of the container one
     # edge, from the first's innermost loop it passes
     fork_tail: dict[
-        str, tuple[str, str]
-    ] = {}  # "<instance>.<port>" -> (the first's node, the data)
+        str, tuple[str, str, str]
+    ] = {}  # "<instance>.<port>" -> (the first's node, the data, the first's port)
     for f, _ in g.walk():
         if f.kind != "fork":
             continue
@@ -240,7 +240,8 @@ def drawing(g: Graph, tops: Sequence[Node], placed: dict[str, Any] | None = None
                 if find(b.id) != find(c0[i].id):
                     alias[b.id] = find(c0[i].id)
                     also.setdefault(find(c0[i].id), []).append(b.id)
-            fork_tail[r] = (first.id, f.attrs["container"])
+            fork_tail[r] = (first.id, f.attrs["container"],
+                            f.attrs["readers"][0].split(".", 1)[1])  # fmt: skip
     depth = {find(mp.id): i for n in nodes.values() for i, mp in enumerate(maps_of[n.id])
              if mp.id not in alias}  # fmt: skip
 
@@ -473,7 +474,9 @@ def drawing(g: Graph, tops: Sequence[Node], placed: dict[str, Any] | None = None
                     a, ap = b, None
                 tgt, tp = into(n, port, m.data, task)
                 fork = n.kind == "accelerated" and f"{n.attrs['instance']}.{port}" in forked
-                d.edge(a, ap, tgt, tp, task=task, skip=skipped_all, data=m.data,
+                via = ({"via": {"node": tail[0], "port": tail[2]}}
+                       if tail is not None and tail[1] == m.data else {})  # fmt: skip
+                d.edge(a, ap, tgt, tp, task=task, skip=skipped_all, data=m.data, **via,
                        style="seed" if seeded else "fork" if fork else "data",
                        sub=api.memlet_text(m), node=n.id, port=port,
                        mark=(api.transpose_label(m.data, perm) if perm is not None

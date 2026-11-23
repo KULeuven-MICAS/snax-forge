@@ -18,6 +18,9 @@ def test_the_forked_reads_of_a_are_marked():
     reads = [(e["from"], e["to"]) for e in v["drawing"]["edges"] if e.get("data") == "A"]
     assert reads == [("A@0", "q_mult_map"), ("q_mult_map", "q_mult_map_1"),
                      ("q_mult_map_1", "unit:mul"), ("q_mult_map_1", "unit:mac")]  # fmt: skip
+    # a click on s's edge lights q's hops to A as well: its edge names q's port (``via``)
+    (to_mac,) = [e for e in v["drawing"]["edges"] if e.get("data") == "A" and e["to"] == "unit:mac"]
+    assert to_mac["via"] == {"node": "q_mult", "port": "a"}
     (o,) = v["drawing"]["outlines"]
     assert (o["id"], o["text"], o["block"]) == ("grp:bicg_types",
                                                 "group bicg_types · from matvec, matvec_1", "matvec")  # fmt: skip

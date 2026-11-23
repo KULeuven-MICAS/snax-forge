@@ -882,8 +882,8 @@ const THROUGH = {
 };
 
 /** The edges a selection traces: an edge's whole route, every hop of its datum to the same port
-(``data``, ``node``, ``port``), on through the muxes, slicers, packers and link FIFOs it passes;
-a container's every route. */
+(``data``, ``node``, ``port``; a fork's other reader also its first reader's, ``via``), on through
+the muxes, slicers, packers and link FIFOs it passes; a container's every route. */
 export function routes(d, sels) {
   const kind = new Map(d.nodes.map((n) => [n.id, n.kind]));
   const out = new Set();
@@ -891,6 +891,7 @@ export function routes(d, sels) {
   for (const s of sels) {
     const e = d.edges.find((x) => x.id === s);
     if (e) seeds.push(...(e.data && e.node ? d.edges.filter((x) => x.data === e.data && x.node === e.node && x.port === e.port) : [e]));
+    if (e && e.via) seeds.push(...d.edges.filter((x) => x.data === e.data && x.node === e.via.node && x.port === e.via.port)); // a fork's other reader: the first's hops to the container (D189)
     else if (d.nodes.some((n) => n.kind === "container" && n.sel === s)) seeds.push(...d.edges.filter((x) => x.data === s));
   }
   const todo = seeds.map((e) => [e, e.task]);

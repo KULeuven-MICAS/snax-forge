@@ -339,6 +339,7 @@ The `drawing` is `{nodes, edges, outlines, tasks}`; positions are the page's, ne
 | edge `from`, `from_port`, `to`, `to_port` | its ends |
 | edge `style`, `task`, `label` | data, seed, link, fork, local, wire or empty; its task after `share`; the dtype where it changes, `↻ var` for an outer loop skipped, `Aᵀ`, `broadcast`, `held a row` (D190) |
 | edge `data`, `node`, `port`, `sub` | the container, the node and port it feeds or leaves, the memlet |
+| edge `via` | a fork's other reader's edge (D189): `{node, port}` of the first reader, whose hops to the container a click on it lights too |
 | outline | `id` (`grp:`, `acc:`, `block:`), `kind`, `text`, `sel`, `parent`; a group that took an open block's boxes also `block` (the first), its text naming the others (`group bicg_types · from matvec, matvec_1`) |
 
 - The URL hash holds the whole view: `step=`, `sel=`, `cmp=`, `tech=`, `open=` (the blocks opened), `fold=` (the loop chains folded), `focus=1`, `zoom=` and `zoomc=` (each panel's zoom and place); `?tech=` names the technology (`char.tech` for an unknown one).
