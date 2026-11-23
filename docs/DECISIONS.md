@@ -7,7 +7,7 @@ Rules (D117):
 - An entry is a choice with a real alternative that someone may want to reverse: direction, ownership, the interfaces between components, the order of work. Implementation details live in the module's docstring and its tests.
 - An entry says what was decided, why, and where the detail lives, in a few short bullets; an edge case only when there is one. A change is written into the entry, not chained after it.
 - Entries merged into one keep all their numbers in its heading, so a cite of any of them still finds it. A number is never changed or reused; the text of a removed entry is in git history.
-- A new decision gets the next free number, under the area it belongs to. Next free number: **D194**.
+- A new decision gets the next free number, under the area it belongs to. Next free number: **D195**.
 
 Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29–D45, D47–D50, D53, D54, D56, D58–D63, D65–D67, D69, D74, D76–D78, D80, D81, D83, D88–D97, D100, D101, D103, D104, D106, D107, D109, D110, D114, D115, D119, D124, D127, D128, D132, D133, D138–D141, D151, D156, D159, D160, D181.
 
@@ -206,7 +206,7 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 
 ### D191 — A fold's unfinished outputs stay in a bank inside the unit
 
-- **Decided:** a `Mac` may keep R rows of W sums (`rows` R, a design param, default 1, the plain `Mac`), one row a firing in turn: a job of T firings starts each row on its first R firings and gives R results, one on each of its last R. `bind` takes it as an option (the editor's "bank rows", offered where the output's index changes along loops inside its sum loop, its rows those loops' counts) and refuses an R the loops do not give, naming the split. The rows are registers; a `ROWS` CSR (at most R) sets the rows a pass uses, the control's `row` the beat mod `ROWS`. The `Mac` takes two row pins from the control, `row` (the row a firing adds into) and `drain` (the row its last firing wrote, pushed a cycle later while the next firing adds), both comparisons, so the `Mac` keeps no row of its own. A wider output than R·W is cut into strips, a design knob: r read once a strip (D190), q carried across them (D192), N a multiple of R·W for now. A seeded bank is refused for now.
+- **Decided:** a `Mac` may keep R rows of W sums (`rows` R, a design param, default 1, the plain `Mac`), one row a firing in turn: a job of T firings starts each row on its first R firings and gives R results, one on each of its last R. `bind` takes it as an option (the editor's "bank rows", offered where the output's index changes along loops inside its sum loop, its rows those loops' counts) and refuses an R the loops do not give, naming the split. The rows are registers; a `ROWS` CSR (at most R) sets the rows a pass uses, the control's `row` the beat mod `ROWS`. The `Mac` takes two row pins from the control, `row` (the row a firing adds into) and `drain` (the row its last firing wrote, pushed a cycle later while the next firing adds), both comparisons, so the `Mac` keeps no row of its own. A wider output than R·W is cut into strips, a design knob: r read once a strip (D190), q carried across them (D192), N a multiple of R·W for now. A seeded bank is D194's.
 - **Why:** bicg's one pass reads A along its rows, so s's N sums are unfinished until the last row; keeping them in the unit sends nothing back to L1, and the row form of q stays as built. One `Mac` with a row of registers per R costs only flops where R `Mac`s would cost R datapaths.
 - **Where:** CONTRACTS, "Block runtime model" and "Accelerator RTL spec"; `brm/function.py` (`mac_kind`), `dfg/execute.py` (`named_rates`), `design/streamers.py` (`bank_loops`); snax-gvsoc's `snax/snax_group_rule.py`.
 - **Edge:** the bank as a memory (one read a cycle, latency 2) is open item 158. Its price is D193's.
@@ -217,6 +217,13 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 - **Why:** the first price, the rows-1 comb with every row loading, gave 0.76 to 0.87 of DC's area and 1.05 to 3.37 times the energy; with the forms the area is 0.99 to 1.01 and the energy 0.90 to 1.06 on X97's points. The numbers live in the table, which `import-costs` copies, not in the code.
 - **Where:** `char/__init__.py` (`lookup`, `_banked`); CONTRACTS, "Cost model".
 - **Edge:** a held input's register loading once a row and the clock gates' idle energy (R × 4.9 fJ a cycle) are left out.
+
+### D194 — A seeded bank starts each row from its seed
+
+- **Decided:** a `Mac` bank may be seeded (D187): its `seed` port moves a beat a row, read on a job's first R firings with the first firing of each row, so row ρ starts from seed beat ρ: s[ρ] ← seed + a·b where the unseeded bank has a·b. The seed is neither held (D190) nor carried (D192): its streamer runs the loops its memlet uses, as the bank's output does, and it reads the words the output writes back at the job's end. The control's `first` already covers a bank's first R firings, so the seed is taken on `first`; the `Mac`'s seed adds through one W-lane mux before its adders, shared by every row. It is priced as D193's bank on the rows-1 `Mac`, whose seeded form is priced as unseeded (D187).
+- **Why:** mvt's one pass (x2 += Aᵀ y2) is bicg's with a start value; seeding the bank keeps x2's sums inside the unit, where an unseeded bank and a `vadd` after it would read x2 back and add a unit.
+- **Where:** `brm/function.py` (`mac_kind`, `AccelFunction.due`), `sandbox/transforms.py` and `lower/derive.py` (the seed's rows); CONTRACTS, "Block runtime model" and "Accelerator RTL spec"; snax-gvsoc's `snax/snax_group_rule.py`.
+- **Edge:** one strip (N = R·W) is what is built and measured; strips would carry x1's tree across them from L1 (D192 without its mask, since x1 starts from itself).
 
 ### D192 — A fold carried across strips through L1
 

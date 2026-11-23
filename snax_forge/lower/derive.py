@@ -329,8 +329,8 @@ def unit_firings(g: Graph, node: Node, inst: Instance) -> tuple[dict[str, Any], 
             {
                 p.name: inst.params["rows"]
                 for p in inst.ports
-                if p.direction == "out" and inst.params.get("rows", 1) > 1
-            },  # a bank (D191)
+                if (p.direction == "out" or p.name == SEED) and inst.params.get("rows", 1) > 1
+            },  # a bank (D191), its seed a beat a row (D194)
             carried_ports(node),  # a carried unit's seed and output revisit (D192)
         )
     except DfgError as e:

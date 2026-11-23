@@ -1,0 +1,60 @@
+{
+ "name": "mvt_v6",
+ "id": "mvt_dot2seed_colbankseed_fork_i8_o32",
+ "description": "The one pass over A: half 1 `mvt_v5`'s seeded `dot_v2` group, a job a row; half 2 the column form rows outer, x2's N sums in a seeded `Mac` bank of R rows of W, each row started from x2 on a job's first R firings (D191, D194), y2 read once a row and held (D190); A read once by both (`fork_read`, D189). One strip: N = R·W. Int8 in, int32 out.",
+ "kernel": "mvt_types",
+ "params": {"M": 64, "N": 64, "W": 8, "R": 8, "D_2": 1},
+ "symbols": {"M": "M", "N": "N"},
+ "types": "i8",
+ "steps": [
+  {"transform": "tag_map", "params": {"map": "tmp1_mult_map", "kind": "temporal"}},
+  {"transform": "split_map", "params": {"map": "tmp1_mult_map_1", "factor": "W"}},
+  {
+   "transform": "bind",
+   "params": {
+    "node": "tmp1_mult",
+    "brm": "simd",
+    "implementation": "chisel_tiled_spatial",
+    "instance": "vmul_x1"
+   }
+  },
+  {"transform": "tag_map", "params": {"map": "sum_map", "kind": "temporal"}},
+  {"transform": "split_map", "params": {"map": "sum_map_1", "factor": "W"}},
+  {"transform": "fuse_seed", "params": {"first": "sum_map_1_s", "second": "augassign_18_4_map"}},
+  {
+   "transform": "bind",
+   "params": {
+    "node": "sum",
+    "brm": "accumulate",
+    "implementation": "chisel_adder_tree",
+    "instance": "vsum_x1"
+   }
+  },
+  {"transform": "link", "params": {"container": "tmp1_prod", "depth": "D_2", "group": "mvt"}},
+  {"transform": "tag_map", "params": {"map": "tmp4_mult_map_1", "kind": "temporal"}},
+  {"transform": "split", "params": {"map": "tmp4_mult_map", "factor": "R * W"}},
+  {"transform": "tag_map", "params": {"map": "tmp4_mult_map", "kind": "temporal"}},
+  {"transform": "split_map", "params": {"map": "tmp4_mult_map_inner", "factor": "W"}},
+  {"transform": "interchange_map", "params": {"map": "tmp4_mult_map_1", "with": "tmp4_mult_map_inner_s"}},
+  {"transform": "interchange_map", "params": {"map": "tmp4_mult_map_inner", "with": "tmp4_mult_map_1"}},
+  {"transform": "tag_map", "params": {"map": "sum_map_3", "kind": "temporal"}},
+  {"transform": "split", "params": {"map": "sum_map_2", "factor": "R * W"}},
+  {"transform": "tag_map", "params": {"map": "sum_map_2", "kind": "temporal"}},
+  {"transform": "split_map", "params": {"map": "sum_map_2_inner", "factor": "W"}},
+  {"transform": "interchange_map", "params": {"map": "sum_map_3", "with": "sum_map_2_inner_s"}},
+  {"transform": "interchange_map", "params": {"map": "sum_map_2_inner", "with": "sum_map_3"}},
+  {"transform": "fuse_seed", "params": {"first": "sum_map_2_inner_s", "second": "augassign_19_4_map"}},
+  {"transform": "fuse_map", "params": {"first": "tmp4_mult_map", "second": "sum_map_2"}},
+  {
+   "transform": "bind",
+   "params": {
+    "node": "tmp4_mult_map_inner_s",
+    "brm": "mac",
+    "implementation": "chisel_mac",
+    "instance": "mac_x2",
+    "params": {"rows": "R"}
+   }
+  },
+  {"transform": "fork_read", "params": {"container": "A", "group": "mvt"}}
+ ]
+}

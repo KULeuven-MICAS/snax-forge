@@ -41,7 +41,8 @@ AccelFn = Callable[
 class AccelPort:
     """One data port: ``rate``, an int or the name of a runtime param, is firings per beat; an
     output of a bank (D191) of ``rows`` gives ``rows`` beats per ``rate`` firings, one on each
-    of the last ``rows``."""
+    of the last ``rows``, and an input of one (a seeded bank's seed, D194) takes them on the
+    first ``rows``."""
 
     name: str
     direction: str  # "in" or "out"
@@ -112,7 +113,7 @@ class AccelFunction:
         """The ports of ``direction`` that move a beat at firing ``k`` (CONTRACTS, "Block runtime
         model")."""
         if direction == "in":
-            return [p.name for p in self.inputs if k % rates[p.name] == 0]
+            return [p.name for p in self.inputs if k % rates[p.name] < p.rows]
         return [p.name for p in self.outputs if k % rates[p.name] >= rates[p.name] - p.rows]
 
 
@@ -236,14 +237,13 @@ def mac_kind(
     ``seed`` 1 an input ``seed`` of ``lanes`` lanes at rate T (D187): a job's first firing
     folds into it instead of starting from the product, cast to the output's dtype. With
     ``rows`` R > 1 a bank (D191): firing k adds into row k mod R, each row starting on a job's
-    first R firings and given out on its last R, so a job of T firings gives R beats."""
+    first R firings and given out on its last R, so a job of T firings gives R beats; seeded,
+    each row starts from its own seed beat, read on those first R firings (D194)."""
     out_dtype = None if dtypes is None else dtypes.get("out")
     if seed not in (0, 1):
         raise ValueError("seed must be 0 or 1")
     if rows < 1:
         raise ValueError("rows must be >= 1")
-    if seed and rows > 1:
-        raise ValueError("a seeded bank is not built yet (a seed per row)")
 
     def fn(k, ins, state, params):
         a, b = np.asarray(ins["a"]), np.asarray(ins["b"])
@@ -266,7 +266,7 @@ def mac_kind(
         return {}
 
     ports = (AccelPort("a", "in", lanes, 1), AccelPort("b", "in", lanes, 1),
-             *((AccelPort("seed", "in", lanes, "T"),) if seed else ()),
+             *((AccelPort("seed", "in", lanes, "T", rows),) if seed else ()),
              AccelPort("out", "out", lanes, "T", rows))  # fmt: skip
     return AccelFunction(ports, fn, "mac")
 

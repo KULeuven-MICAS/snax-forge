@@ -146,8 +146,9 @@ def test_the_mvt_set_is_its_own():
     mvt_v4_1 and mvt_v4_1_1 (int8 in, int32 out) at W = 8, contiguous and
     padded_rows, sequential (D183), and mvt_v5 (half 2 a seeded Mac, D186 · D187) at its
     defaults, sequential contiguous and padded_rows and pipeline contiguous, and
-    mvt_v5_2 (half 2 an unseeded Mac linked into a vadd) sequential contiguous; in
-    neither quick nor full."""
+    mvt_v5_2 (half 2 an unseeded Mac linked into a vadd) sequential contiguous, and the one
+    pass mvt_v6 (a seeded bank, D194) at W = 8, 16, 32 (R = 64 / W) against mvt_v5 under
+    pipeline at W = 16 and 32 (W = 8 is above); in neither quick nor full."""
     names = [d.name for d in fs.SETS["mvt"]]
     pad = "_passes.layoutpadded_rows"
     two = ["mvt_v2", "mvt_v2_2"]
@@ -165,8 +166,10 @@ def test_the_mvt_set_is_its_own():
         "mvt_v5_schedulesequential", f"mvt_v5{pad}_schedulesequential",
         "mvt_v5_schedulepipeline",
         "mvt_v5_2_schedulesequential",
+        "mvt_v6", "mvt_v6_W16_R4", "mvt_v6_W32_R2",
+        "mvt_v5_W_x1-16_schedulepipeline", "mvt_v5_W_x1-32_schedulepipeline",
     ]  # fmt: skip
-    assert len(names) == 42
+    assert len(names) == 47
     assert not {d.recipe for d in fs.SETS["mvt"]} & {d.recipe for d in fs.SETS["full"]}
 
 

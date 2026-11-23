@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
 from snax_forge.brm.function import mac_kind
@@ -58,9 +59,19 @@ def test_a_bank_that_does_not_match_the_loops_is_refused_naming_the_split():
         bind(g, "mult_map_inner_s", "mac", "chisel_mac", "mac", {"rows": 4})
 
 
-def test_a_seeded_bank_and_a_t_off_its_rows_are_refused():
-    with pytest.raises(ValueError, match="seeded bank"):
-        mac_kind(lanes=4, seed=1, rows=4)
+def test_a_seeded_bank_starts_each_row_from_its_seed_on_the_first_rows_firings():
+    f = mac_kind(lanes=2, seed=1, rows=2)
+    rate = f.rates({"n": 8, "T": 4})
+    assert [f.due(k, rate, "in") for k in range(4)] == [["a", "b", "seed"]] * 2 + [["a", "b"]] * 2
+    state, got = {}, []
+    a, b = np.array([1, 2]), np.array([3, 3])
+    for k, seed in enumerate(([10, 20], [30, 40], None, None)):
+        ins = {"a": a, "b": b} | ({"seed": np.array(seed)} if seed else {})
+        got.append(f.fn(k, ins, state, {"T": 4}).get("out"))
+    assert got[:2] == [None, None]
+    assert [list(x) for x in got[2:]] == [[16, 32], [36, 52]]  # seed + 2 * a * b per row
+    with pytest.raises(ValueError, match="not a multiple of the bank's 2 rows"):
+        f.fn(0, {"a": a, "b": b, "seed": a}, {}, {"T": 3})
 
 
 # =============================================================================

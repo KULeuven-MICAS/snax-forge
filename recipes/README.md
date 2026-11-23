@@ -112,6 +112,7 @@ The one-unit kernels take a word for their fold or scalar instead of a form: `tr
 | `mvt_v5` | mvt | `mvt_dot2seed_colseed_i8_o32` | Half 1 a seeded `dot_v2` group, half 2 the column form: one seeded `Mac` with y2 broadcast to its lanes (D186, D187). Both halves read A along its rows, so A is never copied. Int8 in, int32 out. |
 | `mvt_v5_1` | mvt | `mvt_dot2seed_colseed_i8_o32` | `mvt_v5` by reuse: `lift matvec_acc` on each half, then `matvec/matvec_acc_v3` on half 1 and `matvec/matvec_acc_v4` on half 2. |
 | `mvt_v5_2` | mvt | `mvt_dot2seed_colchain_i8_o32` | `mvt_v5` with half 2's `Mac` unseeded and its W sums linked into a `vadd` of x2. Costs a little more than `mvt_v5` for the same time. |
+| `mvt_v6` | mvt | `mvt_dot2seed_colbankseed_fork_i8_o32` | The one pass over A: half 1 `mvt_v5`'s seeded `dot_v2` group, a job a row; half 2 the column form rows outer, x2's N sums in a seeded `Mac` bank of R rows of W, each row started from x2 on a job's first R firings (D191, D194), y2 read once a row and held (D190); A read once by both (`fork_read`, D189). One strip: N = R·W. Int8 in, int32 out. |
 | `rowsum_v1` | reduce | `rowsum_tree` | y[i] = sum over j of A[i, j]: the rows in time, a tree over W lanes of a row. |
 | `rowsum_v1_1` | reduce | `rowsum_tree_m3n7` | `rowsum_v1` at 3 × 7, a row the lanes do not fill. |
 | `rowsum_v2` | reduce | `rowsum_lane` | W rows at once, one a lane, each lane adding along its row over time (`lane_accumulate`). |

@@ -866,8 +866,8 @@ def _bind_rewrite(g: Graph, site: _Site, bound: _Bound, brm: str, implementation
     banks = {
         p: inst.params["rows"]
         for p in with_seed
-        if inst.params.get("rows", 1) > 1 and b.port(p).direction == "out"
-    }  # D191
+        if inst.params.get("rows", 1) > 1 and (b.port(p).direction == "out" or p == SEED)
+    }  # D191; a seeded bank's seed a beat a row (D194)
     carried = (
         {SEED, *(p for p in with_seed if b.port(p).direction == "out")} if _carried(site) else ()
     )

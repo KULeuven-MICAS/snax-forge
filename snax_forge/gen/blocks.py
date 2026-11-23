@@ -342,9 +342,9 @@ def mac(inst: Instance, dtypes: Mapping[str, str] | None = None) -> Fill:
     if not accumulate and dtypes is not None and dtypes[ins[2].name] != dtypes[out.name]:
         raise GenError("gen.dtype", f"{what}: c is {dtypes[ins[2].name]}, out "
                        f"{dtypes[out.name]}; the plain form's c is out's dtype")  # fmt: skip
-    if rows > 1 and (not accumulate or seeded):
-        raise GenError("gen.args", f"{what}: rows {rows}; a bank (D191) is an unseeded "
-                       "accumulating Mac's")  # fmt: skip
+    if rows > 1 and not accumulate:
+        raise GenError("gen.args", f"{what}: rows {rows}; a bank (D191) is an accumulating "
+                       "Mac's")  # fmt: skip
     op_type = None if dtypes is None else result_type([dtypes[p.name] for p in ins[:2]])
     params = {"accumulate": accumulate, "regOut": reg_out} | ({"rows": rows} if rows > 1 else {})
     return Fill(ports, op_type, params)

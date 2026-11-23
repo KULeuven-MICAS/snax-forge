@@ -137,3 +137,45 @@ def test_the_bank_is_priced_by_its_forms(generated):
     assert b.found == "bank"
     assert 0.98 < (b.comb_um2 + b.flops_um2) / 16515 < 1.0
     assert 0.95 < b.e_fire_pj / 11.43 < 1.0
+
+
+@pytest.fixture(scope="module")
+def seeded(tmp_path_factory) -> tuple[Path, str]:
+    """mvt_v6: x2's sums in a seeded bank of 8 rows of 8 (D194), x1's tree seeded per row."""
+    tmp = tmp_path_factory.mktemp("mvt_v6")
+    path = designed(tmp, "mvt_v6", "mvt_v6")
+    with pytest.MonkeyPatch.context() as mp:
+        mp.chdir(tmp)
+        generate(path, tmp / "gvsoc", tmp)
+    return tmp, path
+
+
+def test_a_seeded_bank_reads_its_seed_a_beat_a_row(seeded):
+    """The seed is neither held nor carried: x2's 64 sums read as 8 beats of 8 at the job's start,
+    the same words the bank writes back at its end."""
+    tmp, path = seeded
+    d = json.loads((tmp / "gvsoc" / "accelerator.json").read_text())
+    (g,) = d["accelerators"][0]["groups"]
+    m = next(u for u in g["units"] if u["name"] == "mac_x2")
+    assert m["params"] == {"accumulate": True, "regOut": False, "rows": 8}
+    assert m["ports"]["seed"] == {"port": "seed", "dir": "in", "dtype": "int32", "lanes": 8}
+    assert m["ports"]["b"]["hold"] is True
+    main = (tmp / "gvsoc" / "main.c").read_text()
+    for line in ("csrw_ss(MVT_RW_JOBS_VSUM_X1, 64);", "csrw_ss(MVT_RW_JOBS_MAC_X2, 1);",
+                 "csrw_ss(MVT_RW_MAC_X2_JOB_BEATS, 512);", "csrw_ss(MVT_RW_MAC_X2_ROWS, 8);"):  # fmt: skip
+        assert line in main
+    tl = task_list(DesignPoint.load(tmp / path))
+    (seed,) = [s for s in tl.steps if getattr(s, "task_name", "").endswith("_mac_x2_seed")]
+    assert seed.values["temporal_bounds"] == [8, 1]  # one beat a row, one strip
+
+
+def test_a_seeded_bank_costs_the_one_pass_no_cycle(seeded):
+    """512 firings and the ramp, as bicg_v4 at W = 8; the rule's vectors count the same."""
+    tmp, path = seeded
+    p = DesignPoint.load(tmp / path)
+    (g,) = groups(p.graph)
+    assert g.cycles == 515 and g.bits["mac_x2"] == 8 * 8 * 32 + 8
+    (t,) = vectors(tmp / path, tmp)["tasks"]
+    assert t["counter"] == 515
+    (e,) = estimate(p.graph, p.platform).groups
+    assert e.cost.units["mac_x2"].found == "bank"  # D194: the rows-1 Mac plus D193's forms

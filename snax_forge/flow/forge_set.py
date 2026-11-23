@@ -128,6 +128,8 @@ SETS = {
         *(Design("mvt_v5", lay + (f"design.schedule={s}",))
           for lay, s in (((), "sequential"), ((PADDED,), "sequential"), ((), "pipeline"))),
         Design("mvt_v5_2", ("design.schedule=sequential",)),
+        *(Design("mvt_v6", wr) for wr in ((), ("W=16", "R=4"), ("W=32", "R=2"))),  # one pass (D194)
+        *(Design("mvt_v5", (f"W_x1={w}", "design.schedule=pipeline")) for w in (16, 32)),  # its twins
     ],
     "pack": PACK,
     "bicg": [
