@@ -283,6 +283,15 @@ class Accelerator:
     def d_out(self, m: Mover, unit: str) -> int:
         """The results one word of writer ``m`` holds for ``unit``'s group: its port's ``d_out``
         in accelerator.json (D174), 1 when not packed."""
+        return self._per_word(m, unit, "d_out")
+
+    def d_in(self, m: Mover, unit: str) -> int:
+        """The slices one word of reader ``m`` gives ``unit``'s group, one a pop: its port's
+        ``d_in`` in accelerator.json (D180), 1 when not sliced."""
+        return self._per_word(m, unit, "d_in")
+
+    def _per_word(self, m: Mover, unit: str, key: str) -> int:
+        """Mover ``m``'s port's ``key`` (``d_in`` or ``d_out``) in ``unit``'s group, 1 absent."""
         instance, port = m.instance, m.port
         if m.users:
             mine = set(self.members(unit))
@@ -292,7 +301,7 @@ class Accelerator:
         for g in self.groups():
             for u in g["units"]:
                 if u["name"] == instance:
-                    return int(u["ports"].get(port, {}).get("d_out", 1))
+                    return int(u["ports"].get(port, {}).get(key, 1))
         return 1
 
     def unit_of_mover(self, mover: str) -> str | None:

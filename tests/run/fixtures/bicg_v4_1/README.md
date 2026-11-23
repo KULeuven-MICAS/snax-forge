@@ -1,0 +1,7 @@
+# bicg_v4_1 at 40 × 16, trace level beat
+
+A recorded SNAX-GVSoC run of the one pass in strips (D190–D192), so CI converts it without GVSoC (`tests/run/test_bank.py`): bicg_v4_1 at M = 40, N = 16, W = 4, R = 2, int8 A, p and r, the group `bicg_types` of units `mul`, `sum` (q = A p, linked by `q_prod`, its output packed two int32 to a word, D174, its seed carried across the two strips, D192) and `mac` (s = Aᵀ r in a bank of 2 rows, D191, r held a row, D190), one reader of A forked to `mul` and `mac` (D189), A, p and the seed sliced 2 to a word and r 8 (D180), one task `q_mult_bicg_types`. Made in snax-forge's image at snax-forge `13a4402` and snax-gvsoc `0757314c`:
+
+    pixi run flow recipes/bicg/bicg_v4_1.json --platform platforms/snax_forge.json --set M=40 --set N=16 --set R=2 --trace beat
+
+and copied from `out/flow/bicg_v4_1_M40_N16_R2_beat/` as bicg_v3's (`../bicg_v3/README.md`): `run/events.log` as `events_beat.log`, the three description files of `gen/` and its `manifest.json`, `tasks.json`, `design/design_point.json` (its `graph_from` made relative), `check.json` (the profile's `total_cycles` and `functional_check`) and `elf_symbols.json` (`run.json`'s, the ELF `sw/forge.elf` sha256 `dd89f0face39cff7`). The run: 489 cycles, data 0 errors (56 words), COUNTER `q_mult_bicg_types` 166 (160 beats). M = 40 is about the fewest rows LOWER takes for the carry at this depth (the seed read back 40 jobs after its write, the reader and writer holding 39). Made again the same way when snax-gvsoc's grammar (`docs/EVENTS.md`) or the generated files change.

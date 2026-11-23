@@ -1,5 +1,5 @@
 {
- "design_point": "out/design/bicg_v4_1/design_point.json",
+ "design_point": "design/design_point.json",
  "tag": "snax_forge_bicg_v4_1",
  "accelerators": [
   {
@@ -47,7 +47,7 @@
         },
         "out": {"port": "out", "dir": "out", "dtype": "int32", "lanes": 1, "d_out": 2}
        },
-       "params": {"op": "add", "T": 8},
+       "params": {"op": "add", "T": 2},
        "timing": {"latency": 1, "ii": 1, "span": 1},
        "csrs": [{"name": "CARRY", "access": "rw", "offset": 3, "width": 32}]
       },
@@ -69,11 +69,11 @@
         "out": {"port": "out", "dir": "out", "dtype": "int32", "lanes": 4}
        },
        "opType": "int32",
-       "params": {"accumulate": true, "regOut": false, "rows": 8},
+       "params": {"accumulate": true, "regOut": false, "rows": 2},
        "timing": {"latency": 1, "ii": 1, "span": 1},
        "csrs": [
         {"name": "JOB_BEATS", "access": "rw", "offset": 4, "width": 32},
-        {"name": "ROWS", "access": "rw", "offset": 5, "width": 4}
+        {"name": "ROWS", "access": "rw", "offset": 5, "width": 2}
        ]
       }
      ],

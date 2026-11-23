@@ -13,9 +13,10 @@ each ``class`` line to the next of its task. The invariants, each checked where 
 its lines: grants, bank accesses, DMA beats (as the iDMA counts them), firings, each output's
 pushes against its rate and its writer's words (a packed one d_out results a word) and, at
 ``stall``, stalls, conflicts and ``qmax`` match the summary; every fired ``b`` was granted on
-every lane; each L1 line's ``bank`` and ``row`` are its address's; class runs tile each run; and
-each mover's grant addresses are the nest its CSR writes gave the task (``agu_nest``). A linked
-group is read at its boundary: its firings the head's, each push its sink's.
+every lane (a sliced input's slice of it); each L1 line's ``bank`` and ``row`` are its address's;
+class runs tile each run; and each mover's grant addresses are the nest its CSR writes gave the
+task (``agu_nest``). A linked group is read at its boundary: its firings the head's, each push
+its sink's.
 """
 
 from __future__ import annotations
@@ -706,8 +707,8 @@ def _firings(s: _Seen, unit: str) -> list[str]:
 
 
 def _fired_beats(s: _Seen, unit: str) -> list[str]:
-    """Every beat a firing of ``unit`` names, and every push, against the grants of the
-    streamer tasks launched with its task."""
+    """Every beat a firing of ``unit`` names (a sliced input's slice of its word), and every
+    push, against the grants of the streamer tasks launched with its task."""
     acc, bad = s.ctx.cluster.accelerator, []
     by_beat = beat_grants(s.of["grant"], s.traced)
     mine = acc.movers_of(unit)
@@ -716,14 +717,32 @@ def _fired_beats(s: _Seen, unit: str) -> list[str]:
         g = by_beat.get((m.name, _paired(s.ctx, task, m.name), b), {})
         return [g[lane]["value"] if lane in g else None for lane in range(acc.lanes_of(m, unit))]
 
+    pops: dict[tuple[str, str, int], int] = defaultdict(int)
     for e in (e for e in s.of["fire"] if e["src"] == unit):
         for m in s.traced:
             if m.write or m.name not in e["b"]:
                 continue
-            got = granted(m, e["task"], e["b"][m.name])
-            if got != e["value"][m.name]:
-                bad.append(f"fire {e['n']} at {e['t']}: {m.name}'s beat {e['b'][m.name]} "
-                           f"granted as {got}, fired as {e['value'][m.name]}")  # fmt: skip
+            b, fired = e["b"][m.name], e["value"][m.name]
+            d = acc.d_in(m, unit)
+            if d == 1 or b < 0:
+                got = granted(m, e["task"], b)
+                if got != fired:
+                    bad.append(f"fire {e['n']} at {e['t']}: {m.name}'s beat {b} granted as "
+                               f"{got}, fired as {fired}")  # fmt: skip
+                continue
+            # NB (D180): the k-th firing that names word b takes its slice k, slice 0 lowest
+            k = pops[(m.name, e["task"], b)]
+            pops[(m.name, e["task"], b)] += 1
+            if k >= d:
+                bad.append(f"fire {e['n']} at {e['t']}: {m.name}'s word {b} holds {d} slices, "
+                           f"this is firing {k + 1} to name it")  # fmt: skip
+                continue
+            bits = 64 // d
+            word = granted(m, e["task"], b)[0]
+            got = None if word is None else word >> (k * bits) & ((1 << bits) - 1)
+            if got != fired[0] & ((1 << bits) - 1):
+                bad.append(f"fire {e['n']} at {e['t']}: slice {k} of {m.name}'s word {b} is "
+                           f"{None if got is None else hex(got)}, fired as {hex(fired[0])}")  # fmt: skip
     for e in (e for e in s.of["push"] if e["src"] == unit):
         m = acc.writer_of(unit, e.get("unit"))
         if m is None or m not in s.traced or m not in mine:
