@@ -79,6 +79,7 @@ DESIGNS = {
     "bicg_v3_w64": ("bicg_v3", ["M=64", "N=64", "W=64"]),  # two chains on a forked A (D189)
     "bicg_v4": ("bicg_v4", []),  # s's bank of 16 rows, r held (D191, D190)
     "bicg_v4_1": ("bicg_v4_1", []),  # two strips of a bank of 8, q carried (D192)
+    "mvt_v6": ("mvt_v6", []),  # x2's seeded bank of 8 rows, y2 held, A forked (D194)
 }
 
 # SimdLanes' slot params of a unit with none (axpby's k1 and k2, each slot from its CSR or not)

@@ -40,7 +40,8 @@ import snax.forge.elementwise.{ElementwiseModel, ElementwiseOp}
   * firings n a multiple of that and of the sum's T (its JOB_BEATS, or its fixed T); r is read once a row (D190), a beat
   * on each firing where n mod ROWS = 0, and the Mac's sums are ROWS rows, firing f adding into row f mod ROWS, each job
   * giving its rows in order. With q carried (bicg_v4_1, D192) the sum is seeded once a job from its seed's reader, the
-  * seed 0 in the sum on its first CARRY jobs (CARRY in 0..its JOBS).
+  * seed 0 in the sum on its first CARRY jobs (CARRY in 0..its JOBS). mvt's one pass (mvt_v6, D194): the sum seeded
+  * every job (x1), and the bank seeded a beat a row (x2), each job's row ρ starting from its ρ-th seed beat.
   */
 class ShellRandomSpec extends AnyFlatSpec with ForgeTester {
 
@@ -74,14 +75,19 @@ class ShellRandomSpec extends AnyFlatSpec with ForgeTester {
     Run(csrs, rows == 0, Seq(a, p, x), Seq(packed, s))
   }
 
-  /** bicg_v4's run (the bank, its held r, and with a carried q bicg_v4_1's), or the empty run: its CSRs, every input's
-    * beats in the spec's order and q packed and s.
+  /** bicg_v4's run (the bank, its held r, and with a carried q bicg_v4_1's; with both seeds mvt_v6's), or the empty
+    * run: its CSRs, every input's beats in the spec's order and q packed and s. The units by their roles: the product
+    * (`SimdLanes`), the sum (`TreeAccumulate`) and the bank (a `Mac` of rows above 1).
     */
   private def bankRun(spec: AcceleratorSpec, r: snax.forge.Rand, empty: Boolean): Run = {
-    val (mac, sum)    = (spec.unit("mac"), spec.unit("sum"))
+    val mac           = spec.units.find(_.rows > 1).get
+    val sum           = spec.units.find(_.datapath == "TreeAccumulate").get
+    val mul           = spec.units.find(_.datapath == "SimdLanes").get
     val (i8, i32)     = (IntType("int8"), IntType("int32"))
     val w             = mac.port("a").lanes
     val carried       = sum.ports.exists(_._2.carry)
+    val sumSeeded     = sum.inPorts.contains("seed")
+    val macSeeded     = mac.inPorts.contains("seed")
     var (rows, tm, n) = (1, 1, 1)
     do {
       rows = r.between(1, mac.rows)
@@ -93,33 +99,45 @@ class ShellRandomSpec extends AnyFlatSpec with ForgeTester {
     val carry         = if (carried) r.between(0, js) else 0
     def draw(k: Int, lanes: Int, bits: Int) = if (empty) Nil else Seq.fill(k)(Seq.fill(lanes)(r.word(bits)))
     val (a, p, x, seeds) = (draw(n, w, 8), draw(n, w, 8), draw(n / rows, 1, 8), draw(js, 1, 32))
+    val rowSeeds         = draw(n / tm * rows, w, 32) // NB (D194): the bank's seed, a beat a row of each job
     def wide(v: BigInt) = ElementwiseModel.cast(v, i8, i32)
-    val q      =
+    val q        =
       if (empty) Nil
       else
         (0 until n).grouped(ts).toSeq.zipWithIndex.map { case (job, j) =>
           val dot = LaneBits.dot(job.flatMap(a(_).map(wide)), job.flatMap(p(_).map(wide)), 32)
-          (dot + (if (carried && j >= carry) seeds(j).head else BigInt(0))) & LaneBits.mask(32)
+          (dot + (if (sumSeeded && (!carried || j >= carry)) seeds(j).head else BigInt(0))) & LaneBits.mask(32)
         }
-    val s      =
+    val s        =
       if (empty) Nil
       else
-        (0 until n).grouped(tm).toSeq.flatMap { job => // a job starts at a multiple of ROWS: its row f mod ROWS
+        (0 until n).grouped(tm).toSeq.zipWithIndex.flatMap { case (job, j) => // its row f mod ROWS
           (0 until rows).map { row =>
             val fs = job.filter(_ % rows == row)
             LaneBits.pack(
-              (0 until w).map(l => LaneBits.dot(fs.map(f => wide(a(f)(l))), fs.map(f => wide(x(f / rows).head)), 32)),
+              (0 until w).map { l =>
+                val dot = LaneBits.dot(fs.map(f => wide(a(f)(l))), fs.map(f => wide(x(f / rows).head)), 32)
+                (dot + (if (macSeeded) rowSeeds(j * rows + row)(l) else BigInt(0))) & LaneBits.mask(32)
+              },
               32
             )
           }
         }
-    val jobs   = if (empty) Seq(0L, 0L) else Seq(js.toLong, (n / tm).toLong)
-    val csrs   = Seq("JOBS_SUM" -> jobs(0), "JOBS_MAC" -> jobs(1)) ++
-      Option.when(sum.fixedT.isEmpty)("SUM_JOB_BEATS" -> ts.toLong) ++
-      Seq("MAC_JOB_BEATS" -> tm.toLong, "MAC_ROWS" -> rows.toLong) ++ Option.when(carried)("SUM_CARRY" -> carry.toLong)
-    val beats  = Map(("mul", "a") -> a, ("mul", "b") -> p, ("sum", "seed") -> seeds, ("mac", "b") -> x)
-    val packed = q.grouped(2).map(_.zipWithIndex.map { case (o, k) => o << (k * 32) }.sum).toSeq
-    Run(csrs, empty, spec.inputs.map(beats), spec.outputs.map(Map(("sum", "out") -> packed, ("mac", "out") -> s)))
+    val jobs     = if (empty) Seq(0L, 0L) else Seq(js.toLong, (n / tm).toLong)
+    val (su, mu) = (sum.name.toUpperCase, mac.name.toUpperCase)
+    val csrs     = Seq(s"JOBS_$su" -> jobs(0), s"JOBS_$mu" -> jobs(1)) ++
+      Option.when(sum.fixedT.isEmpty)(s"${su}_JOB_BEATS" -> ts.toLong) ++
+      Seq(s"${mu}_JOB_BEATS" -> tm.toLong, s"${mu}_ROWS" -> rows.toLong) ++
+      Option.when(carried)(s"${su}_CARRY" -> carry.toLong)
+    val beats    = Map(
+      (mul.name, "a")    -> a,
+      (mul.name, "b")    -> p,
+      (sum.name, "seed") -> seeds,
+      (mac.name, "b")    -> x,
+      (mac.name, "seed") -> rowSeeds
+    )
+    val packed   = q.grouped(2).map(_.zipWithIndex.map { case (o, k) => o << (k * 32) }.sum).toSeq
+    Run(csrs, empty, spec.inputs.map(beats), spec.outputs.map(Map((sum.name, "out") -> packed, (mac.name, "out") -> s)))
   }
 
   behavior of "the shell wrapper under random data and stalls"

@@ -49,7 +49,7 @@ class PackedGroupCtrl(desc: GroupDesc, dOut: Int, dIn: Seq[(Int, Int)] = Seq.emp
   pk.word             := packer.io.out.bits.asUInt
 }
 
-/** `GroupCtrl` alone (no datapath, as UnitCasesSpec drives shapes it has none for) through snax-gvsoc's 62 group cases
+/** `GroupCtrl` alone (no datapath, as UnitCasesSpec drives shapes it has none for) through snax-gvsoc's 66 group cases
   * (`SnaxGroupCases`: dot 2-6 at T 2 and 4, J 1 and 2, dot 5 and 6 at W 1, backpressure, an input gap, JOBS 0, the
   * fold's seed: two folds unseeded, the first or both seeded, a late seed on one fold, on a SerialAccumulate and on a
   * Mac (D187); the output packer, `pack_*`; the input slicer, `slice_*`, among them a seeded Mac's broadcast input
@@ -157,9 +157,10 @@ class GroupCasesSpec extends AnyFlatSpec with ForgeTester {
           val seed = u.seed && j == u.inputs - 1
           c.dIn.indexWhere(_._1 == place(at)) match {
             case -1 =>
-              // a seed's on its job's first beat; a held input's on a row's first (D190)
+              // a seed's on its job's first beat (a bank's on each of its first ROWS, D194); a held input's on a
+              // row's first (D190)
               val want =
-                cyc.fire(k) && (!seed || fired(k) % u.t == 0) && (!u.hold.contains(j) || fired(k) % u.rows == 0)
+                cyc.fire(k) && (!seed || fired(k) % u.t < u.rows) && (!u.hold.contains(j) || fired(k) % u.rows == 0)
               assert(high(io.in(at).ready) == want, s"$clue: input $at's ready, ${u.name}'s firing")
             case s  => // a sliced input: its reader's word taken
               val took = high(io.in(at).ready) && cyc.valids(place(at))
@@ -191,7 +192,7 @@ class GroupCasesSpec extends AnyFlatSpec with ForgeTester {
       it should "give every group case's cycles and runs" in
         cancel(s"${SnaxGroupCases.Env} is not set (snax-gvsoc's tests/snax/group/cases)")
     case Some(all) =>
-      it should "find the 62 group cases" in assert(all.size == 62, s"${all.size} cases")
+      it should "find the 66 group cases" in assert(all.size == 66, s"${all.size} cases")
       for (c <- all) {
         it should s"give ${c.name}'s cycles and runs" in run(c, open = false)
         it should s"give ${c.name}'s cycles and runs with its T from JOB_BEATS" in run(c, open = true)

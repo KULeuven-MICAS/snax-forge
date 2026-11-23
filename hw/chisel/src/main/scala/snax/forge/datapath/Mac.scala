@@ -16,11 +16,13 @@ import snax.forge.IntType
   *     in that cycle, since s changes only at the cycle's end. Seeded (`seed`), it has one more input, `seed`, of
   *     `out`'s type and lanes, read once per job: s ← `first` ? seed + p : s + p, so lane l's sum starts from seed(l)
   *     (D187). The control unit holds the first beat until the seed is valid and takes it with that firing
-  *     (`ctrl.GroupRule`); unseeded it is the block it was, the same RTL. A bank (`rows` R > 1, D191, unseeded) keeps R
-  *     rows of W sums: a firing adds into row `row` (`first` starting it) and `out` is row `drain`, the row the last
-  *     firing wrote, so a result pushed a cycle after its firing is that row while the next firing adds into another.
-  *     Both pins are the control unit's (`<unit>_row`, the beat mod ROWS; `drain` the row before it, ROWS − 1 after 0),
-  *     so the block keeps no row of its own and its registers are the R rows only.
+  *     (`ctrl.GroupRule`); unseeded it is the block it was, the same RTL. A bank (`rows` R > 1, D191) keeps R rows of W
+  *     sums: a firing adds into row `row` (`first` starting it) and `out` is row `drain`, the row the last firing
+  *     wrote, so a result pushed a cycle after its firing is that row while the next firing adds into another. Both
+  *     pins are the control unit's (`<unit>_row`, the beat mod ROWS; `drain` the row before it, ROWS − 1 after 0), so
+  *     the block keeps no row of its own and its registers are the R rows only. A seeded bank (D194) takes a seed beat
+  *     on each of a job's first R firings, row ← (`first` ? seed : s[row]) + p: one W-lane mux before the adders,
+  *     shared by the rows.
   *   - plain: `out` = p + c at `outType` (`c` of `out`'s type and lanes), combinational (latency 0), or with `regOut` a
   *     register that takes it on `en` (latency 1, pin `en`: its firing).
   *
@@ -59,8 +61,8 @@ class Mac(
     "regOut is the plain form's output register; an accumulating Mac's s is its register"
   )
   require(!seed || accumulate, "seed is the accumulating form's start; a plain Mac adds c instead")
-  require(rows                     >= 1, s"rows must be 1 or more, got $rows")
-  require(rows == 1 || (accumulate && !seed), s"rows $rows: a bank (D191) is an unseeded accumulating Mac's")
+  require(rows >= 1, s"rows must be 1 or more, got $rows")
+  require(rows == 1 || accumulate, s"rows $rows: a bank (D191) is an accumulating Mac's")
   require(
     inTypes.size == (if (accumulate) 2 else 3),
     s"inTypes must name a, b${if (accumulate) "" else " and c"}, got ${inTypes.mkString(", ")}"
@@ -99,8 +101,16 @@ class Mac(
 
   if (rows > 1) { // NB (D191): the bank's rows, written at `row` and read at `drain`; no register of a row
     val s = RegInit(VecInit(Seq.fill(rows)(VecInit(Seq.fill(lanes)(0.U(outT.width.W))))))
-    when(io.fire.get) {
-      for (l <- 0 until lanes) s(io.row.get)(l) := Mux(io.first.get, p(l), s(io.row.get)(l) + p(l))
+    io.seed match {
+      case None    =>
+        when(io.fire.get) {
+          for (l <- 0 until lanes) s(io.row.get)(l) := Mux(io.first.get, p(l), s(io.row.get)(l) + p(l))
+        }
+      case Some(q) => // NB (D194): each row's first firing in a job starts from the seed beat it takes
+        when(io.fire.get) {
+          for (l <- 0 until lanes)
+            s(io.row.get)(l) := Mux(io.first.get, IntType.cast(q(l), outT, outT).asUInt, s(io.row.get)(l)) + p(l)
+        }
     }
     for (l <- 0 until lanes) io.out(l) := IntType.cast(s(io.drain.get)(l), outT, outT)
   } else if (accumulate) {

@@ -51,6 +51,9 @@
     "snax_forge_mvt_v1_2_2_mvt_ctrl": [["busy", 1], ["vmul_x1_vsum_x1_job_beats_counter", 32], ["vmul_x1_jobs_counter", 32], ["vsum_x1_job_beats_counter", 32], ["vsum_x1_jobs_counter", 32], ["vsum_x1_v", 1], ["vmul_x1_vsum_x1_occupancy", 1], ["done", 1]],
     "snax_forge_mvt_v1_2_2_vadd_ctrl": [["busy", 1], ["vadd_jobs_counter", 32], ["done", 1]]
   },
+  "mvt_v6": {
+    "snax_forge_mvt_v6_mvt_ctrl": [["busy", 1], ["vmul_x1_vsum_x1_job_beats_counter", 32], ["vmul_x1_jobs_counter", 32], ["vsum_x1_job_beats_counter", 32], ["vsum_x1_jobs_counter", 32], ["vsum_x1_v", 1], ["mac_x2_job_beats_counter", 32], ["mac_x2_row", 3], ["mac_x2_jobs_counter", 32], ["mac_x2_v", 1], ["vmul_x1_vsum_x1_occupancy", 1], ["done", 1]]
+  },
   "vecadd_v1": {
     "snax_forge_vecadd_v1_acc_ctrl": [["busy", 1], ["acc_jobs_counter", 32], ["done", 1]]
   },

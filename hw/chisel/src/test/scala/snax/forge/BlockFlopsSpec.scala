@@ -10,10 +10,10 @@ import snax.forge.datapath.SimdLanes
 import snax.forge.elementwise.ElementwiseOp
 
 /** `flops` (`blocks.json`, the registry's `Datapath.flops`): per seed of `Seeds`, a block of every datapath at random
-  * params (the Mac in its three forms, seeded and banked) emitted alone through one `Emit --block` call, and the
-  * register bits its SystemVerilog declares (`reg [n:0] name;` lines of every file, firtool's form for a flop, a Vec
-  * register one per element) equal to the expression evaluated on the params (`FlopsExpr`, `snax_forge/expr.py`'s
-  * grammar as Python evaluates it).
+  * params (the Mac in its three forms, seeded and banked, a bank seeded too) emitted alone through one `Emit --block`
+  * call, and the register bits its SystemVerilog declares (`reg [n:0] name;` lines of every file, firtool's form for a
+  * flop, a Vec register one per element) equal to the expression evaluated on the params (`FlopsExpr`,
+  * `snax_forge/expr.py`'s grammar as Python evaluates it).
   */
 class BlockFlopsSpec extends AnyFlatSpec {
 
@@ -63,7 +63,8 @@ class BlockFlopsSpec extends AnyFlatSpec {
       (true, false, true, 1),
       (false, false, false, 1),
       (false, true, false, 1),
-      (true, false, false, r.between(2, 16)) // a bank (D191): its rows of sums
+      (true, false, false, r.between(2, 16)), // a bank (D191): its rows of sums
+      (true, false, true, r.between(2, 16))   // a seeded bank (D194): the same rows, the seed a port
     ).map { case (acc, reg, seed, rows) =>
       val out = dtype(r)
       ujson.Obj(

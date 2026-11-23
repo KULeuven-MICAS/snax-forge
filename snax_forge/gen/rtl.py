@@ -391,11 +391,11 @@ def vectors(design_point: str | Path, root: str | Path | None = None) -> dict:
         array = c_name(c) if p.direction == "in" else f"{c_name(c)}_golden"
         rate = 1 if p.rate == 1 else values[p.rate]
         beats, rows = values["n"] // rate, bank_rows(inst)
-        if (
-            rows > 1
-        ):  # NB (D191, D190): a bank gives ROWS results a job; its held input, a pop a row
+        if rows > 1:  # NB (D191, D190, D194): a bank gives ROWS results a job and, seeded, takes
+            # ROWS seed beats; its held input, a pop a row
             held = next(u for u in group.units if u.name == name).ports[port].hold
-            beats = beats * rows if p.direction == "out" else beats // rows if held else beats
+            per_row = p.direction == "out" or p.name == SEED
+            beats = beats * rows if per_row else beats // rows if held else beats
         ports.append({"port": p.name, "array": array,
                       "lanes": stream_lanes(point.graph, node, inst, p.name),
                       "beats": beats, "values": list(data[array].values)})  # fmt: skip

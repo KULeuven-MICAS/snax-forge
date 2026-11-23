@@ -23,13 +23,13 @@ case class UnitDesc(
   hold:    Seq[Int] = Nil,
   carry:   Boolean  = false
 ) {
-  require(latency               >= 0, s"$name: latency must be 0 or more, got $latency")
-  require(ii                    >= 1, s"$name: ii must be 1 or more, got $ii")
-  require(span                  >= 1, s"$name: span must be 1 or more, got $span")
-  require(inputs                >= 0, s"$name: inputs must be 0 or more, got $inputs")
-  require(!seeded || inputs     >= 1, s"$name: a seeded unit's seed is one of its outer inputs")
-  require(rows                  >= 1, s"$name: rows must be 1 or more, got $rows")
-  require(rows == 1 || (!seeded && !fixedT.contains(1)), s"$name: a bank of $rows rows is unseeded, of T above 1")
+  require(latency           >= 0, s"$name: latency must be 0 or more, got $latency")
+  require(ii                >= 1, s"$name: ii must be 1 or more, got $ii")
+  require(span              >= 1, s"$name: span must be 1 or more, got $span")
+  require(inputs            >= 0, s"$name: inputs must be 0 or more, got $inputs")
+  require(!seeded || inputs >= 1, s"$name: a seeded unit's seed is one of its outer inputs")
+  require(rows              >= 1, s"$name: rows must be 1 or more, got $rows")
+  require(rows == 1 || !fixedT.contains(1), s"$name: a bank of $rows rows has T above 1")
   require(hold.isEmpty || rows > 1, s"$name: inputs $hold held, but it has no bank; a hold counts the bank's rows")
   require(
     hold.forall(j => 0 <= j && j < inputs - (if (seeded) 1 else 0)),
@@ -227,8 +227,9 @@ class LinkEnables(depth: Int) extends Bundle {
   * A bank (`rows` R > 1, D191, a chain's sink): its row ρ (`<unit>_row`, the beat mod ROWS, the csr's) is its only
   * register beyond the counters; `first` on a job's first ROWS firings (d < ROWS), a result on each of its last ROWS (d
   * + ROWS ≥ T), d and the jobs digit wrapping and counting at d + 1 = T; the `Mac`'s `row` is ρ and its `drain` the row
-  * before (ROWS − 1 at 0). A held input (D190) needs its beat, and is ready, only at ρ = 0. A carried seed (D192) is
-  * taken every job as any seed; `useSeed` = (its jobs counter ≥ CARRY) for the wrapper, a comparison.
+  * before (ROWS − 1 at 0). Seeded (D194), its seed is needed and ready on `first`, a beat a row. A held input (D190)
+  * needs its beat, and is ready, only at ρ = 0. A carried seed (D192) is taken every job as any seed; `useSeed` = (its
+  * jobs counter ≥ CARRY) for the wrapper, a comparison.
   */
 class GroupRule(val desc: GroupDesc, jobWidth: Int = 32) {
   // NB (D153): a unit counts its results in nested counters, never against n_k; snax-gvsoc's SnaxGroupRule must
@@ -375,11 +376,18 @@ class GroupRule(val desc: GroupDesc, jobWidth: Int = 32) {
     for (k <- desc.order) {
       val u = descs(k)
       val s = st(k)
-      inputs(k)    := (if (u.hold.nonEmpty) // NB (D190): a held input's beat only on a row's first firing
+      inputs(k)    := (if (u.hold.nonEmpty && !u.seeded) // NB (D190): a held input's beat only on a row's first firing
                       io.in(k).zipWithIndex.map { case (p, j) => p.valid || heldOff(k, j) }.reduce(_ && _)
                     else if (!u.seeded) io.in(k).map(_.valid).foldLeft(true.B)(_ && _)
-                    else // the seed only on the job's first beat
-                      io.in(k).init.map(_.valid).foldLeft(true.B)(_ && _) && (s.d =/= 0.U || io.in(k).last.valid))
+                    else if (u.rows == 1) // the seed only on the job's first beat
+                      io.in(k).init.map(_.valid).foldLeft(true.B)(_ && _) && (s.d =/= 0.U || io.in(k).last.valid)
+                    else                  // NB (D194): a seeded bank's seed on each of its job's first ROWS beats
+                      io.in(k)
+                        .init
+                        .zipWithIndex
+                        .map { case (p, j) => p.valid || heldOff(k, j) }
+                        .foldLeft(true.B)(_ && _)                         &&
+                      (!first(k) || io.in(k).last.valid))
       avail(k)     := desc.ins(k).foldLeft(inputs(k)) { (a, i) =>
         a && (if (links(i).depth == 0) offer(links(i).from) else occupancy(i) =/= 0.U)
       }
@@ -432,7 +440,8 @@ class GroupRule(val desc: GroupDesc, jobWidth: Int = 32) {
   for {
     k      <- 0 until n
     (p, j) <- io.in(k).zipWithIndex
-  } p.ready := (if (descs(k).seeded && j == descs(k).inputs - 1) fire(k) && st(k).d === 0.U
+  } p.ready := (if (descs(k).seeded && j == descs(k).inputs - 1 && descs(k).rows > 1) fire(k) && first(k)
+                else if (descs(k).seeded && j == descs(k).inputs - 1) fire(k) && st(k).d === 0.U
                 else if (descs(k).hold.contains(j)) fire(k) && !heldOff(k, j)
                 else fire(k))
   for ((k, o) <- outputs.zipWithIndex) outPort(o).valid := pass.offer(k)
