@@ -111,7 +111,9 @@ SETS = {
     "quick": QUICK,
     "full": [*QUICK, *designs("vecadd_v1", "vsum_v1", "rowsum_v3", "vecmul_v1_1_1", "dot_v2",
                               "dot_v3", "dot_v5", "dot_v6", "dot_v7", "matvec_v1", "matvec_v5",
-                              "matvec_v6", "matvec_acc_v1", "matvec_acc_v2", "relu_v1", "rowsum_v2",
+                              "matvec_v6", "matvec_acc_v1", "matvec_acc_v2",
+                              "bicg_v4_1", "mvt_v6",  # the fork, hold, banks and their seeds
+                              "relu_v1", "rowsum_v2",
                               Design("rowsum_v2", (PADDED,)))],
     "mvt": [
         *(Design(r, w + lay) for r in ("mvt_v1", "mvt_v1_2", "mvt_v1_2_2")

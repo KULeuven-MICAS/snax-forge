@@ -82,7 +82,7 @@ def test_a_failing_forge_stops_the_set(tmp_path, stubbed, capsys):
 
 
 def test_the_full_set_holds_the_quick_one():
-    assert fs.SETS["full"][: len(fs.QUICK)] == fs.QUICK and len(fs.SETS["full"]) == 26
+    assert fs.SETS["full"][: len(fs.QUICK)] == fs.QUICK and len(fs.SETS["full"]) == 28
     assert fs.SETS["full"][-3] == fs.Design("relu_v1") and fs.Design("relu_v1") not in fs.QUICK
 
 
@@ -170,7 +170,8 @@ def test_the_mvt_set_is_its_own():
         "mvt_v5_W_x1-16_schedulepipeline", "mvt_v5_W_x1-32_schedulepipeline",
     ]  # fmt: skip
     assert len(names) == 47
-    assert not {d.recipe for d in fs.SETS["mvt"]} & {d.recipe for d in fs.SETS["full"]}
+    # the full set takes the one pass at its defaults, for its seeded bank (D194)
+    assert {d.recipe for d in fs.SETS["mvt"]} & {d.recipe for d in fs.SETS["full"]} == {"mvt_v6"}
 
 
 def test_the_bicg_set_is_its_own():
@@ -193,4 +194,4 @@ def test_the_bicg_set_is_its_own():
         "bicg_v2_1_W32_schedulepipeline", "bicg_v4_1",
     ]  # fmt: skip
     others = {d.recipe for k, ds in fs.SETS.items() if k != "bicg" for d in ds}
-    assert not {d.recipe for d in fs.SETS["bicg"]} & others
+    assert {d.recipe for d in fs.SETS["bicg"]} & others == {"bicg_v4_1"}  # in full too

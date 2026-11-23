@@ -76,12 +76,13 @@ def module_tree(acc: Description) -> dict[str, list[str]]:
 
 
 def provenance(checkout: Path) -> tuple[str | None, bool]:
-    """The checkout's commit (``git rev-parse HEAD``) and whether its work tree has uncommitted
-    changes; ``(None, False)`` outside git."""
+    """The checkout's commit (``git rev-parse HEAD``) and whether a tracked file has uncommitted
+    changes (untracked files, such as the editor's ``recipes/custom/``, do not count);
+    ``(None, False)`` outside git."""
     head = git(checkout, "rev-parse", "HEAD")
     if head is None:
         return None, False
-    return head, bool(git(checkout, "status", "--porcelain"))
+    return head, bool(git(checkout, "status", "--porcelain", "--untracked-files=no"))
 
 
 def file_list(rtl_dir: Path, emitted: list[Path]) -> list[str]:
