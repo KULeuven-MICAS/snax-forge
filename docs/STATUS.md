@@ -104,7 +104,7 @@ CLN4's sizes, before and after:
 To do, in four tracks, each task in its own thread, branch and PR (the ROAD1 plan, 16 Nov 2026). Each task runs in a clone set of its own, so tasks in parallel never share `out/`, a GVSoC build or snax_cluster's imported bundles:
 
 - **Track A, tier A and E4** (snax-forge, snax-gvsoc where a task changes the model):
-  1. **TIERA3** (`wip`, branch `ry/tiera3`): atax's forms at 64 × 64. The two-pass forms by reuse (`recipes/atax/`, `forge-set atax`; half 2 waits on half 1's writer of t under every schedule), the DMA copy at int8, then one group with t held over a link (D197) and A read once through a FIFO from the fork (D196), `atax_v3` and `atax_v4` (sandbox, LOWER, estimate, `accelerator.json`, SNAX-GVSoC's `SnaxGroup` and the Chisel done, fixture `atax_v4`; a fork's buffered branch joins its reader's chain in all three rules); `forge-set atax`'s 18 points all `forge data` exact on SNAX-GVSoC with `--energy` (dynamic 0.03–0.45 % over static), and on vsim the one-group and shared-port points 5 PERFECT and 5 NEAR within their fill (open item 169); at D = T a row costs 2 cycles, the `Mac` waiting for t while the full ring holds the fork; half 2's `Mac` multiplies int8 by int32 (X98).
+  1. **TIERA3** (`wip`, branch `ry/tiera3`): atax's forms at 64 × 64. The two-pass forms by reuse (`recipes/atax/`, `forge-set atax`; half 2 waits on half 1's writer of t under every schedule), the DMA copy at int8, then one group with t held over a link (D197) and A read once through a FIFO from the fork (D196), `atax_v3` and `atax_v4` (sandbox, LOWER, estimate, `accelerator.json`, SNAX-GVSoC's `SnaxGroup` and the Chisel done, fixture `atax_v4`; a fork's buffered branch joins its reader's chain in all three rules); `forge-set atax`'s 18 points all `forge data` exact on SNAX-GVSoC with `--energy` (dynamic 0.03–0.45 % over static), and on vsim the one-group and shared-port points 5 PERFECT and 5 NEAR within their fill (open item 169); at D = T a row costs 2 cycles, the `Mac` waiting for t while the full ring holds the fork; the run's energy prices the fork's ring on its reader's firings, so `atax_v4`'s five points' static is the estimate's to the last digit (30.630 nJ at D = 10, B4's 29.556 without the ring) and the dynamic 0.03–0.28 % over it; the full set on vsim at the close (C1), 10 PERFECT and 5 NEAR, as last measured to the cycle ("The local RTL check"); half 2's `Mac` multiplies int8 by int32 (X98).
   2. **E4S1** (kickoff from TIERA1's plan): E4's sweep script over `pixi run flow --set` (no DSE5) and its figure, first on what runs today (W on dot 3, matvec and mvt_v1; shared against dedicated ports), then on each tier A form as it lands. The bank-bound sweep at int64 and int32: a dot reads $2 W b$ bytes a cycle against $32 \cdot 8 = 256$, so it crosses at W = 16 (int64) and 32 (int32), and W stops at 32.
 - **Track B, costs** (snax-forge-experiments, snax-forge's `char`; Nangate 45 nm only): E4's energy axis reads `--energy` or the static estimate; GE1's left-overs are open items 136 and 137.
 - **Track C, the Snitch-only baseline** (snax_cluster, snax-forge-experiments; E11):
@@ -122,7 +122,27 @@ To do, in four tracks, each task in its own thread, branch and PR (the ROAD1 pla
 
 ## The local RTL check
 
-The local RTL check (D123) runs one program on SNAX-GVSoC and, through snax_cluster's `snax-forge-check`, on vsim, and gives each bundle a verdict: PERFECT, NEAR (a counter's gap beyond its fill up to 10 % of its count), WARNING (up to 15 %) or FAIL. The full set as last measured, 26 bundles, every `forge data` exact, 17 PERFECT and 9 NEAR; cycles are the window, then the `forge counter`s in brackets:
+The local RTL check (D123) runs one program on SNAX-GVSoC and, through snax_cluster's `snax-forge-check`, on vsim, and gives each bundle a verdict: PERFECT, NEAR (a counter's gap beyond its fill up to 10 % of its count), WARNING (up to 15 %) or FAIL. Cycles are the window, then the `forge counter`s in brackets. The full set (D195) at TIERA3's close (C1, 2026-11-24; snax-forge `ry/tiera3` at `b8ddc3a6`, SNAX-GVSoC `d45b68cb`, snax_cluster main at `baf87858`, the RTL built in image `c5db84ad7bce`), 15 bundles, every `forge data` exact, 10 PERFECT and 5 NEAR, every window and counter on both as last measured, to the cycle (the quick set's as in TIERA3 B4):
+
+| Bundle | SNAX-GVSoC cycles | vsim cycles | Verdict |
+|---|---:|---:|---|
+| vecadd_v1_1 at W = 1 (sliced) | 247 (68) | 273 (68) | PERFECT |
+| axpy_v1 | 216 (19) | 247 (19) | PERFECT |
+| dot_v4 | 422 (133) | 445 (133) | PERFECT |
+| mvt_v1_2_2 at W = 8 | 4614 (517, 11, 3240, 8) | 4707 (517, 11, 3249, 11) | NEAR 0.2 % (open item 128) |
+| bicg_v4_1 | 1408 (1030) | 1407 (1030) | PERFECT |
+| vecadd_v1 | 209 (19) | 232 (16) | NEAR, 0.0 % beyond the fill |
+| rowsum_v2 padded_rows | 363 (131) | 376 (131) | PERFECT |
+| matvec_acc_v2 | 5924 (1027, 4099) | 5944 (1027, 4099) | PERFECT |
+| mvt_v4_1_1 sequential | 12509 (514, 517) | 12593 (518, 517) | NEAR 0.2 % (open item 138) |
+| mvt_v5 sequential | 1578 (518, 516) | 1646 (518, 516) | PERFECT |
+| mvt_v6 | 899 (519) | 922 (515) | NEAR 0.2 % (open item 65) |
+| atax_v4 | 796 (526) | 825 (523) | NEAR, 0.0 % beyond the fill (open item 169) |
+| vsum_v1_1 at i8, W = 8 (packed d_out 2) | 158 (11) | 180 (11) | PERFECT |
+| dot_v3 at i16, W = 4 (packed d_out 2) | 323 (132) | 354 (132) | PERFECT |
+| dot_v3 at i32, W = 2 | 486 (260) | 509 (260) | PERFECT |
+
+The full set's earlier designs no longer in it (D195), as TIERA2 C2 last measured them (all 26 of that set `forge data` exact, 17 PERFECT and 9 NEAR):
 
 | Bundle | SNAX-GVSoC cycles | vsim cycles | Verdict |
 |---|---:|---:|---|
@@ -130,12 +150,7 @@ The local RTL check (D123) runs one program on SNAX-GVSoC and, through snax_clus
 | vsum_v1_1_2 | 156 (11) | 192 (11) | PERFECT |
 | dot_v1 | 251 (19, 19) | 266 (16, 19) | NEAR, 0.0 % beyond the fill |
 | dot_v1_1 | 303 (19, 19) | 300 (19, 17) | NEAR, 0.0 % beyond the fill |
-| dot_v4 | 422 (133) | 445 (133) | PERFECT |
-| axpy_v1 | 216 (19) | 247 (19) | PERFECT |
-| vsum_v1_1 at i8, W = 8 (packed d_out 2) | 158 (11) | 180 (11) | PERFECT |
 | matvec_v3 at i8, W = 8 (packed) | 1325 (1028) | 1345 (1028) | PERFECT |
-| vecadd_v1_1 at W = 1 (sliced) | 247 (68) | 273 (68) | PERFECT |
-| vecadd_v1 | 209 (19) | 232 (16) | NEAR, 0.0 % beyond the fill |
 | vsum_v1 | 222 (67) | 263 (65) | NEAR, 0.0 % beyond the fill |
 | rowsum_v3 | 223 (67) | 234 (67) | PERFECT |
 | vecmul_v1_1_1 | 209 (19) | 232 (16) | NEAR, 0.0 % beyond the fill |
@@ -148,20 +163,8 @@ The local RTL check (D123) runs one program on SNAX-GVSoC and, through snax_clus
 | matvec_v5 | 3353 (2101) | 3397 (2101) | PERFECT |
 | matvec_v6 | 3308 (2057) | 3349 (2057) | PERFECT |
 | matvec_acc_v1 | 2835 (1024, 1027) | 2880 (1027, 1027) | NEAR, 0.0 % beyond the fill |
-| matvec_acc_v2 | 5924 (1027, 4099) | 5944 (1027, 4099) | PERFECT |
 | relu_v1 | 163 (18) | 191 (18) | PERFECT |
 | rowsum_v2 | 357 (129) | 387 (134) | NEAR 2.3 % (open item 129) |
-| rowsum_v2 padded_rows | 363 (131) | 376 (131) | PERFECT |
-
-The quick set after B2's change to the emitted RTL (TIERA3 B4, 2026-11-24), every `forge data` exact, 4 PERFECT and 1 NEAR:
-
-| Bundle | SNAX-GVSoC cycles | vsim cycles | Verdict |
-|---|---:|---:|---|
-| vecadd_v1_1 at W = 1 | 247 (68) | 273 (68) | PERFECT |
-| axpy_v1 | 216 (19) | 247 (19) | PERFECT |
-| dot_v4 | 422 (133) | 445 (133) | PERFECT |
-| mvt_v1_2_2 at W = 8 | 4614 (517, 11, 3240, 8) | 4707 (517, 11, 3249, 11) | NEAR 0.2 % (open item 128) |
-| bicg_v4_1 | 1408 (1030) | 1407 (1030) | PERFECT |
 
 ## Next Up
 
