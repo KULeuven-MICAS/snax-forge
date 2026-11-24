@@ -759,7 +759,8 @@ function costParts(c) {
 }
 
 /** Compare's cost bars (api.py's compare_cost_bars): per area and energy, the two steps' bars one
-above the other on one scale, the larger total the whole width. */
+above the other on one scale, the larger total the whole width; all four in one grid, so every
+bar starts at the same left edge. */
 function compareBars(bars) {
   if (!bars) return [];
   const bar = (side, what) => {
@@ -775,8 +776,8 @@ function compareBars(bars) {
       h("div", { class: "c-part-side" }, h("span", {}, side.label), h("span", { class: "nb" }, side.total_text)),
       h("div", { class: "c-part-bar", role: "img", "aria-label": `${side.label}: ${what} by part` }, segs));
   };
-  return [["area", "area"], ["energy", "energy per run"]].map(([key, what]) => h("div", { class: "c-part-bar-wrap" },
-    h("div", { class: "c-part-bar-label muted" }, `${what}, on one scale`), ...bars[key].map((side) => bar(side, what))));
+  return [h("div", { class: "c-part-grid" }, [["area", "area"], ["energy", "energy per run"]].flatMap(([key, what]) => [
+    h("div", { class: "c-part-bar-label muted" }, `${what}, on one scale`), ...bars[key].map((side) => bar(side, what))]))];
 }
 
 async function estimate() {

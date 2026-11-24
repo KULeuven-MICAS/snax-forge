@@ -822,6 +822,11 @@ table.c-cost-table tr.streamer th, table.c-cost-table tr.streamer td { color: va
 .c-part-row { display: grid; grid-template-columns: minmax(5rem, auto) 1fr; gap: 0.4rem; align-items: center; margin-bottom: 0.2rem; }
 .c-part-side { display: flex; flex-direction: column; font-size: 0.82em; line-height: 1.2; }
 .c-part-side span:first-child { font-weight: 600; }
+/* Compare's bars: one grid, the labels' column as wide as the widest, so the bars line up */
+.c-part-grid { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.2rem 0.4rem; align-items: center; margin: 0.3rem 0 0.4rem; }
+.c-part-grid .c-part-row { display: contents; }
+.c-part-grid .c-part-bar-label { grid-column: 1 / -1; margin: 0.35rem 0 0; }
+.c-part-grid .c-part-bar-label:first-child { margin-top: 0; }
 
 /* -- the step's drawing, laid out by ELK (graph.js) -----------------------------
    Boxes are placed absolutely at ELK's places and sizes; edges, labels and outlines in one SVG
