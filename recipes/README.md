@@ -55,6 +55,10 @@ The one-unit kernels take a word for their fold or scalar instead of a form: `tr
 | `atax_v1_2` | atax | `atax_dot2_i8_o32_dmaT` | Matvec twice at int8 in, int32 out (`types` i8): the DMA copies A into `A_T` (`data_transpose`, D182) so half 2 reads rows, then `matvec/matvec_v2` on both halves. |
 | `atax_v2` | atax | `atax_dot2_col` | t a `dot_v2` group per row and y the column form, by reuse: `matvec/matvec_v2` on t and `matvec/matvec_v7` on y, t[i] read back from L1 and broadcast to the `Mac`'s lanes (D186). Both halves read A along its rows. |
 | `atax_v2_1` | atax | `atax_dot2_col_i8_o32` | `atax_v2` at int8 in, int32 out (`types` i8): half 2's `Mac` multiplies A at int8 by t at int32. |
+| `atax_v1_3` | atax | `atax_dot2_ports` | `atax_v1` with the halves on one accelerator whose movers they share (`share_ports` on t, D169): they run in turn, so one set of streamers serves both. |
+| `atax_v1_2_1` | atax | `atax_dot2_ports_i8_o32_dmaT` | `atax_v1_2` with the halves sharing their movers (`share_ports` on t, D169). |
+| `atax_v2_2` | atax | `atax_dot2_col_ports` | `atax_v2` with the halves sharing their movers (`share_ports` on t, D169). |
+| `atax_v2_1_1` | atax | `atax_dot2_col_ports_i8_o32` | `atax_v2_1` with the halves sharing their movers (`share_ports` on t, D169). |
 | `bicg_v1` | bicg | `bicg_dot2` | Each half a `dot_v2` group per row, by reuse: `lift matvec` at each half, then `matvec/matvec_v2` on both. Half 2 reads A down its columns, so its banks follow the layout (`padded_rows`). |
 | `bicg_v2` | bicg | `bicg_dot2_col` | q a `dot_v2` group per row and s the column form, by reuse: `matvec/matvec_v2` on q and `matvec/matvec_v7` on s, r broadcast to the `Mac`'s lanes (D186). Both halves read A along its rows. |
 | `bicg_v2_1` | bicg | `bicg_dot2_col_i8_o32` | `bicg_v2` at int8 in, int32 out (`types` i8). |

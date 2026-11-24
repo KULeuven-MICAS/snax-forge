@@ -1,0 +1,58 @@
+{
+ "name": "atax_v2_2",
+ "id": "atax_dot2_col_ports",
+ "description": "`atax_v2` with the halves sharing their movers (`share_ports` on t, D169).",
+ "kernel": "atax",
+ "params": {
+  "M": 64,
+  "N": 64,
+  "W": 8
+ },
+ "symbols": {
+  "M": "M",
+  "N": "N"
+ },
+ "steps": [
+  {
+   "transform": "lift",
+   "params": {
+    "kernel": "matvec",
+    "at": "tmp1_mult_map"
+   }
+  },
+  {
+   "transform": "apply_recipe",
+   "params": {
+    "block": "matvec",
+    "recipe": "matvec/matvec_v2",
+    "params": {
+     "W": "W"
+    }
+   }
+  },
+  {
+   "transform": "lift",
+   "params": {
+    "kernel": "matvec",
+    "at": "y_mult_map"
+   }
+  },
+  {
+   "transform": "apply_recipe",
+   "params": {
+    "block": "matvec_1",
+    "recipe": "matvec/matvec_v7",
+    "params": {
+     "W": "W"
+    }
+   }
+  },
+  {
+   "transform": "share_ports",
+   "params": {
+    "container": "tmp1",
+    "accelerator": "atax"
+   }
+  }
+ ]
+}

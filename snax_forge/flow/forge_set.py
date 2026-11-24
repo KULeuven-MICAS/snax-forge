@@ -92,7 +92,12 @@ SETS = {
                     "atax_v2_1",
                     Design("atax_v2_1", ("M=40",)),
                     Design("atax_v2_1", ("W=16",)),
-                    Design("atax_v2_1", ("W=32",))),
+                    Design("atax_v2_1", ("W=32",)),
+                    # the halves on shared movers (share_ports)
+                    Design("atax_v1_3", (PADDED,)),
+                    "atax_v2_2",
+                    Design("atax_v1_2_1", (SEQUENTIAL,)),
+                    "atax_v2_1_1"),
 }  # fmt: skip
 
 
