@@ -295,14 +295,18 @@ def counter(unit: Unit, n: int) -> tuple[int, str]:
 
 
 def rule_graph(group: Group, forked: list[list[str]] = ()) -> tuple[
-        list[dict[str, Any]], list[dict[str, Any]], str | list[str], list[list[tuple[str, int]]]]:  # fmt: skip
+        list[dict[str, Any]], list[dict[str, Any]], str | list[str], list[list[tuple[str, int]]],
+        list[dict[str, Any]]]:  # fmt: skip
     """``group`` as snax_group_rule's GroupRule takes it: per unit its name, L, II, span and
-    outer inputs (its ``in`` ports no link feeds); per link ``{from, to, to_input, depth}``,
-    ``to_input`` the fed port's place among its unit's ``in`` ports; the unit owning the outer
-    output (the one with an ``out`` port no link takes), with several chains each in unit
-    order; and the forks (``forked``, the accelerator's) as ``(unit, outer input)``. A
-    banked unit adds its ``rows`` and its held inputs' places, ``hold``."""
-    fed = {link.to for link in group.links}
+    outer inputs (its ``in`` ports no link or fork link feeds); per link ``{from, to,
+    to_input, depth}``, ``to_input`` the fed port's place among its unit's ``in`` ports,
+    ``hold`` into a held port; the unit owning the outer output (the one with an
+    ``out`` port no link takes), with several chains each in unit order; the forks
+    (``forked``, the accelerator's) as ``(unit, outer input)``, and their buffered branches as
+    ``{fork, to, to_input, depth}``. A banked unit adds its ``rows`` and its held
+    inputs' places, ``hold``."""
+    buffered = {k.to: k.depth for k in group.fork_links}
+    fed = {link.to for link in group.links} | set(buffered)
     taken = {link.from_ for link in group.links}
 
     def ins(u: Unit) -> list[str]:
@@ -319,20 +323,26 @@ def rule_graph(group: Group, forked: list[list[str]] = ()) -> tuple[
         src = link.from_.split(".", 1)[0]
         dst, port = link.to.split(".", 1)
         links.append({"from": src, "to": dst, "to_input": ins(by_name[dst]).index(port),
-                      "depth": link.depth})  # fmt: skip
+                      "depth": link.depth}
+                     | ({"hold": True} if by_name[dst].ports[port].hold else {}))  # fmt: skip
     owners = [u.name for u in group.units
               for name, p in u.ports.items() if p.dir == "out" and f"{u.name}.{name}" not in taken]  # fmt: skip
-    rule_forks = []
+    rule_forks, branches = [], []
     for f in forked:
-        mine = []
+        mine, bufs = [], [x for x in f if x in buffered]
         for x in f:
             u, port = x.split(".", 1)
-            if u in by_name:
+            if u in by_name and x not in buffered:
                 outer = [q for q in ins(by_name[u]) if f"{u}.{q}" not in fed]
                 mine.append((u, outer.index(port)))
-        if len(mine) > 1:
+        if len(mine) + len(bufs) > 1:
+            for x in bufs:
+                u, port = x.split(".", 1)
+                branches.append({"fork": len(rule_forks), "to": u,
+                                 "to_input": ins(by_name[u]).index(port), "depth": buffered[x]})  # fmt: skip
             rule_forks.append(mine)
-    return units, links, owners[0] if len(owners) == 1 else owners, rule_forks
+    owner = owners[0] if len(owners) == 1 else owners
+    return units, links, owner, rule_forks, branches
 
 
 def rule_bank(u: Unit, outer: list[str]) -> dict[str, Any]:
@@ -351,14 +361,14 @@ def group_counter(group: Group, jobs: int | list[int], beats: Mapping[str, int],
     valid and the output ready, and the working: JOBS ``jobs``, each unit's T its JOB_BEATS
     (``beats``, by unit) or its fixed T (``params.T``, else 1). BUSY_COUNTER counts the busy cycles,
     E - s: the rule starts the run in cycle 0. A run that does not end is ``gen.counter``."""
-    units, links, owner, forks = rule_graph(group, forked)
+    units, links, owner, forks, branches = rule_graph(group, forked)
     ts = [beats.get(u.name, u.params.get("T", 1)) for u in group.units]
     if 0 in (jobs if isinstance(jobs, list) else [jobs]) or 0 in ts:
         return (
             0,
             "The group's BUSY_COUNTER counts its busy cycles: JOBS or a T 0 is the empty run, none",
         )
-    end = group_cycles(units, links, owner, jobs, ts, forks)
+    end = group_cycles(units, links, owner, jobs, ts, forks, branches)
     if end is None:
         raise GenError("gen.counter", f"group {group.name}: the rule does not end")
     t = ", ".join(f"{u.name} {x}" for u, x in zip(group.units, ts, strict=True))

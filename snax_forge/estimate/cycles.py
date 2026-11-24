@@ -73,18 +73,20 @@ def group_rule() -> ModuleType:
 
 def group_cycles(units: list[dict[str, Any]], links: list[dict[str, Any]],
                  owner: str | list[str], jobs: int | list[int], ts: list[int],
-                 forks: list[list[tuple[str, int]]] | None = None) -> int | None:  # fmt: skip
+                 forks: list[list[tuple[str, int]]] | None = None,
+                 fork_links: list[dict[str, Any]] | None = None) -> int | None:  # fmt: skip
     """The busy cycles of one run of a group, E - s: the group rule (``units`` with ``name``,
     ``L``, ``ii``, ``span`` and ``inputs``, its outer inputs, and optionally ``d_in``, their pops
     per word in port order, absent all 1; ``links`` ``{from, to, to_input, depth}``; ``owner``
     the unit with the outer output, or with several chains each sink in unit order, ``jobs``
-    then one per chain, and ``forks`` each ``(unit, outer input)`` one reader feeds)
+    then one per chain, ``forks`` each ``(unit, outer input)`` one reader feeds, and
+    ``fork_links`` a fork's buffered branches ``{fork, to, to_input, depth}``)
     stepped with every input valid and every output ready, JOBS ``jobs`` and each unit's T
     ``ts``; 0 for the empty run (a JOBS or a T 0), None for a run that does not end."""
     several = not isinstance(jobs, int)
     if 0 in (jobs if several else [jobs]) or 0 in ts:
         return 0
-    rule = group_rule().GroupRule(units, links, owner, forks or ())
+    rule = group_rule().GroupRule(units, links, owner, forks or (), fork_links or ())
     n = rule.firings_per_run(jobs, ts)
     d_in = [1] * rule.n_valid
     for u, places in zip(units, rule.place, strict=True):
@@ -96,21 +98,35 @@ def group_cycles(units: list[dict[str, Any]], links: list[dict[str, Any]],
     return end
 
 
-def rule_forks(graph: Graph, members: list[str], insts: dict[str, Any],
-               fed: set[str]) -> list[list[tuple[str, int]]]:  # fmt: skip
+def buffered(graph: Graph, members: list[str]) -> dict[str, tuple[Node, int]]:
+    """A group's buffered fork branches: each reader ``unit.port`` to its fork node and
+    the buffer's depth."""
+    return {r: (f, d) for f in forks(graph) for r, d in f.attrs.get("buffers", {}).items()
+            if r.split(".")[0] in members}  # fmt: skip
+
+
+def rule_forks(graph: Graph, members: list[str], insts: dict[str, Any], fed: set[str],
+               ) -> tuple[list[list[tuple[str, int]]], list[dict[str, Any]]]:  # fmt: skip
     """The group's forks as the group rule takes them: per fork each reader's unit and
-    the place of its port among the unit's outer inputs (its ``in`` ports no link feeds)."""
-    out = []
+    the place of its port among the unit's outer inputs (its ``in`` ports no link feeds, nor
+    a fork's buffer); and its buffered branches, ``{fork, to, to_input, depth}``, the place
+    among the unit's ``in`` ports, as a link's."""
+    out, branches = [], []
     for f in forks(graph):
-        mine = []
+        mine, bufs = [], f.attrs.get("buffers", {})
         for r in f.attrs["readers"]:
             u, p = r.split(".")
-            if u in members:
+            if u in members and r not in bufs:
                 outer = [q for q in _ins(insts[u]) if f"{u}.{q}" not in fed]
                 mine.append((u, outer.index(p)))
-        if len(mine) > 1:
+        mine_bufs = [(r, d) for r, d in bufs.items() if r.split(".")[0] in members]
+        if len(mine) + len(mine_bufs) > 1:
+            for r, d in mine_bufs:
+                u, p = r.split(".")
+                branches.append({"fork": len(out), "to": u, "to_input": _ins(insts[u]).index(p),
+                                 "depth": d})  # fmt: skip
             out.append(mine)
-    return out
+    return out, branches
 
 
 @dataclass
@@ -187,9 +203,16 @@ def _bank(graph: Graph, inst: Any, node: Node, outer: list[str]) -> dict[str, An
     return {"rows": bank_rows(inst)} | ({"hold": held} if held else {})
 
 
+def _held(graph: Graph, insts: dict[str, Any], nodes: dict[str, list[Node]], end: str) -> bool:
+    """Whether a link's reader port ``end`` (``unit.port``) is held for a bank row."""
+    u, p = end.split(".", 1)
+    node = nodes[u][0]
+    return is_held(insts[u], p, node.inputs[p], firing_loops(graph, node))
+
+
 def _datapath_blocks(graph: Graph, insts: dict[str, Any], members: list[str],
                      ends: list[tuple[Node, str, str]], firings: dict[str, int],
-                     gives: dict[str, int],
+                     gives: dict[str, int], branches: dict[str, tuple[Node, int]] | None = None,
                      ) -> tuple[dict[str, Block], dict[str, Block], dict[str, int]]:  # fmt: skip
     """Per unit and per buffer link (by container) the datapath to cost, its params as the generator
     fills them and its fires (cost.py: a unit's ``firings`` times its span, a buffer's its
@@ -197,8 +220,9 @@ def _datapath_blocks(graph: Graph, insts: dict[str, Any], members: list[str],
     "Estimate"): a wire 0 and no block; a unit the generator does not fill a block with no params
     and no bits. A packed outer output's ``FifoPacker`` joins the links by ``<unit>.<port>``, a
     fire per result; a sliced outer input's ``FifoSlicer`` (``_slicers``) too, a fire per pop: its
-    unit's firings, a seed's one per job (its unit's results). The generator is imported here:
-    gen/rtl.py imports this package."""
+    unit's firings, a seed's one per job (its unit's results); a fork's buffered branch
+    (``branches``) a ``LinkBuffer`` by container, a fire per push, its reader's firings
+    ``LinkBuffer`` ring. The generator is imported here: gen/rtl.py imports this package."""
     from snax_forge.gen.accelerator import Unit
     from snax_forge.gen.blocks import DATAPATHS, GenError, fill_node
     from snax_forge.gen.rtl import buffer_params, catalogue, fill, flops
@@ -232,6 +256,14 @@ def _datapath_blocks(graph: Graph, insts: dict[str, Any], members: list[str],
         end = filled[unit].ports[port]
         links[name] = Block("LinkBuffer", buffer_params(depth, end.lanes, end.dtype,
                                                         cat["LinkBuffer"]), gives[unit])  # fmt: skip
+        bits[name] = flops("LinkBuffer", links[name].params, cat)
+    for r, (fork, depth) in (branches or {}).items():  # a fork's FIFO, one push a beat
+        unit, port = r.split(".", 1)
+        if unit not in filled:
+            continue
+        name, end = fork.attrs["container"], filled[unit].ports[port]
+        links[name] = Block("LinkBuffer", buffer_params(depth, end.lanes, end.dtype,
+                                                        cat["LinkBuffer"]), firings[unit])  # fmt: skip
         bits[name] = flops("LinkBuffer", links[name].params, cat)
     taken = {frm for _, frm, _ in ends}
     for u, unit in filled.items():  # a packed outer output's packer, by <unit>.<port>
@@ -304,7 +336,9 @@ def datapath_blocks(graph: Graph) -> dict[str, Block]:
     for members in graph_groups(graph).values():
         ends = group_links(graph, members)
         zero = dict.fromkeys(members, 0)
-        units, bufs, _ = _datapath_blocks(graph, insts, members, ends, zero, zero)
+        units, bufs, _ = _datapath_blocks(
+            graph, insts, members, ends, zero, zero, buffered(graph, members)
+        )
         out |= units | bufs
     return out
 
@@ -330,7 +364,8 @@ def group_blocks(graph: Graph, job_width: int = 32,
     runs = group_runs(graph)
     for name, members in graph_groups(graph).items():
         ends = group_links(graph, members)  # one per pair of ports
-        fed = {to for _, _, to in ends}
+        branches = buffered(graph, members)
+        fed = {to for _, _, to in ends} | set(branches)
         taken = {frm for _, frm, _ in ends}
         slicers = _slicers(graph, insts, members, ends)
         rule_units = [{"name": u, "L": insts[u].latency, "ii": insts[u].initiation_interval,
@@ -343,12 +378,14 @@ def group_blocks(graph: Graph, job_width: int = 32,
                       for u in members]  # fmt: skip
         rule_links = [{"from": frm.split(".")[0], "to": to.split(".")[0],
                        "to_input": _ins(insts[to.split(".")[0]]).index(to.split(".")[1]),
-                       "depth": k.attrs["depth"]} for k, frm, to in ends]  # fmt: skip
+                       "depth": k.attrs["depth"]}
+                      | ({"hold": True} if _held(graph, insts, nodes, to) else {})
+                      for k, frm, to in ends]  # fmt: skip
         owners = [u for u in members for p in insts[u].ports
                   if p.direction == "out" and f"{u}.{p.name}" not in taken]  # fmt: skip
         owner: str | list[str] = owners[0] if len(owners) == 1 else owners
         chains = group_chains(graph, members) if len(owners) > 1 else None
-        rule_fork = rule_forks(graph, members, insts, fed)
+        rule_fork, fork_links = rule_forks(graph, members, insts, fed)
         tasks = (  # a linked group once per run (several when nests share it)
             runs[name] if len(members) > 1 else [{members[0]: n} for n in nodes[members[0]]]
         )
@@ -362,7 +399,7 @@ def group_blocks(graph: Graph, job_width: int = 32,
             all_jobs = [v for _, k, v in writes if k.startswith("JOBS")]
             jobs: int | list[int] = all_jobs[0] if chains is None else all_jobs
             ts = [values[u][r] if (r := fold_rate(insts[u])) else 1 for u in members]
-            end = group_cycles(rule_units, rule_links, owner, jobs, ts, rule_fork)
+            end = group_cycles(rule_units, rule_links, owner, jobs, ts, rule_fork, fork_links)
             if end is None:
                 raise EstimateError("estimate.counter", f"group {name}: the group rule does not "
                                     "end")  # fmt: skip
@@ -376,10 +413,10 @@ def group_blocks(graph: Graph, job_width: int = 32,
             bottleneck += max(values[u]["n"] * max(insts[u].initiation_interval, insts[u].span)
                               for u in task)  # fmt: skip
         ramp = sum(insts[u].latency + insts[u].span - 1 for u in members)
-        ramp += sum(k.attrs["depth"] >= 1 for k, _, _ in ends)
+        ramp += sum(k.attrs["depth"] >= 1 for k, _, _ in ends) + len(fork_links)
         ramp *= len(tasks)  # each run fills the group's pipeline again
         inputs = sum(u["inputs"] for u in rule_units)
-        units, bufs, bits = _datapath_blocks(graph, insts, members, ends, firings, gives)
+        units, bufs, bits = _datapath_blocks(graph, insts, members, ends, firings, gives, branches)
         g = GroupEstimate(name, list(members), cycles, bottleneck, ramp,
                           cycles - bottleneck - ramp, FILL_ONE_INPUT if inputs == 1 else FILL,
                           [k.attrs["container"] for k, _, _ in ends], bits=bits,

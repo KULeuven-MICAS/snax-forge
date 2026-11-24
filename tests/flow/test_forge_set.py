@@ -85,9 +85,9 @@ def test_a_failing_forge_stops_the_set(tmp_path, stubbed, capsys):
 
 def test_the_full_set_holds_the_quick_one():
     """The quick set's five features, then the full set's six others and a point each at i8,
-    i16 and i32; no other set."""
+    i16 and i32; after them only an open task's own set."""
     assert fs.SETS["full"][: len(fs.QUICK)] == fs.QUICK and len(fs.SETS["full"]) == 14
-    assert list(fs.SETS) == ["quick", "full"]
+    assert list(fs.SETS)[:2] == ["quick", "full"]
     assert [d.sets[0] for d in fs.SETS["full"][-3:]] == ["types=i8", "types=i16", "types=i32"]
 
 

@@ -23,7 +23,9 @@ from itertools import pairwise, product
 from typing import Any
 
 from snax_forge import expr
+from snax_forge.brm.brm import BrmError
 from snax_forge.common import CodedError, fresh
+from snax_forge.design.streamers import LoopError, bank_loops, firing_loops, instance_of, is_held
 from snax_forge.dfg import Container, Graph, Memlet, Node, Reduction, loops
 from snax_forge.dfg.graph import SEEDED
 from snax_forge.dfg.subset import dim_names, map_range, parse_dim
@@ -543,13 +545,16 @@ def _path(body: list[Node], node_id: str) -> list[tuple[list[Node], int]] | None
 def beats(g: Graph, node: Node, port: str) -> list[tuple[tuple[int, ...], ...]]:
     """The elements an accelerated node's ``port`` moves, beat by beat: its memlet over its
     firing loops, outermost first (for a named rate the loops it uses: one beat per T
-    firings), at the graph's symbols; each beat its lanes' indices, row-major."""
+    firings; a held input one a bank row), at the graph's symbols; each beat its
+    lanes' indices, row-major."""
     m = (node.inputs | node.outputs)[port]
     rate = load_brm(node.attrs["brm"]).port(port).rate
     outer = next(o for n, o in g.walk() if n is node)
     loops = [o for o in outer if o.kind == "map"]
     if rate != 1:
         loops = [lp for lp in loops if lp.attrs["var"] in m.names]
+    elif port in node.inputs and (rows := _held_rows(g, node, port)):
+        loops = [lp for lp in loops if lp.id not in rows]
     symbols = g.bound_symbols
     ranges = [list(map_range(lp.attrs["range"], symbols, lp.id)) for lp in loops]
     out = []
@@ -562,6 +567,19 @@ def beats(g: Graph, node: Node, port: str) -> list[tuple[tuple[int, ...], ...]]:
             dims.append(ends[:1] if len(parts) == 1 else list(range(ends[0], ends[1], parts[2])))
         out.append(tuple(product(*dims)))
     return out
+
+
+def _held_rows(g: Graph, node: Node, port: str) -> set[str]:
+    """The bank's row maps a held input skips, none when it is not held or its unit's
+    maps are not all firing loops yet."""
+    try:
+        loops = firing_loops(g, node)
+        inst = instance_of(node)
+    except (LoopError, BrmError):
+        return set()
+    if not is_held(inst, port, node.inputs[port], loops):
+        return set()
+    return {lp.map for lp in bank_loops(inst, loops)}
 
 
 def _group(n: Node) -> str:
@@ -589,9 +607,38 @@ def _ends(g: Graph, container: str) -> tuple[Node, Node]:
     return w, r
 
 
+def _fork_of(g: Graph, container: str) -> Node | None:
+    return next((n for n, _ in g.walk() if n.kind == "fork" and n.attrs["container"] == container),
+                None)  # fmt: skip
+
+
+def _linked_to(g: Graph) -> set[str]:
+    return {n.attrs["to"] for n, _ in g.walk() if n.kind == "link"}
+
+
+def _branch(g: Graph, fork: Node, what: str) -> str:
+    """The reader a forked container's link buffers: the one fed by a link in its chain,
+    else the one after the first, when there are two."""
+    open_ = [r for r in fork.attrs["readers"] if r not in fork.attrs.get("buffers", {})]
+    fed = [r for r in open_ if r.split(".")[0] in _linked_to(g)]
+    if len(fed) == 1 and len(open_) > 1:
+        return fed[0]
+    if not fed and len(open_) == 2:
+        return open_[1]
+    raise LinkError("link.fork", f"{what}: the fork gives {open_} with {fed} fed by a link; a "
+                    "link on a forked read buffers the branch to the one reader down a chain")  # fmt: skip
+
+
 def _link_site(g: Graph, container: str) -> dict[str, Any]:
     """``container`` and a ``group``: an end's group name, else the graph's, or the next free
-    one (``mvt_v2``) when another unit's instance or group has it (mvt's second half)."""
+    one (``mvt_v2``) when another unit's instance or group has it (mvt's second half); a
+    forked container's, its fork's group."""
+    if (fork := _fork_of(g, container)) is not None:
+        reader = fork.attrs["readers"][0].split(".")[0]
+        return {
+            "container": container,
+            "group": next(_group(n) for n in _accelerated(g) if n.attrs["instance"] == reader),
+        }
     w, r = _ends(g, container)
     named = w.attrs.get("group", r.attrs.get("group"))
     if named is not None:
@@ -602,12 +649,39 @@ def _link_site(g: Graph, container: str) -> dict[str, Any]:
     return {"container": container, "group": fresh(g.name, taken)}
 
 
+def _link_fork(g: Graph, container: str, depth: int, group: str) -> Graph:
+    """A buffer of ``depth`` on a forked read's branch to a reader down a chain: the
+    fork node's ``buffers``; LOWER holds the depth to the beats before that reader fires."""
+    g = _copy(g)
+    what = f"link {container!r}"
+    fork = _fork_of(g, container)
+    if type(depth) is not int or depth < 1:
+        raise LinkError("link.container", f"{what}: depth {depth!r}; a forked read's branch is "
+                        "a buffer, depth 1 or more")  # fmt: skip
+    reader = _branch(g, fork, what)
+    have = _link_site(g, container)["group"]
+    if group != have:
+        raise LinkError("link.group", f"{what}: the fork's group is {have!r}, not {group!r}")
+    fork.attrs["buffers"] = {**fork.attrs.get("buffers", {}), reader: depth}
+    return _result(g)
+
+
 def link(g: Graph, container: str, depth: int, group: str) -> Graph:
+    if _fork_of(g, container) is not None:
+        return _link_fork(g, container, depth, group)
     g = _copy(g)
     w, r = _ends(g, container)  # the site
     what = f"link {container!r}"
     if type(depth) is not int or depth < 0:
         raise LinkError("link.container", f"{what}: depth {depth!r}; 0 is a wire, >= 1 a buffer")
+    for f, _ in g.walk():  # a fork's reader taken down a chain needs its branch buffered first
+        if f.kind != "fork":
+            continue
+        end = next((x for x in f.attrs["readers"] if x.split(".")[0] == r.attrs["instance"]), None)
+        if end is not None and end not in f.attrs.get("buffers", {}):
+            raise LinkError("link.fork", f"{what}: {end} takes {f.attrs['container']} from a "
+                            f"fork; link {f.attrs['container']} first (a buffer on its "
+                            "branch)")  # fmt: skip
     (wp,) = [p for p, m in w.outputs.items() if m.data == container]
     (rp,) = [p for p, m in r.inputs.items() if m.data == container]
     wb, rb = beats(g, w, wp), beats(g, r, rp)
@@ -708,10 +782,12 @@ def chains_problem(order: list[str], hops: list[tuple[str, str]],
 
 
 def _unlink_site(g: Graph, selected: str) -> dict[str, Any]:
-    """A link node, or its container."""
+    """A link node, or its container; a forked container with a buffered branch."""
     for n, _ in g.walk():
         if n.kind == "link" and selected in (n.id, n.attrs["container"]):
             return {"container": n.attrs["container"]}
+        if n.kind == "fork" and n.attrs.get("buffers") and selected == n.attrs["container"]:
+            return {"container": selected}
     raise SandboxError(f"unlink {selected!r}: no link of that container")
 
 
@@ -721,6 +797,15 @@ def unlink(g: Graph, container: str) -> Graph:
         raise SandboxError(f"unlink {container!r}: no link of that container")
     g = _copy(g)
     what = f"unlink {container!r}"
+    if (fork := _fork_of(g, container)) is not None and fork.attrs.get("buffers"):
+        (reader,) = list(fork.attrs["buffers"])[-1:]
+        if reader.split(".")[0] in _linked_to(g):
+            raise LinkError("unlink.fork", f"{what}: {reader} is fed by a link too; unlink that "
+                            "first")  # fmt: skip
+        del fork.attrs["buffers"][reader]
+        if not fork.attrs["buffers"]:
+            del fork.attrs["buffers"]
+        return _result(g)
     found = [n for n, _ in g.walk() if n.kind == "link" and n.attrs["container"] == container]
     body, i, _ = _locate(g, found[0].id)
     gone = body.pop(i)

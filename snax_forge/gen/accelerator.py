@@ -43,6 +43,7 @@ from snax_forge.design.streamers import (
     shared_movers,
     streamer_name,
 )
+from snax_forge.design.streamers import forks as graph_forks
 from snax_forge.design.streamers import group_links as shared_links
 from snax_forge.design.streamers import groups as graph_groups
 from snax_forge.dfg import Graph, Node
@@ -148,25 +149,47 @@ class Link:
 
 
 @dataclass(frozen=True)
+class ForkLink:
+    """A fork's buffered branch: ``to`` a forked ``in`` port, not its reader's first, fed
+    through a ring buffer of ``depth`` beats, one pushed each beat the fork takes."""
+
+    name: str
+    to: str
+    depth: int
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"name": self.name, "to": self.to, "depth": self.depth}
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> ForkLink:
+        return cls(d["name"], d["to"], d["depth"])
+
+
+@dataclass(frozen=True)
 class Group:
     """A connected set of units and links with one JOBS: its own CSRs (START, JOBS,
-    then STATUS, BUSY_COUNTER) and its units'."""
+    then STATUS, BUSY_COUNTER) and its units'; ``fork_links`` its forks' buffered branches,
+    written only when there is one."""
 
     name: str
     csrs: list[Csr]
     units: list[Unit]
     links: list[Link] = field(default_factory=list)
+    fork_links: list[ForkLink] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
-        return {"name": self.name, "csrs": [c.to_dict() for c in self.csrs],
-                "units": [u.to_dict() for u in self.units],
-                "links": [k.to_dict() for k in self.links]}  # fmt: skip
+        d = {"name": self.name, "csrs": [c.to_dict() for c in self.csrs],
+             "units": [u.to_dict() for u in self.units],
+             "links": [k.to_dict() for k in self.links]}  # fmt: skip
+        return d | ({"fork_links": [k.to_dict() for k in self.fork_links]}
+                    if self.fork_links else {})  # fmt: skip
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> Group:
         return cls(d["name"], [Csr.from_dict(c) for c in d["csrs"]],
                    [Unit.from_dict(u) for u in d["units"]],
-                   [Link.from_dict(k) for k in d["links"]])  # fmt: skip
+                   [Link.from_dict(k) for k in d["links"]],
+                   [ForkLink.from_dict(k) for k in d.get("fork_links", [])])  # fmt: skip
 
     def chains(self) -> list[list[str]]:
         """Its chains, each its units from head to sink along its links, in the order of their
@@ -472,9 +495,10 @@ def _check_links(acc: Accelerator) -> None:
             if a is None or b is None or a.dir != "out" or b.dir != "in":
                 raise GenError("gen.link", f"{what} goes from {k.from_} to {k.to}; a link goes "
                                "from an out port to an in port of the group's units")  # fmt: skip
-            if (a.dtype, a.lanes) != (b.dtype, b.lanes):
+            lanes = 1 if b.broadcast and b.hold else b.lanes  # NB (D197): one lane, held a row
+            if (a.dtype, a.lanes) != (b.dtype, lanes):
                 raise GenError("gen.link", f"{what}: {k.from_} is {a.lanes} lanes of {a.dtype}, "
-                               f"{k.to} {b.lanes} of {b.dtype}; both ends are the same")  # fmt: skip
+                               f"{k.to} {lanes} of {b.dtype}; both ends are the same")  # fmt: skip
             if type(k.depth) is not int or k.depth < 0:
                 raise GenError("gen.link", f"{what}: depth {k.depth!r}; 0 is a wire, >= 1 a buffer")
             for end, p in ((k.from_, a), (k.to, b)):
@@ -482,15 +506,26 @@ def _check_links(acc: Accelerator) -> None:
                     raise GenError("gen.link", f"{what}: {end} has d_in {p.d_in} and d_out "
                                    f"{p.d_out}; a linked port has no slicer or packer, so both "
                                    "are 1 (absent)")  # fmt: skip
-                if p.broadcast:
+                if p.broadcast and not p.hold:
                     raise GenError("gen.link", f"{what}: {end} is a broadcast; a linked port "
-                                   "takes its lanes from the link, so it is not one "
-                                   "(absent)")  # fmt: skip
+                                   "takes its lanes from the link, so it is not one unless "
+                                   "held for a bank row (absent)")  # fmt: skip
             for end in (k.from_, k.to):
                 if end in linked:
                     raise GenError("gen.link_port", f"{what}: port {end} is on another link too")
                 linked.add(end)
             parent[root(k.from_.split(".")[0])] = root(k.to.split(".")[0])
+        for k in g.fork_links:
+            what = f"accelerator {acc.name}: group {g.name}'s fork link {k.name}"
+            if not any(k.to in f[1:] for f in acc.forks) or k.to not in ports:
+                raise GenError("gen.link", f"{what} goes to {k.to}; a fork's buffered branch "
+                               "goes to a forked port of the group, not its reader's "
+                               "first")  # fmt: skip
+            if type(k.depth) is not int or k.depth < 1:
+                raise GenError("gen.link", f"{what}: depth {k.depth!r}; a fork's branch is a "
+                               "buffer, depth 1 or more")  # fmt: skip
+            if k.to in linked:
+                raise GenError("gen.link_port", f"{what}: port {k.to} is on another link too")
         for f in acc.forks:
             mine = [x.split(".")[0] for x in f if x.split(".")[0] in parent]
             for u in mine[1:]:
@@ -517,7 +552,8 @@ def _check_links(acc: Accelerator) -> None:
 
 def _check_fork(acc: Accelerator, f: list[str], outer: list[str]) -> None:
     """``gen.fork``: a forked input's ports, two or more outer inputs of one group's
-    chain heads, alike in dtype, lanes, slicing and broadcast."""
+    chain heads (or a port down a chain behind a buffer, a fork link), alike in dtype,
+    lanes, slicing and broadcast."""
     what = f"accelerator {acc.name}: the fork {f}"
     group_of = {u.name: g for g in acc.groups for u in g.units}
     port = {f"{u.name}.{k}": p for u in acc.units for k, p in u.ports.items()}
@@ -528,8 +564,9 @@ def _check_fork(acc: Accelerator, f: list[str], outer: list[str]) -> None:
         raise GenError("gen.fork", f"{what}: its ports are in several groups; a fork feeds "
                        "the chains of one group")  # fmt: skip
     fed = {k.to.split(".")[0] for g in acc.groups for k in g.links}
+    buffered = {k.to for g in acc.groups for k in g.fork_links}
     for x in f:
-        if x.split(".")[0] in fed:
+        if x.split(".")[0] in fed and x not in buffered:
             raise GenError("gen.fork", f"{what}: {x}'s unit is fed by a link; a fork feeds the "
                            "heads of chains")  # fmt: skip
     kinds = {(port[x].dtype, port[x].lanes, port[x].d_in, port[x].broadcast) for x in f}
@@ -694,8 +731,11 @@ def describe(point: DesignPoint, point_path: str) -> Description:
             counter = Csr("BUSY_COUNTER", "ro", next(offsets), widths.counter)
             group_links = [Link(k.attrs["container"], end_from, end_to, k.attrs["depth"])
                            for k, end_from, end_to in shared_links(g, members)]  # fmt: skip
+            branches = [ForkLink(f.attrs["container"], r, d) for f in graph_forks(g)
+                        for r, d in f.attrs.get("buffers", {}).items()
+                        if r.split(".")[0] in members]  # fmt: skip
             groups.append(Group(group_name, [start, *jobs, status, counter], group_units,
-                                group_links))  # fmt: skip
+                                group_links, branches))  # fmt: skip
             for u in members:
                 ports = [p for p in mine[u].ports if f"{u}.{p.name}" not in linked]
                 for p in ports:
@@ -750,13 +790,16 @@ def _unit(point: DesignPoint, name: str, inst: Instance, offsets: Iterator[int])
         s = point.streamers.get(streamer_name(u, q))
         if s is not None and max(s.d_out, s.d_in) > 1:
             ports[p] = replace(port, d_out=s.d_out, d_in=s.d_in)
-        if s is not None and is_broadcast(point.graph, node, inst, p):  # one lane for all
+        memlet, loops = (node.inputs | node.outputs)[p], firing_loops(point.graph, node)
+        held = is_held(inst, p, memlet, loops)
+        # NB (D197): a held input may come over a link, one lane for all, no streamer
+        if (s is not None or held) and is_broadcast(point.graph, node, inst, p):
             if not DATAPATHS[datapath].lanewise:
                 raise GenError("gen.broadcast", f"{what}: port {p} is read as one lane for all, "
                                f"but {datapath} sums its lanes; a broadcast feeds a datapath "
                                "whose lanes compute on their own (SimdLanes, Mac)")  # fmt: skip
             ports[p] = replace(ports[p], broadcast=True)
-        if is_held(inst, p, (node.inputs | node.outputs)[p], firing_loops(point.graph, node)):
+        if held:
             if not ports[p].broadcast:  # read once a row, held for the row
                 raise GenError("gen.hold", f"{what}: port {p} is held for a bank row but is not "
                                "a broadcast; a held input is one lane for all for now")  # fmt: skip

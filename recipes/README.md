@@ -37,7 +37,8 @@ An id is the kernel, then words in this order, each from the lists below; a word
 | | `shared` | both halves on one set of units (D165) |
 | | `ports` | a container on ports its writer and reader share (`share_ports`) |
 | | `enc` | a group's units encapsulated as one accelerator |
-| | `fork` | both halves read A through one reader, in one group of two chains (`fork_read`, D189) |
+| | `link` | the halves in one group, half 1's result linked into half 2's held input (D197) |
+| | `fork` | both halves read A through one reader, in one group of two chains (`fork_read`, D189), or a buffered branch down one chain (D196) |
 | Type | (none) | int64 |
 | | `i<b>` | inputs of b bits |
 | | `o<b>` | the output of b bits, when it differs from the inputs |
@@ -59,6 +60,8 @@ The one-unit kernels take a word for their fold or scalar instead of a form: `tr
 | `atax_v1_2_1` | atax | `atax_dot2_ports_i8_o32_dmaT` | `atax_v1_2` with the halves sharing their movers (`share_ports` on t, D169). |
 | `atax_v2_2` | atax | `atax_dot2_col_ports` | `atax_v2` with the halves sharing their movers (`share_ports` on t, D169). |
 | `atax_v2_1_1` | atax | `atax_dot2_col_ports_i8_o32` | `atax_v2_1` with the halves sharing their movers (`share_ports` on t, D169). |
+| `atax_v3` | atax | `atax_dot2_colbank_link_i8_o32` | atax in one group at int8 in, int32 out: t = A x by `matvec/matvec_v2`, y = Aᵀ t by the bank form `matvec/matvec_v8` (R rows, R · W = N), and t linked at depth 1 into the `Mac`'s broadcast input, held for its row (D197). A is read twice, t is in no memory. |
+| `atax_v4` | atax | `atax_dot2_colbank_link_fork_i8_o32` | `atax_v3` with A read once (`fork_read A`): the `Mac`'s branch goes through a ring buffer of D beats (`link A`, D196). D ≥ N/W, or the run never ends (LOWER refuses it); N/W + 2 hides the vsum's latency and the link. |
 | `bicg_v1` | bicg | `bicg_dot2` | Each half a `dot_v2` group per row, by reuse: `lift matvec` at each half, then `matvec/matvec_v2` on both. Half 2 reads A down its columns, so its banks follow the layout (`padded_rows`). |
 | `bicg_v2` | bicg | `bicg_dot2_col` | q a `dot_v2` group per row and s the column form, by reuse: `matvec/matvec_v2` on q and `matvec/matvec_v7` on s, r broadcast to the `Mac`'s lanes (D186). Both halves read A along its rows. |
 | `bicg_v2_1` | bicg | `bicg_dot2_col_i8_o32` | `bicg_v2` at int8 in, int32 out (`types` i8). |

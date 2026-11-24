@@ -97,7 +97,14 @@ SETS = {
                     Design("atax_v1_3", (PADDED,)),
                     "atax_v2_2",
                     Design("atax_v1_2_1", (SEQUENTIAL,)),
-                    "atax_v2_1_1"),
+                    "atax_v2_1_1",
+                    # one group: t linked and held, then A read once through a buffer
+                    "atax_v3",
+                    "atax_v4",
+                    Design("atax_v4", ("D=8",)),
+                    Design("atax_v4", ("M=40",)),
+                    Design("atax_v4", ("W=16", "R=4", "D=6")),
+                    Design("atax_v4", ("W=32", "R=2", "D=4"))),
 }  # fmt: skip
 
 
