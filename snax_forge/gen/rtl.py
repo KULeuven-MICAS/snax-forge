@@ -412,9 +412,11 @@ def vectors(design_point: str | Path, root: str | Path | None = None) -> dict:
     if linked:
         chains = group.chains()
         writes = job_writes(found, task.values, acc.fixed_folds, chains)
-        # several chains: a unit's CSR by unit, as the program names it (MAC_JOB_BEATS)
-        csrs = {(k if len(chains) == 1 or k.startswith("JOBS") else f"{u.upper()}_{k}"): v
-                for u, k, v in writes}  # fmt: skip
+        # several chains, or a name two units have: a unit's CSR by unit, as the program names
+        # it (MAC_JOB_BEATS)
+        names = [k for _, k, _ in writes]
+        csrs = {(k if k.startswith("JOBS") or (len(chains) == 1 and names.count(k) == 1)
+                 else f"{u.upper()}_{k}"): v for u, k, v in writes}  # fmt: skip
         n = task.values[group.units[0].name]["n"]
         beats = {u: v for u, k, v in writes if k == "JOB_BEATS"}
         jobs = [v for _, k, v in writes if k.startswith("JOBS")]

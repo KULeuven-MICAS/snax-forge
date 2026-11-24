@@ -1,0 +1,35 @@
+{
+ "design_point": "out/design/atax_v4/design_point.json",
+ "ports": [
+  {
+   "port": "a",
+   "array": "A",
+   "lanes": 4,
+   "beats": 8,
+   "values": [5, 2, 0, -4, -4, -8, -7, -8, -6, 5, 2, 6, 0, 1, 7, 3, 2, 0, 0, 6, -4, 5, 2, -8, -2, 5, 0, -8, 4, 3, 5, -6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+  },
+  {
+   "port": "b",
+   "array": "x",
+   "lanes": 4,
+   "beats": 8,
+   "values": [-7, 5, -8, 0, -7, -4, -1, -2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+  },
+  {
+   "port": "out",
+   "array": "y_golden",
+   "lanes": 4,
+   "beats": 2,
+   "values": [90, 316, 68, -28, -240, -372, -122, -462, 0, 0, 0, 0, 0, 0, 0, 0]
+  }
+ ],
+ "tasks": [
+  {
+   "name": "tmp2_mult_atax",
+   "csrs": {"JOBS": 1, "SUM_JOB_BEATS": 2, "MAC_JOB_BEATS": 8, "ROWS": 2},
+   "firings": 8,
+   "counter": 14,
+   "working": "The group's BUSY_COUNTER counts its busy cycles. The group rule (snax-gvsoc's snax_group_rule.py) stepped with inputs always valid and the output always ready, JOBS 1, T mul 1, sum 2, mac 8: E - s = 14"
+  }
+ ]
+}

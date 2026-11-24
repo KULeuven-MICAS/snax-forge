@@ -53,6 +53,7 @@ FORGE_FIXTURES: dict[str, tuple[str, tuple[str, ...]]] = {
     "mvt_v5_sequential": ("mvt_v5", ("M=16", "N=16", SEQUENTIAL)),  # two accelerators
     "mvt_v6": ("mvt_v6", ("M=8",)),  # a fork, a seeded bank, a hold
     "bicg_v4_1": ("bicg_v4_1", ("M=40", "N=32", "R=4")),  # two strips, a carried seed
+    "atax_v4": ("atax_v4", ("M=4", "N=8", "W=4", "R=2", "D=4")),  # a held link, a fork's buffer
 }
 
 

@@ -746,7 +746,7 @@ One set of modules per design, shared by its accelerators (D168):
 | `<tag>_shell_wrapper` | the ports snax_cluster connects (below) |
 | `<tag>_csr` ⊃ `<tag>_peripherals` | the CSRs by offset (ReqRspManager's protocol, D130), STATUS's done bit, the read answer, the hold of a busy group's writes, PORT_MUX_SEL; the peripherals hold the BUSY_COUNTERs, left out of every reported figure |
 | `<tag>_ctrl` ⊃ `<tag>_<group>_ctrl` | per group: busy, the counters, the done pulse, the pins |
-| `<tag>_datapath` | a submodule per unit and per buffer; no valid, ready or counter inside |
+| `<tag>_datapath` | a submodule per unit, per buffer and per fork link (D196); no valid, ready or counter inside |
 | `<tag>_<accelerator>_port_mux` | per accelerator whose groups share its movers (D169) |
 
 A group's control unit follows snax-gvsoc's `SnaxGroupRule` (`snax/snax_group.hpp`), with a Python twin (`snax/snax_group_rule.py`) and Chisel's `GroupRule` (D147):
@@ -757,6 +757,7 @@ A group's control unit follows snax-gvsoc's `SnaxGroupRule` (`snax/snax_group.hp
 - **Span**: a unit reads lane l in place at span S, firing on lane S − 1.
 - **A bank** (D191): R rows of sums, `row` = the beat mod ROWS (ROWS ≤ R); a job of T firings gives ROWS results; a chain's sink only, seeded a beat a row (D194).
 - **A carried seed** (D192) is 0 while the unit's jobs counter is below CARRY; **a held input** (D190) is taken where `row` = 0; a **forked input** (D189) when every head fires.
+- **A held link** (D197) into a bank is popped where `row` = 0 (the unit's `take`), so its producer gives a result every ROWS of the bank's firings; **a fork link** (D196) is a ring of D beats in the control unit (`<head>_<to>_fork_occupancy` and its slots), loaded when the fork's units fire and popped by its consumer's firing, the fork held while the ring is full and its consumer does not pop.
 - **Counting** (D153): a register only for what a firing changes, counting up; every counter job_width bits, a fixed T a ⌈log₂ T⌉-bit counter. Done is the sink's JOBS-th push.
 
 ### Cycles
@@ -781,7 +782,7 @@ These plus the streamers' fill (3, or 2 for a one-input unit) are the expected B
 - `clk_i`, `rst_ni` (active low); `csr_req_addr_i`, `csr_req_data_i` (32 bits), `csr_req_write_i`, `csr_req_valid_i`, `csr_req_ready_o`, `csr_rsp_data_o` (32 bits), `csr_rsp_valid_o`, `csr_rsp_ready_i`.
 - Per input port k, numbered across the sets in set order, `stream2acc_<k>_data_i`, `_valid_i`, `_ready_o`; per output port `acc2stream_<k>_data_o`, `_valid_o`, `_ready_i`, in the order of `inputs` and `outputs`. Data is `num_channel × 64` bits, lane i at bits `[w(i+1)-1 : wi]` (D142).
 - Per group `<group>_busy_o` and `<group>_done_o`.
-- Between port and unit: a `FifoPacker` (`<unit>_<port>_packer`, D174) or `FifoSlicer` (`<unit>_<port>_slicer`, D180) on a one-word port, `<unit>_<port>_bcast` for a broadcast (D186), `<unit>_<port>_hold` for a held input (D190); a shared accelerator's (D169) movers and port mux, selected by PORT_MUX_SEL.
+- Between port and unit: a `FifoPacker` (`<unit>_<port>_packer`, D174) or `FifoSlicer` (`<unit>_<port>_slicer`, D180) on a one-word port, `<unit>_<port>_bcast` for a broadcast (D186), `<unit>_<port>_hold` for a held input (D190) or a held link's one-lane beat (D197); a shared accelerator's (D169) movers and port mux, selected by PORT_MUX_SEL.
 
 ### The shared cases
 
@@ -796,7 +797,7 @@ What `pixi run bundle DP [--out DIR]` writes per design point (D111, D130, `gen/
 | the root | section 9's files, the cluster file and `accelerator.json` among them |
 | `rtl/sv/`, `rtl/emitted.json` | what `Emit --spec` wrote (section 10) |
 | `rtl/files.f` | the RTL's file list, one path per line relative to `rtl/`, in `emitted.json`'s order |
-| `bundle.json` | `design_point`, `tag`, `snax_forge_commit` (null outside git), `dirty` (uncommitted changes to tracked files; untracked ones such as `recipes/custom/` do not count), `top` (`<tag>_shell_wrapper`), `modules` (each of the wrapper's modules with its submodules, from `accelerator.json`, section 10's names, then each stream block module once: a sliced input's `FifoSlicer`, a packed output's `FifoPacker`), `expected` (`forge_expected.txt` or null) |
+| `bundle.json` | `design_point`, `tag`, `snax_forge_commit` (null outside git), `dirty` (uncommitted changes to tracked files; untracked ones such as `recipes/custom/` do not count), `top` (`<tag>_shell_wrapper`), `modules` (each of the wrapper's modules with its submodules, from `accelerator.json`, section 10's names, a group's units, buffers and fork links in that order, then each stream block module once: a sliced input's `FifoSlicer`, a packed output's `FifoPacker`), `expected` (`forge_expected.txt` or null) |
 | `forge_expected.txt` | written by `pixi run forge` only, from the bundle's SNAX-GVSoC run: its `forge counter` lines, then its `forge data: 0 errors` line, then per counter `forge fill <task>: <n>`, the fill of the task's group (section 13's `fill`) |
 
 Refused: what sections 9 and 10 refuse, then `bundle.empty` (`emitted.json` lists no file).
