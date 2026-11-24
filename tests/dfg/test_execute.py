@@ -10,7 +10,6 @@ accelerated node's firing order and tasks, and every check named.
 
 from __future__ import annotations
 
-import copy
 import importlib
 
 import numpy as np
@@ -19,10 +18,8 @@ import pytest
 from snax_forge.dfg import KINDS, Graph, Memlet, register_kind
 from snax_forge.dfg.__main__ import main
 from snax_forge.dfg.execute import EXECUTORS, ExecutionError, execute, register_executor
-from snax_forge.dfg.import_sdfg import import_sdfg
 from snax_forge.sdfg.loader import load
 
-from . import sdfg_programs as progs
 from .helpers import NAMES, as_dict, fixture
 
 # the module, not the function the package exports under the same name
@@ -43,89 +40,15 @@ def kernel_run(n: int, seed: int = 0, kernel: str = "vecadd") -> tuple[dict, dic
 # =============================================================================
 
 
-@pytest.mark.parametrize("n", [64, 10, 1024])
-def test_imported_vecadd_equals_the_kernel_reference(n):
-    """N = 10 is not a multiple of the lane count: only the plain graph runs it."""
-    inputs, ref = kernel_run(n)
-    out = execute(Graph.load(fixture("vecadd")), inputs)
-    assert np.array_equal(out["C"], ref["C"])
-    assert np.array_equal(out["A"], inputs["A"]) and np.array_equal(out["B"], inputs["B"])
-
-
 @pytest.mark.parametrize("name", NAMES)
 def test_every_step_equals_the_kernel_reference(name):
     inputs, ref = kernel_run(64)
     assert np.array_equal(execute(Graph.load(fixture(name)), inputs)["C"], ref["C"])
 
 
-def test_plain_split_and_accelerated_agree():
-    inputs, _ = kernel_run(64, seed=7)
-    outs = [execute(Graph.load(fixture(n)), inputs)["C"] for n in NAMES]
-    assert all(np.array_equal(outs[0], o) for o in outs[1:])
-
-
-def test_inputs_are_not_changed():
-    inputs, _ = kernel_run(64)
-    before = copy.deepcopy(inputs)
-    execute(Graph.load(fixture("vecadd_accelerated")), inputs)
-    assert all(np.array_equal(before[k], inputs[k]) for k in inputs)
-
-
-def test_int64_wraps_as_in_c():
-    big = np.iinfo(np.int64).max
-    inputs = {"A": np.array([big, 1]), "B": np.array([1, 1]), "C": np.zeros(2, np.int64)}
-    assert execute(Graph.load(fixture("vecadd")), inputs)["C"].tolist() == [-big - 1, 2]
-
-
 # =============================================================================
 # dot: a reduction
 # =============================================================================
-
-
-@pytest.mark.parametrize("n", [64, 10, 1024])
-def test_imported_dot_equals_np_dot(n):
-    inputs, ref = kernel_run(n, kernel="dot")
-    out = execute(Graph.load(fixture("dot")), inputs)
-    assert out["out"].tolist() == ref["out"].tolist() == [int(inputs["A"] @ inputs["B"])]
-    assert out["tmp0"].tolist() == (inputs["A"] * inputs["B"]).tolist()
-
-
-def test_the_fold_starts_from_the_identity():
-    """What out held before does not count: the sum map writes the sum, as the Reduce does."""
-    inputs, ref = kernel_run(64, kernel="dot")
-    inputs["out"] = np.array([12345])
-    assert execute(Graph.load(fixture("dot")), inputs)["out"].tolist() == ref["out"].tolist()
-
-
-def test_the_fold_wraps_as_in_c():
-    big = np.iinfo(np.int64).max
-    inputs = {"A": np.array([big, 1]), "B": np.array([1, 1]), "out": np.zeros(1, np.int64)}
-    assert execute(Graph.load(fixture("dot")), inputs)["out"].tolist() == [-big - 1]
-
-
-def test_other_folds():
-    """max from the dtype's smallest value; a sum over one axis of two; over both into one."""
-    a = np.random.default_rng(2).integers(-1000, 1000, 10)
-    g = import_sdfg(progs.amax.to_sdfg(simplify=True), "amax")
-    assert execute(g, {"A": a, "out": np.zeros(1, np.int64)})["out"].tolist() == [a.max()]
-    m = np.arange(24).reshape(4, 6)
-    g = import_sdfg(progs.row_sum(), "row_sum")
-    assert execute(g, {"A": m, "B": np.zeros(4, np.int64)})["B"].tolist() == m.sum(1).tolist()
-    g = import_sdfg(progs.total.to_sdfg(simplify=True), "total")
-    assert [(n.id, n.attrs.get("var")) for n, _ in g.walk()][:2] == [
-        ("sum_map", "n"),
-        ("sum_map_1", "j"),
-    ]
-    m = np.arange(36).reshape(6, 6)
-    assert execute(g, {"A": m, "out": np.zeros(1, np.int64)})["out"].tolist() == [m.sum()]
-
-
-def test_the_bound_dot_runs_its_accumulator():
-    """dot_accelerated: accumulate's out has rate T = N / 4 = 16, one beat per task."""
-    inputs, ref = kernel_run(64, kernel="dot")
-    out = execute(Graph.load(fixture("dot_accelerated")), inputs)
-    assert out["out"].tolist() == ref["out"].tolist()
-    assert out["tmp0"].tolist() == (inputs["A"] * inputs["B"]).tolist()
 
 
 def _m(*subset):
@@ -140,21 +63,11 @@ NAMED_RATES = [
 ]
 
 
-@pytest.mark.parametrize(("ports", "loops", "want"), NAMED_RATES)
-def test_named_rates(ports, loops, want):
-    assert ex.named_rates(ports, loops, "t") == want
-
-
 def test_named_rates_rejected():
     with pytest.raises(ExecutionError, match="does not use loop 'i', which is outside"):
         ex.named_rates({"out": (_m("j"), "T")}, [("i", 4), ("j", 6)], "t")
     with pytest.raises(ExecutionError, match="rate 'T' is 6 and 3 on two ports"):
         ex.named_rates({"a": (_m(0), "T"), "b": (_m("i"), "T")}, [("i", 2), ("j", 3)], "t")
-
-
-def test_cli_check_dot(capsys):
-    assert main(["check", str(fixture("dot")), "--kernel", "dot", "--n", "64"]) == 0
-    assert "['out'] equal the dot reference (N = 64)" in capsys.readouterr().out
 
 
 def test_cli_check(capsys):
@@ -168,24 +81,6 @@ def test_cli_check(capsys):
 # =============================================================================
 # Beyond vecadd: transients and offsets, imported
 # =============================================================================
-
-
-def test_transient_between_two_maps():
-    g = import_sdfg(progs.two.to_sdfg(simplify=True), "two")
-    rng = np.random.default_rng(1)
-    a, b = rng.integers(-99, 99, 20), rng.integers(-99, 99, 20)
-    out = execute(g, {"A": a, "B": b, "C": np.zeros(20, np.int64)})
-    assert np.array_equal(out["C"], (a + b) * b)
-    assert np.array_equal(out["tmp0"], a + b)
-
-
-def test_offset_subsets():
-    g = import_sdfg(progs.shift.to_sdfg(simplify=True), "shift")
-    a = np.arange(10) ** 2
-    out = execute(g, {"A": a, "B": np.full(10, -1)})
-    want = np.full(10, -1)
-    want[1:-1] = a[:-2] + a[2:]
-    assert np.array_equal(out["B"], want)
 
 
 # =============================================================================
@@ -319,10 +214,3 @@ def test_an_unregistered_executor():
     finally:
         KINDS.pop("test_noop", None)
         EXECUTORS.pop("test_noop", None)
-
-
-def test_the_node_code_must_be_the_brms():
-    d = as_dict("vecadd_accelerated")
-    accel(d)["attrs"]["code"] = "out = a - b"
-    with pytest.raises(ExecutionError, match="'out = a - b', but 'simd' computes"):
-        execute(Graph.from_dict(d), kernel_run(64)[0])

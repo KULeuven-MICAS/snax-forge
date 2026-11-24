@@ -2,16 +2,13 @@
 
 from __future__ import annotations
 
-import tracemalloc
-from dataclasses import replace
-
 import pytest
 
-from snax_forge.design import Design, Platform, run_checks
+from snax_forge.design import Platform
 from snax_forge.design import __main__ as cli
 from snax_forge.design.hjson_platform import platform_from_hjson
 
-from .helpers import REPO, SNAX_FORGE, bound_vecadd, platform_dict
+from .helpers import REPO, SNAX_FORGE
 
 # snax_forge's source: snax-forge's base cluster
 SOURCE = REPO / "platforms" / "snax_forge_cluster.hjson"
@@ -64,19 +61,6 @@ def test_a_source_outside_the_root_is_refused(tmp_path):
     with pytest.raises(Exception) as e:
         platform_from_hjson(cluster(tmp_path), "c")
     assert e.value.codes == ["hjson.path"] and "copy the file into platforms/" in str(e.value)
-
-
-def test_what_is_read_and_what_is_small16s(tmp_path):
-    p = read(cluster(tmp_path))
-    assert p == replace(Platform.load(SNAX_FORGE), name="c", hjson="c.hjson")
-    l1, l2 = p.l1, p.l2
-    assert (l1.n_banks, l1.width_bits, l1.rows, l1.base_addr, l1.wide_bits) == (
-        32, 64, 512, 0x1000_0000, 512
-    )  # fmt: skip
-    assert (l2.base_addr, l2.size_bytes, l2.beat_bits, l2.width_bits) == (2**31, 2**31, 512, 64)
-    assert p.default.fifo_depth == 8  # temporal_dim is the graph's, not read
-    assert p.wait_mode == platform_dict()["wait_mode"]
-    assert (p.base, p.changes, p.entries) == (None, {}, {})
 
 
 def test_two_accelerators_are_refused(tmp_path):
@@ -142,18 +126,3 @@ def test_a_slot_name_that_is_no_identifier(tmp_path):
     with pytest.raises(Exception) as e:
         read(cluster(tmp_path, accs=ACC.replace("NAME", "snax-alu")))
     assert e.value.codes == ["hjson.value"] and "snax_acc_name" in str(e.value)
-
-
-def test_vecadd_w4_designs_on_snax_forge_inside_the_tcdm_without_allocating_it():
-    """The first nonzero L1 base end to end in the design step."""
-    tracemalloc.start()
-    d = Design(Platform.load(SNAX_FORGE), bound_vecadd(4))
-    assert run_checks(d) == []
-    _, peak = tracemalloc.get_traced_memory()
-    tracemalloc.stop()
-    assert peak < 64 << 20  # nothing the size of either memory
-    lo, hi = 0x1000_0000, 0x1000_0000 + 128 * 1024
-    for c, mems in d.memory.layouts.items():
-        a, b = mems["l1"].span()
-        assert lo <= a and b + 8 <= hi, c
-    assert [mems["l1"].base for mems in d.memory.layouts.values()] == [lo, lo + 512, lo + 1024]

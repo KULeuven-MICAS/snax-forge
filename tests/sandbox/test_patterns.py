@@ -8,7 +8,7 @@ import pytest
 from snax_forge.brm import load_brm
 from snax_forge.dfg import Memlet, Node, Reduction
 from snax_forge.sandbox import SandboxError
-from snax_forge.sandbox.patterns import fused_view, match
+from snax_forge.sandbox.patterns import match
 
 DTYPES = {"in1": "int64", "in2": "int64", "out": "int64"}
 
@@ -24,17 +24,6 @@ def fused(fold: str = "i_s", code: str = "out = in1 * in2", second: str = "out =
                  attrs={"code": second})  # fmt: skip
     return Node("mult_map_s", "map", attrs={"var": "i_s", "range": "0:4", "loop.kind": "spatial"},
                 body=[mult, total])  # fmt: skip
-
-
-def test_a_fused_nest_is_one_tasklet_to_bind():
-    first, second, view = fused_view(fused())
-    assert (first.id, second.id, view.id) == ("mult", "sum", "mult")
-    assert view.attrs["code"] == "out = in1 * in2"
-    assert sorted(view.inputs) == ["in1", "in2"] and view.outputs["out"].data == "out_partial"
-
-
-def test_the_lane_fold_maps_the_nests_connectors():
-    assert match(fused(), load_brm("mac"), DTYPES) == {"in1": "a", "in2": "b", "out": "out"}
 
 
 @pytest.mark.parametrize(

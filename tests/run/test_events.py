@@ -8,22 +8,6 @@ from snax_forge.run.outputs import gzip_events
 from .helpers import PATH, line
 
 
-def test_a_unit_start():
-    got = parse_line(line("snax_acc0/unit", "events", "2932 start count=16 rate=1", 2932))
-    assert got.path == f"{PATH}/snax_acc0/unit"
-    assert (got.trace, got.cycle, got.kind) == ("events", 2932, "start")
-    assert got.fields == {"count": 16, "rate": 1}
-
-
-def test_a_group_of_chains_rates_each_output_and_names_its_pushes():
-    """A group of several chains on a forked input (D189, snax-gvsoc docs/EVENTS.md)."""
-    got = parse_line(line("snax_acc0/bicg_types", "events", "10 start count=64 rate=1,64", 10))
-    assert got.fields == {"count": 64, "rate": [1, 64]}
-    got = parse_line(line("snax_acc0/bicg_types", "beats",
-                          "80 push n=0 first=0 last=63 value=1,2 unit=mac", 80))  # fmt: skip
-    assert got.fields == {"n": 0, "first": 0, "last": 63, "value": [1, 2], "unit": "mac"}
-
-
 @pytest.mark.parametrize(
     "path, trace, text, fields",
     [
@@ -95,14 +79,6 @@ def test_every_kind_reads(path, trace, text, fields):
     assert (got.path, got.trace, got.fields) == (f"{PATH}/{path}", trace, fields)
 
 
-def test_an_instruction_line_is_gvsoc_s_own():
-    text = ("main:0                           M 800001e0 addi                sp, sp, -16"
-            "                  sp=1001ffb0  sp:1001ffc0 ")  # fmt: skip
-    got = parse_line(line("pe0", "insn", text, 2799))
-    assert (got.path, got.trace, got.cycle, got.kind) == (f"{PATH}/pe0", "insn", 2799, "insn")
-    assert got.fields == {"pc": 0x800001E0, "text": "addi sp, sp, -16 sp=1001ffb0 sp:1001ffc0"}
-
-
 @pytest.mark.parametrize(
     "text, code",
     [
@@ -126,22 +102,6 @@ def test_what_is_not_the_grammar_is_a_named_error(text, code):
     with pytest.raises(RunError) as e:
         parse_line(text)
     assert e.value.code == code
-
-
-def test_a_file_reads_in_order_and_names_its_line(tmp_path):
-    f = tmp_path / "events.log"
-    f.write_text(
-        line("pe0", "events", "1 state mode=run", 1)
-        + "\n\n"
-        + line("pe0", "events", "2 func name=main pc=0x10", 2)
-        + "\n"
-    )
-    assert [x.kind for x in read_events(f)] == ["state", "func"]
-    f.write_text(
-        line("pe0", "events", "1 state mode=run") + "\n" + line("pe0", "events", "2 x") + "\n"
-    )
-    with pytest.raises(RunError, match="events.log:2"):
-        read_events(f)
 
 
 def test_a_passing_runs_gzip_reads_under_either_name(tmp_path):

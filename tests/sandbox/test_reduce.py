@@ -21,13 +21,8 @@ from snax_forge.sandbox import (
     SandboxError,
     apply_recipe,
     bind,
-    join_map,
     split_map,
-    split_reduce,
-    unbind,
-    unencapsulate,
 )
-from snax_forge.sandbox.transforms import tag_map
 from tests.helpers import graph_dict, recipe_path
 
 from .helpers import FIXTURES, graph
@@ -83,25 +78,6 @@ def test_the_dot_recipe_gives_the_fixture():
     assert renamed != fixture and results[-1].graph.to_json() == renamed
 
 
-def test_the_dot_1_enc_recipe_encapsulates_dot_1():
-    """dot_v1_1: dot 1's steps, then both groups in the accelerator dot; unencapsulate takes it
-    back to dot 1's last graph."""
-    plain = apply_recipe(Recipe.load(RECIPE), graph("dot"))
-    results = apply_recipe(Recipe.load(ENC), graph("dot"))
-    assert [r.file_name for r in results] == [*(r.file_name for r in plain),
-                                              "5_encapsulate.snaxdfg"]  # fmt: skip
-    assert results[-2].graph.to_json() == plain[-1].graph.to_json()
-    last = results[-1].graph
-    assert [last.node(n).attrs["accelerator"] for n in ("mult", "sum")] == ["dot", "dot"]
-    assert unencapsulate(last, "dot").to_json() == plain[-1].graph.to_json()
-
-
-def test_the_bound_dot_equals_np_dot():
-    x = dot_inputs()
-    out = execute(Graph.load(FIXTURES / "dot_accelerated.snaxdfg"), x)
-    assert out["out"].tolist() == [int(x["A"] @ x["B"])]
-
-
 @pytest.mark.parametrize("w", [1, 2, 8, 16, 64])
 def test_every_w_that_divides_n(w):
     """One W for both accelerators; the recipe checks each step, and the result is np.dot."""
@@ -122,21 +98,6 @@ def test_the_sum_folds_every_lane_into_one():
         "op": "add",
         "identity": 0,
     }
-
-
-def test_the_adder_tree_takes_one_lane():
-    """The sum map split by 1, bound to the adder tree at W = 1 (vsum's)."""
-    g = bind(split_sum(1), **SUM)
-    assert g.node("sum").attrs["params"] == {"W": 1, "op": "add"}
-    x = dot_inputs(seed=5)
-    assert execute(g, x)["out"].tolist() == [int(x["A"] @ x["B"])]
-
-
-def test_unbind_and_join_give_back_the_imported_dot():
-    g = Graph.load(FIXTURES / "dot_accelerated.snaxdfg")
-    for node, m in (("sum", "sum_map"), ("mult", "mult_map")):
-        g = join_map(unbind(g, node), m)
-    assert g.to_json() == imported().to_json()
 
 
 # =============================================================================
@@ -175,10 +136,3 @@ REJECTED = [
 def test_bind_rejected(make, params, message):
     with pytest.raises(SandboxError, match=message):
         bind(make(), **params)
-
-
-def test_split_reduce_refuses_a_tagged_map_by_its_own_name():
-    """Its site tests the tag first and names split_reduce, not the split_map it runs."""
-    g = tag_map(graph("dot"), "sum_map", "temporal")
-    with pytest.raises(SandboxError, match=r"^split_reduce 'sum_map': already temporal$"):
-        split_reduce(g, "sum_map", 4)

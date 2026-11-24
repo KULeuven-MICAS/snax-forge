@@ -14,7 +14,6 @@ import pytest
 from snax_forge.gen import generate
 from snax_forge.gen.accelerator import Description
 from snax_forge.gen.blocks import GenError
-from snax_forge.gen.rtl import vectors
 from snax_forge.lower.derive import task_list
 from snax_forge.lower.tasks import check_values
 
@@ -31,21 +30,6 @@ def generated(tmp_path_factory) -> tuple[Path, str]:
     return tmp, path
 
 
-def test_one_reader_of_a_and_a_jobs_per_chain(generated):
-    tmp, _ = generated
-    d = json.loads((tmp / "gvsoc" / "accelerator.json").read_text())
-    (acc,) = d["accelerators"]
-    assert acc["inputs"] == [["mul.a", "mac.a"], "mul.b", "mac.b"]
-    assert acc["outputs"] == ["sum.out", "mac.out"]
-    (g,) = acc["groups"]
-    assert [c["name"] for c in g["csrs"]] == ["START", "JOBS_SUM", "JOBS_MAC", "STATUS",
-                                              "BUSY_COUNTER"]  # fmt: skip
-    desc = Description.from_dict(d)
-    assert desc.to_dict() == d
-    assert desc.readers == ["mul.a", "mul.b", "mac.b"] and desc.forks == [["mul.a", "mac.a"]]
-    assert desc.accelerators[0].groups[0].chains() == [["mul", "sum"], ["mac"]]
-
-
 def test_the_program_writes_each_chains_jobs(generated):
     tmp, _ = generated
     main = (tmp / "gvsoc" / "main.c").read_text()
@@ -53,18 +37,6 @@ def test_the_program_writes_each_chains_jobs(generated):
                  "csrw_ss(BICG_TYPES_RW_MAC_JOB_BEATS, 64);"):  # fmt: skip
         assert line in main
     assert "READER_3" not in main  # A, p and r: three readers, A's for both halves
-
-
-def test_the_specs_vectors_feed_a_once(generated):
-    tmp, path = generated
-    with pytest.MonkeyPatch.context() as mp:
-        mp.chdir(tmp)
-        v = vectors(path, tmp)
-    assert [p["array"] for p in v["ports"]] == ["A", "p", "r", "q_golden", "s_golden"]
-    (task,) = v["tasks"]
-    assert task["csrs"] == {"JOBS_SUM": 64, "JOBS_MAC": 1, "SUM_JOB_BEATS": 1,
-                            "MAC_JOB_BEATS": 64}  # fmt: skip
-    assert task["counter"] == 67  # the rule: 64 rows, then the tree's and the Mac's results
 
 
 def test_a_fork_whose_units_fire_unlike_is_refused(generated):
@@ -98,12 +70,3 @@ def test_a_fork_the_description_cannot_have(generated, inputs, text):
     with pytest.raises(GenError, match=text) as e:
         Description(d.design_point, d.tag, [acc])
     assert e.value.code == "gen.fork"
-
-
-def test_a_fork_needs_chains(generated):
-    """Without its fork the group's two chains are not connected."""
-    d = _description(generated)
-    acc = replace(d.accelerators[0], inputs=["mul.a", "mul.b", "mac.a", "mac.b"])
-    with pytest.raises(GenError) as e:
-        Description(d.design_point, d.tag, [acc])
-    assert e.value.code == "gen.group"

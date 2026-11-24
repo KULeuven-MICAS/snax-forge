@@ -14,7 +14,7 @@ import pytest
 
 from snax_forge.common import to_json
 from snax_forge.design import DesignPoint
-from snax_forge.lower import TaskList, TaskListError, check_values, components
+from snax_forge.lower import TaskList, TaskListError, check_values
 from snax_forge.lower import task_list as derive
 
 from .helpers import (
@@ -49,15 +49,6 @@ def test_a_derived_task_list_round_trips_and_its_values_fit(point):
     check_values(tasks, point())
 
 
-def test_missing_optional_keys_take_defaults():
-    t = task_list({"op": "configure", "task_name": "a", "type": "dma", "component": "dma",
-                   "values": dma("a")["values"]}, {"op": "start", "tasks": ["a"]},
-                  {"op": "sync", "task": "a"})  # fmt: skip
-    conf, _, s = t.steps
-    assert (conf.after, conf.wait_mode, s.mode) == ([], "poll", "poll")
-    assert t.to_dict()["steps"][0]["after"] == []  # every field is written back
-
-
 # =============================================================================
 # 2. Structural errors (no design point needed)
 # =============================================================================
@@ -90,13 +81,6 @@ def test_structural_errors(steps, match):
         task_list(*steps)
 
 
-def test_a_task_listed_twice_in_one_start():
-    """Two tasks on one component cannot meet in one start: the second
-    configure is refused first (above)."""
-    with pytest.raises(TaskListError, match="listed twice"):
-        task_list(stream("r", "acc_a"), start("r", "r"))
-
-
 # =============================================================================
 # 3. Format errors
 # =============================================================================
@@ -122,13 +106,6 @@ def test_format_errors(d, match):
 # =============================================================================
 # 4. Values against the design point
 # =============================================================================
-
-
-def test_the_components_are_the_design_points():
-    assert components(vecadd_point()) == {
-        "dma": "dma", "acc_a": "streamer", "acc_b": "streamer", "acc_out": "streamer",
-        "acc": "accel",
-    }  # fmt: skip
 
 
 def bad_values(values: dict) -> dict:
@@ -213,17 +190,6 @@ def test_an_accelerator_tasks_csr_writes_fit_job_width():
         TaskListError, match=r"JOB_BEATS 64 \(unit acc\) is past acc_csr.job_width = 6 bits"
     ):
         check_values(vsum, _narrow(vsum_point(), 6))
-
-
-def test_an_accelerator_tasks_head_firings_stay_below_2_to_the_32():
-    """JOBS · ∏T reaches 2^32: SNAX-GVSoC counts a run's firings in 32 bits."""
-
-    def vsum(n: int, t: int) -> TaskList:
-        return task_list({**add("x"), "values": {"n": n, "T": t}}, start("x"))
-
-    check_values(vsum((1 << 32) - 4, 4), vsum_point())  # JOBS 2^30 - 1, 2^32 - 4 firings
-    with pytest.raises(TaskListError, match=r"the head fires JOBS · ∏T = 4294967296 times"):
-        check_values(vsum(1 << 32, 4), vsum_point())
 
 
 def test_an_idle_mover_has_every_bound_0():

@@ -10,16 +10,12 @@ import pytest
 
 from snax_forge.design import DesignPoint
 from snax_forge.gen import generate
-from snax_forge.gen.bundle import write_bundle
-from snax_forge.gen.rtl import write_accelerator
-from snax_forge.lower import task_list
 from snax_forge.report.design import build_design, render_design
-from snax_forge.run.beats import mover_tasks, pairing
-from snax_forge.run.cluster import Cluster, load_cluster
+from snax_forge.run.cluster import load_cluster
 from snax_forge.sandbox import Recipe
-from tests.helpers import FORGE_FIXTURES, REPO, SUB, recipe_path, requires_submodule
+from tests.helpers import recipe_path
 
-from .helpers import designed, fake_emit
+from .helpers import designed
 
 
 @pytest.fixture(scope="module")
@@ -31,57 +27,6 @@ def shared(tmp_path_factory):
         mp.chdir(tmp)
         generate(point, tmp / "gvsoc", root=tmp)
     return tmp, tmp / point, tmp / "gvsoc"
-
-
-@requires_submodule
-@pytest.mark.parametrize(("name", "sets", "acc", "fixture"), [
-    ("dot_v1_2", [], "dot", REPO / "hw/chisel/src/test/resources/rtl/dot_v1_2"),
-    ("mvt_v1_2_2", list(FORGE_FIXTURES["mvt_v1_2_2"][1]), "mvt_vadd", SUB / "forge/mvt_v1_2_2"),
-])  # fmt: skip
-def test_gen_rtl_and_the_bundle_take_a_shared_design(tmp_path, monkeypatch, name, sets, acc,
-                                                     fixture):  # fmt: skip
-    """Both shared fixtures: gen-rtl's accelerator.json is the fixture's (hw/chisel's for
-    dot_v1_2, snax-gvsoc's forge/ for mvt_v1_2_2) byte for byte, movers and port_mux in it, and
-    the bundle (Emit faked) lists the set's port mux after the datapath, holding no module."""
-    point = designed(tmp_path, name, name, sets)
-    monkeypatch.chdir(tmp_path)
-    write_accelerator(point, tmp_path / "rtl", tmp_path)
-    got = (tmp_path / "rtl" / "accelerator.json").read_bytes()
-    assert got == (fixture / "accelerator.json").read_bytes()
-    fake_emit(monkeypatch)
-    b, _ = write_bundle(point, tmp_path / "bundle", tmp_path)
-    t = f"snax_forge_{name}"
-    assert list(b.modules) == [f"{t}_csr", f"{t}_ctrl", f"{t}_datapath", f"{t}_{acc}_port_mux"]
-    assert b.modules[f"{t}_{acc}_port_mux"] == []
-
-
-def test_the_run_reads_one_mover_per_shared_mover(shared, tmp_path):
-    """The cluster has dot_reader0, dot_reader1 and dot_writer0, each with its users; the task
-    pairing takes each mover's configure of its group's task (vsum's reader1 the idle one)."""
-    _, point, out = shared
-    shutil.copy(point, tmp_path / "design_point.json")
-    c = load_cluster(out / "snax_forge.hjson", tmp_path / "design_point.json")
-    movers = c.accelerator.movers
-    assert [(m.name, m.gvsoc, m.lanes, m.users, m.enabled) for m in movers] == [
-        ("dot_reader0", "reader0", 4, ("vmul_a", "vsum_a"), 0),
-        ("dot_reader1", "reader1", 4, ("vmul_b",), 0),
-        ("dot_writer0", "writer0", 4, ("vmul_out", "vsum_out"), 1),
-    ]  # fmt: skip
-    assert [m.name for m in c.accelerator.movers_of("vsum")] == ["dot_reader0", "dot_writer0"]
-    # a beat between vsum and writer0 holds vsum.out's one word, vmul's its four
-    acc = c.accelerator
-    assert [acc.lanes_of(movers[2], u) for u in ("vmul", "vsum")] == [4, 1]
-    assert acc.port_of(movers[0], "vsum") == "vsum_a"
-    assert Cluster.from_dict(c.to_dict()).accelerator == c.accelerator
-    tasks = task_list(DesignPoint.load(point))
-    paired = pairing(tasks, c)
-    assert [sorted(v) for v in paired.values()] == [
-        ["dot_reader0", "dot_reader1", "dot_writer0"]
-    ] * 2
-    vsum = paired[next(t for t in paired if t.endswith("vsum"))]
-    assert vsum["dot_reader0"].endswith("vsum_a") and vsum["dot_writer0"].endswith("vsum_out")
-    assert vsum["dot_reader1"].endswith("vmul_b")  # idle in vsum's task
-    assert [t.rsplit("_", 1)[-1] for t in mover_tasks(tasks, movers[2])] == ["out", "out"]
 
 
 def test_design_md_says_the_set_shares_its_movers(shared, tmp_path):

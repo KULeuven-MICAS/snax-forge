@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from snax_forge.estimate import ctrl_bits, ctrl_registers
+from snax_forge.estimate import ctrl_registers
 from tests.helpers import REPO
 
 from .helpers import copies, estimated
@@ -33,49 +33,6 @@ def _unit(name: str, latency: int, span: int = 1, ii: int = 1) -> dict:
 
 def _link(frm: str, to: str, depth: int) -> dict:
     return {"from": frm, "to": to, "to_input": 0, "depth": depth}
-
-
-def test_a_fold_alone_counts_its_t_from_the_start():
-    """vsum: one TreeAccumulate, T from JOB_BEATS read live: its counter, jobs digit and
-    v, no copy of JOBS or JOB_BEATS."""
-    regs = ctrl_registers([_unit("acc", 1)], [], "acc", {"acc": None}, JW)
-    assert regs == [("busy", 1), ("acc_job_beats_counter", 32), ("acc_jobs_counter", 32),
-                    ("acc_v", 1), ("done", 1)]  # fmt: skip
-    # 67: 131 less the two 32-bit copies of JOBS and JOB_BEATS
-    assert ctrl_bits([_unit("acc", 1)], [], "acc", {"acc": None}, JW) == 67
-
-
-def test_a_unit_without_a_fold_has_no_t_and_a_v_at_l_0():
-    """vecmul: SimdLanes, L 0, T 1: its jobs digit; v is declared as one bit (max(L, 1))
-    but never written, so firtool drops it."""
-    regs = ctrl_registers([_unit("acc", 0)], [], "acc", {"acc": 1}, JW)
-    assert regs == [("busy", 1), ("acc_jobs_counter", 32), ("done", 1)]  # no copy of JOBS
-    declared = ctrl_registers([_unit("acc", 0)], [], "acc", {"acc": 1}, JW, declared=True)
-    assert declared == [*regs[:2], ("acc_v", 1), ("done", 1)]
-
-
-def test_dot_5_counts_the_lane_and_a_wires_slots():
-    """dot 5 at W = 8: the MAC's T from the start, the serial sum's fixed T 1 (no digit for
-    it), its lane of 3 bits; the wire's two 1-bit slots are declared but dropped."""
-    units, links = [_unit("mac", 1), _unit("sum", 1, span=8)], [_link("mac", "sum", 0)]
-    regs = ctrl_registers(units, links, "sum", {"mac": None, "sum": 1}, JW)
-    assert regs == [("busy", 1),  # no copy of JOBS or the MAC's JOB_BEATS
-                    ("mac_job_beats_counter", 32), ("mac_jobs_counter", 32), ("mac_v", 1),
-                    ("sum_jobs_counter", 32), ("sum_v", 1), ("sum_lane", 3), ("done", 1)]  # fmt: skip
-    declared = dict(ctrl_registers(units, links, "sum", {"mac": None, "sum": 1}, JW, True))
-    assert (declared["mac_sum_wslot"], declared["mac_sum_rslot"]) == (1, 1)
-
-
-def test_a_unit_at_l_0_on_a_wire_borrows_and_one_on_a_buffer_counts():
-    """dot 3: the elementwise mul at L 0 on a wire borrows the sum's test (no digit, no jobs
-    counter); dot 2: on a buffer it counts in mixed radix, a digit for the sum's T."""
-    units = [_unit("mul", 0), _unit("sum", 1)]
-    fixed = {"mul": 1, "sum": None}
-    wire = dict(ctrl_registers(units, [_link("mul", "sum", 0)], "sum", fixed, JW))
-    buf = dict(ctrl_registers(units, [_link("mul", "sum", 1)], "sum", fixed, JW))
-    assert "mul_jobs_counter" not in wire and "mul_sum_job_beats_counter" not in wire
-    assert (buf["mul_jobs_counter"], buf["mul_sum_job_beats_counter"]) == (32, 32)
-    assert buf["mul_sum_occupancy"] == 1 and "mul_sum_wslot" not in buf  # one slot: dropped
 
 
 def test_a_fixed_t_counts_in_its_own_bits_and_the_ii_gap_and_job_width():

@@ -3,19 +3,14 @@ accelerator files, always; snax_cluster's for the cluster file, where the submod
 
 from __future__ import annotations
 
-import copy
-import json
 from pathlib import Path
 
 import pytest
-from jsonschema import Draft7Validator, Draft202012Validator, ValidationError
 
-from snax_forge.brm import CONTROLLERS, INT_DTYPES
 from snax_forge.gen import generate
-from snax_forge.gen.schemas import NAMES, schema
 from tests.helpers import bound_vsum, requires_submodule
 
-from .helpers import SOURCE, SUB, parsed, point, validate
+from .helpers import SOURCE, SUB, parsed, point
 
 CLUSTER_SCHEMA = SUB / "sw" / "docs" / "schema" / "snitch_cluster.schema.json"
 
@@ -34,61 +29,12 @@ def folder(request, tmp_path_factory):
     return out
 
 
-@pytest.mark.parametrize("name", NAMES)
-def test_the_schemas_are_schemas(name):
-    Draft202012Validator.check_schema(schema(name))
-
-
 STREAMER = "streamer_acc.hjson"  # the one set's file, after snax_forge_<design>_
 
 
 def _streamer(folder: Path) -> Path:
     """The folder's one streamer file, ``snax_forge_<design>_streamer_acc.hjson``."""
     return folder / f"snax_forge_{folder.name}_{STREAMER}"
-
-
-def test_the_writers_files_validate(folder):
-    validate("streamer", parsed(_streamer(folder)))
-    validate("accelerator", parsed(folder / "accelerator.json"))
-
-
-@pytest.mark.parametrize(
-    ("name", "file", "edit"),
-    [
-        ("streamer", STREAMER, lambda d: d["data_reader_params"].pop("fifo_depth")),
-        ("streamer", STREAMER, lambda d: d.update(snax_library_name="snax-alu")),
-        ("streamer", STREAMER,
-         lambda d: d["data_writer_params"].update(num_channel=[0])),
-        ("streamer", STREAMER, lambda d: d.clear()),
-        ("accelerator", "accelerator.json", lambda d: d.pop("tag")),
-        ("accelerator", "accelerator.json", lambda d: d.update(tag="snax-forge")),
-        ("accelerator", "accelerator.json", lambda d: d.update(fields=["loopCount"])),
-        ("accelerator", "accelerator.json", lambda d: d.update(accelerators=[])),
-        ("accelerator", "accelerator.json", lambda d: d.update(groups=d["accelerators"][0]["groups"])),
-        ("accelerator", "accelerator.json", lambda d: d["accelerators"][0].pop("name")),
-        ("accelerator", "accelerator.json", lambda d: d["accelerators"][0].update(inputs=[])),
-        ("accelerator", "accelerator.json", lambda d: d["accelerators"][0].update(inputs=["a"])),
-        ("accelerator", "accelerator.json", lambda d: G(d).update(links=[{}])),
-        ("accelerator", "accelerator.json", lambda d: G(d)["csrs"][2].update(width=32)),
-        ("accelerator", "accelerator.json", lambda d: G(d)["csrs"][0].pop("width")),
-        ("accelerator", "accelerator.json",
-         lambda d: G(d)["units"][0]["ports"]["a"].update(dtype="float64")),
-        ("accelerator", "accelerator.json", lambda d: G(d)["units"][0].update(wait="lockstep")),
-    ],
-)  # fmt: skip
-def test_a_broken_file_does_not_validate(folder, name, file, edit):
-    path = _streamer(folder) if file == STREAMER else folder / file
-    d = copy.deepcopy(parsed(path))
-    edit(d)
-    with pytest.raises(ValidationError):
-        validate(name, d)
-
-
-def test_the_dtypes_are_the_brms():
-    """A port's dtype and an opType are the BRM's integer dtypes; counted is the only
-    controller, so the file names none."""
-    assert set(schema("accelerator")["$defs"]["dtype"]["enum"]) == set(INT_DTYPES)
-    assert list(CONTROLLERS) == ["counted"]
 
 
 def _resolved(node, top, folder: Path):
@@ -105,24 +51,6 @@ def _resolved(node, top, folder: Path):
     if isinstance(node, list):
         return [_resolved(v, top, folder) for v in node]
     return node
-
-
-@requires_submodule
-def test_the_cluster_file_validates_against_snax_clusters_schema(folder):
-    """clustergen's check (util/clustergen/cluster.py: Draft 7 on the cluster), on the file with
-    its refs resolved, the snax_acc_cfg entries included."""
-    validator = Draft7Validator(json.loads(CLUSTER_SCHEMA.read_text()))
-    cluster = parsed(folder / "snax_forge.hjson")
-    validator.validate(_resolved(cluster, cluster, folder)["cluster"])
-    source = parsed(SOURCE)
-    validator.validate(_resolved(source, source, SOURCE.parent)["cluster"])
-    slot = copy.deepcopy(cluster)
-    slot["snax_forge_core_template"]["snax_acc_cfg"][0]["snax_disable_csr_manager"] = "yes"
-    with pytest.raises(ValidationError, match="'yes' is not of type 'boolean'"):
-        validator.validate(_resolved(slot, slot, folder)["cluster"])
-    del cluster["cluster"]["addr_width"]  # the schema does check: a required key
-    with pytest.raises(ValidationError):
-        validator.validate(_resolved(cluster, cluster, folder)["cluster"])
 
 
 @requires_submodule

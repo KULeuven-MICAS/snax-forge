@@ -8,6 +8,8 @@ folder with its ``forge_expected.txt``, as forge does.
 from __future__ import annotations
 
 import importlib.util
+import subprocess
+import sys
 
 import pytest
 
@@ -123,3 +125,29 @@ def test_every_sets_recipe_is_found_in_its_folder():
     for name in {d.recipe for names in fs.SETS.values() for d in names}:
         path = fs.find_recipe(name)
         assert path.parent.parent == REPO / "recipes" and path.stem == name
+
+
+def test_run_forge_runs_forge_on_the_recipe_with_its_sets(tmp_path, monkeypatch):
+    """``pixi run forge recipes/<folder>/<recipe>.json --set ...``, its output into the file."""
+    seen = {}
+
+    def run(cmd, **kw):
+        seen["cmd"] = cmd
+        kw["stdout"].write("forge passed\n")
+        return subprocess.CompletedProcess(cmd, 0)
+
+    monkeypatch.setattr(fs.subprocess, "run", run)
+    out = tmp_path / "out.txt"
+    assert fs.run_forge(fs.Design("rowsum_v2", (fs.PADDED,)), out) == 0
+    assert seen["cmd"][1:] == ["-m", "snax_forge.flow.forge", str(fs.find_recipe("rowsum_v2")),
+                               "--set", fs.PADDED]  # fmt: skip
+    assert out.read_text() == "forge passed\n"
+
+
+def test_bad_arguments_exit_2():
+    with pytest.raises(SystemExit) as e:
+        fs.main(["quick", "-j", "0"])
+    assert e.value.code == 2
+    done = subprocess.run([sys.executable, "-m", "snax_forge.flow.forge_set", "pack"], cwd=REPO,
+                          capture_output=True, text=True, check=False)  # fmt: skip
+    assert done.returncode == 2 and "invalid choice: 'pack'" in done.stderr

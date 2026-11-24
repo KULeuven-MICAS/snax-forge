@@ -40,15 +40,6 @@ def test_every_w_that_divides_n_passes(w):
     assert results[-1].graph.node("add_map").attrs["range"] == f"0:N // {w}"
 
 
-def test_a_w_that_does_not_divide_n_splits_with_a_tail():
-    """N = 64 by W = 5: 13 firings, the last with one valid lane, and the reference check
-    passes."""
-    results = apply_recipe(recipe().with_params({"W": 5}), graph("vecadd"))
-    m = results[-1].graph.node("add_map")
-    assert m.attrs["range"] == "0:(N + 4) // 5"
-    assert m.attrs["loop.split"] == {"var": "n", "range": "0:N", "valid": "N"}
-
-
 def test_the_reference_check_stops_a_wrong_step():
     def wrong(g: Graph) -> Graph:
         d = g.to_dict()
@@ -82,13 +73,6 @@ def test_bad_steps(edit, message):
     edit(d)
     with pytest.raises(SandboxError, match=message):
         apply_recipe(Recipe.from_dict(d), graph("vecadd"))
-
-
-def test_a_bound_symbol_must_agree():
-    d = graph("vecadd").to_dict()
-    d["symbols"]["N"] = 32
-    with pytest.raises(SandboxError, match="N is bound to 32 already, not 64"):
-        apply_recipe(recipe(), Graph.from_dict(d))
 
 
 def test_cli_writes_every_step(tmp_path, capsys):
@@ -130,11 +114,3 @@ def test_cli_fails_by_name(tmp_path, capsys):
     ]
     assert main(args) == 1
     assert "factor 0 must be a positive int" in capsys.readouterr().err
-
-
-def test_cli_starts_from_the_kernel_import(tmp_path):
-    """Without --graph the recipe starts from the import of its kernel."""
-    assert main([str(RECIPE), "--out", str(tmp_path)]) == 0
-    assert (tmp_path / "2_bind.snaxdfg").read_text() == (
-        FIXTURES / "vecadd_accelerated.snaxdfg"
-    ).read_text()

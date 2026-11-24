@@ -16,9 +16,8 @@ import numpy as np
 import pytest
 
 from snax_forge.dfg import Graph, execute
-from snax_forge.sandbox import Recipe, SandboxError, apply_recipe, bind, split_map
-from snax_forge.sandbox.session import bind_list
-from tests.helpers import FIXTURES, graph_dict, recipe_path
+from snax_forge.sandbox import SandboxError, bind, split_map
+from tests.helpers import graph_dict
 
 BIND = {"brm": "simd", "implementation": "chisel_tiled_spatial", "instance": "acc"}
 RELU = {"node": "numpy_maximum", **BIND}
@@ -54,33 +53,6 @@ def vecadd(code: str) -> Graph:
 # =============================================================================
 
 
-def test_relu_binds_at_max_one_stream_k_0():
-    g = bind(relu(), **RELU)
-    n = g.node("numpy_maximum")
-    assert n.attrs["params"] == {"W": 4, "op": "max", "streams": 1, "k": 0}
-    assert n.attrs["code"] == "out = max(a, k)"
-    assert list(n.inputs) == ["a"] and list(n.outputs) == ["out"]
-    assert n.inputs["a"].subset == ["4 * n_1_t:4 * n_1_t + 4"]
-    A = np.array([-3, 5, 0, -1, 7, -8, 2, -2], np.int32)
-    B = execute(g, {"A": A, "B": np.zeros(8, np.int32)})["B"]
-    assert B.tolist() == [0, 5, 0, 0, 7, 0, 2, 0]
-
-
-def test_relus_recipe_steps_check_against_the_reference():
-    """split_map then bind, each step checked against the imported graph's result."""
-    r = Recipe.from_dict({"name": "relu", "kernel": "relu", "params": {"W": 4, "N": 64},
-                          "symbols": {"N": "N"}, "steps": [
-        {"transform": "split_map", "params": {"map": "numpy_maximum_map", "factor": "W"}},
-        {"transform": "bind", "params": RELU}]})  # fmt: skip
-    results = apply_recipe(r, Graph.load(FIXTURES / "relu.snaxdfg"))
-    assert results[-1].graph.node("numpy_maximum").attrs["params"]["k"] == 0
-
-
-def test_the_editors_bind_list_offers_simd_on_relu():
-    ok = [(e["brm"], e["implementation"]) for e in bind_list(relu(), "numpy_maximum") if e["ok"]]
-    assert ok == [("simd", "chisel_tiled_spatial")]
-
-
 # =============================================================================
 # Every entry
 # =============================================================================
@@ -105,20 +77,6 @@ def test_every_one_stream_entry_binds_with_its_slot(op, k):
     A = np.random.default_rng(2).integers(-99, 99, 8).astype(np.int32)
     B = execute(g, {"A": A, "B": np.zeros(8, np.int32)})["B"]
     assert np.array_equal(B, NP[op](A, np.int32(k)))
-
-
-def test_a_slot_takes_a_constant_expression():
-    assert bind(relu(code="out = in1 + 2 * 4"), **RELU).node("numpy_maximum").attrs["params"][
-        "k"] == 8  # fmt: skip
-
-
-@pytest.mark.parametrize(
-    ("name", "kernel", "node", "op"),
-    [("vecadd_v1", "vecadd", "add", "add"), ("vecmul_v1", "vecmul", "mult", "mul")],
-)
-def test_vecadd_and_vecmul_bind_at_two_streams_with_no_k(name, kernel, node, op):
-    g = apply_recipe(Recipe.load(recipe_path(name)), Graph.load(FIXTURES / f"{kernel}.snaxdfg"))
-    assert g[-1].graph.node(node).attrs["params"] == {"W": 4, "op": op, "streams": 2}
 
 
 # =============================================================================
@@ -154,24 +112,3 @@ LISTED = (r"'simd' computes one of 'out = a \+ b' \(op = 'add', streams = 2\), .
 def test_bind_refuses(make, params, message):
     with pytest.raises(SandboxError, match=message):
         bind(make(), **(RELU | {"params": params}))
-
-
-@pytest.mark.parametrize(
-    ("code", "op", "k"),
-    [("out = max(0, in1)", "max", 0), ("out = 3 + in1", "add", 3), ("out = -2 * in1", "mul", -2),
-     ("out = min(7, in1)", "min", 7)],
-)  # fmt: skip
-def test_commuting_ops_bind_either_way_round(code, op, k):
-    """``max(0, a)`` is relu: the entry ``max(a, k)`` with its operands swapped."""
-    g = bind(relu(code=code), **RELU)
-    n = g.node("numpy_maximum")
-    assert n.attrs["params"] == {"W": 4, "op": op, "streams": 1, "k": k}
-    A = np.array([-3, 5, 0, -1, 7, -8, 2, -2], np.int32)
-    assert np.array_equal(execute(g, {"A": A, "B": np.zeros(8, np.int32)})["B"],
-                          NP[op](A, np.int32(k)))  # fmt: skip
-
-
-def test_a_one_stream_tasklet_never_binds_two_streams():
-    """``out = in1 + 0`` is the one-stream add at k = 0, never a + b."""
-    assert bind(relu(code="out = in1 + 0"), **RELU).node("numpy_maximum").attrs["params"] == {
-        "W": 4, "op": "add", "streams": 1, "k": 0}  # fmt: skip

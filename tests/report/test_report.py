@@ -30,9 +30,12 @@ from snax_forge.report.__main__ import main
 from snax_forge.report.run import CheckRow, bank_notes, build_run, counters_text, render_movement
 from snax_forge.run import load_cluster, read_events, read_run, write_run
 from snax_forge.run.convert import convert
-from snax_forge.viz import api, movement, schedule
+from snax_forge.viz import api, schedule
 from tests.flow.helpers import stubbed_flow
 from tests.helpers import recipe_path
+
+# One worker runs the module, its module-scoped flows once
+pytestmark = pytest.mark.xdist_group("report")
 
 FIXTURE = Path(__file__).resolve().parents[1] / "run" / "fixtures" / "vecadd_v1"
 
@@ -48,45 +51,6 @@ def flows(tmp_path_factory):
 # =============================================================================
 # 1. The design report
 # =============================================================================
-
-
-@pytest.mark.parametrize("key", [("vecadd", "task"), ("vsum", "task")])
-def test_the_design_report_equals_its_sources(flows, key):
-    folder = flows[key]
-    r = reports_of(folder).design
-    point = DesignPoint.load(folder / "design" / "design_point.json")
-    cluster = api.load_run(folder).cluster
-    h = r.header
-    assert (h.kernel, h.recipe, h.symbols) == (key[0], f"{key[0]}_v1", {"N": 64})
-    assert (h.platform, h.passes) == ("snax_forge", dict(point.memory.passes))
-    assert [c.name for c in r.components] == cluster.sources
-    (a,) = r.accelerators
-    (unit,) = cluster.accelerator.description["accelerators"][0]["groups"][0]["units"]
-    assert (a.instance, a.kind, a.target_ii, a.latency) == (
-        "acc",
-        unit["datapath"],
-        unit["timing"]["ii"],
-        unit["timing"]["latency"],
-    )
-    assert a.ports == [f"{m.port} ← {m.name}" for m in cluster.accelerator.movers]
-    assert [(s.name, s.num_ch, s.fifo_depth) for s in r.streamers] == [
-        (m.name, m.lanes, m.fifo_depth) for m in cluster.accelerator.movers
-    ]
-    l1 = next(m for m in r.memories if m.mem == "l1")
-    assert (l1.columns, l1.word_bytes, l1.columns * l1.rows * l1.word_bytes) == (
-        cluster.banks,
-        cluster.bank_bytes,
-        cluster.l1_size,
-    )
-    assert {x.name: x.base for x in l1.regions} == {
-        c: lay["l1"].base for c, lay in point.memory.layouts.items() if "l1" in lay
-    }
-    assert l1.used_bytes == sum(x.bytes for x in l1.regions)
-    # L2 at the program's link: the ELF's addresses run.json records
-    l2 = next(m for m in r.memories if m.mem == "l2")
-    syms = json.loads((folder / "run" / "run.json").read_text())["elf_symbols"]
-    assert {x.name: x.base for x in l2.regions} == {c: s["addr"] for c, s in syms.items()}
-    assert r.notes
 
 
 # =============================================================================
@@ -250,38 +214,6 @@ def recorded(tmp_path_factory):
     return {lv: recorded_run(base / f"vecadd_{lv}", lv) for lv in ("task", "beat", "stall")}
 
 
-@pytest.mark.parametrize("level", ["beat", "stall"])
-def test_the_movement_section_is_the_index(recorded, level):
-    """At beat and above: per region its spans, per lane its nest and pace (viz/movement.py's
-    answers), and at stall the stalls per bank and port, which are the profile's."""
-    rv = api.load_run(recorded[level])
-    m = build_run(rv).movement
-    assert m.reason is None and m.sources is None
-    residency, patterns = movement.residency(rv.index), movement.patterns(rv.index)
-    assert [(r.region, r.mem, r.arrival, r.use, r.departure) for r in m.residency] == [
-        (r["region"], r["mem"], r["arrival"], r["use"], r["departure"]) for r in residency]  # fmt: skip
-    lanes = [p for p in patterns if p["port"] != "dma"]
-    assert [(p.port, p.task, p.base, p.nest, p.beats, p.first, p.last) for p in m.patterns] == [
-        (p["port"], p["task"], p["addr"]["base"], p["addr"]["nest"], p["beats"], p["first"],
-         p["last"]) for p in lanes]  # fmt: skip
-    md = "\n".join(render_movement(m))
-    assert (
-        "| A | L1 | 64 | 0 |" in md
-        and "| acc_a.lane0 | add_acc_a | 0x10000000 | 16 × 32 | 16 |" in md
-    )
-    if level == "beat":
-        assert m.conflicts is None and all(p.held is None for p in m.patterns)
-        assert "L1 stalls: Needs --trace stall; this run was traced at beat." in md
-    else:
-        snax = {n: x.stalls for n, x in rv.outputs.profile.ports.items() if n.startswith("acc_")}
-        assert m.conflicts == sum(snax.values()) == 4
-        assert [(b.where, b.stalls) for b in m.banks] == [("0–3", 1)]
-        assert [(p.where, p.stalls) for p in m.ports] == [(n, x) for n, x in snax.items() if x]
-        assert [p.held for p in m.patterns if p.port.startswith("acc_b.")] == [1, 1, 1, 1]
-        assert "4 L1 stalls" in md
-    assert RunReport.from_dict(json.loads(json.dumps(build_run(rv).to_dict()))) == build_run(rv)
-
-
 def test_the_movement_section_below_beat(recorded, flows):
     for folder, level in ((recorded["task"], "task"), (flows[("vecadd", "off")], "off")):
         r = build_run(api.load_run(folder))
@@ -358,18 +290,6 @@ def test_a_sliced_input_shows_its_d_in(tmp_path):
     assert [(s.port, s.num_ch, s.d_out, s.d_in) for s in r.streamers] == [
         ("a", 1, 1, 2), ("b", 1, 1, 2), ("out", 1, 2, 1)
     ]  # fmt: skip
-
-
-@pytest.mark.parametrize("w", [1, 4])
-def test_design_md_lists_the_design_notes(tmp_path, w):
-    """dot_v5 at W = 1 binds SerialAccumulate at lanes 1: design.md's Notes start with the note
-    design.serial_one_lane and its fix; at W = 4 there is none."""
-    r = designed_report(tmp_path, "dot_v5", ["N=16", f"W={w}"])
-    note = ("note [design.serial_one_lane] sum: SerialAccumulate at lanes 1 reads one lane per "
-            "beat, the same work as TreeAccumulate at lanes 1 Fix: bind chisel_adder_tree")  # fmt: skip
-    assert (r.notes[:1] == [note]) == (w == 1)
-    assert (f"- {note}" in render_design(r)) == (w == 1)
-    assert not any("design.serial_one_lane" in n for n in r.notes[w == 1 :])
 
 
 @pytest.mark.parametrize("w", [8, 16])

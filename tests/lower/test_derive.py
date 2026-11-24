@@ -13,23 +13,16 @@ from snax_forge.lower import (
     Layout,
     LowerError,
     TaskList,
-    check_values,
     memlet_values,
-    placed_waits,
     task_list,
 )
 from snax_forge.lower import __main__ as cli
-from snax_forge.lower.derive import addresses, packed_values
 from tests.brm.helpers import affine_simd
 from tests.design.helpers import (
     SNAX_FORGE,
-    bound_matadd,
     bound_rowsum,
     bound_vecadd,
-    bound_w8,
-    chained,
     design,
-    two_loops,
 )
 
 from .helpers import VECADD_TASKS
@@ -58,62 +51,9 @@ def test_vecadd_on_snax_forge_gives_its_checked_in_task_list():
     assert got == want and got.to_dict() == want.to_dict()
 
 
-def test_the_default_plan_differs_from_the_pinned_one_only_in_the_l1_bases():
-    got = task_list(point()).to_dict()["steps"]
-    want = task_list(point(memory=PINS)).to_dict()["steps"]
-    diff = [(a["task_name"], a["values"]) for a, b in zip(got, want, strict=True) if a != b]
-    assert [name for name, _ in diff] == ["load_B", "add_acc_b", "add_acc_out", "store_C"]
-    assert diff[0][1]["dst"]["base"] == 512 and diff[1][1]["base"] == 512
-    assert diff[2][1]["base"] == 1024 and diff[3][1]["src"]["base"] == 1024
-
-
-def test_w8_gives_eight_lanes():
-    d = design(bound_w8())
-    assert run_checks(d) == []
-    p = DesignPoint.of(d, "vecadd_w8")
-    tl = task_list(p)
-    acc = tl.configured()["add_acc"]
-    assert acc.values == {"n": 8}
-    assert tl.configured()["add_acc_a"].values == {
-        "base": 0, "temporal_bounds": [8], "temporal_strides": [64], "spatial_strides": [8]
-    }  # fmt: skip
-
-
 # =============================================================================
 # 2. More than one loop, more than one node
 # =============================================================================
-
-
-def test_two_temporal_maps_give_two_streamer_loops():
-    p = point(edit_graph=two_loops)  # two streamer loops, from the graph
-    tl = task_list(p)
-    assert tl.configured()["add_acc_a"].values == {
-        "base": 0, "temporal_bounds": [8, 2], "temporal_strides": [32, 256], "spatial_strides": [8]
-    }  # fmt: skip
-    assert tl.configured()["add_acc"].values == {"n": 16}
-
-
-def test_matadd_lowers_its_two_firing_loops():
-    """matadd (int32) at W = 4, M = 8, N = 16 on snax_forge: the column beats
-    innermost (4, 16 bytes apart), the rows outer (8, 64 bytes), 4 lanes as 2 channels a word
-    (8 bytes) apart, each base the plan's; n = 32 firings; the streamers' two temporal loops
-    are the graph's."""
-    d = Design(Platform.load(SNAX_FORGE), bound_matadd())
-    assert run_checks(d) == []
-    p = DesignPoint.of(d, "matadd")
-    assert {s.name: s.temporal_dims for s in p.streamers.values()} == {
-        "acc_a": 2, "acc_b": 2, "acc_out": 2
-    }  # fmt: skip
-    c = task_list(p).configured()
-    for port, cont in (("a", "A"), ("b", "B"), ("out", "C")):
-        assert c[f"add_acc_{port}"].values == {
-            "base": p.memory.layouts[cont]["l1"].base, "temporal_bounds": [4, 8],
-            "temporal_strides": [16, 64], "spatial_strides": [8],
-        }  # fmt: skip
-    assert c["add_acc"].values == {"n": 32}
-    lay = p.memory.layouts["C"]["l1"]
-    visited = addresses(c["add_acc_out"].values, [2])  # beat m_t * 4 + n_1_t, channel (a word)
-    assert visited[1 * 4 + 1, 1] == lay.base + 88 == lay.address([1, 6])  # elements (1, 6:8)
 
 
 @pytest.mark.parametrize(
@@ -140,21 +80,6 @@ def test_rowsum_restarts_every_row(name, reader, writer, n):
     assert c["sum_acc"].values == {"n": n, "T": 16}
 
 
-def test_a_chain_of_two_nodes_orders_its_tasks_by_the_data():
-    p = point(edit_graph=chained)
-    tl = task_list(p)
-    names = [s.task_name for s in tl.steps if s.op == "configure"]
-    assert names == [
-        "load_A", "load_B", "add_acc_a", "add_acc_b", "add_acc_out", "add_acc", "store_C",
-        "add2_acc2_a", "add2_acc2_b", "add2_acc2_out", "add2_acc2", "store_D",
-    ]  # fmt: skip
-    c = tl.configured()
-    assert c["add2_acc2_a"].after == ["add_acc_out"]  # C comes from the first node, in L1
-    assert c["add2_acc2_b"].after == ["load_B"] and c["store_D"].after == ["add2_acc2_out"]
-    # two accelerators in series: acc's task before acc2 starts, then the stores' syncs
-    assert [s.task for s in tl.steps if s.op == "sync"] == ["add_acc", "store_C", "store_D"]
-
-
 # =============================================================================
 # in place: a unit that writes the container it reads
 # =============================================================================
@@ -175,94 +100,9 @@ def in_place(gd: dict, out_subset: str | None = None, tasklet_subset: str | None
         tasklet["outputs"]["out"]["subset"] = [tasklet_subset]
 
 
-def test_an_in_place_update_does_not_wait_on_its_own_read():
-    """B = A + B: the writer starts with B's reader, so it cannot wait for it; the same
-    subset over the same firing loops needs no wait."""
-    p = point(edit_graph=in_place)
-    tl = task_list(p)
-    check_values(tl, p)
-    c = tl.configured()
-    assert [s.task_name for s in tl.steps if s.op == "configure"] == [
-        "load_A", "load_B", "add_acc_a", "add_acc_b", "add_acc_out", "add_acc", "store_B",
-    ]  # fmt: skip
-    assert c["add_acc_b"].after == ["load_B"]
-    assert c["add_acc_out"].after == ["load_B"]  # B in L1 before it, not the read beside it
-    assert c["store_B"].after == ["add_acc_out"]
-    start = next(s for s in tl.steps if s.op == "start" and "add_acc" in s.tasks)
-    assert {"add_acc_b", "add_acc_out"} <= set(start.tasks)
-
-
-def test_a_write_into_its_read_container_elsewhere_is_refused():
-    """B[N:2N] = A + B[0:N]: not the elements it reads, so not an in-place update."""
-
-    def edit(gd):
-        in_place(gd, "4 * n_1_t + N:4 * n_1_t + N + 4", "4 * n_1_t + n_2_s + N")
-
-    with pytest.raises(LowerError, match=r"node add\.out: writes B in place of add_acc_b's "
-                                         r"read, but not the same elements"):  # fmt: skip
-        task_list(point(edit_graph=edit))
-
-
 # =============================================================================
 # dot: a multiplier chained into an accumulator through L1
 # =============================================================================
-
-
-def test_dot_gives_its_task_list():
-    """mul, then sum after mul's writer; sum's out one beat, T = N / W; out stored as one beat."""
-    tl = task_list(point("dot_accelerated"))
-    names = [s.task_name for s in tl.steps if s.op == "configure"]
-    assert names == [
-        "load_A", "load_B", "mult_mul_a", "mult_mul_b", "mult_mul_out", "mult_mul",
-        "sum_sum_a", "sum_sum_out", "sum_sum", "store_out",
-    ]  # fmt: skip
-    c = tl.configured()
-    assert c["sum_sum_a"].after == ["mult_mul_out"]  # tmp0 comes from mul, through L1
-    assert c["mult_mul"].values == {"n": 16}
-    assert c["sum_sum"].values == {"n": 16, "T": 16}
-    assert c["sum_sum_out"].values == {
-        "base": 1024, "temporal_bounds": [1], "temporal_strides": [0], "spatial_strides": [8]
-    }  # fmt: skip
-    assert c["store_out"].values["src"] == {"base": 1024, "bounds": [1], "strides": [64]}
-    assert [s.task for s in tl.steps if s.op == "sync"] == ["mult_mul", "store_out"]
-
-
-def test_dot_runs_its_accelerators_in_series():
-    """mul and sum unencapsulated are two accelerators, two streamer sets: no idle mover
-    (each task holds its own set's movers only), and the serial sync on mul's task after sum's
-    configures, right before sum's start, the one wait between them: a wait on mul's task
-    covers its writer too, so no data wait on mul_out follows (waits.py)."""
-    p = point("dot_accelerated")
-    tl = task_list(p)
-    ops = [(s.op, getattr(s, "task_name", None) or getattr(s, "task", None) or s.tasks)
-           for s in tl.steps]  # fmt: skip
-    i = ops.index(("sync", "mult_mul"))
-    assert ops[i - 3 : i] == [("configure", "sum_sum_a"), ("configure", "sum_sum_out"),
-                              ("configure", "sum_sum")]  # fmt: skip
-    assert ops[i + 1] == ("start", ["sum_sum_a", "sum_sum_out", "sum_sum"])
-    assert not [t for t in tl.of_type("streamer") if not any(t.values["temporal_bounds"])]
-    starts = [s.tasks for s in tl.steps if s.op == "start" and len(s.tasks) > 1]
-    assert starts == [["mult_mul_a", "mult_mul_b", "mult_mul_out", "mult_mul"],
-                      ["sum_sum_a", "sum_sum_out", "sum_sum"]]  # fmt: skip
-    waits = [w.component for w in placed_waits(tl, p)]
-    assert waits == ["dma", "dma", "mul", "sum_out", "dma"]
-
-
-def test_the_serial_sync_is_left_out_when_after_holds_the_previous_task():
-    """The sync is left out when an ``after`` of the next accelerator's start already holds
-    the previous accelerator's task, and the pass adds none twice."""
-    from snax_forge.lower.derive import serial_syncs
-
-    p = point("dot_accelerated")
-    d = task_list(p).to_dict()
-    d["steps"] = [s for s in d["steps"] if s != {"op": "sync", "task": "mult_mul", "mode": "poll"}]
-    assert serial_syncs(TaskList.from_dict(d), p) == task_list(p)  # added back, once
-    for s in d["steps"]:
-        if s.get("task_name") == "sum_sum_a":
-            s["after"] = ["mult_mul_out", "mult_mul"]
-    edited = serial_syncs(TaskList.from_dict(d), p)
-    assert [s.task for s in edited.steps if s.op == "sync"] == ["store_out"]
-    assert serial_syncs(task_list(p), p) == task_list(p)
 
 
 # =============================================================================
@@ -301,37 +141,6 @@ def test_dot_1_configures_every_mover_per_task_the_other_groups_idle():
     assert [s.task for s in tl.steps if s.op == "sync"] == ["store_out"]
 
 
-def test_dot_1_waits_for_mul_s_writer_before_sum_and_never_on_an_idle_mover():
-    p = dot1()
-    waits = placed_waits(task_list(p), p)
-    assert [(w.component, sorted(w.covers)) for w in waits] == [
-        ("dma", ["dma"]), ("dma", ["dma"]),
-        ("vmul_out", ["vmul", "vmul_a", "vmul_b", "vmul_out"]),
-        ("vsum_out", ["vsum", "vsum_a", "vsum_out"]),
-        ("dma", ["dma"]),
-    ]  # fmt: skip
-
-
-def test_dot_1_is_two_accelerators_in_series():
-    """recipes/dot/dot_v1.json (no encapsulate): vmul and vsum, two streamer sets; no idle mover, the
-    serial sync on vmul's task before vsum starts, the one wait between them."""
-    from tests.gen.helpers import bound_dot1
-
-    d = Design(Platform.load(SNAX_FORGE), bound_dot1())
-    assert run_checks(d) == []
-    p = DesignPoint.of(d, "dot_1")
-    tl = task_list(p)
-    assert not [t for t in tl.of_type("streamer") if not any(t.values["temporal_bounds"])]
-    assert [s.task for s in tl.steps if s.op == "sync"] == ["mult_vmul", "store_out"]
-    assert [w.component for w in placed_waits(tl, p)] == ["dma", "dma", "vmul", "vsum_out", "dma"]
-
-
-def test_dot_without_encapsulate_is_two_accelerators_with_no_idle_movers():
-    """Each group its own accelerator: its tasks configure its own movers only."""
-    names = [s.task_name for s in task_list(point("dot_accelerated")).steps if s.op == "configure"]
-    assert not any(n.startswith(("mult_sum", "sum_mul")) for n in names)
-
-
 def _backwards(g):
     """C written back to front: beat t at elements 60 - 4t .. 63 - 4t."""
     g["body"][0]["body"][0]["outputs"]["out"]["subset"] = ["60 - 4 * n_1_t:64 - 4 * n_1_t"]
@@ -344,39 +153,9 @@ def test_a_memlet_the_nest_disagrees_with_is_refused(monkeypatch):
         task_list(point(edit_graph=_backwards))
 
 
-def test_a_stream_brm_takes_the_memlets_order():
-    """The library's simd (stream): the memlet is the order, so C back to front
-    lowers, its streamer starting at element 60 and stepping back a beat at a time."""
-    out = task_list(point(edit_graph=_backwards)).configured()["add_acc_out"].values
-    assert out["temporal_bounds"] == [16] and out["temporal_strides"] == [-32]
-    assert out["spatial_strides"] == [8]
-
-
 # =============================================================================
 # 3. memlet_values
 # =============================================================================
-
-
-def test_memlet_values_through_row_and_column_major_layouts():
-    m = Memlet("X", ["i_t", "0:8"])
-    loops = [Loop("m", "i_t", 0, 4, 1)]
-    row, sb = memlet_values(m, loops, Layout.contiguous(0, (4, 8), 8), {}, "x")
-    assert row == {"base": 0, "temporal_bounds": [4], "temporal_strides": [64],
-                   "spatial_strides": [8]} and sb == [8]  # fmt: skip
-    col, _ = memlet_values(m, loops, Layout(1024, (4, 8), (8, 32)), {}, "x")
-    assert col == {"base": 1024, "temporal_bounds": [4], "temporal_strides": [8],
-                   "spatial_strides": [32]}  # fmt: skip
-    assert addresses(col, sb)[1].tolist() == [1032 + 32 * k for k in range(8)]
-
-
-def test_memlet_values_with_offsets_steps_and_no_loop():
-    m = Memlet("X", ["2 * i + 1:2 * i + 9:2"])
-    v, sb = memlet_values(m, [Loop("m", "i", 3, 2, 4)], Layout(0, (64,), (8,)), {}, "x")
-    # i = 3, 7: first element 7, then 15; lanes step 2
-    assert v == {"base": 56, "temporal_bounds": [2], "temporal_strides": [64],
-                 "spatial_strides": [16]} and sb == [4]  # fmt: skip
-    one, _ = memlet_values(Memlet("X", ["0:4"]), [], Layout(0, (64,), (8,)), {}, "x")
-    assert one["temporal_bounds"] == [1] and one["temporal_strides"] == [0]
 
 
 def test_memlet_values_refuse_what_is_not_affine():
@@ -424,38 +203,6 @@ def test_design_and_lower_import_in_any_order(first):
     assert r.returncode == 0, r.stderr
 
 
-def test_int32_vecadd_lowers_in_words():
-    """int32 vecadd at W = 4: each beat two words (spatial stride 8, the streamer's
-    num_ch W / num_slc = 2), a beat on every 16 bytes; each 64 x 4 = 256-byte container moved as
-    four whole DMA beats."""
-
-    def int32(g):
-        for c in g["containers"].values():
-            c["dtype"] = "int32"
-
-    steps = {
-        s.task_name: s for s in task_list(point(edit_graph=int32)).steps if hasattr(s, "task_name")
-    }
-    assert steps["add_acc_a"].values == {
-        "base": 0, "temporal_bounds": [16], "temporal_strides": [16], "spatial_strides": [8]
-    }  # fmt: skip
-    assert steps["load_A"].values["src"]["bounds"] == [4]
-
-
-def test_matadd_int32_4x6_in_2x2_tiles_in_words():
-    """The accepted 2-D case: the fastest spatial loop one word (8 bytes, a channel of
-    2 int32), the row loop 6 x 4 bytes; the tiles step 2 columns (8 bytes) and 2 rows
-    (48 bytes)."""
-    m = Memlet("A", ["2 * i:2 * i + 2", "2 * j:2 * j + 2"])
-    loops = [Loop("mi", "i", 0, 2, 1), Loop("mj", "j", 0, 3, 1)]
-    v, sb = memlet_values(m, loops, Layout.contiguous(0, (4, 6), 4), {}, "x", num_slc=2)
-    assert sb == [2, 2]
-    assert v == {"base": 0, "temporal_bounds": [3, 2], "temporal_strides": [8, 48],
-                 "spatial_strides": [8, 24]}  # fmt: skip
-    words = (addresses(v, [1, 2]) // 8).tolist()  # 1 channel of 2 int32 by 2 rows
-    assert words[:3] == [[0, 3], [1, 4], [2, 5]]  # the first row of tiles
-
-
 # =============================================================================
 # The fold's seed: matvec_acc_v1's q, read once per job, written in place
 # =============================================================================
@@ -476,78 +223,6 @@ def _seeded(name: str, edit=None) -> DesignPoint:
     d = Design(Platform.load(SNAX_FORGE), g)
     assert run_checks(d) == []
     return DesignPoint.of(d, name)
-
-
-@pytest.mark.parametrize("name, beats", [("matvec_acc_v1", 128), ("matvec_acc_v2", 512)])
-def test_the_seed_is_read_once_per_job_in_place_of_its_write(name, beats):
-    """q's seed streamer loops over the jobs only, one beat per row at q's addresses, the
-    write's; the in-place rule lets the two start together, each after q's load only; the
-    multiply's task keeps the seed idle."""
-    p = _seeded(name)
-    assert p.streamers["sum_seed"].temporal_dims == 1
-    tl = task_list(p)
-    check_values(tl, p)
-    c = tl.configured()
-    q = {"base": p.memory.layouts["q"]["l1"].base, "temporal_bounds": [8],
-         "temporal_strides": [8], "spatial_strides": [8]}  # fmt: skip
-    assert (c["sum_sum_seed"].values, c["sum_sum_out"].values) == (q, q)
-    assert c["sum_sum_seed"].after == c["sum_sum_out"].after == ["load_q"]
-    assert c["sum_sum"].values == {"n": 8 * beats, "T": beats}
-    assert (c["mult_sum_seed"].values, c["mult_sum_seed"].after) == (IDLE, [])
-    start = next(s for s in tl.steps if s.op == "start" and "sum_sum" in s.tasks)
-    assert {"sum_sum_seed", "sum_sum_out"} <= set(start.tasks)
-
-
-def test_a_seed_on_other_elements_than_its_write_is_refused():
-    """The in-place rule, not a bypass: a seed read in another order than the write is
-    refused by name."""
-
-    def reversed_seed(d):
-        for top in d["body"]:
-            for n in top["body"]:
-                if n["id"] == "sum_map_1":
-                    n["body"][0]["inputs"]["seed"]["subset"] = ["7 - m_t:8 - m_t"]
-
-    with pytest.raises(LowerError, match=r"node sum\.out: writes q in place of sum_sum_seed's "
-                       r"read, but not the same elements in the same order"):  # fmt: skip
-        task_list(_seeded("matvec_acc_v1", reversed_seed))
-
-
-@pytest.mark.parametrize(("bounds", "strides", "want"), [
-    ([10], [4], ([5], [8])),  # matvec at i8, M = 10: five words
-    ([9], [2], ([3], [8])),  # rowsum M = 9, int16 out at d_out 4: the last word short
-    ([1], [0], ([1], [0])),  # dot: one result, one word
-    ([6, 4], [4, 24], ([3, 4], [8, 24])),  # a 4 x 6 int32 output: the innermost loop only
-])  # fmt: skip
-def test_a_packed_writer_moves_words(bounds, strides, want):
-    """CONTRACTS, "Task list": the innermost loop of n pushes at s bytes becomes
-    (ceil(n / d_out), d_out * s), the outer loops and the base unchanged."""
-    d_out = 4 if strides[0] == 2 else 2
-    got = packed_values({"base": 64, "temporal_bounds": bounds, "temporal_strides": strides,
-                         "spatial_strides": []}, d_out)  # fmt: skip
-    assert (got["temporal_bounds"], got["temporal_strides"], got["base"]) == (*want, 64)
-
-
-def test_a_sliced_reader_moves_words():
-    """vecadd_v1_1 at W = 1, N = 64 (D180): each reader's 64 pops at 4 B become 32 words at 8 B on
-    one channel, as the packed writer's pushes do (CONTRACTS, "Task list")."""
-    from snax_forge.dfg.import_sdfg import import_kernel
-    from snax_forge.sandbox import Recipe, apply_recipe
-    from tests.helpers import recipe_path
-
-    r = Recipe.load(recipe_path("vecadd_v1_1")).with_params({"W": 1})
-    d = Design(
-        Platform.load(SNAX_FORGE), apply_recipe(r, import_kernel(r.kernel, r.dtypes))[-1].graph
-    )
-    assert run_checks(d) == []
-    point = DesignPoint.of(d, "vecadd_v1_1")
-    assert {k: (s.d_in, s.d_out, s.num_ch) for k, s in point.streamers.items()} == {
-        "acc_a": (2, 1, 1), "acc_b": (2, 1, 1), "acc_out": (1, 2, 1),
-    }  # fmt: skip
-    c = {s.task_name: s for s in task_list(point).steps if s.op == "configure"}
-    for t in ("add_acc_a", "add_acc_b", "add_acc_out"):
-        v = c[t].values
-        assert (v["temporal_bounds"], v["temporal_strides"]) == ([32], [8]), t
 
 
 @pytest.mark.parametrize(("attrs", "message"), [

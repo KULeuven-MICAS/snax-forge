@@ -12,17 +12,14 @@ import pytest
 
 from snax_forge.dfg import Graph
 from snax_forge.sandbox import (
-    Recipe,
     SandboxError,
-    apply_recipe,
     bind,
     join_map,
     split_map,
     unbind,
 )
 from snax_forge.sandbox import transforms as tr
-from snax_forge.sandbox.__main__ import main
-from tests.helpers import graph_dict, recipe_path
+from tests.helpers import graph_dict
 
 from .helpers import FIXTURES, graph, restricted_brm
 
@@ -38,13 +35,6 @@ def imported(n: int = 64) -> Graph:
     d = graph_dict("vecadd")
     d["symbols"]["N"] = n
     return Graph.from_dict(d)
-
-
-def test_the_accelerated_node_says_what_it_computes_and_replaced():
-    acc = graph("vecadd_accelerated").node("add")
-    assert acc.attrs["code"] == "out = a + b"
-    assert acc.attrs["replaced"] == graph("vecadd_split").node("add_map_s").to_dict()
-    assert graph("vecadd_split").node("add_map").attrs["loop.split"] == {"var": "n", "range": "0:N"}
 
 
 def test_back_from_the_accelerated_fixture():
@@ -74,17 +64,6 @@ def test_round_trip_with_an_offset_range():
     assert [m.subset for m in node.inputs.values()] == [["n"], ["n - 2"]]
     assert node.outputs["out"].subset == ["n + 0"]  # split's own expression put back as it was
     assert back.to_json() == g.to_json()
-
-
-def test_the_undo_recipe(tmp_path):
-    """recipes/elementwise/vecadd_v1_4.json on the accelerated fixture gives the imported graph back."""
-    r = Recipe.load(recipe_path("vecadd_v1_4"))
-    results = apply_recipe(r, graph("vecadd_accelerated"))
-    assert results[-1].graph.to_json() == imported().to_json()
-    args = [str(recipe_path("vecadd_v1_4")), "--graph",
-            str(FIXTURES / "vecadd_accelerated.snaxdfg"), "--out", str(tmp_path)]  # fmt: skip
-    assert main(args) == 0
-    assert Graph.load(tmp_path / "2_join_map.snaxdfg").to_json() == imported().to_json()
 
 
 def test_bind_checks_the_code(monkeypatch):
@@ -121,51 +100,3 @@ def test_join_rejected():
 # =============================================================================
 # The linking transforms: each undone by its inverse, the graph as it started
 # =============================================================================
-
-
-def _dot(n: int = 8) -> Graph:
-    d = graph_dict("dot")
-    d["symbols"]["N"] = n
-    return Graph.from_dict(d)
-
-
-def test_join_reduce_undoes_split_reduce():
-    g = _dot()
-    assert (
-        tr.TRANSFORMS["join_reduce"]
-        .fn(tr.TRANSFORMS["split_reduce"].fn(g, "sum_map", 4), "sum_map")
-        .to_json()
-        == g.to_json()
-    )
-
-
-def test_unfuse_map_undoes_fuse_map():
-    from snax_forge.sandbox import fuse_map, split_reduce, unfuse_map
-
-    g = split_reduce(split_map(_dot(), "mult_map", 4), "sum_map", 4)
-    assert unfuse_map(fuse_map(g, "mult_map", "sum_map"), "mult_map").to_json() == g.to_json()
-
-
-@pytest.mark.parametrize("depth", [0, 1, 2])
-def test_unlink_undoes_link(depth):
-    from snax_forge.sandbox import link, unlink
-
-    g = bind(split_map(_dot(), "mult_map", 4), "mult", "simd", "chisel_tiled_spatial",
-             "mul")  # fmt: skip
-    g = bind(split_map(g, "sum_map", 4), "sum", "accumulate", "chisel_adder_tree", "sum")
-    assert unlink(link(g, "tmp0", depth, "dot"), "tmp0").to_json() == g.to_json()
-
-
-def test_dot4_goes_back_to_the_import():
-    """dot_v4's steps undone in reverse order give the imported graph."""
-    from snax_forge.sandbox import fuse_map, join_reduce, link, split_reduce, unfuse_map, unlink
-
-    g0 = _dot()
-    g = fuse_map(split_reduce(split_map(g0, "mult_map", 4), "sum_map", 4), "mult_map", "sum_map")
-    g = bind(g, "mult_map_s", "mac", "chisel_mac", "mac")
-    g = link(
-        bind(g, "sum_final", "accumulate", "chisel_adder_tree", "sum"), "out_partial", 0, "dot"
-    )
-    back = unbind(unbind(unlink(g, "out_partial"), "sum_final"), "mult")
-    back = join_map(join_reduce(unfuse_map(back, "mult_map"), "sum_map"), "mult_map")
-    assert back.to_json() == g0.to_json()

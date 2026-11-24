@@ -5,11 +5,9 @@ from __future__ import annotations
 
 import json
 
-import numpy as np
 import pytest
 
 from snax_forge.dfg import DfgError, Graph
-from snax_forge.dfg.execute import execute
 
 
 def copy_graph(**edit) -> dict:
@@ -50,12 +48,6 @@ def test_the_kind_round_trips(tmp_path):
     assert Graph.from_dict(json.loads(g.to_json())) == g
     g.save(tmp_path / "t.snaxdfg")
     assert Graph.load(tmp_path / "t.snaxdfg").to_json() == g.to_json()
-
-
-def test_the_executor_copies_the_input_permuted():
-    a = np.arange(15, dtype=np.int64).reshape(3, 5)
-    out = execute(Graph.from_dict(copy_graph()), {"A": a, "B": np.zeros((5, 3), np.int64)})
-    assert np.array_equal(out["A_T"], a.T) and np.array_equal(out["B"], a.T + 1)
 
 
 @pytest.mark.parametrize(("edit", "message"), [

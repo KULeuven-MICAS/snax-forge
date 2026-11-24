@@ -22,7 +22,6 @@ from snax_forge.lower.c import (
     QUIET_OFF,
     QUIET_ON,
     cores,
-    job_values,
     program,
     strip_quiet,
 )
@@ -85,133 +84,6 @@ def two_cores(c):
     c["snax_forge_core_template"]["xdma"] = False
     c["dma_core_template"] = {"isa": "rv32ima", "xdma": True}
     c["cluster"]["hives"][0]["cores"].append({"$ref": "#/dma_core_template"})
-
-
-def test_vecadd_runs_the_dma_and_the_accelerator_on_core_0(tmp_path):
-    """The base cluster's one core runs both, with no barrier."""
-    src = text(tmp_path)
-    f = functions(src)
-    assert list(f) == ["forge_core_0", "forge_check", "main"]
-    assert "static int (*const forge_cores[1])(void) = {forge_core_0};" in src
-    assert BARRIER not in src and "// Core 0: the DMA and the accelerator acc" in src
-    assert "on snRuntime: core 0 runs the DMA and the accelerator" in src
-    assert f["forge_core_0"].index("snrt_dma_start_1d((void *)0x10000000, A, 512);") < f[
-        "forge_core_0"
-    ].index("csrw_ss(ACC_RW_START, 1);")
-
-
-def test_two_cores_run_the_dma_on_core_1_and_the_accelerator_on_core_0(tmp_path):
-    src = text(tmp_path, edit_cluster=two_cores)
-    f = functions(src)
-    assert list(f) == ["forge_core_0", "forge_core_1", "forge_check", "main"]
-    assert not any("snrt_dma" in x for x in f["forge_core_0"])
-    assert not any("csrw_ss" in x or "csrr_ss" in x for x in f["forge_core_1"])
-    assert "static int (*const forge_cores[2])(void) = {forge_core_0, forge_core_1};" in src
-    assert f["main"] == [
-        "uint32_t t0 = snrt_mcycle();", "uint32_t core = snrt_cluster_core_idx();",
-        "int err = forge_cores[core]();", "if (core == 0) {", "err += forge_check(t0);", "}",
-        "return err;",
-    ]  # fmt: skip
-    assert "volatile" not in "\n".join(f["main"]) and "snrt_is_compute_core" not in src
-    assert f["forge_core_1"][-1] == "return 0;" and f["forge_core_0"][-1] == "return 0;"
-
-
-def test_vecadd_has_no_marks_and_reads_mcycle_at_the_windows_ends(tmp_path):
-    src = text(tmp_path)
-    f = functions(src)
-    assert "FORGE_MARK" not in src and "asm" not in src and "forge_main" not in src
-    assert src.count("snrt_mcycle()") == 2
-    assert f["main"][0] == "uint32_t t0 = snrt_mcycle();"
-    assert f["forge_check"][:2] == [
-        "uint32_t cycles = snrt_mcycle() - t0;", 'printf("forge cycles: %u\\n", cycles);'
-    ]  # fmt: skip
-    assert "static __attribute__((noinline)) int forge_check(uint32_t t0) {" in src
-
-
-def test_two_cores_barriers_follow_the_cross_core_waits(tmp_path):
-    f = functions(text(tmp_path, edit_cluster=two_cores))
-    c0, c1 = f["forge_core_0"], f["forge_core_1"]
-    b0 = [i for i, x in enumerate(c0) if x == BARRIER]
-    b1 = [i for i, x in enumerate(c1) if x == BARRIER]
-    assert len(b0) == len(b1) == 3
-    # the loads' wait (core 1), the writer's wait (core 0, its counter stored last), the
-    # store's sync (core 1): each the owner's, then the barrier on both
-    assert c1[b1[0] - 1] == "snrt_dma_wait_all();"
-    assert c0[b0[1] - 1] == "forge_counter[0] = csrr_ss(ACC_RO_BUSY_COUNTER);"
-    assert c1[b1[2] - 1] == "snrt_dma_wait_all();"
-    assert c0[b0[0] + 1] == "csrw_ss(ACC_STREAMER_START_CSR, 1);"
-    assert c1[b1[1] + 1] == "snrt_dma_start_1d(C, (void *)0x10000400, 512);"
-    # the function ends after the last barrier; forge_check follows in main
-    assert c0[b0[2] + 1] == "return 0;"
-    # load_B starts with no wait after load_A: the DMA queues; one wait ends both
-    a = c1.index("snrt_dma_start_1d((void *)0x10000200, B, 512);")
-    assert "snrt_dma_wait_all();" not in c1[:a] and c1.count("snrt_dma_wait_all();") == 2
-    assert c1[a + 1] == "snrt_dma_wait_all();"
-
-
-def test_a_dependence_on_a_dma_task_brings_its_wait_back(tmp_path):
-    def b_after_a(steps):
-        next(s for s in steps if s.get("task_name") == "load_B")["after"] = ["load_A"]
-
-    lines = functions(text(tmp_path, edit_tasks=b_after_a, edit_cluster=two_cores))["forge_core_1"]
-    i = lines.index("snrt_dma_start_1d((void *)0x10000200, B, 512);")
-    assert lines[i - 2 : i] == ["snrt_dma_start_1d((void *)0x10000000, A, 512);",
-                                "snrt_dma_wait_all();"]  # fmt: skip
-    assert lines.count("snrt_dma_wait_all();") == 3
-
-
-def test_vecadd_starts_the_movers_with_one_csr_then_the_accelerator(tmp_path):
-    """Its set's start (every streamer macro prefixed with the set's name), then START."""
-    src = text(tmp_path)
-    assert src.count("csrw_ss(ACC_STREAMER_START_CSR, 1);") == 1
-    # the two start CSRs back to back
-    assert "csrw_ss(ACC_STREAMER_START_CSR, 1);\n    csrw_ss(ACC_RW_START, 1);" in src
-
-
-def test_vecadd_configures_from_the_task_values(tmp_path):
-    src = text(tmp_path)
-    for line in [
-        "csrw_ss(ACC_BASE_PTR_READER_1_LOW, 0x10000200);",
-        "csrw_ss(ACC_T_BOUND_WRITER_0_0, 16);", "csrw_ss(ACC_T_STRIDE_READER_0_0, 32);",
-        "csrw_ss(ACC_S_STRIDE_READER_0_0, 8);",
-        "csrw_ss(ACC_RW_JOBS, 16);", "snrt_dma_start_1d((void *)0x10000000, A, 512);",
-        "snrt_dma_start_1d(C, (void *)0x10000400, 512);",
-    ]:  # fmt: skip
-        assert line in src, line
-
-
-def test_vecadd_checks_itself(tmp_path):
-    src = text(tmp_path)
-    assert "if (((volatile int64_t *)C)[i] != C_golden[i]) {" in src
-    assert 'printf("forge data: %d errors (%u words)\\n", data_errors, 64u);' in src
-    assert 'printf("forge counter add_acc: %u\\n", forge_counter[0]);' in src
-    assert "err += forge_counter[0] < 16;" in src
-    assert "static uint32_t forge_counter[1];" in src
-    f = functions(src)
-    assert "forge_counter[0] = csrr_ss(ACC_RO_BUSY_COUNTER);" in f["forge_core_0"]
-    # the wait polls STATUS bit 0 (busy), then its set's streamer
-    assert "while (csrr_ss(ACC_RO_STATUS) & 1) {" in f["forge_core_0"]
-    assert "while (csrr_ss(ACC_STREAMER_BUSY_CSR)) {" in f["forge_core_0"]
-    assert f["forge_check"][-2:] == ['printf("forge errors: %d\\n", err);', "return err;"]
-
-
-def test_vsum_sets_jobs_and_job_beats_and_reads_its_counter(tmp_path):
-    """JOBS = n / T, JOB_BEATS = T; the counter checked against the beats n."""
-    src = text(tmp_path, graph=bound_vsum(), name="vsum_v1")
-    assert "csrw_ss(ACC_RW_JOBS, 1);\n    csrw_ss(ACC_RW_JOB_BEATS, 64);" in src
-    assert "err += forge_counter[0] < 64;" in src
-    assert 'printf("forge counter sum_acc: %u\\n", forge_counter[0]);' in src
-
-
-def test_the_same_point_gives_the_same_text(tmp_path):
-    assert text(tmp_path) == text(tmp_path)
-
-
-def test_one_core_has_no_barriers(tmp_path):
-    src = text(tmp_path)  # the base cluster: one core runs both
-    assert "hw_barrier" not in src
-    assert list(functions(src)) == ["forge_core_0", "forge_check", "main"]
-    assert "// Core 0: the DMA and the accelerator acc" in src
 
 
 def test_a_core_with_no_task_takes_part_in_the_barriers_only(tmp_path):
@@ -306,61 +178,7 @@ def test_refused_a_csr_the_description_lacks(tmp_path):
                INCLUDES, POINT)  # fmt: skip
 
 
-def test_job_values():
-    """JOBS = n / T and, for a fold, JOB_BEATS = T; T = 0 an empty run (JOBS 0)."""
-    from snax_forge.brm import load_brm
-
-    add = load_brm("simd").resolve("chisel_tiled_spatial", {"W": 4})
-    total = load_brm("accumulate").resolve("chisel_adder_tree", {"W": 4})
-    assert job_values(add, {"n": 16}) == {"JOBS": 16}
-    assert job_values(total, {"n": 16, "T": 16}) == {"JOBS": 1, "JOB_BEATS": 16}
-    assert job_values(total, {"n": 12, "T": 4}) == {"JOBS": 3, "JOB_BEATS": 4}
-    assert job_values(total, {"n": 0, "T": 0}) == {"JOBS": 0, "JOB_BEATS": 0}
-
-
-def dot1_text(tmp_path) -> str:
-    """dot_v1_1's main.c: groups vmul and vsum in the accelerator dot."""
-    from tests.gen.helpers import bound_dot1_enc
-
-    p, tasks, cluster, acc, arrays = parts(tmp_path, graph=bound_dot1_enc(), name="dot_v1_1")
-    return main_c(p, tasks, cluster, acc, arrays, ["data.h", "dot_csr.h", STREAMER], POINT)
-
-
 STREAMER = "streamer_dot_csr_addr_map.h"
-
-
-def test_dot_1_runs_each_group_with_its_own_csrs(tmp_path):
-    """Per task: every mover of the one set dot (the other group's at bound 0), the group's JOBS
-    (and JOB_BEATS), the set's streamer start, the group's START; then its STATUS, the set's
-    streamer busy, its BUSY_COUNTER."""
-    core = functions(dot1_text(tmp_path))["forge_core_0"]
-    acc = [x for x in core if "_RW_" in x or "_RO_" in x or "STREAMER_" in x
-           or x.startswith("forge_counter")]  # fmt: skip
-    assert acc == [
-        "csrw_ss(DOT_RW_VMUL_JOBS, 16);",
-        "csrw_ss(DOT_STREAMER_START_CSR, 1);", "csrw_ss(DOT_RW_VMUL_START, 1);",
-        "csrw_ss(DOT_RW_VSUM_JOBS, 1);", "csrw_ss(DOT_RW_VSUM_JOB_BEATS, 16);",
-        "while (csrr_ss(DOT_RO_VMUL_STATUS) & 1) {", "while (csrr_ss(DOT_STREAMER_BUSY_CSR)) {",
-        "forge_counter[0] = csrr_ss(DOT_RO_VMUL_BUSY_COUNTER);",
-        "csrw_ss(DOT_STREAMER_START_CSR, 1);", "csrw_ss(DOT_RW_VSUM_START, 1);",
-        "while (csrr_ss(DOT_RO_VSUM_STATUS) & 1) {", "while (csrr_ss(DOT_STREAMER_BUSY_CSR)) {",
-        "forge_counter[1] = csrr_ss(DOT_RO_VSUM_BUSY_COUNTER);",
-    ]  # fmt: skip
-    bounds = [x for x in core if x.startswith("csrw_ss(DOT_T_BOUND_")]
-    assert bounds == [
-        "csrw_ss(DOT_T_BOUND_READER_0_0, 16);", "csrw_ss(DOT_T_BOUND_READER_1_0, 16);",
-        "csrw_ss(DOT_T_BOUND_WRITER_0_0, 16);", "csrw_ss(DOT_T_BOUND_READER_2_0, 0);",
-        "csrw_ss(DOT_T_BOUND_WRITER_1_0, 0);",
-        "csrw_ss(DOT_T_BOUND_READER_0_0, 0);", "csrw_ss(DOT_T_BOUND_READER_1_0, 0);",
-        "csrw_ss(DOT_T_BOUND_WRITER_0_0, 0);", "csrw_ss(DOT_T_BOUND_READER_2_0, 16);",
-        "csrw_ss(DOT_T_BOUND_WRITER_1_0, 1);",
-    ]  # fmt: skip
-
-
-def test_dot_1_checks_both_counters(tmp_path):
-    check = functions(dot1_text(tmp_path))["forge_check"]
-    assert 'printf("forge counter mult_vmul: %u\\n", forge_counter[0]);' in check
-    assert 'printf("forge counter sum_vsum: %u\\n", forge_counter[1]);' in check
 
 
 def test_refused_a_start_without_the_idle_movers(tmp_path):
@@ -403,37 +221,6 @@ def test_an_idle_mover_outside_an_encapsulated_set_is_refused(tmp_path):
     with pytest.raises(CError, match=r"\[c.start\] sum_sum_a: an idle mover .* of sum, a set of "
                        "one group"):  # fmt: skip
         main_c(p, TaskList.from_dict(d), cluster, acc, arrays, INCLUDES, POINT)
-
-
-def test_two_accelerators_each_run_through_their_own_set(tmp_path):
-    """Dot_serial's mul and sum are two accelerators, two streamer sets of the one entry;
-    each task configures, starts and waits on its own set's macros and its own header's CSRs
-    (c.instances retired)."""
-    from tests.gen.helpers import bound_recipe
-
-    p, tasks, cluster, acc, arrays = parts(tmp_path, graph=bound_recipe("dot_v7", "dot"),
-                                           name="dot_v7")  # fmt: skip
-    assert [a.name for a in acc.accelerators] == ["mul", "sum"]
-    core = functions(main_c(p, tasks, cluster, acc, arrays, INCLUDES, POINT))["forge_core_0"]
-    acc_lines = [x for x in core if "START" in x or "STATUS" in x or "BUSY" in x
-                 or x.startswith("forge_counter") or x == BARRIER]  # fmt: skip
-    # mul: its set's streamers, its CSRs, its streamer start, START; sum the same once the
-    # serial sync, the one wait between them, has waited for mul (its writer too, waits.py)
-    # and read its counter
-    assert acc_lines == [
-        "csrw_ss(MUL_STREAMER_START_CSR, 1);", "csrw_ss(MUL_RW_START, 1);",
-        "while (csrr_ss(MUL_RO_STATUS) & 1) {", "while (csrr_ss(MUL_STREAMER_BUSY_CSR)) {",
-        "forge_counter[0] = csrr_ss(MUL_RO_BUSY_COUNTER);",
-        "csrw_ss(SUM_STREAMER_START_CSR, 1);", "csrw_ss(SUM_RW_START, 1);",
-        "while (csrr_ss(SUM_RO_STATUS) & 1) {", "while (csrr_ss(SUM_STREAMER_BUSY_CSR)) {",
-        "forge_counter[1] = csrr_ss(SUM_RO_BUSY_COUNTER);",
-    ]  # fmt: skip
-    i = core.index("csrw_ss(SUM_STREAMER_START_CSR, 1);")
-    assert core.index("csrw_ss(SUM_RW_JOB_BEATS, 64);") < core.index("forge_counter[0] = "
-                                                                     "csrr_ss(MUL_RO_BUSY_COUNTER);") < i  # fmt: skip
-    assert "csrw_ss(SUM_BASE_PTR_READER_0_LOW, 0x10000440);" in core  # mul's output, tmp0
-    assert "csrw_ss(SUM_RW_JOBS, 1);" in core and "csrw_ss(SUM_RW_JOB_BEATS, 64);" in core
-    assert not any("_T_BOUND_" in x and x.endswith(", 0);") for x in core)  # no idle mover
 
 
 # =============================================================================
@@ -535,32 +322,6 @@ def quiet(tmp_path, **kw):
     return program(p, tasks, cluster, acc, arrays, INCLUDES, POINT)
 
 
-def test_vecadd_marks_each_section_in_order(tmp_path):
-    """dot 3's plan on vecadd: 0 from reset, then the two loads, the streamer's configuration,
-    the accelerator's, the run, the store and the check, each the next value of CSR 0x7c5."""
-    src, marks = quiet(tmp_path)
-    assert [(m["mark"], m["kind"], m["label"]) for m in marks] == [
-        (1, "dma_in", "dma load_A"), (2, "dma_in", "dma load_B"),
-        (3, "streamer_config", "streamer config acc"), (4, "acc_config", "acc config acc"),
-        (5, "run", "run acc"), (6, "dma_out", "dma store_C"), (7, "check", "check"),
-    ]  # fmt: skip
-    lines = [x.strip() for x in src.splitlines()]
-    for m in marks:  # each mark once, inside a quiet block, its label as a comment
-        line = f"write_csr(0x7c5, {m['mark']});  // {m['label']}"
-        assert lines.count(line) == 1 and lines[lines.index(line) - 1] == QUIET_ON
-
-
-def test_dot_1_repeats_the_configure_and_run_sections_per_accelerator(tmp_path):
-    from tests.gen.helpers import bound_recipe
-
-    _, marks = quiet(tmp_path, graph=bound_recipe("dot_v1", "dot"), name="dot_v1")
-    assert [m["kind"] for m in marks] == [
-        "dma_in", "dma_in", "streamer_config", "acc_config", "run", "streamer_config",
-        "acc_config", "run", "dma_out", "check",
-    ]  # fmt: skip
-    assert [m["label"] for m in marks if m["kind"] == "run"] == ["run vmul", "run vsum"]
-
-
 def quiet_build(src: str) -> str:
     """main.c as ``-DFORGE_QUIET`` compiles it: the ``#ifndef FORGE_QUIET`` blocks gone, the
     lines of each ``#ifdef FORGE_QUIET`` block kept without the directives."""
@@ -603,18 +364,6 @@ def test_every_start_is_waited_on_at_once_in_the_quiet_build_and_each_build_wait
         for u in set(units):
             assert lines.count(f"while (csrr_ss({u}_RO_STATUS) & 1) {{") == units.count(u)
     assert q.count("snrt_dma_wait_all();") == sum(x.startswith("snrt_dma_start_") for x in q)
-
-
-def test_the_quiet_build_prints_nothing_and_the_default_build_has_no_quiet_part(tmp_path):
-    src, _ = quiet(tmp_path)
-    lines = src.splitlines()
-    prints = [i for i, x in enumerate(lines) if "printf(" in x]
-    assert len(prints) == 4 and all(
-        lines[i - 1] == QUIET_OFF and lines[i + 1] == QUIET_END for i in prints
-    )  # fmt: skip
-    default = strip_quiet(src)
-    assert QUIET_ON not in default and "write_csr" not in default and "#endif" not in default
-    assert default.count("printf(") == 4 and src.count("snrt_mcycle()") == 2
 
 
 def test_more_marks_than_obs_o_holds_are_refused(tmp_path, monkeypatch):

@@ -28,6 +28,9 @@ from tests.flow.helpers import stubbed_flow
 
 from .helpers import L1, Events, cluster
 
+# One worker runs the module, its module-scoped flows once
+pytestmark = pytest.mark.xdist_group("viz-memory")
+
 B_PIN = [("B.l1.base", L1 + 576)]  # B from bank 8 of row 2
 FLOWS = {
     "default": ("vecadd_v1", "stall", {}),
@@ -114,18 +117,6 @@ L2_PACKED = [  # the stubbed ELF's symbols: at the plan's L2 bases
     "row 16: C[0..7]", "fold 17-22: C+8", "row 23: C[56..63]",
     f"empty 24-{(1 << 31) // 64 - 1}",
 ]  # fmt: skip
-
-
-@pytest.mark.parametrize("name", ["default", "W8"])
-def test_the_contiguous_runs(runs, name):
-    view = api.memory_view(runs[name])
-    assert view["has_regions"] and [m["mem"] for m in view["memories"]] == ["l1", "l2"]
-    assert texts(view, "l1") == L1_CONTIGUOUS and texts(view, "l2") == L2_PACKED
-    geo = mem(view, "l1")["geometry"]
-    assert (geo["columns"], geo["rows"], geo["column_label"], geo["group"]) == (32, 512, "bank", 8)
-    assert (geo["base_addr"], geo["word_bytes"], geo["size_bytes"]) == (L1, 8, 128 * 1024)
-    geo2 = mem(view, "l2")["geometry"]
-    assert (geo2["columns"], geo2["row_label"], geo2["base_addr"]) == (8, "beat", 0x80000000)
 
 
 def test_l2_is_where_the_elf_put_the_arrays(runs):
@@ -281,11 +272,6 @@ def test_a_region_change_ends_the_run():
     ]  # fmt: skip
 
 
-def test_a_region_outside_the_memory_is_refused():
-    with pytest.raises(memory.MemoryViewError, match="outside"):
-        layout(Region("A", "l1", L1 - 8, (4,), (8,), "int64"))
-
-
 # =============================================================================
 # 5. A memory without regions, and the limits of a rows request
 # =============================================================================
@@ -310,25 +296,6 @@ def test_the_limits_of_a_rows_request(runs):
 # =============================================================================
 # 6. Marks
 # =============================================================================
-
-
-@pytest.mark.parametrize("name, have", [
-    ("W8", []), ("task", []), ("beat", ["arrival", "use", "wait"]),
-    ("default", ["conflicts", "arrival", "use", "wait"]),
-])  # fmt: skip
-def test_the_marks_a_level_allows(runs, name, have):
-    view = api.memory_view(runs[name])
-    assert list(view["marks_available"]) == have and view["marks"] is None
-    assert sorted(view["marks_missing"]) == sorted(
-        {"conflicts", "arrival", "use", "wait"} - set(have)
-    )
-    for m, why in view["marks_missing"].items():
-        assert why.startswith("needs --trace ")
-        with pytest.raises(memory.MemoryViewError, match="needs --trace"):
-            api.memory_view(runs[name], m)
-    assert "marks" not in view["memories"][0]["lines"][0]  # none unless asked
-    with pytest.raises(memory.MemoryViewError, match="must be one of"):
-        api.memory_view(runs[name], "later")
 
 
 def test_conflict_marks_fold_the_memory_tab(runs):

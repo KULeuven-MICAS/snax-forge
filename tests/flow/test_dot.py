@@ -28,6 +28,9 @@ from tests.helpers import dot1_split, recipe_path
 
 from .helpers import needs_gvsoc, sound
 
+# One worker runs the module, its module-scoped flows once
+pytestmark = pytest.mark.xdist_group("flow-dot")
+
 DOT1 = recipe_path("dot_v1")
 DOT1_ENC = recipe_path("dot_v1_1")
 

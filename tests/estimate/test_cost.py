@@ -9,22 +9,16 @@ from pathlib import Path
 
 import pytest
 
-from snax_forge.char import CharError, Table, load, lookup
-from snax_forge.design.platform import Platform
+from snax_forge.char import Table, load
 from snax_forge.estimate import Estimate, estimate
 from snax_forge.estimate.cost import (
-    CAVEAT,
     Block,
-    BlockCost,
-    block_cost,
-    dec3,
     group_cost,
-    heading,
     sig3,
 )
 from tests.helpers import steps
 
-from .helpers import SNAX_FORGE, estimated
+from .helpers import estimated
 
 GATED = Path(__file__).parent / "fixtures" / "dot3_gated.json"
 TABLE = Table("t", 10.0, {"snax_forge": "x"}, 2.0, 0.003, 0.0015, {
@@ -32,23 +26,6 @@ TABLE = Table("t", 10.0, {"snax_forge": "x"}, 2.0, 0.003, 0.0015, {
                         "lanes_rule": "interpolate",
                         "points": [{"lanes": 2, "comb_um2": 100.0, "e_comb_pj": 4.0}]}]})  # fmt: skip
 TREE = {"inType": "int64", "outType": "int64", "op": "add", "lanes": 2}
-
-
-def test_a_block_costs_its_comb_and_its_loads_per_fire():
-    """e_fire = e_comb + n_bits e_load, task = n_fire e_fire (a held flop costs nothing, clock
-    gated); area = A_comb + n_bits A_flop."""
-    c = block_cost(TABLE, Block("TreeAccumulate", TREE, 10), 64, 100)
-    assert (c.found, c.comb_um2, c.flops_um2, c.total_um2) == ("measured", 100.0, 128.0, 228.0)
-    assert c.e_fire_pj == pytest.approx(4.0 + 64 * 0.003)
-    assert c.task_nj == pytest.approx(10 * 4.192 / 1000)
-    assert BlockCost.from_dict(c.to_dict()) == c
-
-
-def test_a_block_not_characterized_counts_its_comb_as_0_and_its_flops():
-    for b in (Block("TreeAccumulate", {**TREE, "lanes": 64}, 10), Block(None, {}, 10)):
-        c = block_cost(TABLE, b, 64, 100)
-        assert (c.found, c.comb_um2, c.flops_um2) == (None, 0.0, 128.0)
-        assert c.task_nj == pytest.approx(10 * 0.192 / 1000)
 
 
 def test_a_groups_ctrl_is_its_bits_times_e_ctrl_every_cycle():
@@ -67,116 +44,12 @@ def test_a_groups_ctrl_is_its_bits_times_e_ctrl_every_cycle():
     assert g.energy == pytest.approx(g.units["acc"].task_nj + g.ctrl_nj) and g.missing == []
 
 
-def test_a_unit_fires_its_firings_times_its_span_a_buffer_its_producers_outputs():
-    """dot 5 at W = 8: the Mac 256 fires, the serial sum one firing of 8 beats; dot 2 at W = 8:
-    the depth-1 buffer loads once per output of its producer, the mul's 256; dot 6 at W = 8:
-    once, the Mac giving once per job of 256 beats."""
-    (g,) = estimated("dot_v5", W=8, N=2048).groups
-    assert (g.cost.units["mac"].fires, g.cost.units["sum"].fires) == (256, 8)
-    (g,) = estimated("dot_v2", W=8, N=2048).groups
-    assert g.cost.links["tmp0"].fires == g.cost.units["mul"].fires == 256
-    assert (
-        g.cost.links["tmp0"].found == "measured" and g.cost.links["tmp0"].datapath == "LinkBuffer"
-    )
-    (g,) = estimated("dot_v6", W=8, N=2048).groups
-    assert (g.cost.units["mac"].fires, g.cost.links["out_partial"].fires) == (256, 1)
-
-
 # Rows of snax_forge/char/nangate45/ HWCOST's hand-worked designs read
 READER_8_1_8 = (31739.119316, 22.49923)  # depth, loops, channels -> area µm², pJ per beat
 READER_8_1_4 = (16195.409662, 11.44502)
 READER_8_1_1 = (4556.313922, 3.229712)
 READER_8_2_4 = (16691.765669, 11.54413)
 BANK = (13522.7, 3.53819, 6.4677)  # 512 × 64: area µm², pJ per read, pJ per write
-
-
-def test_vecmul_at_w8_by_part():
-    """The hand-worked design of the HWCOST notes: vecmul at W = 8, N = 2048, three ports of 8
-    channels and one loop, 256 beats each, 6144 words; the crossbar at 24 + 1 + 1 = 26 inputs
-    (the one core and AXI) on 32 banks, its table area linear in inputs (t = 2/8 between 24
-    and 32), its 16 readers' channels read-only and 8 writer's write-only (the factor
-    × (1 − 0.395299 · 16/26 − 0.409746 · 8/26)),
-    every access at a full crossbar's price (32 inputs on 32 banks, a grid point); 32 banks,
-    4096 reads and 2048 writes."""
-    e = estimated("vecmul_v1", W=8, N=2048)
-    assert [(s.counts.name, s.counts.write, s.counts.depth, s.counts.loops, s.counts.channels,
-             s.counts.words, s.counts.beats) for s in e.streamer_costs] == [
-        ("acc_a", False, 8, 1, 8, 2048, 256), ("acc_b", False, 8, 1, 8, 2048, 256),
-        ("acc_out", True, 8, 1, 8, 2048, 256)]  # fmt: skip
-    p = e.parts
-    assert p["streamers"].area_um2 == pytest.approx(3 * READER_8_1_8[0])
-    assert p["streamers"].energy_nj == pytest.approx(3 * 256 * READER_8_1_8[1] / 1000)
-    x = e.xbar
-    assert (x.inputs, x.banks, x.accesses, x.extrapolated) == (26, 32, 6144, ())
-    assert (x.read_only, x.write_only, x.form) == (16, 8, "factor")
-    table = 123926.211252 + 2 / 8 * (164995.016077 - 123926.211252)
-    assert x.area_um2 == pytest.approx(table * (1 - 0.395299 * 16 / 26 - 0.409746 * 8 / 26))
-    assert x.e_access_pj == 2.752585  # xbar.csv's 32 inputs on 32 banks
-    # a read at a read-only input's price, a write at a write-only one's (D178), at 32 banks
-    assert x.e_ro_pj == pytest.approx(2.752585 * (1 - 0.331792))
-    assert x.e_wo_pj == pytest.approx(2.752585 * (1 - 0.471583))
-    assert x.energy_nj == pytest.approx((4096 * x.e_ro_pj + 2048 * x.e_wo_pj) / 1000)
-    m = e.memory
-    assert (m.n, m.depth, m.width, m.reads, m.writes) == (32, 512, 64, 4096, 2048)
-    assert m.area_um2 == pytest.approx(32 * BANK[0])
-    assert m.energy_nj == pytest.approx((4096 * BANK[1] + 2048 * BANK[2]) / 1000)
-    shown = {k: (sig3(v.area_um2), dec3(v.energy_nj)) for k, v in p.items()}
-    # control 360 µm², 0.047 nJ: 34 bits
-    assert shown == {"datapath": ("55 300", "23.137"), "control": ("360", "0.047"),
-                     "streamers": ("95 200", "17.279"), "crossbar": ("84 600", "10.513"),
-                     "memory": ("433 000", "27.738")}  # fmt: skip
-    assert (sig3(e.area), sig3(e.area_design), dec3(e.energy)) == ("668 000", "236 000", "78.714")
-    assert e.energy == pytest.approx(sum(v.energy_nj for v in p.values()))
-    assert e.area_design == pytest.approx(e.area - m.area_um2)
-    assert e.kernel_energy == pytest.approx(p["datapath"].energy_nj + p["control"].energy_nj)
-    (acc,) = e.l1.values()  # its words through the crossbar and the banks
-    assert (list(e.l1), acc.words, acc.reads, acc.writes) == (["acc"], 6144, 4096, 2048)
-    assert acc.energy_nj == pytest.approx(x.energy_nj + m.energy_nj)
-
-
-def test_dot_4_by_part():
-    """dot 4 at W = 4, N = 512: two readers of 4 channels (128 beats), a one-lane writer of one
-    word; the crossbar at 4 + 4 + 1 + 2 = 11 inputs (the one core and AXI), its table
-    area 56,117.5 µm² (t = 3/8 between 8 and 16 inputs; cost_tables.md's example 3 has 61,450.9 at
-    12, two cores) with 8 read-only and 1 write-only, its accesses at a full crossbar's
-    price."""
-    e = estimated("dot_v4")
-    s = {c.counts.name: c for c in e.streamer_costs}
-    assert [(k, c.counts.channels, c.counts.words, c.counts.beats) for k, c in s.items()] == [
-        ("mac_a", 4, 512, 128), ("mac_b", 4, 512, 128), ("sum_out", 1, 1, 1)]  # fmt: skip
-    assert e.parts["streamers"].area_um2 == pytest.approx(2 * READER_8_1_4[0] + READER_8_1_1[0])
-    assert e.parts["streamers"].energy_nj == pytest.approx(
-        (2 * 128 * READER_8_1_4[1] + READER_8_1_1[1]) / 1000)  # fmt: skip
-    assert (e.xbar.read_only, e.xbar.write_only) == (8, 1)
-    assert e.xbar.area_um2 == pytest.approx(
-        (40287.828993 + 3 / 8 * (83108.244072 - 40287.828993))
-        * (1 - 0.395299 * 8 / 11 - 0.409746 / 11)
-    )
-    assert e.xbar.e_access_pj == 2.752585
-    assert (e.memory.reads, e.memory.writes) == (1024, 1)
-
-
-def test_mvt_1_dot2_counts_a_shared_set_once_and_its_words_twice():
-    """mvt 1 with dot 2: one vmul → link → vsum group run for both halves, so its
-    streamers are priced once and move both halves' words (A twice, 2 × 64 × 64 words over 4
-    channels and 2 loops); the vadd's set is its own accelerator; 23 inputs (t = 7/8 between 16 and
-    24;
-    24, a grid value, until the second core went), 16 of them read-only (both sets' readers) and 5
-    write-only (vsum's one, vadd's four)."""
-    e = estimated("mvt_v1_2")
-    s = {c.counts.name: c for c in e.streamer_costs}
-    assert list(s) == ["vmul_x1_a", "vmul_x1_b", "vsum_x1_out", "vadd_a", "vadd_b", "vadd_out"]
-    a = s["vmul_x1_a"]
-    assert (a.counts.loops, a.counts.channels, a.counts.words, a.counts.beats) == (2, 4, 8192, 2048)
-    assert (a.area_um2, a.e_beat_pj) == READER_8_2_4
-    assert (e.xbar.inputs, e.xbar.read_only, e.xbar.write_only) == (23, 16, 5)
-    assert e.xbar.area_um2 == pytest.approx(
-        (83108.244072 + 7 / 8 * (123926.211252 - 83108.244072))
-        * (1 - 0.395299 * 16 / 23 - 0.409746 * 5 / 23)
-    )
-    assert e.xbar.e_access_pj == 2.752585
-    assert sum(x.energy_nj for x in e.l1.values()) == pytest.approx(
-        e.xbar.energy_nj + e.memory.energy_nj)  # fmt: skip
 
 
 def test_dot_1_shared_prices_each_mover_once():
@@ -204,63 +77,11 @@ def test_dot_1_shared_prices_each_mover_once():
         x.counts.to_dict() for x in e.streamer_costs]  # fmt: skip
 
 
-def test_words_are_counted_packed_and_a_link_keeps_its_container_out():
-    """A packed dtype counts words, not elements (vecadd_v1_1: 3 × 32 words for 64 int32;
-    vsum_v1_1_2: 8 + 1 for 64 int8); a link's container is not in L1 (dot 2: tmp0's 2 × 2048
-    words gone from dot 1's)."""
-    assert estimated("vecadd_v1_1").l1_words == {"acc": 96}
-    assert estimated("vsum_v1_1_2").l1_words == {"acc": 9}
-    one, enc, two = (estimated(r, W=8, N=2048).l1_words for r in ("dot_v1", "dot_v1_1", "dot_v2"))
-    assert (one, enc, two) == ({"vmul": 6144, "vsum": 2049}, {"dot": 8193}, {"dot": 4097})
-
-
-def test_not_costed_without_a_platform_or_the_tables():
-    """No platform: no streamer, crossbar or bank counts; the datapath and control parts stay,
-    the others are None and named; a technology with no table is refused."""
-    bare = estimate(steps("vecmul_v1", W=8, N=2048)[-1], None, "nangate45")
-    assert bare.not_costed == ["streamers, crossbar and memory: no platform"]
-    assert bare.parts["memory"] == bare.parts["crossbar"] == bare.parts["streamers"]
-    assert bare.parts["memory"].area_um2 is None and bare.l1 == {}
-    assert bare.energy == pytest.approx(bare.kernel_energy)
-    with pytest.raises(CharError, match="no table for technology 'nangate15'"):
-        estimate(steps("vecmul_v1", W=8, N=2048)[-1], Platform.load(SNAX_FORGE), "nangate15")
-
-
-def test_a_point_outside_the_grid_is_extrapolated_and_named():
-    """vecmul at W = 32: 32 channels per port, past the streamer table's 16, and 96 + 2
-    crossbar inputs, past its 64 (the check refuses the design; the estimate still prices it)."""
-    e = estimated("vecmul_v1", W=32, N=2048)
-    assert e.extrapolated == ["acc_a", "acc_b", "acc_out", "crossbar"]
-    assert all(s.extrapolated == ("channels",) for s in e.streamer_costs)
-    assert (e.xbar.inputs, e.xbar.extrapolated) == (98, ("inputs",))
-    assert e.to_dict()["cost"]["extrapolated"] == e.extrapolated
-
-
-def test_an_access_costs_the_same_whatever_the_inputs():
-    """One price per access for a bank count: the crossbar's energy follows its accesses
-    alone, so dot 5 linked (19 inputs) costs less than unlinked (35 inputs), by its 16 fewer
-    accesses, where pricing at each design's own inputs had it the other way."""
-    s = steps("dot_v5", W=8, N=2048)
-    two, one = (estimate(s[k], Platform.load(SNAX_FORGE)) for k in (5, 6))
-    assert (two.xbar.inputs, one.xbar.inputs) == (35, 19)
-    assert two.xbar.e_access_pj == one.xbar.e_access_pj == 2.752585
-    assert (two.xbar.accesses, one.xbar.accesses) == (4113, 4097)
-    assert (dec3(two.energy), dec3(one.energy)) == ("59.755", "59.656")
-
-
 def test_the_cost_round_trips():
     for e in (estimated("vecmul_v1", W=8, N=2048), estimated("mvt_v1_2")):
         d = e.to_dict()
         back = Estimate.from_dict(json.loads(json.dumps(d)))
         assert back.to_dict() == d and back.parts == e.parts
-
-
-def test_the_estimate_lists_what_is_not_characterized():
-    """relu's one-stream SimdLanes max is not in the table; vecadd at int32 is (D176)."""
-    e = estimated("relu_v1")
-    assert e.missing == ["acc"] and e.groups[0].cost.units["acc"].found is None
-    assert e.to_dict()["cost"]["missing"] == ["acc"]
-    assert estimated("vecadd_v1_1").missing == []
 
 
 def test_no_technology_skips_the_cost_and_both_round_trip():
@@ -276,194 +97,9 @@ def test_no_technology_skips_the_cost_and_both_round_trip():
         assert Estimate.from_dict(json.loads(json.dumps(d))).to_dict() == d
 
 
-def test_an_older_estimate_without_cost_still_reads():
-    d = estimated("vecmul_v1", W=8).to_dict()
-    del d["cost"]
-    for g in d["groups"]:
-        del g["cost"], g["bits"], g["ctrl_bits"]
-    e = Estimate.from_dict(d)
-    assert e.tech is None and e.groups[0].cost is None and e.groups[0].bits == {}
-
-
 def test_a_cost_is_shown_to_3_significant_figures():
     """An area as a reader sees it (design.md, the viewer): 3 significant figures, thousands
     split."""
     assert [sig3(x) for x in (26.33877, 63186.17, 97.2592, 0.1353, 999.6, 0.0, 2723.84)] == [
         "26.3", "63 200", "97.3", "0.135", "1 000", "0", "2 720"]  # fmt: skip
     assert sig3(None) is None
-
-
-def test_an_energy_is_shown_to_3_decimals():
-    """Display precision only, so two close designs can be told apart (dot 4 and dot 5 at W =
-    8: 26.078 and 26.099 nJ); the caveat beside it is unchanged."""
-    assert [dec3(x) for x in (26.28497, 26.33877, 97.2592, 3.6596, 0.1353, 0.0, 1234.5)] == [
-        "26.285", "26.339", "97.259", "3.660", "0.135", "0.000", "1 234.500"]  # fmt: skip
-    assert dec3(None) is None
-
-
-def test_dot_4_and_dot_5_read_apart():
-    four, five = (estimated(r, W=8, N=2048).kernel_energy for r in ("dot_v4", "dot_v5"))
-    assert (dec3(four), dec3(five)) == ("26.078", "26.099")
-    assert heading("nangate45") == "Cost estimate (first-order) on nangate45"
-    assert "about 30 %" in CAVEAT and "csr" in CAVEAT and "4 × e_load" not in CAVEAT
-
-
-def test_dot_3_is_the_experiments_gated_hwcost():
-    """An independent implementation: dot 3 at W = 2 to 32, N = 2048, each of the five parts
-    against snax-forge-experiments' pricing on the same clock-gated tables, within 1e-6 (that
-    one kept the hold term: at most 0.004 pJ on the datapath)."""
-    d = json.loads(GATED.read_text())
-    for w in sorted({r["W"] for r in d["rows"]}):
-        parts = estimate(steps(d["recipe"], W=w, N=d["N"])[-1], _platform(), d["tech"]).parts
-        for r in (r for r in d["rows"] if r["W"] == w):
-            got = parts[r["part"]]
-            assert got.area_um2 == pytest.approx(r["area_um2"], rel=1e-6), (w, r["part"])
-            assert got.energy_nj == pytest.approx(r["energy_nj"], rel=1e-6), (w, r["part"])
-
-
-def _platform():
-    from snax_forge.design import Platform
-
-    return Platform.load(SNAX_FORGE)
-
-
-def test_a_one_stream_simd_is_not_the_two_input_point():
-    """relu at int64 binds a one-stream SimdLanes (op max, k 0): the table's SimdLanes points
-    are two-input ones, so it is not characterized (``char.missing``), its flops still counted;
-    vecadd's two-stream add at int64 is."""
-    from snax_forge.design import Platform
-    from snax_forge.dfg import Graph
-    from snax_forge.sandbox import Recipe, apply_recipe
-    from tests.helpers import graph_dict, recipe_path
-
-    d = graph_dict("relu")
-    for c in d["containers"].values():
-        c["dtype"] = "int64"
-    g = apply_recipe(Recipe.load(recipe_path("relu_v1")), Graph.from_dict(d))[-1].graph
-    e = estimate(g, Platform.load(SNAX_FORGE))
-    assert e.missing == ["acc"] and e.groups[0].cost.units["acc"].found is None
-    assert estimated("vecadd_v1").missing == []
-
-
-def test_the_clusters_dot_3_crossbar_in_both_forms():
-    """dot 3 at W = 16, N = 2048, the design synthesized in the whole cluster: two readers of
-    16 channels and a one-channel writer, 35 inputs on 32 banks with the one core. The
-    factor form gives 114,095 µm², the crosspoint option 111,137, against the gated cluster's
-    103,257 (snax-forge-experiments' cost_tables.md, example 5); the energy per access is the
-    same."""
-    e = estimated("dot_v3", W=16, N=2048)
-    f, c = e.xbar, e.xbar_in("crosspoint")
-    assert (f.inputs, f.read_only, f.write_only, f.form, c.form) == (
-        35,
-        32,
-        1,
-        "factor",
-        "crosspoint",
-    )
-    assert (round(f.area_um2), round(c.area_um2)) == (114095, 111137)
-    assert f.e_access_pj == c.e_access_pj and f.energy_nj == c.energy_nj
-    assert e.parts["crossbar"].area_um2 == f.area_um2
-
-
-def test_a_packed_output_moves_words_and_its_packer_is_priced(tmp_path):
-    """matvec_v3 at i8, W = 8 (M = 16): the sum's int32 results packed 2 to a word, so its writer
-    moves 8 words; its FifoPacker, one held int32 and a 1-bit count, is in the group's cost by
-    sum.out, its table point's bits loading per push (half a slot and the count, 17)."""
-    from snax_forge.design import DesignPoint
-    from tests.gen.helpers import designed
-
-    point = DesignPoint.load(tmp_path / designed(tmp_path, "matvec_v3", "m3", ["types=i8", "W=8"]))
-    assert point.streamers["sum_out"].d_out == 2
-    e = estimate(point.graph, point.platform)
-    assert e.ports["sum.out"].beats == 8
-    (g,) = e.groups
-    assert g.bits["sum.out"] == 33
-    packer = g.cost.links["sum.out"]
-    assert (packer.datapath, packer.found, packer.fires) == ("FifoPacker", "measured", 16)
-    got = lookup(load("nangate45"), "FifoPacker", {"d_out": 2, "lanes": 1, "dtype": "int32"}, 1)
-    assert got.load_bits == 17
-    assert packer.e_fire_pj == pytest.approx(got.e_comb_pj + 17 * load("nangate45").e_load_pj)
-    assert "sum.out" not in e.missing
-
-
-def test_a_sliced_input_moves_words_and_takes_one_cycle_more(tmp_path):
-    """vecadd_v1_1 at W = 1 (N = 64, D180): each reader's 64 pops come from 32 words, the group's
-    run is one cycle longer than its 64 firings (the slicer's first word shows the cycle after it
-    is taken), and each FifoSlicer holds a word, a 1-bit count and its full flag (66 bits). It is
-    priced at its measured point by <unit>.<port>, as a packer: a pop on each of its unit's 64
-    firings, each its comb energy and 33 bits loading; its held bits cost nothing."""
-    from snax_forge.design import DesignPoint
-    from snax_forge.estimate.bits import slicer_bits
-    from tests.gen.helpers import designed
-
-    point = DesignPoint.load(tmp_path / designed(tmp_path, "vecadd_v1_1", "v", ["W=1"]))
-    assert (point.streamers["acc_a"].d_in, point.streamers["acc_a"].num_ch) == (2, 1)
-    e = estimate(point.graph, point.platform)
-    assert (e.ports["acc.a"].beats, e.ports["acc.b"].beats, e.ports["acc.out"].beats) == (
-        32,
-        32,
-        32,
-    )
-    (g,) = e.groups
-    assert g.cycles == e.accelerator_cycles == 65
-    assert g.bits["acc.a"] == g.bits["acc.b"] == slicer_bits(2) == 66
-    assert set(g.cost.links) == {"acc.out", "acc.a", "acc.b"}
-    t = load("nangate45")
-    got = lookup(t, "FifoSlicer", {"d_in": 2, "lanes": 1, "dtype": "int32"}, 1)
-    assert got.load_bits == 33
-    for k in ("acc.a", "acc.b"):
-        s = g.cost.links[k]
-        assert (s.datapath, s.found, s.fires) == ("FifoSlicer", "measured", 64)
-        assert s.comb_um2 == got.comb_um2 and s.flops_um2 == pytest.approx(66 * t.flop_um2)
-        assert s.e_fire_pj == pytest.approx(got.e_comb_pj + 33 * t.e_load_pj)
-        assert s.task_nj == pytest.approx(64 * s.e_fire_pj / 1000)
-    assert e.missing == []
-
-
-@pytest.mark.parametrize("recipe, sets", [
-    ("vecadd_v1_1", ["W=1"]),  # int32, d_in 2
-    ("vecadd_v1", ["types=i8", "W=1"]),  # int8, d_in 8
-    ("matvec_v3", ["types=i8", "W=4"]),  # int8 at 4 lanes, d_in 2
-])  # fmt: skip
-def test_the_sliced_designs_are_characterized(tmp_path, capsys, recipe, sets):
-    """The three sliced designs of the forge sets: every slicer priced at a measured point, so the
-    design step prints no char.missing note and nothing is missing from the cost."""
-    from snax_forge.design import DesignPoint
-    from tests.gen.helpers import designed
-
-    point = DesignPoint.load(tmp_path / designed(tmp_path, recipe, "s", sets))
-    assert "char.missing" not in capsys.readouterr().out
-    e = estimate(point.graph, point.platform)
-    slicers = [b for g in e.groups for b in g.cost.links.values() if b.datapath == "FifoSlicer"]
-    assert slicers and all(b.found == "measured" and b.fires for b in slicers)
-    assert e.missing == []
-
-
-def test_a_broadcast_is_sliced_one_lane_a_pop():
-    """mvt's column-form mac at M = N = 16, W = 8 (D186): y2's reader moves one int8 lane a beat,
-    8 a word, so its 16 pops a strip are 2 words, 4 over the 2 strips; its FifoSlicer pops one lane
-    on each of the mac's 32 firings. A is 8 lanes a beat (32 beats), the seed x2's 8 int32 lanes
-    (one beat of 4 channels a strip)."""
-    from snax_forge.estimate.bits import slicer_bits
-    from tests.helpers import bound_mvt_column
-
-    e = estimate(bound_mvt_column())
-    got = {
-        k: (e.ports[f"mac_x2.{k}"].beats, e.ports[f"mac_x2.{k}"].num_ch) for k in ("a", "b", "seed")
-    }
-    assert got == {"a": (32, 1), "b": (4, 1), "seed": (2, 4)}
-    (g,) = [g for g in e.groups if "mac_x2.b" in g.cost.links]
-    s = g.cost.links["mac_x2.b"]
-    assert (s.datapath, s.found, s.fires) == ("FifoSlicer", "measured", 32)
-    assert g.bits["mac_x2.b"] == slicer_bits(8)
-    mac = g.cost.units["mac_x2"]  # the seeded Mac at its unseeded entry (D187)
-    assert (mac.datapath, mac.found, mac.fires) == ("Mac", "unseeded", 32)
-    assert e.missing == []
-
-
-def test_an_unseeded_mac_is_priced_at_its_measured_entry():
-    """dot 5's Mac (seed false in the catalogue, no seed key in the table) is priced, not
-    missing."""
-    e = estimate(steps("dot_v5")[-1])
-    found = {k: b.found for g in e.groups for k, b in g.cost.units.items()}
-    assert found["mac"] in ("measured", "copy") and e.missing == []

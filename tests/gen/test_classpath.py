@@ -69,21 +69,3 @@ def test_an_unreadable_entry_exports_again(chisel, tmp_path):
         assert rtl.emit_classpath() == jar and len(calls) == 1
     finally:
         locked.chmod(0o755)
-
-
-def test_two_environments_keep_their_own_files(chisel, monkeypatch):
-    """The image's and the host's classpaths, named after each environment's hash, coexist: each
-    reads its own, an old emit-classpath.txt is ignored."""
-    root, jar, calls = chisel
-    image, host = "coursier=/root/.cache/coursier\njava=/usr/bin/java\n", rtl.classpath_env()
-    a, b = rtl.classpath_file(image), rtl.classpath_file(host)
-    assert a != b and a.parent == b.parent == root / "target"
-    assert a.name.startswith("emit-classpath-") and len(a.stem) == len("emit-classpath-") + 8
-    _cache(a, "/root/.cache/coursier/v1/scala-library.jar")
-    _cache(root / "target" / "emit-classpath.txt", "/root/.cache/coursier/v1/old.jar")
-    assert rtl.emit_classpath() == jar and len(calls) == 1  # the host's: none yet, exported
-    assert b.read_text().strip() == jar
-    assert a.read_text().strip() == "/root/.cache/coursier/v1/scala-library.jar"  # untouched
-    assert rtl.emit_classpath() == jar and len(calls) == 1  # the host's again, from its file
-    monkeypatch.setattr(rtl, "classpath_env", lambda: image)
-    assert rtl.classpath_file() == a

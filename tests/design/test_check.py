@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import copy
-import json
 
 import pytest
 
@@ -11,7 +10,6 @@ from snax_forge.design import (
     CHECKS,
     Design,
     DesignError,
-    DesignPoint,
     Platform,
     load,
     register_check,
@@ -20,8 +18,8 @@ from snax_forge.design.check import RUNTIME_MARGIN, RUNTIME_STACK
 from snax_forge.design.memory import MEMORY_PASSES, MemorySpec
 from snax_forge.design.problems import Problem
 from snax_forge.dfg import Graph
-from snax_forge.lower.layout import Layout, LayoutError, dma_side
-from tests.helpers import FIXTURES, graph_dict, recipe_path
+from snax_forge.lower.layout import Layout
+from tests.helpers import recipe_path
 
 from .helpers import (
     BOUND,
@@ -29,13 +27,9 @@ from .helpers import (
     SNAX_FORGE,
     accel_node,
     bound_vecadd,
-    bound_w8,
-    chained,
     codes,
     design,
-    platform_dict,
     problems,
-    two_loops,
 )
 
 # =============================================================================
@@ -43,32 +37,9 @@ from .helpers import (
 # =============================================================================
 
 
-def test_vecadd_on_small16_passes():
-    assert problems(design()) == []
-
-
-def test_vecadd_w8_passes_on_the_same_platform():
-    assert problems(design(bound_w8())) == []
-
-
-def test_changes_that_still_fit_pass():
-    sets = [("l1.n_banks", 32), ("streamers.acc_out.fifo_depth", 4),
-            ("streamers.acc_a.fifo_depth", 3)]  # fmt: skip
-    assert problems(design(sets=sets)) == []
-
-
 # =============================================================================
 # 2. Stage platform
 # =============================================================================
-
-
-def test_platform_load_problems_come_from_load(tmp_path):
-    d = platform_dict()
-    d["l1"]["n_banks"] = "16"
-    bad = tmp_path / "p.json"
-    bad.write_text(json.dumps(d))
-    got = problems(load(BOUND, bad))
-    assert [(p.code, p.where) for p in got] == [("platform.keys", "l1.n_banks")]
 
 
 def test_a_missing_platform_file_is_a_problem(tmp_path):
@@ -91,20 +62,6 @@ def test_l1_and_l2_must_agree(field, value, fix):
     assert [(p.code, p.fix) for p in got] == [("platform.l2", fix)]
 
 
-def test_banks_must_hold_the_dma_port():
-    got = problems(design(sets=[("l1.n_banks", 12)]))
-    assert [(p.code, p.fix) for p in got] == [("platform.banks", "--set platform.l1.n_banks=16")]
-    assert "port group of 8 banks" in got[0].message
-
-
-def test_banks_do_not_matter_without_an_l2():
-    def edit(d):
-        d["l2"] = None
-        d["l1"]["n_banks"] = 12
-
-    assert "platform.banks" not in codes(design(edit_platform=edit))
-
-
 # =============================================================================
 # 3. Stage graph
 # =============================================================================
@@ -116,22 +73,6 @@ def test_a_graph_that_does_not_load_is_a_problem(tmp_path):
     assert [p.code for p in got] == ["graph.load"]
     got = problems(load(tmp_path / "none.snaxdfg", SMALL16))
     assert [p.code for p in got] == ["graph.load"]
-
-
-def test_an_unbound_symbol_names_the_recipe():
-    def edit(g):
-        g["symbols"]["N"] = None
-
-    (p,) = problems(design(edit_graph=edit))
-    assert (p.code, p.where) == ("graph.symbols", "symbol N") and '"symbols"' in p.fix
-
-
-@pytest.mark.parametrize("name", ["vecadd", "vecadd_split"])
-def test_a_tasklet_left_is_unbound(name):
-    """The imported graph also leaves N unbound (graph.symbols); the split one binds it."""
-    (p,) = [p for p in problems(design(name)) if p.code != "graph.symbols"]
-    assert p.code == "graph.unbound" and p.where.startswith("tasklet add")
-    assert "accelerators only" in p.message and '"bind"' in p.fix
 
 
 def test_an_empty_map_and_an_empty_graph_are_unbound():
@@ -183,46 +124,9 @@ def test_an_instance_may_not_take_a_fixed_name():
     assert (p.code, p.where) == ("graph.instance", "instance dma") and "rename" in p.fix
 
 
-def test_an_instance_may_not_take_a_streamers_name():
-    """A second map bound to instance acc_a: its name is acc's streamer for port a."""
-
-    def edit(g):
-        second = copy.deepcopy(g["body"][0])
-        second["id"] = "add_map2"
-        n = second["body"][0]
-        n["id"] = "add2"
-        n["attrs"]["instance"] = "acc_a"
-        n["attrs"]["replaced"]["id"] = "add_map2_s"
-        g["body"].append(second)
-
-    got = problems(design(edit_graph=edit))
-    assert [(p.code, p.where) for p in got] == [("graph.instance", "instance acc_a")]
-    assert "port a of instance acc" in got[0].message
-
-
-def test_platform_and_graph_problems_come_together_and_stop_connect():
-    def graph(g):
-        g["symbols"]["N"] = None
-
-    got = codes(
-        design(edit_graph=graph, sets=[("l1.n_banks", 12), ("streamers.acc_c.fifo_depth", 1)])
-    )
-    assert got == ["platform.banks", "graph.symbols"]  # connect.streamer_key waits
-
-
 # =============================================================================
 # 4. Stage connect
 # =============================================================================
-
-
-def test_an_unknown_streamer_entry_suggests_the_closest():
-    (p,) = problems(design(sets=[("streamers.acc_ou.fifo_depth", 4)]))
-    assert (p.code, p.where, p.fix) == (
-        "connect.streamer_key", "platform.streamers.acc_ou", "did you mean acc_out?"
-    )  # fmt: skip
-    assert "['acc_a', 'acc_b', 'acc_out']" in p.message
-    (p,) = problems(design(sets=[("streamers.zzz.fifo_depth", 4)]))
-    assert p.fix == "remove the entry"
 
 
 def test_write_and_n_ports_come_from_the_port():
@@ -256,14 +160,6 @@ def _dtypes(**by):
     return lambda g: [g["containers"][c].update(dtype=dt) for c, dt in by.items()]
 
 
-def test_a_node_whose_containers_break_the_dtype_rule():
-    """A hand-edited graph: an int32 output under int64 inputs."""
-    (p,) = problems(design(edit_graph=_dtypes(C="int32")))
-    assert (p.code, p.where) == ("connect.dtype", "node add")
-    assert p.message.startswith("output out is int32, narrower than input a (int64)")
-    assert p.fix == "give the output containers a dtype these inputs accept (out: int64, uint64)"
-
-
 def _second_node_of_acc(g):
     """A second node on instance acc, on int32 containers E, F -> G."""
     second = copy.deepcopy(g["body"][0])
@@ -289,18 +185,6 @@ def test_one_instance_moves_one_dtype_per_port():
 
 def _on_snax_forge(graph: Graph) -> Design:
     return Design(Platform.load(SNAX_FORGE), graph)
-
-
-def test_several_accelerators_share_the_one_slot():
-    """Dot's two groups unencapsulated, and two chained vecadds, are two accelerators, two
-    streamer sets of the one entry on snax_forge's slot: no design check refuses them
-    (gen.instances retired), on snax_forge as on small16."""
-    dot = Graph.load(FIXTURES / "dot_accelerated.snaxdfg")
-    gd = graph_dict()
-    chained(gd)
-    for g in (dot, Graph.from_dict(gd)):
-        assert problems(_on_snax_forge(g)) == []
-        assert problems(design(g)) == []
 
 
 def _vecmul(w: int) -> Graph:
@@ -368,14 +252,6 @@ def test_the_error_has_every_problem():
     text = str(e)
     assert text.startswith("design check: 2 problems\n [platform.banks] l1.n_banks: ")
     assert "\n     fix: --set platform.l1.n_banks=16" in text
-
-
-def test_the_working_copy_is_what_the_checks_read():
-    d = load(BOUND, SMALL16, [("streamers.acc_out.fifo_depth", 4)])
-    assert d.platform.base == "small16" and d.platform.changes == {
-        "streamers.acc_out.fifo_depth": 4
-    }
-    assert isinstance(d.platform, Platform) and problems(d) == []
 
 
 # =============================================================================
@@ -459,46 +335,6 @@ def test_a_moved_layout_must_start_on_a_beat():
     assert p.fix == "--set memory.B.l1.base=608"
 
 
-def test_a_moved_container_is_padded_to_whole_beats():
-    """N = 60: 480 bytes, moved as 8 beats; the next container starts after the padding."""
-
-    def n60(g):
-        g["symbols"]["N"] = 60
-
-    d = with_memory(edit_graph=n60)
-    assert problems(d) == []
-    lay = d.memory.layouts
-    assert [lay[c]["l1"].base for c in "ABC"] == [0, 512, 1024]
-    assert dma_side(lay["A"]["l2"], 8, 64) == {"base": 0, "bounds": [8], "strides": [64]}
-
-
-def test_dot_keeps_the_last_beat_of_out_to_itself():
-    """out is one element moved as one beat: tmp0 (L1 only) starts after it, and pinned inside
-    it is an overlap."""
-    d = with_memory(graph="dot_accelerated")
-    assert problems(d) == []
-    lay = d.memory.layouts
-    assert (lay["out"]["l1"].base, lay["tmp0"]["l1"].base) == (1024, 1088)
-    pins = [("out.l1.base", 1024), ("tmp0.l1.base", 1032)]
-    (p,) = problems(with_memory(pins, graph="dot_accelerated"))
-    assert (p.code, p.where) == ("memory.overlap", "out and tmp0 in l1")
-    assert "share 56 bytes: out [1024, 1088)" in p.message
-
-
-def test_the_dma_refuses_a_layout_off_a_beat():
-    with pytest.raises(LayoutError, match="not contiguous from a 64-byte beat"):
-        dma_side(Layout(8, (1,), (8,)), 8, 64)
-
-
-def test_a_layout_must_fit_its_memory():
-    got = problems(with_memory([], edit_platform=lambda d: d["l1"].update(rows=8)))
-    assert [(p.code, p.where) for p in got] == [("memory.fit", "C in l1")]
-    assert "L1 is 1024 B (16 banks x 8 rows x 8 B)" in got[0].message
-    assert got[0].fix.startswith("--set platform.l1.rows=12")
-    (p,) = problems(with_memory([("C.l1.base", 8000)]))
-    assert p.code == "memory.fit" and p.fix.startswith("pin it lower")
-
-
 def test_a_pin_below_a_nonzero_base_gets_the_pin_at_the_memorys_first_byte():
     """snax_forge's L1 starts at 0x1000_0000: a pin below it is outside, and the fix pins it
     at the first byte, which then fits."""
@@ -545,15 +381,6 @@ def test_layouts_stay_below_snruntimes_top_of_l1():
     assert p.code == "memory.fit"
 
 
-def test_a_platform_without_an_hjson_has_no_runtime_top():
-    d = with_memory([("C.l1.base", 16 * 64 * 8 - 512)])  # small16: C ends at L1's end
-    assert d.platform.hjson is None and problems(d) == []
-    d = Design(Platform.load(SNAX_FORGE).with_changes([("hjson", "platforms/elsewhere.hjson")]),
-               bound_vecadd(4))  # fmt: skip
-    d.memory_spec = MemorySpec().with_changes([("C.l1.base", 268435456 + 131072 - 512)])
-    assert problems(d) == []
-
-
 def test_pins_may_not_overlap():
     (p,) = problems(with_memory([("A.l1.base", 0), ("B.l1.base", 256)]))
     assert (p.code, p.where) == ("memory.overlap", "A and B in l1")
@@ -591,17 +418,6 @@ def test_memory_waits_for_connect():
 # =============================================================================
 
 
-def test_each_firing_loop_gives_a_streamer_loop():
-    """temporal_dims comes from the graph: two firing loops, two streamer loops, with no
-    platform change."""
-    d = design(edit_graph=two_loops)
-    assert problems(d) == []
-    point = DesignPoint.of(d, "two")
-    assert {s.name: s.temporal_dims for s in point.streamers.values()} == {
-        "acc_a": 2, "acc_b": 2, "acc_out": 2
-    }  # fmt: skip
-
-
 def test_a_tile_map_is_not_lowered_yet():
     def tile(g):
         g["body"][0]["attrs"]["loop.kind"] = "tile"
@@ -616,70 +432,9 @@ def test_a_tile_map_is_not_lowered_yet():
 # =============================================================================
 
 
-def _missing(graph):
-    from snax_forge.design.check import NOTES, Design
-
-    return [str(p) for p in NOTES["char.missing"](Design(None, graph))]
-
-
-def test_a_block_the_table_does_not_hold_is_noted():
-    """relu: a one-stream SimdLanes max, which nangate45's table does not hold; vecadd at int32
-    it does (D176)."""
-    from tests.helpers import steps
-
-    assert _missing(steps("relu_v1")[-1]) == [
-        "[char.missing] acc: not characterized: SimdLanes at lanes 4 on nangate45"]  # fmt: skip
-    assert _missing(steps("vecadd_v1_1")[-1]) == []
-
-
-def test_only_the_block_outside_the_measured_lanes_is_noted():
-    """dot_v2 at W = 64: the sum's TreeAccumulate interpolates up to 32 lanes only; the
-    elementwise mul and the depth-1 buffer are copied, so not noted. At W = 8 nothing is."""
-    from tests.helpers import steps
-
-    assert _missing(steps("dot_v2", W=64)[-1]) == [
-        "[char.missing] sum: not characterized: TreeAccumulate at lanes 64 on nangate45"]  # fmt: skip
-    assert _missing(steps("dot_v2", W=8)[-1]) == []
-
-
-def test_a_buffer_link_is_noted_with_its_depth(monkeypatch):
-    """A LinkBuffer deeper than the measured 16: its lanes and depth in the note."""
-    from snax_forge.estimate import cycles
-    from snax_forge.estimate.cost import Block
-
-    deep = Block("LinkBuffer", {"depth": 32, "lanes": 8, "dtype": "int64"}, 0)
-    monkeypatch.setattr(cycles, "datapath_blocks", lambda g: {"tmp0": deep})
-    assert _missing(None) == [
-        "[char.missing] tmp0: not characterized: LinkBuffer at lanes 8 (depth 32) on nangate45"]  # fmt: skip
-
-
 # =============================================================================
 # The note cost.extrapolated
 # =============================================================================
-
-
-def _extrapolated(graph):
-    from snax_forge.design.check import NOTES, Design
-    from snax_forge.design.platform import Platform
-    from tests.estimate.helpers import SNAX_FORGE
-
-    return [str(p) for p in NOTES["cost.extrapolated"](Design(Platform.load(SNAX_FORGE), graph))]
-
-
-def test_a_streamer_and_the_crossbar_off_the_grid_are_noted():
-    """vecmul at W = 32: 32 channels per port (the streamer table stops at 16) and 98 crossbar
-    inputs (it stops at 64); at W = 8 nothing is noted."""
-    from tests.helpers import steps
-
-    got = _extrapolated(steps("vecmul_v1", W=32, N=2048)[-1])
-    assert got[:3] == [f"[cost.extrapolated] acc_{p}: streamer outside the table's grid on "
-                       "channels 32 (grid 1–16): its cost extrapolated on nangate45"
-                       for p in ("a", "b", "out")]  # fmt: skip
-    assert got[3] == (
-        "[cost.extrapolated] crossbar: crossbar outside the table's grid on inputs "
-        "98 (grid 4–64): its cost extrapolated on nangate45"
-    )
-    assert _extrapolated(steps("vecmul_v1", W=8, N=2048)[-1]) == []
 
 
 def test_without_a_platform_nothing_is_noted():

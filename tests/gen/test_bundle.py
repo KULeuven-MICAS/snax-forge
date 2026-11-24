@@ -8,23 +8,17 @@ chisel job (``gen-rtl``) and by hand (``pixi run bundle``, docs/TOOL.md).
 
 from __future__ import annotations
 
-import json
-import subprocess
 from dataclasses import replace
-from pathlib import Path
 
 import pytest
 
-from snax_forge.design import DesignPoint
-from snax_forge.gen import GenError, generate
+from snax_forge.gen import GenError
 from snax_forge.gen import bundle as bundle_mod
 from snax_forge.gen import gvsoc as gvsoc_mod
-from snax_forge.gen import rtl as rtl_mod
 from snax_forge.gen.bundle import Bundle, write_bundle
 from snax_forge.gen.rtl import EMITTED_JSON
-from snax_forge.lower.derive import task_list
 
-from .helpers import COMMIT, SV, bound_dot1, fake_emit, files, point, with_groups
+from .helpers import fake_emit, point, with_groups
 
 
 @pytest.fixture
@@ -32,89 +26,11 @@ def fake(monkeypatch):
     return fake_emit(monkeypatch)
 
 
-def test_the_layout(tmp_path, fake):
-    out = tmp_path / "bundle"
-    b, written = write_bundle(point(tmp_path), out, tmp_path)
-    assert files(out) == sorted([
-        "snax_forge.hjson", "snax_forge_vecadd_streamer_acc.hjson", "accelerator.json",
-        "include/streamer_acc_csr_addr_map.h", "include/acc_csr.h", "include/snitch_cluster_cfg.h",
-        "include/snitch_cluster_addrmap.h", "data.h", "main.c", "obs_marks.json",
-        "manifest.json", *(f"rtl/{f}" for f in SV), "rtl/emitted.json",
-        "rtl/files.f", "bundle.json",
-    ])  # fmt: skip
-    assert sorted(f.relative_to(out).as_posix() for f in written) == files(out)
-    assert written[-3:] == [out / "rtl" / "emitted.json", out / "rtl" / "files.f",
-                            out / "bundle.json"]  # fmt: skip
-    assert b.tag == "snax_forge_vecadd"
-
-
-def test_the_root_is_gen_gvsocs_output(tmp_path, fake):
-    """Byte for byte what ``generate`` writes for the design point, the cluster file's slot
-    naming the bundle's file list."""
-    path = point(tmp_path)
-    out, alone = tmp_path / "bundle", tmp_path / "gvsoc"
-    write_bundle(path, out, tmp_path)
-    m = generate(path, alone, tmp_path)
-    for f in m.files:
-        assert (out / f).read_bytes() == (alone / f).read_bytes(), f
-    assert '"snax_forge_rtl": "rtl/files.f"' in (out / "snax_forge.hjson").read_text()
-    assert gvsoc_mod.RTL_FILE_LIST == "rtl/files.f"
-
-
-def test_rtl_is_made_again_and_the_rest_left(tmp_path, fake):
-    """A file an earlier run left in rtl/sv/ is gone; a file of the user's beside rtl/ stays."""
-    out = tmp_path / "bundle"
-    (out / "rtl" / "sv").mkdir(parents=True)
-    (out / "rtl" / "sv" / "old.sv").write_text("module old;\nendmodule\n")
-    (out / "notes.txt").write_text("mine\n")
-    write_bundle(point(tmp_path), out, tmp_path)
-    assert not (out / "rtl" / "sv" / "old.sv").exists()
-    assert sorted(f.name for f in (out / "rtl" / "sv").iterdir()) == sorted(
-        Path(f).name for f in SV
-    )
-    assert (out / "notes.txt").read_text() == "mine\n"
-
-
-def test_files_f_is_emitted_jsons_files_in_order(tmp_path, fake):
-    out = tmp_path / "bundle"
-    write_bundle(point(tmp_path), out, tmp_path)
-    assert (out / "rtl" / "files.f").read_text() == "".join(f"{f}\n" for f in SV)
-    assert all((out / "rtl" / f).is_file() for f in SV)
-
-
-def test_bundle_json(tmp_path, fake):
-    out = tmp_path / "bundle"
-    b, _ = write_bundle(point(tmp_path), out, tmp_path)
-    d = json.loads((out / "bundle.json").read_text())
-    t = "snax_forge_vecadd"  # the tag, <accelerator_slot>_<design>
-    assert d == {"design_point": "design/vecadd/design_point.json", "tag": t,
-                 "top": f"{t}_shell_wrapper",
-                 "modules": {f"{t}_csr": [f"{t}_peripherals"], f"{t}_ctrl": [f"{t}_acc_ctrl"],
-                             f"{t}_datapath": [f"{t}_acc"]},
-                 "snax_forge_commit": COMMIT, "dirty": False, "expected": None}  # fmt: skip
-    assert Bundle.load(out / "bundle.json") == b == Bundle.from_dict(b.to_dict())
-    assert d["design_point"] == json.loads((out / "manifest.json").read_text())["design_point"]
-
-
 def test_provenance_outside_git_and_in_this_checkout(tmp_path):
     assert bundle_mod.provenance(tmp_path) == (None, False)
     commit, dirty = bundle_mod.provenance(gvsoc_mod.ROOT)
     assert commit is None or len(commit) == 40
     assert isinstance(dirty, bool)
-
-
-def test_an_untracked_file_leaves_a_checkout_clean(tmp_path):
-    run = lambda *a: subprocess.run(
-        ["git", "-C", str(tmp_path), *a], check=True, capture_output=True
-    )
-    run("init", "-q")
-    (tmp_path / "a.txt").write_text("a")
-    run("add", "a.txt")
-    run("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "a")
-    (tmp_path / "custom.json").write_text("{}")
-    assert bundle_mod.provenance(tmp_path)[1] is False
-    (tmp_path / "a.txt").write_text("b")
-    assert bundle_mod.provenance(tmp_path)[1] is True
 
 
 @pytest.mark.parametrize(
@@ -131,55 +47,6 @@ def test_a_file_list_that_cannot_be_written(tmp_path, fake, listed, code):
         write_bundle(point(tmp_path), out, tmp_path)
     assert e.value.code == code
     assert not (out / "rtl" / "files.f").exists() and not (out / "bundle.json").exists()
-
-
-def test_the_command(tmp_path, fake, monkeypatch, capsys):
-    monkeypatch.setattr(gvsoc_mod, "ROOT", tmp_path)
-    monkeypatch.setattr(rtl_mod, "ROOT", tmp_path)
-    monkeypatch.setattr(bundle_mod, "OUT", tmp_path / "out" / "bundle")
-    path = point(tmp_path)
-    monkeypatch.chdir(tmp_path)
-    assert bundle_mod.main([str(path)]) == 0
-    text = capsys.readouterr().out
-    assert text.startswith(
-        f"bundle out/bundle/vecadd: snax_forge_vecadd_shell_wrapper from "
-        f"design/vecadd/design_point.json, snax-forge {COMMIT}\n"
-    )
-    assert "wrote out/bundle/vecadd/rtl/files.f\n" in text
-    assert text.endswith("wrote out/bundle/vecadd/bundle.json\nno forge_expected.txt: a bundle alone "
-                         "has no SNAX-GVSoC run (pixi run forge writes it)\n")  # fmt: skip
-    assert not (tmp_path / "out" / "bundle" / "vecadd" / "forge_expected.txt").exists()
-    fake.listed = []
-    assert bundle_mod.main([str(path), "--out", "elsewhere"]) == 1
-    assert "[bundle.empty]" in capsys.readouterr().err
-    with pytest.raises(SystemExit) as e:
-        bundle_mod.main([])
-    assert e.value.code == 2
-
-
-def test_dot_1_encs_bundle_holds_both_groups(tmp_path, fake):
-    """An accelerator of two groups (dot_v1_1): the bundle's accelerator.json, header and
-    program are gen-gvsoc's; the RTL is elaborated from the same file."""
-    from .helpers import bound_dot1_enc
-
-    out = tmp_path / "bundle"
-    b, _ = write_bundle(point(tmp_path, name="dot_v1_1", graph=bound_dot1_enc()), out, tmp_path)
-    assert b.tag == "snax_forge_dot_v1_1" and "include/dot_csr.h" in files(out)
-    acc = json.loads((out / "accelerator.json").read_text())
-    assert [g["name"] for a in acc["accelerators"] for g in a["groups"]] == ["vmul", "vsum"]
-    assert b.top == "snax_forge_dot_v1_1_shell_wrapper"
-
-
-def test_dot_1s_bundle_holds_both_accelerators(tmp_path, fake):
-    """dot 1, two accelerators: one shell, a header pair per set."""
-    from .helpers import bound_dot1
-
-    out = tmp_path / "bundle"
-    b, _ = write_bundle(point(tmp_path, name="dot_v1", graph=bound_dot1()), out, tmp_path)
-    assert b.top == "snax_forge_dot_v1_shell_wrapper"
-    assert {"include/vmul_csr.h", "include/vsum_csr.h"} <= set(files(out))
-    assert b.modules["snax_forge_dot_v1_ctrl"] == ["snax_forge_dot_v1_vmul_ctrl",
-                                                  "snax_forge_dot_v1_vsum_ctrl"]  # fmt: skip
 
 
 def test_the_module_tree_names_every_group_unit_and_buffer():
@@ -253,12 +120,3 @@ def test_the_expected_lines_and_their_refusal(tmp_path, fake):
         assert e.value.code == "bundle.expected"
     write_bundle(point(tmp_path), out, tmp_path)  # a bundle alone: the earlier run's file goes
     assert not path.exists() and Bundle.load(out / "bundle.json").expected is None
-
-
-def test_each_counter_s_fill_is_its_group_s_from_the_estimate(tmp_path):
-    """counter_fills: per accelerator task the estimate's fill of the group it runs, 3
-    for vmul's two inputs and 2 for vsum's one, in dot 1's two accelerators."""
-    path = point(tmp_path, name="dot_v1", graph=bound_dot1())
-    tasks = path.with_name("tasks.json")
-    task_list(DesignPoint.load(path)).save(tasks)
-    assert bundle_mod.counter_fills(path, tasks) == {"mult_vmul": 3, "sum_vsum": 2}

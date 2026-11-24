@@ -295,3 +295,8 @@ def main(*argv: Any) -> int:
     from snax_forge.flow import __main__ as cli
 
     return cli.main([str(a) for a in argv])
+
+
+def summary(f) -> str:
+    """A flow's name and its check, for an assertion's message."""
+    return f"{f.name}: {f.check}"

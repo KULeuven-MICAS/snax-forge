@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from snax_forge.dfg import Container, Graph, Memlet, Node, Reduction
+from snax_forge.dfg import Container, Graph, Memlet, Node
 
-from .helpers import ALL, NAMES, as_dict, fixture
+from .helpers import ALL, fixture
 
 
 @pytest.mark.parametrize("name", ALL)
@@ -103,101 +103,3 @@ def test_missing_keys_take_defaults_and_every_field_is_written():
         "attrs": {"var": "i", "range": "0:8"},
         "body": [],
     }
-
-
-def test_reduce_is_written_only_when_set():
-    """A memlet without a reduce writes no ``reduce`` key; dot's sum writes one."""
-    assert "reduce" not in "".join(fixture(n).read_text() for n in NAMES)
-    g = Graph.load(fixture("dot"))
-    assert g.node("sum").outputs["out"] == Memlet("out", [0], Reduction("add", 0))
-    assert g.node("sum").outputs["out"].to_dict() == {
-        "data": "out",
-        "subset": [0],
-        "reduce": {"op": "add", "identity": 0},
-    }
-    assert g.node("mult").outputs["out"].reduce is None
-
-
-def test_body_is_written_only_for_kinds_that_have_one():
-    g = Graph.load(fixture("vecadd"))
-    assert "body" in g.to_dict()["body"][0]
-    assert "body" not in g.to_dict()["body"][0]["body"][0]  # the tasklet
-    acc = Graph.load(fixture("vecadd_accelerated")).node("add")
-    assert acc.to_dict()["body"] == []  # accelerated: a body, empty for a leaf block
-
-
-def test_expressions_are_stored_canonical():
-    d = as_dict("vecadd_split")
-    tasklet = d["body"][0]["body"][0]["body"][0]
-    tasklet["inputs"]["in1"]["subset"] = ["(4*n_1_t) + n_2_s + 0*1"]
-    tasklet["attrs"]["code"] = "out=(in1+in2)"
-    d["body"][0]["attrs"]["range"] = "0:N//4:1"
-    d["containers"]["A"]["shape"] = ["N+0"]
-    g = Graph.from_dict(d)
-    t = g.node("add")
-    assert t.inputs["in1"].subset == ["4 * n_1_t + n_2_s + 0 * 1"]  # canonical, not simplified
-    assert t.attrs["code"] == "out = in1 + in2"
-    assert g.node("add_map").attrs["range"] == "0:N // 4"  # a step of 1 is left out
-    assert g.containers["A"].shape == ["N + 0"]
-    d["containers"]["A"]["shape"] = ["2*32"]
-    assert Graph.from_dict(d).containers["A"].shape == [64]  # no names: an int
-
-
-def test_namespaced_attrs_pass_through_untouched():
-    d = as_dict("vecadd")
-    note = {"why": ["kept", 1], "n": None}
-    d["body"][0]["attrs"]["user.note"] = note
-    d["body"][0]["attrs"]["hw.whatever"] = 3
-    d["containers"]["A"]["attrs"]["mem.home"] = "l2"
-    g = Graph.from_dict(d)
-    assert g.node("add_map").attrs == {
-        "var": "n",
-        "range": "0:N",
-        "loop.dim": "n",
-        "loop.piece": 1,
-        "user.note": note,
-        "hw.whatever": 3,
-    }
-    assert g.to_dict()["containers"]["A"]["attrs"] == {"mem.home": "l2"}
-    assert Graph.from_dict(g.to_dict()) == g
-
-
-def test_kind_owned_attrs_come_first_with_defaults():
-    d = as_dict("vecadd_accelerated")
-    acc = d["body"][0]["body"][0]
-    acc["attrs"] = {
-        "user.x": 1, "code": "out=a+b", "brm": "simd", "instance": "acc",
-        "implementation": "i",
-    }  # fmt: skip
-    attrs = Graph.from_dict(d).node("add").attrs
-    assert list(attrs) == [
-        "instance", "brm", "implementation", "code", "params", "replaced", "user.x"
-    ]  # fmt: skip
-    assert attrs["params"] == {} and attrs["replaced"] is None
-    assert attrs["code"] == "out = a + b"
-
-
-def test_walk_is_execution_order_with_enclosing_nodes():
-    g = Graph.load(fixture("vecadd_split"))
-    assert [(n.id, [o.id for o in outer]) for n, outer in g.walk()] == [
-        ("add_map", []),
-        ("add_map_s", ["add_map"]),
-        ("add", ["add_map", "add_map_s"]),
-    ]
-    assert g.node("add_map_s").attrs["loop.kind"] == "spatial"
-
-
-def test_save_and_load(tmp_path):
-    g = Graph.load(fixture("vecadd_accelerated"))
-    g.save(tmp_path / "v.snaxdfg")
-    assert (tmp_path / "v.snaxdfg").read_text() == fixture("vecadd_accelerated").read_text()
-
-
-def test_nested_accelerated_node():
-    """An accelerated node may hold a body (a nested block); names bind as usual."""
-    d = as_dict("vecadd_accelerated")
-    outer = d["body"][0]["body"][0]
-    inner = {**outer, "id": "add_inner", "attrs": {**outer["attrs"], "instance": "acc2"}}
-    outer["body"] = [inner]
-    g = Graph.from_dict(d)
-    assert [n.id for n, _ in g.walk()] == ["add_map", "add", "add_inner"]

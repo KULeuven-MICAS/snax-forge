@@ -21,7 +21,7 @@ from snax_forge.flow import run_flow
 from tests.design.helpers import SNAX_FORGE
 from tests.helpers import recipe_path
 
-from .helpers import needs_gvsoc, sound
+from .helpers import needs_gvsoc, sound, summary
 
 pytestmark = [pytest.mark.gvsoc, needs_gvsoc]
 
@@ -35,10 +35,6 @@ def worked(monkeypatch):
         return {"A": np.arange(1, 13, dtype=np.int64).reshape(4, 3), "y": np.zeros(4, np.int64)}
 
     monkeypatch.setattr(reference, "kernel_inputs", inputs)
-
-
-def summary(f) -> str:
-    return f"{f.name}: {f.check}"
 
 
 def test_the_worked_example(tmp_path, worked):

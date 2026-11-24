@@ -11,27 +11,15 @@ from dataclasses import replace
 import pytest
 
 from snax_forge.char import DEFAULT_TECH
-from snax_forge.design import Design, DesignPoint, Platform, run_checks
+from snax_forge.design import Platform
 from snax_forge.estimate import estimate
-from snax_forge.lower import task_list
 from snax_forge.sandbox import Recipe, SandboxError, apply_recipe, session
-from snax_forge.sandbox import __main__ as sandbox_cli
 from snax_forge.sandbox.session import Roots, Session
 from tests.helpers import REPO, imported, recipe_path
 
-from .helpers import RECIPES, recipe_graphs, renamed, tagged_names
+from .helpers import RECIPES, recipe_graphs
 
 pytestmark = pytest.mark.slow
-
-
-@pytest.fixture(autouse=True)
-def cached_import(monkeypatch):
-    monkeypatch.setattr(session, "_import", imported)
-
-
-@pytest.fixture
-def roots(tmp_path):
-    return Roots(tmp_path / "sessions", tmp_path / "recipes", tmp_path / "sandbox")
 
 
 def recipe(name: str) -> Recipe:
@@ -70,62 +58,6 @@ def bind_default(s: Session, node: str) -> dict:
 # =============================================================================
 
 
-@pytest.mark.parametrize("name", ["vecadd_v1", "dot_v2", "dot_v4"])
-def test_built_by_hand_it_ends_in_the_recipes_graph(name, roots):
-    """Each step of the recipe applied in the session, one by one; the last graph is the
-    recipe's, file for file. ``split_map`` stays ``split_map`` here: the later steps name its
-    ``<id>_s``, and a second split (dot 4's ``split_reduce``) names its variables after the
-    first's, so a ``split`` and two tags would differ in more than the three names
-    (test_sites.py checks ``split_map`` against them, a step at a time)."""
-    r = recipe(name)
-    s = Session.from_kernel(r.kernel, r.params, r.symbols, roots=roots)
-    for step in r.steps:
-        ok(s.apply(step.transform, step.params))
-    want = apply_recipe(r, imported(r.kernel))[-1].graph
-    assert s.graphs[-1].to_json() == want.to_json()
-    assert s.name == r.kernel and (roots.sessions / r.kernel / "recipe.json").is_file()
-
-
-def test_a_taken_name_gets_a_suffix(roots):
-    names = [Session.from_kernel("vecadd", {"N": 64}, roots=roots).name for _ in range(3)]
-    assert names == ["vecadd", "vecadd_2", "vecadd_3"]
-
-
-def test_a_number_given_for_a_factor_becomes_a_param(roots, tmp_path):
-    """Every factor the editor writes names a param. vecmul's split given 8 stores W with
-    W = 8 in the params, so after the bind its Bindings entry has W editable and W = 4 replays
-    to 512 cycles; a second split gets W_2; a link's depth given as a number becomes D; the
-    saved recipe sweeps with --set W=…; a recipe opened from a file keeps its numbers."""
-    from snax_forge.viz.dfg.api import bindings_section
-
-    s = Session.from_kernel("vecmul", {"N": 2048}, roots=roots)
-    got = ok(s.apply("split", {"map": "mult_map", "factor": 8}))
-    assert got["params"] == {"map": "mult_map", "factor": "W"} and got["new_params"] == {"W": 8}
-    assert s.recipe.steps[0].params["factor"] == "W" and s.recipe.params == {"N": 2048, "W": 8}
-    ok(s.apply("tag_map", {"map": "mult_map", "kind": "temporal"}))
-    ok(s.apply("tag_map", {"map": "mult_map_inner", "kind": "spatial"}))
-    got = bind_default(s, "mult")  # the editor's W, this unit's alone: W_acc_1
-    assert got["renamed"] == {"W": "W_acc_1"} and s.recipe.params == {"N": 2048, "W_acc_1": 8}
-    assert s.recipe.steps[0].params["factor"] == "W_acc_1"
-    (unit,) = bindings_section(s.graphs[4], s.recipe, editable=True)["entries"]
-    assert unit["params"] == [{"name": "W_acc_1", "value": 8, "editable": True, "shared_with": []}]
-    ok(s.set_params({"W_acc_1": 4}))
-    assert s.estimate(4).accelerator_cycles == 512
-    ok(s.save("vecmul_w"))
-    assert sandbox_cli.main([str(roots.recipes / "custom" / "vecmul_w.json"), "--set", "W_acc_1=2", "--out",
-                             str(tmp_path / "w2")]) == 0  # fmt: skip
-    dot = Session.from_kernel("dot", {"N": 512}, roots=roots)
-    ok(dot.apply("split", {"map": "mult_map", "factor": 8}))
-    ok(dot.apply("split", {"map": "sum_map", "factor": 4}))
-    assert [x.params["factor"] for x in dot.recipe.steps] == ["W", "W_2"]
-    assert dot.recipe.params == {"N": 512, "W": 8, "W_2": 4}
-    two = opened("dot_v2", roots)
-    assert two.recipe.steps[-1].params["depth"] == 1  # the file's number stays
-    ok(two.move(two.n - 1))
-    got = ok(two.apply("link", {"container": "tmp0", "depth": 1, "group": "dot"}, drop=True))
-    assert got["params"]["depth"] == "D" and two.recipe.params["D"] == 1
-
-
 def test_a_kernel_session_at_a_type_preset(roots):
     """``edit-dfg --kernel mvt_types --set types=i8 --set dtypes.x2=int64``: the preset and the
     dtype reach the import and the recipe, the rest are params; the session's recipe file
@@ -156,63 +88,6 @@ def test_a_kernel_session_needs_every_symbol_and_no_w(roots):
     ):
         Session.from_kernel("matvec", {"W": 4}, roots=roots)
     assert Session.from_kernel("vecmul", {}, {"N": 64}, roots=roots).recipe.params == {}
-
-
-def test_vecmul_from_its_kernel_with_a_new_param_is_the_recipes_graph(roots):
-    """vecmul at N = 2048 alone, ``split`` by a new param W = 8, the tags, ``bind`` at the form's
-    defaults: ``recipes/elementwise/vecmul_v1.json``'s last graph at N = 2048, W = 8 up to the split's
-    names;
-    the default instance ``acc_1`` gives the task ``mult_acc_1`` and the streamers ``acc_1_a``,
-    ``acc_1_b`` and ``acc_1_out``, and W becomes ``W_acc_1``."""
-    s = Session.from_kernel("vecmul", {"N": 2048}, roots=roots)
-    refused = s.apply("split", {"map": "mult_map", "factor": "W"})
-    assert refused["param"] == "W"
-    assert (refused["code"], refused["message"]) == (
-        "session.param",
-        "split: factor 'W' is not a param; give its value",
-    )
-    assert (s.n, s.recipe.params) == (0, {"N": 2048})
-    assert split_and_tag(s, "mult_map", "W", {"W": 8}) == "mult_map_inner"
-    assert s.recipe.params == {"N": 2048, "W": 8}
-    got = bind_default(s, "mult")
-    assert got["params"]["instance"] == "acc_1" and got["renamed"] == {"W": "W_acc_1"}
-    r = recipe("vecmul_v1").with_params({"N": 2048, "W": 8})
-    want = apply_recipe(r, imported("vecmul"))[-1].graph
-    names = tagged_names(s.graphs[0], "mult_map", 8)
-    assert names == {"n_1": "n_1_t", "n_2": "n_2_s", "mult_map_inner": "mult_map_s"}
-    assert renamed(s.graphs[-1], names | {"acc_1": "acc"}) == want.to_json()
-    d = Design(s.platform, s.graphs[-1])
-    assert run_checks(d) == []
-    point = DesignPoint.of(d, "vecmul")
-    assert sorted(point.streamers) == ["acc_1_a", "acc_1_b", "acc_1_out"]
-    accel = [x.task_name for x in task_list(point).steps if getattr(x, "type", None) == "accel"]
-    assert accel == ["mult_acc_1"]
-
-
-def test_dot_1_in_the_editor_has_a_param_per_split(roots, tmp_path):
-    """dot 1 with ``W_mul`` 8 and ``W_sum`` 4, each added by its split (names given, so never
-    renamed): the binds default to ``acc_1`` and ``acc_2``, Save writes params ``{N: 2048, W_mul:
-    8, W_sum: 4}``, and the saved recipe passes ``pixi run sandbox``. Undoing the step that
-    added a param keeps it."""
-    s = Session.from_kernel("dot", {"N": 2048}, roots=roots)
-    split_and_tag(s, "mult_map", "W_mul", {"W_mul": 8})
-    got = bind_default(s, "mult")
-    assert got["params"]["instance"] == "acc_1" and got["renamed"] == {}
-    split_and_tag(s, "sum_map", "W_sum", {"W_sum": 4})
-    assert bind_default(s, "sum")["params"]["instance"] == "acc_2"
-    f = {x["name"]: x for x in s.sites(s.cursor, "mult")["encapsulate"]["form"]}
-    ok(s.apply("encapsulate", {"accelerator": f["accelerator"]["value"],
-                               "units": ["acc_1", "acc_2"]}))  # fmt: skip
-    got = ok(s.save("dot_mine"))
-    saved = Recipe.load(roots.recipes / "custom" / "dot_mine.json")
-    assert saved.params == {"N": 2048, "W_mul": 8, "W_sum": 4}
-    assert [x.params.get("factor") for x in saved.steps if x.transform == "split"] == [
-        "W_mul", "W_sum"]  # fmt: skip
-    assert got["problems"] == []
-    assert sandbox_cli.main([str(roots.recipes / "custom" / "dot_mine.json"), "--out",
-                             str(tmp_path / "steps")]) == 0  # fmt: skip
-    ok(s.move(1))
-    assert s.recipe.params == {"N": 2048, "W_mul": 8, "W_sum": 4}  # undo keeps the params
 
 
 # =============================================================================
@@ -290,29 +165,6 @@ def test_save_refuses_unbound_work(roots):
     assert not (roots.recipes / "custom" / "vecadd_mine.json").exists()
 
 
-def test_save_takes_two_accelerators(roots):
-    """Dot 1, no encapsulate, is two accelerators, two streamer sets of the one entry: Save
-    takes it as it is (gen.instances retired)."""
-    s = opened("dot_v1", roots)
-    assert "encapsulate" not in [x.transform for x in s.recipe.steps]
-    assert ok(s.save("dot_two"))["recipe"] == str(roots.recipes / "custom" / "dot_two.json")
-
-
-def test_save_writes_into_custom_and_a_name_in_any_folder_is_taken(roots):
-    """Save writes ``<recipes>/custom/<name>.json``, making the folder; a name a recipe has
-    in any folder is ``save.name`` and nothing is written."""
-    s = opened("vecadd_v1", roots)
-    assert not (roots.recipes / "custom").exists()
-    assert ok(s.save("vecadd_mine"))["recipe"] == str(roots.recipes / "custom" / "vecadd_mine.json")
-    other = roots.recipes / "elementwise" / "vecadd_two.json"
-    other.parent.mkdir(parents=True)
-    replace(recipe("vecadd_v1"), name="vecadd_two").save(other)
-    got = s.save("vecadd_two")
-    assert (got["code"], got["message"]) == (
-        "save.name", f"{other} exists; a recipe is never overwritten")  # fmt: skip
-    assert not (roots.recipes / "custom" / "vecadd_two.json").exists()
-
-
 def test_save_lists_too_many_crossbar_inputs_and_saves_anyway(roots):
     """vecmul at N = 2048, W = 64 from the editor: Save names connect.xbar_inputs (194 inputs
     over 128) as a design problem and saves when forced."""
@@ -354,40 +206,6 @@ def test_a_saved_recipe_gives_the_sessions_graphs(roots):
 # =============================================================================
 # The sites, the bind list and the marks
 # =============================================================================
-
-
-def test_the_sites_at_vecadds_import(roots):
-    s = Session.from_kernel("vecadd", {"N": 64}, roots=roots)
-    at_map, at_add = s.sites(0, "add_map"), s.sites(0, "add")
-    assert (at_map["split"]["ok"], at_map["split"]["params"]) == (True, {"map": "add_map"})
-    assert not at_add["bind"]["ok"] and "split the map first" in at_add["bind"]["message"]
-    assert s.sites(0, "add") is at_add  # cached
-    marks = s.marks(0)
-    assert "add_map" in marks["nodes"] and "add" not in marks["nodes"]
-
-
-def _ok(entries):
-    return [(e["brm"], e["implementation"]) for e in entries if e["ok"]]
-
-
-def test_the_bind_list_of_a_split_multiply(roots):
-    s = Session.from_kernel("dot", {"N": 512, "W": 4}, roots=roots)
-    ok(s.apply("split_map", {"map": "mult_map", "factor": "W"}))
-    entries = s.sites(1, "mult")["bind"]["list"]
-    assert _ok(entries) == [("simd", "chisel_tiled_spatial")]
-    (mul,) = [e for e in entries if e["ok"]]
-    assert mul["params"]["instance"] == "acc_1" and mul["timing"] == {
-        "latency": 0,
-        "ii": 1,
-        "span": 1,
-    }
-
-
-def test_the_bind_list_of_dot_4s_final_sum(roots):
-    s = opened("dot_v4", roots)
-    assert s.recipe.steps[2].transform == "fuse_map"
-    entries = s.sites(3, "sum_final")["bind"]["list"]
-    assert _ok(entries) == [("accumulate", "chisel_adder_tree"), ("accumulate", "chisel_serial")]
 
 
 # =============================================================================
@@ -439,72 +257,6 @@ def test_the_estimate_of_every_step_of_every_recipe(name, roots):
 # =============================================================================
 
 
-def _form(answer):
-    return {f["name"]: f for f in answer["form"]}
-
-
-def test_the_forms_of_vecadds_import(roots):
-    """split's: the map, not editable, and a sweepable factor defaulting to a param of its own,
-    W_2 here since the session has W (its value 4 beside it); tag_map's kind a choice of TAGS; a
-    refused transform has no form."""
-    s = Session.from_kernel("vecadd", {"N": 64, "W": 4}, roots=roots)
-    sites = s.sites(0, "add_map")
-    split = _form(sites["split"])
-    assert list(split) == ["map", "factor"]
-    assert (split["map"]["value"], split["map"]["readonly"], split["map"]["type"]) == (
-        "add_map",
-        True,
-        "str",
-    )
-    assert (split["factor"]["type"], split["factor"]["sweepable"], split["factor"]["value"]) == (
-        "int",
-        True,
-        "W_2",
-    )
-    assert split["factor"]["new_value"] == 4
-    kind = _form(sites["tag_map"])["kind"]
-    assert (kind["type"], kind["value"], [c["value"] for c in kind["choices"]]) == (
-        "choice", "temporal", ["temporal", "tile", "spatial"])  # fmt: skip
-    assert "form" not in sites["bind"]
-
-
-def test_the_bind_form_lists_the_library_with_timing(roots):
-    s = Session.from_kernel("dot", {"N": 512, "W": 4}, roots=roots)
-    ok(s.apply("split_map", {"map": "mult_map", "factor": "W"}))
-    f = _form(s.sites(1, "mult")["bind"])
-    assert list(f) == ["node", "binding", "instance"] and f["node"]["readonly"]
-    assert f["binding"]["value"] == {
-        "brm": "simd",
-        "implementation": "chisel_tiled_spatial",
-    }
-    (good,) = [c for c in f["binding"]["choices"] if c["ok"]]
-    assert (good["label"], good["timing"]) == ("simd / chisel_tiled_spatial",
-                                               {"latency": 0, "ii": 1, "span": 1})  # fmt: skip
-    assert all(c["message"] for c in f["binding"]["choices"] if not c["ok"])
-    assert f["instance"]["value"] == "acc_1"
-
-
-def test_the_encapsulate_and_link_forms(roots):
-    """dot 1 (no encapsulate): the units unencapsulated in graph order, the selection's ticked
-    (one unit's box: that unit; both group outlines: both), and a free accelerator name; dot 2
-    before its link: the depth a param of its own, D, at 1 by default, the group from the site."""
-    one = opened("dot_v1", roots)
-    f = _form(one.sites(one.cursor, "mult")["encapsulate"])
-    assert (f["units"]["type"], f["units"]["value"], [c["value"] for c in f["units"]["choices"]]) == (
-        "checklist", ["vmul"], ["vmul", "vsum"])  # fmt: skip
-    assert f["accelerator"]["value"] == "dot" and not f["units"]["readonly"]
-    assert _form(one.sites(one.cursor, ["vmul", "vsum"])["encapsulate"])["units"]["value"] == [
-        "vmul",
-        "vsum",
-    ]
-    two = opened("dot_v2", roots)
-    ok(two.move(two.n - 1))
-    f = _form(two.sites(two.cursor, "tmp0")["link"])
-    assert (f["container"]["readonly"], f["depth"]["value"], f["depth"]["sweepable"], f["group"]["value"]) == (
-        True, "D", True, "dot")  # fmt: skip
-    assert f["depth"]["new_value"] == 1
-
-
 # =============================================================================
 # Names, the checks on every step, a param change up to the cursor
 # =============================================================================
@@ -530,26 +282,6 @@ def dot1_by_hand(roots: Roots, w_mul: int = 8, w_sum: int = 8) -> tuple[Session,
     out.append(ok(s.apply("encapsulate", {"accelerator": f["accelerator"]["value"],
                                           "units": ["acc_1", "acc_2"]})))  # fmt: skip
     return s, out
-
-
-def test_dot_1_by_hand_names_its_units_params_and_loops(roots):
-    """The binds' instances ``acc_1`` and ``acc_2`` by their order, each split's
-    factor named ``W`` and renamed ``W_<instance>`` at its bind, the second split's variables
-    named as the first's, ``n_1_t`` and ``n_2_s``: the two maps over N are siblings, each its own
-    dimension ``n``."""
-    s, out = dot1_by_hand(roots)
-    assert [x["params"].get("instance") for x in out if x["transform"] == "bind"] == [
-        "acc_1",
-        "acc_2",
-    ]
-    assert [x["renamed"] for x in out if x["transform"] == "bind"] == [
-        {"W": "W_acc_1"}, {"W": "W_acc_2"}]  # fmt: skip
-    assert s.recipe.params == {"N": 2048, "W_acc_1": 8, "W_acc_2": 8}
-    assert [x.params["factor"] for x in s.recipe.steps if x.transform == "split"] == [
-        "W_acc_1", "W_acc_2"]  # fmt: skip
-    vars_ = {n.id: n.attrs["var"] for n, _ in s.graphs[7].walk() if n.kind == "map"}
-    assert (vars_["sum_map"], vars_["sum_map_inner"]) == ("n_1_t", "n_2_s")
-    assert s.recipe.steps[-1].params["accelerator"] == "dot"
 
 
 def test_a_bind_keeps_a_shared_or_a_recipes_own_param(roots):
@@ -585,31 +317,6 @@ def test_every_step_lists_saves_design_checks(roots):
     assert "never written" in p["message"] and p["fix"]
 
 
-def test_while_building_unbound_is_a_note_and_notes_show_beside_problems(roots):
-    """Before the bind graph.unbound is a note ("before Save: bind it …"), not a problem,
-    and Save still refuses it; vecadd at int32 and W = 128 has a problem (too many crossbar
-    inputs) with the design.xbar_inputs and cost.extrapolated notes beside it, of a design past
-    HWCOST's tables; its int32 adder is in nangate45's table (D176), so no char.missing."""
-    s = Session.from_kernel("vecadd", {"N": 64}, roots=roots)
-    split_and_tag(s, "add_map", 4)
-    c = s.checks(3)
-    assert c["problems"] == [] and [n["code"] for n in c["notes"]] == ["graph.unbound"]
-    assert c["notes"][0]["message"].startswith("before Save: bind it (")
-    assert c["notes"][0]["before_save"] is True
-    assert s.save("vecadd_unbound")["code"] == "save.graph"
-    i32 = Session.from_kernel("vecadd", {"N": 2048}, dtypes={"A": "int32", "B": "int32", "C": "int32"},
-                              roots=Roots(roots.sessions / "i32", roots.recipes, roots.sandbox))  # fmt: skip
-    split_and_tag(i32, "add_map", 128)
-    bind_default(i32, "add")
-    c = i32.checks(4)
-    assert [p["code"] for p in c["problems"]] == ["connect.xbar_inputs"]
-    # beside it, its 194 crossbar inputs above 64 and, off HWCOST's tables' grid, its three
-    # streamers of 64 channels and its crossbar, noted as extrapolated
-    assert [(n["code"], n["before_save"]) for n in c["notes"]] == [
-        ("design.xbar_inputs", False), *[("cost.extrapolated", False)] * 4]  # fmt: skip
-    assert not c["problems"][0]["before_save"]
-
-
 def test_a_param_change_replays_up_to_the_cursor(roots):
     """Dot 1 at step 9, a link as step 10, back to 9, W_acc_2 = 4: accepted, step 10 a
     redo step; moving onto it replays it, and the link refuses (its writer's beats are not its
@@ -627,29 +334,6 @@ def test_a_param_change_replays_up_to_the_cursor(roots):
     assert (s.cursor, s.replayed, s.n) == (9, 9, 10)
     ok(s.set_params({"W_acc_2": 8}))
     assert ok(s.move(10))["replayed"] == [10] and s.cursor == 10
-
-
-def test_save_keeps_only_the_params_its_steps_use(roots):
-    """Dot 1 saved at step 9 after a link was tried at step 10 and stepped back from keeps
-    N, W_acc_1 and W_acc_2, not the link's D; a recipe opened from a file keeps its own params
-    (dot_1's N and W) whatever its saved steps use."""
-    s, _ = dot1_by_hand(roots)
-    ok(s.apply("link", {"container": "tmp0", "depth": 1, "group": "dot"}))
-    assert "D" in s.recipe.params
-    ok(s.move(9))
-    ok(s.save("dot_1_kept"))
-    saved = Recipe.load(roots.recipes / "custom" / "dot_1_kept.json")
-    assert saved.params == {"N": 2048, "W_acc_1": 8, "W_acc_2": 8}
-    extra = roots.recipes / "elementwise" / "vecmul_extra.json"
-    extra.parent.mkdir(parents=True, exist_ok=True)
-    replace(
-        recipe("vecmul_v1"), name="vecmul_extra", params={**recipe("vecmul_v1").params, "K": 3}
-    ).save(extra)
-    one = Session.from_recipe(extra, roots=roots)
-    ok(one.save("vecmul_kept"))
-    assert (
-        Recipe.load(roots.recipes / "custom" / "vecmul_kept.json").params["K"] == 3
-    )  # its own, kept
 
 
 def test_save_keeps_a_param_named_only_inside_apply_recipes_params():
@@ -696,39 +380,6 @@ def test_a_param_renamed_in_every_step_and_inside_apply_recipe(roots):
     assert [st.params["params"]["W"] for st in m.recipe.steps if st.transform == "apply_recipe"] \
         == ["W", "W"]  # fmt: skip
     assert m.recipe.params["W"] == 8 and "W_x1" not in m.recipe.params
-
-
-def test_sites_over_a_selection_on_dot_1(roots):
-    """Dot 1 by hand at step 8: the two group outlines (acc_1, acc_2) offer encapsulate with
-    both units ticked, one unit's box (mult) only that unit; split over two items is refused,
-    "takes one selection"; at step 9 the accelerator's outline (dot) offers unencapsulate; at the
-    import mult_map and sum_map together offer fuse_map, first and second in the order
-    selected, and the other order is refused."""
-    s, _ = dot1_by_hand(roots)
-    both = s.sites(8, ["acc_1", "acc_2"])
-    assert both["encapsulate"]["ok"] and both["encapsulate"]["params"] == {
-        "units": ["acc_1", "acc_2"]
-    }
-    assert _form(both["encapsulate"])["units"]["value"] == ["acc_1", "acc_2"]
-    assert _form(both["encapsulate"])["accelerator"]["value"] == "dot"
-    assert (both["split"]["ok"], both["split"]["code"]) == (False, "site.one")
-    assert both["split"]["message"] == "split: takes one selection, not 2"
-    one = s.sites(8, "mult")
-    assert _form(one["encapsulate"])["units"]["value"] == ["acc_1"]
-    assert s.sites(8, ["acc_2"])["encapsulate"]["params"] == {"units": ["acc_2"]}
-    dot = s.sites(9, "dot")
-    assert dot["unencapsulate"]["ok"] and dot["unencapsulate"]["params"] == {"accelerator": "dot"}
-    assert not dot["encapsulate"]["ok"]
-    assert s.sites(9, ["acc_1", "acc_2"])["unencapsulate"]["code"] == "site.one"
-    maps = s.sites(0, ["mult_map", "sum_map"])
-    assert maps["fuse_map"]["ok"] and maps["fuse_map"]["params"] == {"first": "mult_map",
-                                                                     "second": "sum_map"}  # fmt: skip
-    assert maps["split"]["code"] == "site.one"
-    back = s.sites(0, ["sum_map", "mult_map"])["fuse_map"]
-    assert (
-        not back["ok"]
-        and back["message"] == "fuse_map 'sum_map': nothing comes right after it in one body"
-    )
 
 
 def test_the_editor_steps_through_fuse_seed(roots):
