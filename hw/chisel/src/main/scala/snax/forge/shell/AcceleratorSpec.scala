@@ -10,8 +10,9 @@ import java.nio.file.{Files, Path}
   * contiguous in CSR order from the shell's first CSR.
   *
   * A forked input is one entry of an accelerator's `inputs`, the list of the ports one reader feeds, the reader's
-  * first: `inputs` keeps the reader's port, one per `stream2acc_<k>`, and `forks` every fork's ports. A group of
-  * several chains has a `JOBS_<SINK>` per chain in place of JOBS, in the order of their sinks.
+  * first: `inputs` keeps the reader's port, one per `stream2acc_<k>`, and `forks` every fork's ports; a group's
+  * `fork_links` feed some of them through a buffer instead. A group of several chains has a `JOBS_<SINK>` per chain in
+  * place of JOBS, in the order of their sinks.
   *
   * A set whose groups share its movers (`share_ports`) has `movers` and `port_mux`: its outer ports at the wrapper are
   * its movers, readers then writers, each `num_channel * 64` bits, in place of its groups' inputs and outputs, which
@@ -61,6 +62,12 @@ object AcceleratorSpec {
     */
   case class LinkSpec(name: String, from: (String, String), to: (String, String), depth: Int)
 
+  /** A fork's buffered branch: `to`, a forked port but its reader's first, fed the fork's beats through a ring of
+    * `depth` beats (`LinkBuffer`, `<tag>_<name>`), one pushed each beat the fork takes (`fork_links`, written only when
+    * there is one).
+    */
+  case class ForkLinkSpec(name: String, to: (String, String), depth: Int)
+
   case class UnitSpec(
     name:     String,
     brm:      String,
@@ -94,7 +101,13 @@ object AcceleratorSpec {
     def rows: Int = params.get("rows").map(_.num.toInt).getOrElse(1)
   }
 
-  case class GroupSpec(name: String, csrs: Seq[CsrSpec], units: Seq[UnitSpec], links: Seq[LinkSpec]) {
+  case class GroupSpec(
+    name:      String,
+    csrs:      Seq[CsrSpec],
+    units:     Seq[UnitSpec],
+    links:     Seq[LinkSpec],
+    forkLinks: Seq[ForkLinkSpec] = Seq.empty
+  ) {
     private def own(n: String): CsrSpec = csrs.find(_.name == n).get
 
     /** Its JOBS: JOBS, or with several chains a `JOBS_<SINK>` per chain in the order of their sinks. */
@@ -202,6 +215,9 @@ object AcceleratorSpec {
           },
           g("links").arr.toSeq.map { l =>
             LinkSpec(l("name").str, end(l("from").str), end(l("to").str), l("depth").num.toInt)
+          },
+          g.obj.get("fork_links").map(_.arr.toSeq).getOrElse(Seq.empty).map { l =>
+            ForkLinkSpec(l("name").str, end(l("to").str), l("depth").num.toInt)
           }
         )
       },
@@ -276,8 +292,14 @@ case class AcceleratorSpec(
 
   def unit(name: String): AcceleratorSpec.UnitSpec = units.find(_.name == name).get
 
-  /** A forked port but its fork's first, to the first's: the ports that take their reader's beat. */
-  lazy val forked: Map[(String, String), (String, String)] = forks.flatMap(f => f.tail.map(_ -> f.head)).toMap
+  /** The forked ports a fork link feeds, through its buffer. */
+  lazy val buffered: Set[(String, String)] = groups.flatMap(_.forkLinks.map(_.to)).toSet
+
+  /** A forked port but its fork's first, to the first's: the ports that take their reader's beat (not through a fork
+    * link's buffer).
+    */
+  lazy val forked: Map[(String, String), (String, String)] =
+    forks.flatMap(f => f.tail.filterNot(buffered).map(_ -> f.head)).toMap
 
   /** The unit's outer input BRM ports in its port order, each with the index of its reader among the outer inputs (a
     * forked port its fork's reader's).

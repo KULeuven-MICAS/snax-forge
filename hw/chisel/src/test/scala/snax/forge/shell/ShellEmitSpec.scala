@@ -23,13 +23,13 @@ import snax.forge.{Emit, SvHeader}
   * The hierarchy is `bundle.json`'s `modules` (CONTRACTS, "Bundle"; snax-forge's `snax_forge/gen/bundle.py`,
   * `module_tree`, which writes it from `accelerator.json` without elaborating): `<tag>_shell_wrapper` holds
   * `<tag>_csr`, `<tag>_ctrl` and `<tag>_datapath`; `<tag>_csr` its `<tag>_peripherals`; `<tag>_ctrl` a
-  * `<tag>_<group>_ctrl` per group; `<tag>_datapath` a `<tag>_<unit>` per unit, then a `<tag>_<link>` per buffer, group
-  * by group; each `<tag>_<unit>` its one catalogue datapath. Read off each module's instances in the SystemVerilog
-  * (firtool's ` <module> <instance> (` lines); mvt_v5_sequential's (two accelerators), matvec_acc_v2's (two groups),
-  * dot 4's (a wire) and mvt_v6's (a buffer) among them. A set whose groups share its movers shows its movers at the
-  * wrapper (its hjson's `num_channel` are the movers') and adds `<tag>_<set>_port_mux`, which holds no module, after
-  * `<tag>_datapath`: dot_v1_2's and mvt_v1_2_2's. bicg_v4_1's two chains on a forked A have one reader for A and an
-  * output per chain.
+  * `<tag>_<group>_ctrl` per group; `<tag>_datapath` a `<tag>_<unit>` per unit, then a `<tag>_<link>` per buffer and per
+  * fork link, group by group; each `<tag>_<unit>` its one catalogue datapath. Read off each module's instances in the
+  * SystemVerilog (firtool's ` <module> <instance> (` lines); mvt_v5_sequential's (two accelerators), matvec_acc_v2's
+  * (two groups), dot 4's (a wire) and mvt_v6's (a buffer) among them. A set whose groups share its movers shows its
+  * movers at the wrapper (its hjson's `num_channel` are the movers') and adds `<tag>_<set>_port_mux`, which holds no
+  * module, after `<tag>_datapath`: dot_v1_2's and mvt_v1_2_2's. bicg_v4_1's two chains on a forked A have one reader
+  * for A and an output per chain; atax_v4's A is forked to its Mac through a fork link, `<tag>_A`.
   *
   * `emitted.json` lists a file for every module the wrapper reaches, each file exists, and `sv/` holds those only.
   */
@@ -95,7 +95,8 @@ class ShellEmitSpec extends AnyFlatSpec {
       s"${t}_csr"      -> Seq(s"${t}_peripherals"),
       s"${t}_ctrl"     -> spec.groups.map(g => s"${t}_${g.name}_ctrl"),
       s"${t}_datapath" -> spec.groups.flatMap { g =>
-        g.units.map(u => s"${t}_${u.name}") ++ g.links.filter(_.depth > 0).map(l => s"${t}_${l.name}")
+        g.units.map(u => s"${t}_${u.name}") ++ g.links.filter(_.depth > 0).map(l => s"${t}_${l.name}") ++
+          g.forkLinks.map(l => s"${t}_${l.name}")
       }
     ) ++ spec.sets.filter(_.shared).map(s => s"${t}_${s.name}_port_mux" -> Seq.empty) ++
       blocks.distinct.map(_ -> Seq.empty)
@@ -131,9 +132,9 @@ class ShellEmitSpec extends AnyFlatSpec {
       assert(svs == listed, s"sv/ holds ${svs -- listed} besides emitted.json's files")
     }
 
-  it should "have the fixtures of two accelerators, two groups in one, a wire, a buffer, shared movers and a fork" in
+  it should "have the fixtures of two accelerators, two groups in one, a wire, a buffer, shared movers and forks" in
     assert(
-      Set("mvt_v5_sequential", "matvec_acc_v2", "dot_v4", "mvt_v6", "mvt_v1_2_2", "bicg_v4_1")
+      Set("mvt_v5_sequential", "matvec_acc_v2", "dot_v4", "mvt_v6", "mvt_v1_2_2", "bicg_v4_1", "atax_v4")
         .subsetOf(RtlFixtures.all.map(_.name).toSet)
     )
 }

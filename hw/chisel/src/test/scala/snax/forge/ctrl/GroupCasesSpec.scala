@@ -49,43 +49,48 @@ class PackedGroupCtrl(desc: GroupDesc, dOut: Int, dIn: Seq[(Int, Int)] = Seq.emp
   pk.word             := packer.io.out.bits.asUInt
 }
 
-/** `GroupCtrl` alone (no datapath, as UnitCasesSpec drives shapes it has none for) through snax-gvsoc's 66 group cases
+/** `GroupCtrl` alone (no datapath, as UnitCasesSpec drives shapes it has none for) through snax-gvsoc's 70 group cases
   * (`SnaxGroupCases`: dot 2-6 at T 2 and 4, J 1 and 2, dot 5 and 6 at W 1, backpressure, an input gap, JOBS 0, the
   * fold's seed: two folds unseeded, the first or both seeded, a late seed on one fold, on a SerialAccumulate and on a
   * Mac; the output packer, `pack_*`; the input slicer, `slice_*`, among them a seeded Mac's broadcast input sliced 8
   * from a word (wires after the slicer, which the rule does not see); and bicg's one pass, `fork_*`, two chains on a
   * forked input, a JOBS and a ready per chain's output; the bank, `bank_*`, a Mac's rows with its r held, ROWS on its
-  * wire the case's rows, alone and in bicg's two strips; their data is checked by `tb.cpp`, and dot5_w1_j2's through
-  * the wrapper by ShellEndToEndSpec), cycle for cycle: per cycle the outer valids (a forked input's on each of its
-  * units' handshakes, as the wrapper wires it) and each output's ready poked; each input's ready (its unit's firing,
-  * the per-unit join of CONTRACTS, "Accelerator RTL spec"; a seed's that firing on its job's first beat, the unit's
-  * firings counted mod its T), each unit's fire and give, each buffer's occupancy after the cycle and busy compared; at
-  * the run's end its line from `cls` per busy cycle and the head's firings. Each case runs twice (the rule does not
-  * tell the two apart, the control unit's counters do): with every unit's T fixed (`params.T`), JOBS on its wire; and
-  * with every unit of T != 1 open, its T a JOB_BEATS read live from its wire, so dot 2's and dot 3's mul counts against
-  * or borrows from a sum whose T is the csr's. A `pack_*` case (`dout`) runs through `PackedGroupCtrl`: the case's
-  * ready is the writer's, the owner's n-th push in a run is -(n + 1) at the lane's width, and per busy cycle `sent` is
-  * the packer's word going out; at the end the words sent are the case's `words`. A `slice_*` case (`din`) runs through
-  * it too, its sliced inputs through slicers: their valids are the readers', and their ready, the word taken, is
-  * compared with the case's `took`. Without `SNAX_GVSOC_GROUP_CASES` the spec cancels.
+  * wire the case's rows, alone and in bicg's two strips; atax's one group, `atax_*`, its t over a held link into the
+  * bank and A forked through a fork buffer, the buffer's occupancy after the links'; their data is checked by `tb.cpp`,
+  * and dot5_w1_j2's through the wrapper by ShellEndToEndSpec), cycle for cycle: per cycle the outer valids (a forked
+  * input's on each of its units' handshakes, as the wrapper wires it) and each output's ready poked; each input's ready
+  * (its unit's firing, the per-unit join of CONTRACTS, "Accelerator RTL spec"; a seed's that firing on its job's first
+  * beat, the unit's firings counted mod its T), each unit's fire and give, each buffer's occupancy after the cycle and
+  * busy compared; at the run's end its line from `cls` per busy cycle and the head's firings. Each case runs twice (the
+  * rule does not tell the two apart, the control unit's counters do): with every unit's T fixed (`params.T`), JOBS on
+  * its wire; and with every unit of T != 1 open, its T a JOB_BEATS read live from its wire, so dot 2's and dot 3's mul
+  * counts against or borrows from a sum whose T is the csr's. A `pack_*` case (`dout`) runs through `PackedGroupCtrl`:
+  * the case's ready is the writer's, the owner's n-th push in a run is -(n + 1) at the lane's width, and per busy cycle
+  * `sent` is the packer's word going out; at the end the words sent are the case's `words`. A `slice_*` case (`din`)
+  * runs through it too, its sliced inputs through slicers: their valids are the readers', and their ready, the word
+  * taken, is compared with the case's `took`. Without `SNAX_GVSOC_GROUP_CASES` the spec cancels.
   */
 class GroupCasesSpec extends AnyFlatSpec with ForgeTester {
 
-  /** The case's group: a linked input after the unit's outer ones (to_input = its outer inputs, as `tb.cpp`); its forks
-    * by unit; with `open`, every unit of T != 1 reads its T from its JOB_BEATS wire. The case's outputs are its sinks
-    * in unit order, `GroupDesc.outputs`.
+  /** The case's group: a unit's inputs fed inside the group after its outer ones, its fork buffers' then its link's (as
+    * `tb.cpp`); its forks by unit and its fork buffers; with `open`, every unit of T != 1 reads its T from its
+    * JOB_BEATS wire. The case's outputs are its sinks in unit order, `GroupDesc.outputs`.
     */
   def desc(c: SnaxGroupCases.Case, open: Boolean = false): GroupDesc = {
-    def at(name: String) = c.units.indexWhere(_.name == name)
+    def at(name:   String) = c.units.indexWhere(_.name == name)
+    def bufs(name: String) = c.forkBufs.count(_.to == name)
     val d = GroupDesc(
       "dot",
       c.units.map { u =>
-        val fed = c.links.exists(_.to == u.name)
+        val fed = bufs(u.name) + c.links.count(_.to == u.name)
         val t   = if (open && u.t != 1) None else Some(u.t)
-        UnitDesc(u.name, u.latency, u.ii, u.span, u.inputs, t, if (fed) Seq(u.inputs) else Nil, u.seed, u.rows, u.hold)
+        UnitDesc(u.name, u.latency, u.ii, u.span, u.inputs, t, u.inputs until u.inputs + fed, u.seed, u.rows, u.hold)
       },
-      c.links.map(l => Link(at(l.from), at(l.to), c.units(at(l.to)).inputs, l.depth)),
-      c.forks.map(_.map(m => at(m._1)))
+      c.links.map(l => Link(at(l.from), at(l.to), c.units(at(l.to)).inputs + bufs(l.to), l.depth, l.hold)),
+      c.forks.map(_.map(m => at(m._1))),
+      c.forkBufs.zipWithIndex.map { case (f, i) =>
+        ForkLink(f.fork, at(f.to), c.units(at(f.to)).inputs + c.forkBufs.take(i).count(_.to == f.to), f.depth)
+      }
     )
     require(
       c.outputs.isEmpty || c.outputs.map(at) == d.outputs,
@@ -168,7 +173,8 @@ class GroupCasesSpec extends AnyFlatSpec with ForgeTester {
           at += 1
         }
         for (k   <- c.units.indices if cyc.fire(k)) fired(k) += 1
-        val occ = c.depths.filter(_ > 0).indices.map(i => io.links(i).occupancy.peek().litValue.toInt)
+        val occ = c.depths.filter(_ > 0).indices.map(i => io.links(i).occupancy.peek().litValue.toInt) ++
+          c.forkBufs.indices.map(i => io.forkLinks.get(i).occupancy.peek().litValue.toInt)
         assert(occ == cyc.occupancy, s"$clue: occupancy $occ")
         for (p <- pk) {
           val sent = high(p.sent)
@@ -191,7 +197,7 @@ class GroupCasesSpec extends AnyFlatSpec with ForgeTester {
       it should "give every group case's cycles and runs" in
         cancel(s"${SnaxGroupCases.Env} is not set (snax-gvsoc's tests/snax/group/cases)")
     case Some(all) =>
-      it should "find the 66 group cases" in assert(all.size == 66, s"${all.size} cases")
+      it should "find the 70 group cases" in assert(all.size == 70, s"${all.size} cases")
       for (c <- all) {
         it should s"give ${c.name}'s cycles and runs" in run(c, open = false)
         it should s"give ${c.name}'s cycles and runs with its T from JOB_BEATS" in run(c, open = true)

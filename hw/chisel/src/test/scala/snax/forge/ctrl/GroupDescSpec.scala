@@ -5,7 +5,8 @@ import org.scalatest.flatspec.AnyFlatSpec
 /** `GroupDesc` over edges: its topological order, head and owner, two chains on a fork with their outputs and chains,
   * and the graphs it refuses with SnaxGroupRule's reasons (a fork or a join of links, a cycle, two chains no fork
   * joins, a fork onto a unit a link feeds or of one unit) or snax_group.cpp's (a link on an outer input, two links on
-  * one input, an input left to a link that none feeds).
+  * one input, an input left to a link that none feeds); atax's one group with its held link and fork link, and their
+  * refusals (a held link not a buffer into a bank, a fork link of depth 0, into its own fork or onto a fed input).
   */
 class GroupDescSpec extends AnyFlatSpec {
 
@@ -35,8 +36,14 @@ class GroupDescSpec extends AnyFlatSpec {
     assert(d.chain == Seq(0, 0, 1))
   }
 
-  private def refused(units: Seq[UnitDesc], links: Seq[Link], why: String, forks: Seq[Seq[Int]] = Nil): Unit = {
-    val e = intercept[IllegalArgumentException](GroupDesc("g", units, links, forks))
+  private def refused(
+    units:     Seq[UnitDesc],
+    links:     Seq[Link],
+    why:       String,
+    forks:     Seq[Seq[Int]] = Nil,
+    forkLinks: Seq[ForkLink] = Nil
+  ): Unit = {
+    val e = intercept[IllegalArgumentException](GroupDesc("g", units, links, forks, forkLinks))
     assert(e.getMessage.contains(why), e.getMessage)
   }
 
@@ -87,5 +94,35 @@ class GroupDescSpec extends AnyFlatSpec {
       "link 1: b's input 0 is not an input left to a link, or another link feeds it"
     )
     refused(Seq(unit("a", 1), unit("b", 0, Seq(0))), Nil, "b's input 0: no link feeds it")
+  }
+
+  // atax's shape: mul -> sum -> mac, t held into mac's bank, A forked to mac through a fork link
+  private val atax      =
+    Seq(unit("mul", 2), unit("sum", 0, Seq(0)), UnitDesc("mac", 1, 1, 1, 0, None, Seq(0, 1), rows = 2))
+  private val ataxLinks = Seq(Link(0, 1, 0, 1), Link(1, 2, 1, 1, hold = true))
+
+  it should "give atax's one group its fork link and its held link" in {
+    val d = GroupDesc("g", atax, ataxLinks, Seq(Seq(0)), Seq(ForkLink(0, 2, 0, 4)))
+    assert(d.order == Seq(0, 1, 2)            && d.outputs == Seq(2))
+    assert(d.forkIns == Seq(Nil, Nil, Seq(0)) && d.holding == Seq(false, false, true))
+  }
+
+  it should "refuse a held link not into a bank or a wire, and a fork link of depth 0, not after its fork or on a fed input" in {
+    val plain    = atax.updated(2, atax(2).copy(rows = 1))
+    refused(plain, ataxLinks, "link 1: held, but mac has 1 row(s) and the link depth 1; a held link is a buffer")
+    refused(atax, ataxLinks.updated(1, Link(1, 2, 1, 0, hold = true)), "the link depth 0; a held link is a buffer")
+    val forks    = Seq(Seq(0))
+    refused(atax, ataxLinks, "fork link 0: no such fork or unit, or a depth below 1", forks, Seq(ForkLink(0, 2, 0, 0)))
+    val twoReads = atax.updated(2, atax(2).copy(inputs = 1, linked = Seq(1)))
+    refused(twoReads, ataxLinks, "a fork gives one input to two or more units", forks) // one unit, no fork link
+    val early = Seq(unit("mul", 1, Seq(1)), unit("sum", 0, Seq(0)), twoReads(2)) // a fork link into its own fork
+    refused(early, ataxLinks, "fork link 0: unit 0 is not after the fork's units", forks, Seq(ForkLink(0, 0, 1, 2)))
+    refused(
+      atax,
+      ataxLinks,
+      "fork link 0: mac's input 1 is not an input left to a link, or another link feeds it",
+      forks,
+      Seq(ForkLink(0, 2, 1, 4))
+    )
   }
 }

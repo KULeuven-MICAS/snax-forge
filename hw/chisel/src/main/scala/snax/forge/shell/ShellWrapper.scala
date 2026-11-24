@@ -88,7 +88,12 @@ class ShellPorts(val readers: Seq[Int], val writers: Seq[Int], val groups: Seq[S
   *
   * A held input (`hold`), a banked unit's broadcast input read once a row: its lane is kept in `<unit>_<port>_hold`, a
   * register of the element's width loaded when the control takes its beat (a row's first firing), and the datapath sees
-  * the live lane on that firing and the held one on the row's others. A carried seed (`carry`) reaches the datapath
+  * the live lane on that firing and the held one on the row's others. A held link's is the same, its lane its buffer's
+  * one-lane beat (`<tag>_datapath`'s `held`), taken on the control unit's `take`.
+  *
+  * A fork link (`fork_links`) gives a forked input's beat to its port through a `LinkBuffer` in `<tag>_datapath`, its
+  * pins from the group's control unit; the port is not among the fork's at the wrapper, so the fork's ready is its
+  * other units' and its control unit holds it while the buffer is full. A carried seed (`carry`) reaches the datapath
   * ANDed with its control unit's `<unit>_use_seed`, so 0 on the unit's first CARRY jobs; its reader runs every job.
   *
   * Clock `clk_i`, reset `rst_ni` active low and asynchronous, as snax_cluster's (`RequireAsyncReset` in ReqRspManager).
@@ -228,32 +233,37 @@ class ShellWrapper(spec: AcceleratorSpec) extends RawModule {
       for ((u, k) <- g.units.zipWithIndex) {
         val d = dp.io.units(spec.units.indexOf(u))
         val e = c.units(k)
-        for ((j, brm)    <- spec.ins(u.name)) {
+        // The stream's lanes into the unit's port brm: a held lane (taken when `take`) or a carried seed first
+        // (below), then as they are, or a broadcast's one lane to every lane
+        def feed(brm: String, x: Data, take: => Bool): Unit = {
           val p = u.port(brm)
-          // The stream's lanes into the unit's port: a held lane or a carried seed first (below), then as they are, or a
-          // broadcast's one lane to every lane
-          def feed(x: Data): Unit =
-            if (p.hold) { // NB (D190): the lane taken on a row's first firing, kept for the row's others
-              require(p.broadcast && !forks(j), s"${u.name}.$brm: a held input is a broadcast one, not forked")
-              val w    = snax.forge.IntType(p.dtype).width
-              val take = c.in(at).ready
-              val lane = x.asUInt(w - 1, 0)
-              into(Mux(take, lane, RegEnable(lane, 0.U(w.W), take).suggestName(s"${u.name}_${brm}_hold")))
-            } else if (p.carry) // NB (D192): 0 in the seed's place until the unit's CARRY-th job
-              into((x.asUInt & Fill(x.getWidth, e.useSeed.get)).asTypeOf(x))
-            else into(x)
-          def into(x: Data): Unit =
-            if (!p.broadcast) d(brm) := x.asTypeOf(d(brm))
-            else { // NB (D186): wires only, lane 0 of the stream (its one lane) on all the unit's lanes
-              val bcast = Wire(chiselTypeOf(d(brm))).suggestName(s"${u.name}_${brm}_bcast")
-              val lanes = bcast match {
-                case v: Vec[_] => v
-                case other => throw new IllegalArgumentException(s"${u.name}.$brm: a broadcast into $other")
-              }
-              val w     = snax.forge.IntType(p.dtype).width
-              for (l <- 0 until p.lanes) lanes(l) := x.asUInt(w - 1, 0).asTypeOf(lanes(l))
-              d(brm) := dontTouch(bcast) // kept by name in the SV, as the slicer and packer are
+          if (p.hold) { // NB (D190): the lane taken on a row's first firing, kept for the row's others
+            val w    = snax.forge.IntType(p.dtype).width
+            val t    = take
+            val lane = x.asUInt(w - 1, 0)
+            into(brm, Mux(t, lane, RegEnable(lane, 0.U(w.W), t).suggestName(s"${u.name}_${brm}_hold")))
+          } else if (p.carry) // NB (D192): 0 in the seed's place until the unit's CARRY-th job
+            into(brm, (x.asUInt & Fill(x.getWidth, e.useSeed.get)).asTypeOf(x))
+          else into(brm, x)
+        }
+        def into(brm: String, x: Data):                Unit = {
+          val p = u.port(brm)
+          if (!p.broadcast) d(brm) := x.asTypeOf(d(brm))
+          else { // NB (D186): wires only, lane 0 of the stream (its one lane) on all the unit's lanes
+            val bcast = Wire(chiselTypeOf(d(brm))).suggestName(s"${u.name}_${brm}_bcast")
+            val lanes = bcast match {
+              case v: Vec[_] => v
+              case other => throw new IllegalArgumentException(s"${u.name}.$brm: a broadcast into $other")
             }
+            val w     = snax.forge.IntType(p.dtype).width
+            for (l <- 0 until p.lanes) lanes(l) := x.asUInt(w - 1, 0).asTypeOf(lanes(l))
+            d(brm) := dontTouch(bcast) // kept by name in the SV, as the slicer and packer are
+          }
+        }
+        for ((j, brm) <- spec.ins(u.name)) {
+          val p = u.port(brm)
+          require(!p.hold || (p.broadcast && !forks(j)), s"${u.name}.$brm: a held input is a broadcast one, not forked")
+          def feedIn(x: Data): Unit = feed(brm, x, c.in(at).ready)
           if (forks(j)) {
             val (data, valid, ready)  = inPort(j)
             val (bits, v, r, readies) = shared.getOrElseUpdate(
@@ -271,12 +281,12 @@ class ShellWrapper(spec: AcceleratorSpec) extends RawModule {
                 (slicer.io.out.bits, slicer.io.out.valid, slicer.io.out.ready, Seq.empty)
               }
             )
-            feed(bits)
+            feedIn(bits)
             c.in(at).valid := v
             shared(j) = (bits, v, r, readies :+ c.in(at).ready)
           } else if (p.dIn == 1) {
             val (data, valid, ready) = inPort(j)
-            feed(data)
+            feedIn(data)
             c.in(at).valid := valid
             ready          := c.in(at).ready
           } else { // sliced: the slicer between the reader and the unit, after a shared set's mux
@@ -286,7 +296,7 @@ class ShellWrapper(spec: AcceleratorSpec) extends RawModule {
             slicer.io.in.bits   := data.asTypeOf(slicer.io.in.bits)
             slicer.io.in.valid  := valid
             ready               := slicer.io.in.ready
-            feed(slicer.io.out.bits)
+            feedIn(slicer.io.out.bits)
             c.in(at).valid      := slicer.io.out.valid
             slicer.io.out.ready := c.in(at).ready
             slicer.io.enable    := c.busy
@@ -294,6 +304,9 @@ class ShellWrapper(spec: AcceleratorSpec) extends RawModule {
           }
           at += 1
         }
+        // A held link's one-lane beat from its buffer: kept in `<unit>_<port>_hold`, loaded on the control's take
+        for (l <- g.links if l.to._1 == u.name && u.port(l.to._2).hold)
+          feed(l.to._2, dp.io.held.get(dp.heldOf(l.name)), e.take.get)
         for ((j, brm)    <- spec.outs(u.name)) {
           require(desc.outputs.contains(k), s"${u.name}.$brm: an outer output of a unit that has an out-edge")
           val (data, valid, ready) = outPort(j)
@@ -332,16 +345,18 @@ class ShellWrapper(spec: AcceleratorSpec) extends RawModule {
       // A forked input's ready: every unit's taking its beat
       for ((_, (_, _, ready, readies)) <- shared) ready := readies.reduce(_ && _)
 
-      // The buffers' pins, from the group's control unit (its buffers in link order, as GroupDesc.buffers)
-      for ((l, n) <- g.links.filter(_.depth > 0).zipWithIndex) {
-        val b = dp.io.buffers(dp.buffered(l.name))
-        val e = c.links(n)
+      // The buffers' pins, from the group's control unit (its buffers in link order, as GroupDesc.buffers, then its
+      // fork links')
+      val pinned = g.links.filter(_.depth > 0).map(_.name).zip(c.links) ++
+        g.forkLinks.map(_.name).zip(c.forkLinks.toSeq.flatten)
+      for ((l, e) <- pinned) {
+        val b = dp.io.buffers(dp.buffered(l))
         for ((name, pin) <- b.elements)
           pin := (name match {
             case "load"  => e.load
             case "wslot" => e.wslot
             case "rslot" => e.rslot
-            case other   => throw new IllegalArgumentException(s"${l.name}: unknown pin $other")
+            case other   => throw new IllegalArgumentException(s"$l: unknown pin $other")
           })
       }
     }

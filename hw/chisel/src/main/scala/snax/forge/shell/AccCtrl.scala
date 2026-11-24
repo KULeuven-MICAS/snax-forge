@@ -3,7 +3,7 @@ package snax.forge.shell
 import chisel3._
 import chisel3.util.MixedVec
 
-import snax.forge.ctrl.{GroupCtrl, GroupCtrlIO, GroupDesc, Link, UnitDesc}
+import snax.forge.ctrl.{ForkLink, GroupCtrl, GroupCtrlIO, GroupDesc, Link, UnitDesc}
 
 /** `<tag>_ctrl`: the groups' control units (`GroupCtrl`, `<tag>_<group>_ctrl`), one per group of `accelerator.json`,
   * each generated from its group's description (`AccCtrl.desc`). Per group from `<tag>_csr` its start, a bare strobe,
@@ -32,11 +32,13 @@ object AccCtrl {
   /** A group's description (CONTRACTS, "Accelerator RTL spec"): per unit, in the file's order, its L, II and span, its
     * outer inputs (a forked one's on each of its units), its T when fixed (`params.T`, or 1 without a JOB_BEATS) and
     * its inputs no outer port takes, its bank's rows, its held inputs and whether its seed is carried; per link its
-    * ends by unit index, the `to` port's position among its unit's inputs (in port order) and its depth; per fork of
-    * the group its units by index.
+    * ends by unit index, the `to` port's position among its unit's inputs (in port order), its depth and whether it is
+    * held (into a held port); per fork of the group its units by index (a fork link's port's not among them), and per
+    * fork link its fork, its port's unit and position, its depth.
     */
   def desc(spec: AcceleratorSpec, g: AcceleratorSpec.GroupSpec): GroupDesc = {
     def at(unit: String) = g.units.indexWhere(_.name == unit)
+    val forks = spec.forks.filter(_.exists(p => at(p._1) >= 0))
     GroupDesc(
       g.name,
       g.units.map { u =>
@@ -57,9 +59,14 @@ object AccCtrl {
       },
       g.links.map { l =>
         val to = at(l.to._1)
-        Link(at(l.from._1), to, if (to < 0) -1 else g.units(to).inPorts.indexOf(l.to._2), l.depth)
+        val j  = if (to < 0) -1 else g.units(to).inPorts.indexOf(l.to._2)
+        Link(at(l.from._1), to, j, l.depth, to >= 0 && g.units(to).port(l.to._2).hold)
       },
-      spec.forks.map(_.map(p => at(p._1)).filter(_ >= 0)).filter(_.nonEmpty)
+      forks.map(_.filterNot(spec.buffered).map(p => at(p._1)).filter(_ >= 0)),
+      g.forkLinks.map { f =>
+        val to = at(f.to._1)
+        ForkLink(forks.indexWhere(_.contains(f.to)), to, g.units(to).inPorts.indexOf(f.to._2), f.depth)
+      }
     )
   }
 }

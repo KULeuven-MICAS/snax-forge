@@ -23,7 +23,7 @@ class GroupSettings(val open: Int, bits: Int = 32, val chains: Int = 1, banks: S
 
 /** A group control unit's ports (`GroupCtrl`): its start, a bare strobe, and its settings, the csr's wires; busy, its
   * done pulse and pin; its outer handshakes (with several chains, `out` and `last` the first sink's, `rest` and `lasts`
-  * the others'); each unit's and buffer's enables; the cycle's class.
+  * the others'); each unit's and buffer's enables, and each fork link's; the cycle's class.
   */
 class GroupCtrlIO(desc: GroupDesc, jobWidth: Int = 32) extends Bundle {
   private val outs = desc.outputs.size
@@ -32,8 +32,9 @@ class GroupCtrlIO(desc: GroupDesc, jobWidth: Int = 32) extends Bundle {
   val in           = Vec(desc.units.map(_.inputs).sum, new Handshake)
   val out          = Flipped(new Handshake)
   val rest         = Option.when(outs > 1)(Flipped(Vec(outs - 1, new Handshake)))
-  val units        = MixedVec(desc.units.map(u => new UnitEnables(u.span, u.rows, u.carry)))
+  val units        = MixedVec(desc.units.indices.map(desc.enables))
   val links        = MixedVec(desc.buffers.map(i => new LinkEnables(desc.links(i).depth)))
+  val forkLinks    = Option.when(desc.forkLinks.nonEmpty)(MixedVec(desc.forkLinks.map(f => new LinkEnables(f.depth))))
   val busy         = Output(Bool())
   val pulse        = Output(Bool())
   val done         = Output(Bool())
@@ -67,9 +68,9 @@ class GroupCtrlIO(desc: GroupDesc, jobWidth: Int = 32) extends Bundle {
   * Its ports: `in`, every unit's outer inputs' handshakes, unit by unit in port order (a forked input's once per unit,
   * their readies equal); `out`, the outer output, its owner's (`GroupDesc.output`), and with several chains `rest`, the
   * other sinks' in unit order; `units`, each unit's enables to its datapath; `links`, each buffer's, in link order (a
-  * wire has none); `cls`, the cycle's class, as the run line counts it (busy 0, stall_in 1, stall_out 2, flush 3). Test
-  * ports, which the shell leaves unread: each unit's `give` and `adv`, each buffer's `occupancy`, and `cls`; the specs
-  * compare them with snax-gvsoc's cases and `GroupModel` every cycle.
+  * wire has none), and `forkLinks` each fork link's; `cls`, the cycle's class, as the run line counts it (busy 0,
+  * stall_in 1, stall_out 2, flush 3). Test ports, which the shell leaves unread: each unit's `give` and `adv`, each
+  * buffer's `occupancy`, and `cls`; the specs compare them with snax-gvsoc's cases and `GroupModel` every cycle.
   *
   * @param desc
   *   the group: its units and links (`shell.AcceleratorSpec`'s group, `AccCtrl.desc`)
@@ -106,8 +107,12 @@ class GroupCtrl(val desc: GroupDesc, tag: String, jobWidth: Int = 32) extends Mo
   } p      := r
   io.units := rule.io.units
   io.links := rule.io.links
-  io.cls   := rule.io.cls
-  io.last  := rule.io.last
+  for {
+    r <- rule.io.forkLinks
+    p <- io.forkLinks
+  } p     := r
+  io.cls  := rule.io.cls
+  io.last := rule.io.last
 
   private val busy     = rule.io.busy
   private val accepted = io.start.fire

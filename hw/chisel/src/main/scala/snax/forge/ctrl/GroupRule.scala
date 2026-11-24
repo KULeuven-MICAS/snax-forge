@@ -40,36 +40,63 @@ case class UnitDesc(
 
 /** A link of a group, by unit index (SnaxGroupRule's Link): unit `from`'s output into input `toInput` of unit `to` (its
   * position among that unit's inputs; the datapaths use it, the rule does not); `depth` 0 a wire, >= 1 a buffer of that
-  * many beats (`LinkBuffer`).
+  * many beats (`LinkBuffer`); `hold`, a buffer into a bank's held input, taken once a row.
   */
-case class Link(from: Int, to: Int, toInput: Int, depth: Int)
+case class Link(from: Int, to: Int, toInput: Int, depth: Int, hold: Boolean = false)
+
+/** A fork's buffered branch (SnaxGroupRule's ForkLink): fork `fork`'s beat (its index among the description's forks)
+  * through a ring of `depth` >= 1 beats (`LinkBuffer`) into input `toInput` of unit `to`, after every unit of the fork.
+  */
+case class ForkLink(fork: Int, to: Int, toInput: Int, depth: Int)
 
 /** A group's description: its units, the links between them and its forks, a graph (SnaxGroupRule's `configure()`). One
   * or more chains, each a path of links from a head to a sink, whose output is outer: a unit with two out-edges or two
   * in-edges (a fork or a join of links), a cycle and chains no fork joins are refused, with SnaxGroupRule's reasons. A
-  * fork is the units one reader's outer input feeds, the heads of chains, each of span 1. From it: each unit's in-edges
-  * and out-edges, the units in topological order (Kahn's, the lowest index first among the units ready; the head
-  * first), the units owning the outer outputs, the sinks in unit order (`output` the first), and each unit's chain, its
-  * sink's place among them.
+  * fork is the units one reader's outer input feeds, the heads of chains, each of span 1; `forkLinks` give a fork's
+  * beat through a buffer to a unit further down a chain (a fork may then have one unit). A held link goes into a bank.
+  * From it: each unit's in-edges and out-edges, the units in topological order (Kahn's, the lowest index first among
+  * the units ready; the head first), the units owning the outer outputs, the sinks in unit order (`output` the first),
+  * and each unit's chain, its sink's place among them.
   */
-case class GroupDesc(name: String, units: Seq[UnitDesc], links: Seq[Link], forks: Seq[Seq[Int]] = Nil) {
+case class GroupDesc(
+  name:      String,
+  units:     Seq[UnitDesc],
+  links:     Seq[Link],
+  forks:     Seq[Seq[Int]] = Nil,
+  forkLinks: Seq[ForkLink] = Nil
+) {
   require(units.nonEmpty, s"group $name: no unit")
-  for ((e, i) <- links.zipWithIndex) {
+
+  /** Each input fed inside the group, by a link or a fork link, as (unit, input). */
+  private val fed: Seq[(Int, Int)] = links.map(e => e.to -> e.toInput) ++ forkLinks.map(e => e.to -> e.toInput)
+  for ((e, i)      <- links.zipWithIndex) {
     require(
       Seq(e.from, e.to).forall(units.indices.contains) && e.depth >= 0,
       s"group $name: link $i: no such unit, or a depth below 0"
     )
     require(
-      units(e.to).linked.contains(e.toInput) && !links.take(i).exists(x => x.to == e.to && x.toInput == e.toInput),
-      s"group $name: link $i: ${units(e.to).name}'s input ${e.toInput} is not an input left to a link, or another " +
-        "link feeds it"
+      !e.hold || (units(e.to).rows > 1                 && e.depth >= 1),
+      s"group $name: link $i: held, but ${units(e.to).name} has ${units(e.to).rows} row(s) and the link depth " +
+        s"${e.depth}; a held link is a buffer into a bank"
+    )
+  }
+  for ((e, i)      <- forkLinks.zipWithIndex)
+    require(
+      forks.indices.contains(e.fork) && units.indices.contains(e.to) && e.depth >= 1,
+      s"group $name: fork link $i: no such fork or unit, or a depth below 1; a fork's branch to a unit down a chain " +
+        "is a buffer of depth 1 or more"
+    )
+  for (((k, j), i) <- fed.zipWithIndex) {
+    val what = if (i < links.size) s"link $i" else s"fork link ${i - links.size}"
+    require(
+      units(k).linked.contains(j) && !fed.take(i).contains(k -> j),
+      s"group $name: $what: ${units(k).name}'s input $j is not an input left to a link, or another link feeds it"
     )
   }
   for {
-    (u, k)    <- units.zipWithIndex
-    j         <- u.linked
-  }
-    require(links.exists(e => e.to == k && e.toInput == j), s"group $name: ${u.name}'s input $j: no link feeds it")
+    (u, k)         <- units.zipWithIndex
+    j              <- u.linked
+  } require(fed.contains(k -> j), s"group $name: ${u.name}'s input $j: no link feeds it")
 
   /** Per unit its in-edges and its out-edges, by link index. */
   val ins:  Seq[Seq[Int]] = units.indices.map(k => links.indices.filter(links(_).to == k))
@@ -109,8 +136,11 @@ case class GroupDesc(name: String, units: Seq[UnitDesc], links: Seq[Link], forks
     while (outs(x).nonEmpty) x = links(outs(x).head).to
     outputs.indexOf(x)
   }
-  for (f <- forks) {
-    require(f.size >= 2 && f.distinct.size == f.size, s"group $name: a fork gives one input to two or more units")
+  for ((f, i) <- forks.zipWithIndex) {
+    require(
+      f.nonEmpty && f.size + forkLinks.count(_.fork == i) >= 2 && f.distinct.size == f.size,
+      s"group $name: a fork gives one input to two or more units"
+    )
     for (k <- f)
       require(
         units.indices.contains(k) && ins(k).isEmpty && units(k).span == 1,
@@ -131,6 +161,16 @@ case class GroupDesc(name: String, units: Seq[UnitDesc], links: Seq[Link], forks
     s"group $name: the chains ending at ${outputs.map(units(_).name).mkString(" and ")}: no fork joins them; a " +
       "group's chains share an input"
   )
+
+  for ((e, i) <- forkLinks.zipWithIndex)
+    require(
+      forks(e.fork).forall(k => order.indexOf(e.to) > order.indexOf(k)),
+      s"group $name: fork link $i: unit ${e.to} is not after the fork's units in the chain"
+    )
+
+  /** Per unit the fork links into it, by index; whether a held link goes into it (its `take`). */
+  val forkIns: Seq[Seq[Int]] = units.indices.map(k => forkLinks.indices.filter(forkLinks(_).to == k))
+  val holding: Seq[Boolean]  = units.indices.map(k => ins(k).exists(links(_).hold))
 
   /** The head, the first unit in topological order; the unit owning the first outer output. */
   val head:   Int = order.head
@@ -155,6 +195,9 @@ case class GroupDesc(name: String, units: Seq[UnitDesc], links: Seq[Link], forks
 
   /** The links that are buffers (depth >= 1), by link index: the ones with enables (a wire has none). */
   def buffers: Seq[Int] = links.indices.filter(links(_).depth > 0)
+
+  /** Unit k's enables to its datapath. */
+  def enables(k: Int): UnitEnables = new UnitEnables(units(k).span, units(k).rows, units(k).carry, holding(k))
 }
 
 /** A Decoupled port split in two: its data goes to the datapath, its valid and ready to the controller. */
@@ -168,9 +211,10 @@ class Handshake extends Bundle {
   * read is its job's first, d = 0), `read` and `lane` (lane `lane` read in place, at every span: at span 1 the read is
   * the firing), `adv` (its pipeline advances: not frozen) and `give` (a result pushed into its link or the outer
   * output); a bank's (`rows` > 1) `row`, the row its firing adds into, and `drain`, the row its output shows; a carried
-  * seed's `useSeed`, its seed given to the datapath, else 0.
+  * seed's `useSeed`, its seed given to the datapath, else 0; with a held link into it (`held`), `take`, its held link's
+  * beat taken into the hold register (a firing at row 0).
   */
-class UnitEnables(span: Int, rows: Int = 1, carry: Boolean = false) extends Bundle {
+class UnitEnables(span: Int, rows: Int = 1, carry: Boolean = false, held: Boolean = false) extends Bundle {
   val fire    = Output(Bool())
   val first   = Output(Bool())
   val read    = Output(Bool())
@@ -180,6 +224,7 @@ class UnitEnables(span: Int, rows: Int = 1, carry: Boolean = false) extends Bund
   val row     = Option.when(rows > 1)(Output(UInt(log2Ceil(rows).W)))
   val drain   = Option.when(rows > 1)(Output(UInt(log2Ceil(rows).W)))
   val useSeed = Option.when(carry)(Output(Bool()))
+  val take    = Option.when(held)(Output(Bool()))
 }
 
 /** A buffer's enables (`LinkBuffer`'s pins) and its occupancy after the cycle. */
@@ -230,6 +275,13 @@ class LinkEnables(depth: Int) extends Bundle {
   * (ROWS − 1 at 0). Seeded, its seed is needed and ready on `first`, a beat a row. A held input needs its beat, and is
   * ready, only at ρ = 0. A carried seed is taken every job as any seed; `useSeed` = (its jobs counter ≥ CARRY) for the
   * wrapper, a comparison.
+  *
+  * A held link into a bank is the same: its buffer's beat is needed and popped only at ρ = 0 (`take`, for the wrapper's
+  * hold register), so a result of its producer feeds ROWS of the bank's firings and the producer's digit for the bank
+  * steps by ROWS, wrapping at its T. A fork link gives the fork's beat to a unit down the chain through a ring of D
+  * beats (`<head>_<to>_fork_occupancy`, `_wslot`, `_rslot`): loaded when the fork's units fire, popped by its
+  * consumer's firing, which needs occupancy > 0; the fork is held, as when split, while the ring is full and its
+  * consumer does not pop.
   */
 class GroupRule(val desc: GroupDesc, jobWidth: Int = 32) {
   // NB (D153): a unit counts its results in nested counters, never against n_k; snax-gvsoc's SnaxGroupRule must
@@ -266,18 +318,19 @@ class GroupRule(val desc: GroupDesc, jobWidth: Int = 32) {
   private val forked  = desc.forks.nonEmpty
 
   val io = Wire(new Bundle {
-    val config   = Input(Bool())
-    val settings = Input(desc.settings(jobWidth))
-    val in       = MixedVec(descs.map(u => Vec(u.inputs, new Handshake)))
-    val out      = Flipped(new Handshake)
-    val rest     = Option.when(outputs.size > 1)(Flipped(Vec(outputs.size - 1, new Handshake)))
-    val units    = MixedVec(descs.map(u => new UnitEnables(u.span, u.rows, u.carry)))
-    val links    = MixedVec(desc.buffers.map(i => new LinkEnables(desc.links(i).depth)))
-    val busy     = Output(Bool())
-    val done     = Output(Bool())
-    val last     = Output(Bool())
-    val lasts    = Option.when(outputs.size > 1)(Output(Vec(outputs.size - 1, Bool())))
-    val cls      = Output(UInt(2.W))
+    val config    = Input(Bool())
+    val settings  = Input(desc.settings(jobWidth))
+    val in        = MixedVec(descs.map(u => Vec(u.inputs, new Handshake)))
+    val out       = Flipped(new Handshake)
+    val rest      = Option.when(outputs.size > 1)(Flipped(Vec(outputs.size - 1, new Handshake)))
+    val units     = MixedVec(descs.indices.map(k => desc.enables(k)))
+    val links     = MixedVec(desc.buffers.map(i => new LinkEnables(desc.links(i).depth)))
+    val forkLinks = Option.when(desc.forkLinks.nonEmpty)(MixedVec(desc.forkLinks.map(f => new LinkEnables(f.depth))))
+    val busy      = Output(Bool())
+    val done      = Output(Bool())
+    val last      = Output(Bool())
+    val lasts     = Option.when(outputs.size > 1)(Output(Vec(outputs.size - 1, Bool())))
+    val cls       = Output(UInt(2.W))
   })
 
   /** Output o's handshake (its sink's, `outputs(o)`). */
@@ -308,6 +361,9 @@ class GroupRule(val desc: GroupDesc, jobWidth: Int = 32) {
   private def last(k: Int, c: UInt, inc: UInt): Bool =
     live(k).map(inc === _).getOrElse(c === (descs(k).fixedT.get - 1).U)
   private def succ(k: Int): Option[Int] = desc.outs(k).headOption.map(links(_).to)
+
+  /** Whether unit j is fed by a held link. */
+  private def heldInto(j: Int): Boolean = desc.holding(j)
 
   /** The units after k, nearest first. */
   private def after(k: Int): Seq[Int] = succ(k).map(s => s +: after(s)).getOrElse(Nil)
@@ -367,6 +423,20 @@ class GroupRule(val desc: GroupDesc, jobWidth: Int = 32) {
     RegInit(0.U(log2Ceil(e.depth max 2).W)).suggestName(link(i, "rslot"))
   }
 
+  // Per fork link the same, `<fork's first unit>_<to>_fork_...`
+  private def forkHead(i: Int): Int = desc.forks(desc.forkLinks(i).fork).head
+  private def forkLink(i: Int, what: String) =
+    s"${descs(forkHead(i)).name}_${descs(desc.forkLinks(i).to).name}_fork_$what"
+  private val forkOccupancy                  = desc.forkLinks.zipWithIndex.map { case (e, i) =>
+    RegInit(0.U(log2Ceil(e.depth + 1).W)).suggestName(forkLink(i, "occupancy"))
+  }
+  private val forkWslot                      = desc.forkLinks.zipWithIndex.map { case (e, i) =>
+    RegInit(0.U(log2Ceil(e.depth max 2).W)).suggestName(forkLink(i, "wslot"))
+  }
+  private val forkRslot                      = desc.forkLinks.zipWithIndex.map { case (e, i) =>
+    RegInit(0.U(log2Ceil(e.depth max 2).W)).suggestName(forkLink(i, "rslot"))
+  }
+
   /** One decision of the cycle (step()'s two passes), its wires named `<unit><tag>_<what>`; `held`, per unit whether it
     * is held from firing (a fork's), None for a group without a fork.
     */
@@ -388,9 +458,14 @@ class GroupRule(val desc: GroupDesc, jobWidth: Int = 32) {
                         .map { case (p, j) => p.valid || heldOff(k, j) }
                         .foldLeft(true.B)(_ && _)                         &&
                       (!first(k) || io.in(k).last.valid))
-      avail(k)     := desc.ins(k).foldLeft(inputs(k)) { (a, i) =>
-        a && (if (links(i).depth == 0) offer(links(i).from) else occupancy(i) =/= 0.U)
-      }
+      // NB (D197): a held link's beat is needed only on a row's first firing; a fork link's while its ring holds one
+      avail(k)     := desc
+        .forkIns(k)
+        .foldLeft(desc.ins(k).foldLeft(inputs(k)) { (a, i) =>
+          a && (if (links(i).depth == 0) offer(links(i).from)
+                else if (links(i).hold) occupancy(i) =/= 0.U || s.row.get =/= 0.U
+                else occupancy(i) =/= 0.U)
+        })((a, i) => a && forkOccupancy(i) =/= 0.U)
       wants(k)     := held.fold(busy && left(k) && s.gap === 0.U)(h => busy && left(k) && s.gap === 0.U && !h(k))
       wouldFire(k) := wants(k)     && avail(k) && (if (u.span == 1) true.B else s.lane === (u.span - 1).U)
       gives(k)     := wouldFire(k) && (if (u.rows > 1) (s.d +& rowsOf(k)) >= tOf(k) else last(k, s.d, s.dInc))
@@ -404,11 +479,14 @@ class GroupRule(val desc: GroupDesc, jobWidth: Int = 32) {
     // step()'s backward pass, in reverse order: room, frozen, fire, read, give (the C++'s push); an out-edge takes on
     // its consumer's firing
     val room, frozen, fire, read, give = Array.fill(n)(WireDefault(false.B))
+
+    /** Whether unit k takes its held link's beat: it fires at row 0. */
+    def taken(k: Int): Bool = fire(k) && st(k).row.get === 0.U
     for (k <- desc.order.reverse) {
       val u    = descs(k)
       val take = desc.outs(k).map { i =>
         val e = links(i)
-        if (e.depth == 0) fire(e.to) else occupancy(i) < e.depth.U || fire(e.to)
+        if (e.depth == 0) fire(e.to) else occupancy(i) < e.depth.U || (if (e.hold) taken(e.to) else fire(e.to))
       }
       room(k) := take.foldLeft(if (outputs.contains(k)) outPort(outputs.indexOf(k)).ready else true.B)(_ && _)
       frozen(k) := (if (u.latency > 0) head(k) else gives(k)) && !room(k)
@@ -426,9 +504,13 @@ class GroupRule(val desc: GroupDesc, jobWidth: Int = 32) {
   // decided again: SnaxGroupRule's step(), which blocks such units until no fork is split
   private val members                                  = desc.forks.flatten.distinct.sorted
   private val held                                     = Option.when(forked) {
-    val free = new Pass(None, "_free")
-    val all  = WireDefault(members.map(free.fire(_)).reduce(_ && _)).suggestName("forks_fire")
-    (k: Int) => if (members.contains(k)) free.fire(k) && !all else false.B
+    val free  = new Pass(None, "_free")
+    val all   = WireDefault(members.map(free.fire(_)).reduce(_ && _)).suggestName("forks_fire")
+    // NB (D196): a fork with a buffered branch takes its beat only when the buffer has room: below its depth, or its
+    // consumer pops one in the cycle
+    val stuck = desc.forkLinks.zipWithIndex.map { case (e, i) => forkOccupancy(i) === e.depth.U && !free.fire(e.to) }
+    val split = if (stuck.isEmpty) !all else WireDefault(!all || stuck.reduce(_ || _)).suggestName("forks_held")
+    (k: Int) => if (members.contains(k)) free.fire(k) && split else false.B
   }
   private val pass                                     = new Pass(held, "")
   private val (inputs, avail, wants, wouldFire, gives) =
@@ -447,7 +529,7 @@ class GroupRule(val desc: GroupDesc, jobWidth: Int = 32) {
   for ((k, o) <- outputs.zipWithIndex) outPort(o).valid := pass.offer(k)
 
   // The datapaths' enables and the buffers'
-  for (k      <- 0 until n) {
+  for (k <- 0 until n) {
     val e = io.units(k)
     e.fire  := fire(k)
     e.first := first(k)
@@ -465,14 +547,29 @@ class GroupRule(val desc: GroupDesc, jobWidth: Int = 32) {
     }
     // NB (D192): the carried seed's value is the datapath's only from the CARRY-th job on, its jobs counter
     for (u <- e.useSeed) u := WireDefault(st(k).g.get >= carryOf(k)).suggestName(s"${descs(k).name}_use_seed")
+    for (t <- e.take) t    := WireDefault(pass.taken(k)).suggestName(s"${descs(k).name}_take")
   }
+
+  /** A buffer's take: its consumer's firing, a held link's on a row's first. */
+  private def pop(l: Link): Bool = if (l.hold) pass.taken(l.to) else fire(l.to)
   for ((i, b) <- desc.buffers.zipWithIndex) {
     val e = io.links(b)
     val l = links(i)
     e.load      := give(l.from)
     e.wslot     := (if (l.depth > 1) wslot(i) else 0.U)
     e.rslot     := (if (l.depth > 1) rslot(i) else 0.U)
-    e.occupancy := occupancy(i) + give(l.from) - fire(l.to)
+    e.occupancy := occupancy(i) + give(l.from) - pop(l)
+  }
+  // A fork link's: a load each beat its fork takes (its first unit fires), a take its consumer's firing
+  for {
+    ports     <- io.forkLinks
+    (f, i)    <- desc.forkLinks.zipWithIndex
+  } {
+    val e = ports(i)
+    e.load      := fire(forkHead(i))
+    e.wslot     := (if (f.depth > 1) forkWslot(i) else 0.U)
+    e.rslot     := (if (f.depth > 1) forkRslot(i) else 0.U)
+    e.occupancy := forkOccupancy(i) + fire(forkHead(i)) - fire(f.to)
   }
 
   // The class, judged at the sinks (step()'s busy and waits, then its cls)
@@ -513,7 +610,7 @@ class GroupRule(val desc: GroupDesc, jobWidth: Int = 32) {
 
   // The registers, as step() (the backward pass the pipeline, the II and the lane; then the buffers) and start() (the
   // II gap carries over) change them
-  for (k <- 0 until n) {
+  for (k      <- 0 until n) {
     val u = descs(k)
     val s = st(k)
     if (u.ii > 1) when(fire(k)) {
@@ -531,11 +628,18 @@ class GroupRule(val desc: GroupDesc, jobWidth: Int = 32) {
       s.lane := s.lane + 1.U
     }
   }
-  for (i <- desc.buffers) {
-    val Link(from, to, _, d) = links(i)
+  for (i      <- desc.buffers) {
+    val Link(from, _, _, d, _) = links(i)
+    val take                   = pop(links(i))
     when(give(from)) { wslot(i) := (if (d > 1) Mux(wslot(i) === (d - 1).U, 0.U, wslot(i) + 1.U) else 0.U) }
-    when(fire(to)) { rslot(i) := (if (d > 1) Mux(rslot(i) === (d - 1).U, 0.U, rslot(i) + 1.U) else 0.U) }
-    occupancy(i) := occupancy(i) + give(from) - fire(to)
+    when(take) { rslot(i) := (if (d > 1) Mux(rslot(i) === (d - 1).U, 0.U, rslot(i) + 1.U) else 0.U) }
+    occupancy(i) := occupancy(i) + give(from) - take
+  }
+  for ((f, i) <- desc.forkLinks.zipWithIndex) {
+    val (load, take, d) = (fire(forkHead(i)), fire(f.to), f.depth)
+    when(load) { forkWslot(i) := (if (d > 1) Mux(forkWslot(i) === (d - 1).U, 0.U, forkWslot(i) + 1.U) else 0.U) }
+    when(take) { forkRslot(i) := (if (d > 1) Mux(forkRslot(i) === (d - 1).U, 0.U, forkRslot(i) + 1.U) else 0.U) }
+    forkOccupancy(i) := forkOccupancy(i) + load - take
   }
 
   when(io.config) {
@@ -564,8 +668,9 @@ class GroupRule(val desc: GroupDesc, jobWidth: Int = 32) {
         // into the jobs digit
         when(gives(k)) {
           val carry = s.digits.foldLeft(true.B) { case (in, (j, digit)) =>
-            val inc  = digit + 1.U
-            val wrap = last(j, digit, inc)
+            // NB (D197): across a held link a result feeds a bank row's ROWS firings, so that digit steps by ROWS
+            val inc  = if (heldInto(j)) digit +& rowsOf(j) else digit + 1.U
+            val wrap = if (heldInto(j)) inc === tOf(j) else last(j, digit, inc)
             when(in) { digit := Mux(wrap, 0.U, inc) }
             in && wrap
           }
