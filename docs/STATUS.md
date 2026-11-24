@@ -179,7 +179,7 @@ Dates: 20 Nov, track A's target (fine if it slips); 27 Nov, the softmax gate (so
 
 ## Open Items
 
-Questions not decided yet. Numbers are never reused; a closed item is removed, and where it closed is in git history. Next free number: 170.
+Questions not decided yet. Numbers are never reused; a closed item is removed, and where it closed is in git history. Next free number: 171.
 
 1. BRM dataflow notation: `affine` and `stream` (D70), frozen in M6.
 2. What automated search reads and how a sweep is configured (DSE1, M8).
@@ -271,6 +271,7 @@ Questions not decided yet. Numbers are never reused; a closed item is removed, a
 167. `GroupRule`'s done for a bank at L 0 is early: the sink's `g + 1 = JOBS` holds on each of the last job's ROWS giving firings, so the run ends at the first of them (`GroupHoldForkSpec` keeps its bank at L 1–2). A bank is an accumulating `Mac`, L 1, so no design reaches it; `UnitDesc` could refuse rows > 1 at L 0, or done count the bank's last row.
 168. A group that reads through L1 what it writes in the same run is estimated as if the read waited for nothing: `atax_v4`'s steps after `fork_read A` and after `link A` (the `Mac` reads t from L1 while the vsum writes it) give 515 and 514 cycles against 523 once t is linked. LOWER could refuse a group reading a container it writes, or order the reader behind the writer's rows (open item 53).
 169. The one-group atax points on vsim are NEAR within their fill (TIERA3 B4): `atax_v4` at D = 10 and 8 and at W = 32, R = 2 run 523, 649 and 133, the estimate exactly and 3 under SNAX-GVSoC, whose streamer fill the RTL hides for the forked A; `atax_v3` runs 526 against 523, 3 over; `atax_v2_1_1`'s Mac 514 against 516. A trace of the streamers' first beats on both, as open item 65 asks, would say whose fill differs.
+170. A fork's buffer comes before the link into its reader (D196), so nothing in the graph says a FIFO is needed until `link tmp1` is refused. Ryan's later flow: `link` into a forked reader allowed, the state flagged as a design problem on that branch (a buffer of at least T beats), its fix `link A` offered on the edge; a new decision, as that state has no estimate.
 
 ## Sync Reminders
 
