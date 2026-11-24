@@ -632,7 +632,10 @@ def _branch(g: Graph, fork: Node, what: str) -> str:
 def _link_site(g: Graph, container: str) -> dict[str, Any]:
     """``container`` and a ``group``: an end's group name, else the graph's, or the next free
     one (``mvt_v2``) when another unit's instance or group has it (mvt's second half); a
-    forked container's, its fork's group."""
+    forked container's, its fork's group (the fork node selected names its container)."""
+    fork = next((n for n, _ in g.walk() if n.kind == "fork" and n.id == container), None)
+    if fork is not None:
+        container = fork.attrs["container"]
     if (fork := _fork_of(g, container)) is not None:
         reader = fork.attrs["readers"][0].split(".")[0]
         return {

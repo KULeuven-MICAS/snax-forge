@@ -37,6 +37,7 @@ def test_link_on_a_fork_buffers_the_branch_down_the_chain():
     (fork,) = [n for n, _ in g.walk() if n.kind == "fork"]
     assert fork.attrs["readers"] == ["mul.a", "mac.a"] and fork.attrs["buffers"] == {"mac.a": 4}
     assert TRANSFORMS["link"].site(forked, "A") == {"container": "A", "group": "atax"}
+    assert TRANSFORMS["link"].site(forked, fork.id) == {"container": "A", "group": "atax"}
     assert groups(g) == {"atax": ["mul", "sum", "mac"]}
     assert forked_ports(g) == {"mac.a": "mul.a"}
     assert unlink(buffered, "A").to_dict() == forked.to_dict()
