@@ -3,6 +3,7 @@ writes its forge/ fixture, and each feature it carries for snax-gvsoc and the RT
 
 from tests.composite.helpers import FORGE, RTL_FIXTURES, same_files
 from tests.helpers import requires_submodule
+from tests.numbers import check_composite
 
 pytestmark = requires_submodule
 
@@ -29,3 +30,7 @@ def test_y2_is_broadcast_to_every_lane_of_the_seeded_mac(walked):
     mac = walked.units["mac_x2"]
     assert mac["ports"]["b"]["broadcast"] and mac["ports"]["b"]["d_in"] == 8
     assert list(mac["ports"]) == ["a", "b", "seed", "out"]
+
+
+def test_the_numbers_match_their_snapshot(walked):
+    check_composite(walked)

@@ -4,6 +4,7 @@ RTL, one a test."""
 
 from tests.composite.helpers import FORGE, RTL_FIXTURES, same_files
 from tests.helpers import requires_submodule
+from tests.numbers import check_composite
 
 pytestmark = requires_submodule
 
@@ -35,3 +36,7 @@ def test_every_start_is_waited_on_at_once(walked):
 def test_the_seed_is_sliced_and_the_output_packed(walked):
     ports = walked.units["vsum_x2"]["ports"]
     assert (ports["seed"]["d_in"], ports["out"]["d_out"]) == (2, 2)
+
+
+def test_the_numbers_match_their_snapshot(walked):
+    check_composite(walked)

@@ -4,6 +4,7 @@ RTL, one a test."""
 
 from tests.composite.helpers import FORGE, RTL_FIXTURES, same_files
 from tests.helpers import requires_submodule
+from tests.numbers import check_composite
 
 pytestmark = requires_submodule
 
@@ -34,3 +35,7 @@ def test_the_head_counts_job_beats(walked):
     assert [c["name"] for c in walked.units["mac"]["csrs"]] == ["JOB_BEATS"]
     (task,) = walked.tasks.accel_steps()
     assert task.values == {"mac": {"n": 2, "T": 2}, "sum": {"n": 1, "T": 1}}
+
+
+def test_the_numbers_match_their_snapshot(walked):
+    check_composite(walked)

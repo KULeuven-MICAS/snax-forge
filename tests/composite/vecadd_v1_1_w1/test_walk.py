@@ -3,6 +3,7 @@ its RTL fixture, and each feature it carries for snax-gvsoc and the RTL, one a t
 
 from tests.composite.helpers import FORGE, RTL_FIXTURES, same_files
 from tests.helpers import requires_submodule
+from tests.numbers import check_composite
 
 pytestmark = requires_submodule
 
@@ -29,3 +30,7 @@ def test_the_inputs_are_sliced_and_the_output_packed(walked):
 def test_a_beat_of_words_moves_two_jobs(walked):
     (s,) = [x for x in walked.cluster.accelerator.movers if x.name == "acc_out"]
     assert s.lanes == 1 and walked.tasks.accel_steps()[0].values == {"n": 8}
+
+
+def test_the_numbers_match_their_snapshot(walked):
+    check_composite(walked)

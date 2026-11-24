@@ -3,6 +3,7 @@ forge/ fixture, and each feature it carries for snax-gvsoc and the RTL, one a te
 
 from tests.composite.helpers import FORGE, RTL_FIXTURES, same_files
 from tests.helpers import requires_submodule
+from tests.numbers import check_composite
 
 pytestmark = requires_submodule
 
@@ -33,3 +34,7 @@ def test_the_fold_is_seeded(walked):
 
 def test_a_task_per_group(walked):
     assert [t.component for t in walked.tasks.accel_steps()] == ["mul", "sum"]
+
+
+def test_the_numbers_match_their_snapshot(walked):
+    check_composite(walked)

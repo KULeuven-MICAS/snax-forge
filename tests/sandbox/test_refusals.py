@@ -25,6 +25,7 @@ from snax_forge.sandbox import (
 )
 from snax_forge.sandbox.blocks import apply_recipe as apply_block
 from snax_forge.sandbox.blocks import lift, matches, unlift
+from snax_forge.sandbox.run import StepError
 from snax_forge.sandbox.seed import carry_seed, uncarry_seed
 from snax_forge.sandbox.transforms import tag_map
 from tests.composite.axpy_v1.test_sandbox import BIND, scaled
@@ -264,7 +265,17 @@ def _unfuse_seed_refuses_a_fold_not_seeded():
     unfuse_seed(seed_matvec_acc(), FOLD)
 
 
+def _a_split_wider_than_its_loop_is_refused_by_the_check():
+    steps("rowsum_v2", M=2)
+
+
+def _a_tailed_split_interchanged_is_refused_by_the_reference_check():
+    steps("rowsum_v2", M=6)
+
+
 CASES = [
+    pytest.param(_a_split_wider_than_its_loop_is_refused_by_the_check, StepError, "A\\[4 \\* m_1_t \\+ m_2_s\\] leaves 0:2", id='a_split_wider_than_its_loop_is_refused_by_the_check'),
+    pytest.param(_a_tailed_split_interchanged_is_refused_by_the_reference_check, StepError, "the reference check fails, 'y' differs", id='a_tailed_split_interchanged_is_refused_by_the_reference_check'),
     pytest.param(_a_non_scalar_on_a_slot_is_refused_naming_it, SandboxError, "in2 reads A\\[0\\], the same element in every firing; a slot takes a kernel's scalar argument \\(sdfg.scalar\\), and A is not one", id='a_non_scalar_on_a_slot_is_refused_naming_it'),
     pytest.param(_a_slot_given_as_a_param_and_read_from_a_scalar_is_refused, SandboxError, "k1 = 3 given, but the tasklet computes 'out = b \\+ alpha \\* a', 'simd''s 'out = k1 \\* a \\+ b' with its slot k1 from the scalar alpha", id='a_slot_given_as_a_param_and_read_from_a_scalar_is_refused'),
     pytest.param(_a_slot_given_that_the_matched_entry_leaves_unset_is_refused, SandboxError, "k2 = 2 given, but the tasklet computes 'out = b \\+ alpha \\* a', 'simd''s 'out = k1 \\* a \\+ b', which leaves k2 unset", id='a_slot_given_that_the_matched_entry_leaves_unset_is_refused'),
