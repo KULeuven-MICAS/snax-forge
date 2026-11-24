@@ -169,7 +169,7 @@ Dates: 20 Nov, track A's target (fine if it slips); 27 Nov, the softmax gate (so
 
 ## Open Items
 
-Questions not decided yet. Numbers are never reused; a closed item is removed, and where it closed is in git history. Next free number: 165.
+Questions not decided yet. Numbers are never reused; a closed item is removed, and where it closed is in git history. Next free number: 169.
 
 1. BRM dataflow notation: `affine` and `stream` (D70), frozen in M6.
 2. What automated search reads and how a sweep is configured (DSE1, M8).
@@ -259,6 +259,7 @@ Questions not decided yet. Numbers are never reused; a closed item is removed, a
 165. atax's one pass beyond the bank: strips of S = R·W columns of y, only the first a one pass (t needs whole rows), t written to L1 there and read back by the others, so A is read $MN(2 - 1/K)$ times for K strips; the first strip's FIFO takes only that strip's beats, a fork that passes part of the beats (D196 forks every beat). At one strip a design needs D ≥ N/W and R = N/W.
 166. DATA1, every kernel's inputs uniform over the whole type in every experiment (Ryan's, not scheduled); forge's small per-kernel ranges until then. At the full int8 range `atax_types`' y wraps at int32 ($|y| \le MN \cdot 2^{21}$), exact modulo $2^{32}$ on NumPy, SNAX-GVSoC and the RTL alike.
 167. `GroupRule`'s done for a bank at L 0 is early: the sink's `g + 1 = JOBS` holds on each of the last job's ROWS giving firings, so the run ends at the first of them (`GroupHoldForkSpec` keeps its bank at L 1–2). A bank is an accumulating `Mac`, L 1, so no design reaches it; `UnitDesc` could refuse rows > 1 at L 0, or done count the bank's last row.
+168. A group that reads through L1 what it writes in the same run is estimated as if the read waited for nothing: `atax_v4`'s steps after `fork_read A` and after `link A` (the `Mac` reads t from L1 while the vsum writes it) give 515 and 514 cycles against 523 once t is linked. LOWER could refuse a group reading a container it writes, or order the reader behind the writer's rows (open item 53).
 
 ## Sync Reminders
 
