@@ -1,4 +1,4 @@
-"""The held link (D197): the vsum's t[i] over a link of depth 1 into the bank's held,
+"""The held link: the vsum's t[i] over a link of depth 1 into the bank's held,
 broadcast b, taken on a row's first firing, so the sum gives one result a row of ROWS of the
 bank's firings. At M = 4, N = 8, W = 4: T = ROWS = 2, the bank's T = M · ROWS = 8."""
 

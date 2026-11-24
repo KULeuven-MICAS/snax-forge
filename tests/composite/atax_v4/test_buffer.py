@@ -1,4 +1,4 @@
-"""The fork's buffered branch (D196): A read once, given to mul.a and through a ring of
+"""The fork's buffered branch: A read once, given to mul.a and through a ring of
 D = 4 beats to mac.a. D = T + 2 runs at full rate, D = T stalls, D below T never ends; the ring
 is three registers of the control unit, in its bits as in the RTL's."""
 
