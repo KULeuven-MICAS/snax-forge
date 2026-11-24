@@ -9,7 +9,7 @@ The PolyBench and DL kernels are NPBench's DaCe sources (BSD-3, `NPBENCH_LICENSE
 - they are `int64` where the kernel is integer arithmetic, at PolyBench's MINI sizes; `softmax`, `mlp`, `lenet` and `resnet` keep NPBench's `float32` (`float-staged`) until their tier decides the integer form;
 - the tiers are PAPER §6.1's.
 
-The kernels that run at narrow types (`vecadd`, `vecmul`, `matadd`, `relu`, `axpy`, `vsum`, `rowsum`, `dot`, `matvec`, `mvt_types`, `bicg_types`) list type presets in their `SPEC` (`presets`), chosen with `--set types=` (D113 · D173):
+The kernels that run at narrow types (`vecadd`, `vecmul`, `matadd`, `relu`, `axpy`, `vsum`, `rowsum`, `dot`, `matvec`, `mvt_types`, `bicg_types`, `atax_types`) list type presets in their `SPEC` (`presets`), chosen with `--set types=` (D113 · D173):
 
 | Preset | Inputs | Outputs and `OP_TYPE` |
 |---|---|---|
@@ -140,6 +140,16 @@ $$y = A^T (A x)$$
 - No maps at all: a Transpose and two MatMuls, which `sdfg/expand.py` expands before import into dot's shape, the Transpose folded into the second product's indices (D71).
 - A chaining barrier: `A x` must be complete before the second product starts, so it lives in L1 or in the unit's state.
 - `A` is read twice, the second time transposed: a strided streamer, or one pass if the two products fuse.
+
+### atax_types
+
+`polybench/atax_types.py` · tier A · int64, presets `i8`, `i16`, `i32`
+
+atax with its first product at `OP_TYPE`: `y[:] = A.T @ (A @ x.astype(OP_TYPE))`.
+
+- The transient t (`tmp1`) takes `A @ x`'s type, which `A.T @ t` keeps: at `i8` A is int8, t and y int32, so half 2 multiplies int8 by int32.
+- The cast renames half 1's nests (`tmp2_mult_map` where atax has `tmp1_mult_map`); half 2 keeps `y_mult_map`.
+- At the full int8 range y wraps at int32 ($|y| \le M N \cdot 2^{21}$), exact modulo $2^{32}$ on every side.
 
 ### bicg
 

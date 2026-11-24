@@ -1,7 +1,7 @@
 """The design point's schedule: mvt_v3_1 at W = 8, its two halves two accelerators
 (``mvt`` and ``mvt_1``) that share no data, under serial, pipeline and pipeline_compute; mvt_v3,
 the same halves on one shared group, gives one task list under all three; sequential syncs after
-every start."""
+every start. atax_v2's half 2 reads t, which half 1 writes, so every schedule waits for it."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ import pytest
 
 from snax_forge.design import Design, DesignPoint, Platform, run_checks
 from snax_forge.design.check import SCHEDULES
-from snax_forge.lower import task_list
+from snax_forge.lower import placed_waits, task_list
 from snax_forge.lower.derive import sequential
 from snax_forge.lower.tasks import Configure, Start, Sync
 from tests.design.helpers import SNAX_FORGE
@@ -124,3 +124,18 @@ def test_the_quiet_build_still_waits_on_every_start_and_each_build_once(tmp_path
     starts = [i for i, x in enumerate(default) if re.fullmatch(r"csrw_ss\(\w+_RW_START, 1\);", x)]
     polls = [i for i, x in enumerate(default) if x.endswith("_RO_STATUS) & 1) {")]
     assert len(starts) == 2 and max(starts) < min(polls)
+
+
+@pytest.mark.parametrize("schedule", SCHEDULES)
+def test_a_half_reading_what_the_other_writes_waits_for_it_under_every_schedule(schedule):
+    """atax_v2: half 2's reader of t is after half 1's writer of it, so under every schedule
+    the program waits for that writer (pipelined: a wait on it; serial: the sync on half 1,
+    which covers it) before half 2 starts."""
+    d = Design(Platform.load(SNAX_FORGE), steps("atax_v2", W=8)[-1])
+    assert run_checks(d) == []
+    p = replace(DesignPoint.of(d, "atax_v2"), schedule=schedule)
+    tl = task_list(p)
+    half_2 = next(i for i, s in enumerate(tl.steps)
+                  if isinstance(s, Start) and "y_mult_mac" in s.tasks)  # fmt: skip
+    before = [w for w in placed_waits(tl, p) if w.step <= half_2]
+    assert any(w.covers.get("sum_out") == "sum_sum_out" for w in before)

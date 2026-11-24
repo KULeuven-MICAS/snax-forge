@@ -1,0 +1,60 @@
+{
+ "name": "atax_v1_2",
+ "id": "atax_dot2_i8_o32_dmaT",
+ "description": "Matvec twice at int8 in, int32 out (`types` i8): the DMA copies A into `A_T` (`data_transpose`, D182) so half 2 reads rows, then `matvec/matvec_v2` on both halves.",
+ "kernel": "atax_types",
+ "params": {
+  "M": 64,
+  "N": 64,
+  "W": 8
+ },
+ "symbols": {
+  "M": "M",
+  "N": "N"
+ },
+ "types": "i8",
+ "steps": [
+  {
+   "transform": "data_transpose",
+   "params": {
+    "node": "y_mult_map",
+    "container": "A",
+    "by": "dma"
+   }
+  },
+  {
+   "transform": "lift",
+   "params": {
+    "kernel": "matvec",
+    "at": "tmp2_mult_map"
+   }
+  },
+  {
+   "transform": "apply_recipe",
+   "params": {
+    "block": "matvec",
+    "recipe": "matvec/matvec_v2",
+    "params": {
+     "W": "W"
+    }
+   }
+  },
+  {
+   "transform": "lift",
+   "params": {
+    "kernel": "matvec",
+    "at": "y_mult_map"
+   }
+  },
+  {
+   "transform": "apply_recipe",
+   "params": {
+    "block": "matvec_1",
+    "recipe": "matvec/matvec_v2",
+    "params": {
+     "W": "W"
+    }
+   }
+  }
+ ]
+}

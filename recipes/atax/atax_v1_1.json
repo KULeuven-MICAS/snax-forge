@@ -1,0 +1,58 @@
+{
+ "name": "atax_v1_1",
+ "id": "atax_dot2_shared",
+ "description": "`atax_v1` with one `dot_v2` group bound at both halves (`share`, D165): the halves run in turn anyway, so one engine serves both.",
+ "kernel": "atax",
+ "params": {
+  "M": 64,
+  "N": 64,
+  "W": 8
+ },
+ "symbols": {
+  "M": "M",
+  "N": "N"
+ },
+ "steps": [
+  {
+   "transform": "lift",
+   "params": {
+    "kernel": "matvec",
+    "at": "tmp1_mult_map"
+   }
+  },
+  {
+   "transform": "apply_recipe",
+   "params": {
+    "block": "matvec",
+    "recipe": "matvec/matvec_v2",
+    "params": {
+     "W": "W"
+    }
+   }
+  },
+  {
+   "transform": "lift",
+   "params": {
+    "kernel": "matvec",
+    "at": "y_mult_map"
+   }
+  },
+  {
+   "transform": "apply_recipe",
+   "params": {
+    "block": "matvec_1",
+    "recipe": "matvec/matvec_v2",
+    "params": {
+     "W": "W"
+    }
+   }
+  },
+  {
+   "transform": "share",
+   "params": {
+    "group": "matvec_1",
+    "with": "matvec"
+   }
+  }
+ ]
+}

@@ -1,0 +1,52 @@
+{
+ "name": "atax_v2_1",
+ "id": "atax_dot2_col_i8_o32",
+ "description": "`atax_v2` at int8 in, int32 out (`types` i8): half 2's `Mac` multiplies A at int8 by t at int32.",
+ "kernel": "atax_types",
+ "params": {
+  "M": 64,
+  "N": 64,
+  "W": 8
+ },
+ "symbols": {
+  "M": "M",
+  "N": "N"
+ },
+ "types": "i8",
+ "steps": [
+  {
+   "transform": "lift",
+   "params": {
+    "kernel": "matvec",
+    "at": "tmp2_mult_map"
+   }
+  },
+  {
+   "transform": "apply_recipe",
+   "params": {
+    "block": "matvec",
+    "recipe": "matvec/matvec_v2",
+    "params": {
+     "W": "W"
+    }
+   }
+  },
+  {
+   "transform": "lift",
+   "params": {
+    "kernel": "matvec",
+    "at": "y_mult_map"
+   }
+  },
+  {
+   "transform": "apply_recipe",
+   "params": {
+    "block": "matvec_1",
+    "recipe": "matvec/matvec_v7",
+    "params": {
+     "W": "W"
+    }
+   }
+  }
+ ]
+}

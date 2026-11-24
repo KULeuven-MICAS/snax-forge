@@ -1,0 +1,51 @@
+{
+ "name": "atax_v2",
+ "id": "atax_dot2_col",
+ "description": "t a `dot_v2` group per row and y the column form, by reuse: `matvec/matvec_v2` on t and `matvec/matvec_v7` on y, t[i] read back from L1 and broadcast to the `Mac`'s lanes (D186). Both halves read A along its rows.",
+ "kernel": "atax",
+ "params": {
+  "M": 64,
+  "N": 64,
+  "W": 8
+ },
+ "symbols": {
+  "M": "M",
+  "N": "N"
+ },
+ "steps": [
+  {
+   "transform": "lift",
+   "params": {
+    "kernel": "matvec",
+    "at": "tmp1_mult_map"
+   }
+  },
+  {
+   "transform": "apply_recipe",
+   "params": {
+    "block": "matvec",
+    "recipe": "matvec/matvec_v2",
+    "params": {
+     "W": "W"
+    }
+   }
+  },
+  {
+   "transform": "lift",
+   "params": {
+    "kernel": "matvec",
+    "at": "y_mult_map"
+   }
+  },
+  {
+   "transform": "apply_recipe",
+   "params": {
+    "block": "matvec_1",
+    "recipe": "matvec/matvec_v7",
+    "params": {
+     "W": "W"
+    }
+   }
+  }
+ ]
+}

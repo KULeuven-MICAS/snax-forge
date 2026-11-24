@@ -212,7 +212,7 @@ One ELF, snax-forge's, runs on SNAX-GVSoC and on snax_cluster's RTL. The RTL run
 | Command | Reads | Writes |
 |---|---|---|
 | `pixi run forge RECIPE` | a recipe, the platform | the flow, its bundle with `forge_expected.txt` and the bundle's ELF (checked to be the flow's), then prints snax_cluster's commands: `out/forge/<name>/forge.log`, `out/bundle/<name>/` |
-| `pixi run forge-set quick\|full` | the set's recipes (`snax_forge/flow/forge_set.py`) | forge on each at once: `out/forge-set/<set>.md`, `out/forge-set/<set>/<design>.txt`, and one line to run in snax_cluster |
+| `pixi run forge-set quick\|full\|<task>` | the set's recipes (`snax_forge/flow/forge_set.py`; a task's own set while it is open, D195) | forge on each at once: `out/forge-set/<set>.md`, `out/forge-set/<set>/<design>.txt`, and one line to run in snax_cluster |
 | snax_cluster's `make snax-forge-check BUNDLES=... SIM=...` | the bundles | one verdict per bundle; `logs/snax-forge-check.txt` (the verdicts, each run's `forge cycles`), `logs/snax-forge-<name>-<sim>.txt` |
 
 - `forge` takes `--platform` (default `platforms/snax_forge.json`), `--set` and `--trace` for the flow. `forge-set` takes `--sim vsim|vlt` and `-j N`.
