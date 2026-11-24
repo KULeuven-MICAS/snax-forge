@@ -85,27 +85,6 @@ SETS = {
                       Design("vsum_v1_1", ("types=i8", "W=8")),
                       Design("dot_v3", ("types=i16", "W=4")),
                       Design("dot_v3", ("types=i32", "W=2")))],
-    # TIERA3's points while it is open: atax's forms at 64 x 64, serial unless named
-    "atax": designs(Design("atax_v1", (PADDED,)),
-                    Design("atax_v1_1", (PADDED,)),
-                    "atax_v2",
-                    Design("atax_v1_2", (SEQUENTIAL,)),
-                    "atax_v2_1",
-                    Design("atax_v2_1", ("M=40",)),
-                    Design("atax_v2_1", ("W=16",)),
-                    Design("atax_v2_1", ("W=32",)),
-                    # the halves on shared movers (share_ports)
-                    Design("atax_v1_3", (PADDED,)),
-                    "atax_v2_2",
-                    Design("atax_v1_2_1", (SEQUENTIAL,)),
-                    "atax_v2_1_1",
-                    # one group: t linked and held, then A read once through a buffer
-                    "atax_v3",
-                    "atax_v4",
-                    Design("atax_v4", ("D=8",)),
-                    Design("atax_v4", ("M=40",)),
-                    Design("atax_v4", ("W=16", "R=4", "D=6")),
-                    Design("atax_v4", ("W=32", "R=2", "D=4"))),
 }  # fmt: skip
 
 
