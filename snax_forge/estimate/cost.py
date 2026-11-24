@@ -230,8 +230,8 @@ def streamer_cost(costs: Costs, c: StreamerCounts) -> StreamerCost:
 @dataclass(frozen=True)
 class XbarCost:
     """The TCDM crossbar priced: its ``inputs`` and ``banks``, the ``reads`` and ``writes`` it
-    serves in one run (the streamers' words and the copies' accesses, D184), its area (µm²), its
-    energy per access of a read-write input and of a read-only and a write-only one (pJ, D178) and
+    serves in one run (the streamers' words and the copies' accesses), its area (µm²), its
+    energy per access of a read-write input and of a read-only and a write-only one (pJ) and
     per run (nJ), how many of its inputs only read or only write, and the ``form`` its area was
     priced in (CONTRACTS, "Cost model")."""
 
@@ -286,7 +286,7 @@ def xbar_cost(costs: Costs, inputs: int, banks: int, reads: int, writes: int, re
     """The crossbar's area and energy per run on ``costs`` (CONTRACTS, "Cost model"): its area at
     its inputs, ``read_only`` and ``write_only`` of them priced as such in ``form``; its accesses at
     one price per bank count, a full crossbar's (inputs = banks), a read at a read-only input's
-    and a write at a write-only input's (D178)."""
+    and a write at a write-only input's."""
     area = _xbar(costs, inputs, banks, read_only, write_only, form)
     price = _xbar(costs, banks, banks)
     g_ro, g_wo = costs.kinds.energy_factors(banks)

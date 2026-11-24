@@ -74,9 +74,9 @@ def fold_rate(inst: Instance) -> str | None:
 def job_values(inst: Instance, values: Mapping[str, int], fixed: bool = False) -> dict[str, int]:
     """An accelerator task's CSR values from its values (``n`` and the named rates):
     ``JOBS`` = n / T and, for a fold, ``JOB_BEATS`` = T, none when its T is ``fixed``
-    (the description's ``params.T``), then a bank's ``ROWS`` (D191); T is 1 for a unit without a
+    (the description's ``params.T``), then a bank's ``ROWS``; T is 1 for a unit without a
     fold, and T = 0 is an empty run (JOBS 0); a carried unit's ``CARRY``, its jobs before its first
-    revisit (D192)."""
+    revisit."""
     rate = fold_rate(inst)
     t = 1 if rate is None else values[rate]
     out = {"JOBS": values["n"] // t if t else 0}
@@ -87,7 +87,7 @@ def job_values(inst: Instance, values: Mapping[str, int], fixed: bool = False) -
 
 
 def bank_rows(inst: Instance) -> int:
-    """A unit's bank rows R (D191), 1 for a unit without a bank."""
+    """A unit's bank rows R, 1 for a unit without a bank."""
     return int(inst.params.get("rows", 1))
 
 
@@ -97,7 +97,7 @@ def job_writes(units: Mapping[str, Instance], values: Mapping[str, Any], fixed: 
     (``units`` one, ``values`` its n and rates) as ``job_values``; a linked group's (``values``
     by unit, the group's units in order) JOBS = n_u / ∏ T_v over its first unit u and the
     group's folds v, then each fold's JOB_BEATS but those in ``fixed`` (CONTRACTS, "Task
-    list"), then each bank's ROWS. A group of several ``chains`` (each head to sink, D189) writes
+    list"), then each bank's ROWS. A group of several ``chains`` (each head to sink) writes
     one JOBS per chain, ``JOBS_<SINK>`` = n_head / ∏ T over the chain's folds, at its sink."""
     if "n" in values:
         ((unit, inst),) = units.items()

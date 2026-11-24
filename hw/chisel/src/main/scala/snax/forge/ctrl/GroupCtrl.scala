@@ -3,11 +3,11 @@ package snax.forge.ctrl
 import chisel3._
 import chisel3.util._
 
-/** A group's settings as `<tag>_csr` keeps them, wires to its control unit: JOBS (with `chains` chains, D189, the first
+/** A group's settings as `<tag>_csr` keeps them, wires to its control unit: JOBS (with `chains` chains, the first
   * chain's, `more` the others' in the order of their sinks), then each of its `open` units' JOB_BEATS in unit order,
-  * each `bits` wide (the CSRs' job_width); each bank's ROWS (D191, `banks` their rows R, ROWS as wide as R's bits) and
-  * each carried seed's CARRY (D192, `carried` of them, `bits` wide), in unit order; constant through a run, since the
-  * csr holds their writes while the group is busy.
+  * each `bits` wide (the CSRs' job_width); each bank's ROWS (`banks` their rows R, ROWS as wide as R's bits) and each
+  * carried seed's CARRY (`carried` of them, `bits` wide), in unit order; constant through a run, since the csr holds
+  * their writes while the group is busy.
   */
 class GroupSettings(val open: Int, bits: Int = 32, val chains: Int = 1, banks: Seq[Int] = Nil, carried: Int = 0)
     extends Bundle {
@@ -22,8 +22,8 @@ class GroupSettings(val open: Int, bits: Int = 32, val chains: Int = 1, banks: S
 }
 
 /** A group control unit's ports (`GroupCtrl`): its start, a bare strobe, and its settings, the csr's wires; busy, its
-  * done pulse and pin; its outer handshakes (with several chains, D189, `out` and `last` the first sink's, `rest` and
-  * `lasts` the others'); each unit's and buffer's enables; the cycle's class.
+  * done pulse and pin; its outer handshakes (with several chains, `out` and `last` the first sink's, `rest` and `lasts`
+  * the others'); each unit's and buffer's enables; the cycle's class.
   */
 class GroupCtrlIO(desc: GroupDesc, jobWidth: Int = 32) extends Bundle {
   private val outs = desc.outputs.size
@@ -62,14 +62,14 @@ class GroupCtrlIO(desc: GroupDesc, jobWidth: Int = 32) extends Bundle {
   *     bit and BUSY_COUNTER.
   *   - Pins: `busy` and `done`, the done pulse registered: high in E + 1 (a + 1 for an empty run).
   *   - `last`: the outer output's next push is the run's last result, from the counters only (`GroupRule`), for the
-  *     packer of a packed outer output (D174).
+  *     packer of a packed outer output.
   *
   * Its ports: `in`, every unit's outer inputs' handshakes, unit by unit in port order (a forked input's once per unit,
-  * their readies equal, D189); `out`, the outer output, its owner's (`GroupDesc.output`), and with several chains
-  * `rest`, the other sinks' in unit order; `units`, each unit's enables to its datapath; `links`, each buffer's, in
-  * link order (a wire has none); `cls`, the cycle's class, as the run line counts it (busy 0, stall_in 1, stall_out 2,
-  * flush 3). Test ports, which the shell leaves unread: each unit's `give` and `adv`, each buffer's `occupancy`, and
-  * `cls`; the specs compare them with snax-gvsoc's cases and `GroupModel` every cycle.
+  * their readies equal); `out`, the outer output, its owner's (`GroupDesc.output`), and with several chains `rest`, the
+  * other sinks' in unit order; `units`, each unit's enables to its datapath; `links`, each buffer's, in link order (a
+  * wire has none); `cls`, the cycle's class, as the run line counts it (busy 0, stall_in 1, stall_out 2, flush 3). Test
+  * ports, which the shell leaves unread: each unit's `give` and `adv`, each buffer's `occupancy`, and `cls`; the specs
+  * compare them with snax-gvsoc's cases and `GroupModel` every cycle.
   *
   * @param desc
   *   the group: its units and links (`shell.AcceleratorSpec`'s group, `AccCtrl.desc`)

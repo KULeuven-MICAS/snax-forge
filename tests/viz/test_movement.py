@@ -133,8 +133,8 @@ def fork(tmp_path_factory):
 
 
 def test_a_packed_words_result_comes_from_its_own_firings(fork):
-    """q[3] is slice 1 of sum_out's word 1 (two int32 a word, D174), carried as the seed of the
-    second strip (D192): produced by firings 12 to 15 of each strip only; s[1] by the 40 firings
+    """q[3] is slice 1 of sum_out's word 1 (two int32 a word), carried as the seed of the
+    second strip: produced by firings 12 to 15 of each strip only; s[1] by the 40 firings
     of its bank row."""
     j = api.journey_view(fork, "q", 3)
     assert [h["by"] for h in j["hops"] if h["k"] == "grant"] == [

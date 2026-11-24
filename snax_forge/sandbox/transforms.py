@@ -406,7 +406,7 @@ class _Bound:
     code: str  # the matched code entry's
     scalars: dict[str, Memlet]  # slot -> the scalar operand it is read from (a CSR)
     op_type: str | None = None  # the op's type set by the kernel's casts, when not its inputs'
-    broadcasts: frozenset[str] = frozenset()  # inputs read as one lane for all (D186)
+    broadcasts: frozenset[str] = frozenset()  # inputs read as one lane for all
 
 
 def _bind_site(g: Graph, node: str, what: str) -> _Site:
@@ -449,7 +449,7 @@ def _bind_site(g: Graph, node: str, what: str) -> _Site:
 
 
 def bank_hint(g: Graph, site: _Site) -> int | None:
-    """The rows a bank (D191) at ``site`` would take: where the output's index changes along
+    """The rows a bank at ``site`` would take: where the output's index changes along
     temporal loops inside a loop it does not use (its sum), the product of those inner loops'
     counts; None where no bank fits or a count is not bound."""
     used = set().union(*(m.names for m in site.tasklet.outputs.values()))
@@ -538,7 +538,7 @@ def _bind_check(g: Graph, site: _Site, brm: str, implementation: str,
 
 def _lanewise(b: Any, implementation: str) -> bool:
     """Whether the implementation's datapath computes each lane on its own (``gen``'s
-    registry), so an input may be a broadcast (D186)."""
+    registry), so an input may be a broadcast."""
     from snax_forge.gen.blocks import DATAPATHS  # gen imports brm
 
     impl = b.implementations.get(implementation)
@@ -592,7 +592,7 @@ def _tasklets(n: Node) -> list[Node]:
 
 def _op_types(tasklet: Node, ports: Mapping[str, str], conn_dtypes: Mapping[str, str],
               casts: Mapping[str, str]) -> tuple[str | None, str | None]:  # fmt: skip
-    """The op's type from its array inputs' containers (NumPy's result type, D143) and, with
+    """The op's type from its array inputs' containers (NumPy's result type) and, with
     casts, from the casts' types (None without); None where there is no integer result type."""
     from snax_forge.brm import result_type
 
@@ -700,7 +700,7 @@ def _bind_lanes(g: Graph, site: _Site, b: Any, ports: dict[str, str], given: dic
                 ) -> tuple[str, int, dict[str, Memlet], set[str], set[str]]:  # fmt: skip
     """The spatial map's variable and bound, the bound memlets, the folding outputs and the
     broadcast inputs; the lanes param set to the bound in ``given``. An input that does not
-    use the spatial variable is a broadcast (D186) on a ``lanewise`` datapath, one lane given
+    use the spatial variable is a broadcast on a ``lanewise`` datapath, one lane given
     to all, and refused on any other."""
     tasklet, smap = site.tasklet, site.smap
     begin, end, step = parse_dim(smap.attrs["range"], what)
@@ -752,13 +752,13 @@ def _seeds(site: _Site) -> dict[str, Any]:
         for c, m in t.outputs.items():
             if m.reduce is not None and m.reduce.seed is not None:
                 found[c] = m.reduce.seed
-            elif m.reduce is not None and m.reduce.carry:  # its own output (D192)
+            elif m.reduce is not None and m.reduce.carry:  # its own output
                 found[c] = Seed(m.data, tuple(m.subset))
     return found
 
 
 def _carried(site: _Site) -> bool:
-    """Whether the bind's fold is carried (D192): its seed is its own output."""
+    """Whether the bind's fold is carried: its seed is its own output."""
     return any(m.reduce is not None and m.reduce.carry
                for t in [site.tasklet, *(n for n in site.smap.body or [] if n.kind == "tasklet")]
                for m in t.outputs.values())  # fmt: skip
@@ -867,7 +867,7 @@ def _bind_rewrite(g: Graph, site: _Site, bound: _Bound, brm: str, implementation
         p: inst.params["rows"]
         for p in with_seed
         if inst.params.get("rows", 1) > 1 and (b.port(p).direction == "out" or p == SEED)
-    }  # D191; a seeded bank's seed a beat a row (D194)
+    }  # a bank's output a beat a row, and a seeded bank's seed
     carried = (
         {SEED, *(p for p in with_seed if b.port(p).direction == "out")} if _carried(site) else ()
     )
@@ -903,7 +903,7 @@ def _bind_rewrite(g: Graph, site: _Site, bound: _Bound, brm: str, implementation
             out[port] = Memlet(m.data, _lanes_dims(m, bound.var_s, bound.end, f"{what}.{side}.{c}"))
             if nest is not None:
                 _check_order(g, m, temporal, smap, nest.indices(), f"{what} port {port!r}")
-    for seed in _seeds(site).values():  # the seed's elements, its fold's output's lanes (D187)
+    for seed in _seeds(site).values():  # the seed's elements, its fold's output's lanes
         sm = Memlet(seed.data, list(seed.subset))
         if bound.var_s in sm.names:  # a lane fold's (Mac): the lanes' range
             new_in[SEED] = Memlet(seed.data, _lanes_dims(sm, bound.var_s, bound.end,
@@ -928,9 +928,9 @@ def _bind_rewrite(g: Graph, site: _Site, bound: _Bound, brm: str, implementation
         },
         body=[],
     )
-    if bound.op_type is not None:  # the kernel's casts set the op's type (D143)
+    if bound.op_type is not None:  # the kernel's casts set the op's type
         acc.attrs["opType"] = bound.op_type
-    if _carried(site):  # the seed is its own output, the first visit the identity (D192)
+    if _carried(site):  # the seed is its own output, the first visit the identity
         acc.attrs["carry"] = True
     marks = tasklet.attrs.get(TRANSPOSE, {})  # mark_transpose's, onto the port (transpose.py)
     if any(c in ports for c in marks):

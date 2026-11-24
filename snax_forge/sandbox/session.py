@@ -323,7 +323,7 @@ class Session:
                 base = replace(self.recipe, params={**self.recipe.params, **added})
             except SandboxError as e:
                 return _refused("session.param", str(e))
-            # a new step: no longer what the recipe's id and description say (D188)
+            # a new step: no longer what the recipe's id and description say
             trial = replace(base, steps=[*self.recipe.steps[:k], step], id=None, description=None)
             start = time.perf_counter()
             try:
@@ -663,7 +663,7 @@ def _shown(p: Path) -> str:
 def bind_list(g: Graph, selected: str, order: int = 1) -> list[dict[str, Any]]:
     """Every (BRM, implementation) of the library tried as ``bind`` on ``selected``, the
     instance the ``order``-th bind's default (CONTRACTS, "Recipe"). Where a bank fits
-    (``bank_hint``, D191), a BRM with a ``rows`` param is tried with that many rows, its entry's
+    (``bank_hint``), a BRM with a ``rows`` param is tried with that many rows, its entry's
     ``bank`` the rows, the page's "bank rows" box."""
     from snax_forge.brm import BrmError, library_names, load_brm
 

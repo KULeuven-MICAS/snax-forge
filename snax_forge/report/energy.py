@@ -1,4 +1,4 @@
-"""``energy.md``: a flow's energy run (flow/energy.py, D177) for people and LLMs.
+"""``energy.md``: a flow's energy run (flow/energy.py) for people and LLMs.
 
 ``render_energy(run)`` gives each window of the energy run with its energy in the five parts,
 the static estimate's one run of the accelerator beside it, and the counts each part was priced

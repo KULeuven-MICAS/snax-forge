@@ -1,4 +1,4 @@
-"""One read of a container given to several bound units: ``fork_read`` and ``unfork_read`` (D189).
+"""One read of a container given to several bound units: ``fork_read`` and ``unfork_read``.
 
 ``fork_read(container, group)`` takes the bound units that read ``container`` (each a chain's
 head, on one port each) when they read the same beats in the same order (compose.py's

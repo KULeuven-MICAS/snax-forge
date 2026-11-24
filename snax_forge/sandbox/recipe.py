@@ -2,7 +2,7 @@
 
 ``Recipe`` (``Recipe.load``, ``to_dict``) and its ``Step`` read and write a recipe, a JSON file
 in a category folder of ``recipes/`` (CONTRACTS, "Recipe"), named by version, its ``id`` and
-``description`` saying what it builds (D188). ``find_recipe`` finds one by name,
+``description`` saying what it builds. ``find_recipe`` finds one by name,
 ``recipe_paths`` lists them all. A transform's int params take an int or an expression over the
 recipe params (snax_forge/expr.py); ``Recipe.with_params`` (``--set W=8``) overrides a param, and
 ``--set types=i8`` a kernel's type preset and ``--set dtypes.C=int16`` one container's or type
@@ -93,7 +93,7 @@ class Recipe(JsonFile):
     steps: list[Step] = field(default_factory=list)
     dtypes: dict[str, str] = field(default_factory=dict)
     types: str | None = None  # the kernel's type preset (its SPEC's ``presets``)
-    id: str | None = None  # what it builds, in the words of recipes/README.md (D188)
+    id: str | None = None  # what it builds, in the words of recipes/README.md
     description: str | None = None  # the same in one to three sentences
 
     def __post_init__(self) -> None:

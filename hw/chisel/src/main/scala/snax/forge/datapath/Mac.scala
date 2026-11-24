@@ -14,15 +14,14 @@ import snax.forge.IntType
   *   - `accumulate`: on `fire`, s ← `first` ? p : s + p at `outType`; `out` is s. Latency 1, pins `fire` and `first`:
   *     its control unit pushes `out` in the cycle after a job's last beat fires, and may fire the next job's first beat
   *     in that cycle, since s changes only at the cycle's end. Seeded (`seed`), it has one more input, `seed`, of
-  *     `out`'s type and lanes, read once per job: s ← `first` ? seed + p : s + p, so lane l's sum starts from seed(l)
-  *     (D187). The control unit holds the first beat until the seed is valid and takes it with that firing
-  *     (`ctrl.GroupRule`); unseeded it is the block it was, the same RTL. A bank (`rows` R > 1, D191) keeps R rows of W
-  *     sums: a firing adds into row `row` (`first` starting it) and `out` is row `drain`, the row the last firing
-  *     wrote, so a result pushed a cycle after its firing is that row while the next firing adds into another. Both
-  *     pins are the control unit's (`<unit>_row`, the beat mod ROWS; `drain` the row before it, ROWS − 1 after 0), so
-  *     the block keeps no row of its own and its registers are the R rows only. A seeded bank (D194) takes a seed beat
-  *     on each of a job's first R firings, row ← (`first` ? seed : s[row]) + p: one W-lane mux before the adders,
-  *     shared by the rows.
+  *     `out`'s type and lanes, read once per job: s ← `first` ? seed + p : s + p, so lane l's sum starts from seed(l).
+  *     The control unit holds the first beat until the seed is valid and takes it with that firing (`ctrl.GroupRule`);
+  *     unseeded it is the block it was, the same RTL. A bank (`rows` R > 1) keeps R rows of W sums: a firing adds into
+  *     row `row` (`first` starting it) and `out` is row `drain`, the row the last firing wrote, so a result pushed a
+  *     cycle after its firing is that row while the next firing adds into another. Both pins are the control unit's
+  *     (`<unit>_row`, the beat mod ROWS; `drain` the row before it, ROWS − 1 after 0), so the block keeps no row of its
+  *     own and its registers are the R rows only. A seeded bank takes a seed beat on each of a job's first R firings,
+  *     row ← (`first` ? seed : s[row]) + p: one W-lane mux before the adders, shared by the rows.
   *   - plain: `out` = p + c at `outType` (`c` of `out`'s type and lanes), combinational (latency 0), or with `regOut` a
   *     register that takes it on `en` (latency 1, pin `en`: its firing).
   *
@@ -62,7 +61,10 @@ class Mac(
   )
   require(!seed || accumulate, "seed is the accumulating form's start; a plain Mac adds c instead")
   require(rows >= 1, s"rows must be 1 or more, got $rows")
-  require(rows == 1 || accumulate, s"rows $rows: a bank (D191) is an accumulating Mac's")
+  require(
+    rows == 1 || accumulate,
+    s"rows $rows, but accumulate is false; only an accumulating Mac has a bank (set accumulate true, or rows 1)"
+  )
   require(
     inTypes.size == (if (accumulate) 2 else 3),
     s"inTypes must name a, b${if (accumulate) "" else " and c"}, got ${inTypes.mkString(", ")}"

@@ -137,7 +137,7 @@ def _lanes(idx: RunIndex, mover: str) -> int:
 
 def _outputs(idx: RunIndex, unit: str) -> list[tuple[str | None, str | None, int]]:
     """Each output of ``unit``'s group: its pushes' ``unit`` (its sink with two or more
-    outputs, else None), its writer and the results a word of it holds (d_out, D174)."""
+    outputs, else None), its writer and the results a word of it holds (d_out)."""
     a = idx.cluster.accelerator
     sinks = a.sinks(unit) if unit in a.unit_names else [unit]
     out = []

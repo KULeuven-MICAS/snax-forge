@@ -1,4 +1,4 @@
-"""fork_read and unfork_read: one read of A given to bicg's two halves (D189)."""
+"""fork_read and unfork_read: one read of A given to bicg's two halves."""
 
 from __future__ import annotations
 

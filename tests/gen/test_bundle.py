@@ -77,8 +77,8 @@ def test_the_module_tree_names_every_group_unit_and_buffer():
 
 
 def test_the_module_tree_ends_with_each_stream_block_once():
-    """dot_v7 with mul's a and b at int32, one lane, sliced 2 (D180), and sum's out at int32
-    packed 2 (D174): one FifoSlicer module for both inputs, then the packer, after the shell's."""
+    """dot_v7 with mul's a and b at int32, one lane, sliced 2, and sum's out at int32
+    packed 2: one FifoSlicer module for both inputs, then the packer, after the shell's."""
     from snax_forge.gen.blocks import Port
     from tests.gen.test_accelerator import dot_v7
 

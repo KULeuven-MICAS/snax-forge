@@ -337,7 +337,7 @@ def quiet_build(src: str) -> str:
     return "\n".join(out)
 
 
-# vecadd's one wait follows its start; dot_v1's vmul is waited on after vsum's configure (D158)
+# vecadd's one wait follows its start; dot_v1's vmul is waited on after vsum's configure
 @pytest.mark.parametrize("name", ["vecadd", "dot_v1"])
 def test_every_start_is_waited_on_at_once_in_the_quiet_build_and_each_build_waits_once(
     tmp_path, name

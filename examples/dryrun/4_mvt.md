@@ -65,7 +65,7 @@ Here `mvt_v5`:
 
     pixi run flow recipes/mvt/mvt_v5.json --platform platforms/snax_forge.json --set design.schedule=sequential --energy
 
-int64 forms reading A down a column add `--set memory.passes.layout=padded_rows` (a row one word longer, so a column meets all 32 banks); `mvt_v1`, `mvt_v1_2`, `mvt_v2` take `--set W=8` (`W_x1=8 W_x2=8`). All twelve: data 0 errors (128 words). vsim runs the same ELF on the RTL (open item 95); dynamic energy is SNAX-GVSoC's counts priced per transaction (D177).
+int64 forms reading A down a column add `--set memory.passes.layout=padded_rows` (a row one word longer, so a column meets all 32 banks); `mvt_v1`, `mvt_v1_2`, `mvt_v2` take `--set W=8` (`W_x1=8 W_x2=8`). All twelve: data 0 errors (128 words). vsim runs the same ELF on the RTL (the RTL check); dynamic energy is SNAX-GVSoC's counts priced per transaction (D177).
 
 | # | Form | Type | Window | vsim | Dynamic (nJ) | Static (nJ) | Area (µm²) | Without banks (µm²) |
 |---|---|---|---:|---:|---:|---:|---:|---:|

@@ -91,8 +91,8 @@ class StreamerRow(Record):
     fifo_depth: int
     temporal_dims: int
     container: str | None
-    d_out: int = 1  # a packed output's results per word (D174)
-    d_in: int = 1  # a sliced input's pops per word (D180)
+    d_out: int = 1  # a packed output's results per word
+    d_in: int = 1  # a sliced input's pops per word
 
 
 @dataclass
@@ -227,7 +227,7 @@ class EstimateTable(Record):
     streamer_cost: list[StreamerCostRow] = field(default_factory=list)
     xbar: dict[str, Any] | None = None  # its inputs, banks, accesses, area and energy
     memory: dict[str, Any] | None = None  # its banks, shape, reads, writes, area and energy
-    schedule: str = "serial"  # the design point's (D179): pipelined, the longest path
+    schedule: str = "serial"  # the design point's: pipelined, the longest path
     not_costed: list[str] = field(default_factory=list)
     extrapolated: list[str] = field(default_factory=list)
 
@@ -367,7 +367,7 @@ def unit_view(file: dict[str, Any], instance: str) -> tuple[str, str, int, int]:
     """The kind, the control, the latency and the II of ``instance`` in the slot's
     accelerator.json: its unit's datapath under the nest controller, or a linked group's
     datapaths in chain order, each link a wire or a buffer of its depth, under the group's
-    control unit (the latency the chain's); a group of several chains (D189) each chain so,
+    control unit (the latency the chain's); a group of several chains each chain so,
     joined by `‖`, the latency the longest chain's."""
     units = members(file, instance)
     if len(units) == 1:

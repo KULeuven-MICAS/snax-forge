@@ -54,7 +54,7 @@ Here the one pass at W = 8:
 
     pixi run flow recipes/bicg/bicg_v4.json --platform platforms/snax_forge.json --set W=8 --set R=8 --energy
 
-All runs: data 0 errors; columns as in dry run 4 (open item 95, D177), area without the 433 000 µm² of L1 banks. 64 × 64, W = 8:
+All runs: data 0 errors; columns as in dry run 4 (the RTL check, D177), area without the 433 000 µm² of L1 banks. 64 × 64, W = 8:
 
 | # | Form | Type | Window | vsim | Dynamic (nJ) | Static (nJ) | Without banks (µm²) |
 |---|---|---|---:|---:|---:|---:|---:|

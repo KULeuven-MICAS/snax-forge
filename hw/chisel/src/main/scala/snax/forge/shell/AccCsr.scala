@@ -25,10 +25,10 @@ class CsrRsp extends Bundle {
   *     does nothing.
   *   - Every other read-write CSR is a register of its width (JOBS and JOB_BEATS: job_width, a unit's scalar its
   *     dtype's bits, ROWS its bank's rows' bits), which takes a write's low bits when the request fires. Per group, its
-  *     JOBS (a `JOBS_<SINK>` per chain with several, D189), each JOB_BEATS, each ROWS (D191) and each CARRY (D192) in
-  *     unit order leave as wires (`settings(g)`) to its control unit, which reads them through the run with no copy, as
-  *     a scalar's CSRs (those with a `pin`, after its unit's JOB_BEATS) drive `scalars`, one element per CSR in CSR
-  *     order, to the datapath: the wrapper joins a 64-bit one's two (low word first) onto its pin.
+  *     JOBS (a `JOBS_<SINK>` per chain with several), each JOB_BEATS, each ROWS and each CARRY in unit order leave as
+  *     wires (`settings(g)`) to its control unit, which reads them through the run with no copy, as a scalar's CSRs
+  *     (those with a `pin`, after its unit's JOB_BEATS) drive `scalars`, one element per CSR in CSR order, to the
+  *     datapath: the wrapper joins a 64-bit one's two (low word first) onto its pin.
   *   - While a group is busy, a write to any of its read-write CSRs (START with bit 0 set or clear, JOBS, each
   *     JOB_BEATS, each scalar) is held, `req.ready` low, until E + 1, E the cycle its run ends, so its settings stay
   *     constant through the run; a write to another group's CSRs and every read go through.

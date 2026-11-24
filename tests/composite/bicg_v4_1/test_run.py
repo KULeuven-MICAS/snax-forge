@@ -1,9 +1,9 @@
-"""run/ on a recorded run of the one pass in strips (D189–D192): bicg_v4_1 at 40 × 32, W = 4,
+"""run/ on a recorded run of the one pass in strips: bicg_v4_1 at 40 × 32, W = 4,
 R = 4, trace level beat (fixtures/bicg_v4_1/README.md), converted without GVSoC.
 
 The group ``bicg_types`` is one SNAX-GVSoC component, read at its boundary: its firings are its
-head's (``mul``, whose outer inputs are the forked A and p, each sliced two to a word, D180), and
-each push names its sink, ``sum`` (q, packed two int32 results to a word, D174, its seed carried
+head's (``mul``, whose outer inputs are the forked A and p, each sliced two to a word), and
+each push names its sink, ``sum`` (q, packed two int32 results to a word, its seed carried
 from the first strip to the second) or ``mac`` (s, a bank of R rows, r held a row). Each output is
 checked on its own: its pushes against its rate, its writer's grants against its pushes, each push
 against the slice or the word its writer wrote. A sliced input's firing gives the k-th slice of

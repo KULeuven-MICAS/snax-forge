@@ -1,5 +1,5 @@
-"""bicg_v4 on the generator: s's sums in a bank of R rows (D191), r read once a row and held
-(D190), A read once (D189).
+"""bicg_v4 on the generator: s's sums in a bank of R rows, r read once a row and held,
+A read once.
 
 accelerator.json's banked unit and held port, the program's ROWS and job writes, r's reader once
 a row, the Chisel specs' vectors, the control's row register and the estimate."""
@@ -47,7 +47,7 @@ def test_the_program_writes_rows_and_each_chains_jobs(generated):
 
 @pytest.fixture(scope="module")
 def strips(tmp_path_factory) -> tuple[Path, str]:
-    """bicg_v4_1: two strips of 32 columns, q's sum carried across them (D192)."""
+    """bicg_v4_1: two strips of 32 columns, q's sum carried across them."""
     tmp = tmp_path_factory.mktemp("bicg_v4_1")
     path = designed(tmp, "bicg_v4_1", "bicg_v4_1")
     with pytest.MonkeyPatch.context() as mp:
@@ -65,7 +65,7 @@ def test_the_strips_cost_no_cycle(strips):
 
 @pytest.fixture(scope="module")
 def seeded(tmp_path_factory) -> tuple[Path, str]:
-    """mvt_v6: x2's sums in a seeded bank of 8 rows of 8 (D194), x1's tree seeded per row."""
+    """mvt_v6: x2's sums in a seeded bank of 8 rows of 8, x1's tree seeded per row."""
     tmp = tmp_path_factory.mktemp("mvt_v6")
     path = designed(tmp, "mvt_v6", "mvt_v6")
     with pytest.MonkeyPatch.context() as mp:

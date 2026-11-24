@@ -7,7 +7,7 @@ load keeps its error, so the other steps still draw. ``find_step`` reads a step 
 URL hash.
 
 ``graph_view`` gives a step's drawing (drawing.py: boxes, ports, edges, outlines; the page lays
-it out, D185), its blocks (``fold``), each item's Details, and the maps' ``partners``;
+it out), its blocks (``fold``), each item's Details, and the maps' ``partners``;
 ``step_view`` adds the marks, the estimate, its cost and the left column's sections;
 ``compare_view`` gives two steps' diff as rows ``{label, under, a, b, differs}``. CONTRACTS,
 "Recipe" (the viewer's API); the estimate and the cost in "Estimate" and "Cost model".
@@ -210,7 +210,7 @@ def step_view(e: Entry, label: str, platform: Any = None, marks: dict[str, list[
     out["bindings_section"] = bindings_section(e.graph, recipe, editable)
     if recipe is not None:  # the recipe's param names in the boxes and Details
         _name_params(out, e.graph, recipe)
-        if recipe.id is not None:  # what the recipe builds (D188)
+        if recipe.id is not None:  # what the recipe builds
             out["recipe_id"], out["recipe_description"] = recipe.id, recipe.description
     if marks is None:
         from snax_forge.sandbox.session import marks_of
@@ -400,7 +400,7 @@ def bindings_section(g: Graph, recipe: Any = None, editable: bool = False) -> di
                 if any(inner.match(x) for x in ids):
                     used.add(i)
                     names += [x for x in ps if x not in names]
-            for st in list(recipe.steps) if recipe is not None else []:  # a bank's rows (D191)
+            for st in list(recipe.steps) if recipe is not None else []:  # a bank's rows
                 p = st.params
                 if (st.transform == "bind" and p.get("instance") == a["instance"]
                         and isinstance(p.get("params"), dict)):  # fmt: skip
@@ -1079,14 +1079,14 @@ def compact_text(g: Graph, n: Node, param: str | None = None) -> str:
     a = n.attrs
     if n.kind == "tasklet":
         return f"{n.id} · {_operation(n, a['code'], list(n.inputs))}"
-    if n.kind == "accelerated":  # the type it runs at when a cast set one (D143): ``a * b @ int32``
+    if n.kind == "accelerated":  # the type it runs at when a cast set one: ``a * b @ int32``
         at = f" @ {a['opType']}" if a.get("opType") else ""
         text = f"{a['instance']} · {_operation(n, a['code'], list(n.inputs))}{at}"
         try:
             inst = instance_of(n)
             first = next(p.name for p in inst.ports if p.direction == "in")  # a port, not a slot
             slots = "".join(f" · {k} {v}" for k, v in slot_params(n).items())
-            rows = inst.params.get("rows", 1)  # a bank's rows (D191)
+            rows = inst.params.get("rows", 1)  # a bank's rows
             bank = f" · bank {rows} rows" if rows > 1 else ""
             return f"{text} · {param or 'W'} {inst.lanes(first)}{bank}{slots}"
         except (BrmError, ExprError, KeyError, StopIteration):
@@ -1206,7 +1206,7 @@ def details(g: Graph, est: Any) -> dict[str, dict[str, Any]]:
 
 
 def drawing_details(g: Graph, drawn: dict[str, Any], est: Any) -> dict[str, dict[str, Any]]:
-    """The drawing's own items' Details (drawing.py): a slicer's or packer's (D180, D174, with
+    """The drawing's own items' Details (drawing.py): a slicer's or packer's (with
     its cost), a temporal mux's, and every edge's: its memlet, and where it meets a unit its
     packing, port, loops and beats."""
     out: dict[str, dict[str, Any]] = {}
@@ -1239,7 +1239,7 @@ def drawing_details(g: Graph, drawn: dict[str, Any], est: Any) -> dict[str, dict
             out[f"node:{box['id']}"] = {
                 "kind": f"temporal {box['kind']}", "unit": box["unit"], "tasks": tasks,
                 "what": "the streamers run once per task on the same hardware, programmed again "
-                        "between the runs (D165); no mux cell",
+                        "between the runs; no mux cell",
             }  # fmt: skip
     for e in drawn["edges"]:
         d = {"kind": "edge", "data": e.get("data"), "memlet": e.get("sub")}
@@ -1333,7 +1333,7 @@ def _container(g: Graph, name: str, placed: Any = None) -> dict[str, Any]:
 
 
 def _lanes(g: Graph, n: Node, port: str) -> int | None:
-    """The lanes an accelerated node's ``port`` moves a beat (one for a broadcast input, D186);
+    """The lanes an accelerated node's ``port`` moves a beat (one for a broadcast input);
     None for any other node, or an instance the BRM library does not resolve."""
     if n.kind != "accelerated":
         return None
@@ -1344,7 +1344,7 @@ def _lanes(g: Graph, n: Node, port: str) -> int | None:
 
 
 def held_port(g: Graph, n: Node, port: str) -> bool:
-    """Whether an accelerated node's ``port`` is held (D190): read once a bank row and kept;
+    """Whether an accelerated node's ``port`` is held: read once a bank row and kept;
     False for any other node, or an instance the BRM library does not resolve."""
     if n.kind != "accelerated" or port not in n.inputs:
         return False
@@ -1355,7 +1355,7 @@ def held_port(g: Graph, n: Node, port: str) -> bool:
 
 
 def broadcast_port(g: Graph, n: Node, port: str) -> bool:
-    """Whether an accelerated node's ``port`` is a broadcast input (D186), one lane its reader
+    """Whether an accelerated node's ``port`` is a broadcast input, one lane its reader
     moves given to every lane; False for any other node, or an instance the BRM library does not
     resolve."""
     if n.kind != "accelerated":
@@ -1368,7 +1368,7 @@ def broadcast_port(g: Graph, n: Node, port: str) -> bool:
 
 def packer_node(g: Graph, n: Node, port: str, data: str) -> dict[str, Any] | None:
     """The ``FifoPacker`` the flow places on accelerated node ``n``'s output ``port`` when its
-    lanes fill less than a word (D174, design/streamers.py's ``packed``): its text, d_out, lanes
+    lanes fill less than a word (design/streamers.py's ``packed``): its text, d_out, lanes
     and dtype; None where the port is wired."""
     lanes = _lanes(g, n, port) if port in n.outputs else None
     if lanes is None:
@@ -1382,7 +1382,7 @@ def packer_node(g: Graph, n: Node, port: str, data: str) -> dict[str, Any] | Non
 
 def slicer_node(g: Graph, n: Node, port: str, data: str) -> dict[str, Any] | None:
     """The ``FifoSlicer`` the flow places on accelerated node ``n``'s input ``port`` when its
-    lanes fill less than a word (D180, design/streamers.py's ``sliced``): its text, d_in, lanes
+    lanes fill less than a word (design/streamers.py's ``sliced``): its text, d_in, lanes
     and dtype; None where the port is wired."""
     lanes = _lanes(g, n, port) if port in n.inputs else None
     if lanes is None:
@@ -1404,7 +1404,7 @@ def memlet_text(m: Memlet) -> str:
 
 def seed_memlet(n: Node) -> Memlet | None:
     """The element a node's fold starts from (CONTRACTS, "SNAX-DFG"): a seeded tasklet's
-    reduce's seed, a carried fold's own output (D192), or a bound unit's ``seed`` port; None for
+    reduce's seed, a carried fold's own output, or a bound unit's ``seed`` port; None for
     any other node."""
     if n.kind == "accelerated":
         return n.inputs.get(SEED)
@@ -1419,7 +1419,7 @@ def seed_memlet(n: Node) -> Memlet | None:
 
 
 def carried(n: Node) -> bool:
-    """Whether a node's fold is carried (D192): a tasklet's carry reduce, a unit's ``carry``."""
+    """Whether a node's fold is carried: a tasklet's carry reduce, a unit's ``carry``."""
     if n.kind == "accelerated":
         return bool(n.attrs.get("carry"))
     return n.kind == "tasklet" and any(m.reduce is not None and m.reduce.carry
@@ -1557,7 +1557,7 @@ def _uses(n: Node) -> list[tuple[str, Node, str, Memlet]]:
 
 def packing(g: Graph, n: Node, port: str, data: str) -> str | None:
     """``int32 · num_slc 2 · num_ch 2`` for an accelerated node's port (``int32 · num_slc 2 ·
-    d_out 2 · num_ch 1`` for a packed output, D174, ``d_in 2`` for a sliced input, D180); None for
+    d_out 2 · num_ch 1`` for a packed output, ``d_in 2`` for a sliced input); None for
     any other node, or an instance the BRM library does not resolve."""
     lanes = _lanes(g, n, port)
     if lanes is None:

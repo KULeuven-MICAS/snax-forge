@@ -28,8 +28,8 @@ class SliceAndPack(words: Int, laneType: String, lanes: Int) extends Module {
   * `[c(u+1)-1 : cu]` of the out-beat (c the in-beat's bits), the out-beat as `words` words. Timing with the input
   * always valid and the output always ready, random configurations under random input gaps and output stalls, and
   * random streams through a slicer into a packer, which must give back the same words; `clear` and `last` low. Then the
-  * packed outer output (D174) against a model of snax-gvsoc's `SnaxPacker`, cycle by cycle: runs ended by `last` (a
-  * short last word, zero above its slices), `clear` between runs.
+  * packed outer output against a model of snax-gvsoc's `SnaxPacker`, cycle by cycle: runs ended by `last` (a short last
+  * word, zero above its slices), `clear` between runs.
   */
 class FifoPackerSpec extends AnyFlatSpec with ForgeTester {
 

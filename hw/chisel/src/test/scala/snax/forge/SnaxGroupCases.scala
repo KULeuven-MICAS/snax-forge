@@ -13,7 +13,7 @@ object SnaxGroupCases {
   val Env = "SNAX_GVSOC_GROUP_CASES"
 
   /** A unit line; `seed`, its last outer input a fold's seed, one beat per job (`seed 1`); `rows`, a bank's rows (`rows
-    * R`, D191, 1 without); `hold`, its outer inputs read once every `rows` firings and kept (`hold J`, D190).
+    * R`, 1 without); `hold`, its outer inputs read once every `rows` firings and kept (`hold J`).
     */
   case class UnitLine(
     name:     String,
@@ -54,11 +54,11 @@ object SnaxGroupCases {
     */
   case class Data(lanes: Int, a: Seq[BigInt], b: Seq[BigInt], sums: Seq[BigInt])
 
-  /** A case; `forks`, each fork's (unit, outer input) pairs, its first the reader's place (`fork U.I ...`, D189);
-    * `outputs`, the sinks in the order of `jobs` and the readies (`outputs U...`; none: the one sink); `jobs`, one per
-    * output; `dOut`, its outer output packed that many results to a 64-bit word (`dout`, 1 without), and `words`, the
-    * words its packer sends (push n's result -(n + 1), D174); `dIn`, per sliced input its index among the outer inputs
-    * and its pops per word (`din I D`, D180).
+  /** A case; `forks`, each fork's (unit, outer input) pairs, its first the reader's place (`fork U.I ...`); `outputs`,
+    * the sinks in the order of `jobs` and the readies (`outputs U...`; none: the one sink); `jobs`, one per output;
+    * `dOut`, its outer output packed that many results to a 64-bit word (`dout`, 1 without), and `words`, the words its
+    * packer sends (push n's result -(n + 1)); `dIn`, per sliced input its index among the outer inputs and its pops per
+    * word (`din I D`).
     */
   case class Case(
     name:    String,

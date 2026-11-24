@@ -14,7 +14,7 @@ base ``layout.base + sum_d (c_d + sum_k a_dk * b_k) * strides[d]`` for firing lo
 ``sum_d a_dk * s_k * strides[d]``; one spatial loop per range dimension, the last range first.
 The spatial bounds must be the streamer's, and for an ``affine`` BRM the addresses visited beat
 by beat (``addresses``) must be the nest's through the same layout (streams.py). A packed
-output's writer and a sliced input's reader move words (``packed_values``, D174 · D180). The design point's ``schedule`` (D179)
+output's writer and a sliced input's reader move words (``packed_values``). The design point's ``schedule``
 orders the accelerators: ``serial`` adds ``serial_syncs``, ``sequential`` a sync after every
 start (``sequential``); ``pipeline`` moves the stores past other accelerators' starts
 (``later_stores``), and ``pipeline_compute`` also gathers the starts with only loads to wait for
@@ -151,8 +151,8 @@ def accelerator_components(point: DesignPoint) -> dict[str, str]:
     return out
 
 
-# NB (D158): accelerators run in series: the next one is configured while the current one runs
-# and started after a sync on it.
+# Accelerators run in series: the next one is configured while the current one runs and
+# started after a sync on it.
 def serial_syncs(tasks: TaskList, point: DesignPoint) -> TaskList:
     """``tasks`` with the serial syncs (CONTRACTS, "Task list"): before each start of an accelerator
     task whose accelerator is not the previous accelerator task's, a ``sync`` on that previous
@@ -330,20 +330,20 @@ def unit_firings(g: Graph, node: Node, inst: Instance) -> tuple[dict[str, Any], 
                 p.name: inst.params["rows"]
                 for p in inst.ports
                 if (p.direction == "out" or p.name == SEED) and inst.params.get("rows", 1) > 1
-            },  # a bank (D191), its seed a beat a row (D194)
-            carried_ports(node),  # a carried unit's seed and output revisit (D192)
+            },  # a bank, its seed a beat a row
+            carried_ports(node),  # a carried unit's seed and output revisit
         )
     except DfgError as e:
         raise LowerError(str(e)) from None
     out = {"n": prod(lp.count for lp in loops)} | rates
-    if node.attrs.get("carry"):  # the jobs before the first revisit (D192)
+    if node.attrs.get("carry"):  # the jobs before the first revisit
         out["carry"] = carry_jobs(node, inst, loops, out, what)
     return out, loops
 
 
 def carry_jobs(node: Node, inst: Instance, loops: list[Loop], values: dict[str, Any],
                what: str) -> int:  # fmt: skip
-    """A carried unit's jobs before its output's first revisit (D192): its jobs over the counts
+    """A carried unit's jobs before its output's first revisit: its jobs over the counts
     of the loops outside every one its output uses. A loop that revisits it between two it uses
     is refused: the unit would take the identity on jobs that are not a block at the start."""
     (m,) = node.outputs.values()

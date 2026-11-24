@@ -6,13 +6,13 @@ import org.scalatest.flatspec.AnyFlatSpec
 import snax.forge.{ForgeTester, IntType, LaneBits, Rand, Seeds, Sink, Source}
 import snax.forge.elementwise.ElementwiseModel
 
-/** A broadcast outer input in the wrapper (D186) on a seeded Mac (D187), mvt's column form in small: one group of one
-  * accumulating `Mac` of W lanes, `a` W lanes a beat, `b` broadcast (one lane a beat, from its reader or through its
-  * slicer at d_in = 64 / width), the seed W lanes of the output's type once a job. The model, from CONTRACTS,
-  * "Accelerator RTL spec": `b`'s stream is one lane, lane 0 of its word (the bits above it ignored), given to every
-  * lane; job j's lane l is seed(j, l) + Σ_t cast_out(cast_op(a(t, l)) · cast_op(b(t))), wrapping at the output's type.
-  * Per seed of `Seeds`: random types, W, JOBS and JOB_BEATS, data with junk above `b`'s lane, the streamer's gaps and
-  * stalls, with and without the slicer.
+/** A broadcast outer input in the wrapper on a seeded Mac, mvt's column form in small: one group of one accumulating
+  * `Mac` of W lanes, `a` W lanes a beat, `b` broadcast (one lane a beat, from its reader or through its slicer at d_in
+  * \= 64 / width), the seed W lanes of the output's type once a job. The model, from CONTRACTS, "Accelerator RTL spec":
+  * `b`'s stream is one lane, lane 0 of its word (the bits above it ignored), given to every lane; job j's lane l is
+  * seed(j, l) + Σ_t cast_out(cast_op(a(t, l)) · cast_op(b(t))), wrapping at the output's type. Per seed of `Seeds`:
+  * random types, W, JOBS and JOB_BEATS, data with junk above `b`'s lane, the streamer's gaps and stalls, with and
+  * without the slicer.
   */
 class ShellBroadcastSpec extends AnyFlatSpec with ForgeTester {
 

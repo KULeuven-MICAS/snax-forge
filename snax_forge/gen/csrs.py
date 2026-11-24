@@ -26,7 +26,7 @@ from .blocks import GenError
 # reserves 0x5FE (CSR_SNAX_READ_TASK_READY_QUEUE) and 0x5FF
 # (CSR_SNAX_WRITE_TASK_DONE_QUEUE), which hw/snax_util/src/snax_intf_translator.sv
 # routes to the cluster's top-level CSR port, not to the accelerator
-# NB (D120, D157): the SNAX CSRs start at 0x3C0; per set its streamer's CSRs, then its
+# NB (D120): the SNAX CSRs start at 0x3C0; per set its streamer's CSRs, then its
 # accelerator's. snax_cluster's csr_range_table and SNAX-GVSoC's csr_layout use this order.
 SNAX_CSR_FIRST = 0x3C0
 SNAX_ACC_CSR_LAST = 0x5FD

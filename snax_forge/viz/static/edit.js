@@ -330,13 +330,13 @@ function field(f) {
   return f.sweepable && !f.readonly ? sweepable(input, f.new_value) : input;
 }
 
-/** A Mac's "bank rows" box (D191): ticked, the unit keeps R rows of sums, R a param of its own
+/** A Mac's "bank rows" box: ticked, the unit keeps R rows of sums, R a param of its own
 (``sweepable``, its value the rows the site's loops give); unticked, one row, the plain Mac. */
 function bank(c, i) {
   const rows = h("input", { "data-bank-rows": String(i), value: "R", size: 4,
     title: "the bank's rows: a number, or a param (R) whose value is the rows the site's loops give" });
   const box = h("input", { type: "checkbox", "data-bank": String(i), checked: true });
-  const el = h("div", { class: "dfg-bank", title: "keep the sums of R outputs, one row a beat, read out when the job ends (D191)" },
+  const el = h("div", { class: "dfg-bank", title: "keep the sums of R outputs, one row a beat, read out when the job ends" },
     h("label", {}, box, " bank rows "), sweepable(rows, c.bank));
   box.onchange = () => { // unticked: one row, and no new param
     for (const x of el.querySelectorAll("input:not([data-bank])")) x.disabled = !box.checked;

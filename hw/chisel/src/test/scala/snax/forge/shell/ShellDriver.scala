@@ -17,7 +17,7 @@ class ShellHarness(val spec: AcceleratorSpec) extends Module {
   io <> wrapper.io
 
   /** A CSR's offset by name in a group (the first group by default): its own name, or a unit's CSR as the program names
-    * it with several chains (`<UNIT>_JOB_BEATS`, D189).
+    * it with several chains (`<UNIT>_JOB_BEATS`).
     */
   def csr(name: String, group: Int = 0): Int = {
     val g = spec.groups(group)

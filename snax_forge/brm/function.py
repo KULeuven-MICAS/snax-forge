@@ -40,8 +40,8 @@ AccelFn = Callable[
 @dataclass(frozen=True)
 class AccelPort:
     """One data port: ``rate``, an int or the name of a runtime param, is firings per beat; an
-    output of a bank (D191) of ``rows`` gives ``rows`` beats per ``rate`` firings, one on each
-    of the last ``rows``, and an input of one (a seeded bank's seed, D194) takes them on the
+    output of a bank of ``rows`` gives ``rows`` beats per ``rate`` firings, one on each
+    of the last ``rows``, and an input of one (a seeded bank's seed) takes them on the
     first ``rows``."""
 
     name: str
@@ -233,12 +233,12 @@ def mac_kind(
     """T beats of ``a`` and ``b`` -> 1 beat of ``out``, each lane on its own: ``a * b`` at the
     inputs' result type, or at ``op_type`` when the kernel's casts set it, cast to the output's
     dtype (``dtypes["out"]``), folded with ``op`` over the T beats; without ``dtypes``, at the
-    product's. A ``b`` of one lane is a broadcast (D186): every lane multiplies by it. With
-    ``seed`` 1 an input ``seed`` of ``lanes`` lanes at rate T (D187): a job's first firing
+    product's. A ``b`` of one lane is a broadcast: every lane multiplies by it. With
+    ``seed`` 1 an input ``seed`` of ``lanes`` lanes at rate T: a job's first firing
     folds into it instead of starting from the product, cast to the output's dtype. With
-    ``rows`` R > 1 a bank (D191): firing k adds into row k mod R, each row starting on a job's
+    ``rows`` R > 1 a bank: firing k adds into row k mod R, each row starting on a job's
     first R firings and given out on its last R, so a job of T firings gives R beats; seeded,
-    each row starts from its own seed beat, read on those first R firings (D194)."""
+    each row starts from its own seed beat, read on those first R firings."""
     out_dtype = None if dtypes is None else dtypes.get("out")
     if seed not in (0, 1):
         raise ValueError("seed must be 0 or 1")

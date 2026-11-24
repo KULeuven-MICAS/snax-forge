@@ -3,15 +3,15 @@
 ``resolve`` builds one ``Streamer`` per outer port of every accelerated instance, in the order
 the graph first uses them and the BRM's port order, as CONTRACTS, "Platform" (the streamer
 shell) and "Memory plan and design point" (the design point's ``streamers``) define them; a
-port on a link has none, an outer port narrower than a word is packed (an output, ``packed``,
-D174) or sliced (an input, ``sliced``, D180), one rule (``per_word``); ``stream_lanes`` gives the
-lanes a streamer moves, one for a broadcast input (``is_broadcast``, D186); a banked unit's
-input that skips the bank's rows is read once a row and held (``is_held``, D190).
+port on a link has none, an outer port narrower than a word is packed (an output, ``packed``)
+or sliced (an input, ``sliced``), one rule (``per_word``); ``stream_lanes`` gives the
+lanes a streamer moves, one for a broadcast input (``is_broadcast``); a banked unit's
+input that skips the bank's rows is read once a row and held (``is_held``).
 ``instances``, ``groups`` and ``accelerators`` read the instances off the graph and put them
 into groups and accelerators; ``links``, ``linked_ports``, ``unplaced`` and ``slot_containers``
 read the links, the containers with no L1 space and those read only through a slot connector;
-``forks``, ``forked_ports``, ``no_streamer``, ``group_chains`` and ``jobs_csr`` read the forks
-(D189): one streamer for a fork's ports, a group's chains and each one's JOBS CSR. Nothing here checks the pairing: check.py runs first and reports
+``forks``, ``forked_ports``, ``no_streamer``, ``group_chains`` and ``jobs_csr`` read the forks:
+one streamer for a fork's ports, a group's chains and each one's JOBS CSR. Nothing here checks the pairing: check.py runs first and reports
 every problem, so ``resolve`` raises on the first thing that does not fit.
 
 Shared movers (a container marked ``hw.share_ports``, sandbox/share_ports.py):
@@ -53,8 +53,8 @@ class Streamer:
     dtype: str
     num_slc: int
     num_ch: int
-    d_out: int = 1  # results per word through the output's packer (D174), 1 for a wire
-    d_in: int = 1  # pops per word through the input's slicer (D180), 1 for a wire
+    d_out: int = 1  # results per word through the output's packer, 1 for a wire
+    d_in: int = 1  # pops per word through the input's slicer, 1 for a wire
 
     @property
     def n_ports(self) -> int:
@@ -93,12 +93,12 @@ def per_word(dtype: str, lanes: int, width_bits: int) -> int:
 
 
 def packed(dtype: str, lanes: int, write: bool, width_bits: int) -> int:
-    """d_out of a port: ``per_word`` for an output (its packer, D174), 1 for an input."""
+    """d_out of a port: ``per_word`` for an output (its packer), 1 for an input."""
     return per_word(dtype, lanes, width_bits) if write else 1
 
 
 def sliced(dtype: str, lanes: int, write: bool, width_bits: int) -> int:
-    """d_in of a port: ``per_word`` for an input (its slicer, D180), 1 for an output."""
+    """d_in of a port: ``per_word`` for an input (its slicer), 1 for an output."""
     return 1 if write else per_word(dtype, lanes, width_bits)
 
 
@@ -172,7 +172,7 @@ def link_ends(graph: Graph, link: Node) -> tuple[str, str]:
 
 
 def forks(graph: Graph) -> list[Node]:
-    """The fork nodes (D189), in execution order: each one read given to several units."""
+    """The fork nodes, in execution order: each one read given to several units."""
     return [n for n, _ in graph.walk() if n.kind == "fork"]
 
 
@@ -184,7 +184,7 @@ def forked_ports(graph: Graph) -> dict[str, str]:
 
 def group_chains(graph: Graph, members: list[str]) -> list[list[str]]:
     """A group's chains, each its units from head to sink along its links, in the order of
-    their sinks among ``members``: one chain for a group a fork does not join (D189)."""
+    their sinks among ``members``: one chain for a group a fork does not join."""
     nxt = {k.attrs["from"]: k.attrs["to"] for k in links(graph) if k.attrs["from"] in members}
     prev = {b: a for a, b in nxt.items()}
     out = []
@@ -200,7 +200,7 @@ def group_chains(graph: Graph, members: list[str]) -> list[list[str]]:
 
 def jobs_csr(chains: list[list[str]], chain: list[str]) -> str:
     """The JOBS CSR of ``chain`` among a group's ``chains``: ``JOBS`` for a group of one,
-    ``JOBS_<SINK>`` for each of several (D189)."""
+    ``JOBS_<SINK>`` for each of several."""
     return "JOBS" if len(chains) == 1 else f"JOBS_{chain[-1].upper()}"
 
 
@@ -247,7 +247,7 @@ def group_runs(graph: Graph) -> dict[str, list[dict[str, Node]]]:
         for m in n.inputs.values():
             if m.data in writer:
                 parent[root(n.id)] = root(writer[m.data])
-    for f in forks(graph):  # a fork's readers run together (D189)
+    for f in forks(graph):  # a fork's readers run together
         units = {r.split(".")[0] for r in f.attrs["readers"]}
         ids = [n.id for n in mine if n.attrs["instance"] in units
                and any(m.data == f.attrs["container"] for m in n.inputs.values())]  # fmt: skip
@@ -280,7 +280,7 @@ def linked_ports(graph: Graph) -> set[str]:
 
 def no_streamer(graph: Graph) -> set[str]:
     """Every port without a streamer of its own: on a link, or a fork's but its first (it
-    takes the first's beats, D189)."""
+    takes the first's beats)."""
     return linked_ports(graph) | set(forked_ports(graph))
 
 
@@ -511,14 +511,14 @@ def firing_loops(graph: Graph, node: Node) -> list[Loop]:
 def port_loops(inst: Instance, port: str, memlet: Memlet, loops: list[Loop],
                carried: bool = False) -> list[Loop]:  # fmt: skip
     """The firing loops a port's streamer runs over: all of them at rate 1 but a held input's
-    bank loops (D190); for a named rate, which moves one beat per T firings, the loops its
-    memlet uses, and a ``carried`` port's (D192) the loops that revisit it too."""
+    bank loops; for a named rate, which moves one beat per T firings, the loops its
+    memlet uses, and a ``carried`` port's the loops that revisit it too."""
     if is_held(inst, port, memlet, loops):
         rows = bank_loops(inst, loops)
         return [lp for lp in loops if lp not in rows]
     if inst.brm.port(port).rate == 1:
         return loops
-    if carried:  # a carried seed or output: every loop but the folded ones, innermost (D192)
+    if carried:  # a carried seed or output: every loop but the folded ones, innermost
         k = len(loops)
         while k and loops[k - 1].var not in memlet.names:
             k -= 1
@@ -527,7 +527,7 @@ def port_loops(inst: Instance, port: str, memlet: Memlet, loops: list[Loop],
 
 
 def bank_loops(inst: Instance, loops: list[Loop]) -> list[Loop]:
-    """A bank's row loops (D191): the innermost firing loops whose counts multiply to the
+    """A bank's row loops: the innermost firing loops whose counts multiply to the
     unit's ``rows``; none at one row or when they do not (``bind`` refuses that bank)."""
     rows = inst.params.get("rows", 1)
     k, got = len(loops), 1
@@ -538,7 +538,7 @@ def bank_loops(inst: Instance, loops: list[Loop]) -> list[Loop]:
 
 
 def is_held(inst: Instance, port: str, memlet: Memlet, loops: list[Loop]) -> bool:
-    """Whether ``port`` is held (D190): an input at rate 1, not the seed, of a banked unit whose
+    """Whether ``port`` is held: an input at rate 1, not the seed, of a banked unit whose
     memlet uses none of the bank's row loops, so it is read once a row and kept."""
     p = inst.brm.port(port)
     rows = bank_loops(inst, loops)
@@ -564,7 +564,7 @@ def memlet_spatial_bounds(m: Memlet, symbols: dict[str, int], what: str) -> list
 
 def stream_lanes(graph: Graph, node: Node, inst: Instance, port: str) -> int:
     """The lanes ``port``'s streamer moves a beat: a stream BRM's bound memlet's ranges, so one
-    for a broadcast input (D186), else the port's lanes."""
+    for a broadcast input, else the port's lanes."""
     if memlet_ordered(inst.brm):
         m = (node.inputs | node.outputs)[port]
         return prod(memlet_spatial_bounds(m, graph.bound_symbols, f"node {node.id}.{port}"))
@@ -572,7 +572,7 @@ def stream_lanes(graph: Graph, node: Node, inst: Instance, port: str) -> int:
 
 
 def is_broadcast(graph: Graph, node: Node, inst: Instance, port: str) -> bool:
-    """Whether ``port`` is a broadcast (D186): an input, not a seed, of more than one lane whose
+    """Whether ``port`` is a broadcast: an input, not a seed, of more than one lane whose
     streamer moves one, given to every lane (bind takes it on a lane-wise datapath only)."""
     p = inst.brm.port(port)
     return (p.direction == "in" and port != SEED and inst.lanes(port) > 1

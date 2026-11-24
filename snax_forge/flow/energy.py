@@ -1,10 +1,10 @@
-"""The energy run (D177; CONTRACTS, "Profile and trace"): a run's snapshots priced.
+"""The energy run (CONTRACTS, "Profile and trace"): a run's snapshots priced.
 
     energy_of(lines, cluster, marks, graph, est) -> EnergyRun
 
 ``lines`` are a run's ``summary`` events on SNAX-GVSoC: the quiet build's (``forge_quiet.elf``)
 with ``marks`` its ``obs_marks.json``, or, ``marks`` None, the default build's (``forge.elf``),
-which writes no mark: one window, the whole run (a pipelined schedule's, D179). ``est`` is the
+which writes no mark: one window, the whole run (a pipelined schedule's). ``est`` is the
 design's costed estimate. Each window between two snapshots (run/snapshots.py) is priced at the
 instances' prices (estimate/dynamic.py): its units' firings and pushes, its groups' busy cycles,
 its movers' requests and grants, the crossbar's counts of the DMA's copies inside L1. ``static``
@@ -88,7 +88,7 @@ def counts_of(w: Window, cluster: Cluster) -> Counts:
     """A window's counts as the pricing reads them: per unit its firings and pushes, the groups'
     busy cycles added up and per group (a group's line is written by one of its units), per mover
     its lanes' grants and stalls (requests) and grants, and the crossbar's counts of the DMA's
-    copies inside L1 (D184)."""
+    copies inside L1."""
     movers = {}
     for m in cluster.accelerator.movers:
         lanes = [w.counters.inputs[p] for p in m.ports if p in w.counters.inputs]

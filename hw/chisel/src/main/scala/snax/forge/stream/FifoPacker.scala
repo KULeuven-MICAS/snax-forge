@@ -8,9 +8,9 @@ import snax.forge.IntType
 /** `inLanes` lanes of `laneType` in per push, a beat of `words` 64-bit words out: the FIFO packer, `FifoSlicer`'s
   * mirror.
   *
-  * Placed by `shell.ShellWrapper` on a packed outer output (D174): a one-lane result, `FifoPacker(lanes, dtype, 1)`,
-  * between the unit's output and its writer, r = d_out results to a word. snax-gvsoc's `SnaxPacker` is its model, cycle
-  * for cycle.
+  * Placed by `shell.ShellWrapper` on a packed outer output: a one-lane result, `FifoPacker(lanes, dtype, 1)`, between
+  * the unit's output and its writer, r = d_out results to a word. snax-gvsoc's `SnaxPacker` is its model, cycle for
+  * cycle.
   *
   * A beat is `words` * num_slc elements (num_slc = 64 / width), element e at bits `[w(e+1)-1 : we]` of the beat. r =
   * `words` * num_slc / `inLanes` in-beats fill one out-beat, lane l of in-beat u element u * `inLanes` + l. The

@@ -285,7 +285,7 @@ def test_a_packed_output_shows_its_d_out(tmp_path):
 
 
 def test_a_sliced_input_shows_its_d_in(tmp_path):
-    """vecadd_v1_1 at W = 1: each int32 input sliced 2 from a word, on one channel (D180)."""
+    """vecadd_v1_1 at W = 1: each int32 input sliced 2 from a word, on one channel."""
     r = designed_report(tmp_path, "vecadd_v1_1", ["W=1"])
     assert [(s.port, s.num_ch, s.d_out, s.d_in) for s in r.streamers] == [
         ("a", 1, 1, 2), ("b", 1, 1, 2), ("out", 1, 2, 1)

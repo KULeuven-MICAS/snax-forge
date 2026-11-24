@@ -3,7 +3,7 @@
 ``groups(graph)`` gives a ``GroupEstimate`` per group (the units of one ``group``, else of one
 instance, and its links) with the fields CONTRACTS lists; ``cost`` is set later by
 ``estimate``. ``group_cycles`` steps snax-gvsoc's group rule with every outer input valid and the
-outer output ready, a sliced input through its slicer (one cycle a run, D180), the one place
+outer output ready, a sliced input through its slicer (one cycle a run), the one place
 this is done (gen/rtl.py's ``group_counter`` calls it);
 ``group_rule`` loads ``snax/snax_group_rule.py`` from the submodule once, and without it
 ``estimate.submodule`` names the fix. A unit's L, II and span are its implementation's timing
@@ -78,7 +78,7 @@ def group_cycles(units: list[dict[str, Any]], links: list[dict[str, Any]],
     ``L``, ``ii``, ``span`` and ``inputs``, its outer inputs, and optionally ``d_in``, their pops
     per word in port order, absent all 1; ``links`` ``{from, to, to_input, depth}``; ``owner``
     the unit with the outer output, or with several chains each sink in unit order, ``jobs``
-    then one per chain, and ``forks`` each ``(unit, outer input)`` one reader feeds, D189)
+    then one per chain, and ``forks`` each ``(unit, outer input)`` one reader feeds)
     stepped with every input valid and every output ready, JOBS ``jobs`` and each unit's T
     ``ts``; 0 for the empty run (a JOBS or a T 0), None for a run that does not end."""
     several = not isinstance(jobs, int)
@@ -98,7 +98,7 @@ def group_cycles(units: list[dict[str, Any]], links: list[dict[str, Any]],
 
 def rule_forks(graph: Graph, members: list[str], insts: dict[str, Any],
                fed: set[str]) -> list[list[tuple[str, int]]]:  # fmt: skip
-    """The group's forks (D189) as the group rule takes them: per fork each reader's unit and
+    """The group's forks as the group rule takes them: per fork each reader's unit and
     the place of its port among the unit's outer inputs (its ``in`` ports no link feeds)."""
     out = []
     for f in forks(graph):
@@ -178,7 +178,7 @@ def _ins(inst: Any) -> list[str]:
 
 
 def _bank(graph: Graph, inst: Any, node: Node, outer: list[str]) -> dict[str, Any]:
-    """A banked unit's ``rows`` and ``hold`` as the group rule takes them (D190, D191): its rows
+    """A banked unit's ``rows`` and ``hold`` as the group rule takes them: its rows
     R and the places of its held inputs among its outer ones; nothing without a bank."""
     if bank_rows(inst) == 1:
         return {}
@@ -234,7 +234,7 @@ def _datapath_blocks(graph: Graph, insts: dict[str, Any], members: list[str],
                                                         cat["LinkBuffer"]), gives[unit])  # fmt: skip
         bits[name] = flops("LinkBuffer", links[name].params, cat)
     taken = {frm for _, frm, _ in ends}
-    for u, unit in filled.items():  # a packed outer output's packer, by <unit>.<port> (D174)
+    for u, unit in filled.items():  # a packed outer output's packer, by <unit>.<port>
         for p, port in unit.ports.items():
             if port.dir != "out" or f"{u}.{p}" in taken or port.dtype is None:
                 continue
@@ -243,7 +243,7 @@ def _datapath_blocks(graph: Graph, insts: dict[str, Any], members: list[str],
                 params = {"d_out": d_out, "lanes": port.lanes, "dtype": port.dtype}
                 links[f"{u}.{p}"] = Block("FifoPacker", params, gives[u])
                 bits[f"{u}.{p}"] = packer_bits(d_out, port.lanes, port.dtype)
-    for k, b in _slicers(graph, insts, members, ends).items():  # a sliced outer input's (D180)
+    for k, b in _slicers(graph, insts, members, ends).items():  # a sliced outer input's
         u, p = k.split(".", 1)
         links[k] = Block("FifoSlicer", b.params, gives[u] if p == SEED else firings[u])
         bits[k] = slicer_bits(b.params["d_in"])
@@ -251,9 +251,9 @@ def _datapath_blocks(graph: Graph, insts: dict[str, Any], members: list[str],
 
 
 def _bank_bits(graph: Graph, inst: Any, node: Node, unit: Any, flops: int) -> int:
-    """A banked unit's register bits (D191): its rows of sums, ``flops`` (the catalogue's,
-    counting its ``rows``), and a register of the element's width per held input (D190); its
-    read muxes are its lookup's comb (D193)."""
+    """A banked unit's register bits: its rows of sums, ``flops`` (the catalogue's,
+    counting its ``rows``), and a register of the element's width per held input; its
+    read muxes are its lookup's comb."""
     from snax_forge.gen.blocks import port_dtype as width_of
 
     loops = firing_loops(graph, node)
@@ -263,7 +263,7 @@ def _bank_bits(graph: Graph, inst: Any, node: Node, unit: Any, flops: int) -> in
 
 def _slicers(graph: Graph, insts: dict[str, Any], members: list[str],
              ends: list[tuple[Node, str, str]]) -> dict[str, Block]:  # fmt: skip
-    """Each sliced outer input's ``FifoSlicer`` (D180) by ``<unit>.<port>``: its ``d_in``, lanes
+    """Each sliced outer input's ``FifoSlicer`` by ``<unit>.<port>``: its ``d_in``, lanes
     and dtype, no fires (``_datapath_blocks`` gives its pops)."""
     fed, nodes, out = {to for _, _, to in ends} | set(forked_ports(graph)), {}, {}
     for n, _ in graph.walk():
@@ -274,7 +274,7 @@ def _slicers(graph: Graph, insts: dict[str, Any], members: list[str],
             if f"{u}.{p}" in fed:
                 continue
             dtype = port_dtype(graph, nodes[u], p)
-            lanes = stream_lanes(graph, nodes[u][0], insts[u], p)  # one for a broadcast (D186)
+            lanes = stream_lanes(graph, nodes[u][0], insts[u], p)  # one for a broadcast
             d_in = sliced(dtype, lanes, False, WORD_BITS)
             if d_in > 1:
                 out[f"{u}.{p}"] = Block("FifoSlicer", {"d_in": d_in, "lanes": lanes,

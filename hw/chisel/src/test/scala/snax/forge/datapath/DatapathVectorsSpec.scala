@@ -21,14 +21,14 @@ class DatapathVectorsSpec extends AnyFlatSpec with ForgeTester {
       def bool(n: String, v: Boolean) = io.get(n).foreach(_.asInstanceOf[Bool].poke(v.B))
       def slot(n: String, v: Int)     = io.get(n).foreach(x => x.asInstanceOf[UInt].poke(v.U))
       val inputs = t.datapath match {
-        case "SimdLanes" | "Mac" => Seq("a", "b", if (t.params.get("seed").exists(_.bool)) "seed" else "c") // D187
+        case "SimdLanes" | "Mac" => Seq("a", "b", if (t.params.get("seed").exists(_.bool)) "seed" else "c")
         case "LaneAccumulate"    => Seq("a")
-        case _ => Seq("in", "seed") // a fold's seed, its second input
+        case _                   => Seq("in", "seed") // a fold's seed, its second input
       }
       for ((s, k) <- t.steps.zipWithIndex) {
         bool("fire", s.fire); bool("first", s.first); bool("read", s.read); bool("en", s.en)
         bool("load", s.load); slot("lane", s.lane); slot("wslot", s.wslot); slot("rslot", s.rslot)
-        slot("row", s.row); slot("drain", s.drain) // a bank's pins (D191), absent without one
+        slot("row", s.row); slot("drain", s.drain) // a bank's pins, absent without one
         for ((pin, v) <- s.sets) LaneBits.poke(io(pin), v) // a CSR slot's pin, held until set again
         for {
           (lanes, i)  <- s.ins.zipWithIndex

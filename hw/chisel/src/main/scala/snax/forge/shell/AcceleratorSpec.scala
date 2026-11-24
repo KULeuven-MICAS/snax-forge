@@ -9,9 +9,9 @@ import java.nio.file.{Files, Path}
   * outputs set after set. Nothing is checked again here beyond what construction needs: the offsets as stored,
   * contiguous in CSR order from the shell's first CSR.
   *
-  * A forked input (D189) is one entry of an accelerator's `inputs`, the list of the ports one reader feeds, the
-  * reader's first: `inputs` keeps the reader's port, one per `stream2acc_<k>`, and `forks` every fork's ports. A group
-  * of several chains has a `JOBS_<SINK>` per chain in place of JOBS, in the order of their sinks.
+  * A forked input is one entry of an accelerator's `inputs`, the list of the ports one reader feeds, the reader's
+  * first: `inputs` keeps the reader's port, one per `stream2acc_<k>`, and `forks` every fork's ports. A group of
+  * several chains has a `JOBS_<SINK>` per chain in place of JOBS, in the order of their sinks.
   *
   * A set whose groups share its movers (`share_ports`) has `movers` and `port_mux`: its outer ports at the wrapper are
   * its movers, readers then writers, each `num_channel * 64` bits, in place of its groups' inputs and outputs, which
@@ -28,12 +28,12 @@ object AcceleratorSpec {
   }
 
   /** A unit's BRM port: the datapath's port, its direction (`in` or `out`), its dtype (NumPy's name), its lanes;
-    * `dOut`, on an outer output a packer feeds, its results per 64-bit word (`d_out`, written only when packed, else 1;
-    * D174); `dIn`, on an outer input a slicer feeds, its pops per 64-bit word (`d_in`, written only when sliced, else
-    * 1; D180); `broadcast`, an outer input whose stream is one lane, given to all its lanes (`broadcast`, written only
-    * when true; D186), its `dIn` that one lane's; `hold`, a banked unit's input read once a row and kept (`hold`,
-    * written only when true; D190); `carry`, a seed that is the unit's own output carried, 0 on its first CARRY jobs
-    * (`carry`, written only when true; D192).
+    * `dOut`, on an outer output a packer feeds, its results per 64-bit word (`d_out`, written only when packed, else
+    * 1); `dIn`, on an outer input a slicer feeds, its pops per 64-bit word (`d_in`, written only when sliced, else 1);
+    * `broadcast`, an outer input whose stream is one lane, given to all its lanes (`broadcast`, written only when
+    * true), its `dIn` that one lane's; `hold`, a banked unit's input read once a row and kept (`hold`, written only
+    * when true); `carry`, a seed that is the unit's own output carried, 0 on its first CARRY jobs (`carry`, written
+    * only when true).
     */
   case class PortSpec(
     port:      String,
@@ -90,14 +90,14 @@ object AcceleratorSpec {
     /** A scalar's CSRs, the pin's low word first. */
     def pinned(pin: String): Seq[CsrSpec] = csrs.filter(_.pin.contains(pin))
 
-    /** Its bank's rows (`params.rows`, D191; 1 without a bank). */
+    /** Its bank's rows (`params.rows`; 1 without a bank). */
     def rows: Int = params.get("rows").map(_.num.toInt).getOrElse(1)
   }
 
   case class GroupSpec(name: String, csrs: Seq[CsrSpec], units: Seq[UnitSpec], links: Seq[LinkSpec]) {
     private def own(n: String): CsrSpec = csrs.find(_.name == n).get
 
-    /** Its JOBS: JOBS, or with several chains a `JOBS_<SINK>` per chain in the order of their sinks (D189). */
+    /** Its JOBS: JOBS, or with several chains a `JOBS_<SINK>` per chain in the order of their sinks. */
     def jobs: Seq[CsrSpec] = csrs.filter(c => c.access == "rw" && AcceleratorSpec.isJobs(c.name))
 
     /** Its CSRs in CSR order: START, its JOBS, its units' read-write ones, STATUS, BUSY_COUNTER. */
@@ -157,7 +157,7 @@ object AcceleratorSpec {
       u -> p
     }
     val accs                = d("accelerators").arr.toSeq
-    // An entry: a port, or a fork's ports (D189), the reader's first
+    // An entry: a port, or a fork's ports, the reader's first
     def entries(a: ujson.Value, key: String): Seq[Seq[(String, String)]] =
       a(key).arr.toSeq.map {
         case ujson.Arr(ports) => ports.toSeq.map(e => end(e.str))
@@ -276,7 +276,7 @@ case class AcceleratorSpec(
 
   def unit(name: String): AcceleratorSpec.UnitSpec = units.find(_.name == name).get
 
-  /** A forked port but its fork's first, to the first's: the ports that take their reader's beat (D189). */
+  /** A forked port but its fork's first, to the first's: the ports that take their reader's beat. */
   lazy val forked: Map[(String, String), (String, String)] = forks.flatMap(f => f.tail.map(_ -> f.head)).toMap
 
   /** The unit's outer input BRM ports in its port order, each with the index of its reader among the outer inputs (a

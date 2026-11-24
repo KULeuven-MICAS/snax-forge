@@ -666,7 +666,7 @@ def link(g: Graph, container: str, depth: int, group: str) -> Graph:
 
 
 def fork_sets(g: Graph, members: set[str]) -> list[set[str]]:
-    """The instances each fork node (D189) joins, those among ``members``."""
+    """The instances each fork node joins, those among ``members``."""
     return [{r.split(".")[0] for r in n.attrs["readers"]} & members
             for n, _ in g.walk() if n.kind == "fork"]  # fmt: skip
 
@@ -674,7 +674,7 @@ def fork_sets(g: Graph, members: set[str]) -> list[set[str]]:
 def chains_problem(order: list[str], hops: list[tuple[str, str]],
                    forked: list[set[str]]) -> str | None:  # fmt: skip
     """Why a group's units ``order`` (the graph's order) and links ``hops`` are not one chain,
-    or, with forks (``forked``, the units each joins), not chains a fork joins (D189); None
+    or, with forks (``forked``, the units each joins), not chains a fork joins; None
     when they are. Without a fork: the links join each unit to the next. With one: each unit
     has at most one link in and one out, each goes forward, and the forks join every chain."""
     if not any(len(f) > 1 for f in forked):

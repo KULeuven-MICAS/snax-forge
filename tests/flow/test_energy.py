@@ -1,4 +1,4 @@
-"""The energy run (flow/energy.py, D177) and its report (report/energy.py): vecadd's quiet build
+"""The energy run (flow/energy.py) and its report (report/energy.py): vecadd's quiet build
 written by hand, its snapshots priced by window.
 
 On SNAX-GVSoC (marker ``gvsoc``: in the image), vecadd and dot_v3 at N = 2048, W = 8 run with
@@ -86,8 +86,8 @@ def test_refusals_cost_the_crossbar_and_the_streamers_and_the_windows_add_up():
 
 
 def test_a_copy_window_costs_its_beats_at_the_crossbar_and_its_superbanks_banks():
-    """The crossbar's copy counts reach the window's Counts and are priced as D184 says: each
-    beat read a crossbar read and a read on every bank of the superbank, each beat written a
+    """The crossbar's copy counts reach the window's Counts and are priced by their L1 accesses:
+    each beat read a crossbar read and a read on every bank of the superbank, each beat written a
     crossbar write and a write on every bank of it."""
     cluster = cluster_from(*files())
     graph = steps("vecadd_v1")[-1]

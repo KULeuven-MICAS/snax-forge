@@ -1,7 +1,7 @@
 """A copy in the estimate (copies.py): mvt_v4 (int64, 64 × 64) with data_transpose on half 2
 instead of the mark, one burst per element at the DMA's measured rate, each burst one beat read
 and one written on the superbank port: one read-only and one write-only crossbar access, and a
-read and a write on each of the superbank's banks (D184), in the estimate and in the dynamic
+read and a write on each of the superbank's banks, in the estimate and in the dynamic
 energy's graph counts."""
 
 from __future__ import annotations

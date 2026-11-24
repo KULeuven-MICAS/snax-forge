@@ -1,4 +1,4 @@
-"""The viewer draws a forked read (fork_read, D189) as its own edge style into each unit."""
+"""The viewer draws a forked read (fork_read) as its own edge style into each unit."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ def test_the_forked_reads_of_a_are_marked():
     into = {e["to"]: e["style"] for e in v["drawing"]["edges"] if e.get("data") == "A"}
     assert into["unit:mul"] == into["unit:mac"] == "fork"
     assert {e["label"] for e in v["drawing"]["edges"] if e["style"] == "fork"} == {"fork"}
-    # one read of A: from q's innermost loop, which s's loops are drawn on (one box, D189)
+    # one read of A: from q's innermost loop, which s's loops are drawn on (one box)
     reads = [(e["from"], e["to"]) for e in v["drawing"]["edges"] if e.get("data") == "A"]
     assert reads == [("A@0", "q_mult_map"), ("q_mult_map", "q_mult_map_1"),
                      ("q_mult_map_1", "unit:mul"), ("q_mult_map_1", "unit:mac")]  # fmt: skip

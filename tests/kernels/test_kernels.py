@@ -35,7 +35,7 @@ def _presets() -> list[tuple[str, str, dict[str, str]]]:
 @pytest.mark.parametrize(("name", "preset", "dtypes"), _presets())
 def test_a_preset_computes_what_numpy_does(name: str, preset: str, dtypes: dict) -> None:
     """The kernel's own function in NumPy, at the preset's types (its type parameters rebound),
-    equals the reference executor on the imported graph, exactly (D143 · D175); dot at i8 with
+    equals the reference executor on the imported graph, exactly; dot at i8 with
     OP_TYPE int8 is NumPy's wrapped product, vecmul at i8 into int16 a wrapped output."""
     from snax_forge.dfg.import_sdfg import import_kernel
     from snax_forge.dfg.reference import reference_check

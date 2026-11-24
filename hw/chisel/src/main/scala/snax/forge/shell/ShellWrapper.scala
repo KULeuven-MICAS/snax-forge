@@ -66,31 +66,30 @@ class ShellPorts(val readers: Seq[Int], val writers: Seq[Int], val groups: Seq[S
   * holds `<tag>_<set>_port_mux` (`PortMux`) between them and the groups' ports, its select PORT_MUX_SEL from
   * `<tag>_csr`; the groups and their control units are as in an unshared set.
   *
-  * A packed outer output (`d_out` > 1 in its port, D174) has a `FifoPacker(lanes, dtype, 1)`, `<unit>_<port>_packer`,
-  * between its datapath's port and its writer, on the group's side of a shared set's mux: the group's outer handshake
-  * is the packer's input, the writer's data and valid its output, its slice pointer cleared when the group's start is
+  * A packed outer output (`d_out` > 1 in its port) has a `FifoPacker(lanes, dtype, 1)`, `<unit>_<port>_packer`, between
+  * its datapath's port and its writer, on the group's side of a shared set's mux: the group's outer handshake is the
+  * packer's input, the writer's data and valid its output, its slice pointer cleared when the group's start is
   * accepted, `last` the group's `last` (its next push is the run's last result, from the counters). A filling push
   * needs no room at the writer; the port is one 64-bit word.
   *
-  * A sliced outer input (`d_in` > 1 in its port, D180) has a `FifoSlicer(1, dtype, lanes)`, `<unit>_<port>_slicer`,
-  * between its reader and its datapath's port, on the group's side of a shared set's mux: the reader's data and valid
-  * are its input, its pops the group's outer handshake and the datapath's data. It takes a word only while the group is
-  * busy and drops what it holds when the group's start is accepted; the port is one 64-bit word.
+  * A sliced outer input (`d_in` > 1 in its port) has a `FifoSlicer(1, dtype, lanes)`, `<unit>_<port>_slicer`, between
+  * its reader and its datapath's port, on the group's side of a shared set's mux: the reader's data and valid are its
+  * input, its pops the group's outer handshake and the datapath's data. It takes a word only while the group is busy
+  * and drops what it holds when the group's start is accepted; the port is one 64-bit word.
   *
-  * A broadcast input (`broadcast` in its port, D186) is one lane a beat from its reader, or from its slicer, a
-  * `FifoSlicer(1, dtype, 1)` whose r is its `d_in`: `<unit>_<port>_bcast` gives that lane to every lane of the unit's
-  * input, wires only. Its port is that lane, at least one 64-bit word.
+  * A broadcast input (`broadcast` in its port) is one lane a beat from its reader, or from its slicer, a `FifoSlicer(1,
+  * dtype, 1)` whose r is its `d_in`: `<unit>_<port>_bcast` gives that lane to every lane of the unit's input, wires
+  * only. Its port is that lane, at least one 64-bit word.
   *
-  * A forked input (D189), one reader for the heads of several chains of a group, is one `stream2acc_<k>`, its reader's:
-  * its data (or its slicer's, one for the fork, named after the reader's port) goes to each unit's port and its valid
-  * to each unit's handshake, and its ready is the AND of their readies, so a beat is taken only when every unit fires.
+  * A forked input, one reader for the heads of several chains of a group, is one `stream2acc_<k>`, its reader's: its
+  * data (or its slicer's, one for the fork, named after the reader's port) goes to each unit's port and its valid to
+  * each unit's handshake, and its ready is the AND of their readies, so a beat is taken only when every unit fires.
   * Each chain's sink has its own outer output, and each its packer when packed.
   *
-  * A held input (`hold`, D190), a banked unit's broadcast input read once a row: its lane is kept in
-  * `<unit>_<port>_hold`, a register of the element's width loaded when the control takes its beat (a row's first
-  * firing), and the datapath sees the live lane on that firing and the held one on the row's others. A carried seed
-  * (`carry`, D192) reaches the datapath ANDed with its control unit's `<unit>_use_seed`, so 0 on the unit's first CARRY
-  * jobs; its reader runs every job.
+  * A held input (`hold`), a banked unit's broadcast input read once a row: its lane is kept in `<unit>_<port>_hold`, a
+  * register of the element's width loaded when the control takes its beat (a row's first firing), and the datapath sees
+  * the live lane on that firing and the held one on the row's others. A carried seed (`carry`) reaches the datapath
+  * ANDed with its control unit's `<unit>_use_seed`, so 0 on the unit's first CARRY jobs; its reader runs every job.
   *
   * Clock `clk_i`, reset `rst_ni` active low and asynchronous, as snax_cluster's (`RequireAsyncReset` in ReqRspManager).
   */
@@ -220,7 +219,7 @@ class ShellWrapper(spec: AcceleratorSpec) extends RawModule {
       io(s"${g.name}_done_o") := c.done
 
       // The outer ports, unit by unit in the streamer's order: data to the unit's datapath, handshake to the group's
-      // control unit (its inputs flat in unit order, its outputs its sinks'). NB (D189): a forked input's reader (and
+      // control unit (its inputs flat in unit order, its outputs its sinks'). A forked input's reader (and
       // slicer) once, its data and valid to each of its units, its ready the AND of theirs, set after the last unit
       val desc   = AccCtrl.desc(spec, g)
       var at     = 0
@@ -280,7 +279,7 @@ class ShellWrapper(spec: AcceleratorSpec) extends RawModule {
             feed(data)
             c.in(at).valid := valid
             ready          := c.in(at).ready
-          } else { // sliced (D180): the slicer between the reader and the unit, after a shared set's mux
+          } else { // sliced: the slicer between the reader and the unit, after a shared set's mux
             val (data, valid, ready) = inPort(j)
             val slicer = Module(new FifoSlicer(1, p.dtype, p.streamLanes)).suggestName(s"${u.name}_${brm}_slicer")
             require(slicer.r == p.dIn, s"${u.name}.$brm: d_in ${p.dIn}, its slicer's r ${slicer.r}")
@@ -304,7 +303,7 @@ class ShellWrapper(spec: AcceleratorSpec) extends RawModule {
             data    := d(brm).asUInt
             valid   := o.valid
             o.ready := ready
-          } else { // packed (D174): the packer between the port and its writer, before a shared set's mux
+          } else { // packed: the packer between the port and its writer, before a shared set's mux
             val packer = Module(new FifoPacker(p.lanes, p.dtype, 1)).suggestName(s"${u.name}_${brm}_packer")
             require(packer.r == p.dOut, s"${u.name}.$brm: d_out ${p.dOut}, its packer's r ${packer.r}")
             packer.io.in.valid  := o.valid

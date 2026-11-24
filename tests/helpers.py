@@ -113,7 +113,7 @@ def _step(transform: str, **params: Any) -> dict[str, Any]:
     return {"transform": transform, "params": params}
 
 
-# mvt_types at i8 with half 2 in the column form (D186, D187): half 1 as mvt_v4_1_1's,
+# mvt_types at i8 with half 2 in the column form: half 1 as mvt_v4_1_1's,
 # half 2's lanes on n (strips of W_x1 columns, m in time between the strip and the lanes), its
 # fold seeded from x2, fused and bound as a mac reading y2 as a broadcast
 MVT_COLUMN_STEPS = [

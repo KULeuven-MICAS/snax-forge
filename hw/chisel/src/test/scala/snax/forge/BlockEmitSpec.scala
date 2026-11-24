@@ -82,7 +82,7 @@ class BlockEmitSpec extends AnyFlatSpec {
     (false, false, false, false, 1),
     (false, true, false, true, 1),
     (true, false, false, true, 4),
-    (true, false, true, true, 4) // a seeded bank (D194)
+    (true, false, true, true, 4) // a seeded bank
   ).map { case (acc, reg, seed, registered, rows) => // seeded, the port seed; banked, the pins row and drain
     Case(
       "Mac",

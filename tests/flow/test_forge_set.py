@@ -121,7 +121,7 @@ def test_every_sets_recipe_is_found_in_its_folder():
     ``recipes/``, and the sets keep their names."""
     assert [d.recipe for d in fs.QUICK] == ["vecadd_v1_1", "axpy_v1", "dot_v4", "mvt_v1_2_2",
                                             "bicg_v4_1"]  # fmt: skip
-    assert fs.QUICK[0] == fs.Design("vecadd_v1_1", ("W=1",))  # sliced inputs (D180)
+    assert fs.QUICK[0] == fs.Design("vecadd_v1_1", ("W=1",))  # sliced inputs
     for name in {d.recipe for names in fs.SETS.values() for d in names}:
         path = fs.find_recipe(name)
         assert path.parent.parent == REPO / "recipes" and path.stem == name

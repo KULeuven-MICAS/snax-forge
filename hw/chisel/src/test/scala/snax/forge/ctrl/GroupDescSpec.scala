@@ -2,10 +2,10 @@ package snax.forge.ctrl
 
 import org.scalatest.flatspec.AnyFlatSpec
 
-/** `GroupDesc` over edges: its topological order, head and owner, two chains on a fork (D189) with their outputs and
-  * chains, and the graphs it refuses with SnaxGroupRule's reasons (a fork or a join of links, a cycle, two chains no
-  * fork joins, a fork onto a unit a link feeds or of one unit) or snax_group.cpp's (a link on an outer input, two links
-  * on one input, an input left to a link that none feeds).
+/** `GroupDesc` over edges: its topological order, head and owner, two chains on a fork with their outputs and chains,
+  * and the graphs it refuses with SnaxGroupRule's reasons (a fork or a join of links, a cycle, two chains no fork
+  * joins, a fork onto a unit a link feeds or of one unit) or snax_group.cpp's (a link on an outer input, two links on
+  * one input, an input left to a link that none feeds).
   */
 class GroupDescSpec extends AnyFlatSpec {
 

@@ -7,13 +7,13 @@
 per unit its T when fixed at design time, None when a JOB_BEATS CSR sets it. A count of T is
 ⌈log₂ T⌉ bits for a fixed T, ``job_width`` for one from a JOB_BEATS. Per group ``busy`` and
 ``done``; per unit its job-beats counters, ``jobs_counter`` (none when the unit borrows),
-``row`` (a bank's, D191), ``gap`` (at II > 1), ``v`` (max(L, 1) bits, dropped at L 0) and ``lane`` (at span > 1); per link
+``row`` (a bank's), ``gap`` (at II > 1), ``v`` (max(L, 1) bits, dropped at L 0) and ``lane`` (at span > 1); per link
 ``occupancy`` and two slots (dropped for a wire and a depth-1 buffer). ``accelerator_registers``
 reads each group's description from an ``accelerator.json``, and ``registers_json`` gives the
 text of ``ctrl_registers.json``, which ``util/ctrl_regs.py --json`` writes beside the RTL
 fixtures and hw/chisel's ``CtrlRegistersSpec`` compares with the emitted RTL.
-``packer_bits`` gives a packed output's ``FifoPacker`` registers (D174), ``slicer_bits`` a sliced
-input's ``FifoSlicer`` (D180).
+``packer_bits`` gives a packed output's ``FifoPacker`` registers, ``slicer_bits`` a sliced
+input's ``FifoSlicer``.
 """
 
 from __future__ import annotations
@@ -65,7 +65,7 @@ def ctrl_registers(units: Sequence[Mapping[str, Any]], links: Sequence[Mapping[s
         borrows = u["L"] == 0 and any(e["from"] == k and e["depth"] == 0 for e in links)
         if t != 1:
             regs.append((f"{k}_job_beats_counter", count(t)))
-        if u.get("rows", 1) > 1:  # a bank's row, the beat mod ROWS (D191)
+        if u.get("rows", 1) > 1:  # a bank's row, the beat mod ROWS
             regs.append((f"{k}_row", _log2_ceil(u["rows"])))
         if not borrows:
             regs += [(f"{k}_{j}_job_beats_counter", count(fixed[j])) for j in after(k)
@@ -102,7 +102,7 @@ def accelerator_registers(accelerator: Mapping[str, Any]) -> dict[str, list[tupl
     """Per group of an ``accelerator.json``, its control unit ``<tag>_<group>_ctrl`` and
     ``ctrl_registers`` on the group as the RTL reads it (hw/chisel's ``AccCtrl.desc``): each
     unit's timing, its T None with a JOB_BEATS CSR, else its ``params.T`` (1 without one), the
-    links by unit, and ``job_width`` the JOBS CSR's width (the first chain's, D189)."""
+    links by unit, and ``job_width`` the JOBS CSR's width (the first chain's)."""
     out = {}
     for acc in accelerator["accelerators"]:
         for g in acc["groups"]:

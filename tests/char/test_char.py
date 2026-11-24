@@ -16,8 +16,8 @@ I64 = {"inType": "int64", "outType": "int64"}
 def test_every_entry_is_a_catalogue_datapath_with_complete_params(tech):
     """Each entry's datapath is the catalogue's (or a stream block, FifoPacker or FifoSlicer), its params with
     each point's lanes (and depth) a valid and complete param set there, its rule known, its
-    points unique, a narrow fold's slope given. A block measured before it took a seed (a Mac,
-    D187) or a bank (D191) has no seed or rows key in any entry, its unseeded one-row form."""
+    points unique, a narrow fold's slope given. A block measured before it took a seed (a Mac)
+    or a bank has no seed or rows key in any entry, its unseeded one-row form."""
     cat, t = catalogue(), load(tech)
     assert t.tech == tech and t.source["snax_forge"] and t.source["snax_forge_experiments"]
     assert t.flop_um2 > 0 and t.e_load_pj > t.e_ctrl_pj > 0

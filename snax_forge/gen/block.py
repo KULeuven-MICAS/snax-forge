@@ -4,8 +4,8 @@
 "out"}``, ``out`` from the working directory. ``datapath`` names a datapath of the catalogue
 ``hw/chisel/blocks.json`` or a stream block of ``STREAM_BLOCKS`` (``FifoPacker``: ``inLanes``,
 ``laneType``, ``words``; ``FifoSlicer``: ``words``, ``laneType``, ``outLanes``), which is not in
-the catalogue: the flow places it on a port (a packed outer output, a sliced outer input, D142 ·
-D174 · D180) rather than binding it to a unit. A datapath's ``int`` filled from ``unit.params``
+the catalogue: the flow places it on a port (a packed outer output, a sliced outer input)
+rather than binding it to a unit. A datapath's ``int`` filled from ``unit.params``
 may be left out and takes its min (``rtl.at_min``, a ``Mac``'s ``rows`` 1), as Emit does.
 ``check_entry`` checks every entry
 against its params before any is built (``gen.block``, ``gen.catalogue``, ``gen.params``, each a

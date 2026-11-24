@@ -12,9 +12,9 @@ k2 for axpby, each baked (an int that fits opType, else ``gen.k``) or read from 
 CSR); ``tree_accumulate`` and ``serial_accumulate`` lanes, op add only, a seed port when the
 BRM's design param ``seed`` is 1; ``mac`` lanes, ``accumulate`` and ``regOut``;
 ``lane_accumulate`` lanes. ``mac`` takes a seed port of its lanes when the BRM's design param
-``seed`` is 1 (D187). Every port is whole 64-bit channels, a packed output (D174) or a sliced
-input (D180). A datapath registered ``lanewise`` (SimdLanes, Mac: each lane on its own) takes
-a broadcast input (D186), one lane its reader moves given to every lane: the port keeps the
+``seed`` is 1. Every port is whole 64-bit channels, a packed output or a sliced
+input. A datapath registered ``lanewise`` (SimdLanes, Mac: each lane on its own) takes
+a broadcast input, one lane its reader moves given to every lane: the port keeps the
 unit's lanes and carries ``broadcast``. An instance judged without a graph (brm/instance.py's check) has no
 dtypes: its adapter checks all but the widths.
 """
@@ -47,11 +47,11 @@ class Port:
     dir: str
     dtype: str | None  # None: judged without a graph (module doc)
     lanes: int
-    d_out: int = 1  # an outer output's results per word through its packer (D174)
-    d_in: int = 1  # an outer input's pops per word through its slicer (D180)
-    broadcast: bool = False  # an outer input whose reader moves one lane for all (D186)
-    hold: bool = False  # an input read once a bank row and kept (D190)
-    carry: bool = False  # a seed that is its unit's own output, 0 before CARRY jobs (D192)
+    d_out: int = 1  # an outer output's results per word through its packer
+    d_in: int = 1  # an outer input's pops per word through its slicer
+    broadcast: bool = False  # an outer input whose reader moves one lane for all
+    hold: bool = False  # an input read once a bank row and kept
+    carry: bool = False  # a seed that is its unit's own output, 0 before CARRY jobs
 
     @property
     def stream_lanes(self) -> int:
@@ -112,7 +112,7 @@ DATAPATHS: dict[str, Datapath] = {}
 
 def fill_node(datapath: str, inst: Instance, graph: Any, node: Any) -> Fill:
     """``datapath``'s adapter on the instance bound at ``node``, its op type the node's
-    ``opType`` where the kernel's casts set one (D143), else its inputs' result type."""
+    ``opType`` where the kernel's casts set one, else its inputs' result type."""
     from dataclasses import replace
 
     from snax_forge.brm import port_dtypes
@@ -173,7 +173,7 @@ def _fill_ports(inst: Instance, dtypes: Mapping[str, str] | None, words: set[str
                 what: str) -> dict[str, Port]:  # fmt: skip
     """Every port of the instance in its order: the binding's datapath port (by default the same
     name), its dtype and its lanes; a port in ``words`` must be whole 64-bit channels
-    (``gen.lanes``), a packed output (D174) or a sliced input (D180); the others are one word
+    (``gen.lanes``), a packed output or a sliced input; the others are one word
     (a fold's output)."""
     mapping = inst.impl.binding.get("ports") or {}
     out = {}
@@ -343,8 +343,8 @@ def mac(inst: Instance, dtypes: Mapping[str, str] | None = None) -> Fill:
         raise GenError("gen.dtype", f"{what}: c is {dtypes[ins[2].name]}, out "
                        f"{dtypes[out.name]}; the plain form's c is out's dtype")  # fmt: skip
     if rows > 1 and not accumulate:
-        raise GenError("gen.args", f"{what}: rows {rows}; a bank (D191) is an accumulating "
-                       "Mac's")  # fmt: skip
+        raise GenError("gen.args", f"{what}: rows {rows}, but accumulate is false; only an "
+                       "accumulating Mac has a bank (set accumulate true, or rows 1)")  # fmt: skip
     op_type = None if dtypes is None else result_type([dtypes[p.name] for p in ins[:2]])
     params = {"accumulate": accumulate, "regOut": reg_out} | ({"rows": rows} if rows > 1 else {})
     return Fill(ports, op_type, params)
