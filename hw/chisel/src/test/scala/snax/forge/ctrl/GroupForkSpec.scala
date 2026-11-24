@@ -6,12 +6,12 @@ import org.scalatest.flatspec.AnyFlatSpec
 
 import snax.forge.{ForgeTester, Seeds}
 
-/** `GroupCtrl` against `GroupModel` on random groups of several chains on forked inputs (D189): 2 or 3 chains of 1 or 2
-  * units, each head of span 1 with 1-2 outer inputs, its first forked to every other head's, a second fork of two
-  * heads' second inputs now and then; a chain's second unit of span 1, 2 or 4 on the link from its head (depth 0, 1 or
-  * 2) with 0-1 outer inputs of its own; every unit of L 0-2, II 1-2, T 1, 2 or 4 (fixed or a JOB_BEATS on its wire).
-  * Each chain's JOBS makes every head fire alike (N, its chain's T product times its JOBS; LOWER refuses heads that
-  * fire unlike, a run that would never end), now and then a JOBS or a T 0, at job_width 6 or 32, drawn again only while
+/** `GroupCtrl` against `GroupModel` on random groups of several chains on forked inputs: 2 or 3 chains of 1 or 2 units,
+  * each head of span 1 with 1-2 outer inputs, its first forked to every other head's, a second fork of two heads'
+  * second inputs now and then; a chain's second unit of span 1, 2 or 4 on the link from its head (depth 0, 1 or 2) with
+  * 0-1 outer inputs of its own; every unit of L 0-2, II 1-2, T 1, 2 or 4 (fixed or a JOB_BEATS on its wire). Each
+  * chain's JOBS makes every head fire alike (N, its chain's T product times its JOBS; LOWER refuses heads that fire
+  * unlike, a run that would never end), now and then a JOBS or a T 0, at job_width 6 or 32, drawn again only while
   * idle; starts at random times, while busy too; random reader valids (a forked input's on each of its units'
   * handshakes), output readies and, in the seeded runs, seeds. Every cycle: the start's answer, busy and the done
   * pulse; every input's ready (a forked one's equal on each of its units); each output's valid; per unit fire, first,

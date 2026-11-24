@@ -4,8 +4,8 @@
 as its command line would be: import and sandbox, design, lower, gen (gen/gvsoc.py: description
 files, headers, data.h, main.c), build, sw, gvsoc (``run_gvsoc``: ``make`` on gvsoc/Makefile),
 check (the program's own, ``check_output``), convert (CONTRACTS, "Profile and trace") and report;
-with ``energy`` the program runs again into energy/, its snapshots priced by window (flow/energy.py,
-D177) into ``energy.json`` and ``report/energy.md``: the quiet build ``forge_quiet.elf`` by its
+with ``energy`` the program runs again into energy/, its snapshots priced by window (flow/energy.py)
+into ``energy.json`` and ``report/energy.md``: the quiet build ``forge_quiet.elf`` by its
 marks for a schedule in series, the default build ``forge.elf`` in one window for a pipelined one.
 ``run_bound(graph, platform, ...)`` starts at design from a bound ``.snaxdfg``: no recipe, no
 sandbox/ and no per-step reference check. Before writing data.h's goldens, gen checks the
@@ -129,7 +129,7 @@ class FlowOptions:
     trace_sources: Sequence[str] | None = None
     vcd: bool = False
     keep_work: bool = False  # gvrun's run/work/ after a passing run (kept with --vcd)
-    energy: bool = False  # the energy run: forge_quiet.elf again, priced by window (D177)
+    energy: bool = False  # the energy run: forge_quiet.elf again, priced by window
 
 
 def split_sets(sets: Sequence[tuple[str, str, Any]]) -> dict[str, list[tuple[str, Any]]]:

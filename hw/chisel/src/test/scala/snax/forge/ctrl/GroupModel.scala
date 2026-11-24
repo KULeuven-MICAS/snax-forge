@@ -7,10 +7,10 @@ package snax.forge.ctrl
   * room, the II counting from the cycle of the last firing, the class judged at the sinks, and the run ending when
   * every unit has fired its n, nothing is in flight and every buffer is empty.
   *
-  * Several chains (D189): each a path of links from a head to a sink, the sinks in unit order the outputs, each with
-  * its JOBS and its room; `forks`, the units each forked input feeds (heads). A forked input's units fire together: the
-  * cycle is decided with no unit blocked, then again with every unit that fires blocked while another unit of its fork
-  * does not fire, until no fork is split (snax-gvsoc's `snax/snax_group_rule.py`).
+  * Several chains: each a path of links from a head to a sink, the sinks in unit order the outputs, each with its JOBS
+  * and its room; `forks`, the units each forked input feeds (heads). A forked input's units fire together: the cycle is
+  * decided with no unit blocked, then again with every unit that fires blocked while another unit of its fork does not
+  * fire, until no fork is split (snax-gvsoc's `snax/snax_group_rule.py`).
   *
   * Per cycle: `start(...)` first when a start is offered, then `step(inputs, rooms, seeds)`, which steps the rule only
   * in a busy cycle (None otherwise). A seeded unit (`UnitDesc.seeded`) takes `inputs(k)` for its other outer inputs and

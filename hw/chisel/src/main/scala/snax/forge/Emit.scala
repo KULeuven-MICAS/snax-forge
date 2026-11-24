@@ -75,7 +75,7 @@ object Emit {
       Target(d.name, s"datapath: ${ujson.write(ujson.Obj.from(d.example))}", () => d.make(d.example))
     } ++ Seq(
       // Not in the datapath catalogue, emitted on their own: the slicer and the packer, placed by ShellWrapper on a
-      // sliced input (D180) and a packed output (D174), and emittable alone at any params with --block
+      // sliced input and a packed output, and emittable alone at any params with --block
       Target(
         "FifoSlicer",
         "stream block: 2 words of int8 in, 4 lanes out per pop (r = 4)",
@@ -229,8 +229,7 @@ object Emit {
 
   /** The stream blocks `--block` builds beside the catalogue's datapaths, by name, each from its params (checked, an
     * `IllegalArgumentException` that says the fix). They are not in `Datapaths`, which holds what a unit binds: the
-    * flow places a stream block on a port (FifoPacker on a packed outer output, FifoSlicer on a sliced outer input;
-    * D142 · D174 · D180).
+    * flow places a stream block on a port (FifoPacker on a packed outer output, FifoSlicer on a sliced outer input).
     */
   val streamBlocks: Map[String, Map[String, ujson.Value] => Block] = Map(
     "FifoPacker" -> (p =>

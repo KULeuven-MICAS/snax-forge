@@ -66,21 +66,21 @@ def designs(*recipes: str | Design) -> list[Design]:
 PADDED = "memory.passes.layout=padded_rows"  # each row a word longer
 SEQUENTIAL = "design.schedule=sequential"
 # One point per integration feature, the forge/ folders' at the recipes' sizes
-QUICK = designs(Design("vecadd_v1_1", ("W=1",)),  # sliced inputs, a packed output (D180)
+QUICK = designs(Design("vecadd_v1_1", ("W=1",)),  # sliced inputs, a packed output
                 "axpy_v1",  # a CSR scalar
                 "dot_v4",  # a linked group
                 Design("mvt_v1_2_2", ("W=8",)),  # two groups on shared movers, the port mux
                 "bicg_v4_1")  # a fork, a bank, a held input, a carried seed  # fmt: skip
 SETS = {
     "quick": QUICK,
-    # The quick set's features and the rest, then one point each at i8, i16 and i32 (D195)
+    # The quick set's features and the rest, then one point each at i8, i16 and i32
     "full": [*QUICK,
              *designs("vecadd_v1",
                       Design("rowsum_v2", (PADDED,)),  # padded rows
                       "matvec_acc_v2",  # two groups, a seeded fold
                       Design("mvt_v4_1_1", (SEQUENTIAL,)),  # the DMA's transposed copy
                       Design("mvt_v5", (SEQUENTIAL,)),  # two accelerators
-                      "mvt_v6",  # a seeded bank, a fork (D194)
+                      "mvt_v6",  # a seeded bank, a fork
                       Design("vsum_v1_1", ("types=i8", "W=8")),
                       Design("dot_v3", ("types=i16", "W=4")),
                       Design("dot_v3", ("types=i32", "W=2")))],

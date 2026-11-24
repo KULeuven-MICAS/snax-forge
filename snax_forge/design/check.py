@@ -552,8 +552,8 @@ def _connect_pack(design: Design) -> Iterable[Problem]:
     """Each port's elements fill whole words: with num_slc slices (elements) of its
     container's dtype per word, the fastest spatial bound S_0 is a multiple of num_slc, the
     fastest spatial loop steps 1 element, every other loop a multiple of num_slc, and the start
-    is on a word. A port whose W divides num_slc is packed (an output, D174) or sliced (an
-    input, D180) instead (``_packed``). At num_slc = 1 every port passes. The base address is
+    is on a word. A port whose W divides num_slc is packed (an output) or sliced (an
+    input) instead (``_packed``). At num_slc = 1 every port passes. The base address is
     memory.align's. At any k, a memlet stays inside its container's padded shape (a tail's
     padding, as the reference executor requires)."""
     g, pf = design.graph, design.platform
@@ -693,7 +693,7 @@ def _pack(
 def _packed(
     where: str, c: str, dtype: str, num_slc: int, walk: _Walk, names: set[str], out: bool = True
 ) -> Iterator[Problem]:
-    """A packed output (D174) or a sliced input (D180): d = num_slc / W beats to a word, so its
+    """A packed output or a sliced input: d = num_slc / W beats to a word, so its
     beats are contiguous (the innermost of its own loops, ``names``, steps W elements), its start
     and every outer step whole words (a step of 0 re-reads them), and with an outer loop d
     divides the innermost count, since only the run's last word may be short."""

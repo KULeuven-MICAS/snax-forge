@@ -1,4 +1,4 @@
-"""The dynamic energy (estimate/dynamic.py, D177): a run's counts priced at the instances' own
+"""The dynamic energy (estimate/dynamic.py): a run's counts priced at the instances' own
 prices; with the graph's counts, the static estimate to the last digit."""
 
 from __future__ import annotations
@@ -46,7 +46,7 @@ def test_a_sliced_seed_pops_once_a_job():
 
 def test_dot_3_at_w8_counts_and_a_refusal_at_a_grants_price():
     """dot 3 at W = 8, N = 2048: 4097 words through the crossbar, 4096 read at a read-only input's
-    price and 1 written at a write-only one's (D178); 100 refused requests on reader A's lanes add
+    price and 1 written at a write-only one's; 100 refused requests on reader A's lanes add
     100 read-only accesses and 100 / 8 of A's beats, and no bank access."""
     graph = steps("dot_v3", W=8, N=2048)[-1]
     est = estimated("dot_v3", W=8, N=2048)

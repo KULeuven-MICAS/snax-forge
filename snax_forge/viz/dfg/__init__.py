@@ -7,7 +7,7 @@ edit mode, ``python -m snax_forge.viz.dfg.edit`` (pixi ``edit-dfg``), a sandbox 
 
 * api.py: loading files, the view of one step (its drawing, Details, the Estimate) and two
   steps compared;
-* drawing.py: a step's drawing, the boxes, ports, edges and outlines the page lays out (D185);
+* drawing.py: a step's drawing, the boxes, ports, edges and outlines the page lays out;
 * server.py: the routes of both modes, on the viewer's Handler and static files;
 * __main__.py and edit.py: the two command lines;
 * static/dfg.html, static/dfg.js, static/graph.js and static/edit.js: the page; graph.js lays

@@ -134,7 +134,7 @@ def _value(key: str, text: str, lists: set[str], where: str) -> Any:
             if not text:
                 raise ValueError
             return text
-        if key in lists or (key == "rate" and "," in text):  # a rate per output (D189)
+        if key in lists or (key == "rate" and "," in text):  # a rate per output
             return [int(x, 0) for x in text.split(",")]
         return int(text, 0)
     except ValueError:

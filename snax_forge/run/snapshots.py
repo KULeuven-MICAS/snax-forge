@@ -11,7 +11,7 @@ them: the crossbar's inputs by port (``acc_a.lane0``, ``core0``, ``axi``), each 
 unit's trace name, each unit by its instance, each mover by its trace name. ``windows`` subtracts
 consecutive snapshots, boot's (all 0) first; window k takes its kind and label from the quiet
 build's ``obs_marks.json`` row of its mark (window 0 is ``boot``, or ``first``'s: ``WHOLE`` for a
-run that wrote no mark, its one window boot to the end). Nothing is recounted (D137).
+run that wrote no mark, its one window boot to the end). Nothing is recounted.
 """
 
 from __future__ import annotations

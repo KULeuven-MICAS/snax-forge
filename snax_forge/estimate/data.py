@@ -8,7 +8,7 @@ tailed split.
 ``outer_ports`` gives the bound ports on no link. A port's beats come from the firing loops its
 streamer runs over (design/streamers.py's ``port_loops``), its num_slc as the DFG viewer's
 ``packing``; a packed output's or a sliced input's beats are its words (its innermost loop
-over d_out or d_in, D174 · D180). A
+over d_out or d_in). A
 link's and a local value's traffic is not L1 traffic.
 """
 
@@ -101,7 +101,7 @@ def _num_ch(graph: Graph, c: str, lanes: int) -> int:
 
 
 def outer_ports(graph: Graph) -> list[tuple[Node, str, PortData]]:
-    """Every bound node's ports with a streamer (on no link, not a fork's but its first, D189),
+    """Every bound node's ports with a streamer (on no link, not a fork's but its first),
     each with what it moves in one task."""
     linked = no_streamer(graph)
     out = []
@@ -115,7 +115,7 @@ def outer_ports(graph: Graph) -> list[tuple[Node, str, PortData]]:
             m = (n.inputs | n.outputs)[p.name]
             mine = port_loops(inst, p.name, m, loops, p.name in carried_ports(n))
             counts = [lp.count for lp in mine]
-            lanes = stream_lanes(graph, n, inst, p.name)  # one for a broadcast (D186)
+            lanes = stream_lanes(graph, n, inst, p.name)  # one for a broadcast
             d = per_word(graph.containers[m.data].dtype, lanes, WORD_BITS)
             if d > 1:  # words: the innermost loop of more than one push or pop over d_out, d_in
                 k = next((i for i in range(len(counts) - 1, -1, -1) if counts[i] > 1), None)

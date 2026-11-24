@@ -1,4 +1,4 @@
-"""The design point's schedule (D179): mvt_v3_1 at W = 8, its two halves two accelerators
+"""The design point's schedule: mvt_v3_1 at W = 8, its two halves two accelerators
 (``mvt`` and ``mvt_1``) that share no data, under serial, pipeline and pipeline_compute; mvt_v3,
 the same halves on one shared group, gives one task list under all three; sequential syncs after
 every start."""

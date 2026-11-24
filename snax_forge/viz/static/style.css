@@ -822,7 +822,7 @@ table.c-cost-table tr.streamer th, table.c-cost-table tr.streamer td { color: va
 .c-part-side { display: flex; flex-direction: column; font-size: 0.82em; line-height: 1.2; }
 .c-part-side span:first-child { font-weight: 600; }
 
-/* -- the step's drawing, laid out by ELK (graph.js, D185) -----------------------------
+/* -- the step's drawing, laid out by ELK (graph.js) -----------------------------
    Boxes are placed absolutely at ELK's places and sizes; edges, labels and outlines in one SVG
    layer under them, port names in one over them. After share, each task has a colour. */
 :root { --task-0: #7a5bc2; --task-1: #b07a00; --task-2: #2f7f8a; --task-3: #b5476b; }
@@ -834,7 +834,7 @@ svg.c-over { z-index: 2; }
 path.edge { fill: none; stroke: var(--c, var(--edge)); stroke-width: 1.4; }
 path.edge.seed { stroke-dasharray: 1 3.5; stroke-linecap: round; stroke-width: 2.2; }
 path.edge.link, path.edge.local { stroke-width: 2; stroke-dasharray: 5 3; }
-path.edge.fork { stroke: var(--busy); stroke-width: 2.6; } /* one reader for several units (fork_read, D189) */
+path.edge.fork { stroke: var(--busy); stroke-width: 2.6; } /* one reader for several units (fork_read) */
 path.edge.wire { stroke-width: 1.6; }
 path.edge.empty { stroke-width: 1.1; stroke-dasharray: 3 4; opacity: 0.7; }
 path.edge.sel { stroke: var(--hl); stroke-width: 2.6; opacity: 1; }

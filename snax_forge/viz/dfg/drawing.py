@@ -1,8 +1,8 @@
-"""The DFG page's drawing of one step (D185): boxes with ports, edges and outlines, as a flat
+"""The DFG page's drawing of one step: boxes with ports, edges and outlines, as a flat
 graph the page lays out with ELK. Loops are a chain of boxes from the outermost down; an edge
 from a container passes through exactly the loops its subset uses, a loop it skips on the way
 in marked ``↻``; a link's reader nest is drawn on its writer's chain when their loops match, a
-fork's other readers on its first's (D189), their read one edge that splits at the unit; a
+fork's other readers on its first's, their read one edge that splits at the unit; a
 group is drawn as one box holding its hardware and the loops that drive only it, one loop chain
 per configuration, and a block whose boxes all land in groups is named on them instead;
 hardware is keyed by what it is (``unit:<instance>``, ``link:<from>.<port>><to>.<port>``,
@@ -141,7 +141,7 @@ def drawing(g: Graph, tops: Sequence[Node], placed: dict[str, Any] | None = None
     scalars = {c for c, cont in g.containers.items() if cont.attrs.get(SCALAR)}
     local = {c for c, cont in g.containers.items() if "loop.local" in cont.attrs}
     linked: dict[str, Node] = {n.attrs["container"]: n for n, _ in g.walk() if n.kind == "link"}
-    forked = {r for n, _ in g.walk() if n.kind == "fork" for r in n.attrs["readers"]}  # D189
+    forked = {r for n, _ in g.walk() if n.kind == "fork" for r in n.attrs["readers"]}
     nested = [_maps_to(t) for t in tops]
     top_of = {n.id: t.id for t, under in zip(tops, nested, strict=True) for n, _ in under}
     maps_of = {n.id: maps for under in nested for n, maps in under}
@@ -202,7 +202,7 @@ def drawing(g: Graph, tops: Sequence[Node], placed: dict[str, Any] | None = None
                     alias[b.id] = find(a.id)
                     also.setdefault(find(a.id), []).append(b.id)
 
-    # a fork's other readers' nests drawn on its first reader's chain (D189): each loop onto the
+    # a fork's other readers' nests drawn on its first reader's chain: each loop onto the
     # first's of the same range and kind, else level by level; their read of the container one
     # edge, from the first's innermost loop it passes
     fork_tail: dict[
@@ -323,8 +323,8 @@ def drawing(g: Graph, tops: Sequence[Node], placed: dict[str, Any] | None = None
         return ub, port
 
     def bcast(n: Node, port: str) -> dict[str, Any]:
-        """A broadcast input's wire into its unit (D186): labelled ``<port> · broadcast``, and
-        ``held a row`` when it is read once a bank row and kept (D190)."""
+        """A broadcast input's wire into its unit: labelled ``<port> · broadcast``, and
+        ``held a row`` when it is read once a bank row and kept."""
         if not api.broadcast_port(g, n, port):
             return {}
         return {"mark": port, "broadcast": True} | ({"held": True} if api.held_port(g, n, port)
@@ -707,7 +707,7 @@ def _outlines(g: Graph, d: _Drawing, by_inst: dict[str, list[Node]], shared: dic
             mine = drives.get(bid, set()) if box["kind"] == "loop" else set()
             if len(mine) == 1 and None not in mine:
                 box["parent"] = f"grp:{next(iter(mine))}"
-    # folded blocks one group spans (a fork across lifted blocks, D189): its box around them
+    # folded blocks one group spans (a fork across lifted blocks): its box around them
     folded: dict[str, list[str]] = {}
     for bid, box in d.nodes.items():
         n = nodes.get(bid)

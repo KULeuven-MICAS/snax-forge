@@ -270,7 +270,7 @@ def _lane_fold(
     if red is None or red.op != fold:
         raise SandboxError(f"{what}: {second.id} does not fold with {fold!r}")
     identity = REDUCE_OPS[fold].identity(np.dtype(dtypes[cout]))
-    if red.seed is None and red.identity != identity:  # a seed's fold starts from it (D187)
+    if red.seed is None and red.identity != identity:  # a seed's fold starts from it
         raise SandboxError(f"{what}: {second.id}'s fold starts from {red.identity}, the BRM "
                            f"from {fold}'s identity {identity}")  # fmt: skip
     if node.attrs["var"] not in second.outputs[cout].names:

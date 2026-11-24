@@ -8,12 +8,12 @@ import snax.forge.{ForgeTester, RunLines, SnaxGroupCases}
 import snax.forge.stream.{FifoPacker, FifoSlicer}
 
 /** A group control unit with its outer output packed `dOut` results to a 64-bit word and its sliced outer inputs
-  * (`dIn`, each its index and pops per word), wired as `shell.ShellWrapper` wires a packed outer output (D174) and a
-  * sliced outer input (D180): the group's outer handshake into a `FifoPacker(1, int<64 / dOut>, 1)`, cleared when the
-  * start is accepted, `last` the group's; a sliced input's reader into a `FifoSlicer(1, int<64 / d>, 1)`, its pops the
-  * group's input handshake, `enable` the group's busy, `clear` the start accepted. `io` is `GroupCtrl`'s with
-  * `out.ready` the writer's and a sliced input's valid and ready its reader's; `pk.value` the owner's result pushed,
-  * `pk.sent` a word to the writer and `pk.word` that word.
+  * (`dIn`, each its index and pops per word), wired as `shell.ShellWrapper` wires a packed outer output and a sliced
+  * outer input: the group's outer handshake into a `FifoPacker(1, int<64 / dOut>, 1)`, cleared when the start is
+  * accepted, `last` the group's; a sliced input's reader into a `FifoSlicer(1, int<64 / d>, 1)`, its pops the group's
+  * input handshake, `enable` the group's busy, `clear` the start accepted. `io` is `GroupCtrl`'s with `out.ready` the
+  * writer's and a sliced input's valid and ready its reader's; `pk.value` the owner's result pushed, `pk.sent` a word
+  * to the writer and `pk.word` that word.
   */
 class PackedGroupCtrl(desc: GroupDesc, dOut: Int, dIn: Seq[(Int, Int)] = Seq.empty) extends Module {
   private val ctrl   = Module(new GroupCtrl(desc, "case"))
@@ -52,23 +52,22 @@ class PackedGroupCtrl(desc: GroupDesc, dOut: Int, dIn: Seq[(Int, Int)] = Seq.emp
 /** `GroupCtrl` alone (no datapath, as UnitCasesSpec drives shapes it has none for) through snax-gvsoc's 66 group cases
   * (`SnaxGroupCases`: dot 2-6 at T 2 and 4, J 1 and 2, dot 5 and 6 at W 1, backpressure, an input gap, JOBS 0, the
   * fold's seed: two folds unseeded, the first or both seeded, a late seed on one fold, on a SerialAccumulate and on a
-  * Mac (D187); the output packer, `pack_*`; the input slicer, `slice_*`, among them a seeded Mac's broadcast input
-  * sliced 8 from a word (D186: wires after the slicer, which the rule does not see); and bicg's one pass, `fork_*`, two
-  * chains on a forked input (D189), a JOBS and a ready per chain's output; the bank, `bank_*`, a Mac's rows with its r
-  * held (D191, D190), ROWS on its wire the case's rows, alone and in bicg's two strips; their data is checked by
-  * `tb.cpp`, and dot5_w1_j2's through the wrapper by ShellEndToEndSpec), cycle for cycle: per cycle the outer valids (a
-  * forked input's on each of its units' handshakes, as the wrapper wires it) and each output's ready poked; each
-  * input's ready (its unit's firing, the per-unit join of CONTRACTS, "Accelerator RTL spec"; a seed's that firing on
-  * its job's first beat, the unit's firings counted mod its T), each unit's fire and give, each buffer's occupancy
-  * after the cycle and busy compared; at the run's end its line from `cls` per busy cycle and the head's firings. Each
-  * case runs twice (the rule does not tell the two apart, the control unit's counters do): with every unit's T fixed
-  * (`params.T`), JOBS on its wire; and with every unit of T != 1 open, its T a JOB_BEATS read live from its wire, so
-  * dot 2's and dot 3's mul counts against or borrows from a sum whose T is the csr's. A `pack_*` case (`dout`) runs
-  * through `PackedGroupCtrl`: the case's ready is the writer's, the owner's n-th push in a run is -(n + 1) at the
-  * lane's width, and per busy cycle `sent` is the packer's word going out; at the end the words sent are the case's
-  * `words`. A `slice_*` case (`din`) runs through it too, its sliced inputs through slicers: their valids are the
-  * readers', and their ready, the word taken, is compared with the case's `took`. Without `SNAX_GVSOC_GROUP_CASES` the
-  * spec cancels.
+  * Mac; the output packer, `pack_*`; the input slicer, `slice_*`, among them a seeded Mac's broadcast input sliced 8
+  * from a word (wires after the slicer, which the rule does not see); and bicg's one pass, `fork_*`, two chains on a
+  * forked input, a JOBS and a ready per chain's output; the bank, `bank_*`, a Mac's rows with its r held, ROWS on its
+  * wire the case's rows, alone and in bicg's two strips; their data is checked by `tb.cpp`, and dot5_w1_j2's through
+  * the wrapper by ShellEndToEndSpec), cycle for cycle: per cycle the outer valids (a forked input's on each of its
+  * units' handshakes, as the wrapper wires it) and each output's ready poked; each input's ready (its unit's firing,
+  * the per-unit join of CONTRACTS, "Accelerator RTL spec"; a seed's that firing on its job's first beat, the unit's
+  * firings counted mod its T), each unit's fire and give, each buffer's occupancy after the cycle and busy compared; at
+  * the run's end its line from `cls` per busy cycle and the head's firings. Each case runs twice (the rule does not
+  * tell the two apart, the control unit's counters do): with every unit's T fixed (`params.T`), JOBS on its wire; and
+  * with every unit of T != 1 open, its T a JOB_BEATS read live from its wire, so dot 2's and dot 3's mul counts against
+  * or borrows from a sum whose T is the csr's. A `pack_*` case (`dout`) runs through `PackedGroupCtrl`: the case's
+  * ready is the writer's, the owner's n-th push in a run is -(n + 1) at the lane's width, and per busy cycle `sent` is
+  * the packer's word going out; at the end the words sent are the case's `words`. A `slice_*` case (`din`) runs through
+  * it too, its sliced inputs through slicers: their valids are the readers', and their ready, the word taken, is
+  * compared with the case's `took`. Without `SNAX_GVSOC_GROUP_CASES` the spec cancels.
   */
 class GroupCasesSpec extends AnyFlatSpec with ForgeTester {
 
@@ -157,8 +156,8 @@ class GroupCasesSpec extends AnyFlatSpec with ForgeTester {
           val seed = u.seed && j == u.inputs - 1
           c.dIn.indexWhere(_._1 == place(at)) match {
             case -1 =>
-              // a seed's on its job's first beat (a bank's on each of its first ROWS, D194); a held input's on a
-              // row's first (D190)
+              // a seed's on its job's first beat (a bank's on each of its first ROWS); a held input's on a
+              // row's first
               val want =
                 cyc.fire(k) && (!seed || fired(k) % u.t < u.rows) && (!u.hold.contains(j) || fired(k) % u.rows == 0)
               assert(high(io.in(at).ready) == want, s"$clue: input $at's ready, ${u.name}'s firing")

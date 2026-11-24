@@ -17,7 +17,7 @@
    "properties": {
     "name": {"description": "The accelerator and its streamer set: the header's <ACC>.", "$ref": "#/$defs/name"},
     "inputs": {
-     "description": "Its outer input ports, \"<unit>.<port>\", one per reader of its streamer, in order; a forked input (D189) one entry, the list of the ports its reader feeds, the reader's first.",
+     "description": "Its outer input ports, \"<unit>.<port>\", one per reader of its streamer, in order; a forked input one entry, the list of the ports its reader feeds, the reader's first.",
      "type": "array",
      "minItems": 1,
      "items": {"anyOf": [{"$ref": "#/$defs/end"}, {"type": "array", "minItems": 2, "items": {"$ref": "#/$defs/end"}}]}
@@ -95,9 +95,9 @@
     "lanes": {"type": "integer", "minimum": 1},
     "d_out": {"description": "An outer output's results per 64-bit word through its packer; absent at 1.", "enum": [2, 4, 8]},
     "d_in": {"description": "An outer input's pops per 64-bit word through its slicer; absent at 1.", "enum": [2, 4, 8]},
-    "broadcast": {"description": "An input whose stream carries one lane, given to all its lanes (D186); absent when false.", "const": true},
-    "hold": {"description": "A banked unit's input read once a row and kept (D190); absent when false.", "const": true},
-    "carry": {"description": "A seed that is the unit's own output, carried across strips, 0 on its first CARRY jobs (D192); absent when false.", "const": true}
+    "broadcast": {"description": "An input whose stream carries one lane, given to all its lanes; absent when false.", "const": true},
+    "hold": {"description": "A banked unit's input read once a row and kept; absent when false.", "const": true},
+    "carry": {"description": "A seed that is the unit's own output, carried across strips, 0 on its first CARRY jobs; absent when false.", "const": true}
    },
    "required": ["port", "dir", "dtype", "lanes"],
    "additionalProperties": false
@@ -152,7 +152,7 @@
    "type": "object",
    "properties": {
     "name": {"$ref": "#/$defs/name"},
-    "csrs": {"description": "START, JOBS (with several chains a JOBS_<SINK> per chain, D189), STATUS, BUSY_COUNTER.", "type": "array", "items": {"$ref": "#/$defs/csr"}},
+    "csrs": {"description": "START, JOBS (with several chains a JOBS_<SINK> per chain), STATUS, BUSY_COUNTER.", "type": "array", "items": {"$ref": "#/$defs/csr"}},
     "units": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/unit"}},
     "links": {"type": "array", "items": {"$ref": "#/$defs/link"}}
    },

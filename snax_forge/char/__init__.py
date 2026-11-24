@@ -6,7 +6,7 @@
     CTRL_COMB_PER_FLOP                                           a control unit's comb : flops
 
 The table, its lookup (``FOUND``) and what None means are in CONTRACTS, "Cost model". A block is
-looked up at its width pair (D176, ``pair_params``): its widest input and its output, a
+looked up at its width pair (``pair_params``): its widest input and its output, a
 SimdLanes' output at most its op's width, an unsigned type as the signed one of its width; a
 packed output's packer by its lane type and d_out, a sliced input's slicer by its lane type, lanes
 and d_in. A param the fill leaves None is not compared.
@@ -55,7 +55,7 @@ class Table:
     e_load_pj: float
     e_ctrl_pj: float
     blocks: dict[str, list[dict[str, Any]]]
-    bank: dict[str, float] | None = None  # a Mac bank's forms over its rows-1 entry (D193)
+    bank: dict[str, float] | None = None  # a Mac bank's forms over its rows-1 entry
 
 
 @dataclass(frozen=True)
@@ -116,7 +116,7 @@ def _signed(w: int) -> str:
 
 
 def pair_params(datapath: str, params: Mapping[str, Any]) -> dict[str, Any]:
-    """``params`` as the table keys them (D176): lanes, depth and None values dropped; a
+    """``params`` as the table keys them: lanes, depth and None values dropped; a
     SimdLanes' and a Mac's inputs at their widest input, the op and output at the pair's output
     (a SimdLanes' the smaller of its op and output: the low bits of a sum or product need only
     the operands' low bits, a wider output only copies the sign); the folds' and a LinkBuffer's
@@ -177,8 +177,8 @@ def _over_lanes(entry: dict[str, Any], lanes: int, depth: int | None) -> Lookup 
 
 
 def _banked(table: Table, one: Lookup, params: Mapping[str, Any], lanes: int, rows: int) -> Lookup:
-    """A ``Mac`` bank of ``rows`` R from its rows-1 entry ``one`` (D193): the comb grows by the
-    table's ``bank`` forms (X97: the two R:1 read muxes and the row enables), and a fire loads
+    """A ``Mac`` bank of ``rows`` R from its rows-1 entry ``one``: the comb grows by the
+    table's ``bank`` forms (the two R:1 read muxes and the row enables), and a fire loads
     one row of sums, not R. Without the forms, ``one`` (a lower bound, all rows loading). Past the
     largest read mux the forms were fitted to, found ``bank_beyond`` (DC builds the mux otherwise
     and costs more, about 2× at 4 096 bits; snax-forge-experiments' PITFALLS DC20)."""
@@ -202,11 +202,11 @@ def lookup(table: Table, datapath: str, params: Mapping[str, Any], lanes: int,
         return {k: v for k, v in e["params"].items() if v is not None}
 
     keyed = any("seed" in e["params"] for e in entries)
-    if want.get("seed") is False and not keyed:  # measured before it took a seed (a Mac, D187)
+    if want.get("seed") is False and not keyed:  # measured before it took a seed (a Mac)
         want = {k: v for k, v in want.items() if k != "seed"}
     rows = int(want.get("rows") or 1)
     if "rows" in want and not any("rows" in e["params"] for e in entries):
-        # measured without a bank: its rows-1 entry, then the bank's forms (D193)
+        # measured without a bank: its rows-1 entry, then the bank's forms
         want = {k: v for k, v in want.items() if k != "rows"}
         if rows > 1:
             one = lookup(table, datapath, want, lanes, depth)
@@ -218,7 +218,7 @@ def lookup(table: Table, datapath: str, params: Mapping[str, Any], lanes: int,
         p = entry["points"][0]
         return Lookup(p["comb_um2"], p["e_comb_pj"], "measured", p["load_bits"])
     if entry is None and datapath == "LinkBuffer" and "dtype" in want:
-        # a narrower dtype: the int64 entry by the width (D176)
+        # a narrower dtype: the int64 entry by the width
         k64 = {**want, "dtype": "int64"}
         base = next((e for e in entries if key(e) == k64), None)
         if base is None:
@@ -227,7 +227,7 @@ def lookup(table: Table, datapath: str, params: Mapping[str, Any], lanes: int,
     if entry is None and want.get("seed") is True:
         # a seeded fold: the unseeded entry, the same adder and register, the first beat's mux
         # choosing the seed for the register instead of 0 for the sum; a block measured before
-        # it took a seed (a Mac, D187) has no seed key in any entry
+        # it took a seed (a Mac) has no seed key in any entry
         unseeded = {**want, "seed": False} if keyed else {k: v for k, v in want.items()
                                                           if k != "seed"}  # fmt: skip
         base = next((e for e in entries if key(e) == unseeded), None)

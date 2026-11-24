@@ -11,13 +11,13 @@ import snax.forge.elementwise.ElementwiseModel
   * cast_out(cast_op(a) · cast_op(b)); accumulating, s ← first ? p : s + p on fire, `out` s; plain, `out` = p + c at
   * outType, combinational, or with regOut a register taken on `en`. Random beats and enables at three sizes (lanes 2,
   * 4, 8), int64 and int32, signed and unsigned, a wider outType too; and the fixed cases of snax-gvsoc's vectors.
-  * Seeded (D187), s ← first ? seed + p : s + p, the seed of out's type and lanes: random types, lanes 1 to 8, a seed
-  * each cycle; and the refusal of a seed on the plain form. A bank (D191), R rows of W sums: on fire row `row` ← first
-  * ? p : row + p, `out` row `drain`, with random pins at R = 2, 4 and 16; and jobs as the control unit runs them, ROWS
-  * ≤ R rows used, `row` the beat mod ROWS and `drain` the row before it, each of the job's last ROWS results its row's
-  * sum; and the refusal of a bank on a plain Mac. A seeded bank (D194): row `row` ← (first ? seed : row) + p, random
-  * pins and seeds at R = 2, 4 and 16, its module name ending `_acc_seed_r<R>`; and jobs, each row's first firing taking
-  * its own seed beat.
+  * Seeded, s ← first ? seed + p : s + p, the seed of out's type and lanes: random types, lanes 1 to 8, a seed each
+  * cycle; and the refusal of a seed on the plain form. A bank, R rows of W sums: on fire row `row` ← first ? p : row +
+  * p, `out` row `drain`, with random pins at R = 2, 4 and 16; and jobs as the control unit runs them, ROWS ≤ R rows
+  * used, `row` the beat mod ROWS and `drain` the row before it, each of the job's last ROWS results its row's sum; and
+  * the refusal of a bank on a plain Mac. A seeded bank: row `row` ← (first ? seed : row) + p, random pins and seeds at
+  * R = 2, 4 and 16, its module name ending `_acc_seed_r<R>`; and jobs, each row's first firing taking its own seed
+  * beat.
   */
 class MacSpec extends AnyFlatSpec with ForgeTester {
 
@@ -124,7 +124,7 @@ class MacSpec extends AnyFlatSpec with ForgeTester {
 
   behavior of "a banked Mac"
 
-  /** The model of D191: R rows of `lanes` sums at `out`'s type; seeded (D194), a row's first firing starts from `seed`.
+  /** The model of a bank: R rows of `lanes` sums at `out`'s type; seeded, a row's first firing starts from `seed`.
     */
   private class Bank(rows: Int, lanes: Int, out: IntType) {
     var s: Seq[Seq[BigInt]] = Seq.fill(rows)(Seq.fill(lanes)(BigInt(0)))
@@ -210,7 +210,7 @@ class MacSpec extends AnyFlatSpec with ForgeTester {
         new Mac(Seq("int32", "int32", "int32"), "int32", "int32", 2, false, false, false, 4)
       )
     )
-    assert(e.getMessage.contains("a bank (D191) is an accumulating Mac's"), e.getMessage)
+    assert(e.getMessage.contains("only an accumulating Mac has a bank (set accumulate true, or rows 1)"), e.getMessage)
   }
 
   behavior of "a seeded bank"

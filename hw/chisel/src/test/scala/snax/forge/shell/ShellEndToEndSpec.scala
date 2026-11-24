@@ -30,7 +30,7 @@ class ShellEndToEndSpec extends AnyFlatSpec with ForgeTester {
 
   /** A run: the CSR values, each input's elements and beats (pops) and each output's expected elements, by outer port
     * in order; `results`, per output the elements its writer gets when more than it expects (a carried output's earlier
-    * visits, D192, its last the expected); without `values` only the words are counted.
+    * visits, its last the expected); without `values` only the words are counted.
     */
   case class Run(
     csrs:    Seq[(String, Long)],
@@ -83,9 +83,8 @@ class ShellEndToEndSpec extends AnyFlatSpec with ForgeTester {
   }
 
   /** The fixtures whose readers do not stream their arrays in memory order, which `vectors.json` gives and `drive`
-    * streams: bicg_v4_1's strips (D192) read A, p and r a strip at a time, and its seed reads back q's writes through
-    * L1. Their counter, STATUS, input words and output words are checked; ShellRandomSpec checks their values on its
-    * model.
+    * streams: bicg_v4_1's strips read A, p and r a strip at a time, and its seed reads back q's writes through L1.
+    * Their counter, STATUS, input words and output words are checked; ShellRandomSpec checks their values on its model.
     */
   private val Strided = Set("bicg_v4_1")
 

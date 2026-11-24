@@ -392,9 +392,9 @@ def named_rates(
 
     ``ports`` maps a port to its memlet and rate. For a named rate, the
     innermost loops its memlet does not use are the ones one beat folds over;
-    the rate is the product of their counts. A port of a bank of R rows (``banks``, D191)
+    the rate is the product of their counts. A port of a bank of R rows (``banks``)
     first takes the innermost loops it uses whose counts multiply to R, its rows, then folds
-    the unused loops outside them; its rate counts both. A ``carried`` port (D192) may skip a
+    the unused loops outside them; its rate counts both. A ``carried`` port may skip a
     loop outside one it uses: that loop revisits its elements. Two ports naming one rate must
     agree. Raises ExecutionError naming the port.
     """
@@ -483,7 +483,7 @@ def _run_accelerated(node: Node, ctx: Context) -> None:
     except ValueError as e:
         raise ExecutionError(f"{what}: {e}") from None
     written = {m.data: np.zeros(ctx.data[m.data].shape, bool) for m in node.outputs.values()}
-    carry = node.attrs.get("carry", False)  # the seed its own output, first the identity (D192)
+    carry = node.attrs.get("carry", False)  # the seed its own output, first the identity
     tails = {lp.var: valid_count(ctx.graph, lp.node) for lp in inner if tailed_split(lp.node)}
     pads = {m.data: pad_value(ctx.graph, m.data) for m in node.inputs.values()} if tails else {}
     in_what = {name: f"{what}.inputs.{name}" for name in node.inputs}
@@ -504,7 +504,7 @@ def _run_accelerated(node: Node, ctx: Context) -> None:
                 beat = np.array(ctx.data[m.data][idx])
                 beat[~ok] = pads.get(m.data, 0)  # a pad lane reads the pad
                 if carry and name == "seed":  # not written by this unit yet: the identity, 0,
-                    beat[~written[m.data][idx]] = 0  # as every seeded datapath adds (D163)
+                    beat[~written[m.data][idx]] = 0  # as every seeded datapath adds
                 ins[name] = _lanes(_broadcast(beat, p), p, what)
             outs = cfg.fn(k, ins, state, params)
             due = cfg.due(k, rate, "out")
@@ -526,12 +526,12 @@ def _run_accelerated(node: Node, ctx: Context) -> None:
 
 
 def carried_ports(node: Node) -> tuple[str, ...]:
-    """A carried unit's ports that revisit their elements (D192): its seed and its outputs."""
+    """A carried unit's ports that revisit their elements: its seed and its outputs."""
     return ("seed", *node.outputs) if node.attrs.get("carry") else ()
 
 
 def _broadcast(x: np.ndarray, port: Any) -> np.ndarray:
-    """An input beat of one element on a port of more lanes given to every lane (D186: bind
+    """An input beat of one element on a port of more lanes given to every lane (bind
     reads an input that does not use the lane variable as one lane, on a datapath whose lanes
     compute on their own); any other beat as it is."""
     flat = np.asarray(x).reshape(-1)
@@ -551,7 +551,7 @@ register_executor("tasklet", _run_tasklet)
 register_executor("accelerated", _run_accelerated)
 # A link runs as the transient it replaced: its writer and reader still name it
 register_executor("link", lambda node, ctx: None)
-# A fork is one read given to several units (D189); each still names the container
+# A fork is one read given to several units; each still names the container
 register_executor("fork", lambda node, ctx: None)
 
 

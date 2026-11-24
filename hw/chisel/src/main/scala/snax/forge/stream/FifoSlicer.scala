@@ -8,8 +8,8 @@ import snax.forge.IntType
 /** A beat of `words` 64-bit words in, `outLanes` lanes of `laneType` out per pop: the FIFO slicer, `FifoPacker`'s
   * mirror.
   *
-  * Placed by `shell.ShellWrapper` on a sliced outer input (D180): `FifoSlicer(1, dtype, lanes)` between the reader and
-  * the unit, r = d_in pops a word. snax-gvsoc's `SnaxSlicer` is its model, cycle for cycle.
+  * Placed by `shell.ShellWrapper` on a sliced outer input: `FifoSlicer(1, dtype, lanes)` between the reader and the
+  * unit, r = d_in pops a word. snax-gvsoc's `SnaxSlicer` is its model, cycle for cycle.
   *
   * A word holds num_slc = 64 / width slices (elements), element j of word i at bits `[w(j+1)-1 : wj]`, so a beat is
   * `words` * num_slc elements, element e at bits `[w(e+1)-1 : we]` of the beat. Each in-beat is popped r = `words` *

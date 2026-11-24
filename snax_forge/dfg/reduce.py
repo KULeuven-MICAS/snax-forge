@@ -5,7 +5,7 @@ iteration of the maps around it into its element, starting from ``identity``, so
 leaves the fold of exactly its own writes: what a DaCe ``Reduce`` and a hardware accumulator
 do. Its stored form, and the ``seed`` (``Seed``) that may take the identity's place, are in
 CONTRACTS, "SNAX-DFG"; a plain ``identity: null`` (DaCe's plain ``wcr``) is refused. A
-``carry`` fold (D192) writes its element again under a loop outside the ones it moves with,
+``carry`` fold writes its element again under a loop outside the ones it moves with,
 each visit starting from what the last one wrote, the first from the identity: the same values
 as the plain fold, kept apart because the hardware runs it as a fold seeded from its own output.
 ``map_seed`` rewrites the seed's subset with the memlet's, so every transform moves both.
@@ -91,7 +91,7 @@ class Reduction:
     op: str
     identity: int | None = None
     seed: Seed | None = None
-    carry: bool = False  # each visit of the element from the last one's value (D192)
+    carry: bool = False  # each visit of the element from the last one's value
 
     def __post_init__(self) -> None:
         if self.op not in REDUCE_OPS:

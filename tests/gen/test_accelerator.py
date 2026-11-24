@@ -221,7 +221,7 @@ def test_a_reader_checks_the_links(edit, code):
 
 def test_a_group_is_a_chain_or_chains_a_fork_joins():
     """gen.chain: dot 4's units in the other order, the link going back (SNAX-GVSoC's SnaxGroup
-    models a chain in unit order, or chains a fork joins, D189)."""
+    models a chain in unit order, or chains a fork joins)."""
     acc = dot4()
     (g,) = acc.groups
     with pytest.raises(GenError) as e:

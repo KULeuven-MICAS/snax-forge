@@ -518,7 +518,7 @@ class _Beats:
 
         def slice_vals(mover: Mover, unit: str, run: tuple[int, str] | None, n: int, d: int,
                        words: list[int]) -> Any:  # fmt: skip
-            """A packed push's values: result n is slice n % d of word n // d (D174)."""
+            """A packed push's values: result n is slice n % d of word n // d."""
             task = paired.get(run[1], {}).get(mover.name) if run else None
             g = grants.get((mover.name, task, n // d)) if task else None
             if not g or len(g) != 1 or not words:

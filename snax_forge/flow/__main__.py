@@ -13,7 +13,7 @@ Runs run.py's ``run_flow`` on a recipe, or ``run_bound`` on a file ending in ``.
 ``out/flow/<name>/``. ``--set`` takes recipe params, platform fields, memory pins and the design
 point's schedule as the sandbox and design commands do. ``--trace`` picks the level (``off``, ``task``, ``beat``, ``stall``,
 ``finegrained``) and, after a colon, the sources (``run/sources.py``); ``--vcd`` adds gtkwave's
-VCD. ``--energy`` runs the quiet build again and prices its windows (``energy/``, D177). With a graph, the kernel is its ``name`` unless ``--kernel`` names it, and a recipe param or
+VCD. ``--energy`` runs the quiet build again and prices its windows (``energy/``). With a graph, the kernel is its ``name`` unless ``--kernel`` names it, and a recipe param or
 ``--graph`` is refused, as ``--kernel`` is with a recipe. Exit 0 when the program's check passed,
 1 when a stage or the check failed, 2 on bad arguments. pixi: ``flow``.
 """

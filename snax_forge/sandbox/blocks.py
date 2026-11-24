@@ -195,7 +195,7 @@ def _chain(pc: list[Node], rc: list[Node], g: Graph, pg: Graph, m: Match,
     pt, rt = pc[-1], rc[-1]
     if any(k in rt.attrs for k in TOUCHED):
         raise _NoMatch(f"{rt.id} was transformed since import")
-    try:  # the casts aside: a block's types are the graph's it is applied to (D143 · D175)
+    try:  # the casts aside: a block's types are the graph's it is applied to
         same = (expr.strip_casts(pt.attrs["code"], pt.id)[0]
                 == expr.strip_casts(rt.attrs["code"], rt.id)[0])  # fmt: skip
     except ExprError:

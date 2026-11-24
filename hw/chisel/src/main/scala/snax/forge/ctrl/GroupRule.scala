@@ -7,8 +7,8 @@ import chisel3.util._
   * streamer's ports it reads), its T when fixed at design time (`params.T`; 1 for a unit without a fold), else None: a
   * JOB_BEATS read live from the csr; `linked`, the positions among its inputs (in port order) that no outer port takes,
   * each fed by one link (snax_group.cpp's inputs left ""); `seeded`, its last outer input a fold's seed, one beat per
-  * job; `rows`, a bank's rows R (D191, 1 without one); `hold`, its outer inputs read once a row and kept (D190);
-  * `carry`, its seed carried, 0 on its first CARRY jobs (D192).
+  * job; `rows`, a bank's rows R (1 without one); `hold`, its outer inputs read once a row and kept; `carry`, its seed
+  * carried, 0 on its first CARRY jobs.
   */
 case class UnitDesc(
   name:    String,
@@ -47,10 +47,10 @@ case class Link(from: Int, to: Int, toInput: Int, depth: Int)
 /** A group's description: its units, the links between them and its forks, a graph (SnaxGroupRule's `configure()`). One
   * or more chains, each a path of links from a head to a sink, whose output is outer: a unit with two out-edges or two
   * in-edges (a fork or a join of links), a cycle and chains no fork joins are refused, with SnaxGroupRule's reasons. A
-  * fork (D189) is the units one reader's outer input feeds, the heads of chains, each of span 1. From it: each unit's
-  * in-edges and out-edges, the units in topological order (Kahn's, the lowest index first among the units ready; the
-  * head first), the units owning the outer outputs, the sinks in unit order (`output` the first), and each unit's
-  * chain, its sink's place among them.
+  * fork is the units one reader's outer input feeds, the heads of chains, each of span 1. From it: each unit's in-edges
+  * and out-edges, the units in topological order (Kahn's, the lowest index first among the units ready; the head
+  * first), the units owning the outer outputs, the sinks in unit order (`output` the first), and each unit's chain, its
+  * sink's place among them.
   */
 case class GroupDesc(name: String, units: Seq[UnitDesc], links: Seq[Link], forks: Seq[Seq[Int]] = Nil) {
   require(units.nonEmpty, s"group $name: no unit")
@@ -167,8 +167,8 @@ class Handshake extends Bundle {
   * beat taken from every input; at span > 1 the last lane's read; a plain Mac's `en` too), `first` (the beat fired or
   * read is its job's first, d = 0), `read` and `lane` (lane `lane` read in place, at every span: at span 1 the read is
   * the firing), `adv` (its pipeline advances: not frozen) and `give` (a result pushed into its link or the outer
-  * output); a bank's (`rows` > 1, D191) `row`, the row its firing adds into, and `drain`, the row its output shows; a
-  * carried seed's (D192) `useSeed`, its seed given to the datapath, else 0.
+  * output); a bank's (`rows` > 1) `row`, the row its firing adds into, and `drain`, the row its output shows; a carried
+  * seed's `useSeed`, its seed given to the datapath, else 0.
   */
 class UnitEnables(span: Int, rows: Int = 1, carry: Boolean = false) extends Bundle {
   val fire    = Output(Bool())
@@ -214,22 +214,22 @@ class LinkEnables(depth: Int) extends Bundle {
   * first beat (fire = a.valid ∧ (¬first ∨ seed.valid)), and its ready is that firing (seed.ready = fire ∧ first). The
   * outer output's valid is its owner's offer, never its ready's. `cls` is the cycle's class, judged at the owner, as
   * the run line counts it: busy 0, stall_in 1, stall_out 2, flush 3. `last`: the sink's next push is the run's last
-  * result (the done formula without the push), for a packed outer output's `FifoPacker` (D174).
+  * result (the done formula without the push), for a packed outer output's `FifoPacker`.
   *
-  * Several chains (D189): each its own JOBS (`io.settings`' first, then `more`), its sink its own outer output
-  * (`io.out`, then `io.rest`) and `last` (`io.lasts`); stall_out when any sink is frozen; done when every chain has
-  * ended, a chain ending at its sink's last push and staying ended (its counters at their ends, its pipeline empty)
-  * until the next start. A forked input's units fire together: the cycle is decided once with no unit held (the free
-  * pass, `<unit>_free_*`), and a unit of a fork that would fire there is held when another cannot (in the free pass),
-  * then decided again with it held, as SnaxGroupRule's step() does; every chain is joined to the others by forks, so
-  * one unit that cannot fire holds every fork's.
+  * Several chains: each its own JOBS (`io.settings`' first, then `more`), its sink its own outer output (`io.out`, then
+  * `io.rest`) and `last` (`io.lasts`); stall_out when any sink is frozen; done when every chain has ended, a chain
+  * ending at its sink's last push and staying ended (its counters at their ends, its pipeline empty) until the next
+  * start. A forked input's units fire together: the cycle is decided once with no unit held (the free pass,
+  * `<unit>_free_*`), and a unit of a fork that would fire there is held when another cannot (in the free pass), then
+  * decided again with it held, as SnaxGroupRule's step() does; every chain is joined to the others by forks, so one
+  * unit that cannot fire holds every fork's.
   *
-  * A bank (`rows` R > 1, D191, a chain's sink): its row ρ (`<unit>_row`, the beat mod ROWS, the csr's) is its only
-  * register beyond the counters; `first` on a job's first ROWS firings (d < ROWS), a result on each of its last ROWS (d
-  * + ROWS ≥ T), d and the jobs digit wrapping and counting at d + 1 = T; the `Mac`'s `row` is ρ and its `drain` the row
-  * before (ROWS − 1 at 0). Seeded (D194), its seed is needed and ready on `first`, a beat a row. A held input (D190)
-  * needs its beat, and is ready, only at ρ = 0. A carried seed (D192) is taken every job as any seed; `useSeed` = (its
-  * jobs counter ≥ CARRY) for the wrapper, a comparison.
+  * A bank (`rows` R > 1, a chain's sink): its row ρ (`<unit>_row`, the beat mod ROWS, the csr's) is its only register
+  * beyond the counters; `first` on a job's first ROWS firings (d < ROWS), a result on each of its last ROWS (d + ROWS ≥
+  * T), d and the jobs digit wrapping and counting at d + 1 = T; the `Mac`'s `row` is ρ and its `drain` the row before
+  * (ROWS − 1 at 0). Seeded, its seed is needed and ready on `first`, a beat a row. A held input needs its beat, and is
+  * ready, only at ρ = 0. A carried seed is taken every job as any seed; `useSeed` = (its jobs counter ≥ CARRY) for the
+  * wrapper, a comparison.
   */
 class GroupRule(val desc: GroupDesc, jobWidth: Int = 32) {
   // NB (D153): a unit counts its results in nested counters, never against n_k; snax-gvsoc's SnaxGroupRule must
@@ -340,7 +340,7 @@ class GroupRule(val desc: GroupDesc, jobWidth: Int = 32) {
     val gap    = if (u.ii == 1) 0.U(1.W) else RegInit(0.U(log2Ceil(u.ii + 1).W)).suggestName(s"${u.name}_gap")
     val v      = RegInit(VecInit(Seq.fill(u.latency max 1)(false.B))).suggestName(s"${u.name}_v")
     val lane   = RegInit(0.U(log2Ceil(u.span).W)).suggestName(s"${u.name}_lane")
-    // NB (D191): a bank's row, the beat mod ROWS, the only register a bank adds to the control
+    // A bank's row, the beat mod ROWS, the only register a bank adds to the control
     val row    = Option.when(u.rows > 1)(RegInit(0.U(log2Ceil(u.rows).W)).suggestName(s"${u.name}_row"))
   }
   private val st = descs.indices.map(new UnitState(_))
@@ -368,7 +368,7 @@ class GroupRule(val desc: GroupDesc, jobWidth: Int = 32) {
   }
 
   /** One decision of the cycle (step()'s two passes), its wires named `<unit><tag>_<what>`; `held`, per unit whether it
-    * is held from firing (a fork's, D189), None for a group without a fork.
+    * is held from firing (a fork's), None for a group without a fork.
     */
   private class Pass(held: Option[Int => Bool], tag: String) {
     // step()'s forward pass, in topological order: what each unit offers whatever its room
@@ -492,7 +492,7 @@ class GroupRule(val desc: GroupDesc, jobWidth: Int = 32) {
     !(if (sinkL > 1) st(k).v.take(sinkL - 1).reduce(_ || _) else false.B)
   }
   private val lastResult = lastOf(owner)
-  // NB (D189): with several chains the run ends when every chain has: one ended in an earlier cycle has given its last
+  // With several chains the run ends when every chain has: one ended in an earlier cycle has given its last
   // result and holds none (its jobs digit at its JOBS, its pipeline empty), until the next start clears its counters
   private val done =
     if (outputs.size == 1) lastResult && give(owner)

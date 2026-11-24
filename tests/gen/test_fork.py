@@ -1,4 +1,4 @@
-"""bicg_v3 on the generator: one reader of A for both halves, one group of two chains (D189).
+"""bicg_v3 on the generator: one reader of A for both halves, one group of two chains.
 
 accelerator.json's forked input and JOBS per chain, the program's writes, the Chisel specs'
 vectors and the refusals of a fork the description cannot have."""

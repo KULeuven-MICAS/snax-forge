@@ -1,4 +1,4 @@
-"""A carried fold (D192): ``carry_seed`` and its inverse, ``bind`` giving the unit its own
+"""A carried fold: ``carry_seed`` and its inverse, ``bind`` giving the unit its own
 output as its seed, the reference executor's identity on a first visit, and LOWER's CARRY and
 its refusal when the queues could overtake it, on ``matvec_v9``."""
 

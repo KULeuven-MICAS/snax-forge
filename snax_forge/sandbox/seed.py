@@ -1,7 +1,7 @@
 """The fold's seed: the reduction x' = x (+) fold_j(a_j) done in the fold itself.
 
 ``fuse_seed(first, second)`` and ``unfuse_seed(map)``, as CONTRACTS, "Recipe" defines them;
-``carry_seed(map)`` and ``uncarry_seed(map)``, a fold carried across a strip loop (D192).
+``carry_seed(map)`` and ``uncarry_seed(map)``, a fold carried across a strip loop.
 ``first`` is a map of a fold's nest (``fold_of``), or a map ``split_reduce`` split, standing for
 its final sum; ``second`` a map of the elementwise nest that reads the fold's result. The
 fold's kept loops (those its output moves with) and the nest's loops must run over the same
@@ -472,7 +472,7 @@ def _uncarry_site(g: Graph, map: str) -> dict[str, Any]:
 
 
 def carry_seed(g: Graph, map: str) -> Graph:
-    """The fold of ``map``'s nest carried (D192): its output, revisited by a map outside the
+    """The fold of ``map``'s nest carried: its output, revisited by a map outside the
     ones it moves with, starts each visit from the last one's value, the first from the
     identity; ``bind`` gives the unit its own output as its seed."""
     what = f"carry_seed {map!r}"

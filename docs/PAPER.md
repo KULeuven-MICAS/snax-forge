@@ -75,7 +75,7 @@ The ISPASS 2027 paper (PAP3) carries E1, E3, E4, E7 and E11, E2 as a sentence or
 
 ### 6.1 Kernel set
 
-NPBench's DaCe sources, their structure kept, with the dtype as one parameter (D113). Integers come first: `int64` with an exact reference check through tier C and, before the paper, `int8` in and `int32` accumulate on tier done and the untiered kernels, as SNAX's GeMM (OpenGeMM) does, with `int16` and `int32` in alongside as presets of one source (D113 · D173). Float is a second pass per kernel, as a new BRM implementation. About a dozen kernels, chosen by the tier each exercises, the rest in the coverage table as named errors (FE2).
+NPBench's DaCe sources, their structure kept, with the dtype as one parameter (D113). Integers come first: `int64` with an exact reference check through tier C, and `int8` in and `int32` accumulate on tier done and the untiered kernels, as SNAX's GeMM (OpenGeMM) does, with `int16` and `int32` in alongside as presets of one source (D113 · D173). Float is a second pass per kernel, as a new BRM implementation. About a dozen kernels, chosen by the tier each exercises, the rest in the coverage table as named errors (FE2).
 
 | Tier | Compute row | Kernels | Width |
 |---|---|---|---|
@@ -101,11 +101,11 @@ Down the table, the unit stops being one firing per cycle, and the question move
 
 ## 7. Cost model
 
-Area first, energy if characterisation allows; characterised once, then read from tables, each fit's error stated, no place and route.
+Area and energy, characterised once, then read from tables, each fit's error stated, no place and route.
 
 - **What is characterised**: post-synthesis area per BRM parameter (lanes, width, depth), fitted linearly where it is; the L1 macros and bank counts; TCDM interconnect area against banks and ports; per-access energy times the counts the model keeps, as Accelergy does.
 - **Where**: the Nangate 45 nm and 15 nm Open Cell Libraries, synthesis and gate-level power in KULeuven-MICAS/snax-forge-experiments, with results committed. From 5 Nov 2026 on Nangate 45 nm only: the memories come from CACTI 7 at 45 nm (RAM1), so the L1 macros, the cluster synthesis and E11 exist at 45 nm only; what is at 15 nm already (SYN1, SYN2, CHAR1, HSYN1) stays as data, and snax-forge offers nangate45 only (D167).
-- **What exists**: SYN1 gives forge's area and dynamic energy beside the HLS points at one task of N = 2048, ctrl and csr apart (`results/forge_vs_hls.md`); CHAR1 characterizes each basic block alone; HWCOST (D167) adds the streamers, the crossbar and the banks from STRM1's and RAM1's tables, the design's cost in five parts (C§14). Every table and both sides of the HLS comparison (snax-forge-experiments' `results/compare/`) come from clock-gated synthesis (D154 · D172), so a held flop costs nothing; the control constant is measured on the gated forge accelerators alone.
+- **What exists**: SYN1 gives forge's area and dynamic energy beside the HLS points at one task of N = 2048, ctrl and csr apart (`results/forge_vs_hls.md`); CHAR1 characterizes each basic block alone, CHAR2 the narrow types; HWCOST (D167) adds the streamers, the crossbar and the banks from STRM1's and RAM1's tables, the design's cost in five parts (C§14); GE1 prices a run's counts at the same prices (D177, `pixi run flow --energy`). Every table and both sides of the HLS comparison (snax-forge-experiments' `results/compare/`) come from clock-gated synthesis (D154 · D172), so a held flop costs nothing; the control constant is measured on the gated forge accelerators alone.
 - **Checked**: the blocks against dot 2–6 synthesized whole, the cluster level against CSYN1.
 
 ## 8. Related work and positioning
@@ -126,7 +126,7 @@ A draft (PAP2, `brief`) from abstracts and a first pass, before the author's own
 | Richie | ✓ | ◐ | ✓ in RTL, after RTL | ◐ [check] | ✗ (FPGA build) | ✓ | ✓ |
 | SODA-OPT / SODA Synthesizer | ✓ | ◐ | ✗ | ◐ | ✗ (hours) | ✓ (single engine) | ✓ |
 | Allo, HIDA, Stream-HLS | ✓ | ✓ | ✗ | ◐ (HLS reports) | ✗ | ✓ (FPGA) | ✓ |
-| **SNAX-FORGE** | ✓ | ✓ | ✓ (on GVSoC) | ✓ | measured in E2 | ✓ (M14) | ✓ (open item 95; E1) |
+| **SNAX-FORGE** | ✓ | ✓ | ✓ (on GVSoC) | ✓ | measured in E2 | ✓ (M14) | ✓ (STATUS, "The local RTL check"; E1) |
 
 ### 8.2 Works, one line each
 
@@ -209,31 +209,24 @@ The draft's line, then the author's after reading, which wins. A row whose secon
 
 ## 9. Features the evidence needs
 
+Done: SNAX-GVSoC matching snax_cluster RTL (M16; the local RTL check), the generated RTL, GVSoC accelerator, hjson and program (M14), SIMD and the CSR scalar (B2), the overlap of independent accelerators (D179's schedules; the rest is open item 109), shared crossbar ports (PORT1; open item 128), the engine-alone number (VIEW2; D155, C§13), the cost model (CHAR1, CHAR1b, RAM1, HWCOST, CHAR2; section 7), energy per transaction (GE1; open items 136, 137), cluster synthesis on the same macros (RAM1, CSYN1, PWR2) and the narrow types (PACK1a; D113 · D173, D142 · D174). Still to come:
+
 | Feature | Needed by | Where |
 |---|---|---|
-| SNAX-GVSoC matching snax_cluster RTL | E1, every cycle count | M16 (done); the local RTL check, open item 95 |
-| Generated RTL, GVSoC accelerator, hjson and program | C5, E1 on the same design | M14 (done) |
-| The composite kernels | E1, E3, E4, E11 | M13 track A: B2, tier A (open items 47, 54, 109, 113) |
-| SIMD and the CSR scalar | E3, E7's untiered rows | M13 B2 |
-| Overlap of independent accelerators | E4 (mvt) | open item 109, in tier A |
+| The composite kernels | E1, E3, E4, E11 | M13 track A: tier A (open items 54, 113) |
 | One unit across DFG regions | E4 (atax) | open item 113, in tier A |
-| Shared crossbar ports across streamer sets | E4 | M13 PORT1 (done; open item 128) |
 | DMA cost on the graph | Level 1's feedback | L2V1, after the paper (open item 99 for the graph-level node) |
 | Interconnect markers | Level 1's feedback | XBAR1, after the paper |
-| The engine-alone number | C3's baseline in E4 | M13 VIEW2, the ideal estimate (D155, C§13) |
-| Cost model: blocks, streamers, memory, interconnect | E4, E7, C4's cost check | M13 CHAR1, CHAR1b (done), RAM1, HWCOST (section 7); the narrow types in CHAR2 |
-| Energy per transaction in SNAX-GVSoC | E4's energy, C4 | GE1 |
 | A sweep script | E4 | E4S1, over `pixi run flow --set`; DSE5 (M8) is not needed |
-| Cluster synthesis on the same macros | C4's cost check at cluster level, E11 | RAM1, CSYN1 and PWR2 (done); the Snitch-only clusters in SNB1 |
+| The Snitch-only clusters | E11 | SNB1 |
 | `exp`, `max`, division | softmax in E5 | M7 tiers B and C (FE1b, FE1c; open item 37) |
 | Speed on long runs | E2 | open item 50 |
-| Narrow types: int8, int16, int32 in, outputs packed | E1, E4, E11 | M13 PACK1a (D113 · D173, D142 · D174) |
 | Requantization, tiling, the GeMM | E6, E9 | PACK1, M15, tier D: after the paper; E6 takes shortcuts (E2E5) |
 | HLS engine as a BRM implementation | E8 | open item 28: after the paper |
 
 ## 10. Open questions
 
-1. BASE1 is E2's timed vsim path; the GeMM bring-up stays an anecdote, not a logged baseline (PAP3).
+1. E2 comes from the times the runs log (BASE1 and BASE2 are not run as tasks); the GeMM bring-up stays an anecdote, not a logged baseline (PAP3).
 2. Floating point, the second pass per kernel after the integer tiers (D113): Berkeley HardFloat ops inside the existing blocks' lanes is one option. Either way the multi-cycle rows of section 6.2 stay.
 3. E5's head: size, context length and precision (one head that fits L1, e.g. d = 64 and a context of 128); E6 and E12 sized to fit L1 too, best effort.
 4. The snax_cluster version to pin for SNAX-GVSoC and the bundle.
@@ -250,7 +243,7 @@ A guide, not a verdict: what has to be settled before the outline (section 12). 
 **The claim.**
 
 - **Q1. Tool or finding?** The thesis reads as a finding, the contributions as a tool. Settled once E4–E6 show whether a result stands without the tool's name.
-- **Q2. C1 or C3 first?** Leaning to the pair. Settled by which evidence is stronger: a turnaround table (E2) or a ranking that flips (E4–E6). PAP3: C3 leads, C4 and C1 behind it (section 1).
+- **Q2. C1 or C3 first?** PAP3: C3 leads, C4 and C1 behind it (section 1).
 - **Q3. Is the engine–shell split a contribution?** Claim one model of the shell any engine plugs into, and composition at design time on the graph; not the shell (HWPE, SNAX) nor composition as such (CHARM). Settled by reading HWPE and CHARM.
 
 **The reader.**
@@ -260,23 +253,23 @@ A guide, not a verdict: what has to be settled before the outline (section 12). 
 
 **The evidence.**
 
-- **Q6. Least fidelity evidence?** Ranking agreement on 3–5 GeMM sizes with the absolute error beside it, plus one DMA-heavy case; it started on SNAX's ALU in M16 and stands now on the generated vecadd and vsum (GEN2b: counters equal, windows within 10%).
+- **Q6. Least fidelity evidence?** Ranking agreement on 3–5 GeMM sizes with the absolute error beside it, plus one DMA-heavy case; it started on SNAX's ALU in M16, then the generated vecadd and vsum (GEN2b: counters equal, windows within 10%), and stands now on the local RTL check's full set (STATUS; E1).
 - **Q7. Which C3 case, and what if no ranking flips?** E4 is cheap and run first; a scratch run suggests flips exist (`x @ A` with as many columns as banks puts a column's lanes in one bank, and one column of padding restores the gain). Fallback: the cluster changes how much an engine is worth, with the cause named.
 - **Q8. What does C1 measure?** The time to a first number and the time to the cause, with simulation speed apart (BASE2).
-- **Q9. Area only, or energy too?** Area first.
+- **Q9. Area only, or energy too?** Both, per composition (E4, E7, E11).
 - **Q10. Generation in the first paper?** Yes (D111): E1 compares the same design in model and RTL.
 
 **Related work.**
 
 - **Q11. Does each separating sentence hold after the reading?** Tested in section 8.4; one that fails changes the claim.
-- **Q12. Head-to-head run or a feature table?** Stream as E9, exploratory and parked.
+- **Q12. Head-to-head run or a feature table?** Stream as E9, future work.
 - **Q13. HLS and XLS: input or competitor?** Input (E7, E8). PAP3: E7 only; E8 is future work.
 - **Q14. The name clash with AccelForge?** At least one sentence of contrast.
 
 **Scope and story.**
 
-- **Q15. One paper or two?** Decided when the evidence exists, now that there is no deadline.
-- **Q16. The LLM paragraph?** One short demonstration (E10), if clean. PAP3: future work, one sentence.
+- **Q15. One paper or two?** Decided when the evidence exists; the ISPASS 2027 paper is the first (section 1).
+- **Q16. The LLM paragraph?** PAP3: future work, one sentence (E10).
 - **Q17. Limitations up front?** Section 10, item 7.
 - **Q18. Open with the experience or the question?** The question first, the experience as its evidence in two or three sentences.
 - **Q19. Figure 1?** The flow with the shell for a tool paper; the composition spectrum on one graph for a finding paper.

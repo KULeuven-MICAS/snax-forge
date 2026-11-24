@@ -1,4 +1,4 @@
-"""The checked-in recipes' names, ids and descriptions (D188), and recipes/README.md's table of
+"""The checked-in recipes' names, ids and descriptions, and recipes/README.md's table of
 them: every recipe outside ``custom/`` is ``<kernel>_v<N>`` with ``_<k>`` per change from a
 parent that exists, its id starts with its kernel, and recipes sharing an id build the same
 units."""

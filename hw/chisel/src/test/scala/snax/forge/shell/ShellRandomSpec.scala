@@ -24,24 +24,24 @@ import snax.forge.elementwise.{ElementwiseModel, ElementwiseOp}
   * drawn and packed at its dtype's width): `ElementwiseModel.numpy` per lane for a SIMD unit, the lane sums of every T
   * inputs for a fold, each lane cast to the output type first; for a linked group (a dot product: a product per lane,
   * then the sum of a job's lanes and beats, T its JOB_BEATS) the sum over each job's T beats of a · b, wrapping at the
-  * output type. A sliced input (D180) takes its run's beats d_in to a word, the run's last word short, and offers a
-  * run's words only once its START is taken, as `main.c` starts a run's streamer after the last one ended (a word
-  * offered in the run's last cycle would be taken and dropped at the next start); a packed output (D174) gives its
-  * run's results d_out to a word, the last short, zero above.
+  * output type. A sliced input takes its run's beats d_in to a word, the run's last word short, and offers a run's
+  * words only once its START is taken, as `main.c` starts a run's streamer after the last one ended (a word offered in
+  * the run's last cycle would be taken and dropped at the next start); a packed output gives its run's results d_out to
+  * a word, the last short, zero above.
   *
-  * A group of two chains on a forked input (bicg_v3's one pass, D189): per run M rows in 1..16 (one run in eight the
-  * empty run, a JOBS 0), the sum's T and the Mac's each a divisor of M, the chains' JOBS M / T so both heads fire M
-  * times; A's reader gives row i to the product's and the Mac's a, p's its b, r's (broadcast, one lane a beat, sliced)
-  * r_i to every lane of the Mac's b. The model: q, each job's Σ over its rows of A_i · p_i, and s, each job's Σ over
-  * its rows of A_i · r_i lane by lane, wrapping at int32; q packed two to a word. Both outputs are checked, the run's
-  * end E is the last chain's.
+  * A group of two chains on a forked input (bicg_v3's one pass): per run M rows in 1..16 (one run in eight the empty
+  * run, a JOBS 0), the sum's T and the Mac's each a divisor of M, the chains' JOBS M / T so both heads fire M times;
+  * A's reader gives row i to the product's and the Mac's a, p's its b, r's (broadcast, one lane a beat, sliced) r_i to
+  * every lane of the Mac's b. The model: q, each job's Σ over its rows of A_i · p_i, and s, each job's Σ over its rows
+  * of A_i · r_i lane by lane, wrapping at int32; q packed two to a word. Both outputs are checked, the run's end E is
+  * the last chain's.
   *
-  * The same with s's sums in a bank (bicg_v4, D191): per run ROWS in 1..R, the Mac's T a multiple of it, the heads'
-  * firings n a multiple of that and of the sum's T (its JOB_BEATS, or its fixed T); r is read once a row (D190), a beat
-  * on each firing where n mod ROWS = 0, and the Mac's sums are ROWS rows, firing f adding into row f mod ROWS, each job
-  * giving its rows in order. With q carried (bicg_v4_1, D192) the sum is seeded once a job from its seed's reader, the
-  * seed 0 in the sum on its first CARRY jobs (CARRY in 0..its JOBS). mvt's one pass (mvt_v6, D194): the sum seeded
-  * every job (x1), and the bank seeded a beat a row (x2), each job's row ρ starting from its ρ-th seed beat.
+  * The same with s's sums in a bank (bicg_v4): per run ROWS in 1..R, the Mac's T a multiple of it, the heads' firings n
+  * a multiple of that and of the sum's T (its JOB_BEATS, or its fixed T); r is read once a row, a beat on each firing
+  * where n mod ROWS = 0, and the Mac's sums are ROWS rows, firing f adding into row f mod ROWS, each job giving its
+  * rows in order. With q carried (bicg_v4_1) the sum is seeded once a job from its seed's reader, the seed 0 in the sum
+  * on its first CARRY jobs (CARRY in 0..its JOBS). mvt's one pass (mvt_v6): the sum seeded every job (x1), and the bank
+  * seeded a beat a row (x2), each job's row ρ starting from its ρ-th seed beat.
   */
 class ShellRandomSpec extends AnyFlatSpec with ForgeTester {
 
@@ -99,7 +99,7 @@ class ShellRandomSpec extends AnyFlatSpec with ForgeTester {
     val carry         = if (carried) r.between(0, js) else 0
     def draw(k: Int, lanes: Int, bits: Int) = if (empty) Nil else Seq.fill(k)(Seq.fill(lanes)(r.word(bits)))
     val (a, p, x, seeds) = (draw(n, w, 8), draw(n, w, 8), draw(n / rows, 1, 8), draw(js, 1, 32))
-    val rowSeeds         = draw(n / tm * rows, w, 32) // NB (D194): the bank's seed, a beat a row of each job
+    val rowSeeds         = draw(n / tm * rows, w, 32) // the bank's seed, a beat a row of each job
     def wide(v: BigInt) = ElementwiseModel.cast(v, i8, i32)
     val q        =
       if (empty) Nil

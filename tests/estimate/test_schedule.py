@@ -1,4 +1,4 @@
-"""The accelerator's cycles under the design point's schedule (D179): mvt_v3_1 at W = 8, two
+"""The accelerator's cycles under the design point's schedule: mvt_v3_1 at W = 8, two
 independent halves, adds them serial and takes the slower pipelined; mvt_v3, the halves on one
 shared group, adds them under every schedule. Every recipe is imported (DaCe), hence slow."""
 

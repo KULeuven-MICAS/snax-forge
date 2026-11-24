@@ -6,7 +6,7 @@ snax-forge writes it once (gvsoc.py; rtl.py writes the same bytes), and SNAX-GVS
 (snax-gvsoc ``snax/snax_cfg.py``) and Emit (``hw/chisel/``) read it. The accelerators come in
 the order the graph first uses them (design/streamers.py's ``accelerators``), each with its
 groups in the graph's order: a unit alone, named after its instance, or the units ``link``
-and ``fork_read`` join, named by their ``group``. A group of several chains (D189) has a
+and ``fork_read`` join, named by their ``group``. A group of several chains has a
 ``JOBS_<SINK>`` per chain in place of ``JOBS``, and its forked input is one entry of
 ``inputs``, a list of the ports it feeds, the reader's first. Group and accelerator names are unique over the design: they name
 the control units and the streamer sets. ``Accelerator.define`` names a CSR as the header does.
@@ -170,7 +170,7 @@ class Group:
 
     def chains(self) -> list[list[str]]:
         """Its chains, each its units from head to sink along its links, in the order of their
-        sinks among its units (one for a group a fork does not join, D189)."""
+        sinks among its units (one for a group a fork does not join)."""
         nxt = {k.from_.split(".")[0]: k.to.split(".")[0] for k in self.links}
         prev = {b: a for a, b in nxt.items()}
         out = []
@@ -251,7 +251,7 @@ class Accelerator:
     and, encapsulated, its start, and with ``share_ports`` its movers too."""
 
     name: str
-    inputs: list[str | list[str]]  # a fork's ports (D189) as one entry, the reader's first
+    inputs: list[str | list[str]]  # a fork's ports as one entry, the reader's first
     outputs: list[str]
     groups: list[Group]
     movers: list[Mover] = field(default_factory=list)
@@ -303,7 +303,7 @@ class Accelerator:
 
     @property
     def forks(self) -> list[list[str]]:
-        """Its forked inputs (D189), each the ports one reader feeds, the reader's first."""
+        """Its forked inputs, each the ports one reader feeds, the reader's first."""
         return [list(x) for x in self.inputs if not isinstance(x, str)]
 
     def define(self, group: Group | None, unit: Unit | None, csr: Csr) -> str:
@@ -343,7 +343,7 @@ class Description(JsonFile):
                 raise ValueError(f"{self.tag}: CSR {c.name} has width {c.width}, not "
                                  f"{FIXED_WIDTH[c.name]}")  # fmt: skip
         for names in (("JOBS", "JOB_BEATS"), ("BUSY_COUNTER",)):
-            # a chain's JOBS_<SINK> (D189) is a JOBS
+            # a chain's JOBS_<SINK> is a JOBS
             widths = {c.width for _, _, c in self.csrs()
                       if c.name in names or ("JOBS" in names and c.name.startswith("JOBS_"))}  # fmt: skip
             if len(widths) > 1:
@@ -385,7 +385,7 @@ class Description(JsonFile):
 
     @property
     def inputs(self) -> list[str | list[str]]:
-        """Every outer input, set after set (a fork's ports as one entry, D189): the wrapper's
+        """Every outer input, set after set (a fork's ports as one entry): the wrapper's
         ``stream2acc_<k>`` order."""
         return [p for a in self.accelerators for p in a.inputs]
 
@@ -396,7 +396,7 @@ class Description(JsonFile):
 
     @property
     def forks(self) -> list[list[str]]:
-        """Every forked input (D189), the ports one reader feeds, the reader's first."""
+        """Every forked input, the ports one reader feeds, the reader's first."""
         return [f for a in self.accelerators for f in a.forks]
 
     @property
@@ -516,7 +516,7 @@ def _check_links(acc: Accelerator) -> None:
 
 
 def _check_fork(acc: Accelerator, f: list[str], outer: list[str]) -> None:
-    """``gen.fork``: a forked input's ports (D189), two or more outer inputs of one group's
+    """``gen.fork``: a forked input's ports, two or more outer inputs of one group's
     chain heads, alike in dtype, lanes, slicing and broadcast."""
     what = f"accelerator {acc.name}: the fork {f}"
     group_of = {u.name: g for g in acc.groups for u in g.units}
@@ -575,7 +575,7 @@ def _check_shared(acc: Accelerator) -> None:
 
 def _check_chain(acc: Accelerator, g: Group) -> None:
     """``gen.chain`` and ``gen.span``, SNAX-GVSoC's limits (module doc): a chain in unit order
-    whose last unit's output alone is outer, or with a fork (D189) chains it joins, each
+    whose last unit's output alone is outer, or with a fork chains it joins, each
     going forward in unit order with its sink's output outer."""
     names = [u.name for u in g.units]
     hops = [(k.from_.split(".")[0], k.to.split(".")[0]) for k in g.links]
@@ -627,7 +627,7 @@ def fixed_fold(graph: Graph, node: Node, inst: Instance) -> int | None:
     used = node.outputs[port].names
     loops = list(next(o for n, o in graph.walk() if n is node))
     k, rows = len(loops), 1
-    while k and rows < bank_rows(inst):  # a bank's row loops first, as named_rates (D191)
+    while k and rows < bank_rows(inst):  # a bank's row loops first, as named_rates
         k -= 1
         rows *= len(map_range(loops[k].attrs["range"], graph.bound_symbols, loops[k].id))
     while k and loops[k - 1].attrs["var"] not in used:
@@ -744,20 +744,20 @@ def _unit(point: DesignPoint, name: str, inst: Instance, offsets: Iterator[int])
         )  # fmt: skip
     ports = dict(fill.ports)
     node = instance_nodes(point.graph)[name]
-    first = forked_ports(point.graph)  # a forked port takes its first's reader (D189)
-    for p, port in ports.items():  # a packed outer output (D174), a sliced outer input (D180)
+    first = forked_ports(point.graph)  # a forked port takes its first's reader
+    for p, port in ports.items():  # a packed outer output, a sliced outer input
         u, q = first.get(f"{name}.{p}", f"{name}.{p}").split(".", 1)
         s = point.streamers.get(streamer_name(u, q))
         if s is not None and max(s.d_out, s.d_in) > 1:
             ports[p] = replace(port, d_out=s.d_out, d_in=s.d_in)
-        if s is not None and is_broadcast(point.graph, node, inst, p):  # one lane for all (D186)
+        if s is not None and is_broadcast(point.graph, node, inst, p):  # one lane for all
             if not DATAPATHS[datapath].lanewise:
                 raise GenError("gen.broadcast", f"{what}: port {p} is read as one lane for all, "
                                f"but {datapath} sums its lanes; a broadcast feeds a datapath "
                                "whose lanes compute on their own (SimdLanes, Mac)")  # fmt: skip
             ports[p] = replace(ports[p], broadcast=True)
         if is_held(inst, p, (node.inputs | node.outputs)[p], firing_loops(point.graph, node)):
-            if not ports[p].broadcast:  # read once a row, held for the row (D190)
+            if not ports[p].broadcast:  # read once a row, held for the row
                 raise GenError("gen.hold", f"{what}: port {p} is held for a bank row but is not "
                                "a broadcast; a held input is one lane for all for now")  # fmt: skip
             ports[p] = replace(ports[p], hold=True)
@@ -765,9 +765,9 @@ def _unit(point: DesignPoint, name: str, inst: Instance, offsets: Iterator[int])
     params = dict(fill.params) | ({} if fixed is None else {"T": fixed})
     unit_rw = ["JOB_BEATS"] if fold_rate(inst) is not None and fixed is None else []
     unit_csrs = [Csr(n, "rw", next(offsets), point.platform.acc_csr.job_width) for n in unit_rw]
-    if (rows := bank_rows(inst)) > 1:  # the rows a pass uses, at most the bank's (D191)
+    if (rows := bank_rows(inst)) > 1:  # the rows a pass uses, at most the bank's
         unit_csrs.append(Csr("ROWS", "rw", next(offsets), rows.bit_length()))
-    if node.attrs.get("carry"):  # the jobs before the seed is used, its own output (D192)
+    if node.attrs.get("carry"):  # the jobs before the seed is used, its own output
         unit_csrs.append(Csr("CARRY", "rw", next(offsets), point.platform.acc_csr.job_width))
         ports[SEED] = replace(ports[SEED], carry=True)
     for slot, dtype in fill.scalars.items():  # after JOB_BEATS, ROWS and CARRY, in slot order

@@ -246,7 +246,7 @@ ADAPTER_CASES = [
      _dtypes(("a", "out"), a="uint16", out="uint16")),
     ("args", _binding(args={"lanes": "W"}), {}, "gen.args"),
     ("float", None, {}, "gen.dtype", _dtypes(a="float64", b="float64", out="float64")),
-    # 3 lanes of int8 neither fill whole words nor divide one (W = 4 would be sliced, D180)
+    # 3 lanes of int8 neither fill whole words nor divide one (W = 4 would be sliced)
     ("lanes x N", None, {"W": 3, "op": "add", "streams": 2}, "gen.lanes",
      _dtypes(a="int8", b="int8", out="int8")),
     ("lanes vs port", _binding(args={"lanes": "W * 2", "op": "op"}), {}, "gen.lanes"),

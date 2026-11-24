@@ -4,7 +4,6 @@ What each artefact between the components holds, field by field, so a component 
 
 - The artefacts are dataclasses with `to_dict` / `from_dict` and plain JSON until the M6 freeze (D26); the generated hjson files already have schemas (section 9).
 - A fenced block under a `<!-- snippet: ... -->` line is copied verbatim from the file it names; `tests/test_contracts.py` fails if one drifts, and checks that every section the repository cites exists (D46).
-- The sections follow the path: the graph and its blocks (2–4), the design step (5–7), what is generated (8–11), what is measured (12) and estimated (13, 14).
 
 ```mermaid
 flowchart TD
@@ -30,7 +29,7 @@ flowchart TD
 ## 1. Conventions
 
 - **Addresses are bytes**: L1 and L2 addresses, a streamer's `base`, every stride, the DMA's bases.
-- **The bank word is the unit of transfer** (D142). A word is the L1's `width_bits` wide and holds num_slc = `width_bits` / b elements of a container's dtype (b its bits), little-endian as NumPy lays them out. A port of W lanes uses num_ch = W / num_slc streamer channels; `connect.pack` and `connect.num_ch` check it (section 6).
+- **The bank word is the unit of transfer** (D142). A word is the L1's `width_bits` wide and holds num_slc = `width_bits` / b elements of a container's dtype (b its bits), little-endian. A port of W lanes uses num_ch = W / num_slc streamer channels; `connect.pack` and `connect.num_ch` check it (section 6).
 - **Integers first** (D28): the default `dtype` is `int64`.
 
 The L1 of `platforms/snax_forge.json` (section 5):
@@ -50,7 +49,7 @@ The L1 of `platforms/snax_forge.json` (section 5):
 
 ## 2. SNAX-DFG
 
-The workload as one `.snaxdfg` JSON file (D71), written by an importer and rewritten by each sandbox transform. `Graph.load(path)` reads it; every field is written, a missing key takes its default, an unknown key is an error, and a graph is validated when it is made.
+The workload as one `.snaxdfg` JSON file (D71), written by an importer and rewritten by each sandbox transform. `Graph.load(path)` reads it; a missing key takes its default, an unknown key is an error, and a graph is validated when it is made.
 
 | Field | Holds |
 |---|---|
@@ -62,7 +61,7 @@ The workload as one `.snaxdfg` JSON file (D71), written by an importer and rewri
 
 ### Nodes
 
-Every node has `id` (unique: task names are built from it, D75), `kind`, `inputs`, `outputs`, `attrs` and, for a kind that has one, `body`. A connector maps to a memlet, `{"data": container, "subset": [dim, ...]}`, one entry per container dimension: an index (`n`, `4 * n_1_t + n_2_s`, `0`) or a range `begin:end[:step]`, end exclusive.
+Every node has `id` (unique, D75), `kind`, `inputs`, `outputs`, `attrs` and, for a kind that has one, `body`. A connector maps to a memlet, `{"data": container, "subset": [dim, ...]}`, one entry per container dimension: an index or a range `begin:end[:step]`, end exclusive.
 
 | Kind | Attrs | Body |
 |---|---|---|
@@ -73,49 +72,41 @@ Every node has `id` (unique: task names are built from it, D75), `kind`, `inputs
 | `transpose` | `perm` (a permutation of its input's dimensions), `by` (`dma` or `core`: what makes the copy); one input `src` and one output `dst`, each its whole container (`0:<extent>` in every dimension), the output's shape the input's permuted by `perm`, the same dtype; the reference executor copies `np.transpose(src, perm)` into it | none |
 | `accelerated` | `instance`, `brm`, `implementation`, `code` (the BRM's matched entry), `params` (design params), `replaced` (the subtree `bind` replaced), `locals`, `accelerator`, `group`, `opType` (the last four only when set; `opType` the op's type where the tasklet's casts set it, D143 · D175) | empty for a leaf block |
 
-- An accelerated node's connectors are the BRM's ports, each port's lanes as a range: one beat.
-- A slot read from a scalar has no value in `params`; its slot connector names the container instead (axpy's `k1` on `alpha[0]`).
-- `replaced` is checked in the node's scope, never run, and its ids may repeat live ones; `unbind` and `join_map` take it back.
-- Attrs without a namespace belong to the kind and are all written; namespaced ones (`loop.*`, `mem.*`, `hw.*`, `user.*`, `sandbox.*`) pass through. More kinds come with `register_kind`.
+- An accelerated node's connectors are the BRM's ports, each port's lanes as a range: one beat. A slot read from a scalar has no value in `params`; its connector names the container (axpy's `k1` on `alpha[0]`).
+- `replaced` is checked in the node's scope, never run; `unbind` and `join_map` take it back.
+- Attrs without a namespace belong to the kind; namespaced ones (`loop.*`, `mem.*`, `hw.*`, `user.*`, `sandbox.*`) pass through. More kinds come with `register_kind`.
 
 ### Import
 
-`dfg/import_sdfg.py` derives the graph from the kernel's simplified SDFG and decides nothing:
-
-- a Scalar becomes a `[1]` container with `sdfg.scalar`; a Map with several parameters becomes one map per parameter, outermost first; a Reduce becomes one map per input dimension around `out = in1`, its output folding;
-- a map over `0:X` is named `lower(X)` (D162); other names are lower case with underscores stripped, `_1` added on a clash (`__tmp0` → `tmp0`);
-- a convert map (`out = dace.int32(inp)`, from the kernel's `astype`) into a transient is folded into its consumer, which reads the convert's input through a value cast `int32(x)`; a cast to the type the value already has is dropped (D143 · D175);
-- what it does not take (control flow, open item 36) is refused by name.
+`dfg/import_sdfg.py` derives the graph from the kernel's simplified SDFG and decides nothing: a Scalar becomes a `[1]` container with `sdfg.scalar`, a Map one map per parameter, a Reduce one map per input dimension around `out = in1`; a map over `0:X` is named `lower(X)` (D162); a convert map is folded into its consumer as a value cast `int32(x)` (D143 · D175); control flow is refused by name.
 
 ### Folding writes
 
-A tasklet's output memlet may hold `"reduce": {"op": ..., "identity": ...}` (D102): the elements start at `identity` and every iteration's value is folded in with `op` (`add`, `mul`, `min`, `max`; `register_reduction`). dot as imported (`tests/dfg/fixtures/dot.snaxdfg`) folds its `sum` tasklet's `out[0]` so.
+A tasklet's output memlet may hold `"reduce": {"op": ..., "identity": ...}` (D102): the elements start at `identity` and every iteration's value is folded in with `op` (`add`, `mul`, `min`, `max`; `register_reduction`).
 
-- **With a seed** (`fuse_seed`, D163): `"seed": {"data": ..., "subset": [...]}` takes the identity's place; each element starts from the seed's element, read with the inputs (matvec_acc's sum: `q[m_t]`, written in place). The tasklet keeps what `fuse_seed` took in `sandbox.seeded`, for `unfuse_seed`.
-- **Carried** (`carry_seed`, D192): `"carry": true` beside `identity`: the element is written again under loops outside every one its subset uses (strips), each visit starting from what the last wrote, the first from `identity`; the values are the plain fold's. `bind` gives the unit its own output as its `seed` port and the node `"carry": true`; the unit's seed and output then run over those outer loops too.
+- **With a seed** (`fuse_seed`, D163): `"seed": {"data": ..., "subset": [...]}` takes the identity's place; the tasklet keeps what `fuse_seed` took in `sandbox.seeded`.
+- **Carried** (`carry_seed`, D192): `"carry": true` beside `identity`: the element is written again under loops outside every one its subset uses, each visit starting from what the last wrote. `bind` gives the unit its own output as its `seed` port.
 
 ### Accelerators, groups and shared instances
 
 A bound graph nests accelerator ⊃ groups ⊃ units and links (D146, D148):
 
-- A **unit** is an accelerated node. A **group** is a connected set of units and links (`link`, section 4), one chain or several a fork joins (`fork_read`, D189); an unlinked unit is a group of its own, named after its instance; a linked group's units carry its name in `group`. A link node sits before its reader in the body the two share, a fork node before its last reader's nest.
-- By default each group is its own **accelerator**, named after it; `encapsulate` puts several into one, which shares one streamer set (section 9), each group still a task of its own. The nodes of one instance carry the same `accelerator` or none, and an accelerator's name is no instance's.
-- A **fused map** (`fuse_map`) is one nest of two tasklets; the transient between them becomes a local value, no longer in L1 (the container carries `loop.local`, the map records its two nests in `loop.fused`). `bind` on the nest keeps the local in the node's `locals`, so `unbind` then `unfuse_map` give the graph before `fuse_map` exactly. `split_reduce` records its partials and final sum in `loop.split_reduce`.
-- **Shared instances** (D165): several nodes may share one instance, one BRM, implementation and params, run once per node in body order (mvt's variant 1, `recipes/mvt/mvt_v1.json`). LOWER gives each node its own task on the same streamers; the estimate counts the area once and each run's cycles. A linked group is shared by `share`: a node per nest and a link node per nest on the same ports (`design/streamers.py`'s `group_links`), run once per set of nodes its links join (`group_runs`).
+- A **unit** is an accelerated node. A **group** is a connected set of units and links, one chain or several a fork joins (D189); an unlinked unit is a group of its own, named after its instance; a linked group's units carry its name in `group`.
+- By default each group is its own **accelerator**; `encapsulate` puts several into one, sharing one streamer set (section 9). An accelerator's name is no instance's.
+- A **fused map** (`fuse_map`) is one nest of two tasklets joined by a local value (`loop.local`, `loop.fused`), kept by `bind` in the node's `locals`; `split_reduce` records its parts in `loop.split_reduce`.
+- **Shared instances** (D165): several nodes may share one instance, run once per node in body order, each its own task on the same streamers; `share` does it for a linked group.
 
 ### A transposed read
 
-A read across the loop order is served in one of two ways (D182, `sandbox/transpose.py`):
-
-- `mark_transpose` (D164) records on a tasklet `sandbox.transpose`, `{connector: π}`, for an input whose dimensions it reads across its loop order: π orders the container's dimensions by the depth of their outermost map. mvt's half 2 reads `A[m, n]` under the loops (n, m): π = (1, 0). No memlet changes; `bind` carries the mark onto the accelerated node, keyed by port. A container whose element is narrower than the bank word (8 bytes) is refused: a packed input's lanes are contiguous elements of one word (`A is int8: a packed read cannot cross the loop order; use data_transpose`).
-- `data_transpose` adds a transient `<container>_T`, the container's shape permuted by π and its dtype, and a `transpose` node (perm π) reading the whole container and writing the whole copy, at the top level just before the nest's outermost map. Every memlet of the container in the nest, at every level, has its dimensions permuted by π and names the copy, so a split index moves with its dimension; mvt's half 2 then reads `A_T[n, m]` under (n, m), π the identity. Only `by` `dma` is built.
+- `mark_transpose` (D164) records on a tasklet `sandbox.transpose`, `{connector: π}`, π ordering the container's dimensions by the depth of their outermost map; `bind` carries it onto the accelerated node, keyed by port. An element narrower than the bank word is refused.
+- `data_transpose` (D182) adds a transient `<container>_T` and a `transpose` node (perm π) copying the whole container before the nest, whose memlets then name the copy, permuted by π. Only `by` `dma` is built.
 
 ### Names and expressions
 
 - Every name in an expression is a symbol or an enclosing map's `var`; shapes use symbols only; symbols, containers and variables never share a name.
-- An expression is ints, names, `+ - * //`, and `max(a, b)`, `min(a, b)` (`snax_forge/expr.py`), stored as `ast.unparse` writes it, one without names as an int. A tasklet's code also takes value casts `int8(x)` … `uint64(x)`.
+- An expression is ints, names, `+ - * //`, `max(a, b)` and `min(a, b)` (`snax_forge/expr.py`), stored as `ast.unparse` writes it. A tasklet's code also takes value casts `int8(x)` … `uint64(x)`.
 
-vecadd after `split_map` (W = 4) and `bind` (`tests/dfg/fixtures/vecadd_accelerated.snaxdfg`): the accelerated node holds what it computes and what it replaced.
+vecadd after `split_map` (W = 4) and `bind`:
 
 <!-- snippet: tests/dfg/fixtures/vecadd_accelerated.snaxdfg -->
 ```json
@@ -137,7 +128,7 @@ vecadd after `split_map` (W = 4) and `bind` (`tests/dfg/fixtures/vecadd_accelera
 
 ## 3. Block runtime model
 
-One accelerator block as plain data (D68, D70): a hand-written JSON file in `snax_forge/brm/library/`, named after the block, in the form `Brm.to_json` writes (every field, defaults included). `load_brm(name)` reads it; an unknown key or a missing part is refused by name.
+One accelerator block as plain data (D68, D70): a hand-written JSON file in `snax_forge/brm/library/`, named after the block, in the form `Brm.to_json` writes. `load_brm(name)` reads it; an unknown key or a missing part is refused by name.
 
 | Part | Holds | Read by |
 |---|---|---|
@@ -168,34 +159,22 @@ The first four are shared: designs that differ only in timing, supported values 
 | `span` | the cycles a unit reads one input beat in place (section 10); 1 by default |
 
 - Each is an int or an expression over design params, stored canonical.
-- A **design** param is fixed per instance (lanes, the op) and reaches the design point and the hjson. `default` applies when none is given, `values` limits it, an implementation's `supports` further. A null `default` means unset unless `bind` or a code entry sets it; an expression naming an unset param is not evaluated.
+- A **design** param is fixed per instance; `default` applies when none is given, `values` and an implementation's `supports` limit it. A null `default` means unset unless `bind` or a code entry sets it.
 - The **runtime** params are exactly `n` (the firings in a task) and every named port rate, in port order: the accelerator task's `values` (section 8). `n` must be a multiple of every rate.
 
 ### The function and its code
 
-`code` is one `output = expression` per output port over the input ports, per lane of one firing. The ops are `add`, `sub`, `mul`, `min`, `max`, `and`, `or` and `xor`; `simd` works at its inputs' result type, `reduce` casts its lanes to the output's dtype before its tree, `mac` multiplies at the inputs' result type, then casts (D143). A tasklet's operand casts (`int32(a) * int32(b)`, section 2) are types, not code: they set the op's type, the unit's `opType` (section 10), and `bind` strips them before matching, so no BRM's code has one (D143 · D175). A reduction says what one element contributes (`accumulate`'s `out = a`); its fold is its pattern's and kind's (D102).
-
-`code` may instead be a list of entries, `{"params": {...}, "code": ...}`, each fixing design params. `simd` has twelve: add, sub, mul, min and max at two streams; the same five at one stream with the slot `k` for `b`; axpby as `out = k1 * a + k2 * b` and `out = k1 * a + b`.
-
-How `bind` picks an entry (D82):
+`code` is one `output = expression` per output port over the input ports, per lane of one firing, with the ops `add`, `sub`, `mul`, `min`, `max`, `and`, `or` and `xor` (types: D143). A tasklet's operand casts set the unit's `opType` and are stripped before matching (D175). `code` may instead be a list of entries, `{"params": {...}, "code": ...}`, each fixing design params. How `bind` picks an entry (D82):
 
 1. It tries the entries in order, and every assignment of the tasklet's array inputs to the entry's present ports.
 2. The code must equal the tasklet's, with `+`, `*`, `min` and `max` commuting.
-3. A **slot** (a design param the code names that is not a port) matches either an int with no names that fits the op type, baked (D143), or a scalar operand read at run time from an R/W CSR (D161).
-4. An entry fits only when every slot its code names has a value and every other slot is unset (axpy, with `k2` unset, has one code).
+3. A **slot** (a design param the code names that is not a port) matches either an int that fits the op type, baked (D143), or a scalar read at run time from an R/W CSR (D161).
+4. An entry fits only when every slot its code names has a value and every other slot is unset.
 5. The first match's params and baked values become the instance's; a bind param that contradicts them is refused. A null `code` cannot be bound.
 
 ### The binding
 
-`brm/binding.py` (D129): `{datapath, args, controller, ports}`.
-
-- `datapath`: one of the catalogue (`hw/chisel/blocks.json`, section 10); `resolve` checks it takes the instance.
-- `args`: its parameters, each an expression over design params; a bool is a design-time variant.
-- `controller`: `counted`, the group's control unit (D147).
-- `ports`: optional, maps BRM ports to the datapath's (by default the same names).
-- The CSRs are not the binding's: they follow from the unit's group (section 10).
-
-The library's BRMs:
+`brm/binding.py` (D129): `{datapath, args, controller, ports}`: a catalogue datapath (`hw/chisel/blocks.json`, section 10) that `resolve` checks takes the instance; its `args`, expressions over design params; `controller` `counted` (D147); optional `ports`, BRM port → datapath port. The CSRs follow from the unit's group (section 10).
 
 | BRM | Implementation | Datapath | Notes |
 |---|---|---|---|
@@ -205,7 +184,7 @@ The library's BRMs:
 | `mac` | `chisel_mac` | `Mac` (`accumulate` true, `regOut` false) | `out = a * b` folded per lane over T beats (D149); `seed` 0 or 1 adds the input `seed`, W lanes at rate T, read once per job (D187); a `b` bound as one lane is given to every lane (D186); `rows` R > 1 (default 1) keeps R rows of W sums, one a firing in turn, a job giving R results (D191), seeded a seed beat a row on the job's first R firings (D194), and a `b` whose memlet skips the rows' loops is read once a row and held (D190) |
 | `lane_accumulate` | `chisel_lane_accumulate` | `LaneAccumulate` | rowsum 2: `out = a`, each lane folding its own element over T beats; a front op is refused (bind `mac`) |
 
-`mac`'s pattern, `lane_fold`, is a fused nest (section 4): a multiply and a reduce joined by a local value, the fold indexed by the spatial variable:
+`mac`'s pattern, `lane_fold`, is a fused nest (section 4): a multiply and a reduce joined by a local value:
 
 <!-- snippet: snax_forge/brm/library/mac.json -->
 ```json
@@ -220,12 +199,12 @@ The library's BRMs:
 
 ### Two notations
 
-- **`stream`**, which every library BRM uses: the nest is empty; lanes, rate and dtype are the interface's and the bound memlet gives the element order. `bind` checks no order, LOWER takes the streamer's values from the memlet, the design step the spatial bounds from its ranges.
-- **`affine`**: the operand's `shape`, an `offset` and `loops`, outermost first, each a `bound`, one stride per dimension and a `spatial` flag; a step's element is `offset + sum(i_l * strides_l)`. Temporal loops first (a step is a beat), spatial loops last, multiplying to the port's lanes; a temporal stride of 0 repeats a beat. `bind` checks that the memlets give this order.
+- **`stream`**, which every library BRM uses: the nest is empty; lanes, rate and dtype are the interface's and the bound memlet gives the element order.
+- **`affine`**: the operand's `shape`, an `offset` and `loops`, outermost first, each a `bound`, one stride per dimension and a `spatial` flag; temporal loops first, spatial loops last, multiplying to the port's lanes. `bind` checks that the memlets give this order.
 
 ## 4. Recipe
 
-SNAX-SANDBOX's ordered list of transforms (D72): a JSON file in a category folder of `recipes/` (`elementwise/`, `reduce/`, `dot/`, `matvec/`, `mvt/`, and `custom/` for what the editor saves). A recipe is found by its name (`find_recipe`), so names are unique across the folders. `Recipe.load(path)` reads it; every field is written (`dtypes` and `types` only when given), an unknown key is an error.
+SNAX-SANDBOX's ordered list of transforms (D72): a JSON file in a category folder of `recipes/` (`custom/` for what the editor saves), found by its name (`find_recipe`), so names are unique across the folders. `Recipe.load(path)` reads it; an unknown key is an error.
 
 | Field | Holds |
 |---|---|
@@ -239,7 +218,7 @@ SNAX-SANDBOX's ordered list of transforms (D72): a JSON file in a category folde
 | `dtypes` | optional, container or type parameter → NumPy integer dtype in place of the kernel's, on top of `types` (D113): applied before DaCe builds the SDFG, the inputs cast to it (`vecadd_v1_1`: A, B, C and OP_TYPE `int32`); `--set dtypes.C=int16` |
 | `steps` | in order: `transform` (a registered name) and its `params`; an int param takes an int or an expression over the recipe params (`"factor": "W"`) |
 
-Running a recipe binds the symbols (step 0), applies the steps and checks each against the reference executor on the same seeded inputs, writing `<i>_<transform>.snaxdfg` and `recipe.json`. vecadd's, `recipes/elementwise/vecadd_v1.json`:
+Running a recipe binds the symbols (step 0), applies the steps and checks each against the reference executor on the same seeded inputs, writing `<i>_<transform>.snaxdfg` and `recipe.json`:
 
 <!-- snippet: recipes/elementwise/vecadd_v1.json -->
 ```json
@@ -247,12 +226,6 @@ Running a recipe binds the symbols (step 0), applies the steps and checks each a
  "symbols": {"N": "N"},
  "steps": [
   {"transform": "split_map", "params": {"map": "add_map", "factor": "W"}},
-```
-
-```mermaid
-flowchart TD
-  I["0 input: add_map over 0:N"] --> S["1 split_map W: add_map (temporal) around add_map_s (spatial, 0:W)"]
-  S --> B["2 bind: the tasklet in add_map_s becomes acc, simd / chisel_tiled_spatial"]
 ```
 
 ### Transforms
@@ -285,18 +258,14 @@ Each has an inverse, and each refuses with the fix named. The loop names follow 
 
 What `bind` checks:
 
-- Every map around the spatial map is `temporal` (an untagged one names `tag_map`; `tile` is not lowered yet). The lanes param comes from the spatial bound, and the dimension over the spatial variable becomes the lanes' range.
-- The tasklet's code on the port names equals the BRM's `function.code` (section 3). A folding output without the spatial variable becomes one lane (D102). An input without it is a broadcast (D186): one lane a beat, given to every lane, taken only on a lane-wise datapath (`SimdLanes`, `Mac`); elsewhere it is refused, naming `mac` and `simd`. A seed (D163 · D187) has its output's lanes.
-- A carried fold (D192) binds only on a BRM with a `seed` port, at `seed` 1; its seed and output may skip loops outside the ones they use.
-- A `Mac`'s `rows` R (D191) takes the innermost firing loops its output uses whose counts multiply to R as the bank's rows, then folds the loops its output skips outside them; other loops refuse it, naming the split. A seeded bank's seed takes the same rows (D194). An input that uses none of the rows' loops is held (D190).
-- A fused nest binds as one: as a fold (`lane_fold`) or, when the second tasklet is plain, as one code with the first's expression in place of the local value (axpy's `y + alpha * x`).
-- A tasklet that needs a fused map or a split reduction is refused with the fix ("fuse_map first", "split_reduce first", D150).
+- Every map around the spatial map is `temporal`; the lanes param comes from the spatial bound.
+- The tasklet's code equals the BRM's `function.code` (section 3). A folding output without the spatial variable is one lane (D102); an input without it is a broadcast (D186), on a lane-wise datapath only (`SimdLanes`, `Mac`).
+- A carried fold (D192) needs a `seed` port at `seed` 1. A `Mac`'s `rows` R (D191) takes the innermost firing loops its output uses whose counts multiply to R; an input using none of them is held (D190).
+- A fused nest binds as one fold (`lane_fold`) or one code; a tasklet that needs `fuse_map` or `split_reduce` first is refused with that fix (D150).
 
 ### The library's recipes
 
-- `vecadd_v1_4` takes vecadd's last step back to the first.
-- dot binds the multiply to `simd` and the sum to `accumulate`'s `chisel_adder_tree`, whose `out` is one lane every `T = N / W` firings. `dot_v1` has two accelerators, `vmul` and `vsum`, run one after the other (D157, D158); `dot_v1_1` encapsulates them as `dot`, each group's task setting the other's movers idle (section 8). dot 2 and 3 link `tmp0` at depth 1 and 0; dot 4–6 `split_reduce` the sum, fuse the nests and bind `mac`, dot 5 and 6 with `chisel_serial`. `matvec_1`–`matvec_v6` do the same on each row.
-- **Recipes of recipes** (D166): `matvec_v1_1`–`matvec_v6_1` apply `dot/dot_<k>` on each row; `mvt_v1_1`, `mvt_v1_2_1` and `mvt_v2_1` apply a matvec recipe on each half, the `vadd` and the sharing by hand.
+dot binds the multiply to `simd` and the sum to `accumulate`: `dot_v1` as two accelerators (D157, D158), `dot_v1_1` encapsulated, dot 2 and 3 linked at depth 1 and 0, dot 4–6 on `mac` (5 and 6 with `chisel_serial`); `matvec_1`–`matvec_v6` the same per row. Recipes of recipes (D166): `matvec_v1_1`–`matvec_v6_1` apply `dot/dot_<k>` per row, `mvt_v1_1`, `mvt_v1_2_1` and `mvt_v2_1` a matvec recipe per half.
 
 ### The editor's session
 
@@ -308,15 +277,14 @@ What `bind` checks:
 | `session.json` | `cursor` (the step shown; undo and redo move it) and `platform` |
 | `export/<k>_<transform>.snaxdfg` | a step's graph, written by Export |
 
-- **Params**: a session from a kernel starts from its symbols, each a param (`edit-dfg --kernel K --set N=…`). Every factor and depth the editor writes names a param: the form defaults to `W`, `W_2`, … and `D`, `D_2`, …, and a number given instead becomes a new param at that value (`fresh_param`). `POST /api/apply`'s `new_params` (`{"W_mul": 8}`) adds them before the step. `POST /api/params` with `{"rename": {"from": "W_x1", "to": "W"}}` renames one in the params, the symbols and every step (inside `apply_recipe`'s `params` too) and replays (`params.rename` refuses a taken name); with `{"drop": "K"}` drops one that no step, symbol or other param names (`params.drop` names what does). The left column lists an `apply_recipe` step whose `params` name the session's params as an entry of its own, so they are not listed unused.
-- **Renames**: when its map is bound, an editor-named factor is renamed to `W_<instance>` through the session (dot 1's `W_mul` and `W_sum`), unless several units share it (dot 2–6's `W`). `bind`'s default instance is `acc_N`, N the bind's order in the session. Where a bank fits (`bank_hint`: the output's index changes along loops inside one it skips), the bind list tries a BRM with a `rows` param at those loops' rows, its entry's `bank`, and the page shows a "bank rows" box, ticked, whose value is a param of its own (`R`, at the hint), sent as `params.rows`; a name there must be a param, as `apply_recipe`'s.
-- **Replay**: a step applied before the last is refused (`session.drop`) until the later ones are dropped. A param change (`POST /api/params`) replays up to the cursor; the later steps are replayed when the cursor reaches them.
-- **Checks**: every apply and param change runs Save's design checks; the step view's `problems` and `notes` each are `{code, where, message, fix, before_save}`. `graph.unbound` while building is a note, but Save refuses it.
-- **Save** writes steps 1 to the cursor as `recipes/custom/<name>.json`, with only the params its steps and symbols use, and the steps to `out/sandbox/<name>/`. It never overwrites (`save.name`) and refuses a graph-stage problem (`save.graph`), any other design problem unless forced (`save.design`).
+- **Params**: a session starts from its kernel's symbols; every factor and depth the editor writes names a param (`W`, `W_2`, … and `D`, `D_2`, …; `fresh_param`). `POST /api/apply` takes `new_params`; `POST /api/params` takes `rename` (`params.rename`) or `drop` (`params.drop`) and replays. A bound map's factor is renamed `W_<instance>` unless shared; `bind`'s default instance is `acc_N`.
+- **Replay**: a step applied before the last is refused (`session.drop`); a param change replays up to the cursor.
+- **Checks**: every apply and param change runs Save's design checks; `problems` and `notes` each are `{code, where, message, fix, before_save}`.
+- **Save** writes steps 1 to the cursor as `recipes/custom/<name>.json` and the steps to `out/sandbox/<name>/`; it never overwrites (`save.name`) and refuses a graph-stage problem (`save.graph`), any other design problem unless forced (`save.design`).
 
 ### The viewer's API
 
-Python builds every box, port, edge, text and number (`viz/dfg/api.py`, `viz/dfg/drawing.py`); the page measures the boxes, lays them out and draws them (D55, D185).
+Python builds every box, port, edge, text and number (`viz/dfg/api.py`, `viz/dfg/drawing.py`); the page measures, lays out and draws them (D55, D185).
 
 | Route | Gives |
 |---|---|
@@ -342,17 +310,13 @@ The `drawing` is `{nodes, edges, outlines, tasks}`; positions are the page's, ne
 | edge `via` | a fork's other reader's edge (D189): `{node, port}` of the first reader, whose hops to the container a click on it lights too |
 | outline | `id` (`grp:`, `acc:`, `block:`), `kind`, `text`, `sel`, `parent`; a group that took an open block's boxes also `block` (the first), its text naming the others (`group bicg_types · from matvec, matvec_1`) |
 
-- The URL hash holds the whole view: `step=`, `sel=`, `cmp=`, `tech=`, `open=` (the blocks opened), `fold=` (the loop chains folded), `focus=1`, `zoom=` and `zoomc=` (each panel's zoom and place); `?tech=` names the technology (`char.tech` for an unknown one).
-- **Bindings** is a tree, `{kind: accelerator | group, name, children}` down to `{kind: entry, index}` into `entries`: one entry per bound unit with its split's params, a split not bound yet, a link whose depth is a param. A param several entries name says `shared with …`.
-- **Blocks** (D166): a closed block is drawn as one box inside its firing loops, its ports `in:A`, `out:x`, each edge's memlet the slice one firing takes (`A[m_t, 0:N]`).
-- **One box per configuration**: every bound group is an outline holding its units, links, slicers and packers and the loops that drive only it, so the box is what the program configures and starts once; nests driving one group with the same beats are one loop chain, the others' maps its chips (a link whose loops match, a fork's readers on its first's, D189), and a forked read is one edge splitting at its units. An open block all of whose boxes land in groups is not drawn; one group spanning folded blocks is drawn around them.
-- **Packers and slicers** (D174, D180): a packed output's `FifoPacker` and a sliced input's `FifoSlicer` are boxes of their own on the unit's port, inside its group's outline; they are the view's, not nodes of the graph, and appear from `bind` on, where `design/streamers.py`'s `packed` and `sliced` place them.
-- **Partners**: a selected map's partners for `fuse_map`, `fuse_seed` and `interchange_map`, from the transforms' own sites, a fuse's marker on the transient's box, and a near partner with its refusal and fix.
-- **Preview**: `lift`'s and `apply_recipe`'s choices (`preview` on the field) each give what they would change: a kernel its region's node ids (`nodes`) and every region of it (`every`), a recipe the block's node ids and name, with the outer maps its `fuse_map` takes along (`nodes`), and what it makes (`hint`, `8 steps → mul, sum, link`). The page lists them as rows and lights the boxes of the choice under the pointer (else the one ticked), the edges between them and, dimmer, the edges from or to them.
+- The URL hash holds the whole view: `step=`, `sel=`, `cmp=`, `tech=`, `open=`, `fold=`, `focus=1`, `zoom=` and `zoomc=`.
+- **Bindings** is a tree, `{kind: accelerator | group, name, children}` down to `{kind: entry, index}` into `entries`.
+- **One box per configuration**: every bound group is an outline holding its units, links, slicers and packers (D174, D180) and the loops that drive only it; a closed block (D166) is one box inside its firing loops.
 
 ## 5. Platform
 
-The SNAX cluster around the accelerators (D84): a file in `platforms/` that never names a recipe (`snax_forge.json`, read from snax-forge's base cluster; `small16.json`, with no source hjson). `Platform.load` reads it; every field is written, a missing key takes its default (`l2` missing: no L2), and unknown keys and wrong types are all reported at once (section 6).
+The SNAX cluster around the accelerators (D84): a file in `platforms/` that never names a recipe (`snax_forge.json`, `small16.json`). `Platform.load` reads it; a missing key takes its default (`l2` missing: no L2), and unknown keys and wrong types are all reported at once (section 6).
 
 | Field | Holds |
 |---|---|
@@ -393,20 +357,17 @@ The SNAX cluster around the accelerators (D84): a file in `platforms/` that neve
 | `job_width` | bits of JOBS, every JOB_BEATS and the control units' counters | 32 | 1 to 32 |
 | `busy_counter_width` | bits of BUSY_COUNTER, which saturates at 2^w − 1; null follows `job_width` | null | 1 to 32 or null |
 
-Neither memory has an element type: each container's dtype decides how many elements a word holds (D142).
-
 ### The streamer shell
 
 One streamer per port of every accelerated instance, `<instance>_<port>`, but a port on a link (D12).
 
-- **From the port**: `write`, `n_ports` (its lanes) and, unless an entry gives them, `spatial_bounds` (fastest first: an `affine` nest's spatial loops, a `stream` port's memlet ranges).
-- **From the graph**: `temporal_dims`, the firing loops the port's memlet runs over (at least 1, the most over an instance's nodes), recorded per streamer in the design point.
-- **From the platform**: `default.fifo_depth` (≥ 1); an entry named after a streamer overrides it and `spatial_bounds` for that streamer, and may give `num_ch` (never in `default`), the TCDM channels it uses, else W / num_slc, or 1 for an output packed d_out = num_slc / W results to a word or an input sliced d_in = num_slc / W pops from one (D142 · D174 · D180).
+- **From the port**: `write`, `n_ports` (its lanes) and, unless an entry gives them, `spatial_bounds` (fastest first).
+- **From the graph**: `temporal_dims`, the firing loops the port's memlet runs over (at least 1).
+- **From the platform**: `default.fifo_depth` (≥ 1); an entry named after a streamer overrides it and `spatial_bounds`, and may give `num_ch` (never in `default`), else W / num_slc, or 1 for an output packed d_out = num_slc / W results to a word or an input sliced d_in = num_slc / W pops from one (D142 · D174 · D180).
 
 ### Working copies and cluster files
 
-- `pixi run design GRAPH --platform P --set platform.PATH=VALUE` sets a field by its path (`l1.n_banks`, `streamers.acc_out.fifo_depth`; the value as JSON, else text) and writes `out/design/<name>/platform.json`; `pixi run design save SRC NAME` keeps it as `platforms/NAME.json`.
-- `pixi run design from-hjson HJSON NAME` (D131, `design/hjson_platform.py`) writes an original platform: L1 and L2 from the hjson (the reader's docstring lists the keys), `streamers.default` from the one accelerator's streamer template, whose movers must agree, the rest small16's. `snax_forge.json` is read so from `platforms/snax_forge_cluster.hjson`, which has one core holding the accelerator slot and the DMA (D170):
+`pixi run design GRAPH --platform P --set platform.PATH=VALUE` writes `out/design/<name>/platform.json`; `pixi run design save SRC NAME` keeps it as `platforms/NAME.json`; `pixi run design from-hjson HJSON NAME` (D131) writes an original platform from a cluster hjson, as `snax_forge.json` from `platforms/snax_forge_cluster.hjson` (D170):
 
 <!-- snippet: platforms/snax_forge.json -->
 ```json
@@ -416,7 +377,7 @@ One streamer per port of every accelerated instance, `<instance>_<port>`, but a 
 
 ## 6. Design checks
 
-Before the design step writes anything it runs every registered check (`register_check(code, stage, fn)`) on the pair of a bound graph and a platform, and reports every problem as `[code] where: why` with a `fix:` line where one exists (D85). `pixi run design check GRAPH --platform P` runs them only.
+Before the design step writes anything it runs every registered check (`register_check(code, stage, fn)`) on a bound graph and a platform, and reports every problem as `[code] where: why` with a `fix:` line where one exists (D85). `pixi run design check GRAPH --platform P` runs them only.
 
 ```mermaid
 flowchart TD
@@ -461,15 +422,12 @@ The `platform` and `graph` stages run independently, `connect` when both passed,
 | `point.keys` | a design point with unknown or missing keys |
 | `point.streamers` | a design point whose `streamers` are not the platform's shell for its graph |
 
-The three checks that need the most explaining:
-
-- **`connect.pack`**: a word holds num_slc elements of the container's dtype. A port is wired: its fastest spatial bound must be a multiple of num_slc, its fastest spatial loop must step 1 element (not a column), and every other step and the start must be multiples of num_slc (the fix pads the leading dimension). Row strides are over the padded shape: a 3 × 7 int32 matrix split by 4 has row stride 8. Or, when W divides num_slc, an input is sliced (d_in = num_slc / W) and an output packed (d_out = num_slc / W): its pops or pushes must be contiguous (innermost stride W · b / 8 bytes), its start and every outer stride whole words (a stride of 0, an input read again, passes), and with an outer loop d_in or d_out must divide the innermost count, since only the run's last word may be short (a 4 × 5 int32 output at W = 1 is refused: pad the row to 6). A W that neither divides nor is a multiple of num_slc is refused on either side, the fix listing the sliced or packed W and the wired ones (vecadd at i8, W = 3). At num_slc = 1 every port passes.
-- **`connect.pad`**: the hardware masks nothing, so a producer's pad lanes reach the fold. dot 1 at W_mul = W_sum = 10 passes (0 × 0 = 0, add's identity); at W_mul = 8, W_sum = 10 the producer never writes the pad words and is refused (open item 106). The fix: a size that W divides, or a factor that divides n.
-- **`connect.xbar_inputs`**: the inputs as the generated cluster file gives them to SNAX-GVSoC: every streamer's num_ch, a shared set's movers' channels once (D169), one per core and one for AXI. vecmul at W = 64: `acc: 194 TCDM crossbar inputs, the platform takes at most 128 (192 streamer channels, 2 for the core and AXI; …)`; W = 32 has 98, which passes with a note. The fix: fewer lanes, or `share_ports`.
+- **`connect.pack`**: a wired port's fastest spatial bound is a multiple of num_slc, its fastest spatial loop steps 1 element, and every other step and the start are multiples of num_slc. When W divides num_slc, an input is sliced and an output packed: contiguous, its start and outer strides whole words. At num_slc = 1 every port passes.
+- **`connect.xbar_inputs`** counts every streamer's num_ch, a shared set's movers' channels once (D169), one per core and one for AXI.
 
 ### Notes
 
-A note is registered (`register_note(code, fn)`) and runs once the checks passed: the design step prints `note [code] where: why` with its `fix:` and still exits 0, and `design.md` lists it first under Notes. The bank notes compare the streamers of one group only, since an accelerator's groups run one after the other: `bank_bound` (section 13), and `design.md`'s address notes (two movers whose containers start in the same banks or lie a whole number of bank rows apart).
+A note is registered (`register_note(code, fn)`) and runs once the checks passed: the design step prints `note [code] where: why` with its `fix:` and still exits 0, and `design.md` lists it under Notes.
 
 | Code | Noted when |
 |---|---|
@@ -490,10 +448,9 @@ A note is registered (`register_note(code, fn)`) and runs once the checks passed
 | `layout` | shape and strides, base 0 | `contiguous`: row-major over the padded shape (a tail pads to a multiple of W, D144), each element its itemsize |
 | `placement` | each L1 base (an L2 layout stays at 0: the program's link places its array) | `contiguous`: in graph order from L1's first byte, around the pins; a container in both memories on a wide beat, padded to whole beats (D105), the others on a word |
 
-- `padded_rows` (`--set memory.passes.layout=padded_rows`, never in a recipe): as `contiguous`, but a container of two or more dimensions gets its last dimension's pitch rounded up to an odd number of words, in every memory, the pad words zero, so lanes reading down a column start in different banks (rowsum 2's A: 8 × 65 words).
-- `--set memory.<container>.l1.base=N` pins an L1 base; `--set memory.passes.<pass>=NAME` picks a pass.
-- Passes read a `MemoryContext`: the graph, the platform, the shapes, the memory ranges and each port's element-index stream (`accesses`).
-- A container read only through a slot lives in L2 (in L1 without an L2): the core reads it, never a streamer. A layout the DMA moves keeps its last beat to itself.
+- `padded_rows` (`--set memory.passes.layout=padded_rows`): as `contiguous`, but the last dimension's pitch of a container of two or more dimensions is rounded up to an odd number of words.
+- `--set memory.<container>.l1.base=N` pins an L1 base; `--set memory.passes.<pass>=NAME` picks a pass. Passes read a `MemoryContext` (graph, platform, shapes, memory ranges, `accesses`).
+- A container read only through a slot lives in L2 (in L1 without an L2).
 - The design step writes `out/design/<name>/memory.json` (`passes`, `changes`, `layouts`), which `--memory` continues from.
 
 ### Design point
@@ -510,6 +467,7 @@ A note is registered (`register_note(code, fn)`) and runs once the checks passed
 | `memory` | the plan: `passes`, `changes`, `layouts` (container → memory → layout) |
 | `schedule` | how LOWER orders the accelerators (D179, section 8): `serial` (the default; a file without the field), `pipeline`, `pipeline_compute` or `sequential` (D183), from `--set design.schedule=` |
 
+
 ## 8. Task list
 
 SNAX-LOWER's ordered list of tasks (D64): which component runs which task with which values, where each is configured and started, and what it waits for. It is derived from a design point (`lower/derive.py`, `pixi run lower tasks DP`) or written by hand; `lower/c.py` turns it into the program (section 9).
@@ -522,11 +480,7 @@ A task list is `name` and `steps`, each with an `op`:
 | `start` | `tasks` | the waits these tasks need, then their start writes in list order |
 | `sync` | `task`, `mode` | one wait on the task's component |
 
-- `after`: earlier tasks this one needs finished (data it reads, a buffer it overwrites); default `[]`.
-- `wait_mode`: `poll` (default) or `signal`, used whenever lowering waits for this task.
-- Only the loops a task uses are given; the program pads the rest with bound 1 and stride 0. Every field is written back, and an unknown key is an error.
-
-`type` says how `values` are read:
+`after` lists earlier tasks this one needs finished (default `[]`); `wait_mode` is `poll` (default) or `signal`. Only the loops a task uses are given; the program pads the rest with bound 1 and stride 0. `type` says how `values` are read:
 
 | `type` | `values` |
 |---|---|
@@ -534,52 +488,31 @@ A task list is `name` and `steps`, each with an `op`:
 | `dma` | `direction` (`l2_to_l1`, `l1_to_l2`, `l1_to_l1`); `src` and `dst`, each with bounds and strides, innermost first, the same bounds on both, an L1 side with `base`, an L2 side with `symbol` (its container's `data.h` array); `size`, optional, a burst's bytes (D182). Without it each step moves a wide beat, one `snrt_dma_start_1d` or `_2d`; with it each step of the innermost loop is one burst of `size` bytes, that loop one `snrt_dma_start_2d`'s repeat and every outer loop a C `for` |
 | `accel` | `n`, then each named rate (`T`), then each slot read from a scalar as `{"from": <container>}` (axpy's `k1: {"from": "alpha"}`), written to the slot's CSR before START |
 
-- **A streamer's strides**: a channel moves one bank word of num_slc elements. The fastest spatial loop runs S_0 / num_slc channels, its stride num_slc × the element stride × the itemsize; every other stride is the element stride × the itemsize; `base` is the layout's base plus the offset's bytes. Spatial bounds are design-time, in elements, from the design point's streamers.
-- **An idle mover** (another group's in the same encapsulated set, D148): every temporal bound 0, so it never starts, and every temporal stride a bank word, never 0 (a reader whose first loop has stride 0 runs that loop once whatever its bound, as snax_cluster's `Reader.scala` does).
+- **A streamer's strides**: the fastest spatial loop runs S_0 / num_slc channels, its stride num_slc × the element stride × the itemsize; every other stride is the element stride × the itemsize; `base` is the layout's base plus the offset's bytes.
+- **An idle mover** (another group's in the same encapsulated set, D148): every temporal bound 0 and every temporal stride a bank word, never 0.
 - **A shared set's movers** (D169) keep a task per port; the program writes each mover once per start.
-- **Names** (D75): streamer `<instance>_<port>` (`acc_a`), task `<node>_<component>` (`add_acc`), DMA task `load_<container>`, `store_<container>` or `transpose_<dst>` (a `transpose` node's copy), `_<k>` added for tile `k`.
+- **Names** (D75): streamer `<instance>_<port>`, task `<node>_<component>`, DMA task `load_<container>`, `store_<container>` or `transpose_<dst>`, `_<k>` added for tile `k`.
 
 ### Checks
 
 - When a list is made: task names are unique; `after`, `start` and `sync` name tasks configured earlier; a component has at most one configured task not yet started; a task starts once, after its `after` tasks; every configured task is started.
-- Against the design point (`check_values`): the component exists with the task's type, the values have exactly the type's keys (a DMA's `size` optional), a streamer's loops fit it, a DMA's direction is valid, its sides have the same bounds (an `l1_to_l1` both a `base`), its `size` divides the beat and is whole elements of both sides' containers, every bound is at least 1 (an idle mover's all 0).
+- Against the design point (`check_values`): the component exists with the task's type, the values have exactly the type's keys, a streamer's loops fit it, a DMA's sides have the same bounds and its `size` divides the beat, every bound is at least 1 (an idle mover's all 0).
 - JOBS and every JOB_BEATS fit `acc_csr.job_width`, and a group's head firings (JOBS × every T) are below 2^32.
 
 ### Waits
 
-`lower/waits.py`'s `placed_waits`: before a `start`, one wait per component on its latest task, for every `after` task not yet covered, leaving out a wait another covers. A wait on a writer streamer also covers its unit and the readers started with it; an idle mover's task needs no wait.
+`lower/waits.py`'s `placed_waits`: before a `start`, one wait per component on its latest task, for every `after` task not yet covered. A wait on a writer streamer also covers its unit and the readers started with it; an idle mover's task needs no wait.
 
 ### Derived
 
-`lower/derive.py`, per accelerated node in execution order:
+`lower/derive.py`, per accelerated node in execution order: `load_<C>` for each input not yet in L1 (or `transpose_<C>`), a task per streamer, the accelerator task (`n` and each named rate, D102), one `start` of them all, `store_<C>` for each output written for the last time; at the end one `sync` per non-transient output.
 
-1. `load_<C>` for each input not yet in L1, or `transpose_<C>` for one a `transpose` node makes.
-2. A task per streamer, then the accelerator task (`n` the firings, each named rate from `named_rates`, D102).
-3. One `start` of them all.
-4. `store_<C>` for each output written for the last time; at the end one `sync` per non-transient output.
-
-```mermaid
-flowchart TD
-  LA[load_A] --> S["start: add_acc_a, add_acc_b, add_acc_out, add_acc"]
-  LB[load_B] --> S
-  S --> ST["store_C (after add_acc_out)"] --> SY[sync store_C]
-```
-
-- **Encapsulated** (several groups on one streamer set): each task also configures the other groups' movers idle, and its `start` launches every mover. `dot_v1_1`'s `mult_vmul` starts `vmul_a`, `vmul_b`, `vmul_out`, with `vsum_a`, `vsum_out` idle.
-- **A linked group** is one task at its first unit's node, `<node>_<group>`, on the group as its component: streamers only on the ports on no link (a link's container is never loaded or stored), and one accelerator task whose `values` are each unit's, by unit. Dot 6's `mult_dot`: `{"mac": {"n": 128, "T": 128}, "sum": {"n": 1, "T": 1}}`. The program writes the group's JOBS = n_u / ∏ T_v over its first unit u and its folds v, then each fold's JOB_BEATS, each bank's ROWS, its `rows` (section 10, D191), and each carried unit's CARRY. A held input's streamer skips the bank's row loops (D190). A carried unit's values hold `carry`, its jobs before the first revisit (its jobs over the counts of the loops outside its output's), its seed and output streamers run over those loops, and LOWER refuses a CARRY under the seed reader's and writer's queues and slicer or packer, ((depth + 1) · d_in + (depth + 1) · d_out + L + 2), or a revisiting loop between two its output uses (D192). A group of several chains (D189) writes a `JOBS_<SINK>` per chain, n_head / ∏ T over the chain's folds; a fork's ports but the first have no streamer, and its heads must fire alike (`ValueError` otherwise).
-- **Chains through L1** (D105): `after` holds data dependences only, so two groups chain with one wait, on the first's writer.
-- **In place**: a writer never waits for a reader it starts with. That is an in-place update, allowed only when the reader is a port of its own unit visiting the same addresses in the same order (axpy's `y`, a fold's seed), and refused by name otherwise.
-- **A packed output** (D174): its writer's innermost loop of n pushes at stride s = W · b / 8 bytes becomes $(\lceil n / d_{out} \rceil, d_{out}\thinspace s)$, one write per 8-byte word, its spatial bounds `[1]`, the outer loops and the base unchanged. matvec at i8, M = 10 int32 outputs at W = 1: (10, 4 B) becomes (5, 8 B). A sliced input's reader (D180) the same with d_in: vecadd_v1_1 at W = 1, N = 64: (64, 4 B) becomes (32, 8 B).
-- **A copy** (D182): a `transpose` node is the DMA task `transpose_<dst>`, `l1_to_l1`, where a load of its destination would be (with the loads of the first node that reads it), `after` what put the source in L1 (its load, made first if none did). Its loops are the destination's dimensions, the last innermost, each moving the source along the dimension `perm` maps there, one burst of an element a step (`size`); the strides come from both L1 layouts, so `padded_rows` needs nothing of its own. The reader's `after` holds it, so the DMA wait (D135) comes before the reader's start. Rank 2 only; another rank, or `by` other than `dma`, is refused by name. A 64 × 64 int8 A, contiguous: `size` 1, `src` strides [64, 1], `dst` [1, 64], so `for k: snrt_dma_start_2d(A_T + 64·k, A + k, 1, 1, 64, 64)`; at int64 `size` 8 and strides of 512 (520 under `padded_rows`).
-- **In series** (D158, the `serial` schedule): before each accelerator's `start`, one `sync` on the previous accelerator's task, its own configures placed before it, so it is set up while the previous one runs. None when an `after` already holds that task, and none between the groups of one encapsulated accelerator. dot_v7: `sum_sum`'s configures, `sync mult_mul`, its start.
-- **Sequential** (D183, `sequential`): a `sync` right after every start, on its accelerator task, else its DMA task, so each step, configures included, begins after the previous one has ended; a later `sync` on a task already synced is left out. mvt_v4_1: each load and its sync, conf half 1, start, sync, `store_x1` and its sync, `transpose_A_T` and its sync, the loads of half 2 each with its sync, conf half 2, start, sync, `store_x2` and its sync.
-- **Pipelined** (D179): `pipeline` adds no serial sync, so a start waits only for its tasks' `after` and its components' previous tasks. Each store (its configure and start) moves down past the later blocks of other accelerators (a block: the loads, configures and start of one accelerator task), stopping before a block of its own accelerator, else going to before the final syncs. `pipeline_compute` also gathers consecutive blocks whose tasks' `after` are DMA tasks only and that share no component (the first may open with stores): their loads, then their configures, then their starts back to back. A shared form (mvt_v3) gives one list under all three schedules. mvt_v3_1, its halves `mvt` and `mvt_1`:
-
-| Schedule | Order |
-|---|---|
-| `serial` | loads of half 1, conf `mvt`, start, `store_x1`, loads of half 2, conf `mvt_1`, `sync tmp0_mult_mvt`, start, `store_x2`, syncs |
-| `pipeline` | loads of half 1, conf `mvt`, start, loads of half 2, conf `mvt_1`, start, `store_x1`, `store_x2`, syncs |
-| `pipeline_compute` | loads of both halves, conf `mvt`, conf `mvt_1`, start `mvt`, start `mvt_1`, `store_x1`, `store_x2`, syncs |
+- **Encapsulated**: each task also configures the other groups' movers idle, and its `start` launches every mover.
+- **A linked group** is one task `<node>_<group>`: streamers only on the ports on no link, and one accelerator task whose `values` are each unit's, by unit. The program writes JOBS = n_u / ∏ T_v over its first unit u and its folds v, each fold's JOB_BEATS, each bank's ROWS (D191), each carried unit's CARRY (D192), and a `JOBS_<SINK>` per chain (D189).
+- **In place**: a writer never waits for a reader it starts with, allowed only when the reader is a port of its own unit visiting the same addresses in the same order.
+- **A packed output** (D174): its writer's innermost loop of n pushes at stride s = W · b / 8 bytes becomes $(\lceil n / d_{out} \rceil, d_{out}\thinspace s)$; a sliced input's reader (D180) the same with d_in.
+- **A copy** (D182): a `transpose` node is the DMA task `transpose_<dst>`, `l1_to_l1`, one burst of an element a step (`size`). Rank 2 only.
+- **Schedules**: `serial` (D158) puts one `sync` on the previous accelerator's task before each accelerator's `start`; `sequential` (D183) a `sync` after every start; `pipeline` (D179) no serial sync, each store moving down past other accelerators' blocks; `pipeline_compute` also gathers consecutive blocks that share no component and wait only on DMA tasks.
 
 vecadd's design point on `platforms/snax_forge.json` gives `tests/lower/fixtures/vecadd_v1_tasks.json` exactly; its end:
 
@@ -614,7 +547,7 @@ vecadd's design point on `platforms/snax_forge.json` gives `tests/lower/fixtures
 
 ## 9. Generated hjson files
 
-What `pixi run gen-gvsoc DP [--out DIR]` writes per design point (D134, `gen/gvsoc.py`), by default to `out/gvsoc/<design>/`: what SNAX-GVSoC's `snax_hjson` target reads (`--param hjson=<dir>/<platform>.hjson`) and what snax-gvsoc's generic app (`sw/apps/forge/`) builds. One design point gives byte-identical files wherever written.
+What `pixi run gen-gvsoc DP [--out DIR]` writes per design point (D134, `gen/gvsoc.py`), by default to `out/gvsoc/<design>/`: what SNAX-GVSoC's `snax_hjson` target reads and what snax-gvsoc's generic app (`sw/apps/forge/`) builds. One design point gives byte-identical files wherever written.
 
 | File | Holds |
 |---|---|
@@ -627,43 +560,25 @@ What `pixi run gen-gvsoc DP [--out DIR]` writes per design point (D134, `gen/gvs
 | `obs_marks.json` | the quiet build's sections in order, each `{mark, kind, label}` (below) |
 | `manifest.json` | `design`, `design_point`, `symbols`, `cluster`, `files`, `program`, `trace`, `csrs`, `tasks` (below) |
 
-- Each hjson and C file starts with a `//` comment naming the design point; `accelerator.json` names it in its `design_point` key.
-- The accelerators come in the order the graph first uses them, their groups in graph order.
-- A set's streamer header is snax_cluster's text byte for byte, its timestamp line naming the design point.
-- A shared set (D169) gives each mover its widest user's channels and spatial bounds, the most temporal dims and the deepest FIFO, and `configurable_channel` where a narrower user is masked.
-- `<acc>_csr.h`: a one-group accelerator's names have no group (dot 1's `VMUL_RW_START` to `VMUL_RO_BUSY_COUNTER`), an encapsulated one's do (`DOT_RW_VMUL_START`), a shared one's end with `<ACC>_RW_PORT_MUX_SEL`.
+The accelerators come in the order the graph first uses them, their groups in graph order. A shared set (D169) gives each mover its widest user's channels and spatial bounds, the most temporal dims and the deepest FIFO.
+
+`<acc>_csr.h` names every CSR by section 10's name: a one-group accelerator's without the group, an encapsulated one's with it, a shared one's ending with `<ACC>_RW_PORT_MUX_SEL`.
 
 ### The slot
 
-The source's one slot, on core 0, renamed `<accelerator_slot>_<design>` (the tag, D131; not an identifier is `gen.tag`):
-
-- **Dropped**: its `bender_target` (the RTL comes from the bundle), `snax_streamer_cfg`, `snax_num_rw_csr`, `snax_num_ro_csr`.
-- **`snax_streamer_sets`**: one per accelerator in CSR order, `{name, snax_streamer_cfg: {$ref: "<tag>_streamer_<set>.hjson"}, snax_num_rw_csr, snax_num_ro_csr}`, also for one set (D157).
-- **`snax_tcdm_ports`**: the sum of the sets' movers' num_ch; the source's `sparse_interconnect_config` becomes one group per set.
-- **Added**: `snax_disable_csr_manager` `true` (D130), `snax_forge_rtl` `"rtl/files.f"` (in a bundle only), `snax_datapath_cfg` `{$ref: "accelerator.json"}`. snax_cluster's schema lists them, none with a default (open item 88).
+The source's one slot, on core 0, renamed `<accelerator_slot>_<design>` (the tag, D131): `bender_target`, `snax_streamer_cfg`, `snax_num_rw_csr` and `snax_num_ro_csr` dropped; `snax_streamer_sets` one per accelerator in CSR order (D157); `snax_tcdm_ports` the sum of the sets' movers' num_ch; added `snax_disable_csr_manager` `true` (D130), `snax_forge_rtl` `"rtl/files.f"` (in a bundle only) and `snax_datapath_cfg` `{$ref: "accelerator.json"}`.
 
 ### The CSRs
 
-Per accelerator its streamer's CSRs, then its own (section 10's order), packed from `0x3C0`; snax_cluster's `snax_csr_range_demux` sends each range to its set (D157). With $s_k$ and $c_k$ accelerator $k$'s streamer and own CSRs, of $K$:
+Per accelerator its streamer's CSRs, then its own (section 10's order), packed from `0x3C0` (D157). With $s_k$ and $c_k$ accelerator $k$'s streamer and own CSRs, of $K$:
 
 $$b_0 = 960, \qquad b_{k+1} = b_k + s_k + c_k$$
 
-streamer $k$ at $[b_k, b_k + s_k)$, its own at $[b_k + s_k, b_{k+1})$, and $b_K - 1 \le$ `0x5FD` (`gen.csrs`; snax_cluster routes `0x5FE` and `0x5FF` to its task queues). The shell sees its own CSRs from 0. dot 1:
-
-| Accelerator | Streamer | Own CSRs | In the shell |
-|---|---|---|---|
-| `vmul` | 960–977 | 978–981 | 0–3 |
-| `vsum` | 982–994 | 995–999 | 4–8 |
+streamer $k$ at $[b_k, b_k + s_k)$, its own at $[b_k + s_k, b_{k+1})$, and $b_K - 1 \le$ `0x5FD` (`gen.csrs`). The shell sees its own CSRs from 0.
 
 ### The program
 
-`main.c` (`lower/c.py`, D135):
-
-1. `main` reads `mcycle`, then runs one function per core, each step on its component's core, storing each accelerator task's counter after its wait (`forge_counter[]`).
-2. A shared set's task (D169) writes every mover once (its group's port, a masked mover's `ENABLED_CHANNEL` = (1 << num_ch) − 1, the rest idle), then `PORT_MUX_SEL` when it changes, after the wait on the set's previous task (`c.port_mux`), then `STREAMER_START`, then the group's `START`.
-3. `forge_check()` reads `mcycle` and prints `forge cycles: <n>`, then checks the outputs' valid elements against their goldens (`forge data:`), each task's counter against its beats (`forge counter <task>:`), and prints `forge errors:`; `main` returns the error count.
-
-The quiet build (`-DFORGE_QUIET`): every start waited on right after it, each section marked by the next value written to CSR `0x7c5` (core 0's `obs_o`), no `printf`. Its parts are `#ifdef FORGE_QUIET` blocks, so the default build compiles without them (`strip_quiet`). Each build waits on a start once: a wait the task list places right after the start is one wait for both builds, and one placed later, which the quiet build has already waited for, is an `#ifndef FORGE_QUIET` block. `obs_marks.json` lists the sections: `mark` 1 up (0 from reset to the first, at most 255, `c.obs`), `kind` (`dma_in`, `dma_out`, `dma_copy`, `streamer_config`, `acc_config`, `run`, `check`), `label` (`dma load_A`, `run dot`).
+`main.c` (`lower/c.py`, D135): `main` reads `mcycle`, runs one function per core and stores each accelerator task's counter after its wait (`forge_counter[]`); `forge_check()` prints `forge cycles: <n>`, checks the outputs against their goldens (`forge data:`) and each counter against its beats (`forge counter <task>:`), and prints `forge errors:`. The quiet build (`-DFORGE_QUIET`) waits on every start right after it and marks each section by a write to CSR `0x7c5`, listed in `obs_marks.json` (`mark` 1 up, at most 255; `kind`; `label`).
 
 ### The manifest
 
@@ -675,8 +590,7 @@ The quiet build (`-DFORGE_QUIET`): every start waited on right after it, each se
 
 ### Checks
 
-- The streamer file and `accelerator.json` have snax-forge's schemas (`gen/schema/`, JSON Schema 2020-12); the cluster file validates against snax_cluster's (snax-gvsoc's copy, `sw/docs/schema/snitch_cluster.schema.json`).
-- `gen.platform`: a platform value the cluster file cannot express (an L1 that is not whole KiB); `gen.source`: a platform without a source; `gen.slot`: a source with no slot or several. What the description refuses is section 10's.
+The streamer file and `accelerator.json` have snax-forge's schemas (`gen/schema/`, JSON Schema 2020-12); the cluster file validates against snax_cluster's. `gen.platform`, `gen.source` and `gen.slot` refuse a platform the cluster file cannot express, one without a source, and a source without exactly one slot.
 
 <!-- snippet: snax_forge/gen/schema/accelerator.schema.json -->
 ```json
@@ -685,7 +599,7 @@ The quiet build (`-DFORGE_QUIET`): every start waited on right after it, each se
 
 ## 10. Accelerator RTL spec
 
-`accelerator.json`, the one description of a design point's accelerators (D145, `gen/accelerator.py`). snax-forge writes it once (`pixi run gen-gvsoc`, section 9; also at the bundle's root, section 11) and checks it against the datapath catalogue (D130); SNAX-GVSoC (`snax_cfg.py`) and `Emit --spec` (`hw/chisel/`) read it, and snax_cluster only resolves the slot's `$ref` to it. Plain JSON, concrete values only. The examples are snax-gvsoc's fixtures, `forge/<design>/accelerator.json`.
+`accelerator.json`, the one description of a design point's accelerators (D145, `gen/accelerator.py`). snax-forge writes it once and checks it against the datapath catalogue (D130); SNAX-GVSoC (`snax_cfg.py`) and `Emit --spec` (`hw/chisel/`) read it, and snax_cluster only resolves the slot's `$ref` to it. Plain JSON, concrete values only.
 
 | Key | Holds |
 |---|---|
@@ -706,13 +620,13 @@ A unit:
 | `timing` | `latency`, `ii`, `span` (the cycles a unit reads one input in place; its throughput is one beat per max(ii, span)) |
 | `csrs` | its R/W CSRs |
 
-A CSR is `name`, `access` (`rw`, `ro`), `offset` from the shell's first CSR, `width` (START 1, JOBS, every JOB_BEATS and CARRY `acc_csr.job_width`, ROWS the bits of `rows`, STATUS 2, BUSY_COUNTER `busy_counter_width`), `pin` (a scalar's). snax-forge computes offsets and widths once; a reader checks them and never recomputes them.
+A CSR is `name`, `access` (`rw`, `ro`), `offset` from the shell's first CSR, `width` (START 1, JOBS, every JOB_BEATS and CARRY `acc_csr.job_width`, ROWS the bits of `rows`, STATUS 2, BUSY_COUNTER `busy_counter_width`), `pin` (a scalar's). A reader checks offsets and widths and never recomputes them.
 
-- **`movers`**, with `share_ports`: per mover in the streamer's order `{name (reader<k>, writer<k>), role, num_channel, masked, users}`, each user `{group, port, num_channel}`.
-- **`port_mux`**: `{groups (in PORT_MUX_SEL's order), csr}`; PORT_MUX_SEL is the accelerator's last CSR, R/W, as wide as a group's index.
-- **Derived, never stored**: each port's num_slc and num_ch (D142; 1 for a packed output or a sliced input, whose `d_out` or `d_in` a reader checks against num_slc / W, W being 1 for a broadcast), each link's kind and `to_input` (the fed port's place among its unit's inputs), every unit's firings.
+- **`movers`**, with `share_ports`: per mover `{name (reader<k>, writer<k>), role, num_channel, masked, users}`, each user `{group, port, num_channel}`.
+- **`port_mux`**: `{groups (in PORT_MUX_SEL's order), csr}`; PORT_MUX_SEL is the accelerator's last CSR, R/W.
+- **Derived, never stored**: each port's num_slc and num_ch (D142), each link's kind and `to_input`, every unit's firings.
 
-dot 4's file, one accelerator `dot` of one group `dot`, the MAC's lane partials wired into the tree:
+dot 4's file, snax-gvsoc's fixture:
 
 <!-- snippet: gvsoc/snax-gvsoc/forge/dot_v4/accelerator.json -->
 ```json
@@ -771,40 +685,33 @@ dot 4's file, one accelerator `dot` of one group `dot`, the MAC's lane partials 
 
 ### What reads it
 
-- **`pixi run gen-rtl DP`** (`gen/rtl.py`) writes the same bytes, checks every unit against the catalogue (`gen.catalogue`, `gen.params`, `gen.port_map`, `gen.timing`) and every buffer link against `LinkBuffer`, and runs `Emit --spec accelerator.json --out DIR/`, which lists what it wrote in `emitted.json`. Its java runs on a classpath sbt exports once per environment into `hw/chisel/target/emit-classpath-<hash>.txt`, again when `hw/chisel/src/main/` or `build.sbt` is newer.
-- **`Emit --block NAME --params JSON --out DIR`** builds one catalogue datapath alone, as an accelerator holds it, for snax-forge-experiments: the params as the catalogue lists them (`{"inType":"int64","outType":"int64","lanes":8,"op":"add","seed":false}`), where an `int` filled from `unit.params` may be left out and takes its min, as the fill gives a unit without it (a `Mac` without `rows` is built at rows 1, `emitted.json` listing `"rows": 1`); its ports as they are, into `DIR/sv/` with `emitted.json` (`block`, `params`, `top`, `modules`, `files`). It differs from the accelerator's module only where the accelerator ties a pin to a constant, which firtool folds in. `NAME` may also be a stream block the flow places and the catalogue does not list: `FifoPacker` on a packed output (D174), params `inLanes` and `words` (ints ≥ 1) and `laneType` (an int dtype), `inLanes` dividing the beat's `words` × 64 / width elements (`{"inLanes":1,"laneType":"int32","words":1}` gives `FifoPacker_n1_i32_w1`, d_out 2); `FifoSlicer` on a sliced input (D180), params `words`, `laneType` and `outLanes`, `outLanes` dividing the same (`{"words":1,"laneType":"int32","outLanes":1}` gives `FifoSlicer_w1_i32_n1`, d_in 2); each with the clock and asynchronous reset it has in the wrapper. `pixi run gen-block LIST.json` (`gen/block.py`) runs a list of them in one java call.
-- **The Chisel specs' fixtures** (`hw/chisel/src/test/resources/rtl/<design>/vectors.json`, `gen-rtl --fixture`) read their `accelerator.json` from snax-gvsoc's `forge/`.
+`pixi run gen-rtl DP` (`gen/rtl.py`) checks every unit against the catalogue (`gen.catalogue`, `gen.params`, `gen.port_map`, `gen.timing`) and runs `Emit --spec accelerator.json --out DIR/`, which lists what it wrote in `emitted.json`. `Emit --block NAME --params JSON --out DIR` builds one catalogue datapath, `FifoPacker` or `FifoSlicer` alone (`pixi run gen-block LIST.json` runs a list). The Chisel specs' fixtures (`gen-rtl --fixture`) read snax-gvsoc's `forge/<design>/accelerator.json`.
 
 ### Refused
 
-Each a `GenError`, before anything is written:
-
-- **The entry**: a tag that is not an identifier, or a platform without an `accelerator_slot` (`gen.tag`: a design named `dot-1`).
-- **A unit**: a null binding (`gen.binding`), an unregistered datapath (`gen.datapath`), a controller other than `counted` (`gen.controller`), a drain other than 0 (`gen.drain`), timing other than the catalogue's (`gen.timing`), and what the datapath refuses: args (`gen.args`), op (`gen.op`), ports (`gen.ports`), rates (`gen.rate`), a port's lanes neither whole 64-bit channels nor sliced (an input) or packed (an output) (`gen.lanes`), a dtype not intN or uintN (`gen.dtype`), a seed on a `Mac` without `accumulate` (`gen.seed`), a broadcast into a datapath whose lanes are not lane-wise (`gen.broadcast`).
-- **Links and groups**: a link not from an `out` to an `in` of the same dtype and lanes, or an end with `d_in`, `d_out` or `broadcast` (`gen.link`), a port on two links (`gen.link_port`), `inputs` or `outputs` not exactly the unlinked ports (`gen.outer`), a group not connected by its links and forks (`gen.group`), a fork of fewer than two outer inputs, over two groups, onto a unit a link feeds or over ports unlike in dtype, lanes, `d_in` or `broadcast` (`gen.fork`), a shared accelerator not as `movers` and `port_mux` say, or one with a fork (`gen.share`).
-- **Until the phase that lifts it**: a group that is not a chain in unit order, only the last unit's output outer, or chains a fork joins, each going forward in unit order with only its sink's output outer (`gen.chain`), and a unit of span > 1 on an outer input (`gen.span`, until B2).
+Each a `GenError`, before anything is written: the entry (`gen.tag`); a unit (`gen.binding`, `gen.datapath`, `gen.controller`, `gen.drain`, `gen.timing`, `gen.args`, `gen.op`, `gen.ports`, `gen.rate`, `gen.lanes`, `gen.dtype`, `gen.seed`, `gen.broadcast`); links and groups (`gen.link`, `gen.link_port`, `gen.outer`, `gen.group`, `gen.fork`, `gen.share`); and until lifted, a group that is not a chain in unit order (`gen.chain`) or a unit of span > 1 on an outer input (`gen.span`).
 
 ### Types, groups and firings
 
-- **Types** (D142, D143): a unit's types are its ports' dtypes, fixed at elaboration. Each input is extended to `opType` by its own signedness (a fold's lanes to its output's type before its tree), and the result is extended or wrapped into the output's type; a `Mac` forms the product at `opType`, casts it to `outType` and folds there. Python decides every type; the datapaths only construct.
-- **Firings** (D146): a group has one JOBS per chain (D189; one chain, JOBS). A sink gives R = its chain's JOBS results; a unit k before its successor s gives R_k = R_s · T_s, one on every T_k-th firing, so it fires n_k = R_k · T_k times, every T in beats (the one-lane vsum's `SerialAccumulate` has T = 1 and span W).
+- **Types** (D142, D143): a unit's types are its ports' dtypes, fixed at elaboration. Each input is extended to `opType` by its own signedness, and the result extended or wrapped into the output's type; a `Mac` forms the product at `opType`, casts it to `outType` and folds there.
+- **Firings** (D146): a group has one JOBS per chain (D189). A sink gives R = its chain's JOBS results; a unit k before its successor s gives R_k = R_s · T_s, so it fires n_k = R_k · T_k times, every T in beats.
 
 ### The CSRs
 
-Per accelerator and per group in order, from offset 0 (D146): START (R/W), JOBS (R/W; with several chains a `JOBS_<SINK>` per chain, D189), each unit's R/W CSRs (JOB_BEATS for a fold without `params.T`, ROWS for a bank, CARRY for a carried seed, then its scalars, a 64-bit one as two, low word first), STATUS (R/O), BUSY_COUNTER (R/O). With c_g a group's chains, f_u = 1 for a fold without `params.T`, b_u = 1 for a bank, s_u = 1 for a carried seed and k_u a unit's scalar CSRs:
+Per accelerator and per group in order, from offset 0 (D146): START (R/W), JOBS (R/W; a `JOBS_<SINK>` per chain, D189), each unit's R/W CSRs (JOB_BEATS for a fold without `params.T`, ROWS for a bank, CARRY for a carried seed, then its scalars, a 64-bit one as two, low word first), STATUS (R/O), BUSY_COUNTER (R/O). With c_g a group's chains, f_u = 1 for a fold without `params.T`, b_u = 1 for a bank, s_u = 1 for a carried seed and k_u a unit's scalar CSRs:
 
 $$rw = \sum_g \Big(1 + c_g + \sum_u (f_u + b_u + s_u + k_u)\Big), \qquad ro = 2G$$
 
-They are the accelerator's interface, all in `<tag>_csr`, BUSY_COUNTER in its submodule `<tag>_peripherals` (D152, D168). A read gives a CSR's bits, the upper ones 0. Per group:
+All are in `<tag>_csr`, BUSY_COUNTER in `<tag>_peripherals` (D152, D168). Per group:
 
-- **START** is a strobe: no register, it reads 0. A write with bit 0 set starts the group; the accepted start is a bare strobe to its control unit, which reads JOBS and each JOB_BEATS from `<tag>_csr` as wires through the run (a unit without JOB_BEATS has T 1, or its `params.T`).
-- **A busy group holds its writes**: while it runs, a write to any of its R/W CSRs waits (`csr_req_ready_o` low) until E + 1, E the cycle its run ends, so its settings stay constant (D168). Writes to other groups and every read go through. Programming the next task during a run is open item 123.
-- **An empty run**, any JOBS 0 or any JOB_BEATS 0, ends in the cycle it starts: busy never rises, BUSY_COUNTER is 0, and it ends in a done.
-- **STATUS**: bit 0 busy, bit 1 done (sticky: set by the done pulse in E, cleared by an accepted start). The program polls bit 0.
-- **BUSY_COUNTER**: the busy cycles after the accepted start, held after the run, saturating at 2^busy_counter_width − 1. On snax_cluster's RTL it may differ from SNAX-GVSoC's by up to the group's streamer fill (3, or 2 with one outer input, D123): the streamer's head start before START counts, which the core's timing sets (`dot_v1_1` at N = 512: `vmul` 128 on the RTL against 131).
-- **Pins**: `<group>_busy_o` (STATUS bit 0) and `<group>_done_o` (the done pulse, high in E + 1), which snax_cluster leaves unconnected (open item 92).
+- **START** is a strobe: no register, it reads 0; a write with bit 0 set starts the group.
+- **A busy group holds its writes**: a write to any of its R/W CSRs waits (`csr_req_ready_o` low) until E + 1, E the cycle its run ends (D168).
+- **An empty run**, any JOBS 0 or any JOB_BEATS 0, ends in the cycle it starts, BUSY_COUNTER 0, in a done.
+- **STATUS**: bit 0 busy, bit 1 done (sticky: set by the done pulse in E, cleared by an accepted start).
+- **BUSY_COUNTER**: the busy cycles after the accepted start, saturating at 2^busy_counter_width − 1; on the RTL it may differ from SNAX-GVSoC's by up to the group's streamer fill (3, or 2 with one outer input, D123).
+- **Pins**: `<group>_busy_o` (STATUS bit 0) and `<group>_done_o` (high in E + 1).
 
-The header names a CSR `<ACC>_<RW|RO>_[<GROUP>_][<UNIT>_]<NAME>` (`Accelerator.define`, for the header and the program), without the group when the accelerator has one, without the unit when the group has one: vecadd's `ACC_RW_START`, dot 4's `DOT_RW_MAC_JOB_BEATS`, dot 1's `VSUM_RW_JOB_BEATS`, `dot_v1_1`'s `DOT_RW_VSUM_JOB_BEATS`.
+The header names a CSR `<ACC>_<RW|RO>_[<GROUP>_][<UNIT>_]<NAME>` (`Accelerator.define`), without the group when the accelerator has one, without the unit when the group has one.
 
 | Design | Offsets | rw, ro | Task values |
 |---|---|---|---|
@@ -817,7 +724,7 @@ The header names a CSR `<ACC>_<RW|RO>_[<GROUP>_][<UNIT>_]<NAME>` (`Accelerator.d
 
 ### The datapath catalogue
 
-`hw/chisel/blocks.json`, equal to `Emit --describe` (D147): per datapath its params, ports, latency (an int or an expression over its params), `span`, `flops` (its register bits, with `width(t)` a dtype param's bits; `BlockFlopsSpec` counts them in the emitted SV, D154), pins, and the rule that fills it from a unit's ports. A port or pin may carry `when`, `{param: value}`: it exists only when every one holds, a value `{"min": m}` holding on an int of at least m. A param filled from `unit.params.<name>` that the unit lacks is null, an `int` its `min` (a `Mac`'s `rows` 1). A datapath is data and enables only.
+`hw/chisel/blocks.json`, equal to `Emit --describe` (D147): per datapath its params, ports, latency, `span`, `flops` (its register bits, `width(t)` a dtype param's bits, D154), pins, and the rule that fills it from a unit's ports. A port or pin with `when`, `{param: value}`, exists only when every one holds.
 
 | Datapath | Computes | L | Pins | Flops |
 |---|---|---|---|---|
@@ -842,28 +749,19 @@ One set of modules per design, shared by its accelerators (D168):
 | `<tag>_datapath` | a submodule per unit and per buffer; no valid, ready or counter inside |
 | `<tag>_<accelerator>_port_mux` | per accelerator whose groups share its movers (D169) |
 
-A group's control unit is generated from the description (D147). Its rule is snax-gvsoc's `SnaxGroupRule` (`snax/snax_group.hpp`), with a Python twin (`snax/snax_group_rule.py`) and Chisel's `GroupRule`, one rule on three sides:
+A group's control unit follows snax-gvsoc's `SnaxGroupRule` (`snax/snax_group.hpp`), with a Python twin (`snax/snax_group_rule.py`) and Chisel's `GroupRule` (D147):
 
-- **Each cycle**: a forward pass over the units in topological order gives what each offers whatever its room (its outer valids and every in-edge's offer; a wire its producer's offer, a buffer occupancy > 0), and a backward pass gives its room (its outer output's ready, and every out-edge's take), whether it is frozen, fires and reads.
-- **Outer ports**: a unit fires only with every one of its outer valids (ready_k = fire_{u(k)}), so valid never depends on ready. A seed is taken on a job's first firing only: fire = a.valid ∧ (¬first ∨ seed.valid).
-- **Classes**, at the units owning the outer outputs: stall_out (one is frozen) > busy (a unit fires, reads or is in its II gap) > stall_in (a unit wants to fire and an outer input has no beat) > flush.
-- **Span**: a unit reads lane l in place at span S, firing on lane S − 1; a frozen unit reads nothing; busy counts every read.
-- **A bank** (D191): a unit of `rows` R keeps R rows of sums, one a firing in turn, the control's `row` = the beat mod ROWS (ROWS ≤ R, the rows a pass uses): `first` on a job's first ROWS firings, a result on each of its last ROWS (the drain overlaps the last row), so a job of T firings (T a multiple of ROWS) gives ROWS results. Only a chain's sink. Seeded (D194), its seed's beat is needed and taken on each of those first ROWS firings, a beat a row.
-- **A carried seed** (D192): taken on every job's first firing as any seed (D163), the rule unchanged; the wrapper gives the datapath 0 in its place while the unit's jobs counter is below CARRY (`<unit>_use_seed` from the control unit, a comparison of the counter and the CSR), so the first strip starts from 0 and the later ones from what the strip before wrote.
-- **A held input** (D190): read once a row and kept in a register of its element's width; it needs its beat, and its reader's (or slicer's) beat is taken, only on a firing where `row` = 0.
-- **Chains** (D189): several chains meet only at a forked outer input, one reader for their heads; its beat is taken when every head fires, ready = ∧ fire of the heads, so a head that could fire waits while another cannot. Each chain counts its own JOBS; the group is done when every chain is. A fork, a join or a cycle of links is refused, and chains no fork joins.
-
-**Counting** (D153, D168): a register only for what a firing changes, counting up with no product and no copy of a setting (the tests read the csr's JOBS and JOB_BEATS live).
-
-- A unit of T ≠ 1 keeps its beat counter d (`<unit>_job_beats_counter`): first = (d = 0), last = (d + 1 = JOB_BEATS); a fixed T a ⌈log₂ T⌉-bit counter. A bank adds its row ρ (`<unit>_row`, ⌈log₂ R⌉ bits, wrapping at ROWS): first = (d < ROWS), a result when d + ROWS ≥ JOB_BEATS, a held input's take when ρ = 0; its d wraps and its jobs digit counts at d + 1 = JOB_BEATS. The `Mac` adds into row ρ and shows row `drain` = (ρ = 0 ? ROWS − 1 : ρ − 1), the row its last firing wrote, which a result pushed a cycle after its firing needs while the next firing adds into ρ: a comparison, so the `Mac` keeps no row of its own. A carried seed's `<unit>_use_seed` = (its jobs counter ≥ CARRY), its unit a chain's sink.
-- A unit at L 0 whose out-link is a wire borrows its consumer's test, since its giving firing is the consumer's firing.
-- Any other unit counts its giving firings up in mixed radix, a digit per later unit with T ≠ 1 (`<unit>_<downstream>_job_beats_counter`), then a jobs digit g (`<unit>_jobs_counter`); it has finished when g equals JOBS.
-- Done is the sink's JOBS-th push, read off its jobs digit and its pipeline; with several chains (D189) the last chain's, a chain that ended earlier holding its jobs digit at its JOBS and its pipeline empty. The empty run is tested on the csr's wires in the start's cycle.
-- Every counter is job_width bits; LOWER refuses a JOBS or JOB_BEATS above 2^job_width − 1 (`lower/tasks.py`'s `_check_widths`).
+- **Each cycle**: a forward pass over the units in topological order gives what each offers, and a backward pass its room, whether it is frozen, fires and reads.
+- **Outer ports**: a unit fires only with every one of its outer valids, so valid never depends on ready; a seed is taken on a job's first firing only.
+- **Classes**, at the units owning the outer outputs: stall_out > busy > stall_in > flush.
+- **Span**: a unit reads lane l in place at span S, firing on lane S − 1.
+- **A bank** (D191): R rows of sums, `row` = the beat mod ROWS (ROWS ≤ R); a job of T firings gives ROWS results; a chain's sink only, seeded a beat a row (D194).
+- **A carried seed** (D192) is 0 while the unit's jobs counter is below CARRY; **a held input** (D190) is taken where `row` = 0; a **forked input** (D189) when every head fires.
+- **Counting** (D153): a register only for what a firing changes, counting up; every counter job_width bits, a fixed T a ⌈log₂ T⌉-bit counter. Done is the sink's JOBS-th push.
 
 ### Cycles
 
-dot's variants alone on ideal streams, J jobs of T beats at W lanes, which snax-gvsoc's `tests/snax/group/gen.py` checks the rule against:
+dot's variants alone on ideal streams, J jobs of T beats at W lanes, checked by snax-gvsoc's `tests/snax/group/gen.py`:
 
 $$C_2 = JT + 2, \quad C_3 = JT + 1, \quad C_4 = JT + 2, \quad C_5 = J(T + W - 1) + 2, \quad C_6 = (J - 1)\max(T, W) + T + W + 2$$
 
@@ -874,9 +772,7 @@ $$C_2 = JT + 2, \quad C_3 = JT + 1, \quad C_4 = JT + 2, \quad C_5 = J(T + W - 1)
 | row, 16 × 512, W = 4 | 128 | 2050 | 2049 | 2050 | 2098 | 2054 |
 | row, 16 × 512, W = 8 | 64 | 1026 | 1025 | 1026 | 1138 | 1034 |
 
-- dot 5's MAC stalls (J − 1)(W − 1) cycles; a depth-1 buffer acts as a pipeline register, so dot 2 is dot 3 plus a cycle; dot 6 runs without a stall only at T ≥ W.
-- These cycles plus the streamers' fill (3, or 2 for a one-input unit) are the expected BUSY_COUNTER, a guide and not a check (D155, section 13).
-- A linked group's counter in `vectors.json` comes from the rule's model (`gen/rtl.py`'s `group_counter`).
+These plus the streamers' fill (3, or 2 for a one-input unit) are the expected BUSY_COUNTER, a guide and not a check (D155, section 13).
 
 ### The wrapper
 
@@ -884,22 +780,16 @@ $$C_2 = JT + 2, \quad C_3 = JT + 1, \quad C_4 = JT + 2, \quad C_5 = J(T + W - 1)
 
 - `clk_i`, `rst_ni` (active low); `csr_req_addr_i`, `csr_req_data_i` (32 bits), `csr_req_write_i`, `csr_req_valid_i`, `csr_req_ready_o`, `csr_rsp_data_o` (32 bits), `csr_rsp_valid_o`, `csr_rsp_ready_i`.
 - Per input port k, numbered across the sets in set order, `stream2acc_<k>_data_i`, `_valid_i`, `_ready_o`; per output port `acc2stream_<k>_data_o`, `_valid_o`, `_ready_i`, in the order of `inputs` and `outputs`. Data is `num_channel × 64` bits, lane i at bits `[w(i+1)-1 : wi]` (D142).
-- **A packed output** (D174): a `FifoPacker` of depth d_out (`<unit>_<port>_packer`) sits between the unit's output and `acc2stream_<k>`, on the group's side of a shared set's port mux; the port is one 64-bit word. Its slice pointer clears when the group's START is accepted; each push fills the next slice, and the word goes to the writer when the slice is d_out − 1 or the push is the run's last (the control unit's `last`: the done condition without the push, from the counters only), the slices above zero; only a sending push waits for the writer's ready, so no cycle is added.
-- **A sliced input** (D180): a `FifoSlicer` of d_in pops a word (`<unit>_<port>_slicer`) sits between `stream2acc_<k>` and the unit's input, on the group's side of a shared set's port mux; the port is one 64-bit word. The unit's input handshake is its pops, slice `count` at the low bits, low slice first; it takes the reader's word when empty or on its last pop, only while the group is busy (`enable`), and drops what it holds when the group's START is accepted (`clear`). Its output is registered, so a run takes one cycle more.
-- **A broadcast input** (D186): its reader, or its slicer, moves one lane a beat, so the port is that lane, at least one 64-bit word, and a slicer's d_in is that lane's; `<unit>_<port>_bcast` gives the lane to every lane of the unit's input, wires only.
-- **A held input** (D190), a banked unit's broadcast one: `<unit>_<port>_hold`, a register of the lane's width, takes the lane when the control unit takes its beat (a row's first firing); the unit sees the live lane on that firing and the held one on the row's others, before the broadcast.
-- **A carried seed** (D192): its data, after its slicer, ANDed with `<unit>_use_seed` before the datapath, so 0 on the unit's first CARRY jobs; its reader runs every job.
-- **A forked input** (D189): one `stream2acc_<k>`, its reader's (the first port of its `inputs` entry); its data, or its one slicer's (`<reader unit>_<port>_slicer`), goes to each of its units' ports and its valid to each unit's handshake, and its ready is the AND of their readies. Each chain's sink has its own `acc2stream_<k>`.
 - Per group `<group>_busy_o` and `<group>_done_o`.
-- **A shared accelerator** (D169) has its movers at the wrapper instead, readers then writers, and its port mux between them and its groups' ports, pure wires selected by PORT_MUX_SEL (reset 0, never held): a reader's data to each user, its valid and ready the selected group's only; a writer the selected user's data, zero-padded. snax-gvsoc's `SnaxPortMuxRule` without its fatal cases.
+- Between port and unit: a `FifoPacker` (`<unit>_<port>_packer`, D174) or `FifoSlicer` (`<unit>_<port>_slicer`, D180) on a one-word port, `<unit>_<port>_bcast` for a broadcast (D186), `<unit>_<port>_hold` for a held input (D190); a shared accelerator's (D169) movers and port mux, selected by PORT_MUX_SEL.
 
 ### The shared cases
 
-snax-gvsoc's `tests/snax/group/cases/` (the group rule), `unit/cases/` and `shell/cases/` (`SnaxShellRule`, the CSRs above) are checked against the C++ rules by its testbenches and driven through the Chisel by the specs (`SNAX_GVSOC_GROUP_CASES`, `SNAX_GVSOC_UNIT_CASES`, `SNAX_GVSOC_SHELL_CASES`, set by CI's chisel job). Where they disagree, the Chisel stands unless it breaks this section or D130, and SNAX-GVSoC follows it.
+snax-gvsoc's `tests/snax/group/cases/`, `unit/cases/` and `shell/cases/` are checked against the C++ rules and driven through the Chisel by the specs (`SNAX_GVSOC_GROUP_CASES`, `SNAX_GVSOC_UNIT_CASES`, `SNAX_GVSOC_SHELL_CASES`). Where they disagree, the Chisel stands unless it breaks this section or D130.
 
 ## 11. Bundle
 
-What `pixi run bundle DP [--out DIR]` writes per design point (D111, D130, `gen/bundle.py`), by default to `out/bundle/<design>/`: everything snax_cluster needs to build the design's cluster, made afresh by the snax-forge checked out. `rtl/` is removed before each run.
+What `pixi run bundle DP [--out DIR]` writes per design point (D111, D130, `gen/bundle.py`), by default to `out/bundle/<design>/`: everything snax_cluster needs to build the design's cluster. `rtl/` is removed before each run.
 
 | File | Holds |
 |---|---|
@@ -909,20 +799,15 @@ What `pixi run bundle DP [--out DIR]` writes per design point (D111, D130, `gen/
 | `bundle.json` | `design_point`, `tag`, `snax_forge_commit` (null outside git), `dirty` (uncommitted changes to tracked files; untracked ones such as `recipes/custom/` do not count), `top` (`<tag>_shell_wrapper`), `modules` (each of the wrapper's modules with its submodules, from `accelerator.json`, section 10's names, then each stream block module once: a sliced input's `FifoSlicer`, a packed output's `FifoPacker`), `expected` (`forge_expected.txt` or null) |
 | `forge_expected.txt` | written by `pixi run forge` only, from the bundle's SNAX-GVSoC run: its `forge counter` lines, then its `forge data: 0 errors` line, then per counter `forge fill <task>: <n>`, the fill of the task's group (section 13's `fill`) |
 
-Refused: what sections 9 and 10 refuse (`gen.elaborate` among them), then `bundle.empty` (`emitted.json` lists no file).
+Refused: what sections 9 and 10 refuse, then `bundle.empty` (`emitted.json` lists no file).
 
 ### How snax_cluster takes it
 
-Through the cluster file alone (`CFG_OVERRIDE`, D130):
-
-- clustergen and snaxgen resolve a `$ref` against the cluster file's real folder;
-- in RTL mode snaxgen writes `target/snitch_cluster/generated/snax_forge.f` from the slot's `snax_forge_rtl`: the bundle's files, then its own (each set's streamer files and `<tag>_wrapper.sv`), all absolute; vsim and Verilator read it when it is non-empty;
-- each set's streamer header lands in `sw/snax/<tag>/include/`; `snax-forge-sw` fails when its `#define` lines differ from the bundle's copy;
-- `target/snitch_cluster/snax_forge.mk` runs a program on the RTL: `CFG_OVERRIDE`, `FORGE` (the program's folder), `ELF` (default the one built from `FORGE`), `SIM` (`vlt`, or `vsim`); `snax-forge-sim` builds the simulator, `snax-forge-run` runs into `logs/snax-forge-$(SIM).txt` and fails on a nonzero exit code.
+Through the cluster file alone (`CFG_OVERRIDE`, D130): snaxgen resolves the `$ref`s and in RTL mode writes `target/snitch_cluster/generated/snax_forge.f` from `snax_forge_rtl`; `target/snitch_cluster/snax_forge.mk` (`FORGE`, `ELF`, `SIM` `vlt` or `vsim`) builds and runs a program on the RTL into `logs/snax-forge-$(SIM).txt`.
 
 ### The local check
 
-D123: `pixi run forge-set quick|full` makes a set's bundles with their `forge_expected.txt` and prints one `make snax-forge-check BUNDLES=... SIM=vsim SNAX_CLUSTER_IMAGE=...` line. In snax_cluster's `target/snitch_cluster` it runs each bundle's ELF on its RTL and compares the `forge data` line exactly and each `forge counter` beyond its `forge fill`; a file without fill lines takes every fill as 0.
+D123: `pixi run forge-set quick|full` makes a set's bundles and prints one `make snax-forge-check ...` line, which runs each bundle's ELF on its RTL and compares the `forge data` line exactly and each `forge counter` beyond its `forge fill`, into `logs/snax-forge-check.txt`.
 
 | Verdict | When |
 |---|---|
@@ -930,8 +815,6 @@ D123: `pixi run forge-set quick|full` makes a set's bundles with their `forge_ex
 | `NEAR` | the worst gap beyond the fill at most 10 % of its count |
 | `WARNING` | up to 15 % |
 | `FAIL` | beyond, or any data error; the only failing verdict |
-
-The verdicts go to `logs/snax-forge-check.txt` with each run's `forge cycles`. `docs/TOOL.md` section 6 runs it; CLAUDE.md says when each set is due.
 
 ## 12. Profile and trace
 
@@ -946,10 +829,10 @@ What the reports and the viewers read of a flow run (D137). SNAX-GVSoC writes it
 | `events.log.gz` | the raw events, gzipped by a passing run (a failing one keeps `events.log`); `read_events` reads either | always |
 | `all.vcd`, `view.gtkw` | gtkwave's view, never read here | with `--vcd` |
 
-- **The folder's name** (`flow/run.py`'s `default_name`): the recipe's name, each `--set` appended as `_<path><value>` (`vecmul_dry_W4`), a `-` between the two where the path ends in a digit (`dot_1_dry_W_acc_1-10`), then `_<level>` above `off`.
-- **The window**: `total_cycles` is the program's `mcycle` in `forge_check()` minus its read in main (the `forge cycles:` line). The converter finds both reads in the core's events, checks they are `total_cycles` apart, shifts every cycle so t = 0 is the read in main (the shift is `boot`), and drops events outside `[0, total_cycles)`.
-- **Refusals**, each a `RunError`: `convert.path` (a line of no component or port), `convert.window` (the two `mcycle` reads not found or not `total_cycles` apart), `convert.summary`, `convert.tasks` (starts and copies against the task list), `convert.beats`, `convert.kind`, `convert.invariant` (a count that does not add up).
-- **A failed run**: when SNAX-GVSoC exits non-zero or prints no `forge cycles:` line, the flow's error adds `; SNAX-GVSoC: <line>`, the first error line of `stdout.txt`, then `stderr.txt` (`first_error`). Example, vecmul at W = 32: `check: no 'forge cycles:' line in the program's output; SNAX-GVSoC: nb_inputs must be in (0, 64], got 99`. The `sw` step first checks that `clang` and `ld.lld` are on PATH.
+- **The folder's name** (`flow/run.py`'s `default_name`): the recipe's name, each `--set` appended as `_<path><value>` (`vecmul_dry_W4`), a `-` between the two where the path ends in a digit, then `_<level>` above `off`.
+- **The window**: `total_cycles` is the program's `mcycle` in `forge_check()` minus its read in main; every cycle is shifted so t = 0 is the read in main (the shift is `boot`), and events outside `[0, total_cycles)` are dropped.
+- **Refusals**, each a `RunError`: `convert.path`, `convert.window`, `convert.summary`, `convert.tasks`, `convert.beats`, `convert.kind`, `convert.invariant`.
+- **A failed run** (a non-zero exit or no `forge cycles:` line): the flow's error adds `; SNAX-GVSoC: <line>`, the first error line of `stdout.txt`, then `stderr.txt` (`first_error`).
 
 ### Profile
 
@@ -978,8 +861,6 @@ class Profile:
 | port | per crossbar input its grants, stalls and the stalls lost to the DMA's superbank; a core's or AXI's over the whole run |
 | banks | reads, writes and conflicts (cycles with two or more requests on a bank), from the streamers and the DMA only |
 | `functional_check` | `kernel`, `seed`, `symbols`, `exit_code`, `data_errors` and `words`, `tasks` (per accelerator task its `counter`, `beats` and `group`), `passed` |
-
-Names, ports and FIFO depths come from the hjson files and the design point.
 
 ### Trace
 
@@ -1012,39 +893,24 @@ Names, ports and FIFO depths come from the hjson files and the design point.
     finegrained  insn     pc, func, text  (src = the core)
 ```
 
-- **`src`**: a unit (`acc`; with several groups each unit, `mul`, `sum`), a linked group (`dot`, SNAX-GVSoC's one component for its units), a mover (`acc_a`), `dma`, `core0`, or for a `grant` or `stall` the crossbar port (`acc_a.lane0`, `core0`, `axi`).
-  - A linked group's lines are its boundary's: `count` and `firings` are the head unit's, a `fire`'s beats the head's outer inputs (a forked one by its one reader, D189), a `push` its chain's last unit's, its `first` and `last` the head's firings it folds. With two or more outputs a `push` names its sink (`unit`), and each output is checked on its own: its pushes against its `rate`, its writer's grants against its pushes. No line names the pops of an outer input past the head, so its FIFO counts are checked against its depth and `qmax` only. Per-unit and per-link events are open item 96.
-  - Each streamer set is read at the manifest's `csrs.streamers[].trace` (`snax_acc<i>/streamer_<set>`), its movers numbered within the set (`reader0` of `streamer_vsum` is `vsum_a`); the crossbar's inputs are `snax_acc<i>.streamer_<set>.<mover>.lane<l>`.
-- **`block`**: the component whose CSR it is: `acc`, a unit or linked group, or `<accelerator>_streamer`.
-- **Ids link lines, never order**: a streamer beat is its mover and `b` (a reader's numbered in its AGU's order per run, a writer's in hand-over order; a repeated beat is one `b`); a firing's `n` is its index in the run, a push's its index among its output's results, equal to the writer's `b` (packed, D174: result n is slice n mod d_out, slice 0 lowest, of word `b` = n div d_out); a DMA beat is its copy's `id` and `i`.
-- **Pairing**: a streamer line's `task` is its mover's task, paired with the unit task its start launched it with (`run/beats.py`'s `pairing`), so a firing's operands are the grants of the streamer tasks launched with it.
-- **DMA copies**: `dir` (`l2_to_l1`, `l1_to_l2`) comes from the addresses; copies match the task list's `load_<C>` and `store_<C>` in issue order.
-- **Added by the converter**: `task` (the task bracketing the line on its component; null for a core's or AXI's access), `mem` and the absolute `addr`, `region` (the container the address is in), `elems` (the flat indexes of its elements in the word), `vals` (their values by the region's dtype), an `insn`'s `func`. The raw words stay: `value`, `bank` and `row`, `back`.
-- **Classes**: a `done` carries its run's `cycles` by class; from `beat` on, a `class` event gives the first cycle of each run of one class, covering the run with no gap and no overlap.
-- **Sources**: `--trace LEVEL[:SOURCES]` names the sources whose beat, stall and instruction lines are written; by default the accelerator, its movers and the DMA (at `finegrained` also every core). `summary` and `events` lines are always whole.
+- **`src`**: a unit, a linked group (its boundary's lines), a mover (`acc_a`), `dma`, `core0`, or for a `grant` or `stall` the crossbar port (`acc_a.lane0`, `core0`, `axi`). **`block`**: the component whose CSR it is.
+- **Ids link lines, never order**: a streamer beat is its mover and `b`; a firing's `n` its index in the run, a push's its index among its output's results, equal to the writer's `b`; a DMA beat its copy's `id` and `i`.
+- **Pairing**: a streamer line's `task` is paired with the unit task its start launched it with (`run/beats.py`'s `pairing`).
+- **Classes**: a `done` carries its run's `cycles` by class; from `beat` on, `class` events cover the run with no gap and no overlap.
+- **Added by the converter**: `task`, `mem`, the absolute `addr`, `region`, `elems`, `vals`, an `insn`'s `func`.
+- **Sources**: `--trace LEVEL[:SOURCES]` names the sources whose beat, stall and instruction lines are written.
 
 ### Regions
 
-`run/regions.py`, `run/elf.py` (D86). A container's L1 region is the design point's layout. Its L2 region has the plan's shape and dtype at its array's address in the linked program, from `run.json`'s `elf_symbols` (container -> `addr` and `size`, its padded bytes in whole DMA beats, `lower.layout.l2_bytes`); a missing symbol or another size stops the flow. Everything takes regions from `regions_of(point, elf_symbols)` only.
+`run/regions.py`, `run/elf.py` (D86): a container's L1 region is the design point's layout, its L2 region at its array's address from `run.json`'s `elf_symbols`; everything takes regions from `regions_of(point, elf_symbols)` only.
 
 ### The run report and the run viewer
 
-`report/run.md` and `pixi run view` read the files above.
-
-- **Accelerators**: a row per accelerator (its streamer set, D157) with its groups, its CSRs, its streamer's busy windows (one per start) and each group's BUSY_COUNTER. Example, dot 1 at N = 64: `vmul` 960–981 and `vsum` 982–999; `dot_v1_1`'s `dot` 960–996 in two windows.
-- **Units and movers**: a row per unit (a linked group under its name); the movers in a drop-down per group, `vmul ▸ vmul_a, vmul_b, vmul_out`, with each mover's port, direction, num_ch, busy, stalls and FIFO highest against depth.
-- **Idle tasks**: a streamer task whose temporal bounds are all 0, started only because an encapsulated set's movers share one start, is marked idle (`mult_vsum_a (idle)`), its schedule bar dashed (`viz/index.py`'s `idle_tasks`).
-- **BUSY_COUNTER**: shown beside its expected value, a guide and not a check (`mult_mul 256 (expected 259, a guide)`, D155).
-- **The schedule** has lanes accelerator ▸ group: per group its movers, then its unit.
-- **The cluster view at a cycle** (`viz/cluster.py`): `acc` is the unit whose task is open, `accelerator` the entry's name, `units` every unit's task, class, fire and push, `streamers` one per set, busy while a task of its movers is open; a shared mover's lanes name the user its mux serves.
+`report/run.md` and `pixi run view` read the files above: a row per accelerator with its groups, CSRs, busy windows and BUSY_COUNTER (beside its expected value, a guide, D155), a row per unit and its movers, idle tasks marked (`viz/index.py`'s `idle_tasks`), and the cluster view at a cycle (`viz/cluster.py`).
 
 ### The energy run
 
-With `--energy` (D177), the flow runs the program again on SNAX-GVSoC with only the `summary` traces on, into `energy/`, and prices its windows: `energy/energy.json` (`flow/energy.py`'s `EnergyRun`), `energy/events.log.gz` and `report/energy.md`. A failing program has no energy run. Under `serial` and `sequential` the program is the quiet build (`sw/forge_quiet.elf`, D135), priced window by window between its marks; under a pipelined schedule (D179) it is the default build (`sw/forge.elf`, the program the flow ran), since the quiet build waits on every start at once and would run it serially: it writes no mark, so it is priced in one window from boot to the end of the simulation (`flow/run.py`'s `energy_elf`).
-
-- **Snapshots** (`run/snapshots.py`): each core 0 write to CSR `0x7C5` and the end of the simulation (mark −1) make every SNAX component write its counters as running totals since boot, `snap` lines (snax-gvsoc's `docs/EVENTS.md`, Snapshots). Every component's k-th set of lines is snapshot k; components that took different marks, an input no `input` line names, a last snapshot that is not the end's or an end that is not the crossbar's whole run are each a `RunError` (`snapshots.<rule>`).
-- **Windows**: window k is snapshot k + 1 minus snapshot k, $n(k) = N(S_{k+1}) - N(S_k)$ for every counter N, boot's (all 0) first, so the windows add up to the end. Window k takes its kind and label from `gen/obs_marks.json`'s row of the mark that opens it (`boot` for window 0; `mark <m>` for a mark the file lacks); the default build's one window is kind `whole`, label `the whole run`, and a mark in it is a `RunError` (`energy.marks`); its `first` and `last` are the snapshots' cycles.
-- **Counters**, by the converter's names: per crossbar input by port (`acc_a.lane0`, `core0`, `axi`) `grants` and `stalls`; per bank `reads`, `writes`, `conflicts`; per group (its unit's trace name) its busy-flag classes; per unit (its instance) `firings` and `pushes`; per mover its classes; `copies`, the crossbar's `copy_reads` and `copy_writes` (the beats the DMA's copies inside L1 read and write on the superbank port, one per superbank line a beat touches), (0, 0) in a run without that line.
+With `--energy` (D177), the flow runs the program again with only the `summary` traces on, into `energy/`, and prices its windows: `energy/energy.json` (`flow/energy.py`'s `EnergyRun`) and `report/energy.md`. Under `serial` and `sequential` it is the quiet build, priced between its marks; under a pipelined schedule (D179) the default build, in one window. Each core 0 write to CSR `0x7C5` and the end (mark −1) make every component write its running totals (`run/snapshots.py`); window k is $n(k) = N(S_{k+1}) - N(S_k)$ for every counter N.
 
 | `energy.json` field | Holds |
 |---|---|
@@ -1054,13 +920,9 @@ With `--energy` (D177), the flow runs the program again on SNAX-GVSoC with only 
 | `total` | nJ per part over every window |
 | `static` | the estimate's five parts for one run of the accelerator, with the counts they were priced on |
 
-An energy's `counts` are what each part was priced on (section 14): `fires` (the units' fires, the links' loads, the packers' pushes), `cycles` (the busy-flag cycles), `beats` (the movers' requests over their channels), `requests` (the crossbar's), `reads` and `writes` (the banks').
-
 ## 13. Estimate
 
-The ideal estimate of a bound graph (D155, `estimate/`), with or without a platform: what a mapping buys before any run, for the viewers and `design.md`. `estimate(graph, platform, tech)` also costs it on a technology (section 14; default `nangate45`, None leaves the cost out). It assumes ideal streams: no bank conflicts, no streamer fill, no core control, and no DMA but for a `transpose` node's copy (`copies`).
-
-An `Estimate` is a dataclass with `to_dict` / `from_dict`; the totals are written and derived again when read.
+The ideal estimate of a bound graph (D155, `estimate/`), with or without a platform, for the viewers and `design.md`. `estimate(graph, platform, tech)` also costs it on a technology (section 14; default `nangate45`, None leaves the cost out). It assumes ideal streams: no bank conflicts, no streamer fill, no core control, and no DMA but for a `transpose` node's copy.
 
 | Field | Holds |
 |---|---|
@@ -1097,25 +959,9 @@ A group's fields:
 | `bits`, `ctrl_bits` | per unit and buffer link its datapath's register bits (the catalogue's `flops`; a bank's R rows, while the catalogue's `Mac` has no `rows` its flops times R, and a held input's element, D190 · D191; the bank's read muxes and row enables are its lookup's comb, D193), a packed output's `FifoPacker` by `<unit>.<port>` ((d_out − 1) · W · b held, ⌈log₂ d_out⌉ count; D174), a sliced input's `FifoSlicer` by `<unit>.<port>` (64 held, ⌈log₂ d_in⌉ count, 1 full; D180), and its control unit's (`estimate/bits.py`): the cost model's counts (D154) |
 | `cost` | on a technology, its units', links' and control unit's area and energy, and the totals (section 14) |
 
-How the cycles grow along dot's recipe at N = 512:
-
-| Step | `not_mapped` | `unmapped_iterations` | `total_cycles` |
-|---|---|---|---|
-| imported | 1024 | 1024 | 1024 |
-| `mult_map` split and tagged | 640 | 1024 | 1024 |
-| after `split_reduce` on `sum_map` | 257 | 1028 (the final sum's 4 lanes) | 1028 |
-
 ### The expected BUSY_COUNTER
 
-A run's BUSY_COUNTER counts from its group's START every cycle until busy drops (section 10), so it includes bank conflicts and is shortened by the streamers' head start: the program starts the streamers, then the accelerator, so a stream may have data waiting. `counter` is a guide that the viewer and `run.md` show beside the measured value, not a check.
-
-- dot 1 at N = 2048, W = 8: `dot_v1_1`'s vmul 256 against 259 (its START 10 cycles after the shared streamer's), `dot_v1`'s vmul and vsum 259 against 259; vecmul at W = 1: 2048 against 2051.
-- `tests/estimate/` holds it equal to the SNAX-GVSoC counter of the designs in open item 95 it matches (`COUNTERS`). It does not match rowsum_v2's contiguous layout (131 against 134, bank conflicts), the seeded sums (matvec_acc_v1's 1028 against 1027) and rowsum_v3 (67 against 65).
-- Pipelined, `design.md` notes when runs of different accelerators, each started as soon as its `after` allow, move more words a cycle at once than there are banks: `mvt and mvt_1 run at once under pipeline: their streams move 32.3 words a cycle over 32 banks, so bank conflicts stretch them beyond the ideal` (mvt_v3_1 at W = 8). The longest path holds no core configuration, so both pipelined schedules give it the same cycles.
-- `bank_bound` is noted in the page, `design.md` and `run.md` when it exceeds `cycles`, over one group's streamers: `mul: the streams move 6144 words over 32 banks, at least 192 cycles of L1 time against the ideal 128` (dot 1 at W_mul = 16, whose streams took 211 cycles and BUSY_COUNTER 186).
-- Against SYN2's 48 synthesized points (`tests/estimate/fixtures/syn2_flops.json`), each datapath's `bits` matches the flops DC kept and `ctrl_bits` is held within 10 %: a check of the counts, not of the cost's accuracy (section 14).
-
-`ctrl_bits` counts the registers firtool keeps of a group's control unit (`estimate/bits.py`), a count of T taking ⌈log₂ T⌉ bits for a fixed T, else `job_width`:
+A run's BUSY_COUNTER counts from its group's START until busy drops (section 10), so it includes bank conflicts and is shortened by the streamers' head start; `counter` is a guide shown beside it, not a check. `tests/estimate/` holds it equal to the SNAX-GVSoC counter of the designs it matches (`COUNTERS`). `bank_bound` is noted when it exceeds `cycles`. `ctrl_bits` counts the registers firtool keeps of a group's control unit (`estimate/bits.py`), a count of T taking ⌈log₂ T⌉ bits for a fixed T, else `job_width`:
 
 | Register | Bits |
 |---|---|
@@ -1131,9 +977,7 @@ A run's BUSY_COUNTER counts from its group's START every cycle until busy drops 
 
 ## 14. Cost model
 
-What a design costs in area and energy before any synthesis, beside the estimate's cycles: the blocks and control from CHAR1's model (D154 · D172), the streamers, crossbar and banks from HWCOST's tables (D167), every table from clock-gated synthesis. It aims at the large costs and at comparing variants, about 30 % of synthesis on the large costs; a small block can be much further off. [`snax_forge/char/README.md`](../snax_forge/char/README.md) says where every number comes from, with a worked example. Only nangate45 is offered (`TECHS`); any other technology is refused (`char.tech`).
-
-- **Evidence**: on the clock-gated dot 3 cluster at W = 2 to 32 (snax-forge-experiments, `results/cluster/`) the datapath's area is 0.999 of the netlist's and the memory's within 1 %, the datapath's energy 1.61–1.63 of the run's at W = 2 to 16 and 1.06 at 32 (the table is measured on random data); the streamer and crossbar tables reproduce their own points within 5.1 % (a reader's energy) and 2.6 % (the crossbar's) leave-one-out.
+What a design costs in area and energy before any synthesis: the blocks and control from CHAR1's model (D154 · D172), the streamers, crossbar and banks from HWCOST's tables (D167), every table from clock-gated synthesis. It aims at the large costs and at comparing variants, about 30 % of synthesis on the large costs; [`snax_forge/char/README.md`](../snax_forge/char/README.md) says where every number comes from. Only nangate45 is offered (`TECHS`; else `char.tech`).
 
 ### The tables
 
@@ -1145,44 +989,28 @@ What a design costs in area and energy before any synthesis, beside the estimate
 | `<tech>/xbar_kinds.json` | the area's factor form's $f_{\mathit{ro}}$ and $f_{\mathit{wo}}$ (0.395299, 0.409746), the crosspoint form's coefficients; the energy's $g_{\mathit{ro}}(b)$, $g_{\mathit{wo}}(b)$ at 16, 32 and 64 banks (`energy.by_banks`; 0.331792, 0.471583 at 32) | X71, X93 |
 | `<tech>/ram_table.csv` | CACTI 7: depth 32–4096 × width 8–256, `area_um2`, `e_rd_pj`, `e_wr_pj` | X47, X48 |
 
-- `pixi run import-costs` copies the five files as they are, with `<tech>/SOURCE` naming the commit and each file's path and sha256; never run in CI. `tests/char/` checks every block entry against the catalogue and the tables against `SOURCE`.
-- **Block lookup** (`lookup(table, datapath, params, lanes, depth=None)`, D176): the entry whose params equal the block's at its width pair (`pair_params`: lanes, depth and unset constants aside; the widest input, a SimdLanes' output at most its op's width, unsigned as signed; a packer by its lane type and d_out, a slicer by its lane type, lanes and d_in), then a point at these lanes as is (`measured`); else under `copy` lanes / W0 × the point at the smallest lanes W0; under `interpolate` linear between the two measured lanes around it; under `slope` the nearest point plus the entry's slope per lane; a LinkBuffer depth linear between two measured depths, a narrower dtype the int64 entry × width / 64 (`width`); a seeded fold its unseeded entry (`unseeded`), a block whose entries have no `seed` key (a Mac, measured before it took one) its entry without it; a `Mac` bank of `rows` R > 1, whose entries have no `rows` key, its rows-1 entry plus the table's `bank` forms (D193, X97): comb + `comb_um2_lane_row` · W · R µm², a fire's comb energy + W · (`e_pj_lane_log2_rows` · log₂ R + `e_pj_lane`) pJ, one row of W · width(outType) bits loading a fire (`bank`; past `mux_bits_max` bits a read mux, `bank_beyond`). Anything else is None (a form the table does not hold, lanes outside the range): the comb part counts 0 and `char.missing` names it.
-- **Table lookup** (`tables.py`'s `streamer_cost`, `xbar_cost`, `bank`): linear along one axis at a time between the two grid values around the query, the crossbar's energy in 1/inputs, and where inputs > banks its value at inputs = banks. Outside the grid, linear through the two nearest grid values, clamped at zero, with `cost.extrapolated`. The banks are a lookup, never interpolated: a bank off the grid costs 0 and is noted. A writer is priced as a reader.
+- `pixi run import-costs` copies the five files with `<tech>/SOURCE` naming each file's origin and sha256; `tests/char/` checks them.
+- **Block lookup** (`lookup`, D176): the entry at the block's width pair (`pair_params`), then a point at its lanes (`measured`), else by `lanes_rule` (`copy`, `interpolate`, `slope`), depth, `width` or `unseeded`; a `Mac` bank from its rows-1 entry and the `bank` forms (D193). Else the comb part counts 0 (`char.missing`).
+- **Table lookup** (`streamer_cost`, `xbar_cost`, `bank`): linear along one axis at a time; outside the grid linear through the two nearest values, clamped at zero, with `cost.extrapolated`. A writer is priced as a reader.
 
 ### The model
 
-Per unit and per buffer link over one run of the accelerator: n_fire its fires (a unit's firings times its span; a buffer's loads), n_bits its `bits` (section 13); per group n_bits^ctrl its `ctrl_bits` and C_g its own `cycles`. A flop that holds costs nothing (clock-gated, D154 · D172), a control unit included while its group is idle:
+Per unit and per buffer link over one run: n_fire its fires, n_bits its `bits` (section 13); per group n_bits^ctrl its `ctrl_bits` and C_g its `cycles`. A flop that holds costs nothing (clock-gated, D154 · D172):
 
 $$E_{\mathit{unit}} = n_{\mathit{fire}}\thinspace(e_{\mathit{comb}} + n_{\mathit{bits}}\thinspace e_{\mathit{load}}), \qquad E_{\mathit{ctrl}} = e_{\mathit{ctrl}}\thinspace n_{\mathit{bits}}^{\mathit{ctrl}}\thinspace C_g$$
 
 $$A_{\mathit{unit}} = A_{\mathit{comb}} + n_{\mathit{bits}}\thinspace A_{\mathit{flop}}, \qquad A_{\mathit{ctrl}} = 2\thinspace n_{\mathit{bits}}^{\mathit{ctrl}}\thinspace A_{\mathit{flop}}$$
 
-The control unit's comb area is taken equal to its flops' (the 2), a rough estimate; its comb energy is taken as negligible.
-
-The whole design (D167), per port's streamer p with D_p its FIFO depth, L_p its loops, C_p its channels and W_p the 64-bit words it moves in L1 in one run (a link's container is not in L1); n_in the crossbar's inputs, n_ro and n_wo of them a reader's and a writer's channels; n_banks the banks; N_rd and N_wr the words read and written:
+The whole design (D167), per port's streamer p with D_p its FIFO depth, L_p its loops, C_p its channels and W_p its words in L1; n_in the crossbar's inputs, n_ro and n_wo a reader's and a writer's channels; N_rd and N_wr the words read and written:
 
 $$A = \sum_b A_b + \sum_g A_{\mathit{ctrl},g} + \sum_p A_{\mathit{strm}}(D_p, L_p, C_p) + A_{\mathit{xbar}}(n_{\mathit{in}}, n_{\mathit{banks}})\thinspace\Big(1 - f_{\mathit{ro}}\frac{n_{\mathit{ro}}}{n_{\mathit{in}}} - f_{\mathit{wo}}\frac{n_{\mathit{wo}}}{n_{\mathit{in}}}\Big) + n_{\mathit{banks}}\thinspace A_{\mathit{bank}}$$
 
 $$E = \sum_b E_b + \sum_g E_{\mathit{ctrl},g} + \sum_p \frac{W_p}{C_p}\thinspace e_{\mathit{beat}}(D_p, L_p, C_p) + e_{\mathit{acc}}(n_{\mathit{banks}}, n_{\mathit{banks}})\thinspace\big(N_{\mathit{rd}}\thinspace(1 - g_{\mathit{ro}}) + N_{\mathit{wr}}\thinspace(1 - g_{\mathit{wo}})\big) + N_{\mathit{rd}}\thinspace e_{\mathit{rd}} + N_{\mathit{wr}}\thinspace e_{\mathit{wr}}$$
 
-- **The five parts** (`PARTS`): datapath (the units and buffer links, b), control (g), streamers, crossbar, memory (the banks). The csr, the cores, the I-cache and the DMA are not costed: the DMA's loads and stores are the same for every variant, and the cores' and AXI's ports enter only as crossbar inputs.
-- **A copy** (section 13's `copies`, D184) is one beat read and one beat written on L1's superbank port per burst, whatever its size (a one-element burst never crosses a superbank line; `Estimate.copy_bursts`): in the crossbar part a read at a read-only input's price and a write at a write-only one's, and in the memory part a read and a write on each of the superbank's S banks (S = `superbank_banks`), added to N_rd and N_wr. The DMA engine is not priced. mvt_v4 at 64 × 64 on 32 banks (S = 8): 8 × 4096 × (3.538 + 6.468) pJ = 327.87 nJ in the banks and 4096 × (1.839 + 1.455) pJ = 13.49 nJ in the crossbar.
-- **The crossbar's energy** has one price per access for a bank count, a full crossbar's ($e_{\mathit{acc}}$ at inputs = banks, 2.752585 pJ on 32 banks), so it follows the accesses alone: dot 5 linked (19 inputs, 4097 accesses) costs 59.656 nJ against 59.755 nJ unlinked (35 inputs, 4113).
-- **By input kind** (D178, X93): a read is priced as a read-only input's and a write as a write-only one's, $e_{\mathit{acc}}(1 - g_k)$, with $g_k$ at the design's bank count (linear in it between 16, 32 and 64 banks, the nearest one's outside). On 32 banks a read costs 2.752585 × (1 − 0.331792) = 1.839299 pJ and a write 2.752585 × (1 − 0.471583) = 1.454513 pJ; `xbar` gives both as `e_ro` and `e_wo`.
-- **The crossbar's area** prices a reader's channel as a read-only input and a writer's as write-only, since synthesis removes what their constant bits make dead (X70, X71). The factor form above is the default; the crosspoint form, $b\thinspace(c_{\mathit{rw}}\thinspace n_{\mathit{rw}} + c_{\mathit{ro}}\thinspace n_{\mathit{ro}} + c_{\mathit{wo}}\thinspace n_{\mathit{wo}}) + d\thinspace n_{\mathit{in}} + e\thinspace b + g$, is an option (`Estimate.xbar_in("crosspoint")`). dot 3 at W = 16 on the one-core cluster (35 inputs, 32 read-only, 1 write-only): 113 891 µm², where every input read-write gives 182 006; the synthesized gated cluster has 103 257 µm².
-- **A shared set's movers** (D169) are priced once each: each user's beats at its own C_p, the area only at the mover's first user, at the mover's channels (`StreamerCounts`' `mover`, `mover_channels`, `area`). The port mux costs nothing.
-- Every count is read where it is made, so a change to it (the crossbar's inputs, a port's channels) changes the cost without touching the model.
-
-Worked example, vecmul at W = 8 and N = 2048 (three ports of 8 channels and one loop, 256 beats each; 26 inputs on 32 banks, 16 read-only and 8 write-only; 4096 reads, 2048 writes):
-
-| Part | Area (µm²) | Energy (nJ) |
-|---|---|---|
-| datapath | 55 300 | 23.137 |
-| control | 360 | 0.047 |
-| streamers | 95 200 | 17.279 |
-| crossbar | 84 600 | 10.513 |
-| memory | 433 000 | 27.738 |
-| total (without the banks) | 668 000 (236 000) | 78.714 |
+- **The five parts** (`PARTS`): datapath, control, streamers, crossbar, memory. The csr, the cores, the I-cache and the DMA are not costed.
+- **A copy** (D184) is one beat read and one written on L1's superbank port per burst, on each of its S banks (`superbank_banks`).
+- **By input kind** (D178): a read priced at $e_{\mathit{acc}}(1 - g_{ro})$, a write at $e_{\mathit{acc}}(1 - g_{wo})$; the crosspoint area form is an option (`Estimate.xbar_in("crosspoint")`).
+- **A shared set's movers** (D169) are priced once each, at the mover's channels.
 
 ### The fields
 
@@ -1200,13 +1028,11 @@ Worked example, vecmul at W = 8 and N = 2048 (three ports of 8 channels and one 
 
 ### What is shown
 
-- The fields keep full precision. A reader sees an area to 3 significant figures (`sig3`: 63 200 µm²) and an energy to 3 decimals in its unit (`dec3`: 26.285 nJ per run, 97.259 pJ per fire), so two close designs can be told apart (dot 4 and dot 5 at W = 8: 26.133 and 26.158 nJ). The decimals are display precision, not accuracy.
-- Every cost is shown under "Cost estimate (first-order) on <tech>" with one line, `CAVEAT`.
-- `design.md` (`pixi run report DIR --tech T`) shows each group's area and energy beside its cycles, how each unit, link and control unit is costed, each port's streamer, each accelerator's L1 words, the cost by part with its shares, and what is not characterized, not costed or extrapolated; the viewers show the same, the parts as two bars to scale.
+An area to 3 significant figures (`sig3`) and an energy to 3 decimals (`dec3`), display precision, not accuracy, under "Cost estimate (first-order) on <tech>" with `CAVEAT`, in `design.md` (`pixi run report DIR --tech T`) and the viewers.
 
 ### The dynamic energy
 
-The dynamic energy prices what a run did rather than what the graph says (D177, `estimate/dynamic.py`). SNAX-GVSoC counts every transaction of each component; snax-forge multiplies each window's counts by the same prices per transaction the static estimate uses, part by part. Only the counts differ, so the two estimates differ only where the run differs from the graph.
+The dynamic energy prices what a run did rather than what the graph says (D177, `estimate/dynamic.py`): each window's counts times the static estimate's prices, part by part.
 
 $$E_j = \sum_c \sum_k n_{c,k}(j)\thinspace e_{c,k} = E_{dp}(j) + E_{ctrl}(j) + E_{strm}(j) + E_{xbar}(j) + E_{mem}(j)$$
 
@@ -1228,8 +1054,6 @@ $$E_j = \sum_c \sum_k n_{c,k}(j)\thinspace e_{c,k} = E_{dp}(j) + E_{ctrl}(j) + E
 | $e_{rd}$, $e_{wr}$ | a bank's energy per read and per write | `ram_table.csv` | pJ |
 | $rd$, $wr$ | the movers that read and those that write | the cluster | — |
 
-The five parts:
-
 $$E_{dp}(j) = \sum_u f_u(j)\thinspace S_u\thinspace e_{fire,u} + \sum_{\ell} p_{src(\ell)}(j)\thinspace e_{fire,\ell} + \sum_{s} f_{u(s)}(j)\thinspace e_{fire,s}$$
 
 $$E_{ctrl}(j) = e_{ctrl} \sum_h n_h^{ctrl}\thinspace b_h(j)$$
@@ -1240,41 +1064,9 @@ $$E_{xbar}(j) = e_{acc}(b, b) \Big((1 - g_{ro}) \sum_{m \in rd} \sum_{i \in I_m}
 
 $$E_{mem}(j) = e_{rd} \sum_{m \in rd} \sum_{i \in I_m} a_i(j) + e_{wr} \sum_{m \in wr} \sum_{i \in I_m} a_i(j)$$
 
-How to read them:
-
-- **Datapath:** a unit fires its firings times its span; a buffer link loads, and a packer pushes, on each push of its producer; a slicer s pops on each firing of its unit u(s) (a seed's on each push, one a job). The count is fixed by the program, so it equals the static one.
-- **Control:** each group's control unit clocks on its own group's busy-flag cycles and holds otherwise, as the static estimate clocks it over its group's cycles (D154 · D172), so control does not depend on the schedule. A group's `snap` line is written by one of its units and counted to its group (`Counts.groups`).
-- **Streamers:** a mover moves its requests over its channels, one beat per C_m requests; a refused request costs a granted one's beat.
-- **Crossbar:** every request, granted or refused, costs one access at its input's kind: a reader's channel read-only, a writer's write-only (D178).
-- **Memory:** only a grant reaches a bank. The cores', AXI's and the DMA's loads and stores are not priced (D167).
-- **A copy** (D184): the beats the DMA's copies inside L1 read, $c_{rd}(j)$, and write, $c_{wr}(j)$, on the superbank port in the window (the crossbar's `copy_reads` and `copy_writes`, the window's `copies`, passed to `Counts.copies`) add $c_{rd}\thinspace(e_{acc}(1 - g_{ro}) + S\thinspace e_{rd}) + c_{wr}\thinspace(e_{acc}(1 - g_{wo}) + S\thinspace e_{wr})$ to the crossbar and memory parts: each beat a reader's or a writer's crossbar access and a read or a write on each of the superbank's $S$ banks (`Prices.superbank_banks`); the DMA engine costs nothing.
-- **Held and idle cycles cost nothing,** as under clock gating (D154 · D172).
-
-The static identity: `graph_counts` puts the graph's counts in this form (a unit's fires over its span, its links' loads as pushes, each group's cycles, each port's words as requests and grants, none refused, the copies' bursts as their beats read and written). Priced with each port's streamer as a mover, every part equals the static estimate's (`tests/estimate/test_dynamic.py`, to 1e-12).
-
-**Example 1, dot 3 at W = 8, N = 2048** (one group of `mul` and `sum`, 67 control bits, readers `mul_a` and `mul_b` of 8 channels, writer `sum_out` of 1, 32 banks). SNAX-GVSoC's `run` window: 256 firings of each unit, 260 busy-flag cycles (256 busy, 3 stall_in, 1 flush), `mul_a` 2048 requests, `mul_b` 2056 (8 refused), `sum_out` 1.
-
-| Part | Counts × prices | nJ (static) |
-|---|---|---|
-| datapath | 256 × 90.37756 + 256 × 4.03461 pJ | 24.170 (24.170) |
-| control | 5.4496 fJ × 67 × 260 | 0.095 (0.094, 257 cycles) |
-| streamers | (2048 + 2056) / 8 × 22.49923 + 1 / 1 × 3.229712 pJ | 11.545 (11.523) |
-| crossbar | 4104 × 2.752585 × (1 − 0.331792) + 1 × 2.752585 × (1 − 0.471583) pJ = 4104 × 1.839299 + 1.454513 pJ | 7.550 (7.535) |
-| memory | 4096 × 3.53819 + 1 × 6.4677 pJ | 14.499 (14.499) |
-| five parts | | 57.859 (57.820) |
-
-**Example 2, the same design at W = 32.** 32 channels a reader against 32 banks: `mul_a` is refused 63 times on each of its 32 lanes and `mul_b` 64, so the readers make 4064 + 4096 = 8160 requests for 4096 words, and the group stalls 66 cycles (131 busy-flag cycles against the static 65). The crossbar costs 8160 × 1.839299 + 1.454513 pJ = 15.010 nJ where the static estimate has 7.535, the streamers 22.619 nJ against 11.356, and the five parts 76.161 nJ against 57.398; the gated cluster's `run` window has 73.33 nJ (snax-forge-experiments' `ge-check`).
-
-- A shared mover (D169) is priced at its own channels, where the static estimate prices each user at its port's: the two agree when every user takes all the mover's channels.
+A request costs an access whether granted or refused; only a grant reaches a bank; held and idle cycles cost nothing. `graph_counts` puts the graph's counts in this form, so each part equals the static estimate's (`tests/estimate/test_dynamic.py`, to 1e-12).
 
 ### The checks and the known limits
 
-- `tests/estimate/test_cost.py` checks consistency, not accuracy: dot 3 at W = 2 to 32, N = 2048, each of the five parts within 1e-6 of snax-forge-experiments' own pricing on the same gated tables (`tests/estimate/fixtures/dot3_gated.json`). It also prices vecmul at W = 8, dot 4 and mvt_v1_2 by hand from the tables' rows, and vecmul at W = 32 off the grid. `tests/char/test_tables.py` checks the lookup rule against `cost_tables.md`'s six worked examples.
-- **Limits**:
-  - The control unit's comb area is only its 1 : 1 estimate.
-  - A streamer is priced per beat and a crossbar access at one price per input kind: a streamer's clock while it waits and the crossbar's per-cycle part are not counted, and a writer's streamer is priced as a reader. The static estimate does not see conflicts; the dynamic energy counts each refused request at a granted one's price.
-  - Every price was measured on random data: on a program's smaller values the datapath costs less than its price (dot 3: 1.6× high at W ≤ 16), a limit accepted (D177).
-  - An accumulator's isolated fire costs 25–30 % more than a back-to-back one.
-  - Deep LinkBuffers come out about 1.4–1.8× high on nangate45 (X35).
-  - The blocks are measured on random data at each port's width, so a datapath on real data (dot's) is priced high: 1.6× in the gated cluster at W = 2 to 16. At a narrow pair with w_in < w_out a register's upper bits copy the sign, so e_load prices it high by up to 2.2×.
-  - Comb energy is counted per fire, so a unit fed by another is undercounted when its inputs change more often than it fires: dot 4's tree sum comes out at 0.06–0.19 of SYN2, the kernel staying within 4 %.
+- `tests/estimate/test_cost.py` checks consistency, not accuracy (`tests/estimate/fixtures/dot3_gated.json`); `tests/char/test_tables.py` checks the lookup rule.
+- **Limits**: the control unit's comb area is a 1 : 1 estimate; a waiting streamer's clock and the crossbar's per-cycle part are not counted; prices from random data put a datapath on real data high (D177); an accumulator's isolated fire costs 25–30 % more than a back-to-back one; deep LinkBuffers come out about 1.4–1.8× high; comb energy per fire undercounts a unit whose inputs change more often than it fires.

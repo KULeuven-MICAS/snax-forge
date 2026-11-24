@@ -28,8 +28,8 @@ import snax.forge.{Emit, SvHeader}
   * (firtool's ` <module> <instance> (` lines); mvt_v5_sequential's (two accelerators), matvec_acc_v2's (two groups),
   * dot 4's (a wire) and mvt_v6's (a buffer) among them. A set whose groups share its movers shows its movers at the
   * wrapper (its hjson's `num_channel` are the movers') and adds `<tag>_<set>_port_mux`, which holds no module, after
-  * `<tag>_datapath`: dot_v1_2's and mvt_v1_2_2's. bicg_v4_1's two chains on a forked A (D189) have one reader for A and
-  * an output per chain.
+  * `<tag>_datapath`: dot_v1_2's and mvt_v1_2_2's. bicg_v4_1's two chains on a forked A have one reader for A and an
+  * output per chain.
   *
   * `emitted.json` lists a file for every module the wrapper reaches, each file exists, and `sv/` holds those only.
   */
@@ -79,7 +79,7 @@ class ShellEmitSpec extends AnyFlatSpec {
     Files.readAllLines(sv.resolve(s"$module.sv")).asScala.toSeq.collect { case Instance(m) => m }
 
   /** `bundle.py`'s `module_tree`: then each stream block once, unit by unit, a sliced input's `FifoSlicer` (its out
-    * lanes the stream's, one for a broadcast, D186) and a packed output's `FifoPacker`.
+    * lanes the stream's, one for a broadcast) and a packed output's `FifoPacker`.
     */
   def tree(spec: AcceleratorSpec): Seq[(String, Seq[String])] = {
     val t      = spec.tag

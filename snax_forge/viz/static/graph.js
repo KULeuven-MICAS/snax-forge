@@ -1,4 +1,4 @@
-// The DFG page's drawing of one step (api.py's ``drawing``, D185): the server decides every box,
+// The DFG page's drawing of one step (api.py's ``drawing``): the server decides every box,
 // port, edge, text and outline; here each box is measured as drawn, ELK (vendor/, run in its
 // worker) places the boxes and routes the edges, and the result is drawn: boxes as HTML in the
 // page's style, edges, labels and outlines in one SVG layer under them, port names in one over
@@ -891,7 +891,7 @@ export function routes(d, sels) {
   for (const s of sels) {
     const e = d.edges.find((x) => x.id === s);
     if (e) seeds.push(...(e.data && e.node ? d.edges.filter((x) => x.data === e.data && x.node === e.node && x.port === e.port) : [e]));
-    if (e && e.via) seeds.push(...d.edges.filter((x) => x.data === e.data && x.node === e.via.node && x.port === e.via.port)); // a fork's other reader: the first's hops to the container (D189)
+    if (e && e.via) seeds.push(...d.edges.filter((x) => x.data === e.data && x.node === e.via.node && x.port === e.via.port)); // a fork's other reader: the first's hops to the container
     else if (d.nodes.some((n) => n.kind === "container" && n.sel === s)) seeds.push(...d.edges.filter((x) => x.data === s));
   }
   const todo = seeds.map((e) => [e, e.task]);

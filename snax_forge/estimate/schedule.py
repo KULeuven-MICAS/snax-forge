@@ -5,9 +5,9 @@ per set of nodes a linked group joins), in the order LOWER starts them, each wit
 L1 words its streams move and the earlier runs it waits for: those of its own group or its
 accelerator (one streamer set), and those that write what it reads or writes, or read what it
 writes, in L1. ``longest_path`` adds the cycles along the slowest chain of waits: the
-accelerator's cycles when independent accelerators overlap (D179). ``overlap`` gives, with the
+accelerator's cycles when independent accelerators overlap. ``overlap`` gives, with the
 runs started as early as their waits allow, the most words a cycle that runs of different
-accelerators move at once; the estimate notes it beyond the banks. Ideal like the rest (D155):
+accelerators move at once; the estimate notes it beyond the banks. Ideal like the rest:
 no core configuration, so it cannot tell the two pipelined schedules apart.
 """
 

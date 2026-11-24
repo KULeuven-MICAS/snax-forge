@@ -271,7 +271,7 @@ def write_accelerator(design_point: str | Path, out_dir: str | Path,
 
 def counter(unit: Unit, n: int) -> tuple[int, str]:
     """The counter a task of ``n`` firings gives with an always-ready streamer, and the working;
-    a sliced input (D180) shows its first word the cycle after the first busy cycle takes it."""
+    a sliced input shows its first word the cycle after the first busy cycle takes it."""
     shell = ("The group's BUSY_COUNTER is reset by the accepted start and counts each busy cycle; busy "
              "rises the cycle after the start")  # fmt: skip
     s = 1 if any(p.d_in > 1 for p in unit.ports.values()) else 0
@@ -300,8 +300,8 @@ def rule_graph(group: Group, forked: list[list[str]] = ()) -> tuple[
     outer inputs (its ``in`` ports no link feeds); per link ``{from, to, to_input, depth}``,
     ``to_input`` the fed port's place among its unit's ``in`` ports; the unit owning the outer
     output (the one with an ``out`` port no link takes), with several chains each in unit
-    order; and the forks (``forked``, the accelerator's, D189) as ``(unit, outer input)``. A
-    banked unit adds its ``rows`` and its held inputs' places, ``hold`` (D190, D191)."""
+    order; and the forks (``forked``, the accelerator's) as ``(unit, outer input)``. A
+    banked unit adds its ``rows`` and its held inputs' places, ``hold``."""
     fed = {link.to for link in group.links}
     taken = {link.from_ for link in group.links}
 
@@ -382,7 +382,7 @@ def vectors(design_point: str | Path, root: str | Path | None = None) -> dict:
     linked = len(group.units) > 1
     data = {a.name: a for a in arrays(point)}
     ports = []
-    for end in [*acc.readers, *acc.outputs]:  # a fork's by its reader's port (D189)
+    for end in [*acc.readers, *acc.outputs]:  # a fork's by its reader's port
         name, port = end.split(".", 1)
         inst, node = found[name], instance_nodes(point.graph)[name]
         values = task.values[name] if linked else task.values
@@ -391,7 +391,7 @@ def vectors(design_point: str | Path, root: str | Path | None = None) -> dict:
         array = c_name(c) if p.direction == "in" else f"{c_name(c)}_golden"
         rate = 1 if p.rate == 1 else values[p.rate]
         beats, rows = values["n"] // rate, bank_rows(inst)
-        if rows > 1:  # NB (D191, D190, D194): a bank gives ROWS results a job and, seeded, takes
+        if rows > 1:  # NB (D191): a bank gives ROWS results a job and, seeded, takes
             # ROWS seed beats; its held input, a pop a row
             held = next(u for u in group.units if u.name == name).ports[port].hold
             per_row = p.direction == "out" or p.name == SEED
@@ -402,7 +402,7 @@ def vectors(design_point: str | Path, root: str | Path | None = None) -> dict:
     if linked:
         chains = group.chains()
         writes = job_writes(found, task.values, acc.fixed_folds, chains)
-        # several chains (D189): a unit's CSR by unit, as the program names it (MAC_JOB_BEATS)
+        # several chains: a unit's CSR by unit, as the program names it (MAC_JOB_BEATS)
         csrs = {(k if len(chains) == 1 or k.startswith("JOBS") else f"{u.upper()}_{k}"): v
                 for u, k, v in writes}  # fmt: skip
         n = task.values[group.units[0].name]["n"]

@@ -160,7 +160,7 @@ def _join() -> Graph:
 
 def test_link_refuses_a_join():
     """link.chain: mul2 into the add's other input makes {mul1, mul2, add} a join, not a chain
-    (SNAX-GVSoC's limit, gen.chain's check made early; chains meet only at a fork, D189)."""
+    (SNAX-GVSoC's limit, gen.chain's check made early; chains meet only at a fork)."""
     g = link(_join(), "t1", 0, "j")
     with pytest.raises(LinkError) as e:
         link(g, "t2", 0, "j")

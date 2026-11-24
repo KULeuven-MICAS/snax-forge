@@ -367,13 +367,13 @@ def _check_size(v: Mapping[str, Any], point: DesignPoint) -> None:
 
 def _check_unit(where: str, v: Mapping[str, Any], inst: Any, point: DesignPoint) -> None:
     """A unit's accelerator values: its registers (``n``, the named rates), a carried unit's
-    ``carry`` (D192) and each slot it
+    ``carry`` and each slot it
     reads from a container (``Instance.read``) as ``{"from": <container>}``, a kernel's scalar
     argument (shape [1]) that lives in a memory (the core's)."""
     from snax_forge.dfg.graph import SCALAR
 
     names = [*inst.brm.registers, *inst.read]
-    if set(v) - {"carry"} != set(names):  # a carried unit's jobs before it revisits (D192)
+    if set(v) - {"carry"} != set(names):  # a carried unit's jobs before it revisits
         raise ValueError(f"{where}: parameters {sorted(v)}, registers {names}")
     if "carry" in v and (type(v["carry"]) is not int or v["carry"] < 1):
         raise ValueError(f"{where}: carry {v['carry']!r}; a carried unit's jobs before its first "

@@ -1,4 +1,4 @@
-"""mvt's half 2 in the column form: a ``mac`` with ``y2`` broadcast (D186) and a seed (D187).
+"""mvt's half 2 in the column form: a ``mac`` with ``y2`` broadcast and a seed.
 
 mvt (``x2 += A.T @ y2``) at M = 8, N = 16 (helpers' SIZES): the multiply and the fold's nests
 with the lanes on the output index n (strips of W = 4 columns, m in time between the strip and

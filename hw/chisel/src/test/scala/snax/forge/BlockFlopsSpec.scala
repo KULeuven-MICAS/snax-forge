@@ -63,8 +63,8 @@ class BlockFlopsSpec extends AnyFlatSpec {
       (true, false, true, 1),
       (false, false, false, 1),
       (false, true, false, 1),
-      (true, false, false, r.between(2, 16)), // a bank (D191): its rows of sums
-      (true, false, true, r.between(2, 16))   // a seeded bank (D194): the same rows, the seed a port
+      (true, false, false, r.between(2, 16)), // a bank: its rows of sums
+      (true, false, true, r.between(2, 16))   // a seeded bank: the same rows, the seed a port
     ).map { case (acc, reg, seed, rows) =>
       val out = dtype(r)
       ujson.Obj(

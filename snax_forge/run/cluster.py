@@ -241,7 +241,7 @@ class Accelerator:
     def fire_readers(self, unit: str) -> list[Mover]:
         """The readers a ``fire`` line of ``unit`` names, in its order (snax-gvsoc's
         ``docs/EVENTS.md``): a unit's every reader; a linked group's head's, its first unit's
-        outer inputs, a forked one by its one reader, the fork's first port's (D189)."""
+        outer inputs, a forked one by its one reader, the fork's first port's."""
         readers = [m for m in self.movers_of(unit) if not m.write]
         g = self._group_of(unit)
         if g is None or len(g["units"]) == 1:
@@ -282,12 +282,12 @@ class Accelerator:
 
     def d_out(self, m: Mover, unit: str) -> int:
         """The results one word of writer ``m`` holds for ``unit``'s group: its port's ``d_out``
-        in accelerator.json (D174), 1 when not packed."""
+        in accelerator.json, 1 when not packed."""
         return self._per_word(m, unit, "d_out")
 
     def d_in(self, m: Mover, unit: str) -> int:
         """The slices one word of reader ``m`` gives ``unit``'s group, one a pop: its port's
-        ``d_in`` in accelerator.json (D180), 1 when not sliced."""
+        ``d_in`` in accelerator.json, 1 when not sliced."""
         return self._per_word(m, unit, "d_in")
 
     def _per_word(self, m: Mover, unit: str, key: str) -> int:

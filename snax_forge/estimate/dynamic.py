@@ -1,5 +1,5 @@
-"""The dynamic energy (CONTRACTS, "Cost model"; D177): D167's five parts with a run's counts in
-place of the graph's, each priced at the instance's existing price.
+"""The dynamic energy (CONTRACTS, "Cost model"): the cost model's five parts with a run's counts
+in place of the graph's, each priced at the instance's existing price.
 
     prices_of(graph, est, movers) -> Prices     what one transaction of each instance costs
     price(prices, counts) -> Energy             a window's counts priced, in nJ per part
@@ -11,8 +11,8 @@ stalls) and grants. A unit fires its firings times its span, a buffer link loads
 pushes its producer's pushes, a slicer pops on its unit's firings (a seed's on its pushes, one a
 job), each control unit clocks its own group's busy cycles, a mover moves
 its requests over its channels, the crossbar serves every request at its mover's kind (a
-reader's read-only, a writer's write-only, D178) and the banks the grants. A copy's beats (the
-DMA's L1 → L1 transfers on the superbank port, D184) cost the crossbar an access each, as a
+reader's read-only, a writer's write-only) and the banks the grants. A copy's beats (the
+DMA's L1 → L1 transfers on the superbank port) cost the crossbar an access each, as a
 reader's and a writer's, and the banks a read or a write on every bank of the superbank; the
 DMA engine nothing. With ``graph_counts`` the parts are the static estimate's
 (``Estimate.parts``).
@@ -54,8 +54,8 @@ class Prices:
     """One transaction of each instance, in pJ: per unit its span and energy per fire, per buffer
     link or packer (``<unit>.<port>``) its producer and energy per load or push, the control
     units' bits (in all, and per group) and e_ctrl, per mover whether it writes, its channels and its energy per beat,
-    the crossbar's per request of a read-only and of a write-only input (D178), a bank's per read
-    and per write, the banks a DMA beat reads or writes (a superbank's, D184); per slicer (``<unit>.<port>``) its unit, the count it pops on (``firings``, a
+    the crossbar's per request of a read-only and of a write-only input, a bank's per read
+    and per write, the banks a DMA beat reads or writes (a superbank's); per slicer (``<unit>.<port>``) its unit, the count it pops on (``firings``, a
     seed's ``pushes``) and its energy per pop."""
 
     units: dict[str, tuple[int, float]]
@@ -90,7 +90,7 @@ class Prices:
                    d["ctrl_bits"], d["e_ctrl"],
                    {k: (v["write"], v["channels"], v["e_beat"]) for k, v in d["movers"].items()},
                    d["e_xbar_ro"], d["e_xbar_wo"], d["e_rd"], d["e_wr"],
-                   d.get("superbank_banks", 1),  # a run priced before D184's wide port: 1 bank
+                   d.get("superbank_banks", 1),  # an older run's prices: 1 bank
                    {k: (v["from"], v["count"], v["e_fire"])
                     for k, v in d.get("slicers", {}).items()},
                    dict(d.get("group_ctrl_bits", {})))  # fmt: skip
@@ -100,7 +100,7 @@ class Prices:
 class Counts:
     """A window's counts (module doc): per unit ``(firings, pushes)``, the groups' busy-flag cycles
     added up (``busy``) and per group (``groups``), per mover ``(requests, grants)``, and the
-    copies' beats on the superbank port ``(reads, writes)`` (D184)."""
+    copies' beats on the superbank port ``(reads, writes)``."""
 
     units: dict[str, tuple[int, int]] = field(default_factory=dict)
     busy: int = 0
@@ -117,7 +117,7 @@ class Counts:
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> Counts:
-        cp = d.get("copies", {"reads": 0, "writes": 0})  # none in a window written before D184
+        cp = d.get("copies", {"reads": 0, "writes": 0})  # none in an older window
         return cls({k: (v["firings"], v["pushes"]) for k, v in d["units"].items()}, d["busy"],
                    {k: (v["requests"], v["grants"]) for k, v in d["movers"].items()},
                    (cp["reads"], cp["writes"]), dict(d.get("groups", {})))  # fmt: skip
@@ -223,13 +223,13 @@ def price(p: Prices, c: Counts) -> Energy:
         else:
             reads += g
     # A copy's beats: an access each on the crossbar, as a reader's and a writer's, and a read or
-    # a write on every bank of the superbank (D184)
+    # a write on every bank of the superbank
     cr, cw = c.copies
     requests += cr + cw
     xbar += cr * p.e_xro_pj + cw * p.e_xwo_pj
     reads += cr * p.superbank_banks
     writes += cw * p.superbank_banks
-    # Each control unit over its own group's busy cycles (D154 · D172); a window counted before
+    # Each control unit over its own group's busy cycles; a window counted before
     # the groups were kept apart prices every control unit over all of them
     if c.groups and p.group_bits:
         unknown = sorted(set(c.groups) - set(p.group_bits))
@@ -253,7 +253,7 @@ def price(p: Prices, c: Counts) -> Energy:
 def graph_counts(graph: Graph, est: Estimate) -> Counts:
     """The static estimate's counts in ``Counts``' form: a unit's firings (its fires over its
     span) and its pushes (its links' and packer's loads, a seeded unit's seed pops), each group's
-    cycles (whatever the schedule, D154 · D172), per port's
+    cycles (whatever the schedule), per port's
     streamer its words as requests and grants (none refused), the copies' bursts as their beats,
     one read and one write each. Priced at ``prices_of`` with the
     ports' streamers as movers, the parts are ``est.parts``' energies."""

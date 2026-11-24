@@ -9,8 +9,8 @@ and, on a technology, the cost (cost.py; ``tech=None`` leaves it out). The work 
 ``unmapped_iterations`` at ``UNMAPPED_CYCLES_PER_ITERATION`` cycles each, an assumption held in
 this one constant so a measured value can replace it; a copy (data_transpose's) at the DMA's
 measured rate (copies.py); ``total_cycles`` adds both to the accelerator's. Under a pipelined
-``schedule`` (D179) the accelerator's cycles are the longest path through the runs (schedule.py),
-not their sum; ``serial`` and ``sequential`` (D183) add them. The viewers and ``design.md`` read
+``schedule`` the accelerator's cycles are the longest path through the runs (schedule.py),
+not their sum; ``serial`` and ``sequential`` add them. The viewers and ``design.md`` read
 it (report/design.py).
 """
 
@@ -83,7 +83,7 @@ class Estimate(JsonFile):
     streamer_counts: list[StreamerCounts] = field(default_factory=list)
     xbar_inputs: tuple[int, int] | None = None
     bank_shape: tuple[int, int, int] | None = None
-    schedule: str = "serial"  # the design point's (D179)
+    schedule: str = "serial"  # the design point's
     runs: list[RunEstimate] = field(default_factory=list)  # in start order (schedule.py)
     copies: list[CopyEstimate] = field(default_factory=list)  # data_transpose's (copies.py)
     # The banks a DMA beat on L1 reads or writes: the DMA's beat over the bank's word, the
@@ -160,7 +160,7 @@ class Estimate(JsonFile):
     @property
     def copy_bursts(self) -> int:
         """The copies' bursts, each one beat: one read and one write on the superbank port, each a
-        crossbar access, and a read and a write on every bank of the superbank (D184); the DMA
+        crossbar access, and a read and a write on every bank of the superbank; the DMA
         engine is not costed."""
         return sum(x.bursts for x in self.copies)
 
@@ -357,7 +357,7 @@ def estimate(graph: Graph, platform: Platform | None = None,
              tech: str | None = DEFAULT_TECH, schedule: str = "serial") -> Estimate:  # fmt: skip
     """The ideal estimate of a bound graph (its symbols bound), on ``platform``'s L1 if given,
     costed on ``tech``'s table unless None, its accelerators ordered by ``schedule`` (a design
-    point's, D179)."""
+    point's)."""
     blocks = group_blocks(graph, platform.acc_csr.job_width if platform is not None else 32)
     found = [g for g, _, _ in blocks]
     data = containers(graph)
@@ -368,7 +368,7 @@ def estimate(graph: Graph, platform: Platform | None = None,
     in_l1 = {c for c, x in data.items() if x.placement == "l1"}
     run_list = group_runs(graph, found, in_l1, node_words)
     table = None if tech is None else load(tech)
-    if table is not None:  # each control unit clocked over its own group's cycles (D154 · D172)
+    if table is not None:  # each control unit clocked over its own group's cycles
         for g, units, bufs in blocks:
             g.cost = group_cost(table, units, bufs, g.bits, g.ctrl_bits, g.cycles)
     unit_group = {u: g for g in found for u in g.units}

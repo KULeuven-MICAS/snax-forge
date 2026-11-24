@@ -9,11 +9,10 @@ import snax.forge.{ForgeTester, IntType, LaneBits, Rand, Seeds, Sink, Source}
 /** `FifoSlicer` against a model written from its docstring: an in-beat of `words` words is the bits of its elements,
   * element e at bits `[w(e+1)-1 : we]`, and pop u of it is elements u * outLanes until (u + 1) * outLanes. Timing with
   * the input always valid and the output always ready, two worked words (two int32, 16 int8), and random configurations
-  * under random input gaps and output stalls, `enable` high and `clear` low. Then `enable` and `clear` (D180) against a
-  * cycle model of snax-gvsoc's `SnaxSlicer`, every cycle under random `enable` and `clear`, and the sliced input's
-  * fixed cases: the group's start (`clear`) in cycle 0 and busy (`enable`) from cycle 1, the reader early by 0, 1 and
-  * several cycles, a short last word then a clear, a clear after a run that ended on a whole word, and `enable` low
-  * mid-run.
+  * under random input gaps and output stalls, `enable` high and `clear` low. Then `enable` and `clear` against a cycle
+  * model of snax-gvsoc's `SnaxSlicer`, every cycle under random `enable` and `clear`, and the sliced input's fixed
+  * cases: the group's start (`clear`) in cycle 0 and busy (`enable`) from cycle 1, the reader early by 0, 1 and several
+  * cycles, a short last word then a clear, a clear after a run that ended on a whole word, and `enable` low mid-run.
   */
 class FifoSlicerSpec extends AnyFlatSpec with ForgeTester {
 
@@ -155,7 +154,7 @@ class FifoSlicerSpec extends AnyFlatSpec with ForgeTester {
     (take, pop, bits)
   }
 
-  behavior of "FifoSlicer with enable and clear (a sliced input, D180)"
+  behavior of "FifoSlicer with enable and clear (a sliced input)"
 
   for (seed <- Seeds())
     it should s"match the model every cycle under random enable and clear (seed $seed)" in

@@ -12,9 +12,9 @@ object SnaxDatapathVectors {
 
   val Env = "SNAX_GVSOC_DATAPATH_VECTORS"
 
-  /** One step: fire, first, read, lane, en, load, wslot, rslot, and a bank's row and drain (D191, 0 without); each
-    * input's lanes; the output's lanes; the CSR slots set before it (`set SLOT V` lines: SimdLanes' `k`, `k1`, `k2`
-    * from their pins).
+  /** One step: fire, first, read, lane, en, load, wslot, rslot, and a bank's row and drain (0 without); each input's
+    * lanes; the output's lanes; the CSR slots set before it (`set SLOT V` lines: SimdLanes' `k`, `k1`, `k2` from their
+    * pins).
     */
   case class Step(
     fire:  Boolean,
@@ -77,7 +77,7 @@ object SnaxDatapathVectors {
             "accumulate" -> ujson.Bool(one("accumulate") == "1"),
             "regOut"     -> ujson.Bool(one("regOut") == "1"),
             "seed"       -> ujson.Bool(header.get("seed").contains(Seq("1"))),
-            "rows"       -> ujson.Num(header.get("rows").fold(1)(_.head.toInt)) // a bank's (D191), else 1
+            "rows"       -> ujson.Num(header.get("rows").fold(1)(_.head.toInt)) // a bank's, else 1
           )
         case "SerialAccumulate" =>
           Map(
