@@ -581,9 +581,9 @@ flowchart TD
 | `pipeline` | loads of half 1, conf `mvt`, start, loads of half 2, conf `mvt_1`, start, `store_x1`, `store_x2`, syncs |
 | `pipeline_compute` | loads of both halves, conf `mvt`, conf `mvt_1`, start `mvt`, start `mvt_1`, `store_x1`, `store_x2`, syncs |
 
-vecadd's design point on `platforms/snax_forge.json` gives `tests/run/fixtures/vecadd_v1/tasks.json` exactly; its end:
+vecadd's design point on `platforms/snax_forge.json` gives `tests/lower/fixtures/vecadd_v1_tasks.json` exactly; its end:
 
-<!-- snippet: tests/run/fixtures/vecadd_v1/tasks.json -->
+<!-- snippet: tests/lower/fixtures/vecadd_v1_tasks.json -->
 ```json
   {
    "op": "configure",

@@ -11,10 +11,10 @@ import snax.forge.{Datapaths, Emit}
 /** A block alone (`Emit --block`) is the module it is inside an accelerator (`Emit --spec`): the same SystemVerilog,
   * byte for byte, for every file the block emits.
   *
-  * Compared on blocks whose pins the control unit drives: vsum_v1_1_w8's `TreeAccumulate` (int64, lanes 8, add) and
-  * dot_v5_w1's `Mac` (int64, lanes 1, accumulating), each at the params `blocks.json`'s fill rule gives its unit. A pin
-  * the accelerator ties to a constant is propagated into the module by firtool, so there the two differ by design:
-  * dot_v5_w1's `SerialAccumulate`, whose `first` is constant at T = 1 (snax-forge-experiments' PITFALLS, DC on
+  * Compared on a block whose pins the control unit drives: dot_v4's `Mac` (int64, lanes 4, accumulating), at the params
+  * `blocks.json`'s fill rule gives its unit. A pin the accelerator ties to a constant is propagated into the module by
+  * firtool, so there the two differ by design: dot_v4's `TreeAccumulate` (int64, lanes 4, add), whose `fire` and
+  * `first` are constant at T = 1 (as `SerialAccumulate`'s `first` in snax-forge-experiments' PITFALLS, DC on
   * SerialAccumulate), is emitted both ways and its difference reported, not checked.
   */
 class BlockInShellSpec extends AnyFlatSpec {
@@ -24,27 +24,26 @@ class BlockInShellSpec extends AnyFlatSpec {
 
   private val cases = Seq(
     Case(
-      "vsum_v1_1_w8",
-      "acc",
-      true,
-      ujson.Obj("inType" -> "int64", "outType" -> "int64", "lanes" -> 8, "op" -> "add", "seed" -> false)
-    ),
-    Case(
-      "dot_v5_w1",
+      "dot_v4",
       "mac",
       true,
       ujson.Obj(
         "inTypes"    -> ujson.Arr("int64", "int64"),
         "opType"     -> "int64",
         "outType"    -> "int64",
-        "lanes"      -> 1,
+        "lanes"      -> 4,
         "accumulate" -> true,
         "regOut"     -> false,
         "seed"       -> false,
         "rows"       -> 1
       )
     ),
-    Case("dot_v5_w1", "sum", false, ujson.Obj("inType" -> "int64", "outType" -> "int64", "lanes" -> 1, "seed" -> false))
+    Case(
+      "dot_v4",
+      "sum",
+      false,
+      ujson.Obj("inType" -> "int64", "outType" -> "int64", "lanes" -> 4, "op" -> "add", "seed" -> false)
+    )
   )
 
   private def fixture(n: String): RtlFixtures.Fixture = RtlFixtures.all.find(_.name == n).get

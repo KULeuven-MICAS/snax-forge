@@ -232,33 +232,36 @@ RECORDED = REPO / "tests" / "run" / "fixtures" / "vecadd_v1"
 
 
 def recorded_run(out: Path, level: str = "stall", fixture: Path | None = None) -> Path:
-    """The recorded vecadd run (or the run of ``fixture``, a folder of tests/run/fixtures/, at
-    task) converted at ``level`` into the flow folder ``out``, laid out as the flow lays it out
-    (``gen/``, ``design/``, ``run/``, ``tasks.json``): ``task`` from its task-level events,
-    ``beat`` and ``stall`` from its stall-level ones (at ``beat`` without the ``stalls``
-    lines). Returns ``out``."""
+    """The recorded vecadd run (or the run of ``fixture``, a folder of tests/run/fixtures/)
+    converted at ``level`` into the flow folder ``out``, laid out as the flow lays it out
+    (``gen/``, ``design/``, ``run/``, ``tasks.json``; the generated files ``recorded_files``
+    makes): from its events at ``level``, or ``beat`` from its stall-level ones without the
+    ``stalls`` lines. Returns ``out``."""
     recorded = RECORDED if fixture is None else fixture
     import shutil
 
     from snax_forge.common import to_json
     from snax_forge.run import write_run
     from snax_forge.run.convert import convert
+    from tests.run.helpers import recorded_files
 
+    made = recorded_files(recorded.name)
     (out / "gen").mkdir(parents=True)
     (out / "design").mkdir()
     described = [
         "snax_forge.hjson",
-        *sorted(p.name for p in recorded.glob("*_streamer_*.hjson")),
+        *sorted(p.name for p in made.glob("*_streamer_*.hjson")),
         "accelerator.json",
         "manifest.json",
     ]  # the cluster file, a streamer file per set, the manifest (the sets' trace paths)
     for name in described:
-        shutil.copy(recorded / name, out / "gen" / name)
-    shutil.copy(recorded / "design_point.json", out / "design" / "design_point.json")
-    shutil.copy(recorded / "tasks.json", out / "tasks.json")
-    cluster, tasks, check, lines, regions, syms = load_recorded(
-        recorded, "events.log" if level == "task" else "events_stall.log"
-    )
+        shutil.copy(made / name, out / "gen" / name)
+    shutil.copy(made / "design_point.json", out / "design" / "design_point.json")
+    shutil.copy(made / "tasks.json", out / "tasks.json")
+    events = f"events_{level}.log"
+    if not (recorded / events).is_file() and level == "beat":
+        events = "events_stall.log"
+    cluster, tasks, check, lines, regions, syms = load_recorded(recorded, events)
     sources = (
         []
         if level == "task"

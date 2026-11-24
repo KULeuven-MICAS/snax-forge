@@ -732,9 +732,11 @@ def _from_graph(
         for p in [p for p in gen.rglob("*") if p.is_file() and p not in written]:
             p.unlink()  # the flow's own folder: only what this generation wrote stays
 
-    # build: SNAX-GVSoC, when needed
-    with _timed(times, "build"), build_lock(GVSOC_WORKDIR):
+    # build: SNAX-GVSoC, when needed; the checkout read before the lock (git status takes
+    # seconds on a network disk, and a build does not change it), the decision under it
+    with _timed(times, "build"):
         c = checkout()
+    with _timed(times, "build"), build_lock(GVSOC_WORKDIR):
         why = build_reason(c, GVSOC_WORKDIR)
         if why is not None:
             print(f"  build     building SNAX-GVSoC: {why}; log in "

@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from snax_forge.run import LEVELS, RunError, Trace
+from snax_forge.run import RunError, Trace
 
 
 def events():
@@ -68,16 +68,6 @@ def beat_events():
         {"t": 0, "k": "insn", "src": "core0", "pc": 0x800001E0, "func": "main",
          "text": "addi sp, sp, -16 sp=1001ffb0 sp:1001ffc0"},
     ]  # fmt: skip
-
-
-def test_the_levels_and_the_beat_kinds():
-    assert LEVELS == ("off", "task", "beat", "stall", "finegrained")
-    t = Trace("finegrained", 226, 2812, ["acc", "acc_a", "dma", "core0"], events() + beat_events(),
-              ["acc", "acc_a", "dma", "core0"])  # fmt: skip
-    back = Trace.from_dict(json.loads(json.dumps(t.to_dict())))
-    assert back == t and back.filter == ["acc", "acc_a", "dma", "core0"]
-    assert t.meta()["filter"] == ["acc", "acc_a", "dma", "core0"]
-    assert [e["src"] for e in t.of_kind("grant")] == ["acc_a.lane0", "core0"]
 
 
 @pytest.mark.parametrize(

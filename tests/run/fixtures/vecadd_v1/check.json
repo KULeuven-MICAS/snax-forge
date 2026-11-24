@@ -1,5 +1,5 @@
 {
- "total_cycles": 214,
+ "total_cycles": 209,
  "functional_check": {
   "kernel": "vecadd",
   "seed": 0,

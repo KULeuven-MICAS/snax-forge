@@ -22,7 +22,7 @@ from tests.design.helpers import REPO
 
 from .helpers import excerpts_hold, near, needs_gvsoc
 
-pytestmark = [pytest.mark.gvsoc, needs_gvsoc]
+pytestmark = [pytest.mark.xdist_group("loop1"), pytest.mark.gvsoc, needs_gvsoc]
 
 README = REPO / "examples" / "loop1" / "README.md"
 DEFAULT, WIDE = "vecadd_v1_N512_stall", "vecadd_v1_N512_W8_stall"

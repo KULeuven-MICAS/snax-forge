@@ -1,19 +1,19 @@
 {
- "total_cycles": 489,
+ "total_cycles": 687,
  "functional_check": {
   "kernel": "bicg_types",
   "seed": 0,
   "symbols": {
    "M": 40,
-   "N": 16
+   "N": 32
   },
   "exit_code": 0,
   "data_errors": 0,
-  "words": 56,
+  "words": 72,
   "tasks": {
    "q_mult_bicg_types": {
-    "counter": 166,
-    "beats": 160,
+    "counter": 327,
+    "beats": 320,
     "group": "bicg_types"
    }
   },

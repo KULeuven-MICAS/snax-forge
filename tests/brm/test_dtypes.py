@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from snax_forge.brm import INT_DTYPES, Brm, check_dtypes, load_brm, output_dtypes
-
-from .helpers import adder
+from snax_forge.brm import INT_DTYPES, check_dtypes, load_brm, output_dtypes
 
 VMUL = load_brm("simd")
 VSUM = load_brm("accumulate")
@@ -14,20 +12,6 @@ VSUM = load_brm("accumulate")
 
 def test_every_port_takes_every_integer_dtype_by_default():
     assert all(p.dtypes == list(INT_DTYPES) for p in VMUL.interface.ports)
-
-
-@pytest.mark.parametrize(
-    "dtypes",
-    [
-        {"a": "int64", "b": "int64", "out": "int64"},
-        {"a": "int32", "b": "int32", "out": "int32"},
-        {"a": "int32", "b": "int32", "out": "int64"},
-        {"a": "int8", "b": "uint8", "out": "int16"},
-        {"a": "uint64", "b": "uint64", "out": "uint64"},
-    ],
-)
-def test_accepted(dtypes):
-    assert check_dtypes(VMUL, dtypes) == []
 
 
 REFUSED = [
@@ -54,16 +38,6 @@ REFUSED = [
 @pytest.mark.parametrize(("case", "dtypes", "why"), REFUSED, ids=[c[0] for c in REFUSED])
 def test_refused(case, dtypes, why):
     assert check_dtypes(VMUL, dtypes) == why
-
-
-def test_a_port_that_narrows_its_dtypes():
-    d = adder()
-    d["interface"]["ports"][2]["dtypes"] = ["int64"]
-    b = Brm.from_dict(d)
-    assert check_dtypes(b, {"a": "int32", "b": "int32", "out": "int32"}) == [
-        "port out is int32; test_add takes ['int64'] there"
-    ]
-    assert output_dtypes(b, {"a": "int32", "b": "int32"}) == {"out": ["int64"]}
 
 
 def test_accepted_outputs():

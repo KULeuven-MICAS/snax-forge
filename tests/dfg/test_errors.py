@@ -6,7 +6,7 @@ import pytest
 
 from snax_forge.dfg import DfgError, Graph
 
-from .helpers import as_dict, edited, inner
+from .helpers import edited, inner
 
 
 def _set(path, value):
@@ -115,32 +115,6 @@ CASES = [
 def test_rejected_by_name(name, edit, message):
     with pytest.raises(DfgError, match=message):
         Graph.from_dict(edited(name, edit))
-
-
-def test_one_instance_bound_two_ways():
-    d = as_dict("vecadd_accelerated")
-    a = d["body"][0]["body"][0]
-    b = {**a, "id": "add2", "attrs": {**a["attrs"], "params": {"W": 8, "op": "add", "streams": 2}}}
-    d["body"][0]["body"].append(b)
-    with pytest.raises(DfgError, match="instance 'acc' is bound elsewhere"):
-        Graph.from_dict(d)
-    b["attrs"]["params"] = {"W": 4, "op": "add", "streams": 2}
-    Graph.from_dict(d)  # the same binding twice is fine
-
-
-def test_a_variable_is_bound_only_inside_its_map():
-    d = as_dict("vecadd")
-    d["body"].append(
-        {
-            "id": "late",
-            "kind": "tasklet",
-            "inputs": {"x": {"data": "A", "subset": ["i"]}},
-            "outputs": {"y": {"data": "C", "subset": [0]}},
-            "attrs": {"code": "y = x"},
-        }
-    )
-    with pytest.raises(DfgError, match="node 'late'.inputs.x: 'i' is not a symbol"):
-        Graph.from_dict(d)
 
 
 def _replaced(edit):

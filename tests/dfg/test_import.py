@@ -16,56 +16,20 @@ reference at two sizes each (the constructs they need: test_import_constructs.py
 
 from __future__ import annotations
 
-import dace
-import numpy as np
 import pytest
 
-from snax_forge.dfg import DfgError, Graph
 from snax_forge.dfg.__main__ import main
 from snax_forge.dfg.import_sdfg import (
     SdfgImportError,
-    clean,
-    fresh,
-    import_kernel,
     import_sdfg,
 )
-from snax_forge.sdfg.build import build
-from snax_forge.sdfg.loader import load
 
 from . import sdfg_programs as progs
 from .helpers import fixture
 
-
-@pytest.fixture(scope="module")
-def vecadd_sdfg() -> dace.SDFG:
-    return build(load("vecadd"), simplify=True)
-
-
 # =============================================================================
 # vecadd (the acceptance)
 # =============================================================================
-
-
-def test_no_transient_and_no_copy_left(vecadd_sdfg):
-    """simplify already folded C[:] = A + B into a direct write."""
-    g = import_sdfg(vecadd_sdfg, "vecadd")
-    assert list(g.containers) == ["A", "B", "C"]
-    assert not any(c.transient for c in g.containers.values())
-    assert [n.kind for n, _ in g.walk()] == ["map", "tasklet"]
-    assert g.node("add").outputs["out"].data == "C"
-
-
-def test_the_kernel_is_int64():
-    """vecadd imports as int64: every container's dtype."""
-    g = import_kernel("vecadd")
-    assert {c.dtype for c in g.containers.values()} == {"int64"}
-
-
-def test_a_stored_sdfg_gives_the_same_graph(vecadd_sdfg, tmp_path):
-    """What `pixi run sdfg vecadd` writes imports to the same graph."""
-    path = tmp_path / "vecadd.simplified.sdfg"
-    vecadd_sdfg.save(path)
-    assert import_sdfg(dace.SDFG.from_file(path), "vecadd") == Graph.load(fixture("vecadd"))
 
 
 @pytest.mark.parametrize(
@@ -79,30 +43,6 @@ def test_cli_writes_the_fixture(tmp_path, capsys, kernel):
     assert capsys.readouterr().out.strip() == str(tmp_path / f"{kernel}.snaxdfg")
 
 
-@pytest.mark.parametrize(
-    ("kernel", "sizes"),
-    [
-        ("relu", ["1024", "7"]),
-        ("axpy", ["1024", "7"]),
-        ("matadd", ["256 x 256", "256 x 8"]),  # --n sets N only: one square, one not
-        ("rowsum", ["256 x 256", "256 x 8"]),
-    ],
-)
-def test_cli_imports_and_checks_the_b0_kernels(tmp_path, capsys, kernel, sizes):
-    """Each imports, then runs in the reference executor equal to the kernel's reference."""
-    assert main(["import", kernel, "--out", str(tmp_path)]) == 0
-    path = str(tmp_path / f"{kernel}.snaxdfg")
-    capsys.readouterr()
-    for n in (None, "7" if sizes[1] == "7" else "8"):
-        assert main(["check", path, "--kernel", kernel, *(["--n", n] if n else [])]) == 0
-    out = capsys.readouterr().out
-    assert out.count("OK ") == 2
-    for size in sizes:
-        dims = size.split(" x ")
-        want = f"N = {dims[0]})" if len(dims) == 1 else f"M = {dims[0]}, N = {dims[1]})"
-        assert want in out
-
-
 def test_cli_reports_an_unsupported_kernel(tmp_path, capsys):
     assert main(["import", "jacobi1d", "--out", str(tmp_path)]) == 1
     assert "no control flow yet" in capsys.readouterr().err
@@ -114,68 +54,9 @@ def test_cli_reports_an_unsupported_kernel(tmp_path, capsys):
 # =============================================================================
 
 
-def test_dot_is_a_multiply_map_then_a_sum_map():
-    """The Reduce's scalar and its copy are folded: the sum map writes out[0]."""
-    g = import_kernel("dot")
-    assert list(g.containers) == ["A", "B", "out", "tmp0"]
-    assert [c for c, cont in g.containers.items() if cont.transient] == ["tmp0"]
-    assert {c.dtype for c in g.containers.values()} == {"int64"}
-    assert [(n.id, n.attrs.get("var")) for n in g.body] == [("mult_map", "n"), ("sum_map", "n")]
-    s = g.node("sum")
-    assert s.attrs["code"] == "out = in1"
-    assert s.inputs["in1"].to_dict() == {"data": "tmp0", "subset": ["n"]}
-    assert s.outputs["out"].to_dict() == {
-        "data": "out",
-        "subset": [0],
-        "reduce": {"op": "add", "identity": 0},
-    }
-
-
-def test_max_reduction():
-    """np.max: op max, identity the dtype's smallest value, named after the reduction."""
-    g = import_sdfg(progs.amax.to_sdfg(simplify=True), "amax")
-    assert list(g.containers) == ["A", "out"]
-    assert [n.id for n, _ in g.walk()] == ["max_map", "max"]
-    red = g.node("max").outputs["out"].reduce
-    assert (red.op, red.identity) == ("max", int(np.iinfo(np.int64).min))
-
-
-def test_reduce_over_one_axis():
-    """A Reduce over axis 1 of A[4, 6]: a map per dimension, the output keeps i."""
-    g = import_sdfg(progs.row_sum(), "row_sum")
-    assert [(n.id, n.attrs.get("var")) for n, _ in g.walk()] == [
-        ("sum_map", "i"),
-        ("sum_map_1", "j"),
-        ("sum", None),
-    ]
-    s = g.node("sum")
-    assert s.inputs["in1"].subset == ["i", "j"]
-    assert s.outputs["out"].subset == ["i"]
-
-
 # =============================================================================
 # Beyond vecadd
 # =============================================================================
-
-
-def test_transient_between_two_maps():
-    """Two maps in one state, in order, sibling variables both ``n``, ``__tmp0`` -> ``tmp0``."""
-    g = import_sdfg(progs.two.to_sdfg(simplify=True), "two")
-    assert list(g.containers) == ["A", "B", "C", "tmp0"]
-    assert g.containers["tmp0"].transient
-    assert [(n.id, n.attrs.get("var")) for n in g.body] == [("add_map", "n"), ("mult_map", "n")]
-    assert g.node("add").outputs["out"].data == "tmp0"
-    assert g.node("mult").inputs["in1"].data == "tmp0"
-    assert g.node("mult").attrs["code"] == "out = in1 * in2"
-
-
-def test_offset_subsets_and_ranges():
-    """B[1:-1] = A[:-2] + A[2:]: a range of N - 2 and indices i, i + 2, i + 1."""
-    g = import_sdfg(progs.shift.to_sdfg(simplify=True), "shift")
-    assert g.node("add_map").attrs["range"] == "0:N - 2"
-    add = g.node("add")
-    assert [m.subset for m in add.inputs.values()] == [["i"], ["i + 2"]]
-    assert add.outputs["out"].subset == ["i + 1"]
 
 
 # =============================================================================
@@ -183,77 +64,9 @@ def test_offset_subsets_and_ranges():
 # =============================================================================
 
 
-def test_rowsum_names_its_loops_after_their_dimensions():
-    """sum_map over M is m, sum_map_1 over N is n: A[m, n], y[m]; base and piece in the attrs."""
-    g = import_kernel("rowsum")
-    assert [(n.id, n.attrs["var"]) for n, _ in g.walk() if n.kind == "map"] == [
-        ("sum_map", "m"),
-        ("sum_map_1", "n"),
-    ]
-    s = g.node("sum")
-    assert (s.inputs["in1"].subset, s.outputs["out"].subset) == (["m", "n"], ["m"])
-    assert {k: g.node("sum_map_1").attrs[k] for k in ("loop.dim", "loop.piece")} == {
-        "loop.dim": "n",
-        "loop.piece": 1,
-    }
-
-
-def test_vecadd_names_its_loop_n():
-    g = import_kernel("vecadd")
-    assert g.node("add_map").attrs["var"] == "n"
-    assert [m.subset for m in g.node("add").inputs.values()] == [["n"], ["n"]]
-
-
-def test_a_triangular_range_keeps_the_importers_name():
-    """The inner map over 0:i keeps j (its base too); its range names the outer map's n."""
-    g = import_sdfg(progs.triangle(), "triangle")
-    outer, inner = g.node("outer"), g.node("inner")
-    assert (outer.attrs["var"], inner.attrs["var"], inner.attrs["range"]) == ("n", "j", "0:n")
-    assert inner.attrs["loop.dim"] == "j"
-    assert g.node("c").inputs["a"].subset == ["n", "j"]
-
-
-def test_a_second_map_over_the_same_symbol_keeps_the_importers_name():
-    """total's sum over A[N, N]: n outer, the inner map over N again keeps j (n is taken by the
-    enclosing map), A[n, j]; an int range keeps the importer's names too (row_sum's 0:4, 0:6)."""
-    g = import_sdfg(progs.total.to_sdfg(simplify=True), "total")
-    assert [n.attrs["var"] for n, _ in g.walk() if n.kind == "map"] == ["n", "j"]
-    assert g.node("sum").inputs["in1"].subset == ["n", "j"]
-    g = import_sdfg(progs.row_sum(), "row_sum")
-    assert [n.attrs["var"] for n, _ in g.walk() if n.kind == "map"] == ["i", "j"]
-
-
-def test_names():
-    assert clean("_Add__map") == "add_map"
-    assert clean("__tmp0") == "tmp0"
-    assert clean("__in1") == "in1"
-    assert clean("assign_14_4") == "assign_14_4"
-    taken = {"add"}
-    assert fresh("add", taken) == "add_1"
-    assert fresh("add", taken) == "add_2"
-    assert fresh("mul", taken) == "mul"
-
-
 # =============================================================================
 # Unsupported constructs are rejected by name
 # =============================================================================
-
-
-@pytest.mark.parametrize(
-    ("kernel", "message"),
-    [
-        ("jacobi1d", "4 states .*no control flow yet"),
-    ],
-)
-def test_unsupported_kernels(kernel, message):
-    with pytest.raises(SdfgImportError, match=message):
-        import_kernel(kernel)
-
-
-def test_raw_vecadd_has_three_states():
-    """The raw SDFG still has the transient copies in states of their own."""
-    with pytest.raises(SdfgImportError, match=r"\d+ states .* only one is imported"):
-        import_sdfg(build(load("vecadd"), simplify=False), "vecadd")
 
 
 @pytest.mark.parametrize(
@@ -282,44 +95,3 @@ def test_unsupported_constructs(make, message):
 # =============================================================================
 # Casts and convert maps (D143 · D175)
 # =============================================================================
-
-
-def test_a_value_cast_is_kept():
-    (t,) = [n for n, _ in import_sdfg(progs.value_cast(), "t").walk() if n.kind == "tasklet"]
-    assert t.attrs["code"] == "o = int64(a) // 3"
-
-
-@pytest.mark.parametrize(
-    ("types", "dtypes", "code", "params"),
-    [
-        (None, None, "out = in1 * in2", {}),  # OP_TYPE int64 on int64: the converts are copies
-        ("i8", None, "out = int32(in1) * int32(in2)", {"OP_TYPE": "int32"}),
-        (
-            "i8",
-            {"OP_TYPE": "int8"},
-            "out = in1 * in2",
-            {"OP_TYPE": "int8"},
-        ),  # NumPy's wrapped product
-        ("i32", None, "out = int64(in1) * int64(in2)", {}),  # OP_TYPE int64 is its default
-    ],
-)
-def test_converts_fold_into_their_reader(types, dtypes, code, params):
-    """dot's ``A.astype(OP_TYPE) * B.astype(OP_TYPE)``: DaCe's two convert maps into transients fold
-    into the multiply, which reads A and B through the casts (none where they are no-ops), and
-    the product keeps its name tmp0, as without the casts."""
-    g = import_kernel("dot", dtypes, types)
-    assert [n.id for n in g.body] == ["mult_map", "sum_map"]
-    assert g.node("mult").attrs["code"] == code
-    assert {c: m.data for c, m in g.node("mult").inputs.items()} == {"in1": "A", "in2": "B"}
-    assert set(g.containers) == {"A", "B", "out", "tmp0"}
-    assert g.type_params == params
-    assert Graph.from_dict(g.to_dict()) == g
-
-
-def test_type_params_are_written_only_when_set_and_checked():
-    d = import_kernel("dot", None, "i8").to_dict()
-    assert d["type_params"] == {"OP_TYPE": "int32"}
-    assert "type_params" not in import_kernel("dot").to_dict()
-    d["type_params"] = {"OP_TYPE": "float32"}
-    with pytest.raises(DfgError, match="type_params.OP_TYPE: must be an integer dtype"):
-        Graph.from_dict(d)

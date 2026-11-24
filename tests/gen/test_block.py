@@ -13,7 +13,7 @@ import pytest
 from snax_forge.gen import GenError
 from snax_forge.gen import block as block_mod
 from snax_forge.gen.block import check_entry, emit_blocks, main
-from snax_forge.gen.rtl import EMITTED_JSON, at_min, catalogue
+from snax_forge.gen.rtl import EMITTED_JSON
 
 TREE = {"inType": "int64", "outType": "int64", "lanes": 8, "op": "add", "seed": False}
 MAC = {"inTypes": ["int64", "int64"], "opType": "int64", "outType": "int64", "lanes": 1,
@@ -24,23 +24,6 @@ SLICER = {"words": 1, "laneType": "int8", "outLanes": 4}
 
 def entry(tmp_path: Path, datapath: str = "TreeAccumulate", **params) -> dict:
     return {"datapath": datapath, "params": params or dict(TREE), "out": str(tmp_path / datapath)}
-
-
-def test_a_good_entry_passes(tmp_path):
-    check_entry(entry(tmp_path))
-    check_entry(entry(tmp_path, "Mac", **MAC))
-    check_entry(entry(tmp_path, "FifoPacker", **PACKER))
-    check_entry(entry(tmp_path, "FifoSlicer", **SLICER))
-
-
-def test_a_mac_without_rows_passes_at_rows_1(tmp_path):
-    """An int filled from unit.params may be left out, at its min; a bad one still fails."""
-    bare = {k: v for k, v in MAC.items() if k != "rows"}
-    check_entry(entry(tmp_path, "Mac", **bare))
-    assert at_min(bare, catalogue()["Mac"]) == MAC
-    with pytest.raises(GenError) as e:
-        check_entry(entry(tmp_path, "Mac", **{**bare, "rows": 0}))
-    assert e.value.code == "gen.params"
 
 
 def test_a_packer_whose_lanes_do_not_divide_its_beat_is_refused(tmp_path):

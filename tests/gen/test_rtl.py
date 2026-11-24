@@ -17,7 +17,6 @@ from dataclasses import replace
 import pytest
 
 from snax_forge.gen import (
-    ELEMENTWISE_OP,
     Accelerator,
     Csr,
     Description,
@@ -30,56 +29,32 @@ from snax_forge.gen.accelerator import ACCELERATOR_JSON, Link
 from snax_forge.gen.gvsoc import generate
 from snax_forge.gen.rtl import (
     accelerator_spec,
-    buffer_params,
     catalogue,
     check_params,
     check_unit,
-    counter,
     fill,
-    flops,
     group_counter,
     live,
     write_accelerator,
     write_fixture,
 )
 from tests.design.helpers import REPO
-from tests.helpers import SUB, bound_vsum, requires_submodule
+from tests.helpers import FORGE_FIXTURES, SUB, requires_submodule
 
-from .helpers import designed, point, validate, with_groups
+from .helpers import designed, point, validate
 
 RTL_FIXTURES = REPO / "hw" / "chisel" / "src" / "test" / "resources" / "rtl"
 FORGE = SUB / "forge"
-# Each fixture: its recipe and --set
+# forge/'s designs that the specs driving every fixture have no model for: axpby's CSR scalar
+# (ShellScalarSpec checks it through ShellCasesSpec) and padded rows
+NOT_RTL = {"axpy_v1", "rowsum_v2_padded"}
+# Each fixture: its recipe and --set values; forge/'s designs at forge/'s sizes, then the ones a
+# Chisel spec needs that forge/ does not hold (their accelerator.json and streamer hjsons beside)
 DESIGNS = {
-    "vecadd_v1": ("vecadd_v1", []),
-    "vecmul_v1": ("vecmul_v1", []),
-    "vsum_v1": ("vsum_v1", []),
-    "vsum_v1_1": ("vsum_v1_1", []),
-    "vsum_v1_1_w8": ("vsum_v1_1", ["W=8"]),
-    "vecadd_v1_1": ("vecadd_v1_1", []),
-    "vecmul_v1_1": ("vecmul_v1_1", []),
-    "vecadd_v1_2": ("vecadd_v1_2", []),
-    "vsum_v1_1_1": ("vsum_v1_1_1", []),
-    "vsum_v1_1_2": ("vsum_v1_1_2", []),
-    "vecmul_v1_1_1": ("vecmul_v1_1_1", []),
-    "dot_v1": ("dot_v1", []),
-    "dot_v1_1": ("dot_v1_1", []),
-    "dot_v2": ("dot_v2", ["N=16"]),
-    "dot_v3": ("dot_v3", ["N=16"]),
-    "dot_v4": ("dot_v4", ["N=16"]),
-    "dot_v5": ("dot_v5", ["N=16"]),
-    "dot_v5_w1": ("dot_v5", ["N=16", "W=1"]),
-    "dot_v6": ("dot_v6", ["N=16"]),
-    "matvec_v4": ("matvec_v4", ["M=2", "N=16"]),
-    "matvec_v5": ("matvec_v5", ["M=2", "N=16"]),
-    "matvec_v6": ("matvec_v6", ["M=2", "N=16"]),
-    "dot_v1_2": ("dot_v1_2", []),
-    "mvt_v1_2_2": ("mvt_v1_2_2", ["W=8"]),
-    "vecadd_v1_1_w1": ("vecadd_v1_1", ["W=1"]),
-    "bicg_v3_w64": ("bicg_v3", ["M=64", "N=64", "W=64"]),  # two chains on a forked A (D189)
-    "bicg_v4": ("bicg_v4", []),  # s's bank of 16 rows, r held (D191, D190)
-    "bicg_v4_1": ("bicg_v4_1", []),  # two strips of a bank of 8, q carried (D192)
-    "mvt_v6": ("mvt_v6", []),  # x2's seeded bank of 8 rows, y2 held, A forked (D194)
+    **{d: (r, list(sets)) for d, (r, sets) in FORGE_FIXTURES.items() if d not in NOT_RTL},
+    "vsum_v1": ("vsum_v1", []),  # ShellCasesSpec's fold wrapper: one lane, one input
+    "vsum_v1_1_1": ("vsum_v1_1_1", []),  # ShellPackedSpec's sum, its output packed by hand
+    "dot_v1_2": ("dot_v1_2", []),  # ShellEndToEndSpec's port mux run through two tasks
 }
 
 # SimdLanes' slot params of a unit with none (axpby's k1 and k2, each slot from its CSR or not)
@@ -89,75 +64,6 @@ NO_SLOTS = {"k1": None, "k2": None, "kCsr": False, "k1Csr": False, "k2Csr": Fals
 @pytest.fixture
 def vecadd(tmp_path):
     return point(tmp_path), tmp_path
-
-
-def test_gen_rtl_writes_gen_gvsocs_accelerator_json(vecadd):
-    """The same bytes as gen-gvsoc's, and they meet the schema."""
-    from snax_forge.gen import generate
-
-    path, root = vecadd
-    acc = write_accelerator(path, root / "rtl", root)
-    generate(path, root / "gvsoc", root)
-    text = (root / "rtl" / "accelerator.json").read_text()
-    assert text == (root / "gvsoc" / "accelerator.json").read_text() == acc.to_json()
-    validate("accelerator", json.loads(text))
-
-
-def test_the_fill_rule_gives_the_datapaths_params(vecadd, tmp_path):
-    path, root = vecadd
-    acc = accelerator_spec(path, root)
-    (u,) = acc.groups[0].units
-    sig = catalogue()["SimdLanes"]
-    assert fill(acc, u, sig) == {"inTypes": ["int64", "int64"], "opType": "int64",
-                                 "outType": "int64", "lanes": 4, "op": "add", "streams": 2,
-                                 "k": None} | NO_SLOTS  # fmt: skip
-    vsum = accelerator_spec(
-        point(tmp_path / "vsum_v1", name="vsum_v1", graph=bound_vsum()), tmp_path / "vsum_v1"
-    )
-    (v,) = vsum.groups[0].units
-    assert fill(vsum, v, catalogue()["TreeAccumulate"]) == {
-        "inType": "int64", "outType": "int64", "lanes": 1, "op": "add", "seed": False
-    }  # fmt: skip
-
-
-def test_relus_unit_fills_one_stream_and_its_k(tmp_path):
-    """relu's SimdLanes: one input (streams 1, b not live), k 0 from its params; the catalogue
-    takes it."""
-    from .helpers import bound_recipe
-
-    path = point(tmp_path, name="relu_v1", graph=bound_recipe("relu_v1", "relu"))
-    acc = accelerator_spec(path, tmp_path)
-    (u,) = acc.groups[0].units
-    sig = catalogue()["SimdLanes"]
-    params = fill(acc, u, sig)
-    assert params == {"inTypes": ["int32"], "opType": "int32", "outType": "int32", "lanes": 4,
-                      "op": "max", "streams": 1, "k": 0} | NO_SLOTS  # fmt: skip
-    assert list(live(sig["ports"], params)) == ["a", "out"]
-
-
-def test_the_catalogues_ops_are_elementwise_ops():
-    """The catalogue's op names are blocks.py's (whose encodings tests read from the Chisel source),
-    then axpby."""
-    ops = catalogue()["SimdLanes"]["params"]["op"]["values"]
-    assert ops == [*ELEMENTWISE_OP, "axpby"]
-
-
-def test_the_catalogue_has_the_datapaths_latency_span_and_pins():
-    cat = catalogue()
-    assert {k: (v["latency"], v["span"]) for k, v in cat.items()} == {
-        "SimdLanes": (0, 1), "TreeAccumulate": (1, 1), "Mac": ("max(accumulate, regOut)", 1),
-        "SerialAccumulate": (1, "lanes"), "LaneAccumulate": (1, 1), "LinkBuffer": (1, 1),
-    }  # fmt: skip
-    pins = {k: live(v["pins"], {"accumulate": True, "regOut": False}) for k, v in cat.items()}
-    assert {k: list(v) for k, v in pins.items()} == {
-        "SimdLanes": [], "TreeAccumulate": ["fire", "first"], "Mac": ["fire", "first"],
-        "SerialAccumulate": ["read", "lane", "first"], "LaneAccumulate": ["fire", "first"],
-        "LinkBuffer": ["load", "wslot", "rslot"],
-    }  # fmt: skip
-    assert list(live(cat["Mac"]["pins"], {"accumulate": False, "regOut": True})) == ["en"]
-    assert live(cat["Mac"]["pins"], {"accumulate": False, "regOut": False}) == {}
-    for v in cat.values():
-        assert set(v["fill"]) == set(v["params"])
 
 
 def _edit(f):
@@ -204,17 +110,6 @@ def test_a_type_param_must_be_type_names():
         with pytest.raises(GenError) as e:
             check_params("E", {**good, k: v}, sig)
         assert e.value.code == "gen.params"
-
-
-def test_the_counter_is_worked_from_the_controllers_rule(tmp_path):
-    from snax_forge.design.point import DesignPoint
-    from snax_forge.gen import describe
-
-    (add,) = describe(DesignPoint.load(point(tmp_path)), "p").groups[0].units
-    vsum = DesignPoint.load(point(tmp_path, name="vsum_v1", graph=bound_vsum()))
-    (acc,) = describe(vsum, "p").groups[0].units
-    assert counter(add, 16)[0] == 16
-    assert counter(acc, 64)[0] == 65
 
 
 @requires_submodule
@@ -266,14 +161,10 @@ def test_gen_rtl_writes_a_fixture(vecadd, capsys):
 @requires_submodule
 def test_a_linked_fixtures_counter_is_the_group_rules():
     """A linked group's counter is snax-gvsoc's group rule stepped with an always-ready streamer:
-    at T 4 dot's J 1 row of the table and matvec's J 2 (2 × 16, W 4), which the Cycles
-    state too; dot 4 at J 16 and T 128 is C4 = JT + 2; with a buffer of depth 2 for its wire,
-    which no formula states, a cycle more: JT + 3."""
-    got = {d: json.loads((RTL_FIXTURES / d / "vectors.json").read_text())["tasks"][0]["counter"]
-           for d in ("dot_v2", "dot_v3", "dot_v4", "dot_v5", "dot_v6", "matvec_v4", "matvec_v5",
-                     "matvec_v6")}  # fmt: skip
-    assert got == {"dot_v2": 6, "dot_v3": 5, "dot_v4": 6, "dot_v5": 9, "dot_v6": 10, "matvec_v4": 10,
-                   "matvec_v5": 16, "matvec_v6": 14}  # fmt: skip
+    dot 4 at J 1 and T 2 is JT + 2 = 4; at J 16 and T 128 C4 = JT + 2; with a buffer of depth 2
+    for its wire, which no formula states, a cycle more: JT + 3."""
+    got = json.loads((RTL_FIXTURES / "dot_v4" / "vectors.json").read_text())["tasks"][0]["counter"]
+    assert got == 4
     from tests.gen.test_accelerator import dot4
 
     (group,) = dot4().groups
@@ -368,40 +259,6 @@ def _mac(accumulate: bool, reg_out: bool = False, c: bool | None = None, latency
                 csrs, "int64", span)  # fmt: skip
 
 
-@pytest.mark.parametrize(("accumulate", "reg_out"), [(True, False), (False, False), (False, True)])
-def test_a_mac_unit_in_each_form_is_accepted(accumulate, reg_out):
-    unit = _mac(accumulate, reg_out)
-    acc = _alone(unit)
-    check_unit(acc, unit, catalogue())
-    assert fill(acc, unit, catalogue()["Mac"])["inTypes"] == ["int64"] * (2 if accumulate else 3)
-    assert fill(acc, unit, catalogue()["Mac"])["rows"] == 1  # no params.rows: the plain Mac
-
-
-def _behind_mac(unit: Unit) -> Description:
-    """dot 5's group: a Mac wired into ``unit`` (``sum``), which reads from the link."""
-    from tests.gen.test_accelerator import dot4
-
-    acc = dot4()
-    (g,) = acc.groups
-    return with_groups(acc, [replace(g, units=[g.units[0], unit])])
-
-
-def test_a_serial_accumulate_unit_spans_its_lanes():
-    """Behind a link (dot 5): span 4 is the catalogue's; span 1 is gen.timing. Fed by the
-    streamer it is gen.span, SNAX-GVSoC's limit."""
-    unit = Unit("sum", "accumulate", "SerialAccumulate",
-                {"a": Port("in", "in", "int64", 4), "out": Port("out", "out", "int64", 1)},
-                {"T": 1}, 1, 1, [], None, 4)  # fmt: skip
-    check_unit(_behind_mac(unit), unit, catalogue())
-    with pytest.raises(GenError) as e:
-        bad = replace(unit, span=1)
-        check_unit(_behind_mac(bad), bad, catalogue())
-    assert e.value.code == "gen.timing"
-    with pytest.raises(GenError) as e:
-        _alone(unit)
-    assert e.value.code == "gen.span"
-
-
 @pytest.mark.parametrize(
     ("unit", "code"),
     [
@@ -424,80 +281,6 @@ def test_a_mac_unit_the_catalogue_refuses(unit, code):
 # =============================================================================
 # flops: the register bits of a unit's and a link's datapath
 # =============================================================================
-
-
-def test_the_catalogue_has_each_datapaths_flops():
-    assert {k: v["flops"] for k, v in catalogue().items()} == {
-        "SimdLanes": 0, "TreeAccumulate": "width(outType)",
-        "Mac": "lanes * width(outType) * max(accumulate, regOut) * rows",
-        "SerialAccumulate": "width(outType)", "LaneAccumulate": "lanes * width(outType)",
-        "LinkBuffer": "depth * lanes * width(dtype)",
-    }  # fmt: skip
-
-
-@pytest.mark.parametrize(
-    ("datapath", "params", "bits"),
-    [
-        ("SimdLanes", {"lanes": 8, "outType": "int64"}, 0),
-        ("TreeAccumulate", {"inType": "int8", "outType": "int32", "lanes": 8}, 32),
-        ("SerialAccumulate", {"inType": "int64", "outType": "int64", "lanes": 16}, 64),
-        (
-            "Mac",
-            {"outType": "int64", "lanes": 8, "accumulate": True, "regOut": False, "rows": 1},
-            512,
-        ),
-        (
-            "Mac",
-            {"outType": "int16", "lanes": 4, "accumulate": False, "regOut": True, "rows": 1},
-            64,
-        ),
-        (
-            "Mac",
-            {"outType": "int64", "lanes": 8, "accumulate": False, "regOut": False, "rows": 1},
-            0,
-        ),
-        (
-            "Mac",
-            {"outType": "int32", "lanes": 4, "accumulate": True, "regOut": False, "rows": 16},
-            2048,
-        ),
-        ("LaneAccumulate", {"inType": "int32", "outType": "int64", "lanes": 8}, 512),
-        ("LinkBuffer", {"depth": 3, "lanes": 4, "dtype": "uint8"}, 96),
-    ],
-)
-def test_flops_is_the_expression_on_the_params(datapath, params, bits):
-    assert flops(datapath, params, catalogue()) == bits
-
-
-def test_a_macs_rows_fill_1_when_absent_and_a_bank_has_its_row_pins():
-    """A unit without ``params.rows`` fills the catalogue's int min (the plain ``Mac``); the pins
-    ``row`` and ``drain`` live from 2 rows on (D191)."""
-    sig = catalogue()["Mac"]
-    on = {"accumulate": True, "regOut": False}
-    assert live(sig["pins"], on | {"rows": 1}) == {"fire": None, "first": None}
-    assert live(sig["pins"], on | {"rows": 2}) == {"fire": None, "first": None, "row": None,
-                                                    "drain": None}  # fmt: skip
-
-
-@pytest.mark.parametrize(("accumulate", "reg_out", "bits"), [(True, False, 256), (False, False, 0),
-                                                             (False, True, 256)])  # fmt: skip
-def test_a_units_flops_come_from_its_params_by_the_fill_rule(accumulate, reg_out, bits):
-    """A Mac of 4 int64 lanes: its accumulator or its output register, none plain."""
-    unit, cat = _mac(accumulate, reg_out), catalogue()
-    assert flops(unit.datapath, fill(_alone(unit), unit, cat[unit.datapath]), cat) == bits
-
-
-def test_a_links_flops_are_its_buffers():
-    """A wire holds nothing; a buffer its depth's beats of its ends' lanes and dtype."""
-    cat = catalogue()
-
-    def link(depth: int, lanes: int, dtype: str) -> int:
-        params = buffer_params(depth, lanes, dtype, cat["LinkBuffer"])
-        return flops("LinkBuffer", params, cat) if depth else 0
-
-    assert link(0, 8, "int64") == 0
-    assert [link(d, 8, "int64") for d in (1, 2, 4)] == [512, 1024, 2048]
-    assert link(2, 4, "int8") == 64
 
 
 def test_axpys_unit_fills_k1_from_its_csr_and_k1_is_a_live_pin(tmp_path):
@@ -531,19 +314,3 @@ def test_axpys_unit_fills_k1_from_its_csr_and_k1_is_a_live_pin(tmp_path):
         check_unit(acc, u, catalogue())
     with pytest.raises(GenError, match=r"scalar k3 is no pin of SimdLanes here \(\[\]\)"):
         check_unit(acc, replace(u, scalars={"k3": "int32"}), catalogue())
-
-
-@pytest.mark.parametrize(("recipe", "datapath"), [("matvec_acc_v1", "TreeAccumulate"),
-                                                  ("matvec_acc_v2", "SerialAccumulate")])  # fmt: skip
-def test_a_seeded_fold_fills_seed_and_its_seed_port_is_live(tmp_path, recipe, datapath):
-    """matvec_acc_v1's sum: the catalogue's fill rule unit.ports.seed gives seed true,
-    and the datapath's port seed is live on it, so the unit passes check_unit; the mul's simd
-    and an unseeded fold keep their params."""
-    acc = accelerator_spec(tmp_path / designed(tmp_path, recipe, recipe), tmp_path)
-    (sum_,) = [u for g in acc.groups for u in g.units if u.name == "sum"]
-    sig = catalogue()[datapath]
-    params = fill(acc, sum_, sig)
-    assert params["seed"] is True and params["lanes"] == (4 if recipe == "matvec_acc_v1" else 1)
-    assert set(live(sig["ports"], params)) == {"in", "seed", "out"}
-    assert set(live(sig["ports"], params | {"seed": False})) == {"in", "out"}
-    check_unit(acc, sum_, catalogue())

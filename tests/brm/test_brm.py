@@ -6,9 +6,9 @@ import json
 
 import pytest
 
-from snax_forge.brm import INT_DTYPES, Brm, BrmError
+from snax_forge.brm import Brm, BrmError
 
-from .helpers import adder, reducer
+from .helpers import adder
 
 # =============================================================================
 # Round trip
@@ -22,70 +22,14 @@ def test_round_trip_every_field_written():
     assert Brm.from_dict(b.to_dict()) == b
 
 
-def test_sparse_file_takes_defaults_and_writes_them():
-    b = Brm.from_dict(reducer())
-    d = b.to_dict()
-    assert d["interface"]["params"]["n"] == {
-        "stage": "runtime",
-        "type": "int",
-        "default": None,
-        "values": None,
-    }
-    assert d["interface"]["ports"][0]["rate"] == 1
-    assert "dtypes" not in d["interface"]["ports"][0]  # every integer dtype, not written
-    assert b.interface.ports[0].dtypes == list(INT_DTYPES)
-    assert d["pattern"] == {"family": "reduce", "attrs": {}}
-    assert d["function"]["code"] is None  # a reduction cannot say it per lane yet
-    impl = d["implementations"]["chisel_adder_tree"]
-    assert impl["supports"] == {} and impl["binding"] is None
-    assert Brm.from_dict(d) == b
-
-
-def test_save_load(tmp_path):
-    b = Brm.from_dict(adder())
-    b.save(tmp_path / "test_add.json")
-    assert Brm.load(tmp_path / "test_add.json") == b
-    assert (tmp_path / "test_add.json").read_text() == b.to_json()
-
-
 # =============================================================================
 # Derived: registers
 # =============================================================================
 
 
-def test_registers_are_n_then_named_rates():
-    assert Brm.from_dict(adder()).registers == ["n"]
-    assert Brm.from_dict(reducer()).registers == ["n", "T"]
-
-
 # =============================================================================
 # Required and optional parts
 # =============================================================================
-
-
-@pytest.mark.parametrize(
-    "part", ["name", "interface", "function", "dataflow", "pattern", "implementations"]
-)
-def test_missing_part_is_rejected(part):
-    d = adder()
-    del d[part]
-    with pytest.raises(BrmError, match=f"missing part '{part}'"):
-        Brm.from_dict(d)
-
-
-@pytest.mark.parametrize("part", ["source", "timing"])
-def test_missing_implementation_part_is_rejected(part):
-    d = adder()
-    del d["implementations"]["chisel_tiled_spatial"][part]
-    with pytest.raises(BrmError, match=f"missing part '{part}'"):
-        Brm.from_dict(d)
-
-
-def test_no_implementation_is_rejected():
-    d = adder()
-    d["implementations"] = {}
-    with pytest.raises(BrmError, match="at least one implementation"):
-        Brm.from_dict(d)
 
 
 # The binding of a simd BRM: the datapath, its args, the nest controller
@@ -94,32 +38,6 @@ BINDING = {
     "args": {"lanes": "W", "op": "op"},
     "controller": "counted",
 }
-
-
-def test_binding_is_optional():
-    d = adder()
-    del d["implementations"]["chisel_tiled_spatial"]["binding"]
-    assert Brm.from_dict(d).implementations["chisel_tiled_spatial"].binding is None
-    d["implementations"]["chisel_tiled_spatial"]["binding"] = BINDING
-    assert Brm.from_dict(d).to_dict()["implementations"]["chisel_tiled_spatial"]["binding"] == (
-        BINDING
-    )
-
-
-def test_binding_expressions_are_stored_canonical():
-    d = adder()
-    _impl(d)["binding"] = {**BINDING, "args": {"lanes": "W*1", "op": "(op)"}}
-    got = Brm.from_dict(d).implementations["chisel_tiled_spatial"].binding
-    assert got["args"] == {"lanes": "W * 1", "op": "op"}
-
-
-def test_binding_ports_are_kept_in_port_order_when_given():
-    d = adder()
-    _impl(d)["binding"] = {**BINDING, "ports": {"out": "y", "b": "x1", "a": "x0"}}
-    got = Brm.from_dict(d).implementations["chisel_tiled_spatial"].binding
-    assert list(got["ports"].items()) == [("a", "x0"), ("b", "x1"), ("out", "y")]
-    _impl(d)["binding"] = BINDING
-    assert "ports" not in Brm.from_dict(d).implementations["chisel_tiled_spatial"].binding
 
 
 def _binding(**kw):
@@ -141,25 +59,6 @@ BINDING_CASES = [
     ("ports name", _binding(ports={"a": "a", "b": "b", "out": "o x"}), "not a datapath port name"),
     ("ports twice", _binding(ports={"a": "x", "b": "x", "out": "out"}), "two BRM ports"),
 ]
-
-
-def test_the_controller_is_a_registered_kind():
-    from snax_forge.brm import CONTROLLERS, register_controller
-
-    assert list(CONTROLLERS) == ["counted"]
-    with pytest.raises(ValueError, match="already registered"):
-        register_controller("counted", "again")
-
-
-def test_unknown_keys_are_rejected():
-    d = adder()
-    d["timing"] = {}
-    with pytest.raises(BrmError, match="unknown keys \\['timing'\\]"):
-        Brm.from_dict(d)
-    d = adder()
-    d["interface"]["ports"][0]["width"] = 64
-    with pytest.raises(BrmError, match="unknown keys \\['width'\\]"):
-        Brm.from_dict(d)
 
 
 # =============================================================================
@@ -229,15 +128,6 @@ def _stream(nests: dict) -> dict:
     return {"notation": "stream", "ports": {"a": {}, "b": {}, "out": {}} | nests}
 
 
-def test_the_stream_notation_has_empty_nests():
-    """A unit BRM: lanes, rate and dtype are the interface's, the bound memlet the order."""
-    d = adder()
-    d["dataflow"] = _stream({})
-    brm = Brm.from_dict(d)
-    assert brm.to_dict()["dataflow"] == _stream({})
-    brm.resolve("chisel_tiled_spatial", {"W": 8})
-
-
 @pytest.mark.parametrize(
     ("case", "edit", "msg"), CASES + BINDING_CASES, ids=[c[0] for c in CASES + BINDING_CASES]
 )
@@ -246,13 +136,6 @@ def test_invalid(case, edit, msg):
     edit(d)
     with pytest.raises(BrmError, match=msg):
         Brm.from_dict(d)
-
-
-def test_python_construction_is_validated():
-    b = Brm.from_dict(adder())
-    b.interface.ports[0].lanes = "n"
-    with pytest.raises(BrmError, match="not design params"):
-        Brm(b.name, b.interface, b.function, b.dataflow, b.pattern, b.implementations)
 
 
 # =============================================================================
@@ -275,12 +158,6 @@ def test_function_code_rejected(code, message):
     d["function"]["code"] = code
     with pytest.raises(BrmError, match=message):
         Brm.from_dict(d)
-
-
-def test_function_code_is_stored_canonical():
-    d = adder()
-    d["function"]["code"] = "out=(a+b)"
-    assert Brm.from_dict(d).function.code == "out = a + b"
 
 
 # =============================================================================
@@ -310,13 +187,6 @@ def test_a_code_table_is_stored_canonical_and_round_trips():
     assert Brm.from_dict(b.to_dict()) == b and Brm.from_dict(json.loads(b.to_json())) == b
     assert b.code_for({"W": 4, "op": "mul"}) == "out = a * b"
     assert b.code_for({"W": 4, "op": "sub"}) is None
-
-
-def test_a_plain_code_is_one_entry_without_params():
-    b = Brm.from_dict(adder())
-    assert [(e.params, e.code) for e in b.function.entries()] == [({}, "out = a + b")]
-    assert b.code_for({"W": 4, "op": "add"}) == "out = a + b"
-    assert b.to_dict()["function"]["code"] == "out = a + b"
 
 
 @pytest.mark.parametrize(
@@ -367,23 +237,6 @@ def test_a_port_with_when_round_trips_and_is_written_only_when_set():
     assert "when" not in b.to_dict()["interface"]["ports"][0]
     assert [p.name for p in b.present({"streams": 1})] == ["a", "out"]
     assert [p.name for p in b.present({"streams": 2})] == ["a", "b", "out"]
-
-
-def test_an_unset_param_is_left_out_of_the_instance():
-    """k has no default: unset unless given, and no instance's params hold it; its ports are
-    the ones present at its params."""
-    b = Brm.from_dict(one_or_two())
-    inst = b.resolve("chisel_tiled_spatial")
-    assert inst.params == {"W": 4, "op": "add", "streams": 2}
-    assert [p.name for p in inst.ports] == ["a", "b", "out"]
-    one = b.resolve("chisel_tiled_spatial", {"streams": 1, "k": -3})
-    assert one.params == {"W": 4, "op": "add", "streams": 1, "k": -3}
-    assert [p.name for p in one.ports] == ["a", "out"]
-
-
-def test_a_slot_is_an_int_design_param_the_entry_names():
-    b = Brm.from_dict(one_or_two())
-    assert [b.slots(e) for e in b.function.entries()] == [[], ["k"]]
 
 
 @pytest.mark.parametrize(

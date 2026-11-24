@@ -73,14 +73,24 @@ def test_the_readme_gives_the_command_and_dot_4s_check_line():
 
 @pytest.fixture(scope="module")
 def flows(tmp_path_factory):
-    base = tmp_path_factory.mktemp("dot")
-    return {n: run_flow(recipe_path(n), SNAX_FORGE, recipe_sets={"N": SMALL}, out=base / n)
-            for n in NAMES}  # fmt: skip
+    """Each dot's flow at N = 64, run on its first use: a design's tests share an xdist group
+    (``BY_NAME``), so one worker runs its flow once."""
+
+    class Flows(dict):
+        def __missing__(self, n):
+            out = tmp_path_factory.mktemp("dot") / n
+            self[n] = run_flow(recipe_path(n), SNAX_FORGE, recipe_sets={"N": SMALL}, out=out)
+            return self[n]
+
+    return Flows()
+
+
+BY_NAME = [pytest.param(n, marks=pytest.mark.xdist_group(f"dot-example-{n}")) for n in NAMES]
 
 
 @pytest.mark.gvsoc
 @needs_gvsoc
-@pytest.mark.parametrize("name", NAMES)
+@pytest.mark.parametrize("name", BY_NAME)
 def test_each_runs_and_checks_itself(flows, name):
     f = flows[name]
     assert f.passed, summary(f)
@@ -90,7 +100,7 @@ def test_each_runs_and_checks_itself(flows, name):
 
 @pytest.mark.gvsoc
 @needs_gvsoc
-@pytest.mark.parametrize("name", NAMES)
+@pytest.mark.parametrize("name", BY_NAME)
 def test_each_counter_is_c17_plus_the_fill(flows, name):
     tasks = flows[name].check["tasks"]
     counters = tuple(x["counter"] for x in tasks.values())
@@ -100,7 +110,7 @@ def test_each_counter_is_c17_plus_the_fill(flows, name):
 
 @pytest.mark.gvsoc
 @needs_gvsoc
-@pytest.mark.parametrize("name", NAMES)
+@pytest.mark.parametrize("name", BY_NAME)
 def test_the_second_readers_one_stall_is_the_fills(flows, name):
     streamers = read_run(flows[name].out / "run").profile.streamers
     held = {k: s.cycles["stall_xbar"] for k, s in streamers.items() if not s.write}
@@ -110,7 +120,7 @@ def test_the_second_readers_one_stall_is_the_fills(flows, name):
 
 @pytest.mark.gvsoc
 @needs_gvsoc
-@pytest.mark.parametrize("name", NAMES)
+@pytest.mark.parametrize("name", BY_NAME)
 def test_each_row_is_its_runs_description(flows, name):
     acc = json.loads((flows[name].out / "gen" / "accelerator.json").read_text())
     groups, units, link, *_ = table()[name]

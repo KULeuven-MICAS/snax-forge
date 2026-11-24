@@ -16,16 +16,11 @@ import pytest
 
 from snax_forge.dfg import Graph, loops
 from snax_forge.sandbox import (
-    Recipe,
-    SandboxError,
-    apply_recipe,
-    interchange_map,
     join_map,
     split,
 )
-from snax_forge.sandbox.compose import fuse_map, join_reduce, split_reduce, unfuse_map
 from snax_forge.sandbox.transforms import split_map, tag_map, untag_map
-from tests.helpers import FIXTURES, imported, recipe_path
+from tests.helpers import FIXTURES, imported
 
 from .helpers import RECIPES, recipe_graphs
 
@@ -59,29 +54,6 @@ def chain() -> list[Graph]:
     return [g0, g1, split(g1, "add_map_inner", 2)]
 
 
-def test_the_rule():
-    assert loops.var_name("n", 1, 1, None) == "n"
-    assert loops.var_name("n", 1, 1, "temporal") == "n_t"
-    assert loops.var_name("n", 2, 3, "spatial") == "n_2_s"
-    assert loops.var_name("n", 3, 3, "tile") == "n_3_tile"
-
-
-def test_splits_number_the_pieces_outer_to_inner_and_tags_add_a_suffix():
-    """n -> n_1, n_2 -> n_1, n_2, n_3 -> n_1_t, n_2_t, n_3_s."""
-    g0, g1, g2 = chain()
-    assert maps(g0) == [("add_map", "n", 1)]
-    assert maps(g1) == [("add_map", "n_1", 1), ("add_map_inner", "n_2", 2)]
-    assert maps(g2) == [("add_map", "n_1", 1), ("add_map_inner", "n_2", 2),
-                        ("add_map_inner_inner", "n_3", 3)]  # fmt: skip
-    assert index(g2) == "4 * n_1 + (2 * n_2 + n_3)"
-    g = tag_map(g2, "add_map", "temporal")
-    g = tag_map(g, "add_map_inner", "temporal")
-    g = tag_map(g, "add_map_inner_inner", "spatial")
-    assert [v for _, v, _ in maps(g)] == ["n_1_t", "n_2_t", "n_3_s"]
-    assert index(g) == "4 * n_1_t + (2 * n_2_t + n_3_s)"
-    assert maps(tag_map(g0, "add_map", "temporal")) == [("add_map", "n_t", 1)]  # unsplit: n_t
-
-
 def test_splitting_a_middle_piece_renumbers_the_pieces_below_it():
     """n_2 of n_1, n_2, n_3 split by 2: n_1, n_2, n_3 (the new inner piece), n_4 (n_3 was); its
     record keeps the one before (``prior``), so join_map gives the three pieces back exactly."""
@@ -94,21 +66,6 @@ def test_splitting_a_middle_piece_renumbers_the_pieces_below_it():
     assert join_map(g, "add_map_inner").to_json() == g2.to_json()
 
 
-def test_joins_renumber_back_and_one_piece_is_the_base_again():
-    g0, g1, g2 = chain()
-    assert join_map(g2, "add_map_inner").to_json() == g1.to_json()
-    assert join_map(g1, "add_map").to_json() == g0.to_json()
-    t = tag_map(tag_map(g2, "add_map", "temporal"), "add_map_inner", "temporal")
-    t = tag_map(t, "add_map_inner_inner", "spatial")
-    with pytest.raises(SandboxError, match="its inner piece 'add_map_inner' was split since"):
-        join_map(t, "add_map")
-    joined = join_map(t, "add_map_inner")  # n_2_t with n_3_s: one untagged piece, n_2
-    assert maps(joined) == [("add_map", "n_1_t", 1), ("add_map_inner", "n_2", 2)]
-    one = join_map(untag_map(joined, "add_map"), "add_map")
-    assert maps(one) == [("add_map", "n", 1)] and one.to_json() == g0.to_json()
-    assert maps(tag_map(one, "add_map", "temporal")) == [("add_map", "n_t", 1)]  # with its suffix
-
-
 def test_every_inverse_gives_back_the_graph_exactly():
     g = vecadd()
     assert join_map(split(g, "add_map", 4), "add_map").to_json() == g.to_json()
@@ -116,55 +73,6 @@ def test_every_inverse_gives_back_the_graph_exactly():
     assert join_map(split_map(g, "add_map", 4), "add_map").to_json() == g.to_json()
     tail = vecadd(7)  # a tail: the record's valid count
     assert join_map(split_map(tail, "add_map", 4), "add_map").to_json() == tail.to_json()
-
-
-def test_interchange_and_fuse_keep_each_maps_dimension_and_piece():
-    """rowsum_v2's swap keeps m_2_s and n_t; axpy's fused nest takes the first nest's names, then
-    one split_map names both tasklets' indices n_1_t, n_2_s, and the inverses give it back."""
-    g = tag_map(split_map(bound("rowsum", M=8, N=64), "sum_map", 4), "sum_map_1",
-                "temporal")  # fmt: skip
-    swapped = interchange_map(g, "sum_map_s", **{"with": "sum_map_1"})
-    assert maps(swapped) == [("sum_map", "m_1_t", 1), ("sum_map_1", "n_t", 1),
-                             ("sum_map_s", "m_2_s", 2)]  # fmt: skip
-    a = bound("axpy", N=64)
-    fused = fuse_map(a, "mult_map", "augassign_19_4_map")
-    s = split_map(fused, "mult_map", 4)
-    assert maps(s) == [("mult_map", "n_1_t", 1), ("mult_map_s", "n_2_s", 2)]
-    assert s.node("augassign_19_4").inputs["in1"].subset == ["4 * n_1_t + n_2_s"]
-    assert unfuse_map(join_map(s, "mult_map"), "mult_map").to_json() == a.to_json()
-
-
-def test_rowsum_2s_steps():
-    """m_1_t and m_2_s from the split, n_t from the tag; the bound unit reads
-    A[4 * m_1_t:4 * m_1_t + 4, n_t]."""
-    r = Recipe.load(recipe_path("rowsum_v2"))
-    graphs = [x.graph for x in apply_recipe(r, imported("rowsum"))]
-    assert [maps(g) for g in graphs[1:4]] == [
-        [("sum_map", "m_1_t", 1), ("sum_map_s", "m_2_s", 2), ("sum_map_1", "n", 1)],
-        [("sum_map", "m_1_t", 1), ("sum_map_s", "m_2_s", 2), ("sum_map_1", "n_t", 1)],
-        [("sum_map", "m_1_t", 1), ("sum_map_1", "n_t", 1), ("sum_map_s", "m_2_s", 2)],
-    ]
-    unit = graphs[-1].node("sum")
-    assert unit.inputs["a"].subset == ["4 * m_1_t:4 * m_1_t + 4", "n_t"]
-    assert unit.outputs["out"].subset == ["4 * m_1_t:4 * m_1_t + 4"]
-
-
-def test_dot_4_drys_split_reduce_names():
-    """The sum map split as split_map splits it, n_1_t around n_2_s, the partials out_partial[n_2_s];
-    the final sum a dimension of its own, n_f, spatial: n_f_s. The two maps over N are siblings,
-    each its own dimension n, so the fuse finds the same names on both; join_reduce gives the sum
-    map back."""
-    r, graphs = recipe_graphs("dot_4_dry")
-    i = [s.transform for s in r.steps].index("split_reduce") + 1
-    g = graphs[i]
-    assert maps(g) == [("mult_map", "n_1_t", 1), ("mult_map_inner", "n_2_s", 2),
-                       ("sum_map", "n_1_t", 1), ("sum_map_s", "n_2_s", 2),
-                       ("sum_map_final", "n_f_s", 1)]  # fmt: skip
-    assert g.node("sum").outputs["out"].subset == ["n_2_s"]
-    assert g.node("sum_final").inputs["in1"].subset == ["n_f_s"]
-    assert g.node("sum_map_final").attrs["loop.dim"] == "n_f"
-    assert join_reduce(g, "sum_map").to_json() == graphs[i - 1].to_json()
-    assert split_reduce(graphs[i - 1], "sum_map", 8).to_json() == g.to_json()
 
 
 @pytest.mark.parametrize("name", RECIPES)

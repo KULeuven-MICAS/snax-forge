@@ -33,7 +33,6 @@ from snax_forge.flow import (
     check_output,
     checkout,
     default_name,
-    run_exit_code,
     run_flow,
     summary,
 )
@@ -352,13 +351,6 @@ def test_the_check_of_data_errors_and_a_nonzero_exit():
 def test_a_missing_line_is_named(drop, says):
     with pytest.raises(FlowError, match=f"check: no `{says}` line in the program's output"):
         check_output(PASS.replace(drop, ""), 0, {"add_acc": 16})
-
-
-def test_the_runs_exit_code_from_make():
-    assert run_exit_code(0, "") == 0
-    assert run_exit_code(2, "Warning: ...\nmake: *** [Makefile:110: run] Error 1\n") == 1
-    with pytest.raises(FlowError, match=r"gvsoc: make run failed \(exit 2\) before running gvrun"):
-        run_exit_code(2, "make: *** No rule to make target 'run'.  Stop.\n")
 
 
 FATAL = (

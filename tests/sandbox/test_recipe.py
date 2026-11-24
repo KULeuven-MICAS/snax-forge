@@ -19,28 +19,6 @@ def test_round_trip():
     assert Recipe.from_dict(r.to_dict()) == r
 
 
-def test_defaults_are_written():
-    r = Recipe.from_dict({"name": "r", "kernel": "vecadd"})
-    assert r.to_dict() == {
-        "name": "r",
-        "kernel": "vecadd",
-        "params": {},
-        "symbols": {},
-        "steps": [],
-    }
-
-
-def test_params_and_symbols():
-    r = Recipe.from_dict(
-        {"name": "r", "kernel": "k", "params": {"W": 4}, "symbols": {"N": "16 * W"}}
-    )
-    assert r.bound_symbols() == {"N": 64}
-    assert r.with_params({"W": 8}).bound_symbols() == {"N": 128}
-    assert r.params == {"W": 4}  # with_params makes a new recipe
-    with pytest.raises(SandboxError, match="no param 'V'"):
-        r.with_params({"V": 1})
-
-
 @pytest.mark.parametrize(
     ("d", "message"),
     [

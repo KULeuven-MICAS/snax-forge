@@ -75,6 +75,12 @@ def _refused(code: str, message: str, **more: Any) -> dict[str, Any]:
     return {"ok": False, "code": code, "message": message, **more}
 
 
+def _replay_refused(e: Exception) -> dict[str, Any]:
+    """A replay's refusal: a failing step's at its index, any other at step 0."""
+    index = e.index if isinstance(e, StepError) else 0  # type: ignore[attr-defined]
+    return _refused(_code(e), str(e), index=index)
+
+
 def drop_question(k: int, n: int) -> str | None:
     """What the page asks before an apply at step k of n drops the steps after it; None at
     the last step."""
@@ -361,17 +367,26 @@ class Session:
             self._write_cursor()
             return {"ok": True, "cursor": k, "replayed": replayed}
 
+    def _take(self, recipe: Recipe) -> dict[str, Any] | None:
+        """``recipe`` replayed to the cursor and made the session's; the refusal when the
+        replay fails, the session unchanged."""
+        try:
+            graphs, inputs, want = self._replay(recipe, self.cursor)
+        except (SandboxError, DfgError) as e:
+            return _replay_refused(e)
+        self.recipe, self.graphs, self.inputs, self.want = recipe, graphs, inputs, want
+        return None
+
     def set_params(self, values: dict[str, int | str]) -> dict[str, Any]:
         """Every step replayed with the params ``values`` sets."""
         with self._lock:
             try:
                 recipe = self.recipe.with_params(values)
-                graphs, inputs, want = self._replay(recipe, self.cursor)
-            except StepError as e:
-                return _refused(_code(e), str(e), index=e.index)  # type: ignore[attr-defined]
             except (SandboxError, DfgError) as e:
-                return _refused(_code(e), str(e), index=0)
-            self.recipe, self.graphs, self.inputs, self.want = recipe, graphs, inputs, want
+                return _replay_refused(e)
+            refused = self._take(recipe)
+            if refused is not None:
+                return refused
             self._forget(-1)
             self._write()
             return {"ok": True, "params": dict(recipe.params), "replayed": self.cursor,
@@ -412,13 +427,9 @@ class Session:
                 symbols={k: _renamed(v, ren) for k, v in r.symbols.items()},
                 steps=[Step(st.transform, {p: _renamed(v, ren) for p, v in st.params.items()})
                        for st in r.steps])  # fmt: skip
-            try:
-                graphs, inputs, want = self._replay(recipe, self.cursor)
-            except StepError as e:
-                return _refused(_code(e), str(e), index=e.index)  # type: ignore[attr-defined]
-            except (SandboxError, DfgError) as e:
-                return _refused(_code(e), str(e), index=0)
-            self.recipe, self.graphs, self.inputs, self.want = recipe, graphs, inputs, want
+            refused = self._take(recipe)
+            if refused is not None:
+                return refused
             self.own_params = [ren.get(p, p) for p in self.own_params]
             self._forget(-1)
             self._write()

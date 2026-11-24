@@ -1,0 +1,37 @@
+{
+ "total_cycles": 509,
+ "functional_check": {
+  "kernel": "mvt",
+  "seed": 0,
+  "symbols": {
+   "M": 8,
+   "N": 8
+  },
+  "exit_code": 0,
+  "data_errors": 0,
+  "words": 16,
+  "tasks": {
+   "tmp0_mult_mvt": {
+    "counter": 15,
+    "beats": 8,
+    "group": "mvt"
+   },
+   "augassign_18_4_vadd": {
+    "counter": 4,
+    "beats": 1,
+    "group": "vadd"
+   },
+   "tmp2_mult_mvt": {
+    "counter": 14,
+    "beats": 8,
+    "group": "mvt"
+   },
+   "augassign_19_4_vadd": {
+    "counter": 4,
+    "beats": 1,
+    "group": "vadd"
+   }
+  },
+  "passed": true
+ }
+}

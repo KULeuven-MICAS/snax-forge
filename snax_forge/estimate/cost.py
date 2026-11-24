@@ -45,25 +45,25 @@ def heading(tech: str) -> str:
     return f"Cost estimate (first-order) on {tech}"
 
 
-def sig3(x: float | None) -> str | None:
-    """``x`` to 3 significant figures, thousands split by a space: 26.3, 63 200, 0.135; None
-    stays None."""
+def sig3(x: float | None, unit: str = "") -> str | None:
+    """``x`` to 3 significant figures, thousands split by a space: 26.3, 63 200, 0.135, then
+    ``unit`` (``" µm²"``); None stays None."""
     if x is None:
         return None
     r = float(f"{x:.3g}")
     if r == 0:
-        return "0"
+        return f"0{unit}"
     decimals = max(0, 2 - floor(log10(abs(r))))
-    return f"{r:,.{decimals}f}".replace(",", " ")
+    return f"{r:,.{decimals}f}".replace(",", " ") + unit
 
 
-def dec3(x: float | None) -> str | None:
+def dec3(x: float | None, unit: str = "") -> str | None:
     """An energy as shown: 3 decimal places in its unit, thousands split by a space (26.285,
-    97.259, 0.135, 1 234.500); None stays None. Display precision only: the model is
-    first-order (``CAVEAT``)."""
+    97.259, 0.135, 1 234.500), then ``unit`` (``" nJ"``); None stays None. Display precision
+    only: the model is first-order (``CAVEAT``)."""
     if x is None:
         return None
-    return f"{x:,.3f}".replace(",", " ")
+    return f"{x:,.3f}".replace(",", " ") + unit
 
 
 @dataclass(frozen=True)

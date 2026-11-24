@@ -1,6 +1,6 @@
 """A set of bundles for the local RTL check, in one command.
 
-    python -m snax_forge.flow.forge_set quick|full|mvt|pack|bicg [--sim vsim|vlt] [-j N]    (pixi forge-set)
+    python -m snax_forge.flow.forge_set quick|full [--sim vsim|vlt] [-j N]    (pixi forge-set)
 
 ``forge_set`` runs ``pixi run forge`` (flow/forge.py) on each ``Design`` of the set in ``SETS``
 (a recipe and its ``--set`` values, named as forge's folder), ``-j`` at a time (default the CPU
@@ -25,7 +25,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from snax_forge.common import cwd_relative
-from snax_forge.design.check import SCHEDULES
 from snax_forge.gen import bundle
 from snax_forge.gen.rtl import warm_emit
 from snax_forge.sandbox.recipe import Recipe, find_recipe
@@ -65,89 +64,26 @@ def designs(*recipes: str | Design) -> list[Design]:
 
 
 PADDED = "memory.passes.layout=padded_rows"  # each row a word longer
-I8 = ("types=i8", "W=8")  # int8 in, int32 out and accumulate, at its smallest W (D173)
-QUICK = designs("vecadd_v1_1", "vsum_v1_1_2", "dot_v1", "dot_v1_1", "dot_v4", "axpy_v1",
-                Design("vsum_v1_1", I8), Design("matvec_v3", I8),
-                Design("vecadd_v1_1", ("W=1",)))  # sliced inputs (D180)  # fmt: skip
-# Every recipe with narrow types at i8 (int32 outputs packed, D174), a few at W = 32, i16, i32
-PACK = [
-    *(
-        Design(r, I8)
-        for r in (
-            "vecadd_v1",
-            "vecmul_v1",
-            "relu_v1",
-            "axpy_v1",
-            "matadd_v1",
-            "vsum_v1_1",
-            "rowsum_v1",
-            "dot_v1",
-            "dot_v1_1",
-            "dot_v1_2",
-            "dot_v2",
-            "dot_v3",
-            "dot_v4",
-            "dot_v5",
-            "dot_v6",
-            "matvec_v1",
-            "matvec_v3",
-            "matvec_v4",
-            "matvec_v6",
-            "matvec_v1_1",
-            "matvec_v3_1",
-            "matvec_v4_1",
-            "matvec_v6_1",
-        )
-    ),
-    Design("dot_v7", ("types=i32", "W=2")),
-    Design("dot_v3", ("types=i8", "W=32")),
-    Design("matvec_v3", ("types=i8", "W=32")),
-    Design("dot_v3", ("types=i16", "W=4")),
-    Design("dot_v3", ("types=i32", "W=2")),
-    Design("vecadd_v1", ("types=i8", "W=1")),  # sliced inputs (D180)
-    Design("matvec_v3", ("types=i8", "W=4")),
-]
+SEQUENTIAL = "design.schedule=sequential"
+# One point per integration feature, the forge/ folders' at the recipes' sizes
+QUICK = designs(Design("vecadd_v1_1", ("W=1",)),  # sliced inputs, a packed output (D180)
+                "axpy_v1",  # a CSR scalar
+                "dot_v4",  # a linked group
+                Design("mvt_v1_2_2", ("W=8",)),  # two groups on shared movers, the port mux
+                "bicg_v4_1")  # a fork, a bank, a held input, a carried seed  # fmt: skip
 SETS = {
     "quick": QUICK,
-    "full": [*QUICK, *designs("vecadd_v1", "vsum_v1", "rowsum_v3", "vecmul_v1_1_1", "dot_v2",
-                              "dot_v3", "dot_v5", "dot_v6", "dot_v7", "matvec_v1", "matvec_v5",
-                              "matvec_v6", "matvec_acc_v1", "matvec_acc_v2",
-                              "bicg_v4_1", "mvt_v6",  # the fork, hold, banks and their seeds
-                              "relu_v1", "rowsum_v2",
-                              Design("rowsum_v2", (PADDED,)))],
-    "mvt": [
-        *(Design(r, w + lay) for r in ("mvt_v1", "mvt_v1_2", "mvt_v1_2_2")
-          for w in ((), ("W=8",)) for lay in ((), (PADDED,))),
-        *(Design(r, w + lay) for r in ("mvt_v2", "mvt_v2_2")
-          for w in ((), ("W_x1=8", "W_x2=8")) for lay in ((), (PADDED,))),
-        Design("mvt_v2_1"),
-        Design("mvt_v3"),
-        *(Design("mvt_v4", w + lay) for w in ((), ("W_x1=4",)) for lay in ((), (PADDED,))),
-        *(Design("mvt_v3_1", lay + (f"design.schedule={s}",)) for lay in ((), (PADDED,))
-          for s in SCHEDULES if s != "sequential"),
-        *(Design(r, lay + ("design.schedule=sequential",))
-          for r in ("mvt_v4", "mvt_v4_1", "mvt_v4_1_1") for lay in ((), (PADDED,))),
-        *(Design("mvt_v5", lay + (f"design.schedule={s}",))
-          for lay, s in (((), "sequential"), ((PADDED,), "sequential"), ((), "pipeline"))),
-        Design("mvt_v5_2", ("design.schedule=sequential",)),
-        *(Design("mvt_v6", wr) for wr in ((), ("W=16", "R=4"), ("W=32", "R=2"))),  # one pass (D194)
-        *(Design("mvt_v5", (f"W_x1={w}", "design.schedule=pipeline")) for w in (16, 32)),  # its twins
-    ],
-    "pack": PACK,
-    "bicg": [
-        *(Design("bicg_v1", lay + (f"design.schedule={s}",)) for lay in ((), (PADDED,))
-          for s in ("sequential", "pipeline")),
-        *(Design("bicg_v2", (f"design.schedule={s}",)) for s in ("sequential", "pipeline")),
-        Design("bicg_v2", (PADDED, "design.schedule=pipeline")),  # the halves on spread banks
-        *(Design("bicg_v2_1", size + (f"design.schedule={s}",)) for size in ((), ("M=40",))
-          for s in ("sequential", "pipeline")),
-        Design("bicg_v2_1", ("N=32", "W=32", "design.schedule=pipeline")),  # the one pass's twin
-        Design("bicg_v3"),  # one pass over A at N = W (D189)
-        *(Design("bicg_v4", size) for size in ((), ("M=40",), ("W=8", "R=8"), ("W=16", "R=4"),
-                                               ("W=32", "R=2"))),  # the bank (D191), by W
-        *(Design("bicg_v2_1", (f"W={w}", "design.schedule=pipeline")) for w in (16, 32)),  # its twins (W = 8 is above)
-        Design("bicg_v4_1"),  # two strips, q carried across them (D192)
-    ],
+    # The quick set's features and the rest, then one point each at i8, i16 and i32 (D195)
+    "full": [*QUICK,
+             *designs("vecadd_v1",
+                      Design("rowsum_v2", (PADDED,)),  # padded rows
+                      "matvec_acc_v2",  # two groups, a seeded fold
+                      Design("mvt_v4_1_1", (SEQUENTIAL,)),  # the DMA's transposed copy
+                      Design("mvt_v5", (SEQUENTIAL,)),  # two accelerators
+                      "mvt_v6",  # a seeded bank, a fork (D194)
+                      Design("vsum_v1_1", ("types=i8", "W=8")),
+                      Design("dot_v3", ("types=i16", "W=4")),
+                      Design("dot_v3", ("types=i32", "W=2")))],
 }  # fmt: skip
 
 

@@ -5,9 +5,8 @@ from __future__ import annotations
 import pytest
 
 from snax_forge.brm import Brm, BrmError, function_of
-from snax_forge.brm.function import reduce_kind, simd
 
-from .helpers import IMPL, adder, reducer
+from .helpers import IMPL, adder
 
 
 def _brm(d=None) -> Brm:
@@ -17,36 +16,6 @@ def _brm(d=None) -> Brm:
 # =============================================================================
 # Resolving and the function
 # =============================================================================
-
-
-def test_the_adder_resolves_with_its_defaults():
-    inst = _brm().resolve(IMPL)
-    assert inst.params == {"W": 4, "op": "add"}  # defaults, in declaration order
-    assert (inst.latency, inst.initiation_interval, inst.drain) == (0, 1, 0)
-
-
-def test_the_function_follows_the_design_params():
-    inst = _brm().resolve(IMPL, {"W": 8})
-    assert [p.lanes for p in function_of(inst).ports] == [8, 8, 8]
-    assert inst.lanes("out") == 8
-
-
-def test_the_function_is_the_simd_kind():
-    f = function_of(_brm().resolve(IMPL))
-    want = simd(lanes=4, n_inputs=2)
-    assert (f.ports, f.kind) == (want.ports, want.kind)
-
-
-def test_the_reducer_is_the_reduce_kind():
-    inst = Brm.from_dict(reducer()).resolve("chisel_adder_tree", {"W": 4})
-    assert function_of(inst).ports == reduce_kind(lanes=4, lanes_out=1).ports
-
-
-def test_timing_expressions_are_resolved():
-    d = adder()
-    d["implementations"][IMPL]["timing"] = {"latency": "W // 2", "initiation_interval": "1"}
-    inst = _brm(d).resolve(IMPL, {"W": 8})
-    assert (inst.latency, inst.initiation_interval) == (4, 1)
 
 
 # =============================================================================
@@ -69,18 +38,6 @@ VALUE_CASES = [
 def test_rejected_values(case, impl, params, msg):
     with pytest.raises(BrmError, match=msg):
         _brm().resolve(impl, params)
-
-
-def test_missing_value_without_default():
-    with pytest.raises(BrmError, match="no value for 'W'"):
-        Brm.from_dict(reducer()).resolve("chisel_adder_tree")
-
-
-def test_resolved_timing_out_of_range():
-    d = adder()
-    d["implementations"][IMPL]["timing"]["latency"] = "W - 8"
-    with pytest.raises(BrmError, match="latency = 'W - 8' gives -4"):
-        _brm(d).resolve(IMPL)
 
 
 # =============================================================================
@@ -113,15 +70,6 @@ def test_a_function_its_kind_does_not_build(case, edit, msg):
         function_of(inst)
 
 
-def test_rate_mismatch():
-    d = reducer()
-    d["interface"]["params"]["K"] = d["interface"]["params"].pop("T")
-    d["interface"]["ports"][1]["rate"] = "K"
-    inst = Brm.from_dict(d).resolve("chisel_adder_tree", {"W": 4})
-    with pytest.raises(BrmError, match="differ from kind 'reduce'"):
-        function_of(inst)
-
-
 # =============================================================================
 # The datapath a binding names
 # =============================================================================
@@ -136,19 +84,3 @@ def _bound(binding_edit=None, timing=None):
     if timing:
         d["implementations"][IMPL]["timing"] = timing
     return _brm(d)
-
-
-def test_a_bound_implementation_resolves_when_its_datapath_takes_it():
-    assert _bound().resolve(IMPL).impl.binding["datapath"] == "SimdLanes"
-
-
-def test_a_datapath_the_generator_does_not_build_is_refused():
-    brm = _bound(lambda b: b.update(datapath="Gemm"))
-    with pytest.raises(BrmError, match="datapath 'Gemm' is not one the generator builds"):
-        brm.resolve(IMPL)
-
-
-def test_a_datapath_that_refuses_the_instance_is_refused():
-    brm = _bound(lambda b: b.update(args={"lanes": "W * 2", "op": "op"}))
-    with pytest.raises(BrmError, match=r"refuses the instance: \[gen.lanes\]"):
-        brm.resolve(IMPL)

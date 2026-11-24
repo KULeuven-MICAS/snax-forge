@@ -38,7 +38,7 @@ from snax_forge.expr import ExprError, Value
 from .graph import SCALAR, Container, Graph, Memlet, Node
 from .kinds import DfgError
 from .loops import import_names
-from .reduce import REDUCE_OPS, Reduction, Seed
+from .reduce import REDUCE_OPS, Reduction
 from .subset import format_dim
 
 VARIABLES = ("i", "j", "k", "l")
@@ -663,13 +663,11 @@ def _fold_converts(body: list[Node], containers: dict[str, Container],
 
 
 def _rename_data(nodes: list[Node], renamed: dict[str, str]) -> None:
-    """Every memlet (and fold seed) on a container in ``renamed`` moved to its new name."""
+    """Every memlet on a container in ``renamed`` moved to its new name (the importer makes no
+    seeded fold)."""
     for n in nodes:
         for m in n.memlets():
             m.data = renamed.get(m.data, m.data)
-            if m.reduce is not None and m.reduce.seed is not None:
-                m.reduce = Reduction(m.reduce.op, None, Seed(renamed.get(m.reduce.seed.data,
-                                     m.reduce.seed.data), m.reduce.seed.subset))  # fmt: skip
         if n.body:
             _rename_data(n.body, renamed)
 

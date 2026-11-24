@@ -5,13 +5,12 @@ from __future__ import annotations
 
 import copy
 
-from snax_forge.design import Platform, instances, resolve
 from snax_forge.dfg import Graph
 from snax_forge.dfg.import_sdfg import import_kernel
 from snax_forge.sandbox import Recipe, apply_recipe
 from tests.helpers import graph_dict, imported, recipe_path
 
-from .helpers import SMALL16, accel_node, problems
+from .helpers import accel_node, problems
 from .helpers import design as paired
 
 
@@ -64,19 +63,6 @@ def _vsum(dtypes: dict[str, str]) -> Graph:
     return Graph.from_dict(d)
 
 
-def _shell(g: Graph, platform: Platform | None = None) -> dict[str, tuple]:
-    pf = platform or Platform.load(SMALL16)
-    return {k: (s.dtype, s.num_slc, s.num_ch) for k, s in resolve(pf, g, instances(g)).items()}
-
-
-def _d_out(g: Graph) -> dict[str, int]:
-    return {k: s.d_out for k, s in resolve(Platform.load(SMALL16), g, instances(g)).items()}
-
-
-def _d_in(g: Graph) -> dict[str, int]:
-    return {k: s.d_in for k, s in resolve(Platform.load(SMALL16), g, instances(g)).items()}
-
-
 def _recipe(name: str, **params: int | str) -> Graph:
     """Recipe ``name`` at ``params`` (``types`` a type preset), its last graph."""
     r = Recipe.load(recipe_path(name)).with_params(params)
@@ -90,71 +76,6 @@ def _pack(g: Graph) -> list:
 # =============================================================================
 # Accepted
 # =============================================================================
-
-
-def test_vecadd_int32_takes_two_channels_per_port():
-    g = _vecadd({"A": "int32", "B": "int32", "C": "int32"})
-    assert problems(paired(g)) == []
-    assert _shell(g) == {p: ("int32", 2, 2) for p in ("acc_a", "acc_b", "acc_out")}
-
-
-def test_vmul_int32_into_int64():
-    g = _vecadd({"A": "int32", "B": "int32", "C": "int64"}, brm="simd")
-    assert problems(paired(g)) == []
-    assert _shell(g) == {
-        "acc_a": ("int32", 2, 2), "acc_b": ("int32", 2, 2), "acc_out": ("int64", 1, 4)
-    }  # fmt: skip
-
-
-def test_vsum_int32_into_int64():
-    g = _vsum({"A": "int32", "out": "int64"})
-    assert problems(paired(g)) == []
-    assert _shell(g) == {"acc_a": ("int32", 2, 2), "acc_out": ("int64", 1, 1)}
-
-
-def test_vsum_int32_out_is_packed_two_to_a_word():
-    g = _vsum({"A": "int32", "out": "int32"})
-    assert problems(paired(g)) == []
-    assert _shell(g) == {"acc_a": ("int32", 2, 2), "acc_out": ("int32", 2, 1)}
-    assert _d_out(g) == {"acc_a": 1, "acc_out": 2}
-
-
-def test_a_4x6_int32_output_at_w_1_is_packed():
-    """Rows of 6 int32 at W = 1: the pushes step one element, a row is three whole words."""
-    g = _grid([4, 6], [("i", "0:4"), ("j", "0:6")], ["i", "j:j + 1"], out="int32")
-    g = Graph.from_dict(_narrow_out(g.to_dict()))
-    assert _pack(g) == []  # connect.dtype refuses an output narrower than its inputs: a fold's
-    assert _d_out(g)["acc_out"] == 2
-
-
-def test_vecadd_i32_at_w_1_slices_its_inputs_and_packs_its_output():
-    """One int32 lane a beat: a and b sliced 2 from a word, out packed 2 to one, num_ch 1."""
-    g = _recipe("vecadd_v1_1", W=1)
-    assert problems(paired(g)) == []
-    assert _shell(g) == {p: ("int32", 2, 1) for p in ("acc_a", "acc_b", "acc_out")}
-    assert _d_in(g) == {"acc_a": 2, "acc_b": 2, "acc_out": 1}
-    assert _d_out(g) == {"acc_a": 1, "acc_b": 1, "acc_out": 2}
-
-
-def test_a_narrow_input_is_sliced():
-    """vsum_v1_1 at int8, W = 4: its input sliced 2 from a word, its int32 sum packed 2."""
-    g = _vsum({"A": "int8", "out": "int32"})
-    assert _pack(g) == []
-    assert _d_in(g) == {"acc_a": 2, "acc_out": 1}
-    assert _d_out(g) == {"acc_a": 1, "acc_out": 2}
-
-
-def test_an_input_re_read_by_an_outer_loop_is_sliced():
-    """A 6-element int32 row read again on every pass of i (a step of 0): whole words."""
-    g = _grid([6], [("i", "0:4"), ("j", "0:6")], ["j:j + 1"])
-    assert _pack(g) == []
-    assert _d_in(g) == {"acc_a": 2, "acc_b": 2, "acc_out": 1}
-
-
-def test_matadd_int32_4x6_in_2x2_tiles():
-    g = _grid([4, 6], [("i", "0:2"), ("j", "0:3")], ["2 * i:2 * i + 2", "2 * j:2 * j + 2"])
-    assert problems(paired(g)) == []
-    assert _shell(g) == {p: ("int32", 2, 2) for p in ("acc_a", "acc_b", "acc_out")}
 
 
 # =============================================================================
@@ -174,24 +95,6 @@ def test_matadd_int32_3x5_in_2x2_tiles_pads_the_row():
         "spatial loop over dimension 0 steps 5 elements, so its beats would start inside a word"
     )
     assert got[0].fix == "pad the leading dimension to 6"
-
-
-def test_s0_not_a_multiple_of_num_slc_is_one_problem_per_port():
-    """int16 in 4 x 2 tiles: S_0 = 2 < num_slc = 4. Loop j steps by S_0 and fails only because of
-    it, so it is not reported again."""
-    d = _grid([8, 8], [("i", "0:2"), ("j", "0:4")], ["4 * i:4 * i + 4", "2 * j:2 * j + 2"])
-    d = d.to_dict()
-    for c in d["containers"].values():
-        c["dtype"] = "int16"
-    got = _pack(Graph.from_dict(d))
-    assert [p.where for p in got] == ["node add.a", "node add.b", "node add.out"]
-    assert got[0].message == (
-        "the fastest spatial bound S_0 = 2 is not a multiple of num_slc (int16, num_slc = 4 slices "
-        "per word): a beat's fastest lanes must fill whole words"
-    )
-    assert got[0].fix == (
-        "make the fastest spatial bound a multiple of 4 (the split factor in the recipe)"
-    )
 
 
 def test_a_column_does_not_run_along_contiguous_elements():

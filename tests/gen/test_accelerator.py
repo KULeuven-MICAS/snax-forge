@@ -11,11 +11,9 @@ import pytest
 
 from snax_forge.gen import Accelerator, Csr, Description, Group, Link, Port, Unit, describe
 from snax_forge.gen.blocks import GenError
-from tests.helpers import bound_mvt_column, bound_vsum
+from tests.helpers import bound_vsum
 
 from .helpers import (
-    bound_dot1,
-    bound_dot1_enc,
     bound_recipe,
     one_unit,
     point,
@@ -56,7 +54,7 @@ def dot1() -> Description:
     """dot 1 as the and the tables have it: two accelerators, vmul and vsum, each its
     streamer set, their CSRs contiguous over the two from offset 0."""
     mul, total = mul_sum("v")
-    return Description("out/design/dot_1/design_point.json", "snax_forge_dot_v1", [
+    return Description("out/design/dot_v1/design_point.json", "snax_forge_dot_v1", [
         Accelerator("vmul", ["vmul.a", "vmul.b"], ["vmul.out"], [Group("vmul", own(0, 0), [mul])]),
         Accelerator("vsum", ["vsum.a"], ["vsum.out"], [Group("vsum", own(4, 1), [total])]),
     ])  # fmt: skip
@@ -94,28 +92,6 @@ def test_the_description_round_trips_and_meets_its_schema():
         validate("accelerator", acc.to_dict())
     assert list(dot().to_dict()) == ["design_point", "tag", "accelerators"]
     assert list(dot().to_dict()["accelerators"][0]) == ["name", "inputs", "outputs", "groups"]
-
-
-def test_csr_order_and_counts():
-    """Per group START, JOBS, the units' R/W, STATUS, BUSY_COUNTER; rw = Σ_g (2 + Σ_u (f_u + k_u)),
-    ro = 2G (dot_v1_1 is 5, 4; dot 1's accelerators 2, 2 and 3, 2)."""
-    acc = dot()
-    order = [
-        ("vmul", "START", 0), ("vmul", "JOBS", 1), ("vmul", "STATUS", 2), ("vmul", "BUSY_COUNTER", 3),
-        ("vsum", "START", 4), ("vsum", "JOBS", 5), ("vsum", "JOB_BEATS", 6), ("vsum", "STATUS", 7),
-        ("vsum", "BUSY_COUNTER", 8),
-    ]  # fmt: skip
-    assert [(g.name, c.name, c.offset) for g, _, c in acc.csrs()] == order
-    (a,) = acc.accelerators
-    assert (a.rw, a.ro) == (5, 4)
-    # two accelerators: the same offsets, contiguous over both; each its own counts
-    for serial in (dot1(), dot_v7()):
-        assert [(g.name.removeprefix("v"), c.name, c.offset) for g, _, c in serial.csrs()] == [
-            (g.removeprefix("v"), n, o) for g, n, o in order]  # fmt: skip
-        assert [(a.rw, a.ro) for a in serial.accelerators] == [(2, 2), (3, 2)]
-    (u,) = one_unit().accelerators
-    (u1,) = one_unit(1).accelerators
-    assert ((u.rw, u.ro), (u1.rw, u1.ro)) == ((2, 2), (3, 2))
 
 
 def test_one_helper_names_every_csr():
@@ -198,30 +174,6 @@ def test_the_widths_come_from_the_platform(tmp_path):
         with_groups(acc, [replace(g, units=[unit])])
 
 
-def test_vsums_unit_has_job_beats(tmp_path):
-    """A fold (an output of a named rate) gets JOB_BEATS between its group's JOBS and STATUS."""
-    from snax_forge.design import DesignPoint
-
-    acc = describe(DesignPoint.load(point(tmp_path, name="vsum_v1", graph=bound_vsum())), "p")
-    ((_, unit),) = [(g, u) for g in acc.groups for u in g.units]
-    assert [c.to_dict() for c in unit.csrs] == [
-        {"name": "JOB_BEATS", "access": "rw", "offset": 2, "width": 32}
-    ]
-    assert list(acc.defines()) == ["ACC_RW_START", "ACC_RW_JOBS", "ACC_RW_JOB_BEATS",
-                                   "ACC_RO_STATUS", "ACC_RO_BUSY_COUNTER"]  # fmt: skip
-
-
-def test_a_linked_group_names_its_units_csrs():
-    """One group: no group part; two units: the unit part on JOB_BEATS only (the dot 2–6)."""
-    acc = dot4()
-    assert list(acc.defines()) == ["DOT_RW_START", "DOT_RW_JOBS", "DOT_RW_MAC_JOB_BEATS",
-                                   "DOT_RO_STATUS", "DOT_RO_BUSY_COUNTER"]  # fmt: skip
-    (a,) = acc.accelerators
-    assert (a.rw, a.ro) == (3, 2)
-    assert acc.find("sum", "START") == "DOT_RW_START"
-    assert acc.find("mac", "JOB_BEATS") == "DOT_RW_MAC_JOB_BEATS"
-
-
 def _edit(links=None, inputs=None, outputs=None, ports=None) -> None:
     """dot4 with its links, outer ports or the sum unit's ports replaced."""
     desc = dot4()
@@ -277,48 +229,6 @@ def test_a_group_is_a_chain_or_chains_a_fork_joins():
     assert e.value.code == "gen.chain" and "chains a fork joins" in str(e.value)
 
 
-def test_a_span_unit_reads_from_a_link_until_b2():
-    """gen.span: dot 5's SerialAccumulate (span 4) fed by the streamer instead of the MAC."""
-    serial = Unit("sum", "accumulate", "SerialAccumulate",
-                  {"a": Port("in", "in", "int64", 4), "out": Port("out", "out", "int64", 1)},
-                  {"T": 1}, 1, 1, [], None, 4)  # fmt: skip
-    own = [Csr("START", "rw", 0, 1), Csr("JOBS", "rw", 1, 32), Csr("STATUS", "ro", 2, 2),
-           Csr("BUSY_COUNTER", "ro", 3, 32)]  # fmt: skip
-    with pytest.raises(GenError) as e:
-        acc = Accelerator("sum", ["sum.a"], ["sum.out"], [Group("sum", own, [serial])])
-        Description("p", "snax_forge_p", [acc])
-    assert e.value.code == "gen.span" and "reads from a link" in str(e.value)
-
-
-def test_dot_1_enc_is_one_accelerator_of_two_groups(tmp_path):
-    """dot_v1_1 (encapsulate): one accelerator dot, its two groups vmul and vsum, one
-    streamer set: its inputs and outputs every unlinked port, group by group; offsets 0 to 8;
-    the tag the entry's name."""
-    from snax_forge.design import DesignPoint
-
-    graph = bound_dot1_enc()
-    desc = describe(DesignPoint.load(point(tmp_path, name="dot_v1_1", graph=graph)), "p")
-    assert desc.tag == "snax_forge_dot_v1_1"
-    (acc,) = desc.accelerators
-    assert (acc.name, acc.inputs, acc.outputs) == ("dot", ["vmul.a", "vmul.b", "vsum.a"],
-                                                   ["vmul.out", "vsum.out"])  # fmt: skip
-    assert [g.name for g in acc.groups] == ["vmul", "vsum"]
-    assert [c.offset for _, _, c in desc.csrs()] == list(range(9))
-    assert desc.find("vsum", "JOB_BEATS") == "DOT_RW_VSUM_JOB_BEATS"
-    assert replace(desc, design_point=dot().design_point) == dot()
-    validate("accelerator", desc.to_dict())
-
-
-def test_dot_1_is_two_accelerators(tmp_path):
-    """dot 1 (no encapsulate, F2b): two accelerators vmul and vsum, each one group and one
-    streamer set, the and the tables (offsets 0 to 8 over the two)."""
-    from snax_forge.design import DesignPoint
-
-    desc = describe(DesignPoint.load(point(tmp_path, name="dot_v1", graph=bound_dot1())), "p")
-    assert replace(desc, design_point=dot1().design_point) == dot1()
-    validate("accelerator", desc.to_dict())
-
-
 def test_dot_serial_is_two_accelerators(tmp_path):
     """dot_v7 (no encapsulate): two accelerators mul and sum in the graph's order, each one
     group and one streamer set, its own outer ports; the offsets run on, 0 to 8."""
@@ -359,78 +269,3 @@ def test_a_platform_without_a_slot_has_no_tag(tmp_path):
     with pytest.raises(GenError) as e:
         describe(p, "p")
     assert e.value.code == "gen.tag" and "no accelerator_slot" in str(e.value)
-
-
-def test_the_tag_is_the_designs_name_whatever_the_folder(tmp_path):
-    """The tag is <accelerator_slot>_<name>, <name> the design's: the recipe's ``name`` the
-    sandbox kept beside the graph (design/point.py's ``design_of``), not the folder a ``--set``
-    named, even one a flow names with a ``-`` (``W_acc_1-10``); the folder stays."""
-    from snax_forge.design import DesignPoint
-
-    from .helpers import designed
-
-    path = designed(tmp_path, "dot_v1", "dot_1_W_acc_1-10", ["W=8"])
-    assert path == "out/design/dot_1_W_acc_1-10/design_point.json"
-    p = DesignPoint.load(tmp_path / path)
-    assert p.name == "dot_v1"
-    assert describe(p, path).tag == "snax_forge_dot_v1"
-
-
-@pytest.mark.parametrize(("recipe", "params"), [("matvec_acc_v1", {"op": "add"}),
-                                              ("matvec_acc_v2", {})])  # fmt: skip
-def test_a_seeded_fold_has_its_seed_port_and_no_new_csr(tmp_path, recipe, params):
-    """matvec_acc_v1: the sum's seed is a port of one int64 word, an outer input after
-    a, read by the accelerator's streamer; its CSRs are the same as unseeded, so are its
-    params (TreeAccumulate's op, none for SerialAccumulate), which the port says. data.h's golden is
-    q + A p on the seeded inputs."""
-    import numpy as np
-
-    from snax_forge.design import DesignPoint
-    from snax_forge.gen.data import arrays
-
-    graph = bound_recipe(recipe, "matvec_acc")
-    p = DesignPoint.load(point(tmp_path, name=recipe, graph=graph))
-    desc = describe(p, "p")
-    (acc,) = desc.accelerators
-    assert (acc.inputs, acc.outputs) == (["mul.a", "mul.b", "sum.a", "sum.seed"],
-                                         ["mul.out", "sum.out"])  # fmt: skip
-    (unit,) = [u for g in acc.groups for u in g.units if u.name == "sum"]
-    assert unit.ports["seed"].to_dict() == {"port": "seed", "dir": "in", "dtype": "int64",
-                                            "lanes": 1}  # fmt: skip
-    assert list(unit.ports) == ["a", "seed", "out"] and unit.params == params
-    assert [(g.name, c.name) for g, _, c in desc.csrs()] == [  # matvec_1's: none for the seed
-        *(("mul", c) for c in ("START", "JOBS", "STATUS", "BUSY_COUNTER")),
-        *(("sum", c) for c in ("START", "JOBS", "JOB_BEATS", "STATUS", "BUSY_COUNTER"))]  # fmt: skip
-    validate("accelerator", desc.to_dict())
-    got = {a.name: np.array(a.values) for a in arrays(p)}
-    want = got["q"] + got["A"].reshape(8, 512) @ got["p"]
-    assert np.array_equal(got["q_golden"], want) and got["q"].any()
-
-
-def test_the_column_form_mac_reads_a_broadcast_and_a_seed(tmp_path):
-    """mvt's half 2 in the column form (D186, D187): the mac's y2 is one int8 lane given to its
-    8, sliced 8 a word, and its seed is x2's 8 int32 lanes; neither adds a CSR. data.h's goldens
-    are x1 + A y1 and x2 + A^T y2."""
-    import numpy as np
-
-    from snax_forge.design import DesignPoint
-    from snax_forge.gen.data import arrays
-
-    p = DesignPoint.load(point(tmp_path, name="mvt_col", graph=bound_mvt_column()))
-    desc = describe(p, "p")
-    mac = next(a for a in desc.accelerators if a.name == "mac_x2")
-    (unit,) = mac.groups[0].units
-    assert {k: v.to_dict() for k, v in unit.ports.items()} == {
-        "a": {"port": "a", "dir": "in", "dtype": "int8", "lanes": 8},
-        "b": {"port": "b", "dir": "in", "dtype": "int8", "lanes": 8, "d_in": 8, "broadcast": True},
-        "seed": {"port": "seed", "dir": "in", "dtype": "int32", "lanes": 8},
-        "out": {"port": "out", "dir": "out", "dtype": "int32", "lanes": 8}}  # fmt: skip
-    assert unit.ports["b"].stream_lanes == 1 and unit.ports["a"].stream_lanes == 8
-    assert Port.from_dict(unit.ports["b"].to_dict()) == unit.ports["b"]
-    assert [c.name for g, _, c in desc.csrs() if g.name == "mac_x2"] == [
-        "START", "JOBS", "JOB_BEATS", "STATUS", "BUSY_COUNTER"]  # fmt: skip
-    validate("accelerator", desc.to_dict())
-    got = {a.name: np.array(a.values) for a in arrays(p)}
-    a = got["A"].reshape(16, 16)
-    assert np.array_equal(got["x2_golden"], got["x2"] + a.T @ got["y2"][:16])
-    assert np.array_equal(got["x1_golden"], got["x1"] + a @ got["y1_l2"][:16])

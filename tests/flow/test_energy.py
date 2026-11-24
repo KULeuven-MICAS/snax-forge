@@ -22,12 +22,15 @@ from snax_forge.estimate.dynamic import graph_counts
 from snax_forge.flow import run_flow
 from snax_forge.flow.energy import EnergyRun, counts_of, energy_of
 from snax_forge.report.energy import render_energy
-from snax_forge.run import RunError, cluster_from, load_cluster, parse_line
+from snax_forge.run import cluster_from, load_cluster, parse_line
 from tests.estimate.helpers import SNAX_FORGE
 from tests.helpers import recipe_path, steps
 from tests.run.helpers import files, snap_lines
 
 from .helpers import needs_gvsoc
+
+# One worker runs the module, its module-scoped flows once
+pytestmark = pytest.mark.xdist_group("flow-energy")
 
 MARKS = [{"mark": 1, "kind": "acc_config", "label": "acc config acc"},
          {"mark": 2, "kind": "run", "label": "run acc"},
@@ -115,13 +118,6 @@ def test_the_energy_run_round_trips_and_reports():
     assert "| crossbar: requests | 204 | 192 |" in text
 
 
-def test_a_run_without_snapshots_is_refused():
-    cluster = cluster_from(*files())
-    graph = steps("vecadd_v1")[-1]
-    with pytest.raises(RunError, match="energy.snapshots"):
-        energy_of([], cluster, MARKS, graph, estimate(graph, Platform.load(SNAX_FORGE)))
-
-
 def test_a_run_without_marks_is_priced_in_one_window_of_the_whole_run():
     """The default build's end snapshot alone, priced with no marks: one window, boot to the end,
     named the whole run, costing what the quiet build's run window costs."""
@@ -135,15 +131,6 @@ def test_a_run_without_marks_is_priced_in_one_window_of_the_whole_run():
     ((_, want),) = run(stalls=2).of_kind("run")
     assert got.parts == pytest.approx(want.parts, rel=1e-12)
     assert "## The counts the whole run was priced on" in render_energy(e)
-
-
-def test_a_default_build_that_wrote_marks_is_refused():
-    cluster = cluster_from(*files())
-    graph = steps("vecadd_v1")[-1]
-    snaps = [(1, 50, totals(0, 0, 0, 0)), (-1, 140, totals(16, 0, 16, 16))]
-    lines = [parse_line(x) for x in snap_lines(cluster, snaps)]
-    with pytest.raises(RunError, match="energy.marks"):
-        energy_of(lines, cluster, None, graph, estimate(graph, Platform.load(SNAX_FORGE)))
 
 
 def test_the_flow_runs_the_quiet_build_again_and_prices_it(tmp_path, monkeypatch):

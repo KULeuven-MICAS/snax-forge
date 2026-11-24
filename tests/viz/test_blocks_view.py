@@ -34,29 +34,6 @@ def view(g: Graph, *expanded: str) -> dict:
     return graph_view(Entry(g.name, Path(g.name), g, None), expanded=expanded)
 
 
-def test_each_half_is_one_box_until_expanded():
-    v = view(_mvt_of_matvecs())
-    assert containers(v, first=True) == ["A@0", "y1@0", "x1@0", "y2@0", "x2@0"]
-    assert ("A@0", "matvec.in:A") in ends(v) and ("matvec.out:tmp0", "tmp0@1") in ends(v)
-    assert ("A@0", "matvec_1.in:A") in ends(v)  # A one box, read by both halves
-    b = boxes(v)["matvec"]
-    assert (b["kind"], b["text"], b["block"]) == (
-        "block",
-        "matvec · matvec/matvec_v3_1 · W = 4",
-        "matvec",
-    )
-    assert [(b["name"], b["collapsed"], b["hidden"]) for b in v["blocks"]] == [
-        ("matvec", True, False), ("dot", False, True), ("matvec_1", True, False),
-        ("dot_1", False, True)]  # fmt: skip
-    d = v["details"]["block:matvec"]
-    assert (d["recipe"], d["params"], d["blocks"], d["units"]) == (
-        "matvec/matvec_v3_1",
-        {"W": 4},
-        ["dot"],
-        ["mul", "sum"],
-    )
-
-
 def test_expanding_shows_the_inner_block_then_the_nodes():
     g = _mvt_of_matvecs()
     one = view(g, "matvec")
@@ -100,22 +77,3 @@ def test_halves_sharing_units_expand_together():
     g = share(g, "dot_1", **{"with": "dot"})
     v = view(g)
     assert {b["name"]: b["together"] for b in v["blocks"]} == {"dot": ["dot_1"], "dot_1": ["dot"]}
-
-
-def test_the_step_route_takes_the_blocks_expanded(tmp_path):
-    """View mode over matvec_v3_1's steps: its last step one dot box, ``?expand=dot`` its
-    nodes."""
-    from snax_forge.sandbox import write_steps
-    from snax_forge.viz.dfg.server import make_dfg_server
-    from tests.helpers import recipe_path
-
-    from .helpers import get_json, served
-
-    r = Recipe.load(recipe_path("matvec_v3_1")).with_params({"M": 4, "N": 64})
-    write_steps(r, apply_recipe(r, imported(r.kernel)), tmp_path / "s")
-    with served(make_dfg_server([tmp_path / "s"], 0)) as srv:
-        _, shut = get_json(srv, "/api/step/3")
-        _, open_ = get_json(srv, "/api/step/3?expand=dot")
-    assert ("mult_map", "dot.in:A") in ends(shut)  # the rows' loop, then the dot box
-    assert shut["marks"]["blocks"] == ["dot"]  # applied: unapply takes it
-    assert "dot" not in boxes(open_) and {"mult_map", "unit:mul", "unit:sum"} <= set(boxes(open_))

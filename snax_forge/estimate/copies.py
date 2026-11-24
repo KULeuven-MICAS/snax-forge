@@ -37,11 +37,6 @@ class CopyEstimate:
     def cycles(self) -> float:
         return self.bursts * DMA_CYCLES_PER_BURST
 
-    @property
-    def accesses(self) -> int:
-        """Its accesses on the superbank port: one read and one write per burst."""
-        return 2 * self.bursts
-
     def to_dict(self) -> dict[str, Any]:
         return {"name": self.name, "by": self.by, "bursts": self.bursts, "size": self.size,
                 "cycles": round(self.cycles, 2)}  # fmt: skip

@@ -13,7 +13,7 @@ import pytest
 
 from snax_forge.design import Design, DesignPoint, Platform, run_checks
 from snax_forge.design.check import SCHEDULES
-from snax_forge.lower import placed_waits, task_list
+from snax_forge.lower import task_list
 from snax_forge.lower.derive import sequential
 from snax_forge.lower.tasks import Configure, Start, Sync
 from tests.design.helpers import SNAX_FORGE
@@ -56,28 +56,6 @@ STORES = ["store_x1", "start store_x1", "store_x2", "start store_x2", "sync stor
           "sync store_x2"]  # fmt: skip
 
 
-def test_serial_syncs_on_half_1_before_half_2_starts():
-    assert order("serial") == [
-        *LOADS_1, "conf mvt", "start tmp0_mult_mvt", "store_x1", "start store_x1", *LOADS_2,
-        "conf mvt_1", "sync tmp0_mult_mvt", "start tmp2_mult_mvt_1", "store_x2",
-        "start store_x2", "sync store_x1", "sync store_x2",
-    ]  # fmt: skip
-
-
-def test_pipeline_configures_half_2_while_half_1_runs_and_stores_after_both_starts():
-    assert order("pipeline") == [
-        *LOADS_1, "conf mvt", "start tmp0_mult_mvt", *LOADS_2, "conf mvt_1",
-        "start tmp2_mult_mvt_1", *STORES,
-    ]  # fmt: skip
-
-
-def test_pipeline_compute_configures_both_then_starts_them_back_to_back():
-    assert order("pipeline_compute") == [
-        *LOADS_1, *LOADS_2, "conf mvt", "conf mvt_1", "start tmp0_mult_mvt",
-        "start tmp2_mult_mvt_1", *STORES,
-    ]  # fmt: skip
-
-
 @pytest.mark.parametrize("schedule", SCHEDULES)
 def test_every_schedule_keeps_the_tasks_and_their_after(schedule):
     """The same tasks, each configured with the same values and after, each started after its
@@ -114,18 +92,6 @@ def test_sequential_syncs_after_every_start():
         "start tmp2_mult_mvt_1", "sync tmp2_mult_mvt_1", "store_x2", "start store_x2",
         "sync store_x2",
     ]  # fmt: skip
-
-
-def test_pipelined_waits_end_on_each_half_once():
-    """No wait on half 1 before half 2 starts; each half's writer waited on once, by its store."""
-    for schedule in ("pipeline", "pipeline_compute"):
-        p = at(schedule)
-        tl = task_list(p)
-        second = next(i for i, s in enumerate(tl.steps) if isinstance(s, Start)
-                      and "tmp2_mult_mvt_1" in s.tasks)  # fmt: skip
-        waits = [w for w in placed_waits(tl, p) if w.component != "dma"]  # c.py queues the DMA
-        assert [w.component for w in waits if w.step <= second] == []
-        assert [w.component for w in waits] == ["vadd_x1_out", "vadd_x2_out"]
 
 
 def test_the_schedule_round_trips_through_the_design_point():

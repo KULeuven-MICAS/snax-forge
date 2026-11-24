@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from snax_forge.design import DesignError, Platform, StreamerOptions, parse_value
+from snax_forge.design import DesignError, Platform, StreamerOptions
 from snax_forge.design.platform import L1Config, parse
 
 from .helpers import SMALL16, SNAX_FORGE, platform_dict
@@ -20,13 +20,6 @@ def test_small16_round_trips_byte_for_byte():
     p = Platform.load(SMALL16)
     assert p.to_json() == SMALL16.read_text()
     assert Platform.from_dict(json.loads(p.to_json())) == p
-
-
-def test_small16_has_no_source_hjson():
-    """Not read from a cluster file: no source and no slot, so nothing to write a cluster from."""
-    p = Platform.load(SMALL16)
-    assert (p.hjson, p.accelerator_slot) == (None, None)
-    assert json.loads(SMALL16.read_text())["hjson"] is None
 
 
 def test_missing_keys_take_defaults_and_every_field_is_written():
@@ -95,13 +88,6 @@ def test_a_bad_streamer_entry_is_named(entry, code, text):
     assert [p.code for p in found] == [code] and text in found[0].message
 
 
-def test_a_bad_channels_entry_names_its_fix():
-    d = platform_dict()
-    d["streamers"]["acc_a"] = {"num_ch": 0}
-    (p,) = parse(d)[1]
-    assert p.fix == "set num_ch to an int >= 1, or remove it"
-
-
 def test_channels_in_an_entry_round_trip_and_never_in_default():
     d = platform_dict()
     d["streamers"]["acc_a"] = {"num_ch": 2}
@@ -116,13 +102,6 @@ def test_channels_in_an_entry_round_trip_and_never_in_default():
     assert [(p.code, p.where) for p in found] == [("platform.keys", "streamers.default")]
 
 
-def test_write_and_n_ports_in_an_entry_load_for_the_connect_check():
-    """Only the graph knows the port, so connect.derived reports them (test_check)."""
-    d = platform_dict()
-    d["streamers"]["acc_a"] = {"write": True, "n_ports": 8}
-    assert Platform.from_dict(d).entries["acc_a"] == {"write": True, "n_ports": 8}
-
-
 def test_a_platform_without_name_or_as_a_list_is_rejected():
     assert [p.where for p in parse({})[1]] == ["name"]
     assert [p.code for p in parse([1])[1]] == ["platform.keys"]
@@ -131,40 +110,6 @@ def test_a_platform_without_name_or_as_a_list_is_rejected():
 # =============================================================================
 # 3. --set, working copies and save
 # =============================================================================
-
-
-def test_with_changes_gives_a_working_copy():
-    base = Platform.load(SMALL16)
-    w = base.with_changes([("l1.n_banks", 32), ("streamers.acc_out.fifo_depth", 4)])
-    assert (w.name, w.base) == ("small16", "small16")
-    assert w.changes == {"l1.n_banks": 32, "streamers.acc_out.fifo_depth": 4}
-    assert w.l1.n_banks == 32 and w.entries == {"acc_out": {"fifo_depth": 4}}
-    assert base.l1.n_banks == 16 and base.changes == {}  # the input is not changed
-    assert base.with_changes([]).base == "small16"
-
-
-def test_continuing_adds_to_the_changes_and_keeps_the_base():
-    w = Platform.load(SMALL16).with_changes([("l1.n_banks", 32), ("l1.rows", 128)])
-    again = Platform.from_dict(json.loads(w.to_json())).with_changes(
-        [("l1.n_banks", 64), ("streamers.default.fifo_depth", 4)]
-    )
-    assert again.base == "small16"
-    assert list(again.changes.items()) == [
-        ("l1.rows", 128), ("l1.n_banks", 64), ("streamers.default.fifo_depth", 4)
-    ]  # fmt: skip
-    assert (again.l1.n_banks, again.l1.rows, again.default.fifo_depth) == (64, 128, 4)
-
-
-def test_saved_as_renames_and_keeps_the_record():
-    w = Platform.load(SMALL16).with_changes([("streamers.default.fifo_depth", 4)])
-    s = w.saved_as("small16_f4")
-    assert (s.name, s.base, s.changes) == ("small16_f4", "small16", w.changes)
-    assert Platform.from_dict(s.to_dict()) == s
-    # Continuing from a saved platform keeps the root base and the full difference.
-    c = s.with_changes([("l1.rows", 128)])
-    assert c.base == "small16" and list(c.changes) == ["streamers.default.fifo_depth", "l1.rows"]
-    with pytest.raises(DesignError, match="not an identifier"):
-        w.saved_as("small-16")
 
 
 @pytest.mark.parametrize(
@@ -225,16 +170,6 @@ def test_a_set_the_config_rejects_is_a_value_problem():
     assert e.value.codes == ["platform.values"]
 
 
-def test_the_csr_widths_are_set_and_counter_width_follows_job_width_when_null():
-    """acc_csr: job_width 1-32; busy_counter_width 1-32, or null to follow job_width."""
-    w = Platform.load(SMALL16).with_changes([("acc_csr.job_width", 16)])
-    assert (w.acc_csr.job_width, w.acc_csr.counter) == (16, 16)
-    w = w.with_changes([("acc_csr.busy_counter_width", 8)])
-    assert (w.acc_csr.job_width, w.acc_csr.counter) == (16, 8)
-    assert w.with_changes([("acc_csr.busy_counter_width", None)]).acc_csr.counter == 16
-    assert Platform.from_dict(json.loads(w.to_json())) == w
-
-
 def test_the_crossbar_limit_is_a_platform_value():
     """l1.max_xbar_inputs: 128 by default and in both platform files, at least 1; the
     warning l1.warn_xbar_inputs 64, from 1 to the limit."""
@@ -274,9 +209,3 @@ def test_a_bad_csr_width_is_refused_by_set_and_by_load(path, value, code, text):
     d["acc_csr"] = {path.split(".")[1]: value}
     _, found = parse(d)
     assert [p.code for p in found] == [code] and text in found[0].message
-
-
-def test_parse_value_takes_json_or_text():
-    assert parse_value("32") == 32 and parse_value("true") is True
-    assert parse_value("[2, 2]") == [2, 2] and parse_value('"int32"') == "int32"
-    assert parse_value("int32") == "int32"

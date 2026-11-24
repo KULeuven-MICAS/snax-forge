@@ -5,27 +5,28 @@ import org.scalatest.flatspec.AnyFlatSpec
 
 import snax.forge.{ForgeTester, LaneBits, Sink, Source}
 
-/** Several groups in one accelerator: dot 1 encapsulated, the generated `accelerator.json` of
-  * `recipes/dot/dot_v1_1.json` (the fixture dot_v1_1, snax-gvsoc's `forge/dot_v1_1/`), one accelerator `dot` in one
-  * streamer set: group vmul (SimdLanes, mul, 4 lanes of int64; START 0, JOBS 1, STATUS 2, BUSY_COUNTER 3) and group
-  * vsum (TreeAccumulate, 4 lanes of int64 into one; START 4, JOBS 5, JOB_BEATS 6, STATUS 7, BUSY_COUNTER 8). Each group
-  * starts, runs and reports STATUS on its own: vsum is started first and starved (its input held back), vmul then runs
-  * its 3 jobs to the end while vsum stays busy, then vsum's input flows and it ends.
+/** Several groups in one accelerator: the generated `accelerator.json` of matvec_acc_v2 (snax-gvsoc's
+  * `forge/matvec_acc_v2/`), one accelerator `matvec` in one streamer set: group mul (SimdLanes, mul, 4 lanes of int64;
+  * START 0, JOBS 1, STATUS 2, BUSY_COUNTER 3) and group sum (SerialAccumulate, one lane of int64, seeded; START 4, JOBS
+  * 5, JOB_BEATS 6, STATUS 7, BUSY_COUNTER 8). Each group starts, runs and reports STATUS on its own: sum is started
+  * first and starved (its input and seed held back), mul then runs its 3 jobs to the end while sum stays busy, then
+  * sum's input flows and it ends.
   */
 class TwoGroupsSpec extends AnyFlatSpec with ForgeTester {
 
-  private lazy val spec = RtlFixtures.all.find(_.name == "dot_v1_1").get.spec
+  private lazy val spec = RtlFixtures.all.find(_.name == "matvec_acc_v2").get.spec
 
-  behavior of "a two-group accelerator (dot_v1_1)"
+  behavior of "a two-group accelerator (matvec_acc_v2)"
 
   it should "start, run and report STATUS per group" in {
     test(new ShellHarness(spec)) { dut =>
       val beat       = (k: Int, t: Int) => LaneBits.pack(Seq.tabulate(4)(l => BigInt(10 * k + t + l + 1)), 64)
-      var release    = false // sum's input held back until then
+      var release    = false // sum's input and seed held back until then
       val sources    = Seq(
         new Source(3, beat(0, _), _ => true),
         new Source(3, beat(1, _), _ => true),
-        new Source(2, beat(2, _), _ => release)
+        new Source(2, t => BigInt(21 + t), _ => release),
+        new Source(1, _ => BigInt(5), _ => release)
       )
       val d          = new ShellDriver(dut, sources, Seq(new Sink(_ => true), new Sink(_ => true)))
       val (mul, sum) = (0, 1)
@@ -42,7 +43,7 @@ class TwoGroupsSpec extends AnyFlatSpec with ForgeTester {
       assert(d.read(dut.csr("STATUS", mul)) == 2, "mul done")
       assert(d.read(dut.csr("BUSY_COUNTER", mul)) == 3, "mul's BUSY_COUNTER: three busy cycles")
       assert(d.read(dut.csr("STATUS", sum)) == 1, "sum still busy, not done")
-      assert(dut.io.bool("vsum_busy_o").peek().litToBoolean && !dut.io.bool("vmul_busy_o").peek().litToBoolean)
+      assert(dut.io.bool("sum_busy_o").peek().litToBoolean && !dut.io.bool("mul_busy_o").peek().litToBoolean)
       release = true
       while ((d.read(dut.csr("STATUS", sum)) & 1) != 0) {}
       assert(d.read(dut.csr("STATUS", sum)) == 2, "sum done")
@@ -52,7 +53,7 @@ class TwoGroupsSpec extends AnyFlatSpec with ForgeTester {
         LaneBits.pack(Seq.tabulate(4)(l => BigInt(t + l + 1) * BigInt(10 + t + l + 1)), 64)
       }
       assert(d.outputs(0) == products, "mul's outputs")
-      assert(d.outputs(1) == Seq((0 until 2).flatMap(t => (0 until 4).map(l => BigInt(20 + t + l + 1))).sum), "the sum")
+      assert(d.outputs(1) == Seq(BigInt(5 + 21 + 22)), "the sum, from its seed")
     }
   }
 }

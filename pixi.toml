@@ -48,6 +48,7 @@ snax-forge = { path = ".", editable = true }
 [feature.dev.dependencies]
 pytest = ">=8.0"
 pytest-xdist = ">=3.5"
+pytest-cov = ">=5"
 ruff = ">=0.6"
 ipython = ">=8.0"
 
@@ -149,7 +150,7 @@ bundle     = "python -m snax_forge.gen.bundle"
 # runs the flow, the bundle of its design point (out/bundle/<name>/) and the bundle's program, checked to be the
 # flow's ELF; each step's output in out/forge/<name>/forge.log, then snax_cluster's Verilator commands
 forge      = "python -m snax_forge.flow.forge"
-# A set of bundles for the local RTL check: `pixi run forge-set quick|full|mvt|pack|bicg [--sim vsim|vlt] [-j N]` runs forge on
+# A set of bundles for the local RTL check: `pixi run forge-set quick|full [--sim vsim|vlt] [-j N]` runs forge on
 # each recipe of the set and writes out/forge-set/<set>.md, with the one line that checks them all in snax_cluster
 forge-set  = "python -m snax_forge.flow.forge_set"
 # HWCOST's tables (CONTRACTS, "Cost model"): `pixi run import-costs [--experiments DIR]` copies the streamer, crossbar

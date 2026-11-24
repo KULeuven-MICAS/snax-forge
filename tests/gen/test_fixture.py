@@ -1,7 +1,7 @@
 """snax-forge reproduces snax-gvsoc's fixtures.
 
 Each fixture is a folder of the snax-gvsoc submodule's ``forge/``, the generator's output for
-one design point (``DESIGNS``, each from its recipe unless ``FROM`` says otherwise), checked in
+one design point (``FORGE_FIXTURES`` in tests/helpers.py: its recipe and ``--set`` values), checked in
 untouched (``forge/README.md`` there). Its refresh commands are run here as written, from a
 temporary folder that stands for the repo root (the checked-in recipe and platform, the
 platform's source hjson copied into its ``platforms/``), so every header comment names
@@ -17,39 +17,19 @@ from pathlib import Path
 import pytest
 
 from snax_forge.gen import generate
-from tests.helpers import requires_submodule
+from tests.helpers import FORGE_FIXTURES, requires_submodule
 
 from .helpers import SUB, designed, files
 
 FORGE = SUB / "forge"
-# Each fixture's design: its recipe, on platforms/snax_forge.json
-DESIGNS = [
-    "vecadd_v1", "vecmul_v1", "vsum_v1", "vsum_v1_1", "matadd_v1", "rowsum_v1", "rowsum_v3",
-    "vecadd_v1_1", "vecmul_v1_1", "vsum_v1_1_1", "vecadd_v1_2", "vsum_v1_1_2",
-    "vecadd_v1_3", "vsum_v1_1_3", "rowsum_v1_1", "vecmul_v1_1_1", "dot_v1", "dot_v1_1",
-    "dot_v2", "dot_v3", "dot_v4", "dot_v5", "dot_v6",
-    "matvec_v1", "matvec_v2", "matvec_v3", "matvec_v4", "matvec_v5", "matvec_v6", "relu_v1",
-    "axpy_v1", "axpy_v1_1", "rowsum_v2", "rowsum_v2_padded", "matvec_acc_v1", "matvec_acc_v2",
-    "dot_v1_2", "mvt_v1_2_2", "vecadd_v1_1_w1", "mvt_v4_1_sequential",
-    "mvt_v4_1_1_sequential", "mvt_v5_sequential", "mvt_v5_2_sequential", "bicg_v2_1_sequential",
-    "bicg_v3", "bicg_v4", "bicg_v4_1", "mvt_v6",
-]  # fmt: skip
-# A fixture made from another recipe, or with --set values: its recipe and its sets
-FROM = {"rowsum_v2_padded": ("rowsum_v2", ("memory.passes.layout=padded_rows",)),
-        "mvt_v1_2_2": ("mvt_v1_2_2", ("W=8",)),
-        "vecadd_v1_1_w1": ("vecadd_v1_1", ("W=1",)),
-        "mvt_v4_1_sequential": ("mvt_v4_1", ("design.schedule=sequential",)),
-        "mvt_v4_1_1_sequential": ("mvt_v4_1_1", ("design.schedule=sequential",)),
-        "mvt_v5_sequential": ("mvt_v5", ("design.schedule=sequential",)),
-        "mvt_v5_2_sequential": ("mvt_v5_2", ("design.schedule=sequential",)),
-        "bicg_v2_1_sequential": ("bicg_v2_1", ("design.schedule=sequential",))}  # fmt: skip
+DESIGNS = list(FORGE_FIXTURES)
 
 pytestmark = requires_submodule
 
 
 def regenerate(tmp: Path, design: str) -> Path:
     """The fixture's refresh commands under ``tmp`` as the root; the generated folder."""
-    recipe, sets = FROM.get(design, (design, ()))
+    recipe, sets = FORGE_FIXTURES[design]
     point = designed(tmp, recipe, design, sets)
     out = tmp / "gvsoc" / design
     with pytest.MonkeyPatch.context() as mp:

@@ -18,8 +18,8 @@ from snax_forge.sandbox import Recipe, apply_recipe
 from tests.design.helpers import design
 from tests.helpers import FIXTURES, REPO, recipe_path
 
-# vecadd's task list on snax_forge, as derived and checked in for tests/run
-VECADD_TASKS = REPO / "tests" / "run" / "fixtures" / "vecadd_v1" / "tasks.json"
+# vecadd's task list on snax_forge at N = 64, W = 4, as derived and checked in
+VECADD_TASKS = REPO / "tests" / "lower" / "fixtures" / "vecadd_v1_tasks.json"
 
 
 @cache

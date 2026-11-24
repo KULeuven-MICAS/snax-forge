@@ -1,4 +1,4 @@
-"""Every forge-set recipe and mvt's compile (the y1 clash): the generator's data.h and main.c
+"""Every full-set recipe's compile (mvt's y1 clash among them): the generator's data.h and main.c
 against the runtime's headers, as ``make sw`` includes them, so a container named after a
 libc or runtime symbol (mvt's ``y1``, math.h's Bessel function) is caught here and not at a
 flow's ``sw`` step. Syntax only (clang's ``-fsyntax-only`` for riscv32): no runtime library,
@@ -6,7 +6,6 @@ no link. Skipped without a clang that targets riscv32 or the snax-gvsoc submodul
 
 from __future__ import annotations
 
-import json
 import shutil
 import subprocess
 from functools import cache
@@ -14,7 +13,6 @@ from pathlib import Path
 
 import pytest
 
-from snax_forge.common import RESERVED_C, c_name
 from snax_forge.flow.forge_set import SETS
 from tests.helpers import REPO
 
@@ -41,13 +39,7 @@ FLAGS = [
     "-fopenmp",
     "-fsyntax-only",
 ]  # fmt: skip (toolchain.mk's)
-MVT = ["mvt_v1", "mvt_v1_2", "mvt_v2", "mvt_v1_1", "mvt_v1_2_1", "mvt_v2_1"]
-RECIPES = list(dict.fromkeys([d.recipe for d in SETS["full"]] + MVT))
-
-
-def test_a_container_named_as_a_runtime_symbol_gets_a_c_name_of_its_own():
-    assert c_name("y1") == "y1_l2" and c_name("A") == "A" and c_name("x1") == "x1"
-    assert {"y0", "y1", "yn", "j0", "j1", "jn", "int", "main"} <= RESERVED_C
+RECIPES = list(dict.fromkeys(d.recipe for d in SETS["full"]))  # mvt's y1 among them
 
 
 def _generated(tmp: Path, recipe: str) -> Path:
@@ -79,13 +71,3 @@ def test_the_generated_program_compiles(tmp_path, recipe):
            *(f"-I{SW / d}" for d in INCLUDES), str(out / "main.c")]  # fmt: skip
     r = subprocess.run(cmd, capture_output=True, text=True, check=False)
     assert r.returncode == 0, r.stderr[-2000:]
-
-
-@pytest.mark.slow
-def test_mvt_names_y1_as_its_own(tmp_path):
-    """mvt's data.h declares y1 as ``y1_l2``, and main.c moves it by that name (N int64)."""
-    n = json.loads((REPO / "recipes/mvt/mvt_v2.json").read_text())["params"]["N"]
-    out = _generated(tmp_path, "mvt_v2")
-    data, main = (out / "data.h").read_text(), (out / "main.c").read_text()
-    assert f"const int64_t y1_l2[{n}]" in data and " y1[" not in data
-    assert f"y1_l2, {8 * n});" in main

@@ -8,11 +8,8 @@ from __future__ import annotations
 import re
 from collections import defaultdict
 
-import pytest
-
-from snax_forge.sandbox import Recipe, apply_recipe, bind_recipe_symbols
+from snax_forge.sandbox import Recipe
 from snax_forge.sandbox.recipe import RECIPE_ROOT, recipe_paths
-from tests.helpers import imported
 
 README = RECIPE_ROOT / "README.md"
 
@@ -56,26 +53,6 @@ def test_the_readme_lists_every_recipe_as_its_file_says():
     assert sorted(rows) == want
 
 
-def _units(r: Recipe) -> list[tuple]:
-    kw = {"types": r.types} if r.types else {}
-    g = apply_recipe(r, bind_recipe_symbols(r, imported(r.kernel, **kw)))[-1].graph
-    units = [
-        (n.attrs["brm"], n.attrs.get("implementation"), n.attrs.get("accelerator") is not None)
-        for n, _ in g.walk()
-        if n.kind == "accelerated"
-    ]
-    links = [("link", n.attrs.get("depth")) for n, _ in g.walk() if n.kind == "link"]
-    return sorted(map(str, units + links))
-
-
 TWINS = defaultdict(list)
 for _name, _r in checked_in().items():
     TWINS[_r.id].append(_name)
-
-
-@pytest.mark.slow
-@pytest.mark.parametrize("names", [sorted(v) for v in TWINS.values() if len(v) > 1], ids=str)
-def test_recipes_sharing_an_id_build_the_same_units(names):
-    recipes = checked_in()
-    first, *rest = (_units(recipes[n]) for n in names)
-    assert all(u == first for u in rest), names

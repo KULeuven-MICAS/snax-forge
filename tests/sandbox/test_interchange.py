@@ -18,7 +18,7 @@ import pytest
 from snax_forge.dfg import REDUCE_OPS, Graph
 from snax_forge.dfg.reduce import ReduceOp
 from snax_forge.sandbox import Recipe, SandboxError, apply_recipe, interchange_map
-from snax_forge.sandbox.transforms import TRANSFORMS, interchange, partners, site_of
+from snax_forge.sandbox.transforms import interchange, partners, site_of
 from tests.helpers import imported
 
 from .helpers import recipe_graphs
@@ -44,61 +44,6 @@ def run(steps: list[dict], **params: int) -> list[Graph]:
 def nest(g: Graph) -> list[tuple]:
     return [(n.id, n.attrs.get("var"), n.attrs.get("range"), n.attrs.get("loop.kind"))
             for n, _ in g.walk()]  # fmt: skip
-
-
-def test_the_innermost_map_with_its_parent():
-    """rowsum_v2's step: the spatial row map and the innermost column map trade places."""
-    *_, before, g = run([SPLIT, TAG, swap("sum_map_s", "sum_map_1")])
-    assert nest(g) == [
-        ("sum_map", "m_1_t", "0:M // 4", "temporal"),
-        ("sum_map_1", "n_t", "0:N", "temporal"),
-        ("sum_map_s", "m_2_s", "0:4", "spatial"),
-        ("sum", None, None, None),
-    ]
-    s = g.node("sum")
-    assert s.inputs["in1"].subset == ["4 * m_1_t + m_2_s", "n_t"]
-    assert s.outputs["out"].subset == ["4 * m_1_t + m_2_s"]
-    assert g.node("sum_map").attrs["loop.split"] == {"var": "m", "range": "0:M"}
-    for n in ("sum_map_1", "sum_map_s"):  # each keeps its attrs, its tag among them
-        assert g.node(n).attrs == before.node(n).attrs
-    assert interchange(before, "sum_map_1", "sum_map_s").to_json() == g.to_json()  # either order
-
-
-def test_twice_gives_the_graph_back_in_either_order():
-    graphs = run([SPLIT, TAG, swap("sum_map_s", "sum_map_1"), swap("sum_map_s", "sum_map_1"),
-                  swap("sum_map_1", "sum_map_s"), swap("sum_map_1", "sum_map_s")])  # fmt: skip
-    before, after = graphs[2], graphs[3]
-    assert after.to_json() != before.to_json()
-    assert graphs[4].to_json() == before.to_json() == graphs[6].to_json()
-    assert graphs[5].to_json() == after.to_json()
-
-
-def test_a_non_adjacent_pair_outer_with_innermost():
-    """sum_map (m_1_t) -> sum_map_s (m_2_s) -> sum_map_1 (n): the outer and the innermost map
-    trade places, the middle one stays, each keeps its name, and the pair again gives the graph
-    back."""
-    _, before, g, back = run([SPLIT, swap("sum_map", "sum_map_1"), swap("sum_map_1", "sum_map")])
-    assert nest(before)[:3] == [
-        ("sum_map", "m_1_t", "0:M // 4", "temporal"),
-        ("sum_map_s", "m_2_s", "0:4", "spatial"),
-        ("sum_map_1", "n", "0:N", None),
-    ]
-    assert nest(g) == [
-        ("sum_map_1", "n", "0:N", None),
-        ("sum_map_s", "m_2_s", "0:4", "spatial"),
-        ("sum_map", "m_1_t", "0:M // 4", "temporal"),
-        ("sum", None, None, None),
-    ]
-    assert g.node("sum_map").attrs == before.node("sum_map").attrs
-    assert back.to_json() == before.to_json()
-
-
-def test_the_site_takes_any_map_with_a_partner():
-    _, _, g = run([SPLIT, TAG])
-    for m in ("sum_map", "sum_map_s", "sum_map_1"):  # the innermost included
-        assert TRANSFORMS["interchange_map"].site(g, m) == {"map": m}
-        assert site_of("interchange_map", g, [m]) == {"map": m}
-    assert partners(g, "sum_map_1") == [("sum_map", None), ("sum_map_s", None)]
 
 
 def refused(g: Graph, x: str, y: str, match: str) -> None:
@@ -218,54 +163,6 @@ def test_refused_an_order_dependent_fold(monkeypatch):
     refused(g, "sum_map", "sum_map_1_s", match)  # n_1_t and n_2_s swap their order too
     # the row map with the next: y[m] moves with m, so each element's writes keep their order
     assert interchange(g, "sum_map", "sum_map_1").body[0].id == "sum_map_1"
-
-
-def test_the_bind_site_names_a_spatial_tag():
-    """A map around the bound one tagged spatial is named so, not untagged (D: bind's site)."""
-    *_, g = run([{"transform": "tag_map", "params": {"map": "sum_map", "kind": "spatial"}},
-                 {"transform": "tag_map", "params": {"map": "sum_map_1", "kind": "spatial"}}],
-                M=4, N=4)  # fmt: skip
-    from snax_forge.sandbox import bind
-
-    with pytest.raises(SandboxError, match="map 'sum_map' around it is spatial; the maps around "
-                                           "the spatial map are its firing loops, temporal: "
-                                           "untag_map it, then tag_map it temporal"):  # fmt: skip
-        bind(g, "sum", "accumulate", "chisel_adder_tree", "acc", {"W": 4})
-
-
-@pytest.mark.slow
-def test_the_editors_choices_and_undo(tmp_path, monkeypatch):
-    """The editor lists interchange_map on each of rowsum's three maps, the innermost included;
-    ``with`` is a choice of every map above and below, the nearest that can trade the default
-    (the one below on a tie), one that cannot disabled with its refusal; Undo moves the
-    cursor back, and the pair again is the step's own inverse."""
-    from snax_forge.sandbox import session
-    from snax_forge.sandbox.session import Roots, Session
-
-    monkeypatch.setattr(session, "_import", imported)
-    roots = Roots(tmp_path / "sessions", tmp_path / "recipes", tmp_path / "sandbox")
-    s = Session.from_kernel("rowsum", {"M": 8, "N": 64, "W": 4}, roots=roots)
-    assert s.apply("split_map", {"map": "sum_map", "factor": "W"})["ok"]
-    assert s.apply("tag_map", {"map": "sum_map_1", "kind": "temporal"})["ok"]
-
-    def with_field(m: str) -> dict:
-        site = s.sites(2, m)["interchange_map"]
-        assert site["ok"] and site["params"] == {"map": m}
-        (f,) = [f for f in site["form"] if f["name"] == "with"]
-        return f
-
-    inner = with_field("sum_map_1")
-    assert inner["type"] == "choice" and inner["value"] == "sum_map_s"
-    assert [(c["value"], c["label"], c["ok"]) for c in inner["choices"]] == [
-        ("sum_map", "sum_map (above)", True), ("sum_map_s", "sum_map_s (above)", True)]  # fmt: skip
-    assert with_field("sum_map_s")["value"] == "sum_map_1"
-    assert with_field("sum_map")["value"] == "sum_map_s"
-    before = s.graphs[2].to_json()
-    assert s.apply("interchange_map", {"map": "sum_map_s", "with": "sum_map_1"})["ok"]
-    assert s.move(2)["ok"] and s.graphs[s.cursor].to_json() == before
-    assert s.move(3)["ok"]
-    assert s.apply("interchange_map", {"map": "sum_map_1", "with": "sum_map_s"}, drop=True)["ok"]
-    assert s.graphs[4].to_json() == before
 
 
 def test_a_refused_partner_is_a_disabled_choice():

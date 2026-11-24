@@ -33,7 +33,6 @@ from snax_forge.dfg import Graph
 from snax_forge.gen import Accelerator, Csr, Description, Group, Port, Unit
 from snax_forge.gen import bundle as bundle_mod
 from snax_forge.gen.rtl import EMITTED_JSON
-from snax_forge.gen.schemas import schema
 from snax_forge.sandbox import Recipe, apply_recipe
 from tests.design.helpers import SNAX_FORGE, bound_vecadd
 from tests.helpers import FIXTURES, REPO, SUB, recipe_path
@@ -208,5 +207,14 @@ def fake_emit(monkeypatch) -> SimpleNamespace:
 
 def validate(name: str, value: object) -> None:
     """Raise jsonschema.ValidationError unless ``value`` is a ``name`` file's content (the
-    generator's schemas, gen/schemas.py)."""
+    generator's schemas, snax_forge/gen/schema/)."""
     Draft202012Validator(schema(name)).validate(value)
+
+
+SCHEMAS = REPO / "snax_forge" / "gen" / "schema"
+
+
+def schema(name: str) -> dict:
+    """The generator's schema of the ``name`` file (``snax_forge/gen/schema/<name>.schema.json``,
+    JSON Schema 2020-12): "streamer", the streamer template, or "accelerator"."""
+    return json.loads((SCHEMAS / f"{name}.schema.json").read_text())

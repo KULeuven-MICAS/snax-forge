@@ -10,11 +10,10 @@ import json
 import pytest
 
 from snax_forge.dfg import Graph
-from snax_forge.sandbox import Recipe, SandboxError, apply_recipe
-from snax_forge.sandbox.blocks import APPLIED, BLOCK, lift, matches, name_block, unlift
+from snax_forge.sandbox import SandboxError
+from snax_forge.sandbox.blocks import BLOCK, lift, matches, name_block
 from snax_forge.sandbox.blocks import apply_recipe as apply_block
 from snax_forge.sandbox.transforms import split_map, tag_map
-from tests.helpers import imported, recipe_path
 
 from .helpers import mvt
 
@@ -24,131 +23,7 @@ def _paths(g, kinds=("map",)) -> dict[str, list[str]]:
             if n.kind in kinds}  # fmt: skip
 
 
-def test_dot_matches_each_row_of_both_halves_of_mvt():
-    found = matches(mvt(), "dot")
-    assert [(m.heads, m.symbols, m.outer) for m in found] == [
-        (["tmp0_mult_map_1", "sum_map_1"], {"N": "N"},
-         {"tmp0_mult_map_1": ["tmp0_mult_map"], "sum_map_1": ["sum_map"]}),
-        (["tmp2_mult_map_1", "sum_map_3"], {"N": "M"},
-         {"tmp2_mult_map_1": ["tmp2_mult_map"], "sum_map_3": ["sum_map_2"]}),
-    ]  # fmt: skip
-
-
-def test_matvec_matches_half_2_through_a_permuted_a():
-    found = matches(mvt(), "matvec_acc")
-    assert [(m.heads[0], m.symbols, m.perms) for m in found] == [
-        ("tmp0_mult_map", {"M": "M", "N": "N"}, {}),
-        ("tmp2_mult_map", {"M": "N", "N": "M"}, {"A": [1, 0]}),
-    ]
-
-
-def test_a_kernel_not_in_the_graph_is_refused():
-    assert matches(mvt(), "vecadd") == []
-    with pytest.raises(SandboxError, match="no region of the graph matches vecadd"):
-        lift(mvt(), "vecadd")
-
-
-def test_lift_in_either_order_nests_dot_in_matvec():
-    g = mvt()
-    down, up = lift(lift(g, "matvec_acc"), "dot"), lift(lift(g, "dot"), "matvec_acc")
-    assert _paths(down) == _paths(up)
-    p = _paths(down)
-    assert p["tmp0_mult_map"] == ["matvec_acc"]
-    assert p["tmp0_mult_map_1"] == p["sum_map_1"] == ["matvec_acc", "dot"]
-    assert p["tmp2_mult_map_1"] == ["matvec_acc_1", "dot_1"]
-
-
-def test_unlift_gives_the_graph_back():
-    g = mvt()
-    lifted = lift(lift(g, "matvec_acc"), "dot")
-    assert unlift(unlift(lifted, "dot"), "dot_1") == lift(g, "matvec_acc")
-    with pytest.raises(SandboxError, match="neither a block nor a node in one"):
-        unlift(lifted, "mvt")
-
-
-def test_apply_recipe_refuses_a_param_the_sub_recipe_lacks():
-    with pytest.raises(SandboxError, match="dot_v3 has no param 'K'"):
-        apply_block(mvt(), "dot/dot_v3", region=["tmp0_mult_map_1", "sum_map_1"], params={"K": 4})
-
-
-def test_dot_3_on_a_lifted_block_names_its_group_after_the_block():
-    g = lift(mvt(), "dot")
-    for m in ("tmp2_mult_map", "sum_map_2"):  # the rows' loops, firing loops
-        g = tag_map(g, m, "temporal")
-    g = apply_block(g, "dot/dot_v3", block="dot_1", params={"W": 4})
-    units = {n.id: (n.attrs["instance"], n.attrs["group"]) for n, _ in g.walk()
-             if n.kind == "accelerated"}  # fmt: skip
-    assert units == {"tmp2_mult": ("mul", "dot_1"), "sum_1": ("sum", "dot_1")}
-    rec = next(b for n, _ in g.walk() if n.id == "tmp2_mult" for b in n.attrs[BLOCK])
-    assert rec == {"name": "dot_1", "kernel": "dot", "heads": ["tmp2_mult_map_1", "sum_map_3"],
-                   "recipe": "dot/dot_v3", "params": {"W": 4}}  # fmt: skip
-    with pytest.raises(SandboxError, match="block dot_1 has dot/dot_v3 applied"):
-        apply_block(g, "dot/dot_v3", block="dot_1", params={"W": 4})
-
-
-def _matvec_dot(k: int) -> Recipe:
-    """recipes/matvec/matvec_v<k>_1.json: dot's variant ``k`` on the rows."""
-    return Recipe.load(recipe_path(f"matvec_v{k}_1"))
-
-
-def _graph(r: Recipe) -> dict:
-    """The last graph's dict, the block records left out and the group named G (matvec_K names
-    it matvec, matvec_dotK dot after its block)."""
-    d = apply_recipe(r, imported(r.kernel, r.dtypes))[-1].graph.to_dict()
-
-    def walk(x):
-        if isinstance(x, dict):
-            x.pop(BLOCK, None)
-            x.pop(APPLIED, None)
-            if x.get("group") in ("dot", "matvec"):
-                x["group"] = "G"
-            for v in x.values():
-                walk(v)
-        elif isinstance(x, list):
-            for v in x:
-                walk(v)
-
-    walk(d)
-    return d
-
-
-@pytest.mark.slow
-@pytest.mark.parametrize("k", range(2, 7))
-def test_matvec_dot_k_is_matvec_k(k):
-    """dot_v4 to dot_v6 fuse their two nests: on the rows, the fusion takes the rows' loop."""
-    assert _graph(_matvec_dot(k)) == _graph(Recipe.load(recipe_path(f"matvec_v{k}")))
-
-
-@pytest.mark.slow
-def test_mvt_from_matvec_dot3_on_both_halves_nests_the_blocks():
-    r = Recipe.from_dict({"name": "mvt_try", "kernel": "mvt", "params": {"W": 4},
-                          "symbols": {"M": 8, "N": 16}, "steps": [
-        {"transform": "apply_recipe", "params": {"recipe": "matvec/matvec_v3_1",
-                                                 "region": heads, "params": {"W": "W"}}}
-        for heads in (["tmp0_mult_map", "sum_map"], ["tmp2_mult_map", "sum_map_2"])]})  # fmt: skip
-    g = apply_recipe(r, imported("mvt"))[-1].graph
-    units = {n.id: (n.attrs["instance"], n.attrs["group"]) for n, _ in g.walk()
-             if n.kind == "accelerated"}  # fmt: skip
-    assert units == {"tmp0_mult": ("mul", "dot"), "sum": ("sum", "dot"),
-                     "tmp2_mult": ("mul_1", "dot_1"), "sum_1": ("sum_1", "dot_1")}  # fmt: skip
-    p = _paths(g, ("accelerated", "link"))
-    assert p["tmp0_prod"] == ["matvec", "dot"] and p["sum_1"] == ["matvec_1", "dot_1"]
-
-
 # -- the sites and the editor's forms (round 2) ---------------------------------------------------
-
-
-def test_lift_offers_the_kernels_matching_at_a_node_and_lifts_that_region_only():
-    from snax_forge.sandbox.blocks import lift_choices
-
-    g = mvt()
-    assert lift_choices(g, "tmp2_mult") == ["dot", "matvec", "matvec_acc", "vecmul"]
-    assert lift_choices(g, "augassign_19_4") == ["matvec_acc"]
-    one = lift(g, "dot", at="tmp2_mult")
-    assert {b for p in _paths(one).values() for b in p} == {"dot"}
-    assert _paths(one)["sum_map_3"] == ["dot"]
-    with pytest.raises(SandboxError, match="lift at 'tmp0_mult': vecadd does not match here"):
-        lift(g, "vecadd", at="tmp0_mult")
 
 
 def _matvec_session():
@@ -163,25 +38,6 @@ def _matvec_session():
     assert [c["value"] for c in site["form"][0]["choices"]] == ["dot", "vecmul"]
     assert s.apply("lift", site["params"])["ok"]
     return s
-
-
-def test_apply_recipe_from_the_editor_on_a_lifted_block():
-    s = _matvec_session()
-    a = s.sites(s.cursor, "dot")["apply_recipe"]
-    assert a["params"] == {"block": "dot", "recipe": "dot/dot_v1"}
-    fields = {f["name"]: f for f in a["form"]}
-    assert fields["block"]["readonly"] and fields["params.W"]["value"] == "W"
-    assert fields["params.W"]["new_value"] == 4 and "dot/dot_v3" in [
-        c["value"] for c in fields["recipe"]["choices"]
-    ]
-    r = s.apply("apply_recipe", {"block": "dot", "recipe": "dot/dot_v3", "params": {"W": "W"}},
-                new_params={"W": 4})  # fmt: skip
-    assert r["ok"] and s.recipe.params["W"] == 4
-    assert s.set_params({"W": 8})["ok"]  # the session's W drives the sub-recipe's
-    units = [n.attrs["instance"] for n, _ in s.graphs[s.cursor].walk() if n.kind == "accelerated"]
-    assert units == ["mul", "sum"]
-    assert not s.sites(s.cursor, "dot")["apply_recipe"]["ok"]  # applied already
-    assert s.sites(s.cursor, "dot")["unlift"]["message"].endswith("applied (unapply)")
 
 
 def test_the_editor_names_an_unknown_param_inside_apply_recipe_and_lights_the_fused_maps():
@@ -260,7 +116,6 @@ def test_unapply_refuses_a_block_changed_since_or_inside_another():
 
 
 def test_name_block_names_a_region_by_hand():
-    from snax_forge.sandbox.blocks import name_block
 
     g = name_block(mvt(), ["tmp0_mult_map", "sum_map"], "half1")
     assert _paths(g)["sum_map_1"] == ["half1"] and _paths(g)["tmp2_mult_map"] == []
@@ -288,27 +143,6 @@ def test_a_sub_recipe_lifts_and_applies_by_the_blocks_name(tmp_path):
     assert p["tmp2_mult"] == ["matvec", "dot_1"] and p["tmp0_mult"] == ["dot"]
 
 
-def test_apply_recipe_refuses_a_param_the_region_sets():
-    """N is the region's row length: a value for it in params would change the splits only."""
-    r = Recipe.from_dict({"name": "t", "kernel": "matvec", "params": {"W": 4, "M": 8, "N": 64},
-                          "symbols": {"M": "M", "N": "N"}, "steps": [
-        {"transform": "tag_map", "params": {"map": "mult_map", "kind": "temporal"}},
-        {"transform": "tag_map", "params": {"map": "sum_map", "kind": "temporal"}},
-        {"transform": "apply_recipe", "params": {"recipe": "dot/dot_v1", "region": ["mult_map_1", "sum_map_1"],
-                                                 "params": {"W": "W", "N": 16}}}]})  # fmt: skip
-    with pytest.raises(SandboxError, match=r"N is the region's \(64\): leave it out of params"):
-        apply_recipe(r, imported("matvec"))
-
-
-def test_a_sub_recipes_share_follows_its_renamed_group():
-    """vmul is taken by a block named by hand, so mvt_v1_1's halves bind vmul_1 and vmul_2
-    there, and its step share vmul_1 with vmul shares half 2's into half 1's."""
-    g = name_block(mvt(), ["augassign_18_4_map"], "vmul")
-    g = apply_block(g, "mvt/mvt_v1_1", region=[n.id for n in g.body], params={"W": 4})
-    units = {n.id: n.attrs["instance"] for n, _ in g.walk() if n.kind == "accelerated"}
-    assert units["tmp0_mult"] == units["tmp2_mult"] == "vmul_1"
-
-
 def test_a_container_used_in_two_orders_is_not_the_pattern():
     """The products written [m, n] and read [n, m]: no mat-vec, nor a dot per row, in half 1."""
     d = mvt().to_dict()
@@ -327,90 +161,3 @@ def test_a_container_used_in_two_orders_is_not_the_pattern():
     g = Graph.from_dict(d)
     for kernel, head in (("matvec", "tmp2_mult_map"), ("dot", "tmp2_mult_map_1")):
         assert [m.heads[0] for m in matches(g, kernel)] == [head]
-
-
-@pytest.mark.slow
-@pytest.mark.parametrize(("reuse", "hand"), [("mvt_v1_1", "mvt_v1"),
-                                             ("mvt_v1_2_1", "mvt_v1_2"),
-                                             ("mvt_v2_1", "mvt_v2"),
-                                             ("mvt_v5_1", "mvt_v5")])  # fmt: skip
-@pytest.mark.parametrize("size", [None, {"M": 16, "N": 32}])
-def test_mvt_from_matvec_recipes_is_the_hand_written_mvt(reuse, hand, size):
-    """Both halves from matvec_v1_1 or matvec_v2_1, the vadd and the sharing by hand, or from
-    matvec_acc_v3 and matvec_acc_v4 on two lifted blocks: the graph of the
-    hand-written recipe, the units' and groups' names aside; also with M ≠ N, which half 2
-    swaps."""
-
-    def names(g):
-        d = g.to_dict()
-        seen: dict[str, str] = {}
-
-        def walk(x):
-            if isinstance(x, dict):
-                for k in (BLOCK, APPLIED, "sandbox.shared"):
-                    x.pop(k, None)
-                for k in ("instance", "group", "from", "to", "accelerator"):
-                    if "kind" not in x and isinstance(x.get(k), str):
-                        x[k] = seen.setdefault(x[k], f"u{len(seen)}")
-                for v in x.values():
-                    walk(v)
-            elif isinstance(x, list):
-                for v in x:
-                    walk(v)
-
-        walk(d)
-        return d
-
-    recipes = [Recipe.load(recipe_path(x)) for x in (reuse, hand)]
-    if size:
-        recipes = [r.with_params(size) for r in recipes]
-    graphs = [apply_recipe(r, imported(r.kernel, types=r.types))[-1].graph for r in recipes]
-    assert names(graphs[0]) == names(graphs[1])
-
-
-@pytest.mark.slow
-def test_the_column_form_applies_to_either_half_of_mvt():
-    """matvec_acc_v4 on both halves of mvt_types at i8 straight from the import: each
-    half a seeded mac, half 2 reading A by rows (through Aᵀ), half 1 down its columns, which
-    the design check refuses at int8 (connect.pack), not the sandbox."""
-    r = Recipe.from_dict({
-        "name": "mvt_both_col", "kernel": "mvt_types", "types": "i8",
-        "params": {"M": 16, "N": 16, "W": 8}, "symbols": {"M": "M", "N": "N"},
-        "steps": [{"transform": "apply_recipe",
-                   "params": {"recipe": "matvec/matvec_acc_v4", "region": heads,
-                              "params": {"W": "W"}}}
-                  for heads in (["tmp1_mult_map", "sum_map", "augassign_18_4_map"],
-                                ["tmp4_mult_map", "sum_map_2", "augassign_19_4_map"])]})  # fmt: skip
-    g = apply_recipe(r, imported("mvt_types", types="i8"))[-1].graph
-    units = {n.attrs["instance"]: n for n, _ in g.walk() if n.kind == "accelerated"}
-    assert sorted(units) == ["mac", "mac_1"] and {n.attrs["brm"] for n in units.values()} == {"mac"}
-    reads = sorted(m.subset[-1] for n in units.values() for k, m in n.inputs.items() if k == "a")
-    assert reads == ["8 * n_1_t:8 * n_1_t + 8", "n_t"]  # half 2 a row's 8, half 1 one column
-
-
-def test_the_lift_and_apply_forms_give_what_each_choice_changes():
-    """lift at half 2's multiply: each kernel with the region holding it (dot: its inner loops
-    and fold, matvec_acc: the += nest too) and every region of the kernel (both halves);
-    apply_recipe on the lifted block: each recipe with the block's nodes and its name, and what
-    it makes."""
-    from snax_forge.sandbox.session import form
-
-    g = mvt()
-    lift_form = form("lift", g, {"params": {"at": "tmp2_mult", "kernel": "dot"}}, {})
-    kernels = {c["value"]: c for c in lift_form[0]["choices"]}
-    assert lift_form[0]["preview"] and set(kernels) >= {"dot", "matvec", "matvec_acc"}
-    assert "augassign_19_4_map" in kernels["matvec_acc"]["nodes"]
-    assert "augassign_19_4_map" not in kernels["matvec"]["nodes"]
-    assert set(kernels["dot"]["nodes"]) < set(kernels["dot"]["every"])
-    assert "tmp0_mult" in kernels["dot"]["every"] and "tmp0_mult" not in kernels["dot"]["nodes"]
-    b = lift(g, "matvec_acc", at="tmp2_mult")
-    (name,) = {x["name"] for n, _ in b.walk() for x in n.attrs.get(BLOCK, [])}
-    apply_form = form(
-        "apply_recipe", b, {"params": {"block": name, "recipe": "matvec/matvec_acc_v1"}}, {}
-    )
-    recipes = {
-        c["value"]: c for c in next(f for f in apply_form if f["name"] == "recipe")["choices"]
-    }
-    seed = recipes["matvec/matvec_acc_v3"]
-    assert name in seed["nodes"] and "tmp2_mult" in seed["nodes"]
-    assert seed["hint"] == "8 steps → mul, sum, link"

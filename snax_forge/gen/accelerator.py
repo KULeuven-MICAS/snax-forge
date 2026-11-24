@@ -434,12 +434,6 @@ class Description(JsonFile):
                 return g
         raise KeyError(f"{self.tag} has no unit {unit!r}")
 
-    def define(self, group: Group | None, unit: Unit | None, csr: Csr) -> str:
-        """A CSR's name in the header and the program: its accelerator's ``define``."""
-        (a,) = (a for a in self.accelerators
-                if any(g is group for g in a.groups) or (a.port_mux and a.port_mux.csr is csr))  # fmt: skip
-        return a.define(group, unit, csr)
-
     def port_mux_sel(self, acc: str) -> str | None:
         """The define of accelerator ``acc``'s PORT_MUX_SEL, None when it shares no movers."""
         (a,) = (a for a in self.accelerators if a.name == acc)

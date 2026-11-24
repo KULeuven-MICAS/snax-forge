@@ -1,20 +1,33 @@
-"""Shared snippets for the run tests: a cluster's description files (the cluster file, its one
-streamer set's file, accelerator.json) and design point, as the generator writes them for vecadd
-on snax_forge (cut to what run/ reads), and GVSoC header lines."""
+"""Shared snippets for the run tests: the recorded runs (``load_recorded``), a cluster's
+description files (the cluster file, its one streamer set's file, accelerator.json) and design
+point, as the generator writes them for vecadd on snax_forge (cut to what run/ reads), and GVSoC
+header lines."""
 
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
+import re
+import shutil
+import tempfile
 from collections import defaultdict
+from functools import cache
 from pathlib import Path
 from typing import Any, NamedTuple
 
 from snax_forge.run.trace import LEVELS
 
 PATH = "/chip/soc/cluster_0"
-RECORDED = Path(__file__).parent / "fixtures"  # the recorded runs, a folder each
-TASKS = RECORDED / "vecadd_v1" / "tasks.json"  # the recorded vecadd's
+# The recorded runs, a folder each: GVSoC's outputs (events_<level>.log, check.json,
+# elf_symbols.json) and a README naming the flow commands and the sha256 of each generated file
+RECORDED = Path(__file__).parent / "fixtures"
+# vecadd's task list at N = 64, W = 4 (the synthetic runs' design)
+TASKS = Path(__file__).resolve().parents[1] / "lower" / "fixtures" / "vecadd_v1_tasks.json"
+# The generated files a recorded run is converted with, made again by ``recorded_files``
+DESCRIBED = ("snax_forge.hjson", "accelerator.json", "manifest.json")
+GENERATED = ("design_point.json", "tasks.json", *DESCRIBED)
+_SHA = re.compile(r"^- `([^`]+)`: sha256 `([0-9a-f]{64})`$", re.MULTILINE)
 
 
 class Recorded(NamedTuple):
@@ -29,21 +42,73 @@ class Recorded(NamedTuple):
     elf_symbols: dict[str, Any]
 
 
-def load_recorded(name: str | Path, events: str = "events.log") -> Recorded:
-    """The recorded run ``name`` (a folder of tests/run/fixtures/, or its path), its
-    ``events`` file read."""
+def sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def generated_files(name: str) -> Path:
+    """A new folder of the recorded run ``name``'s generated files (``GENERATED`` and each set's
+    streamer file), made by the flow's stages from its recipe at its recorded sizes
+    (``FORGE_FIXTURES``: the forge/ folder of the same name), the design point named after the
+    recipe as the flow names it."""
+    import pytest
+
+    from snax_forge.design import DesignPoint
+    from snax_forge.gen import generate
+    from snax_forge.lower import task_list
+    from snax_forge.sandbox import Recipe
+    from tests.gen.helpers import designed
+    from tests.helpers import FORGE_FIXTURES, recipe_path
+
+    recipe, sets = FORGE_FIXTURES[name]
+    point_name = Recipe.load(recipe_path(recipe)).name
+    tmp = Path(tempfile.mkdtemp(prefix=f"recorded-{name}-"))
+    point = designed(tmp, recipe, point_name, sets)
+    out = tmp / "files"
+    out.mkdir()
+    with pytest.MonkeyPatch.context() as mp:
+        mp.chdir(tmp)
+        tasks = task_list(DesignPoint.load(point))
+        generate(point, tmp / "gen", root=tmp, tasks=tasks)
+    tasks.save(out / "tasks.json")
+    shutil.copy(tmp / point, out / "design_point.json")
+    for f in [*DESCRIBED, *(p.name for p in (tmp / "gen").glob("*_streamer_*.hjson"))]:
+        shutil.copy(tmp / "gen" / f, out / f)
+    return out
+
+
+@cache
+def recorded_files(name: str) -> Path:
+    """``generated_files`` of the recorded run ``name``, made once a process; each must have the
+    sha256 its README lists, else the run was recorded on other files and is recorded again."""
+    out = generated_files(name)
+    want = dict(_SHA.findall((RECORDED / name / "README.md").read_text()))
+    got = {p.name: sha256(p) for p in sorted(out.iterdir())}
+    if got != want:
+        moved = sorted(f for f in got.keys() | want.keys() if got.get(f) != want.get(f))
+        raise AssertionError(
+            f"tests/run/fixtures/{name}: {', '.join(moved)} no longer as recorded; record the run "
+            f"again by the commands in its README.md and write its hashes there"
+        )
+    return out
+
+
+def load_recorded(name: str | Path, events: str = "events_task.log") -> Recorded:
+    """The recorded run ``name`` (a folder of tests/run/fixtures/, or its path), its ``events``
+    file read, the rest from ``recorded_files``."""
     from snax_forge.design import DesignPoint
     from snax_forge.lower.tasks import TaskList
     from snax_forge.run import load_cluster, read_events, regions_of
 
     d = RECORDED / name if isinstance(name, str) else Path(name)
+    files = recorded_files(d.name)
     syms = json.loads((d / "elf_symbols.json").read_text())
     return Recorded(
-        load_cluster(d / "snax_forge.hjson", d / "design_point.json"),
-        TaskList.from_dict(json.loads((d / "tasks.json").read_text())),
+        load_cluster(files / "snax_forge.hjson", files / "design_point.json"),
+        TaskList.load(files / "tasks.json"),
         json.loads((d / "check.json").read_text()),
         read_events(d / events),
-        regions_of(DesignPoint.load(d / "design_point.json"), syms),
+        regions_of(DesignPoint.load(files / "design_point.json"), syms),
         syms,
     )
 
@@ -79,10 +144,11 @@ STREAMER: dict[str, Any] = {
                            "fifo_depth": [8]},
 }  # fmt: skip
 
-# vecadd's accelerator.json, as the recorded run's
-UNIT: dict[str, Any] = json.loads(
-    (Path(__file__).parent / "fixtures" / "vecadd_v1" / "accelerator.json").read_text()
-)
+
+def vecadd_unit() -> dict[str, Any]:
+    """vecadd's accelerator.json, as the recorded run's."""
+    return json.loads((recorded_files("vecadd_v1") / "accelerator.json").read_text())
+
 
 POINT: dict[str, Any] = {
     "name": "vecadd_v1",
@@ -107,7 +173,7 @@ def files() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, A
     """Fresh copies of the cluster file, the streamer files by set (vecadd's one, ``acc``),
     accelerator.json, the point and the manifest: ``cluster_from``'s arguments."""
     cluster, streamer, unit, point, manifest = (
-        copy.deepcopy(x) for x in (CLUSTER, STREAMER, UNIT, POINT, MANIFEST)
+        copy.deepcopy(x) for x in (CLUSTER, STREAMER, vecadd_unit(), POINT, MANIFEST)
     )
     return cluster, {"acc": streamer}, unit, point, manifest
 

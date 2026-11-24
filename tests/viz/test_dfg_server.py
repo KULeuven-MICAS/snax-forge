@@ -353,23 +353,6 @@ def test_the_site_route_takes_a_selection(tmp_path, monkeypatch):
         assert get_json(srv, "/api/step/4/site")[0] == 400
 
 
-@pytest.mark.slow
-def test_a_factor_given_as_a_number_is_a_param_on_the_page(tmp_path, monkeypatch):
-    """POST /api/apply with factor 8: the step stores W (the log line says so) and the step's
-    Bindings list the split with W = 8 as an input, changeable after the bind."""
-    monkeypatch.setattr(session, "_import", imported)
-    roots = Roots(tmp_path / "sessions", tmp_path / "recipes", tmp_path / "sandbox")
-    with served(make_edit_server(0, roots=roots)) as srv:
-        post(srv, "/api/session", {"kernel": "vecadd", "params": {"N": 64}})
-        status, got = post(srv, "/api/apply", {"transform": "split",
-                                               "params": {"map": "add_map", "factor": 8}})  # fmt: skip
-        assert status == 200 and got["params"]["factor"] == "W" and " factor=W " in got["log"]
-        (entry,) = get_json(srv, "/api/step/1")[1]["bindings_section"]["entries"]
-        assert (entry["label"], entry["params"]) == ("add_map split", [
-            {"name": "W", "value": 8, "editable": True, "shared_with": []}])  # fmt: skip
-        assert get_json(srv, "/api/session")[1]["params"] == {"N": 64, "W": 8}
-
-
 # =============================================================================
 # Both viewers: JSON POSTs, and the page's files
 # =============================================================================

@@ -492,11 +492,6 @@ def units_of(templates: dict[str, dict[str, Any]], description: dict[str, Any]) 
     return out
 
 
-def linked(description: dict[str, Any]) -> bool:
-    """An accelerator has a linked group (several units in one group)."""
-    return any(len(g["units"]) > 1 for g in _groups(description))
-
-
 def _cores(cluster: dict[str, Any]) -> list[dict[str, Any]]:
     """The cluster file's cores, in hive and core order."""
     try:

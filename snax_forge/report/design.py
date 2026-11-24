@@ -714,7 +714,7 @@ def render_estimate(e: EstimateTable) -> list[str]:
     cols = ["Group", "Cycles", "Bottleneck", "Ramp", "Stall", "Expected BUSY_COUNTER"]
     cols += ["Area (µm²)", "Energy (nJ)"] if costed else []
     out += table(cols, [[g.group, g.cycles, g.bottleneck, g.ramp, g.stall, g.counter]
-                        + ([_shown(g.area_um2), _energy(g.energy_nj)] if costed else [])
+                        + ([sig3(g.area_um2), dec3(g.energy_nj)] if costed else [])
                         for g in e.groups], set(range(1, len(cols))))  # fmt: skip
     l1 = f"{e.l1_footprint} bytes"
     if e.l1_size is not None:
@@ -728,18 +728,6 @@ def render_estimate(e: EstimateTable) -> list[str]:
     if costed:
         out += ["", *render_cost(e)]
     return out
-
-
-def _shown(x: float | None, unit: str = "") -> str | None:
-    """An area as shown: 3 significant figures."""
-    v = sig3(x)
-    return None if v is None else f"{v}{unit}"
-
-
-def _energy(x: float | None, unit: str = "") -> str | None:
-    """An energy as shown: 3 decimal places in its unit."""
-    v = dec3(x)
-    return None if v is None else f"{v}{unit}"
 
 
 def render_cost(e: EstimateTable) -> list[str]:
@@ -764,8 +752,8 @@ def render_cost(e: EstimateTable) -> list[str]:
                   "Flops (µm²)", "e_fire (pJ)", "Energy (nJ)"],
                  [[c.group, c.block, c.datapath,
                    c.found or ("not characterized" if c.block != "ctrl" else None), c.fires,
-                   c.bits, _shown(c.comb_um2), _shown(c.flops_um2), _energy(c.e_fire_pj),
-                   _energy(c.energy_nj)] for c in e.cost],
+                   c.bits, sig3(c.comb_um2), sig3(c.flops_um2), dec3(c.e_fire_pj),
+                   dec3(c.energy_nj)] for c in e.cost],
                  {4, 5, 6, 7, 8, 9})  # fmt: skip
     if e.streamer_cost:
         out += ["", *table(["Accelerator", "Streamer", "Direction", "FIFO depth", "Loops",
@@ -773,34 +761,34 @@ def render_cost(e: EstimateTable) -> list[str]:
                            [[x.accelerator, x.streamer + (" (extrapolated)" if x.extrapolated
                                                           else ""),
                              x.direction, x.depth, x.loops, x.channels, x.beats,
-                             _shown(x.area_um2), _energy(x.e_beat_pj), _energy(x.energy_nj)]
+                             sig3(x.area_um2), dec3(x.e_beat_pj), dec3(x.energy_nj)]
                             for x in e.streamer_cost], {3, 4, 5, 6, 7, 8, 9})]  # fmt: skip
     if e.l1:
         out += ["", *table(["Accelerator", "Block", "Reads", "Writes", "Crossbar (nJ)",
                             "Banks (nJ)", "Energy (nJ)"],
-                           [[x.accelerator, L1_LABEL, x.reads, x.writes, _energy(x.xbar_nj),
-                             _energy(x.banks_nj), _energy(x.energy_nj)] for x in e.l1],
+                           [[x.accelerator, L1_LABEL, x.reads, x.writes, dec3(x.xbar_nj),
+                             dec3(x.banks_nj), dec3(x.energy_nj)] for x in e.l1],
                            {2, 3, 4, 5, 6})]  # fmt: skip
     if e.parts:
         out += ["", "Cost by part:", "", *table(
             ["Part", "Area (µm²)", "Area share", "Energy (nJ)", "Energy share"],
-            [[p.part, _shown(p.area_um2) or "not costed", _share(p.area_share),
-              _energy(p.energy_nj) or "not costed", _share(p.energy_share)] for p in e.parts]
-            + [["total", _shown(e.area_um2), None, _energy(e.energy_nj), None],
-               ["without the banks", _shown(e.area_design_um2), None, None, None]],
+            [[p.part, sig3(p.area_um2) or "not costed", _share(p.area_share),
+              dec3(p.energy_nj) or "not costed", _share(p.energy_share)] for p in e.parts]
+            + [["total", sig3(e.area_um2), None, dec3(e.energy_nj), None],
+               ["without the banks", sig3(e.area_design_um2), None, None, None]],
             {1, 2, 3, 4})]  # fmt: skip
     x, m = e.xbar, e.memory
     if x is not None and m is not None:
         out += ["", (f"The crossbar: {x['inputs']} inputs on {x['banks']} banks, "
-                     f"{x['reads']} reads at {_energy(x['e_ro'], ' pJ')} and {x['writes']} writes "
-                     f"at {_energy(x['e_wo'], ' pJ')} (read-write {_energy(x['e_access'], ' pJ')}). "
+                     f"{x['reads']} reads at {dec3(x['e_ro'], ' pJ')} and {x['writes']} writes "
+                     f"at {dec3(x['e_wo'], ' pJ')} (read-write {dec3(x['e_access'], ' pJ')}). "
                      "The L1: "
                      f"{m['banks']} banks of {m['depth']} × {m['width']} bits, {m['reads']} reads "
-                     f"at {_energy(m['e_rd'], ' pJ')} and {m['writes']} writes at "
-                     f"{_energy(m['e_wr'], ' pJ')}.")]  # fmt: skip
-    out += ["", (f"Design on {e.tech}: about {_shown(e.area_um2, ' µm²')} "
-                 f"({_shown(e.area_design_um2, ' µm²')} without the banks) and "
-                 f"{_energy(e.energy_nj, ' nJ')} per run.")]  # fmt: skip
+                     f"at {dec3(m['e_rd'], ' pJ')} and {m['writes']} writes at "
+                     f"{dec3(m['e_wr'], ' pJ')}.")]  # fmt: skip
+    out += ["", (f"Design on {e.tech}: about {sig3(e.area_um2, ' µm²')} "
+                 f"({sig3(e.area_design_um2, ' µm²')} without the banks) and "
+                 f"{dec3(e.energy_nj, ' nJ')} per run.")]  # fmt: skip
     if e.missing:
         out += ["", (f"Not characterized on {e.tech} (comb counted as 0, flops counted): "
                      f"{', '.join(e.missing)}; see the notes.")]  # fmt: skip

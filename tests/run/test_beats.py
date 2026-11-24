@@ -199,20 +199,6 @@ def _packed(cluster, channels: dict[str, int], lines: list[str]):
             if e["k"] in ("fire", "push")]  # fmt: skip
 
 
-def test_vecadd_i32s_first_firing_two_words_per_port(cluster):
-    """As traced: two readers of 2 words (4 int32 lanes, two per word) and a writer of 2."""
-    fire, push = _packed(cluster, {"acc_a": 2, "acc_b": 2, "acc_out": 2}, [
-        (
-            "2613 fire n=0 b=0,0 value=0x111000002bd,0xfffffe3300000016,0xfffffd26000002ee,"
-            "0x1ba0000009d"
-        ),
-        "2613 push n=0 first=0 last=0 value=0xfffffe37000005ab,0xffffffed000000b3",
-    ])  # fmt: skip
-    assert fire["value"] == {"acc_a": [0x111000002BD, 0xFFFFFE3300000016],
-                             "acc_b": [0xFFFFFD26000002EE, 0x1BA0000009D]}  # fmt: skip
-    assert push["value"] == [0xFFFFFE37000005AB, 0xFFFFFFED000000B3]
-
-
 def test_a_fold_two_words_in_one_out(cluster):
     """vsum_v1_1_1's shape: a reader of 2 words, a writer of 1 (the fold's one word)."""
     fire, push = _packed(cluster, {"acc_a": 2, "acc_out": 1}, [

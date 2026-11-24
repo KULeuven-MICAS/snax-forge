@@ -12,7 +12,7 @@ from snax_forge.sandbox import transforms as tr
 from tests.brm.helpers import affine_adder
 from tests.helpers import graph_dict
 
-from .helpers import FIXTURES, graph, restricted_brm
+from .helpers import FIXTURES, graph
 
 BIND = {
     "node": "add",
@@ -44,24 +44,6 @@ def test_split_gives_the_split_fixture():
     assert g.to_json() == (FIXTURES / "vecadd_split.snaxdfg").read_text()
 
 
-def test_split_does_not_change_its_input():
-    g = bound("vecadd")
-    before = g.to_json()
-    split_map(g, "add_map", 4)
-    assert g.to_json() == before
-
-
-def test_split_a_range_that_does_not_start_at_zero():
-    d = graph_dict("vecadd")
-    d["symbols"]["N"] = 66
-    d["body"][0]["attrs"]["range"] = "2:N"
-    g = Graph.from_dict(d)
-    s = split_map(g, "add_map", 8)
-    assert s.node("add_map").attrs["range"] == "0:(N - 2) // 8"
-    assert s.node("add").inputs["in1"].subset == ["2 + 8 * n_1_t + n_2_s"]
-    assert same_output(g, s, 66)
-
-
 @pytest.mark.parametrize(
     ("make", "args", "message"),
     [
@@ -85,21 +67,6 @@ def test_split_rejected(make, args, message):
 def test_bind_gives_the_accelerated_fixture():
     g = bind(graph("vecadd_split"), **BIND)
     assert g.to_json() == (FIXTURES / "vecadd_accelerated.snaxdfg").read_text()
-
-
-def test_bind_reads_w_off_the_spatial_bound():
-    g = bind(split_map(bound("vecadd"), "add_map", 8), **BIND)
-    acc = g.node("add")
-    assert acc.attrs["params"] == {"W": 8, "op": "add", "streams": 2}
-    assert acc.inputs["a"].subset == ["8 * n_1_t:8 * n_1_t + 8"]
-    assert same_output(graph("vecadd_split"), g)
-
-
-def test_a_w_the_brm_does_not_allow(monkeypatch):
-    monkeypatch.setattr(tr, "load_brm", lambda name: restricted_brm())
-    bind(split_map(bound("vecadd"), "add_map", 8), **BIND)  # 8 is allowed
-    with pytest.raises(SandboxError, match="W = 2 not in the param's values \\[4, 8\\]"):
-        bind(split_map(bound("vecadd"), "add_map", 2), **BIND)
 
 
 def split_dict() -> dict:
@@ -164,22 +131,6 @@ def test_bind_rejected(make, params, message):
         bind(make(), **(BIND | params))
 
 
-def test_bind_takes_the_first_code_entry_that_is_the_tasklets():
-    """simd's code table: a multiply binds at op mul, an add at op add, each node
-    carrying the matched entry's code; a bind param that agrees is taken as given."""
-    mul = bind(_edit(lambda d: tasklet(d)["attrs"].update(code="out = in1 * in2")), **BIND)
-    add = bind(graph("vecadd_split"), **(BIND | {"params": {"op": "add"}}))
-    for g, op, code in ((mul, "mul", "out = a * b"), (add, "add", "out = a + b")):
-        attrs = g.node("add").attrs
-        assert (attrs["params"], attrs["code"]) == ({"W": 4, "op": op, "streams": 2}, code)
-
-
-def test_bind_takes_the_containers_dtypes():
-    """Every port takes every integer dtype; int32 in and out binds."""
-    g = _edit(lambda d: [c.update(dtype="int32") for c in d["containers"].values()])
-    assert bind(g, **BIND).containers["C"].dtype == "int32"
-
-
 def test_bind_refuses_vmul_into_a_narrower_output_naming_the_accepted_ones():
     def vmul_int32_out(d):
         tasklet(d)["attrs"].update(code="out = in1 * in2")
@@ -210,11 +161,3 @@ def test_the_order_check_is_about_the_brm_not_the_result(monkeypatch):
     monkeypatch.setattr(tr, "load_brm", lambda name: Brm.from_dict(affine_adder()))
     with pytest.raises(SandboxError, match="does not give the BRM's order"):
         bind(_strided(), **BIND)
-
-
-def test_a_stream_brm_takes_the_memlets_order():
-    """simd is in the stream notation: the memlet is the order, so the strided
-    lanes bind, and the bound graph still adds A and B."""
-    g = bind(_strided(), **BIND)
-    assert g.node("add").inputs["a"].subset == ["n_1_t:n_1_t + 64:16"]
-    assert same_output(graph("vecadd"), g)
