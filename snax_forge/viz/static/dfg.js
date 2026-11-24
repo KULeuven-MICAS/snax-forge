@@ -526,8 +526,10 @@ function valueText(v) {
 }
 
 /** Compare's two columns (api.py's compare_view ``columns``): a label column and the two
-steps' texts, the left step first, rows that differ marked; a row's ``under`` opens a section. */
+steps' texts, the left step first, rows that differ marked; a row's ``under`` opens a section.
+A value wraps, and a list joined by "; " (L1 accesses per accelerator, lanes) takes a line an item. */
 function columnsTable(labels, rows) {
+  const lines = (v) => (typeof v === "string" && v.includes("; ") ? v.split("; ").map((x) => h("div", {}, x)) : v);
   const body = [];
   let under = null;
   for (const r of rows) {
@@ -535,7 +537,7 @@ function columnsTable(labels, rows) {
     under = r.under;
     body.push(h("tr", { class: r.differs ? "differs" : null },
       h("th", { scope: "row", class: r.under ? "sub" : null }, r.label),
-      h("td", { class: "mono" }, r.a), h("td", { class: "mono" }, r.b)));
+      h("td", { class: "mono" }, lines(r.a)), h("td", { class: "mono" }, lines(r.b))));
   }
   return h("table", { class: "c-cols" },
     h("thead", {}, h("tr", {}, h("th", {}, ""), h("th", { scope: "col" }, labels[0]), h("th", { scope: "col" }, labels[1]))),
