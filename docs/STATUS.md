@@ -104,7 +104,7 @@ CLN4's sizes, before and after:
 To do, in four tracks, each task in its own thread, branch and PR (the ROAD1 plan, 16 Nov 2026). Each task runs in a clone set of its own, so tasks in parallel never share `out/`, a GVSoC build or snax_cluster's imported bundles:
 
 - **Track A, tier A and E4** (snax-forge, snax-gvsoc where a task changes the model):
-  1. **TIERA3** (`wip`, branch `ry/tiera3`): atax's forms at 64 × 64. The two-pass forms by reuse (`recipes/atax/`, `forge-set atax`; half 2 waits on half 1's writer of t under every schedule), the DMA copy at int8, then one group with t held over a link (D197) and A read once through a FIFO from the fork (D196), `atax_v3` and `atax_v4` (sandbox, LOWER, estimate, `accelerator.json`, SNAX-GVSoC's `SnaxGroup` and the Chisel done, fixture `atax_v4`; on SNAX-GVSoC 0 data errors and BUSY_COUNTER 523, 526 at D = 10 and 652 at D = 8, the estimate's 523, 523 and 649 plus at most its fill; vsim next); half 2's `Mac` multiplies int8 by int32 (X98).
+  1. **TIERA3** (`wip`, branch `ry/tiera3`): atax's forms at 64 × 64. The two-pass forms by reuse (`recipes/atax/`, `forge-set atax`; half 2 waits on half 1's writer of t under every schedule), the DMA copy at int8, then one group with t held over a link (D197) and A read once through a FIFO from the fork (D196), `atax_v3` and `atax_v4` (sandbox, LOWER, estimate, `accelerator.json`, SNAX-GVSoC's `SnaxGroup` and the Chisel done, fixture `atax_v4`; a fork's buffered branch joins its reader's chain in all three rules); `forge-set atax`'s 18 points all `forge data` exact on SNAX-GVSoC with `--energy` (dynamic 0.03–0.45 % over static), and on vsim the one-group and shared-port points 5 PERFECT and 5 NEAR within their fill (open item 169); at D = T a row costs 2 cycles, the `Mac` waiting for t while the full ring holds the fork; half 2's `Mac` multiplies int8 by int32 (X98).
   2. **E4S1** (kickoff from TIERA1's plan): E4's sweep script over `pixi run flow --set` (no DSE5) and its figure, first on what runs today (W on dot 3, matvec and mvt_v1; shared against dedicated ports), then on each tier A form as it lands. The bank-bound sweep at int64 and int32: a dot reads $2 W b$ bytes a cycle against $32 \cdot 8 = 256$, so it crosses at W = 16 (int64) and 32 (int32), and W stops at 32.
 - **Track B, costs** (snax-forge-experiments, snax-forge's `char`; Nangate 45 nm only): E4's energy axis reads `--energy` or the static estimate; GE1's left-overs are open items 136 and 137.
 - **Track C, the Snitch-only baseline** (snax_cluster, snax-forge-experiments; E11):
@@ -152,6 +152,16 @@ The local RTL check (D123) runs one program on SNAX-GVSoC and, through snax_clus
 | relu_v1 | 163 (18) | 191 (18) | PERFECT |
 | rowsum_v2 | 357 (129) | 387 (134) | NEAR 2.3 % (open item 129) |
 | rowsum_v2 padded_rows | 363 (131) | 376 (131) | PERFECT |
+
+The quick set after B2's change to the emitted RTL (TIERA3 B4, 2026-11-24), every `forge data` exact, 4 PERFECT and 1 NEAR:
+
+| Bundle | SNAX-GVSoC cycles | vsim cycles | Verdict |
+|---|---:|---:|---|
+| vecadd_v1_1 at W = 1 | 247 (68) | 273 (68) | PERFECT |
+| axpy_v1 | 216 (19) | 247 (19) | PERFECT |
+| dot_v4 | 422 (133) | 445 (133) | PERFECT |
+| mvt_v1_2_2 at W = 8 | 4614 (517, 11, 3240, 8) | 4707 (517, 11, 3249, 11) | NEAR 0.2 % (open item 128) |
+| bicg_v4_1 | 1408 (1030) | 1407 (1030) | PERFECT |
 
 ## Next Up
 
@@ -260,6 +270,7 @@ Questions not decided yet. Numbers are never reused; a closed item is removed, a
 166. DATA1, every kernel's inputs uniform over the whole type in every experiment (Ryan's, not scheduled); forge's small per-kernel ranges until then. At the full int8 range `atax_types`' y wraps at int32 ($|y| \le MN \cdot 2^{21}$), exact modulo $2^{32}$ on NumPy, SNAX-GVSoC and the RTL alike.
 167. `GroupRule`'s done for a bank at L 0 is early: the sink's `g + 1 = JOBS` holds on each of the last job's ROWS giving firings, so the run ends at the first of them (`GroupHoldForkSpec` keeps its bank at L 1–2). A bank is an accumulating `Mac`, L 1, so no design reaches it; `UnitDesc` could refuse rows > 1 at L 0, or done count the bank's last row.
 168. A group that reads through L1 what it writes in the same run is estimated as if the read waited for nothing: `atax_v4`'s steps after `fork_read A` and after `link A` (the `Mac` reads t from L1 while the vsum writes it) give 515 and 514 cycles against 523 once t is linked. LOWER could refuse a group reading a container it writes, or order the reader behind the writer's rows (open item 53).
+169. The one-group atax points on vsim are NEAR within their fill (TIERA3 B4): `atax_v4` at D = 10 and 8 and at W = 32, R = 2 run 523, 649 and 133, the estimate exactly and 3 under SNAX-GVSoC, whose streamer fill the RTL hides for the forked A; `atax_v3` runs 526 against 523, 3 over; `atax_v2_1_1`'s Mac 514 against 516. A trace of the streamers' first beats on both, as open item 65 asks, would say whose fill differs.
 
 ## Sync Reminders
 
