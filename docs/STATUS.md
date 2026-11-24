@@ -86,7 +86,7 @@ Done, each in git history:
 | VIEW3 | The DFG page as a flat graph laid out by ELK | D185 |
 | TIERA1 | mvt's forms at 64 × 64 (`examples/dryrun/4_mvt.md`): schedules, the slicer, the DMA's transposed copy, the broadcast and seeded `Mac`, recipes named by version | D163–D165, D179, D180, D182–D184, D186–D188 |
 | TIERA2 | bicg's forms and the one pass over A for bicg and mvt (`examples/dryrun/5_bicg.md`): the fork, the bank, the hold, carried and seeded seeds | D154, D172, D177, D189–D194 |
-| CLN4 | A lean base before atax: snax-gvsoc's `forge/`, the RTL fixtures and the recorded runs one design per integration feature at their smallest sizes, `forge-set` quick and full by feature; composite tests per design, a refusal table per package, the rest cut to the coverage bar; dead code out; the documents cut to what holds; the markings guarded | D195 |
+| CLN4 | A lean base before atax: snax-gvsoc's `forge/`, the RTL fixtures and the recorded runs one design per integration feature at their smallest sizes, `forge-set` quick and full by feature; composite tests per design, a refusal table per package, the rest cut to the coverage bar, with each composite's estimate and profile and every recipe's estimate totals checked against snapshots; dead code out; the documents cut to what holds; the markings guarded | D195 |
 
 
 CLN4's sizes, before and after:
@@ -168,7 +168,7 @@ Dates: 20 Nov, track A's target (fine if it slips); 27 Nov, the softmax gate (so
 
 ## Open Items
 
-Questions not decided yet. Numbers are never reused; a closed item is removed, and where it closed is in git history. Next free number: 164.
+Questions not decided yet. Numbers are never reused; a closed item is removed, and where it closed is in git history. Next free number: 165.
 
 1. BRM dataflow notation: `affine` and `stream` (D70), frozen in M6.
 2. What automated search reads and how a sweep is configured (DSE1, M8).
@@ -255,6 +255,7 @@ Questions not decided yet. Numbers are never reused; a closed item is removed, a
 161. bicg_v2_1 at W = 16 under `pipeline`: s's counter is 272 on vsim against 267 on SNAX-GVSoC, 2 beyond its fill of 3 (NEAR 0.7 %); on SNAX-GVSoC s's 10 stall_in cycles are where its reader of A is refused, 13 of 15 times a lane by q's reader of A. The RTL's 5 more cycles are not placed (no trace of its readers' refusals); next check a waveform of the two A readers' requests and grants on vsim.
 162. The converter refuses two recorded designs at trace level `stall` while their `task` and `beat` levels convert: bicg_v4_1 (the fork, the bank and the carried seed) at every size tried, "mul_a lane 0: fifo counts ... its words visible minus popped give ..." (the forked readers' FIFO counts against their grants), and mvt_v5 sequential at 16 × 16 and 64 × 64, "mac_x2_seed's beat -1 granted as [None, ...]" (the seeded `Mac`'s seed reader). Their recorded runs (`tests/run/fixtures/`) are at `beat` and `task` until the stall check takes them.
 163. `sandbox/blocks.py`'s `_outer_of` raises `_NoMatch`, a plain `Exception`, which nothing catches on `apply_recipe` → `_fuse_outer`: a sub-recipe's `fuse_map` naming a node outside the region would escape the session's refusal handling instead of coming back as a refusal (found by reading; not run).
+164. A tailed split interchanged with the loop under it (`rowsum_v2` at M = 6, W = 4) fails the reference check at `interchange_map` ('y' differs); either `interchange_map` refuses a tailed split with its own message, or the pad lanes are placed so the check passes.
 
 ## Sync Reminders
 

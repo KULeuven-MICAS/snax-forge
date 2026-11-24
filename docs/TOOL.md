@@ -281,6 +281,7 @@ The Makefile names the image's Python, CMake and host compilers, so it runs the 
 |---|---|
 | `pixi run test` | every test, on all cores; `-m "not slow"` leaves out the DaCe builds, the compiles and the largest design |
 | `pixi run test-<block>` | one block: `lower`, `brm`, `dfg`, `sandbox`, `char`, `estimate`, `design`, `flow`, `run`, `report`, `gen`, `kernels`, `viz`, `docs` |
+| `pixi run python -m tests.numbers` | writes the value snapshots again (`tests/composite/numbers/`, `tests/estimate/totals.json`); only for a change meant to move an estimate, a profile or a recipe's totals |
 | `pixi run lint` | ruff's checks and format check, and the Markdown rule (`util/md_reflow.py --check`); CI runs it |
 | `pixi run fmt` | ruff's fixes and format, then the Markdown rule (`util/md_reflow.py`) |
 | `pixi run clean` | removes `out/` (but the GVSoC build and the editor's sessions, unless `--all`), caches and Chisel build trees; `--dry-run` lists first |
