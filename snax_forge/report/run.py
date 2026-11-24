@@ -297,13 +297,6 @@ def expected_counters(point: Any) -> dict[str, int]:
     return {t: g.counter for t, g in _task_groups(point).items()}
 
 
-def expected_parts(point: Any) -> dict[str, tuple[int, int]]:
-    """Per accelerator task (as ``expected_counters``), its group's ideal cycles and its
-    streamers' fill, the two parts of the expected BUSY_COUNTER; the run test's tolerance reads
-    them as the RTL comparison reads the fill."""
-    return {t: (g.cycles, g.fill) for t, g in _task_groups(point).items()}
-
-
 def bank_notes(point: Any) -> dict[str, str]:
     """Per accelerator task (as ``expected_counters``), its group's bank-bound note where L1's
     banks allow fewer cycles than the ideal ones."""

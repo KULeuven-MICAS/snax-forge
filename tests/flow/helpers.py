@@ -63,7 +63,6 @@ def sound(f: Any) -> dict[str, int]:
     counter within 10 % of the estimate's expected BUSY_COUNTER beyond its fill (the gap
     max(0, |counter - cycles| - fill) at most 10 % of cycles + fill, as the RTL comparison's NEAR); the
     counters by task."""
-    from snax_forge.report.run import expected_parts
 
     c = f.check
     assert f.passed and c["exit_code"] == 0 and c["data_errors"] == 0, c
@@ -300,3 +299,12 @@ def main(*argv: Any) -> int:
 def summary(f) -> str:
     """A flow's name and its check, for an assertion's message."""
     return f"{f.name}: {f.check}"
+
+
+def expected_parts(point) -> dict[str, tuple[int, int]]:
+    """Per accelerator task (as report/run.py's ``expected_counters``), its group's ideal cycles
+    and its streamers' fill, the two parts of the expected BUSY_COUNTER; ``sound``'s tolerance
+    reads them as the RTL comparison reads the fill."""
+    from snax_forge.report.run import _task_groups
+
+    return {t: (g.cycles, g.fill) for t, g in _task_groups(point).items()}

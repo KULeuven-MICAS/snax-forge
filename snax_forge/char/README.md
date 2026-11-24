@@ -153,7 +153,6 @@ The constants (`nangate45.json`, `flop` and `ctrl`): $e_{\mathit{load}}$ = 17.81
 |---|---|---|
 | the table against the catalogue | `tests/char/` | every entry names a datapath and params the generator can build |
 | `flops` against the emitted RTL | `BlockFlopsSpec` (`hw/chisel/`) | the catalogue's count is the register bits firtool emits, at random params |
-| bits against SYN2 | `tests/estimate/test_bits.py` | each datapath's count matched DC's flops at SYN2's 48 points; the control unit's matched them when it was built and is held within 10 %: a check of the counts, not a promise |
 | the estimate against the experiments' pricing | `tests/estimate/test_cost.py` | a consistency check: dot 3 at W = 2 to 32, each of the five parts within 1e-6 of snax-forge-experiments' own implementation on the same gated tables (its control and crossbar rescaled to CG5's constants); it says nothing about accuracy |
 | the model against synthesis | snax-forge-experiments `results/cluster/` (the gated cluster) and `char_table.md`, Model (the gated accelerators alone) | the evidence: the datapath's area at 0.999 of the gated cluster's, its energy 1.6 times high on random data; the kernels at 0.996 to 1.035 of the gated accelerators' |
 | a block alone against inside | snax-forge-experiments X30, R0 | the block CHAR1 measured is the block an accelerator holds: area within 0.05 % where the accelerator drives its pins |

@@ -72,6 +72,12 @@ def _two_entries_that_fit_the_same_instances_are_refused():
     Brm.from_dict(d)
 
 
+def _an_unknown_port_is_refused():
+    from snax_forge.brm import load_brm
+
+    load_brm("simd").port("zz")
+
+
 CASES = [
     pytest.param(_spatial_lanes_checked_at_resolve, BrmError, 'give 2 lanes, the port has 4', id='spatial_lanes_checked_at_resolve'),
     pytest.param(_indices_must_stay_in_the_shape, ValueError, 'run over \\[1, 64\\], outside the shape \\[64\\]', id='indices_must_stay_in_the_shape'),
@@ -82,6 +88,7 @@ CASES = [
     pytest.param(_a_datapath_the_generator_does_not_build_is_refused, BrmError, "datapath 'Gemm' is not one the generator builds", id='a_datapath_the_generator_does_not_build_is_refused'),
     pytest.param(_a_datapath_that_refuses_the_instance_is_refused, BrmError, 'refuses the instance: \\[gen.lanes\\]', id='a_datapath_that_refuses_the_instance_is_refused'),
     pytest.param(_two_entries_that_fit_the_same_instances_are_refused, BrmError, 'code\\[12\\]: fits the instances code\\[11\\] fits', id='two_entries_that_fit_the_same_instances_are_refused'),
+    pytest.param(_an_unknown_port_is_refused, KeyError, "no port 'zz'", id='an_unknown_port_is_refused'),
 ]  # fmt: skip
 
 

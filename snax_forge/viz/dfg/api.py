@@ -1077,12 +1077,6 @@ def compact_text(g: Graph, n: Node, param: str | None = None) -> str:
     """A node's text in its box (drawing.py); a unit's lanes under ``param``, the
     recipe param its split names (``W_acc_1 8``), else ``W``."""
     a = n.attrs
-    if n.kind == "map":
-        its = _iterations(g, a["range"])
-        return (
-            f"{n.id} · {a['var']} · {'?' if its is None else its} · "
-            f"{a.get('loop.kind') or 'untagged'}"
-        )
     if n.kind == "tasklet":
         return f"{n.id} · {_operation(n, a['code'], list(n.inputs))}"
     if n.kind == "accelerated":  # the type it runs at when a cast set one (D143): ``a * b @ int32``

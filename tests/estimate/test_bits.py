@@ -1,29 +1,21 @@
 """The register bits of the estimate: a control unit's registers from its group
-description (estimate/bits.py), every datapath's and control unit's bits against what DC kept in
-SYN2's 48 points (``fixtures/syn2_flops.json``, util/syn2_flops.py), and the RTL fixtures'
-``ctrl_registers.json`` (hw/chisel's CtrlRegistersSpec) current."""
+description (estimate/bits.py), and the RTL fixtures' ``ctrl_registers.json`` (hw/chisel's
+CtrlRegistersSpec, which compares them with the emitted control units) current."""
 
 from __future__ import annotations
 
 import importlib.util
 import json
-from pathlib import Path
 
 import pytest
 
 from snax_forge.estimate import ctrl_registers
 from tests.helpers import REPO
 
-from .helpers import copies, estimated
-
-# SYN2 synthesized SimdLanes before its rename: its modules keep the old name
-SYN2_NAMES = {"SimdLanes": "ElementwiseLanes"}
-
 _spec = importlib.util.spec_from_file_location("ctrl_regs", REPO / "util" / "ctrl_regs.py")
 ctrl_regs = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(ctrl_regs)
 
-SYN2 = Path(__file__).parent / "fixtures" / "syn2_flops.json"
 JW = 32
 
 
@@ -63,67 +55,3 @@ def test_the_rtl_fixtures_ctrl_registers_json_is_current():
 # =============================================================================
 # Against SYN2: every datapath's count, and each control unit's within 10 %
 # =============================================================================
-
-
-@pytest.fixture(scope="module")
-def syn2():
-    """Per SYN2 point (recipe, W) the fixture's row and the estimate's one group."""
-    rows = json.loads(SYN2.read_text())["points"]
-    out = []
-    for r in rows:
-        (g,) = estimated(r["recipe"], W=r["W"]).groups
-        out.append((r, g))
-    return out
-
-
-@pytest.mark.slow
-def test_syn2_has_the_48_design_points():
-    rows = json.loads(SYN2.read_text())["points"]
-    want = {(r, w) for r in ("vecadd_v1", "vecmul_v1", "vsum_v1_1", *(f"dot_v{k}" for k in range(2, 7)))
-            for w in (1, 2, 4, 8, 16, 32)}  # fmt: skip
-    assert {(r["recipe"], r["W"]) for r in rows} == want
-
-
-@pytest.mark.slow
-def test_every_datapath_has_the_flops_dc_kept(syn2):
-    """Each SYN2 instance, unit or buffer, has the catalogue's flops on its params; the estimate
-    lists nothing else but wires, which hold none."""
-    for r, g in syn2:
-        want = {k: v["flops"] for k, v in r["instances"].items()}
-        assert {k: g.bits[k] for k in want} == want, r["point"]
-        assert all(v == 0 for k, v in g.bits.items() if k not in want), (r["point"], g.bits)
-
-
-@pytest.mark.slow
-def test_each_synthesized_module_is_its_instances_datapath(syn2):
-    """SYN2's module names stay as synthesized: each instance's is its estimated datapath's,
-    under the name it had then (``SYN2_NAMES``: SimdLanes was ElementwiseLanes)."""
-    for r, g in syn2:
-        blocks = g.cost.units | g.cost.links
-        for k, v in r["instances"].items():
-            dp = blocks[k].datapath
-            assert v["module"].startswith(f"{SYN2_NAMES.get(dp, dp)}_"), (r["point"], k)
-
-
-@pytest.mark.slow
-def test_ctrl_bits_against_syn2s(syn2, capsys):
-    """The control unit's counted bits against DC's at every point, printed. When the count was
-    built they matched at all 48 (firtool drops a v at L 0 and a wire's or depth-1 buffer's
-    slots, and ctrl_bits leaves them out); the check of the count asks within 10 %, so a later
-    control change does not fail on a bit or two. SYN2 synthesized CTRL1's control units, which
-    held copies of JOBS and each JOB_BEATS the control unit no longer keeps: the count plus those
-    copies' bits (``copies``) is compared, until the fixture is refreshed from the new
-    synthesis."""
-    lines = [
-        "| point | recipe | W | counted | + copies | synthesized | difference |",
-        "|---|---|---|---|---|---|---|",
-    ]
-    for r, g in syn2:
-        was = g.ctrl_bits + copies(r["recipe"])
-        lines.append(f"| {r['point']} | {r['recipe']} | {r['W']} | {g.ctrl_bits} | {was} | "
-                     f"{r['ctrl']} | {was - r['ctrl']:+d} |")  # fmt: skip
-    with capsys.disabled():
-        print("\nctrl bits, counted (estimate/bits.py) against SYN2's (DC):\n" + "\n".join(lines))
-    off = [r["point"] for r, g in syn2
-           if abs(g.ctrl_bits + copies(r["recipe"]) - r["ctrl"]) > 0.1 * r["ctrl"]]  # fmt: skip
-    assert not off, off

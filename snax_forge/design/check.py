@@ -621,6 +621,17 @@ def _reach(design: Design, node: Node, conn: str) -> Iterator[Problem]:
             )  # fmt: skip
 
 
+def _on_word(where: str, c: str, num_slc: int, offset: int, of: str) -> Iterator[Problem]:
+    """A packed, sliced or wired port's walk starts on a word: its first element ``offset`` of
+    ``c`` a multiple of num_slc (``of`` the dtype and packing the message names)."""
+    if offset % num_slc:
+        yield Problem(
+            "connect.pack", where,
+            f"starts at element {offset} of {c}, not on a word ({of})",
+            f"start it at a multiple of {num_slc} elements",
+        )  # fmt: skip
+
+
 def _pack(
     where: str, c: str, dtype: str, num_slc: int, out: bool, walk: _Walk
 ) -> Iterator[Problem]:
@@ -676,12 +687,7 @@ def _pack(
             "start inside a word",
             f"step it by a multiple of {num_slc} elements",
         )  # fmt: skip
-    if walk.offset % num_slc:
-        yield Problem(
-            "connect.pack", where,
-            f"starts at element {walk.offset} of {c}, not on a word ({of})",
-            f"start it at a multiple of {num_slc} elements",
-        )  # fmt: skip
+    yield from _on_word(where, c, num_slc, walk.offset, of)
 
 
 def _packed(
@@ -733,12 +739,7 @@ def _packed(
                     f"loop {v2} steps {s2} elements of {c}, not whole words ({of})",
                     f"pad the leading dimension to {round_up(s2, num_slc)}",
                 )  # fmt: skip
-    if walk.offset % num_slc:
-        yield Problem(
-            "connect.pack", where,
-            f"starts at element {walk.offset} of {c}, not on a word ({of})",
-            f"start it at a multiple of {num_slc} elements",
-        )  # fmt: skip
+    yield from _on_word(where, c, num_slc, walk.offset, of)
 
 
 def pad_content(g: Graph, c: str, seen: frozenset[str] = frozenset()) -> int | None | str:
@@ -913,10 +914,7 @@ def _connect_xbar_inputs(design: Design) -> Iterable[Problem]:
 def _design_xbar_inputs(design: Design) -> Iterable[Problem]:
     """More crossbar inputs than the platform's ``l1.warn_xbar_inputs``: the design passes,
     its crossbar cost extrapolated beyond the tables and beyond SNAX's own crossbar."""
-    try:
-        counted = xbar_inputs(design)
-    except (ValueError, DesignError, BrmError, DfgError):
-        return
+    counted = xbar_inputs(design)
     warn = design.platform.l1.warn_xbar_inputs
     if counted is None or sum(counted) <= warn:
         return

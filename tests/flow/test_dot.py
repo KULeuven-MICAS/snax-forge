@@ -49,7 +49,7 @@ def test_the_task_list_waits_once_between_the_accelerators(tmp_path):
 
 @pytest.fixture(scope="module")
 def flows(tmp_path_factory):
-    base = tmp_path_factory.mktemp("dot_1")
+    base = tmp_path_factory.mktemp("dot_v1")
     return {lv: run_flow(DOT1, SNAX_FORGE, out=base / lv, trace_level=lv) for lv in ("off", "task")}
 
 
@@ -108,8 +108,8 @@ def test_dot_1_reads_the_muls_pads_through_a_tail(tmp_path):
     import json
     from dataclasses import replace
 
-    recipe = tmp_path / "dot_1_w10.json"
-    recipe.write_text(json.dumps(replace(dot1_split(10, 10), name="dot_1_w10").to_dict()))
+    recipe = tmp_path / "dot_v1_w10.json"
+    recipe.write_text(json.dumps(replace(dot1_split(10, 10), name="dot_v1_w10").to_dict()))
     f = run_flow(recipe, SNAX_FORGE, out=tmp_path / "flow")
     assert f.passed, summary(f)
     assert f.check["exit_code"] == 0 and f.check["data_errors"] == 0 and f.check["words"] == 1
@@ -118,7 +118,7 @@ def test_dot_1_reads_the_muls_pads_through_a_tail(tmp_path):
 @pytest.fixture(scope="module")
 def beat_flows(tmp_path_factory):
     """dot 1 at N = 2048, W = 8 untraced and at --trace beat (the dry run's 8/8)."""
-    base = tmp_path_factory.mktemp("dot_1_2048")
+    base = tmp_path_factory.mktemp("dot_v1_n2048")
     sets = {"N": 2048, "W": 8}
     return {lv: run_flow(DOT1, SNAX_FORGE, recipe_sets=sets, out=base / lv, trace_level=lv)
             for lv in ("off", "beat")}  # fmt: skip

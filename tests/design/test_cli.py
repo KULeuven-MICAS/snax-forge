@@ -25,7 +25,7 @@ def test_serial_accumulate_at_one_lane_is_a_note_not_a_refusal(tmp_path, capsys,
     none."""
     from tests.gen.helpers import designed
 
-    rel = designed(tmp_path, "dot_v5", f"dot_5_w{w}", ["N=16", f"W={w}"])  # asserts exit 0
+    rel = designed(tmp_path, "dot_v5", f"dot_v5_w{w}", ["N=16", f"W={w}"])  # asserts exit 0
     out = capsys.readouterr().out
     note = ("note [design.serial_one_lane] sum: SerialAccumulate at lanes 1 reads one lane per "
             "beat, the same work as TreeAccumulate at lanes 1\n    fix: bind chisel_adder_tree")  # fmt: skip

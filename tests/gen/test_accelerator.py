@@ -54,7 +54,7 @@ def dot1() -> Description:
     """dot 1 as the and the tables have it: two accelerators, vmul and vsum, each its
     streamer set, their CSRs contiguous over the two from offset 0."""
     mul, total = mul_sum("v")
-    return Description("out/design/dot_1/design_point.json", "snax_forge_dot_v1", [
+    return Description("out/design/dot_v1/design_point.json", "snax_forge_dot_v1", [
         Accelerator("vmul", ["vmul.a", "vmul.b"], ["vmul.out"], [Group("vmul", own(0, 0), [mul])]),
         Accelerator("vsum", ["vsum.a"], ["vsum.out"], [Group("vsum", own(4, 1), [total])]),
     ])  # fmt: skip

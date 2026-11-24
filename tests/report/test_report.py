@@ -607,7 +607,7 @@ def dot1_sets(tmp_path_factory):
 
 def test_design_md_has_a_row_per_accelerator_and_counts_the_streamers(dot1_sets):
     """The same rows from the design: each set's movers, channels, temporal dims, CSRs and its
-    groups' own CSRs; dot_1's 2 streamer sets (40 CSRs, not costed), dot_v1_1's 1 (37)."""
+    groups' own CSRs; dot_v1's 2 streamer sets (40 CSRs, not costed), dot_v1_1's 1 (37)."""
     one, enc = (dot1_sets[d] for d in ("dot_v1", "dot_v1_1"))
     assert [(x.name, x.movers, x.channels, x.temporal_dims, x.first, x.last, x.group_csrs)
             for x in one.sets] == [

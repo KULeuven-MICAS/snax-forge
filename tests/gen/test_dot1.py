@@ -79,6 +79,6 @@ def serial(tmp_path_factory):
 
 @pytest.fixture(scope="module")
 def plain(tmp_path_factory):
-    tmp = tmp_path_factory.mktemp("dot_1")
+    tmp = tmp_path_factory.mktemp("dot_v1")
     path = point(tmp, name="dot_v1", graph=bound_dot1())
     return tmp, path, generate(path, tmp / "out", root=tmp)

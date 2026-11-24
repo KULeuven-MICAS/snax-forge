@@ -17,6 +17,7 @@ from snax_forge.dfg.import_sdfg import (
     import_sdfg,
 )
 from snax_forge.dfg.pad import pad_value
+from snax_forge.expr import ExprError
 from snax_forge.sdfg.expand import ExpandError, expand
 from tests.dfg import sdfg_programs as progs
 from tests.dfg.helpers import as_dict
@@ -67,6 +68,42 @@ def _readers_that_need_different_pads_are_refused():
     pad_value(Graph.from_dict(d), "A")
 
 
+def _a_container_of_no_dims_is_refused():
+    from snax_forge.dfg.graph import Container
+
+    Container.from_dict({"shape": [], "dtype": "int32"}, "c")
+
+
+def _a_graph_with_an_empty_name_is_refused():
+    from snax_forge.dfg import Graph
+
+    Graph.from_dict({"name": ""})
+
+
+def _a_dim_that_is_not_text_is_refused():
+    from snax_forge.dfg.subset import parse_dim
+
+    parse_dim(1.5, "d")
+
+
+def _a_dim_of_four_parts_is_refused():
+    from snax_forge.dfg.subset import parse_dim
+
+    parse_dim("0:1:1:1", "d")
+
+
+def _a_dim_without_an_end_is_refused():
+    from snax_forge.dfg.subset import parse_dim
+
+    parse_dim("0::1", "d")
+
+
+def _an_empty_seed_is_refused():
+    from snax_forge.dfg.reduce import Seed
+
+    Seed.from_dict([], "s")
+
+
 CASES = [
     pytest.param(_the_node_code_must_be_the_brms, ExecutionError, "'out = a - b', but 'simd' computes", id='the_node_code_must_be_the_brms'),
     pytest.param(_vec_vec_is_refused, ExpandError, 'a \\[N\\] @ b \\[N\\] is not expanded, a has rank 1', id='vec_vec_is_refused'),
@@ -75,6 +112,12 @@ CASES = [
     pytest.param(_type_params_are_written_only_when_set_and_checked, DfgError, 'type_params.OP_TYPE: must be an integer dtype', id='type_params_are_written_only_when_set_and_checked'),
     pytest.param(_a_kind_is_registered_once, ValueError, 'already registered', id='a_kind_is_registered_once'),
     pytest.param(_readers_that_need_different_pads_are_refused, DfgError, 'container A: its readers need different pads: sum \\(max\\) need -128; smallest \\(min\\) need 127', id='readers_that_need_different_pads_are_refused'),
+    pytest.param(_a_container_of_no_dims_is_refused, DfgError, 'c\\.shape: must be a non-empty list', id='a_container_of_no_dims_is_refused'),
+    pytest.param(_a_graph_with_an_empty_name_is_refused, DfgError, 'graph name: must be a non-empty string', id='a_graph_with_an_empty_name_is_refused'),
+    pytest.param(_a_dim_that_is_not_text_is_refused, ExprError, 'd: must be an int or a string, got 1.5', id='a_dim_that_is_not_text_is_refused'),
+    pytest.param(_a_dim_of_four_parts_is_refused, ExprError, 'has more than three parts', id='a_dim_of_four_parts_is_refused'),
+    pytest.param(_a_dim_without_an_end_is_refused, ExprError, 'has an empty part', id='a_dim_without_an_end_is_refused'),
+    pytest.param(_an_empty_seed_is_refused, DfgError, 's: must be \\{data, subset\\}', id='an_empty_seed_is_refused'),
 ]  # fmt: skip
 
 
