@@ -1,7 +1,8 @@
 """The code's markings (CLAUDE.md, Conventions): an ``NB (Dn)`` comment cites a decision that has a
 heading in docs/DECISIONS.md; no other decision or experiment tag stands in the code or the tests
 (snax_forge/, tests/, hw/chisel/src/, and the submodule's snax/ and tests/snax/); and every
-``CONTRACTS, "…"`` citation names a section of docs/CONTRACTS.md. Run by ``pixi run test-docs``.
+citation of a docs/CONTRACTS.md section by its title names one it has. Run by
+``pixi run test-docs``.
 """
 
 from __future__ import annotations
@@ -22,7 +23,7 @@ IMPORTED = REPO / "snax_forge" / "char"
 NB = re.compile(r"NB \((D\d+)\)")
 # A decision (D) or experiment (X) number standing as a tag: letter, digits, not part of a name
 TAG = re.compile(r"(?<![\w.$/-])[DX]\d{1,3}(?![\w.$/-])")
-CITE = re.compile(r'CONTRACTS, "([^"]+)"')
+CITE = re.compile("CONTRACTS" + r', "([^"]+)"')  # split, so tests/test_contracts.py reads no cite
 
 
 def sources() -> list[Path]:

@@ -86,6 +86,20 @@ Done, each in git history:
 | VIEW3 | The DFG page as a flat graph laid out by ELK | D185 |
 | TIERA1 | mvt's forms at 64 × 64 (`examples/dryrun/4_mvt.md`): schedules, the slicer, the DMA's transposed copy, the broadcast and seeded `Mac`, recipes named by version | D163–D165, D179, D180, D182–D184, D186–D188 |
 | TIERA2 | bicg's forms and the one pass over A for bicg and mvt (`examples/dryrun/5_bicg.md`): the fork, the bank, the hold, carried and seeded seeds | D154, D172, D177, D189–D194 |
+| CLN4 | A lean base before atax: snax-gvsoc's `forge/`, the RTL fixtures and the recorded runs one design per integration feature at their smallest sizes, `forge-set` quick and full by feature; composite tests per design, a refusal table per package, the rest cut to the coverage bar; dead code out; the documents cut to what holds; the markings guarded | D195 |
+
+
+CLN4's sizes, before and after:
+
+| What | Before | After |
+|---|---:|---:|
+| snax-gvsoc `forge/`, lines (folders) | 38 464 (48) | 6 942 (11) |
+| recorded runs `tests/run/fixtures/`, lines (runs) | 14 635 (7) | 6 340 (4) |
+| RTL fixtures, lines (designs) | 1 245 (35) | 571 (13) |
+| `tests/**/*.py`, lines | 31 356 | 20 675 |
+| `snax_forge/**/*.py`, lines | 37 326 | 37 205 |
+| docs: STATUS, CONTRACTS, DECISIONS, TOOL, ARCHITECTURE, PAPER, characters | 121 043, 139 144, 55 476, 32 110, 17 787, 29 605 | 36 151, 92 567, 39 848, 24 517, 13 490, 29 256 |
+| `examples/dryrun/`, characters | 118 125 | 84 994 |
 
 To do, in four tracks, each task in its own thread, branch and PR (the ROAD1 plan, 16 Nov 2026). Each task runs in a clone set of its own, so tasks in parallel never share `out/`, a GVSoC build or snax_cluster's imported bundles:
 
