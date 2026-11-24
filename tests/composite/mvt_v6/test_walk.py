@@ -4,6 +4,7 @@ RTL, one a test."""
 
 from tests.composite.helpers import FORGE, RTL_FIXTURES, same_files
 from tests.helpers import requires_submodule
+from tests.numbers import check_composite
 
 pytestmark = requires_submodule
 
@@ -35,3 +36,7 @@ def test_the_mac_is_a_seeded_bank_of_8_rows_with_y2_held(walked):
 def test_a_jobs_csr_per_chain(walked):
     (g,) = walked.groups
     assert [c["name"] for c in g["csrs"]][:3] == ["START", "JOBS_VSUM_X1", "JOBS_MAC_X2"]
+
+
+def test_the_numbers_match_their_snapshot(walked):
+    check_composite(walked)

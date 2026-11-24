@@ -3,6 +3,7 @@ each feature it carries for snax-gvsoc and the RTL, one a test."""
 
 from tests.composite.helpers import FORGE, same_files
 from tests.helpers import requires_submodule
+from tests.numbers import check_composite
 
 pytestmark = requires_submodule
 
@@ -31,3 +32,7 @@ def test_main_c_writes_k1_from_alpha_before_the_start(walked):
 def test_an_input_is_padded_to_whole_beats(walked):
     data = (walked.gen / "data.h").read_text()
     assert "// x: input, 8 elements, 16 padded to beats" in data or "padded to beats" in data
+
+
+def test_the_numbers_match_their_snapshot(walked):
+    check_composite(walked)

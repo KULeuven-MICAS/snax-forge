@@ -4,6 +4,7 @@ gvsoc and the RTL, one a test."""
 
 from tests.composite.helpers import FORGE, RTL_FIXTURES, same_files
 from tests.helpers import requires_submodule
+from tests.numbers import check_composite
 
 pytestmark = requires_submodule
 
@@ -32,3 +33,7 @@ def test_one_accelerator_of_one_unit(walked):
 def test_one_task_of_a_job_a_beat(walked):
     (task,) = walked.tasks.accel_steps()
     assert task.values == {"n": 16}
+
+
+def test_the_numbers_match_their_snapshot(walked):
+    check_composite(walked)

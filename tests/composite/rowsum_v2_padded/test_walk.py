@@ -3,6 +3,7 @@ forge/ fixture, and each feature it carries for snax-gvsoc and the RTL, one a te
 
 from tests.composite.helpers import FORGE, same_files
 from tests.helpers import requires_submodule
+from tests.numbers import check_composite
 
 pytestmark = requires_submodule
 
@@ -24,3 +25,7 @@ def test_each_row_is_a_word_longer(walked):
 def test_one_lane_accumulate_with_job_beats(walked):
     acc = walked.units["acc"]
     assert (acc["datapath"], [c["name"] for c in acc["csrs"]]) == ("LaneAccumulate", ["JOB_BEATS"])
+
+
+def test_the_numbers_match_their_snapshot(walked):
+    check_composite(walked)

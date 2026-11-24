@@ -4,6 +4,7 @@ snax-gvsoc and the RTL, one a test."""
 
 from tests.composite.helpers import FORGE, RTL_FIXTURES, same_files
 from tests.helpers import requires_submodule
+from tests.numbers import check_composite
 
 pytestmark = requires_submodule
 
@@ -38,3 +39,7 @@ def test_s_is_a_bank_of_4_rows_with_r_held(walked):
 def test_a_reader_of_a_forks_to_mul_and_mac(walked):
     (acc,) = walked.accelerator["accelerators"]
     assert acc["inputs"][0] == ["mul.a", "mac.a"]
+
+
+def test_the_numbers_match_their_snapshot(walked):
+    check_composite(walked)
