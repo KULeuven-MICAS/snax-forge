@@ -53,10 +53,10 @@ case class ForkLink(fork: Int, to: Int, toInput: Int, depth: Int)
   * or more chains, each a path of links from a head to a sink, whose output is outer: a unit with two out-edges or two
   * in-edges (a fork or a join of links), a cycle and chains no fork joins are refused, with SnaxGroupRule's reasons. A
   * fork is the units one reader's outer input feeds, the heads of chains, each of span 1; `forkLinks` give a fork's
-  * beat through a buffer to a unit further down a chain (a fork may then have one unit). A held link goes into a bank.
-  * From it: each unit's in-edges and out-edges, the units in topological order (Kahn's, the lowest index first among
-  * the units ready; the head first), the units owning the outer outputs, the sinks in unit order (`output` the first),
-  * and each unit's chain, its sink's place among them.
+  * beat through a buffer to a unit further down a chain, or the head of another, whose chain it joins (a fork may then
+  * have one unit). A held link goes into a bank. From it: each unit's in-edges and out-edges, the units in topological
+  * order (Kahn's, the lowest index first among the units ready; the head first), the units owning the outer outputs,
+  * the sinks in unit order (`output` the first), and each unit's chain, its sink's place among them.
   */
 case class GroupDesc(
   name:      String,
@@ -154,6 +154,8 @@ case class GroupDesc(
       f <- forks
       k <- f.tail
     } root(find(chain(k))) = find(chain(f.head))
+    // a fork's buffered branch joins its consumer's chain as a unit of the fork does
+    for (e <- forkLinks) root(find(chain(e.to))) = find(chain(forks(e.fork).head))
     outputs.indices.map(find)
   }
   require(

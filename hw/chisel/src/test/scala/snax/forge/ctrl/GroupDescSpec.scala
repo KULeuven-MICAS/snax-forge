@@ -107,6 +107,12 @@ class GroupDescSpec extends AnyFlatSpec {
     assert(d.forkIns == Seq(Nil, Nil, Seq(0)) && d.holding == Seq(false, false, true))
   }
 
+  it should "join t's chain and the bank's by the fork's buffered branch, t still from L1" in {
+    val twoChains = atax.updated(2, atax(2).copy(inputs = 1, linked = Seq(1), hold = Seq(0)))
+    val d         = GroupDesc("g", twoChains, ataxLinks.take(1), Seq(Seq(0)), Seq(ForkLink(0, 2, 1, 4)))
+    assert(d.outputs == Seq(1, 2) && d.chain == Seq(0, 0, 1))
+  }
+
   it should "refuse a held link not into a bank or a wire, and a fork link of depth 0, not after its fork or on a fed input" in {
     val plain    = atax.updated(2, atax(2).copy(rows = 1))
     refused(plain, ataxLinks, "link 1: held, but mac has 1 row(s) and the link depth 1; a held link is a buffer")
