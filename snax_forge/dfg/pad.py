@@ -45,11 +45,24 @@ def _users(graph: Graph, c: str) -> Iterator[tuple[Node, tuple[Node, ...]]]:
             yield node, outer
 
 
+def _maps_below(node: Node) -> Iterator[Node]:
+    for kid in node.body or []:
+        if kid.kind == "map":
+            yield kid
+            yield from _maps_below(kid)
+
+
 def split_factor(node: Node) -> int:
     """W of a tailed split map: its only child map's length whatever its tag (``split`` leaves
     it untagged), else its spatial map's, or once bound, the lanes its accelerated node's
     ranges move per step of the map's variable."""
     var = node.attrs["var"]
+    dim, piece = node.attrs.get("loop.dim"), node.attrs.get("loop.piece")
+    if dim is not None and piece is not None:  # the split's inner piece, wherever it moved
+        for kid in _maps_below(node):
+            if kid.attrs.get("loop.dim") == dim and kid.attrs.get("loop.piece") == piece + 1:
+                begin, end, _ = parse_dim(kid.attrs["range"], kid.id)
+                return int(end) - int(begin)
     kids = node.body or []
     only = len(kids) == 1 and kids[0].kind == "map" and node.attrs.get("loop.split")
     for kid in kids:
