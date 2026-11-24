@@ -35,7 +35,7 @@ The whole list is `docs/TOOL.md`; the ones used most:
 
 ## Conventions
 
-- The local RTL check: a change to the emitted RTL or to the program (`main.c`) needs the quick set checked on vsim before its PR merges, with no FAIL (D123; a NEAR or WARNING gets an open item), and a phase's close needs the full set; the numbers go into open item 95's table. TOOL.md section 6 runs it.
+- The local RTL check: a change to the emitted RTL or to the program (`main.c`) needs the quick set checked on vsim before its PR merges, with no FAIL (D123; a NEAR or WARNING gets an open item), and a phase's close needs the full set; the numbers go into STATUS's "The local RTL check". TOOL.md section 6 runs it.
 - Python 3.11, type hints on all public functions, dataclasses for artefacts.
 - One package per component under `snax_forge/` (ARCHITECTURE section 5 lists them). Recipes live in `recipes/<category>/` (the editor's Save writes `recipes/custom/`), platforms in `platforms/`, BRMs in `snax_forge/brm/library/`.
 - Generated files (`.snaxdfg`, design points, runs) go under `out/`, not in git; test fixtures are the exception (`tests/dfg/fixtures/`, in the form `Graph.to_json` writes).
