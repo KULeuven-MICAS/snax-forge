@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import functools
 import importlib.util
+import inspect
 from dataclasses import dataclass, field
 from math import prod
 from types import ModuleType
@@ -86,7 +87,11 @@ def group_cycles(units: list[dict[str, Any]], links: list[dict[str, Any]],
     several = not isinstance(jobs, int)
     if 0 in (jobs if several else [jobs]) or 0 in ts:
         return 0
-    rule = group_rule().GroupRule(units, links, owner, forks or (), fork_links or ())
+    mod = group_rule()
+    if fork_links and "fork_links" not in inspect.signature(mod.GroupRule).parameters:
+        raise EstimateError("estimate.submodule", "the submodule's group rule has no buffered "
+                            "fork branches: update gvsoc/snax-gvsoc (git submodule update)")  # fmt: skip
+    rule = mod.GroupRule(units, links, owner, forks or (), *([fork_links] if fork_links else []))
     n = rule.firings_per_run(jobs, ts)
     d_in = [1] * rule.n_valid
     for u, places in zip(units, rule.place, strict=True):
