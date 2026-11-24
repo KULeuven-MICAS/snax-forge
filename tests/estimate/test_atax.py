@@ -10,6 +10,7 @@ import pytest
 from snax_forge import char
 from snax_forge.design import Platform
 from snax_forge.estimate import Estimate, estimate
+from snax_forge.estimate.dynamic import graph_counts, port_movers, price, prices_of
 from tests.helpers import steps
 
 from .helpers import SNAX_FORGE
@@ -44,3 +45,12 @@ def test_the_buffer_loads_one_entry_a_push():
     assert e.groups[0].bits["A"] == (T + 2) * W * 8
     got = char.lookup(table, "LinkBuffer", {"depth": T + 2, "lanes": W, "dtype": "int8"}, W, T + 2)
     assert fifo.e_fire_pj == pytest.approx(got.e_comb_pj + W * 8 * table.e_load_pj)
+
+
+def test_a_run_prices_the_fork_ring_as_the_estimate():
+    """The run's energy (flow --energy) at the estimate's own counts is the estimate to the last
+    digit: the ring loads on its reader's firings, one push a beat of A."""
+    g, e = steps("atax_v4")[-1], at("atax_v4")
+    run = price(prices_of(g, e, port_movers(e)), graph_counts(g, e))
+    for part, p in e.parts.items():
+        assert run.parts[part] == pytest.approx(p.energy_nj), part
