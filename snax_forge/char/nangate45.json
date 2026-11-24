@@ -9,7 +9,8 @@
  "source": {
   "snax_forge": "04165576384c4f3031e3b2d27d0ee9c058498b51",
   "snax_forge_FifoSlicer": "c5c7d3bad1eb1ccf2e4e4a3d841fea749677d3f3",
-  "snax_forge_experiments": "27ae64da92f7fe181890c7e6a8b150fd6dd3e8ef",
+  "snax_forge_mixed": "90e9fba98c080676b22e7c95137d26a0faa9636d",
+  "snax_forge_experiments": "f61fb89e3261da0a35815b29ca3af3ebe607730e",
   "stimulus": "rand64 seed 0",
   "clk_gate": "1"
  },
@@ -112,6 +113,10 @@
    {"params": {"inTypes": ["int32", "int32"], "opType": "int64", "outType": "int64", "op": "mul", "streams": 2, "k": null, "k1": null, "k2": null, "kCsr": false, "k1Csr": false, "k2Csr": false}, "lanes_rule": "copy",
     "points": [
      {"lanes": 1, "comb_um2": 4200.938021, "e_comb_pj": 7.189913}
+    ]},
+   {"params": {"inTypes": ["int8", "int32"], "opType": "int32", "outType": "int32", "op": "mul", "streams": 2, "k": null, "k1": null, "k2": null, "kCsr": false, "k1Csr": false, "k2Csr": false}, "lanes_rule": "copy",
+    "points": [
+     {"lanes": 1, "comb_um2": 833.112003, "e_comb_pj": 1.425924}
     ]}
   ],
   "Mac": [
@@ -156,6 +161,10 @@
    {"params": {"inTypes": ["int32", "int32"], "opType": "int32", "outType": "int32", "accumulate": true, "regOut": false}, "lanes_rule": "copy",
     "points": [
      {"lanes": 8, "comb_um2": 17196.900106, "e_comb_pj": 25.67308}
+    ]},
+   {"params": {"inTypes": ["int8", "int32"], "opType": "int32", "outType": "int32", "accumulate": true, "regOut": false}, "lanes_rule": "copy",
+    "points": [
+     {"lanes": 8, "comb_um2": 7690.060041, "e_comb_pj": 11.0557}
     ]}
   ],
   "TreeAccumulate": [

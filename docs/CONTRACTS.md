@@ -990,7 +990,7 @@ What a design costs in area and energy before any synthesis: the blocks and cont
 | `<tech>/ram_table.csv` | CACTI 7: depth 32–4096 × width 8–256, `area_um2`, `e_rd_pj`, `e_wr_pj` | X47, X48 |
 
 - `pixi run import-costs` copies the five files with `<tech>/SOURCE` naming each file's origin and sha256; `tests/char/` checks them.
-- **Block lookup** (`lookup`, D176): the entry at the block's width pair (`pair_params`), then a point at its lanes (`measured`), else by `lanes_rule` (`copy`, `interpolate`, `slope`), depth, `width` or `unseeded`; a `Mac` bank from its rows-1 entry and the `bank` forms (D193). Else the comb part counts 0 (`char.missing`).
+- **Block lookup** (`lookup`, D176): the entry at the block's own pair if its inputs differ in width and that pair is measured (`exact_params`), else at its width pair (`pair_params`), then a point at its lanes (`measured`), else by `lanes_rule` (`copy`, `interpolate`, `slope`), depth, `width` or `unseeded`; a `Mac` bank from its rows-1 entry and the `bank` forms (D193). Else the comb part counts 0 (`char.missing`).
 - **Table lookup** (`streamer_cost`, `xbar_cost`, `bank`): linear along one axis at a time; outside the grid linear through the two nearest values, clamped at zero, with `cost.extrapolated`. A writer is priced as a reader.
 
 ### The model

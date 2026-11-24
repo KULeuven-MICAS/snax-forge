@@ -8,6 +8,7 @@
 The table, its lookup (``FOUND``) and what None means are in CONTRACTS, "Cost model". A block is
 looked up at its width pair (``pair_params``): its widest input and its output, a
 SimdLanes' output at most its op's width, an unsigned type as the signed one of its width; a
+block whose inputs differ in width first at its own pair (``exact_params``); a
 packed output's packer by its lane type and d_out, a sliced input's slicer by its lane type, lanes
 and d_in. A param the fill leaves None is not compared.
 """
@@ -192,10 +193,36 @@ def _banked(table: Table, one: Lookup, params: Mapping[str, Any], lanes: int, ro
                   row)  # fmt: skip
 
 
+def exact_params(datapath: str, params: Mapping[str, Any]) -> dict[str, Any] | None:
+    """A SimdLanes' or a Mac's ``params`` at their own input types, for a block whose inputs
+    differ in width (int8 x int32): ``pair_params`` but each input kept, signed. None when the
+    inputs share a width, where the width pair is the only key."""
+    if (
+        datapath not in ("SimdLanes", "Mac")
+        or len({_width(t) for t in params.get("inTypes", [])}) < 2
+    ):
+        return None
+    p = pair_params(datapath, params)
+    return {**p, "inTypes": [_signed(_width(t)) for t in params["inTypes"]]}
+
+
 def lookup(table: Table, datapath: str, params: Mapping[str, Any], lanes: int,
            depth: int | None = None) -> Lookup | None:  # fmt: skip
-    """A block's comb area and energy per fire on ``table`` (CONTRACTS, "Cost model"), or None."""
-    want = pair_params(datapath, params)
+    """A block's comb area and energy per fire on ``table`` (CONTRACTS, "Cost model"), or None:
+    a block of mixed inputs at its own pair if measured (``exact_params``), else at its width
+    pair."""
+    exact = exact_params(datapath, params)
+    if exact is not None:  # either order: a and b reach the same multiplier
+        for ins in (exact["inTypes"], exact["inTypes"][::-1]):
+            got = _lookup(table, datapath, params, {**exact, "inTypes": ins}, lanes, depth)
+            if got is not None:
+                return got
+    return _lookup(table, datapath, params, pair_params(datapath, params), lanes, depth)
+
+
+def _lookup(table: Table, datapath: str, params: Mapping[str, Any], want: dict[str, Any],
+            lanes: int, depth: int | None) -> Lookup | None:  # fmt: skip
+    """``lookup`` at the key ``want``."""
     entries = table.blocks.get(datapath, [])
 
     def key(e: Mapping[str, Any]) -> dict[str, Any]:
@@ -209,7 +236,7 @@ def lookup(table: Table, datapath: str, params: Mapping[str, Any], lanes: int,
         # measured without a bank: its rows-1 entry, then the bank's forms
         want = {k: v for k, v in want.items() if k != "rows"}
         if rows > 1:
-            one = lookup(table, datapath, want, lanes, depth)
+            one = _lookup(table, datapath, params, want, lanes, depth)
             return None if one is None else _banked(table, one, params, lanes, rows)
     entry = next((e for e in entries if key(e) == want), None)
     if datapath in ("FifoPacker", "FifoSlicer"):
@@ -247,6 +274,7 @@ __all__ = [
     "CharError",
     "Lookup",
     "Table",
+    "exact_params",
     "load",
     "lookup",
     "pair_params",

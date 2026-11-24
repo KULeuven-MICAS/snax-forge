@@ -319,7 +319,7 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 
 ### D176 — A block priced at its width pair
 
-- **Decided:** the block table holds each block at its width pairs (X89); a unit is looked up at its widest input and its output (a SimdLanes' at most its op's width, a Mac's at its output, unsigned as signed). Over lanes: `copy` from the pair's point, a narrow fold's `slope` (int64 cost per lane × w_in / 64), a narrow LinkBuffer the int64 one × w / 64. A FifoPacker is keyed by lane type and d_out, a FifoSlicer by lane type, lanes and d_in (D180). A seeded fold (D163) costs its `unseeded` entry until measured.
+- **Decided:** the block table holds each block at its width pairs (X89); a unit is looked up at its widest input and its output (a SimdLanes' at most its op's width, a Mac's at its output, unsigned as signed). Over lanes: `copy` from the pair's point, a narrow fold's `slope` (int64 cost per lane × w_in / 64), a narrow LinkBuffer the int64 one × w / 64. A FifoPacker is keyed by lane type and d_out, a FifoSlicer by lane type, lanes and d_in (D180). A seeded fold (D163) costs its `unseeded` entry until measured. A SimdLanes or Mac whose inputs differ in width is looked up at its own pair first where measured (int8 × int32, X98), in either order, else at its widest input.
 - **Why:** synthesis removes logic on copied sign bits, so a narrow block costs what it computes; one point per pair and one rule over lanes keep the table small.
 - **Where:** CONTRACTS, "Cost model"; `snax_forge/char/README.md`.
 

@@ -55,7 +55,7 @@ Every number is measured by CHAR1 and CHAR2 in [snax-forge-experiments](https://
 
 A block's register bits are not in the table: they are the catalogue's `flops` on its params (`hw/chisel/blocks.json`, C§10), which CHAR1 and CHAR2 checked against DC's sequential cells at every point (a packer's and a slicer's are `estimate/bits.py`'s, equal to its point's `flops`).
 
-**The lookup** (`lookup(table, datapath, params, lanes, depth)`, `__init__.py`) takes the entry whose params equal the block's at its width pair (`pair_params`, D176: lanes, depth and unset constants aside; a SimdLanes' and a Mac's inputs at their widest input, a SimdLanes' output at most its op's width, a Mac's at its output; unsigned as signed; a packer's `d_out`, `lanes` and `dtype` as its `inLanes`, `laneType` and `words`, a slicer's `d_in`, `lanes` and `dtype` as its `words`, `laneType` and `outLanes`), then in order:
+**The lookup** (`lookup(table, datapath, params, lanes, depth)`, `__init__.py`) takes the entry whose params equal the block's at its width pair (`pair_params`, D176: lanes, depth and unset constants aside; a SimdLanes' and a Mac's inputs at their widest input, unless the block's own mixed pair is measured (`exact_params`, int8 × int32, either order), a SimdLanes' output at most its op's width, a Mac's at its output; unsigned as signed; a packer's `d_out`, `lanes` and `dtype` as its `inLanes`, `laneType` and `words`, a slicer's `d_in`, `lanes` and `dtype` as its `words`, `laneType` and `outLanes`), then in order:
 
 1. a point at these lanes (and depth): used as is (`measured`; a packer's or a slicer's one point, with its `load_bits`);
 2. under `copy`: lanes / $W_0$ × the point at the smallest lanes $W_0$, a LinkBuffer's at the same depth (`copy`);
