@@ -426,7 +426,9 @@ def group_blocks(graph: Graph, job_width: int = 32,
                           cycles - bottleneck - ramp, FILL_ONE_INPUT if inputs == 1 else FILL,
                           [k.attrs["container"] for k, _, _ in ends], bits=bits,
                           ctrl_bits=ctrl_bits(rule_units, rule_links, owner,
-                                              _fixed_ts(graph, insts, members), job_width))  # fmt: skip
+                                              _fixed_ts(graph, insts, members), job_width,
+                                              [{"from": rule_fork[e["fork"]][0][0], "to": e["to"],
+                                                "depth": e["depth"]} for e in fork_links]))  # fmt: skip
         g.run_cycles = run_cycles
         out.append((g, units, bufs))
     return out

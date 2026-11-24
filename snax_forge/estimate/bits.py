@@ -8,7 +8,8 @@ per unit its T when fixed at design time, None when a JOB_BEATS CSR sets it. A c
 ⌈log₂ T⌉ bits for a fixed T, ``job_width`` for one from a JOB_BEATS. Per group ``busy`` and
 ``done``; per unit its job-beats counters, ``jobs_counter`` (none when the unit borrows),
 ``row`` (a bank's), ``gap`` (at II > 1), ``v`` (max(L, 1) bits, dropped at L 0) and ``lane`` (at span > 1); per link
-``occupancy`` and two slots (dropped for a wire and a depth-1 buffer). ``accelerator_registers``
+``occupancy`` and two slots (dropped for a wire and a depth-1 buffer), and per fork link the
+same, ``<fork's first unit>_<to>_fork_*``. ``accelerator_registers``
 reads each group's description from an ``accelerator.json``, and ``registers_json`` gives the
 text of ``ctrl_registers.json``, which ``util/ctrl_regs.py --json`` writes beside the RTL
 fixtures and hw/chisel's ``CtrlRegistersSpec`` compares with the emitted RTL.
@@ -43,9 +44,11 @@ def slicer_bits(d_in: int) -> int:
 
 def ctrl_registers(units: Sequence[Mapping[str, Any]], links: Sequence[Mapping[str, Any]],
                    owner: str, fixed: Mapping[str, int | None],
-                   job_width: int, declared: bool = False) -> list[tuple[str, int]]:  # fmt: skip
+                   job_width: int, declared: bool = False,
+                   fork_links: Sequence[Mapping[str, Any]] = ()) -> list[tuple[str, int]]:  # fmt: skip
     """The registers of the group's control unit firtool keeps with their bits, in the module
-    doc's order; ``declared`` every one the description declares, the dropped ones too."""
+    doc's order; ``declared`` every one the description declares, the dropped ones too;
+    ``fork_links`` each ``{from, to, depth}``, its fork's first unit and its consumer."""
     succ = {e["from"]: e["to"] for e in links}
 
     def after(k: str) -> list[str]:
@@ -82,15 +85,22 @@ def ctrl_registers(units: Sequence[Mapping[str, Any]], links: Sequence[Mapping[s
         regs.append((f"{name}_occupancy", _log2_ceil(e["depth"] + 1)))
         if e["depth"] > 1 or declared:
             regs += [(f"{name}_{s}", _log2_ceil(max(e["depth"], 2))) for s in ("wslot", "rslot")]
+    for e in fork_links:  # NB (D196): a fork link's ring, as a link's
+        name = f"{e['from']}_{e['to']}_fork"
+        regs.append((f"{name}_occupancy", _log2_ceil(e["depth"] + 1)))
+        if e["depth"] > 1 or declared:
+            regs += [(f"{name}_{s}", _log2_ceil(max(e["depth"], 2))) for s in ("wslot", "rslot")]
     regs.append(("done", 1))
     return [(n, b) for n, b in regs if b]
 
 
 def ctrl_bits(units: Sequence[Mapping[str, Any]], links: Sequence[Mapping[str, Any]], owner: str,
-              fixed: Mapping[str, int | None], job_width: int) -> int:  # fmt: skip
+              fixed: Mapping[str, int | None], job_width: int,
+              fork_links: Sequence[Mapping[str, Any]] = ()) -> int:  # fmt: skip
     """The register bits of the group's control unit firtool keeps (``ctrl_registers``
     summed)."""
-    return sum(b for _, b in ctrl_registers(units, links, owner, fixed, job_width))
+    return sum(b for _, b in ctrl_registers(units, links, owner, fixed, job_width,
+                                            fork_links=fork_links))  # fmt: skip
 
 
 # =============================================================================
@@ -115,7 +125,11 @@ def accelerator_registers(accelerator: Mapping[str, Any]) -> dict[str, list[tupl
                      else u.get("params", {}).get("T", 1) for u in g["units"]}  # fmt: skip
             owner = next(u["name"] for u in units if u["name"] not in {e["from"] for e in links})
             job_width = next(c["width"] for c in g["csrs"] if c["name"].startswith("JOBS"))
-            regs = ctrl_registers(units, links, owner, fixed, job_width)
+            forks = [x for x in acc["inputs"] if isinstance(x, list)]
+            fork_links = [{"from": next(f[0] for f in forks if e["to"] in f).split(".")[0],
+                           "to": e["to"].split(".")[0], "depth": e["depth"]}
+                          for e in g.get("fork_links", [])]  # fmt: skip
+            regs = ctrl_registers(units, links, owner, fixed, job_width, fork_links=fork_links)
             out[f"{accelerator['tag']}_{g['name']}_ctrl"] = regs
     return out
 
