@@ -637,6 +637,7 @@ def _link_site(g: Graph, container: str) -> dict[str, Any]:
     if fork is not None:
         container = fork.attrs["container"]
     if (fork := _fork_of(g, container)) is not None:
+        _branch(g, fork, f"link {container!r}")  # offered only while a branch can take a buffer
         reader = fork.attrs["readers"][0].split(".")[0]
         return {
             "container": container,

@@ -305,6 +305,7 @@ The `drawing` is `{nodes, edges, outlines, tasks}`; positions are the page's, ne
 | node `parent`, `chips` | its outline; `[node, task]` per node a unit runs, or a merged loop's other maps |
 | node `layer`, `row`, `port_tasks`, `width_of` | `first` for a kernel input; a front loop's row; a mux's port per task; the unit a mux is as wide as |
 | edge `from`, `from_port`, `to`, `to_port` | its ends |
+| edge `sel` | what a click on it selects when not the edge: a link's edges their link node, a forked read's edges and its FIFO the container (`link`, `unlink`) |
 | edge `style`, `task`, `label` | data, seed, link, fork, local, wire or empty; its task after `share`; the dtype where it changes, `↻ var` for an outer loop skipped, `Aᵀ`, `broadcast`, `held a row` (D190) |
 | edge `data`, `node`, `port`, `sub` | the container, the node and port it feeds or leaves, the memlet |
 | edge `via` | a fork's other reader's edge (D189): `{node, port}` of the first reader, whose hops to the container a click on it lights too |

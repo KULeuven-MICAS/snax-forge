@@ -108,7 +108,8 @@ class _Drawing:
     def edge(self, a: str, ap: str | None, b: str, bp: str | None, *, once: bool = False,
              **kw: Any) -> dict[str, Any] | None:  # fmt: skip
         """An edge from box ``a`` (port ``ap``) to box ``b`` (port ``bp``); ``once`` a wire of the
-        hardware, drawn once whatever uses it."""
+        hardware, drawn once whatever uses it; ``sel`` what a click on it selects (a link node, a
+        forked container), else the edge itself."""
         if once:
             key = (a, ap, b, bp)
             if key in self.wires:
@@ -327,9 +328,10 @@ def drawing(g: Graph, tops: Sequence[Node], placed: dict[str, Any] | None = None
         if f"{inst}.{port}" in buffered:  # a fork's branch down a chain: its ring buffer
             fork, depth = buffered[f"{inst}.{port}"]
             fid = f"fifo:{fork.id}>{inst}.{port}"
-            d.box(fid, kind="link", text=f"{fork.attrs['container']} · FIFO {depth}", sel=fork.id,
+            d.box(fid, kind="link", text=f"{fork.attrs['container']} · FIFO {depth}",
+                  sel=fork.attrs["container"],
                   ins=["in"], outs=["out"], links=[])["depth"] = depth  # fmt: skip
-            d.edge(fid, "out", *to, once=True, style="link")
+            d.edge(fid, "out", *to, once=True, style="link", sel=fork.attrs["container"])
             to, style = (fid, "in"), "wire"
         if sl is not None:
             d.edge(sl, "out", *to, once=True, style=style, **bcast(n, port))
@@ -454,6 +456,7 @@ def drawing(g: Graph, tops: Sequence[Node], placed: dict[str, Any] | None = None
                     )
                     d.edge(lb, "out", unit_box(n) if n.kind == "accelerated" else n.id, port, once=True,
                            style="link", data=m.data, sub=api.memlet_text(m), node=n.id, port=port,
+                           sel=ln.id,
                            **(bcast(n, port) if n.kind == "accelerated" else {}))  # fmt: skip
                     continue
                 if m.data in written_here:
@@ -494,6 +497,7 @@ def drawing(g: Graph, tops: Sequence[Node], placed: dict[str, Any] | None = None
                 d.edge(a, ap, tgt, tp, task=task, skip=skipped_all, data=m.data, **via,
                        style="seed" if seeded else "fork" if fork else "data",
                        sub=api.memlet_text(m), node=n.id, port=port,
+                       **({"sel": m.data} if fork else {}),
                        mark=(api.transpose_label(m.data, perm) if perm is not None
                              else "fork" if fork
                              else "carried, 0 first" if seeded and api.carried(n) else None),
@@ -519,7 +523,7 @@ def drawing(g: Graph, tops: Sequence[Node], placed: dict[str, Any] | None = None
                         else ln.id
                     )
                     d.edge(nb, c, lb, "in", once=True, style="link", dt=dtype_changes(n, m.data),
-                           data=m.data, sub=api.memlet_text(m), node=n.id, port=c)  # fmt: skip
+                           data=m.data, sub=api.memlet_text(m), node=n.id, port=c, sel=ln.id)  # fmt: skip
                     continue
                 written_here.setdefault(m.data, []).append((nb, c))
                 pending.setdefault(m.data, []).append((n, c, m))
