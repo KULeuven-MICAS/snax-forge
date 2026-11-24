@@ -43,43 +43,22 @@ from snax_forge.gen.rtl import (
     write_fixture,
 )
 from tests.design.helpers import REPO
-from tests.helpers import SUB, bound_vsum, requires_submodule
+from tests.helpers import FORGE_FIXTURES, SUB, bound_vsum, requires_submodule
 
 from .helpers import designed, point, validate, with_groups
 
 RTL_FIXTURES = REPO / "hw" / "chisel" / "src" / "test" / "resources" / "rtl"
 FORGE = SUB / "forge"
-# Each fixture: its recipe and --set
+# forge/'s designs that the specs driving every fixture have no model for: axpby's CSR scalar
+# (ShellScalarSpec checks it through ShellCasesSpec) and padded rows
+NOT_RTL = {"axpy_v1", "rowsum_v2_padded"}
+# Each fixture: its recipe and --set values; forge/'s designs at forge/'s sizes, then the ones a
+# Chisel spec needs that forge/ does not hold (their accelerator.json and streamer hjsons beside)
 DESIGNS = {
-    "vecadd_v1": ("vecadd_v1", []),
-    "vecmul_v1": ("vecmul_v1", []),
-    "vsum_v1": ("vsum_v1", []),
-    "vsum_v1_1": ("vsum_v1_1", []),
-    "vsum_v1_1_w8": ("vsum_v1_1", ["W=8"]),
-    "vecadd_v1_1": ("vecadd_v1_1", []),
-    "vecmul_v1_1": ("vecmul_v1_1", []),
-    "vecadd_v1_2": ("vecadd_v1_2", []),
-    "vsum_v1_1_1": ("vsum_v1_1_1", []),
-    "vsum_v1_1_2": ("vsum_v1_1_2", []),
-    "vecmul_v1_1_1": ("vecmul_v1_1_1", []),
-    "dot_v1": ("dot_v1", []),
-    "dot_v1_1": ("dot_v1_1", []),
-    "dot_v2": ("dot_v2", ["N=16"]),
-    "dot_v3": ("dot_v3", ["N=16"]),
-    "dot_v4": ("dot_v4", ["N=16"]),
-    "dot_v5": ("dot_v5", ["N=16"]),
-    "dot_v5_w1": ("dot_v5", ["N=16", "W=1"]),
-    "dot_v6": ("dot_v6", ["N=16"]),
-    "matvec_v4": ("matvec_v4", ["M=2", "N=16"]),
-    "matvec_v5": ("matvec_v5", ["M=2", "N=16"]),
-    "matvec_v6": ("matvec_v6", ["M=2", "N=16"]),
-    "dot_v1_2": ("dot_v1_2", []),
-    "mvt_v1_2_2": ("mvt_v1_2_2", ["W=8"]),
-    "vecadd_v1_1_w1": ("vecadd_v1_1", ["W=1"]),
-    "bicg_v3_w64": ("bicg_v3", ["M=64", "N=64", "W=64"]),  # two chains on a forked A (D189)
-    "bicg_v4": ("bicg_v4", []),  # s's bank of 16 rows, r held (D191, D190)
-    "bicg_v4_1": ("bicg_v4_1", []),  # two strips of a bank of 8, q carried (D192)
-    "mvt_v6": ("mvt_v6", []),  # x2's seeded bank of 8 rows, y2 held, A forked (D194)
+    **{d: (r, list(sets)) for d, (r, sets) in FORGE_FIXTURES.items() if d not in NOT_RTL},
+    "vsum_v1": ("vsum_v1", []),  # ShellCasesSpec's fold wrapper: one lane, one input
+    "vsum_v1_1_1": ("vsum_v1_1_1", []),  # ShellPackedSpec's sum, its output packed by hand
+    "dot_v1_2": ("dot_v1_2", []),  # ShellEndToEndSpec's port mux run through two tasks
 }
 
 # SimdLanes' slot params of a unit with none (axpby's k1 and k2, each slot from its CSR or not)
@@ -266,14 +245,10 @@ def test_gen_rtl_writes_a_fixture(vecadd, capsys):
 @requires_submodule
 def test_a_linked_fixtures_counter_is_the_group_rules():
     """A linked group's counter is snax-gvsoc's group rule stepped with an always-ready streamer:
-    at T 4 dot's J 1 row of the table and matvec's J 2 (2 × 16, W 4), which the Cycles
-    state too; dot 4 at J 16 and T 128 is C4 = JT + 2; with a buffer of depth 2 for its wire,
-    which no formula states, a cycle more: JT + 3."""
-    got = {d: json.loads((RTL_FIXTURES / d / "vectors.json").read_text())["tasks"][0]["counter"]
-           for d in ("dot_v2", "dot_v3", "dot_v4", "dot_v5", "dot_v6", "matvec_v4", "matvec_v5",
-                     "matvec_v6")}  # fmt: skip
-    assert got == {"dot_v2": 6, "dot_v3": 5, "dot_v4": 6, "dot_v5": 9, "dot_v6": 10, "matvec_v4": 10,
-                   "matvec_v5": 16, "matvec_v6": 14}  # fmt: skip
+    dot 4 at J 1 and T 2 is JT + 2 = 4; at J 16 and T 128 C4 = JT + 2; with a buffer of depth 2
+    for its wire, which no formula states, a cycle more: JT + 3."""
+    got = json.loads((RTL_FIXTURES / "dot_v4" / "vectors.json").read_text())["tasks"][0]["counter"]
+    assert got == 4
     from tests.gen.test_accelerator import dot4
 
     (group,) = dot4().groups

@@ -17,7 +17,7 @@ from snax_forge.report.design import build_design, render_design
 from snax_forge.run.beats import mover_tasks, pairing
 from snax_forge.run.cluster import Cluster, load_cluster
 from snax_forge.sandbox import Recipe
-from tests.helpers import SUB, recipe_path, requires_submodule
+from tests.helpers import FORGE_FIXTURES, REPO, SUB, recipe_path, requires_submodule
 
 from .helpers import designed, fake_emit
 
@@ -34,17 +34,20 @@ def shared(tmp_path_factory):
 
 
 @requires_submodule
-@pytest.mark.parametrize(("name", "sets", "acc"), [("dot_v1_2", [], "dot"),
-                                                   ("mvt_v1_2_2", ["W=8"], "mvt_vadd")])  # fmt: skip
-def test_gen_rtl_and_the_bundle_take_a_shared_design(tmp_path, monkeypatch, name, sets, acc):
-    """Both shared fixtures: gen-rtl's accelerator.json is snax-gvsoc's forge/<name>/ byte for
-    byte, movers and port_mux in it, and the bundle (Emit faked) lists the set's port mux after
-    the datapath, holding no module."""
+@pytest.mark.parametrize(("name", "sets", "acc", "fixture"), [
+    ("dot_v1_2", [], "dot", REPO / "hw/chisel/src/test/resources/rtl/dot_v1_2"),
+    ("mvt_v1_2_2", list(FORGE_FIXTURES["mvt_v1_2_2"][1]), "mvt_vadd", SUB / "forge/mvt_v1_2_2"),
+])  # fmt: skip
+def test_gen_rtl_and_the_bundle_take_a_shared_design(tmp_path, monkeypatch, name, sets, acc,
+                                                     fixture):  # fmt: skip
+    """Both shared fixtures: gen-rtl's accelerator.json is the fixture's (hw/chisel's for
+    dot_v1_2, snax-gvsoc's forge/ for mvt_v1_2_2) byte for byte, movers and port_mux in it, and
+    the bundle (Emit faked) lists the set's port mux after the datapath, holding no module."""
     point = designed(tmp_path, name, name, sets)
     monkeypatch.chdir(tmp_path)
     write_accelerator(point, tmp_path / "rtl", tmp_path)
     got = (tmp_path / "rtl" / "accelerator.json").read_bytes()
-    assert got == (SUB / "forge" / name / "accelerator.json").read_bytes()
+    assert got == (fixture / "accelerator.json").read_bytes()
     fake_emit(monkeypatch)
     b, _ = write_bundle(point, tmp_path / "bundle", tmp_path)
     t = f"snax_forge_{name}"

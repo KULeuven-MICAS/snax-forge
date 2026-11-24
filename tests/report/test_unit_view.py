@@ -5,9 +5,7 @@ from pathlib import Path
 
 from snax_forge.report.design import unit_view
 
-FIXTURE = (
-    Path(__file__).parents[2] / "hw/chisel/src/test/resources/rtl/bicg_v3_w64/accelerator.json"
-)
+FIXTURE = Path(__file__).parents[2] / "gvsoc/snax-gvsoc/forge/bicg_v4_1/accelerator.json"
 
 
 def test_each_chain_in_order_the_longest_chains_latency():

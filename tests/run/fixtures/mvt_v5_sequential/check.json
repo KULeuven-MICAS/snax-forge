@@ -1,0 +1,27 @@
+{
+ "total_cycles": 521,
+ "functional_check": {
+  "kernel": "mvt_types",
+  "seed": 0,
+  "symbols": {
+   "M": 16,
+   "N": 16
+  },
+  "exit_code": 0,
+  "data_errors": 0,
+  "words": 32,
+  "tasks": {
+   "tmp1_mult_mvt": {
+    "counter": 34,
+    "beats": 32,
+    "group": "mvt"
+   },
+   "tmp4_mult_mac_x2": {
+    "counter": 36,
+    "beats": 32,
+    "group": "mac_x2"
+   }
+  },
+  "passed": true
+ }
+}

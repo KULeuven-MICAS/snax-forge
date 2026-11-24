@@ -1,4 +1,4 @@
-"""Every forge-set recipe and mvt's compile (the y1 clash): the generator's data.h and main.c
+"""Every full-set recipe's compile (mvt's y1 clash among them): the generator's data.h and main.c
 against the runtime's headers, as ``make sw`` includes them, so a container named after a
 libc or runtime symbol (mvt's ``y1``, math.h's Bessel function) is caught here and not at a
 flow's ``sw`` step. Syntax only (clang's ``-fsyntax-only`` for riscv32): no runtime library,
@@ -41,8 +41,7 @@ FLAGS = [
     "-fopenmp",
     "-fsyntax-only",
 ]  # fmt: skip (toolchain.mk's)
-MVT = ["mvt_v1", "mvt_v1_2", "mvt_v2", "mvt_v1_1", "mvt_v1_2_1", "mvt_v2_1"]
-RECIPES = list(dict.fromkeys([d.recipe for d in SETS["full"]] + MVT))
+RECIPES = list(dict.fromkeys(d.recipe for d in SETS["full"]))  # mvt's y1 among them
 
 
 def test_a_container_named_as_a_runtime_symbol_gets_a_c_name_of_its_own():

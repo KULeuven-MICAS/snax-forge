@@ -330,7 +330,7 @@ def test_a_filtered_trace_says_so(tmp_path):
 
 
 # =============================================================================
-# 6. A group of two outputs (tests/run/fixtures/bicg_v3)
+# 6. A group of two outputs (tests/run/fixtures/bicg_v4_1)
 # =============================================================================
 
 
@@ -339,24 +339,31 @@ def fork(tmp_path_factory):
     from tests.run.helpers import RECORDED
 
     base = tmp_path_factory.mktemp("fork")
-    return api.load_run(recorded_run(base / "rec", "stall", RECORDED / "bicg_v3"), "rec")
+    return api.load_run(recorded_run(base / "rec", "beat", RECORDED / "bicg_v4_1"), "rec")
 
 
 def test_a_firing_has_a_push_per_output(fork):
-    """A[0, 5] feeds firing 0, which q's push 0 (rate 1) and s's one push (firings 0 to 63)
-    fold: each output with its writer's elements."""
-    (f,) = api.journey_view(fork, "A", [0, 5])["firings"]
-    assert (f["role"], f["n"], f["push"]["unit"]) == ("consumed", 0, "sum")
-    got = {w: (p["unit"], p["n"], p["first"], p["last"]) for w, p in f["pushes"].items()}
-    assert got == {"sum_out": ("sum", 0, 0, 0), "mac_out": ("mac", 0, 0, 63)}
-    assert f["outputs"]["sum_out"] == ["q[0]"] and len(f["outputs"]["mac_out"]) == 32
+    """A[0, 5], in a word of two slices, feeds firings 0 and 1, which q's push 0 (rate 4) and s's
+    first push (firings 0 to 39, a row of the bank) fold: each output with its writer's
+    elements."""
+    fs = api.journey_view(fork, "A", [0, 5])["firings"]
+    assert [(f["role"], f["n"], f["push"]["unit"]) for f in fs] == [("consumed", 0, "sum"),
+                                                                    ("consumed", 1, "sum")]  # fmt: skip
+    got = {w: (p["unit"], p["n"], p["first"], p["last"]) for w, p in fs[0]["pushes"].items()}
+    assert got == {"sum_out": ("sum", 0, 0, 3), "mac_out": ("mac", 0, 0, 39)}
+    assert fs[0]["outputs"] == {"sum_out": ["q[0]"], "mac_out": [f"s[{i}]" for i in range(4)]}
 
 
-def test_a_packed_words_result_comes_from_its_own_firing(fork):
-    """q[3] is slice 1 of sum_out's word 1 (two int32 a word, D174): produced by firing 3 only;
-    s[1] by all 64."""
+def test_a_packed_words_result_comes_from_its_own_firings(fork):
+    """q[3] is slice 1 of sum_out's word 1 (two int32 a word, D174), carried as the seed of the
+    second strip (D192): produced by firings 12 to 15 of each strip only; s[1] by the 40 firings
+    of its bank row."""
     j = api.journey_view(fork, "q", 3)
-    assert [h["by"] for h in j["hops"] if h["k"] == "grant"] == ["sum_out.lane0"]
-    assert [(f["role"], f["n"]) for f in j["firings"]] == [("produced", 3)]
-    assert j["firings"][0]["outputs"]["sum_out"] == ["q[3]"]
-    assert [f["n"] for f in api.journey_view(fork, "s", 1)["firings"]] == list(range(64))
+    assert [h["by"] for h in j["hops"] if h["k"] == "grant"] == [
+        "sum_seed.lane0",
+        "sum_out.lane0",
+    ] * 2
+    assert [(f["role"], f["n"]) for f in j["firings"]] == [
+        ("produced", n) for n in (12, 13, 14, 15, 172, 173, 174, 175)]  # fmt: skip
+    assert {x for f in j["firings"] for x in f["outputs"]["sum_out"]} == {"q[3]"}
+    assert [f["n"] for f in api.journey_view(fork, "s", 1)["firings"]] == list(range(40))

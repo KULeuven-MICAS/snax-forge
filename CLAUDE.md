@@ -27,7 +27,7 @@ The whole list is `docs/TOOL.md`; the ones used most:
 - `pixi run test` (all, on every core; `-m "not slow"` leaves out the DaCe builds, the compiles and the largest design), or one block: `test-lower`, `test-brm`, `test-dfg`, `test-sandbox`, `test-char`, `test-estimate`, `test-design`, `test-flow`, `test-run`, `test-report`, `test-gen`, `test-kernels`, `test-viz`, `test-docs`. CI runs `pixi run -e ci test`.
 - `pixi run lint` (CI runs it) and `pixi run fmt` (ruff's fixes and format, then the Markdown rule). Always the pixi tasks, never ruff or pytest directly, so the versions are the pinned ones.
 - `pixi run flow RECIPE --platform platforms/snax_forge.json [--set ...] [--trace LEVEL]` runs a recipe on SNAX-GVSoC into `out/flow/<name>/` (D136; in the image, the submodule checked out). TOOL.md section 2.
-- `pixi run forge RECIPE` and `pixi run forge-set quick|full|mvt|pack|bicg` make bundles for snax_cluster's RTL check (the sets are listed in `snax_forge/flow/forge_set.py`). TOOL.md section 6.
+- `pixi run forge RECIPE` and `pixi run forge-set quick|full` make bundles for snax_cluster's RTL check (the sets are listed in `snax_forge/flow/forge_set.py`). TOOL.md section 6.
 - `pixi run sandbox`, `design`, `lower`, `gen-gvsoc`, `gen-rtl`, `bundle`: one stage alone. TOOL.md section 3.
 - `pixi run view`, `view-dfg`, `edit-dfg` (ports 8765, 8766, 8767; every POST needs `Content-Type: application/json`). TOOL.md sections 4 and 5.
 - `pixi run -e hw chisel-test`, `chisel-gen`, and `chisel-check` after any Scala edit; `hw/chisel/` is a project of its own.

@@ -14,22 +14,17 @@ import snax.forge.{ForgeTester, IntType, LaneBits, Seeds, Sink, SnaxGroupCases, 
   * controller's rule or, for a linked group, the Cycles of CONTRACTS, "Accelerator RTL spec" (`vectors.json`'s
   * `working`).
   *
-  * Then each linked variant (dot 2–6, matvec 4–6) at N 8 and 16, W 4, on random int64 data of one seed per N (the
-  * cycles do not depend on the data, which ShellRandomSpec varies): dot J = 1, matvec J = 2 rows (q_i = Σ_j A_ij · p_j,
-  * p read again for each row), the results NumPy's (int64, wrapping), the counter the busy cycles of snax-gvsoc's
-  * matching group case (`dot<k>_n<N>_j<J>`: its run line's classes added up; cancelled without
-  * `SNAX_GVSOC_GROUP_CASES`). And matvec 4–6 at int32 (every port and the product retyped), N 8, J 2, on the rows
-  * (46341, 3, 3, 3, 3, 3, 3, 6) and (0, 1, 1, 1, 1, 0, 0, 0) against p = (46341, 1, ..., 1): 46341² wraps at int32, q =
-  * (-2147478991, 4), the tb's MAC vector `mac_int32_wrap_w2_t8` through the whole accelerator. And dot 5 at W 1
-  * (SerialAccumulate at lanes 1) on its group case `dot5_w1_j2`'s own data: J = 2 jobs of T = 4 beats, the results the
-  * case's sums (NumPy's) and the counter its busy cycles.
+  * Then each linked fixture without a fork at W 4 (dot 4) at N 8 and 16, on random int64 data of one seed per N (the
+  * cycles do not depend on the data, which ShellRandomSpec varies): J = 1, the results NumPy's (int64, wrapping), the
+  * counter the busy cycles of snax-gvsoc's matching group case (`dot<k>_n<N>_j<J>`: its run line's classes added up;
+  * cancelled without `SNAX_GVSOC_GROUP_CASES`).
   *
   * And dot_v1_2: its two groups on one set's movers through `<tag>_dot_port_mux`, `main.c`'s CSR writes in its order
   * (vmul's JOBS, PORT_MUX_SEL 0, vmul's START, vsum's JOBS and JOB_BEATS while vmul runs, vmul's STATUS polled and its
   * BUSY_COUNTER read, PORT_MUX_SEL 1, vsum's START, its STATUS polled and BUSY_COUNTER read), an always-ready streamer
   * per mover and task: task 1's readers vmul's a and b (random int64, one seed), task 2's reader 0 the products task
   * 1's writer gave and reader 1 idle. The products NumPy's (wrapping), the sum on the writer's low word with the other
-  * three 0, each counter its unshared twin's (`vecmul`'s and `vsum_v1_1`'s `vectors.json`, the same shapes).
+  * three 0, each counter the nest controller's rule at L 0 and L 1: one busy cycle a beat for vmul, one more for vsum.
   */
 class ShellEndToEndSpec extends AnyFlatSpec with ForgeTester {
 
@@ -116,7 +111,7 @@ class ShellEndToEndSpec extends AnyFlatSpec with ForgeTester {
       }
     }
 
-  /** The linked fixtures at `lanes` lanes (W): at 4 the variants dot 2–6 and matvec 4–6, at 1 dot 5. */
+  /** The linked fixtures without a fork at `lanes` lanes (W): at 4, dot 4. */
   private def linked(lanes: Int) =
     RtlFixtures.all.filter { f =>
       f.spec.groups.exists(_.links.nonEmpty) && f.spec.forks.isEmpty && f.spec.units.head.port("a").lanes == lanes
@@ -141,11 +136,7 @@ class ShellEndToEndSpec extends AnyFlatSpec with ForgeTester {
   private def group(f: RtlFixtures.Fixture, n: Int, jobs: Int): String =
     s"dot${f.name.split("_").last.stripPrefix("v")}_n${n}_j$jobs"
 
-  it should "have the linked variants dot 2–6 and matvec 4–6" in
-    assert(
-      variants
-        .map(_.name) == Seq("dot_v2", "dot_v3", "dot_v4", "dot_v5", "dot_v6", "matvec_v4", "matvec_v5", "matvec_v6")
-    )
+  it should "have the linked fixture dot 4" in assert(variants.map(_.name) == Seq("dot_v4"))
 
   for {
     f      <- variants
@@ -154,7 +145,7 @@ class ShellEndToEndSpec extends AnyFlatSpec with ForgeTester {
   }
     it should s"give ${f.name}'s NumPy results and its group case's cycles at N $n (seed $seed)" in Seeds.run(seed) {
       r =>
-        val jobs  = if (f.name.startsWith("matvec")) 2 else 1
+        val jobs  = 1
         val lanes = f.spec.units.head.port("a").lanes
         val t     = n / lanes
         val cyc   = caseCycles(group(f, n, jobs)).getOrElse(cancel(s"${SnaxGroupCases.Env} is not set"))
@@ -170,64 +161,16 @@ class ShellEndToEndSpec extends AnyFlatSpec with ForgeTester {
         drive(f.spec, run, Some(cyc), s"${f.name}, N $n, J $jobs")
     }
 
-  for (f <- linked(1))
-    it should s"give ${f.name}'s group case data: its NumPy sums and its cycles" in {
-      val name  = s"dot${f.name.split("_")(1).stripPrefix("v")}_w1_j2"
-      val all   = SnaxGroupCases.all.getOrElse(cancel(s"${SnaxGroupCases.Env} is not set"))
-      val c     = all.find(_.name == name).getOrElse(fail(s"no group case $name"))
-      val data  = c.data.getOrElse(fail(s"$name has no data"))
-      val beats = c.jobs * c.units.head.t
-      assert(data.lanes == 1 && data.a.size == beats, s"$name: ${data.a.size} beats of lanes ${data.lanes}")
-      drive(
-        f.spec,
-        Run(
-          Seq("JOBS" -> c.jobs.toLong, "JOB_BEATS" -> c.units.head.t.toLong),
-          Seq(data.a, data.b),
-          Seq(beats, beats),
-          Seq(data.sums)
-        ),
-        caseCycles(name),
-        s"${f.name} on $name"
-      )
-    }
-
-  /** `spec` with every port, and the product, at `dtype`. */
-  private def retyped(spec: AcceleratorSpec, dtype: String): AcceleratorSpec =
-    spec.copy(groups = spec.groups.map { g =>
-      g.copy(units = g.units.map { u =>
-        u.copy(ports = u.ports.map { case (b, x) => b -> x.copy(dtype = dtype) }, opType = u.opType.map(_ => dtype))
-      })
-    })
-
-  for (f <- variants if f.name.startsWith("matvec"))
-    it should s"wrap ${f.name}'s int32 products: q = (-2147478991, 4)" in {
-      val spec = retyped(f.spec, "int32")
-      val a    = Seq(46341, 3, 3, 3, 3, 3, 3, 6, 0, 1, 1, 1, 1, 0, 0, 0).map(BigInt(_))
-      val p    = (46341 +: Seq.fill(7)(1)).map(BigInt(_))
-      val q    = matvec(a, p, 2, IntType("int32"))
-      assert(q == Seq(BigInt(-2147478991), BigInt(4)))
-      val cyc  = caseCycles(group(f, 8, 2)).getOrElse(cancel(s"${SnaxGroupCases.Env} is not set"))
-      drive(
-        spec,
-        Run(Seq("JOBS" -> 2L, "JOB_BEATS" -> 2L), Seq(a, p), Seq(4, 4), Seq(q)),
-        Some(cyc),
-        s"${f.name} int32"
-      )
-    }
-
   it should "run dot_v1_2's two tasks through its port mux as main.c does" in Seeds.run(Seeds().head) { r =>
-    val f      = RtlFixtures.all.find(_.name == "dot_v1_2").get
-    val spec   = f.spec
-    val sel    = spec.portMuxCsrs.head.offset
-    val (n, w) = (64, 4)
-    val beats  = n / w
-    def twin(name: String) = RtlFixtures.all.find(_.name == name).get.tasks.head
-    val (mulTask, sumTask) = (twin("vecmul_v1"), twin("vsum_v1_1"))
-    assert(mulTask.csrs == Seq("JOBS" -> beats.toLong), s"vecmul's task ${mulTask.csrs}")
-    assert(sumTask.csrs.toMap == Map("JOBS" -> 1L, "JOB_BEATS" -> beats.toLong), s"vsum_v1_1's task ${sumTask.csrs}")
-    val a                  = Seq.fill(n)(LaneBits.signed(r.word(64), 64))
-    val b                  = Seq.fill(n)(LaneBits.signed(r.word(64), 64))
-    val prods              = a.zip(b).map { case (x, y) => (x * y) & LaneBits.mask(64) }
+    val f                        = RtlFixtures.all.find(_.name == "dot_v1_2").get
+    val spec                     = f.spec
+    val sel                      = spec.portMuxCsrs.head.offset
+    val (n, w)                   = (64, 4)
+    val beats                    = n / w
+    val (mulCounter, sumCounter) = (beats.toLong, beats + 1L) // L 0: a busy cycle a beat; L 1: one more
+    val a                        = Seq.fill(n)(LaneBits.signed(r.word(64), 64))
+    val b                        = Seq.fill(n)(LaneBits.signed(r.word(64), 64))
+    val prods                    = a.zip(b).map { case (x, y) => (x * y) & LaneBits.mask(64) }
     def beat(v: Seq[BigInt])(t: Int) = LaneBits.pack(v.slice(t * w, (t + 1) * w).map(LaneBits.signed(_, 64)), 64)
     val (mul, sum) = (0, 1)
     test(new ShellHarness(spec)) { dut =>
@@ -242,7 +185,7 @@ class ShellEndToEndSpec extends AnyFlatSpec with ForgeTester {
       one.write(dut.csr("JOBS", sum), 1)
       one.write(dut.csr("JOB_BEATS", sum), beats)
       while ((one.read(dut.csr("STATUS", mul)) & 1) != 0) {}
-      assert(one.read(dut.csr("BUSY_COUNTER", mul)) == mulTask.counter, "vmul's counter, vecmul's")
+      assert(one.read(dut.csr("BUSY_COUNTER", mul)) == mulCounter, "vmul's counter")
       assert(one.outputs.head == (0 until beats).map(beat(prods)), "vmul's products on writer 0")
       assert(one.taken == Seq(beats, beats), "every beat of a and b taken")
 
@@ -255,7 +198,7 @@ class ShellEndToEndSpec extends AnyFlatSpec with ForgeTester {
       assert(two.read(sel) == 1, "PORT_MUX_SEL read back")
       two.write(dut.csr("START", sum), 1)
       while ((two.read(dut.csr("STATUS", sum)) & 1) != 0) {}
-      assert(two.read(dut.csr("BUSY_COUNTER", sum)) == sumTask.counter, "vsum's counter, vsum_v1_1's")
+      assert(two.read(dut.csr("BUSY_COUNTER", sum)) == sumCounter, "vsum's counter")
       assert(two.outputs.head == Seq(prods.sum & LaneBits.mask(64)), "the sum on writer 0's low word, the rest 0")
       assert(two.taken == Seq(beats, 0), "every product taken, reader 1 idle")
       assert(two.read(dut.csr("STATUS", mul)) == 2 && two.read(dut.csr("STATUS", sum)) == 2, "both done")

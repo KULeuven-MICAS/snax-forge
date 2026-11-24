@@ -25,10 +25,11 @@ import snax.forge.{Emit, SvHeader}
   * `<tag>_csr`, `<tag>_ctrl` and `<tag>_datapath`; `<tag>_csr` its `<tag>_peripherals`; `<tag>_ctrl` a
   * `<tag>_<group>_ctrl` per group; `<tag>_datapath` a `<tag>_<unit>` per unit, then a `<tag>_<link>` per buffer, group
   * by group; each `<tag>_<unit>` its one catalogue datapath. Read off each module's instances in the SystemVerilog
-  * (firtool's ` <module> <instance> (` lines); dot 1's (two groups), dot 4's (a wire) and dot 6's (a buffer) among
-  * them. A set whose groups share its movers shows its movers at the wrapper (its hjson's `num_channel` are the
-  * movers') and adds `<tag>_<set>_port_mux`, which holds no module, after `<tag>_datapath`: dot_v1_2's and
-  * mvt_v1_2_2's. bicg_v3's two chains on a forked A (D189) have one reader for A and an output per chain.
+  * (firtool's ` <module> <instance> (` lines); mvt_v5_sequential's (two accelerators), matvec_acc_v2's (two groups),
+  * dot 4's (a wire) and mvt_v6's (a buffer) among them. A set whose groups share its movers shows its movers at the
+  * wrapper (its hjson's `num_channel` are the movers') and adds `<tag>_<set>_port_mux`, which holds no module, after
+  * `<tag>_datapath`: dot_v1_2's and mvt_v1_2_2's. bicg_v4_1's two chains on a forked A (D189) have one reader for A and
+  * an output per chain.
   *
   * `emitted.json` lists a file for every module the wrapper reaches, each file exists, and `sv/` holds those only.
   */
@@ -132,7 +133,7 @@ class ShellEmitSpec extends AnyFlatSpec {
 
   it should "have the fixtures of two accelerators, two groups in one, a wire, a buffer, shared movers and a fork" in
     assert(
-      Set("dot_v1", "dot_v1_1", "dot_v4", "dot_v6", "dot_v1_2", "mvt_v1_2_2", "bicg_v3_w64")
+      Set("mvt_v5_sequential", "matvec_acc_v2", "dot_v4", "mvt_v6", "mvt_v1_2_2", "bicg_v4_1")
         .subsetOf(RtlFixtures.all.map(_.name).toSet)
     )
 }

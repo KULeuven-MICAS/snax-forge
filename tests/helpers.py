@@ -2,6 +2,7 @@
 marker, and the graph fixtures read as dicts or bound by their recipes.
 
     REPO, FIXTURES (tests/dfg/fixtures), SUB (gvsoc/snax-gvsoc)
+    FORGE_FIXTURES          the submodule's forge/ folders: each its recipe and --set values
     recipe_path(name)       ``recipes/<folder>/<name>.json`` (``find_recipe``)
     requires_submodule      skips where the submodule is not checked out (SUBMODULE_MISSING)
     graph_dict(name)        a fixture's .snaxdfg as a dict
@@ -35,6 +36,24 @@ SUBMODULE_MISSING = (
     "the snax-gvsoc submodule is not checked out (git submodule update --init gvsoc/snax-gvsoc)"
 )
 requires_submodule = pytest.mark.skipif(not (SUB / "snax").is_dir(), reason=SUBMODULE_MISSING)
+
+SEQUENTIAL = "design.schedule=sequential"
+# snax-gvsoc's forge/ folders, one per integration feature, each its recipe and --set values at
+# the smallest size that still shows it; the RTL fixtures and the recorded runs of the same names
+# are made at the same sizes
+FORGE_FIXTURES: dict[str, tuple[str, tuple[str, ...]]] = {
+    "vecadd_v1": ("vecadd_v1", ()),  # B on A's banks: conflicts at level stall
+    "vecadd_v1_1_w1": ("vecadd_v1_1", ("W=1", "N=8")),  # inputs sliced, the output packed
+    "axpy_v1": ("axpy_v1", ("N=8",)),  # a CSR scalar, a padded tail
+    "rowsum_v2_padded": ("rowsum_v2", ("M=4", "N=8", "memory.passes.layout=padded_rows")),
+    "dot_v4": ("dot_v4", ("N=8",)),  # a linked group, a wire
+    "matvec_acc_v2": ("matvec_acc_v2", ("M=2", "N=16")),  # two groups, a seeded fold
+    "mvt_v1_2_2": ("mvt_v1_2_2", ("W=8", "M=8", "N=8")),  # shared movers, the port mux
+    "mvt_v4_1_1_sequential": ("mvt_v4_1_1", ("M=16", "N=16", SEQUENTIAL)),  # the DMA's transpose
+    "mvt_v5_sequential": ("mvt_v5", ("M=16", "N=16", SEQUENTIAL)),  # two accelerators
+    "mvt_v6": ("mvt_v6", ("M=8",)),  # a fork, a seeded bank, a hold
+    "bicg_v4_1": ("bicg_v4_1", ("M=40", "N=32", "R=4")),  # two strips, a carried seed
+}
 
 
 def recipe_path(name: str) -> Path:

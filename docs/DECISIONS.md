@@ -7,7 +7,7 @@ Rules (D117):
 - An entry is a choice with a real alternative that someone may want to reverse: direction, ownership, the interfaces between components, the order of work. Implementation details live in the module's docstring and its tests.
 - An entry says what was decided, why, and where the detail lives, in a few short bullets; an edge case only when there is one. A change is written into the entry, not chained after it.
 - Entries merged into one keep all their numbers in its heading, so a cite of any of them still finds it. A number is never changed or reused; the text of a removed entry is in git history.
-- A new decision gets the next free number, under the area it belongs to. Next free number: **D195**.
+- A new decision gets the next free number, under the area it belongs to. Next free number: **D196**.
 
 Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29–D45, D47–D50, D53, D54, D56, D58–D63, D65–D67, D69, D74, D76–D78, D80, D81, D83, D88–D97, D100, D101, D103, D104, D106, D107, D109, D110, D114, D115, D119, D124, D127, D128, D132, D133, D138–D141, D151, D156, D159, D160, D181.
 
@@ -329,6 +329,12 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 - **Decided:** snax-forge's ELF runs on SNAX-GVSoC and on snax_cluster's RTL. The data must match exactly; each group's BUSY_COUNTER is compared by its gap beyond the group's streamer fill, $e = \max(0, |c_\text{RTL} - c_\text{GVSoC}| - \text{fill}) / c_\text{GVSoC}$. The worst counter gives the verdict: PERFECT when all are equal, NEAR up to 10 %, WARNING up to 15 % (each with an open item, neither blocks a merge), FAIL beyond or on any data error.
 - **Why:** the BUSY_COUNTER counts the streamer's head start, which the core's timing sets and SNAX-GVSoC does not model (open items 65, 67). snax-forge never runs RTL; snax_cluster's `snax-forge-check` does.
 - **Where:** CONTRACTS, "Bundle"; docs/TOOL.md section 6.
+
+### D195 — Fixtures and check sets by feature
+
+- **Decided:** snax-gvsoc's `forge/` holds one folder per integration feature (accelerators, groups, links, fork, bank, hold, carry, seeds, broadcast, slicer and packer, unit CSRs, shared movers, the DMA's transposed copy, schedules, padded rows and tails), each at the smallest size that shows it (`FORGE_FIXTURES` in `tests/helpers.py`); types and ops are left to the datapath testbench. The RTL fixtures and the recorded runs take forge/'s designs at forge/'s sizes, a recorded run keeping only GVSoC's outputs and the sha256 of the files it was made on. `forge-set quick` is about five points, one per feature group, and `full` the same features plus one point each at i8, i16 and i32; a task's own set is kept only while the task is open.
+- **Why:** a folder per type and op variant grew the fixtures, the recorded runs and the sets without testing more of the integration; each type and op is already checked bit for bit against the RTL by the datapath vectors.
+- **Where:** snax-gvsoc's `forge/README.md`; `snax_forge/flow/forge_set.py`; `tests/run/fixtures/*/README.md`.
 
 ## Flow and estimate
 

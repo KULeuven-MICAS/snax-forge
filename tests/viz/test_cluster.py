@@ -160,98 +160,8 @@ def test_a_bad_step_is_refused():
 
 
 # =============================================================================
-# An accelerator of two groups at beat level (dot 1)
+# The recorded runs: two groups on shared movers, two sets, a group of two outputs
 # =============================================================================
-
-
-@pytest.fixture(scope="module")
-def dot1_stall(tmp_path_factory):
-    from snax_forge.viz import api
-    from tests.run.helpers import RECORDED
-
-    from .helpers import recorded_run
-
-    out = recorded_run(
-        tmp_path_factory.mktemp("dot1") / "dot_1_enc_stall", "stall", RECORDED / "dot_v1_1"
-    )
-    return api.load_run(out, "dot_1_enc_stall")
-
-
-def test_the_cluster_view_names_the_unit_that_fires(dot1_stall):
-    """dot_v1_1 (fixtures/dot_v1_1, N = 64, W = 4): at a vmul firing ``acc`` is vmul, its task
-    and fire its own, vsum's entry quiet; at a vsum firing the other way round; each lane's grant
-    is its own mover's."""
-    idx = dot1_stall.index
-    for unit, other in (("vmul", "vsum"), ("vsum", "vmul")):
-        t = next(e["t"] for e in idx.events if e["k"] == "fire" and e["src"] == unit)
-        a = cv.cluster_at(idx, t)["acc"]
-        assert (a["name"], a["accelerator"], a["fire"]["src"]) == (unit, "dot", unit)
-        units = {u["name"]: u for u in a["units"]}
-        assert units[other]["task"] is None and units[other]["fire"] is None
-        assert units[unit]["task"] == ("mult_vmul" if unit == "vmul" else "sum_vsum")
-
-
-def test_the_schedule_marks_the_idle_tasks_and_splits_the_detail(dot1_stall):
-    from snax_forge.viz import schedule
-
-    idx = dot1_stall.index
-    bars = {b["task"]: b["idle"] for lane in schedule.lanes(idx)["lanes"] for b in lane.get("bars", [])
-            if "idle" in b}  # fmt: skip
-    assert sorted(t for t, idle in bars.items() if idle) == [
-        "mult_vsum_a", "mult_vsum_out", "sum_vmul_a", "sum_vmul_b", "sum_vmul_out"]  # fmt: skip
-    assert not bars["mult_vmul_a"] and not bars["sum_vsum"]
-    d = schedule.detail(idx, 0, idx.total_cycles)
-    assert {u: {e["src"] for e in es} for u, es in d["units"].items()} == {
-        "vmul": {"vmul"},
-        "vsum": {"vsum"},
-    }
-
-
-@pytest.fixture(scope="module")
-def dot1_sets(tmp_path_factory):
-    from snax_forge.viz import api
-    from tests.run.helpers import RECORDED
-
-    from .helpers import recorded_run
-
-    out = recorded_run(
-        tmp_path_factory.mktemp("sets") / "dot_1_stall", "stall", RECORDED / "dot_v1"
-    )
-    return api.load_run(out, "dot_1_stall")
-
-
-def test_the_cluster_view_has_a_streamer_per_set(dot1_sets, dot1_stall):
-    """dot 1 (fixtures/dot_1): two streamers inside the accelerator, vmul's busy at a vmul firing
-    and vsum's quiet; dot_v1_1 one, busy with both groups' tasks."""
-    idx = dot1_sets.index
-    t = next(e["t"] for e in idx.events if e["k"] == "fire" and e["src"] == "vmul")
-    a = cv.cluster_at(idx, t)
-    assert [(s["name"], s["groups"], s["first"], s["last"], s["movers"]) for s in a["streamers"]] == [
-        ("vmul", ["vmul"], 960, 977, ["vmul_a", "vmul_b", "vmul_out"]),
-        ("vsum", ["vsum"], 982, 994, ["vsum_a", "vsum_out"])]  # fmt: skip
-    assert [(s["busy"], s["task"]) for s in a["streamers"]] == [
-        (True, "mult_vmul_a"),
-        (False, None),
-    ]
-    assert {u["name"]: u["set"] for u in a["acc"]["units"]} == {"vmul": "vmul", "vsum": "vsum"}
-    (one,) = cv.cluster_at(dot1_stall.index, t)["streamers"]
-    assert (one["name"], one["groups"], one["movers"]) == (
-        "dot", ["vmul", "vsum"], ["vmul_a", "vmul_b", "vsum_a", "vmul_out", "vsum_out"])  # fmt: skip
-
-
-def test_the_schedule_groups_lanes_accelerator_then_group(dot1_sets, dot1_stall):
-    """As the editor's Bindings: per accelerator, per group its movers then its unit."""
-    from snax_forge.viz import schedule
-
-    def order(run):
-        return [(x["accelerator"], x["group"], x["name"]) for x in schedule.lanes(run.index)["lanes"]
-                if x["kind"] in ("mover", "accelerator")]  # fmt: skip
-
-    assert order(dot1_sets) == [
-        ("vmul", "vmul", "vmul_a"), ("vmul", "vmul", "vmul_b"), ("vmul", "vmul", "vmul_out"),
-        ("vmul", "vmul", "vmul"), ("vsum", "vsum", "vsum_a"), ("vsum", "vsum", "vsum_out"),
-        ("vsum", "vsum", "vsum")]  # fmt: skip
-    assert [x[:2] for x in order(dot1_stall)] == [("dot", "vmul")] * 4 + [("dot", "vsum")] * 3
 
 
 def _recorded(tmp_path_factory, fixture, level):
@@ -265,37 +175,107 @@ def _recorded(tmp_path_factory, fixture, level):
     return api.load_run(out, name)
 
 
-def test_a_shared_movers_mux_serves_the_user_of_the_firing_unit(tmp_path_factory):
-    """dot_v1_2: reader0 serves vmul_a at a vmul firing and vsum_a at a vsum firing; reader1,
-    vmul's only, serves no one in the idle task it runs with vsum; an unshared run has no user."""
-    idx = _recorded(tmp_path_factory, "dot_v1_2", "stall").index
-    for unit, users in (
-        ("vmul", ("vmul_a", "vmul_b", "vmul_out")),
-        ("vsum", ("vsum_a", None, "vsum_out")),
+@pytest.fixture(scope="module")
+def shared(tmp_path_factory):
+    """mvt_v1_2_2 at stall: one accelerator of two groups, mvt and vadd, on shared movers."""
+    return _recorded(tmp_path_factory, "mvt_v1_2_2", "stall")
+
+
+@pytest.fixture(scope="module")
+def two_sets(tmp_path_factory):
+    """mvt_v5_sequential at task: two accelerators, mvt and mac_x2, each its own set."""
+    return _recorded(tmp_path_factory, "mvt_v5_sequential", "task")
+
+
+def test_the_cluster_view_names_the_unit_that_fires(shared):
+    """At an mvt firing ``acc`` is mvt, its task and fire its own, vadd's entry quiet; at a vadd
+    firing the other way round."""
+    idx = shared.index
+    for unit, other, task in (
+        ("mvt", "vadd", "tmp0_mult_mvt"),
+        ("vadd", "mvt", "augassign_18_4_vadd"),
     ):
         t = next(e["t"] for e in idx.events if e["k"] == "fire" and e["src"] == unit)
-        at = cv.cluster_at(idx, t)
-        got = tuple(
-            at["movers"][f"dot_{m}.lane0"]["user"] for m in ("reader0", "reader1", "writer0")
-        )
-        assert got == users
-        assert at["movers"]["dot_reader0.lane3"]["user"] == users[0]
-        assert "dot_reader0" in at["acc"]["fire"]["b"]
+        a = cv.cluster_at(idx, t)["acc"]
+        assert (a["name"], a["accelerator"], a["fire"]["src"]) == (unit, "mvt_vadd", unit)
+        units = {u["name"]: u for u in a["units"]}
+        assert units[other]["task"] is None and units[other]["fire"] is None
+        assert units[unit]["task"] == task
+
+
+def test_the_schedule_splits_the_detail_by_unit(shared):
+    from snax_forge.viz import schedule
+
+    idx = shared.index
+    bars = [b for lane in schedule.lanes(idx)["lanes"] for b in lane.get("bars", []) if "idle" in b]
+    assert bars and not any(b["idle"] for b in bars)  # every mover is used by both groups
+    d = schedule.detail(idx, 0, idx.total_cycles)
+    assert {u: {e["src"] for e in es} for u, es in d["units"].items()} == {
+        "mvt": {"mvt"}, "vadd": {"vadd"}}  # fmt: skip
+
+
+def test_the_cluster_view_has_a_streamer_per_set(two_sets, shared):
+    """Two streamers inside the cluster, mvt's busy once mvt starts and mac_x2's quiet; the
+    shared set one, holding both groups."""
+    idx = two_sets.index
+    t = next(e["t"] for e in idx.events if e["k"] == "start" and e["src"] == "mvt")
+    a = cv.cluster_at(idx, t + 1)
+    assert [(s["name"], s["groups"], s["first"], s["last"], s["movers"]) for s in a["streamers"]] == [
+        ("mvt", ["mvt"], 960, 986, ["vmul_x1_a", "vmul_x1_b", "vsum_x1_seed", "vsum_x1_out"]),
+        ("mac_x2", ["mac_x2"], 992, 1018, ["mac_x2_a", "mac_x2_b", "mac_x2_seed", "mac_x2_out"]),
+    ]  # fmt: skip
+    assert [(s["busy"], s["task"]) for s in a["streamers"]] == [(True, "tmp1_mult_vmul_x1_a"),
+                                                                (False, None)]  # fmt: skip
+    assert {u["name"]: u["set"] for u in a["acc"]["units"]} == {"mvt": "mvt", "mac_x2": "mac_x2"}
+    (one,) = cv.cluster_at(shared.index, 300)["streamers"]
+    assert (one["name"], one["groups"]) == ("mvt_vadd", ["mvt", "vadd"])
+
+
+def test_the_schedule_groups_lanes_accelerator_then_group(two_sets, shared):
+    """As the editor's Bindings: per accelerator, per group its movers then its unit."""
+    from snax_forge.viz import schedule
+
+    def order(run):
+        return [(x["accelerator"], x["group"], x["name"]) for x in schedule.lanes(run.index)["lanes"]
+                if x["kind"] in ("mover", "accelerator")]  # fmt: skip
+
+    assert order(two_sets) == [
+        *(("mvt", "mvt", m) for m in ("vmul_x1_a", "vmul_x1_b", "vsum_x1_seed", "vsum_x1_out", "mvt")),
+        *(("mac_x2", "mac_x2", m) for m in ("mac_x2_a", "mac_x2_b", "mac_x2_seed", "mac_x2_out",
+                                            "mac_x2")),
+    ]  # fmt: skip
+    assert [x[:2] for x in order(shared)] == [("mvt_vadd", "mvt")] * 4 + [("mvt_vadd", "vadd")] * 4
+
+
+def test_a_shared_movers_mux_serves_the_user_of_the_firing_unit(shared):
+    """At an mvt firing reader0, reader1 and writer0 serve vmul_x1_a, vmul_x1_b and vsum_x1_out,
+    on every lane; at a vadd firing writer0 serves vadd_out; an unshared run has no user."""
+    idx = shared.index
+    t = next(e["t"] for e in idx.events if e["k"] == "fire" and e["src"] == "mvt")
+    at = cv.cluster_at(idx, t)
+    got = tuple(
+        at["movers"][f"mvt_vadd_{m}.lane0"]["user"] for m in ("reader0", "reader1", "writer0")
+    )
+    assert got == ("vmul_x1_a", "vmul_x1_b", "vsum_x1_out")
+    assert at["movers"]["mvt_vadd_reader0.lane7"]["user"] == "vmul_x1_a"
+    assert "mvt_vadd_reader0" in at["acc"]["fire"]["b"]
+    t = next(e["t"] for e in idx.events if e["k"] == "fire" and e["src"] == "vadd")
+    assert cv.cluster_at(idx, t)["movers"]["mvt_vadd_writer0.lane0"]["user"] == "vadd_out"
     assert "user" not in cv.cluster_at(run().index("stall", total=30), 10)["movers"]["acc_a.lane0"]
 
 
-def test_a_linked_group_at_task_says_what_needs_beat(tmp_path_factory):
-    """dot_v4 (mac → sum linked): at task the grants need beat, with no ``filtered``."""
-    idx = _recorded(tmp_path_factory, "dot_v4", "task").index
-    t = next(e["t"] for e in idx.events if e["k"] == "start" and e["src"] == "dot")
+def test_a_linked_group_at_task_says_what_needs_beat(two_sets):
+    """mvt (vmul_x1 → vsum_x1 linked): at task the grants need beat, with no ``filtered``."""
+    idx = two_sets.index
+    t = next(e["t"] for e in idx.events if e["k"] == "start" and e["src"] == "mvt")
     at = cv.cluster_at(idx, t + 1)
     assert at["filtered"] is None and at["needs"]["grant"] == "beat" and "linked" not in at
-    assert at["acc"]["task"] == "mult_dot"
+    assert at["acc"]["task"] == "tmp1_mult_mvt"
 
 
 def test_a_group_of_two_outputs_shows_each_push_of_a_cycle(tmp_path_factory):
-    """bicg_v3 at t = 266: q's push 62 and s's one push in one cycle, each with its sink."""
-    idx = _recorded(tmp_path_factory, "bicg_v3", "stall").index
-    (u,) = cv.cluster_at(idx, 266)["acc"]["units"]
-    assert [(p["unit"], p["n"]) for p in u["pushes"]] == [("sum", 62), ("mac", 0)]
+    """bicg_v4_1 at t = 400: q's push 38 and s's first push in one cycle, each with its sink."""
+    idx = _recorded(tmp_path_factory, "bicg_v4_1", "beat").index
+    (u,) = cv.cluster_at(idx, 400)["acc"]["units"]
+    assert [(p["unit"], p["n"]) for p in u["pushes"]] == [("sum", 38), ("mac", 0)]
     assert u["push"] is u["pushes"][0]

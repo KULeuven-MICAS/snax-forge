@@ -51,15 +51,15 @@ The modules, whose behaviour C§10 states:
 
 - Only the outer ports reach the wrapper, which splits each Decoupled port: its data to its unit's datapath, its valid and ready to its group's control unit. A forked input is one reader: its data and valid to each of its units, its ready the AND of theirs. A shared set's outer ports are its movers, reached through the port mux.
 - `pixi run gen-rtl DESIGN_POINT` checks and elaborates (`docs/TOOL.md` section 3), running `Emit` with java on hw/chisel's runtime classpath, which sbt exports once into `target/emit-classpath-<hash>.txt`, again after a change under `src/main/` or to `build.sbt`.
-- The fixtures in `src/test/resources/rtl/<design>/` hold `vectors.json`; their `accelerator.json` and streamer hjsons are read from snax-gvsoc's `forge/<design>/` (a spec that needs one cancels without the submodule), but vsum_v1_1_w8, dot_v5_w1 and bicg_v3_w64, which `forge/` does not hold, keep them beside their vectors. `tests/gen/test_rtl.py` checks them byte for byte. Refresh one with:
+- The fixtures in `src/test/resources/rtl/<design>/` are snax-gvsoc's `forge/` designs at forge/'s sizes (`FORGE_FIXTURES` in `tests/helpers.py`; not axpy_v1 and rowsum_v2_padded, which the specs that drive every fixture have no model for) and three a spec needs that `forge/` does not hold: vsum_v1 (`ShellCasesSpec`'s fold wrapper), vsum_v1_1_1 (`ShellPackedSpec`'s sum) and dot_v1_2 (`ShellEndToEndSpec`'s port mux run). A design of one accelerator task holds `vectors.json`, one of several a README only; their `accelerator.json` and streamer hjsons are read from `forge/<design>/` (a spec that needs one cancels without the submodule), the three others keep them beside. `tests/gen/test_rtl.py` checks them byte for byte. Refresh one with:
 
 ```bash
-pixi run sandbox recipes/reduce/vsum_v1_1.json --set W=8 --out out/sandbox/vsum_v1_1_w8
-pixi run design out/sandbox/vsum_v1_1_w8/2_bind.snaxdfg --platform platforms/snax_forge.json --out out/design/vsum_v1_1_w8
-pixi run gen-rtl out/design/vsum_v1_1_w8/design_point.json --fixture hw/chisel/src/test/resources/rtl/vsum_v1_1_w8
+pixi run sandbox recipes/reduce/vsum_v1.json --out out/sandbox/vsum_v1
+pixi run design out/sandbox/vsum_v1/2_bind.snaxdfg --platform platforms/snax_forge.json --out out/design/vsum_v1
+pixi run gen-rtl out/design/vsum_v1/design_point.json --fixture hw/chisel/src/test/resources/rtl/vsum_v1
 ```
 
-The others come from their recipe as it is, named after it; dot_v2 to dot_v6 with `--set N=16`, matvec_v4 to matvec_v6 with `--set M=2 --set N=16`, vecadd_v1_1_w1 from vecadd_v1_1 with `--set W=1`, and bicg_v3_w64 from bicg_v3 with `--set M=64 --set N=64 --set W=64` (`forge/bicg_v3` is the recipe's 64 × 32 at W = 32), so each of its int8 arrays fills whole DMA beats (the specs stream a re-read port's array modulo its size, which padding would break). bicg_v4 (s's bank of 16 rows, r held, D191 · D190) and bicg_v4_1 (two strips of a bank of 8, q carried, D192) are their recipes at 64 × 64, W = 4; bicg_v4_1's readers go a strip at a time, not in its arrays' order, so ShellEndToEndSpec counts its words and ShellRandomSpec checks its values.
+A forge/ design takes its `--set` values from `FORGE_FIXTURES` (a recipe param on the sandbox step, a `memory.` or `design.` path on the design step). mvt_v6 is at N = 64 so y1's int8 fill whole DMA beats (the specs stream a re-read port's array modulo its size, which padding would break); bicg_v4_1's readers go a strip at a time, not in its arrays' order, so ShellEndToEndSpec counts its words and ShellRandomSpec checks its values.
 
 The specs on the fixtures:
 
@@ -67,9 +67,9 @@ The specs on the fixtures:
 |---|---|
 | `ShellEmitSpec` | one emit each: the wrapper's ports are the template's for its streamer hjson plus the group pins; the hierarchy is `bundle.json`'s `modules` (C§11); `emitted.json` lists every file |
 | `ShellCasesSpec` | vecadd's and vsum's wrappers through snax-gvsoc's shell cases (below) |
-| `ShellEndToEndSpec` | `main.c`'s CSR writes with an always-ready streamer: the goldens and counter of `vectors.json` (bicg_v3's two outputs, A's one reader for both chains); dot_v1_2's two tasks through its port mux; each linked variant (dot 2–6, matvec 4–6) at N 8 and 16 on random data against NumPy and snax-gvsoc's group cases, matvec 4–6 also at int32 through the wrapping product |
+| `ShellEndToEndSpec` | `main.c`'s CSR writes with an always-ready streamer: the goldens and counter of `vectors.json` (bicg_v4_1's and mvt_v6's two outputs, A's one reader for both chains); dot_v1_2's two tasks through its port mux; the linked dot 4 at N 8 and 16 on random data against NumPy and snax-gvsoc's group cases |
 | `CtrlRegistersSpec` | every `<tag>_<group>_ctrl`'s registers, by name and bits, equal to `ctrl_registers.json` (from `util/ctrl_regs.py --json`, which `tests/estimate/test_bits.py` keeps current) |
-| `TwoGroupsSpec` | each of dot 1's groups (`mul`, `sum`) on its own |
+| `TwoGroupsSpec` | each of matvec_acc_v2's groups (`mul`, `sum`) on its own |
 | `ShellPackedSpec` | a packed outer output (D174): vsum_v1_1_1's sum changed by hand to int32 at d_out 2, its 64-bit writer and its words over 3 jobs, the last short |
 | `ShellSlicedSpec` | a sliced outer input (D180): the fixture vecadd_v1_1_w1 (a and b at int32 d_in 2, out d_out 2), its 64-bit readers and 3 jobs from 2 words each, the last short, into 2 words |
 
@@ -78,7 +78,7 @@ The specs on the fixtures:
 `Emit --block NAME --params JSON --out DIR` (C§10) checks the params (`Datapath.check`) and builds `make(params)` as the top module with an asynchronous reset, as inside the wrapper; `pixi run gen-block LIST.json` runs a list of them in one java call. The reset comes from `DatapathModule.asyncTop`, which `emitBlock` sets around the construction, so no block, builder or wrapper changes. `NAME` may also be a stream block of `Emit.streamBlocks` (`FifoPacker`, `FifoSlicer`), its params checked in `Emit` and built with `RequireAsyncReset`.
 
 - `BlockEmitSpec`: a block of every datapath (Mac in its three forms and seeded, SerialAccumulate at lanes 1 and 8, LinkBuffer at depth 1 and 2), its ports against `blocks.json`'s live ports and pins, every flop on `posedge clock or posedge reset`; FifoPacker at int32, int16 and int8 (d_out 2, 4, 8), at int32 byte for byte the packer in ShellPackedSpec's wrapper; FifoSlicer at one word of int32 (1 lane), int16 (1, 2) and int8 (1, 2, 4), at int32 byte for byte the slicer in ShellSlicedSpec's wrapper.
-- `BlockInShellSpec`: the block alone byte for byte equal to the module inside the accelerator (vsum_v1_1_w8's TreeAccumulate, dot_v5_w1's Mac); dot_v5_w1's SerialAccumulate differs only where firtool folds its constant `first`.
+- `BlockInShellSpec`: the block alone byte for byte equal to the module inside the accelerator (dot_v4's Mac); dot_v4's TreeAccumulate differs only where firtool folds its constant `first`.
 - `BlockFlopsSpec`: a block of every datapath at random params per seed (the Mac in its three forms and seeded), its declared register bits equal to its `flops`.
 
 ## The shared cases

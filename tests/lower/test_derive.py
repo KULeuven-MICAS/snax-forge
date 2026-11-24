@@ -50,7 +50,7 @@ def point(graph="vecadd_accelerated", memory=(), sets=None, edit_graph=None) -> 
 
 
 def test_vecadd_on_snax_forge_gives_its_checked_in_task_list():
-    """Equal to tests/run/fixtures/vecadd_v1/tasks.json, the run fixture's."""
+    """Equal to tests/lower/fixtures/vecadd_v1_tasks.json."""
     d = Design(Platform.load(SNAX_FORGE), bound_vecadd(4))
     assert run_checks(d) == []
     got = task_list(DesignPoint.of(d, "vecadd_v1"))

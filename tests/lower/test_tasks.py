@@ -35,7 +35,7 @@ from .helpers import (
 
 
 def test_the_checked_in_task_list_round_trips():
-    """vecadd's on snax_forge, as tests/run keeps it: the same data back, byte for byte."""
+    """vecadd's on snax_forge, as checked in: the same data back, byte for byte."""
     d = json.loads(VECADD_TASKS.read_text())
     tasks = TaskList.from_dict(d)
     assert tasks.to_dict() == d

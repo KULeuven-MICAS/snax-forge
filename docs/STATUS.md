@@ -185,7 +185,7 @@ Dates: 20 Nov, track A's target (fine if it slips); 27 Nov, the softmax gate (so
 
 ## Open Items
 
-Questions not decided yet. Numbers are never reused; a closed item is removed, and where it closed is in git history. Next free number: 162.
+Questions not decided yet. Numbers are never reused; a closed item is removed, and where it closed is in git history. Next free number: 163.
 
 1. BRM dataflow notation: `affine` and `stream` (D70), frozen in M6.
 2. What automated search reads and how a sweep is configured (DSE1, M8).
@@ -419,6 +419,7 @@ Questions not decided yet. Numbers are never reused; a closed item is removed, a
 159. A carried seed's reader started late (D192) instead of reading the first strip and dropping it: started by the control unit about CARRY jobs into the run, it would save M seed reads (32 words, about 3 % of `bicg_v4_1`'s L1 reads) and the rule would not take a seed on the first strip. It needs a reader of a streamer set to start apart from the others, which neither snax_cluster's streamer nor SNAX-GVSoC's has; for when the streamer changes anyway.
 160. `vectors.json` gives each port's array in memory order, which ShellEndToEndSpec streams beat by beat; a strided reader (`bicg_v4_1`'s strips, its seed read back through L1) needs each port's order too, or the spec the streamer's loops, before its goldens are checked on the wrapper.
 161. bicg_v2_1 at W = 16 under `pipeline` (TIERA2 B8b, open item 95): s's counter is 272 on vsim against 267 on SNAX-GVSoC, 2 beyond its fill of 3 (NEAR 0.7 %), q's 271 against 269 within it; at W = 8 and 32 both are within the fill (s 536 against 534, 140 against 138). On SNAX-GVSoC the two passes' reads of A meet in 78 bank conflicts at W = 16, s's reader of A refused 30 times. TIERA2 C2, SNAX-GVSoC at `--trace stall` (the converter stops at open item 157's invariant on `mac_b`, so read from `events.log`): s's group is 256 busy, 10 stall_in and 1 flush cycles, its stall_in single cycles spread through the run where its reader of A is refused (15 times a lane, 13 of them by q's reader of A: the two passes' reads of A meeting on a bank); q's reader of A is refused 9 times a lane, 6 and 8 of them by s's and one by the DMA. The RTL's 5 more cycles are not placed: its run has no trace of its readers' refusals, so whether the RTL's crossbar orders these same meetings the other way (as open item 139) stays open; a waveform of the two A readers' requests and grants on vsim is the next check.
+162. The converter refuses two recorded designs at trace level `stall` while their `task` and `beat` levels convert: bicg_v4_1 (the fork, the bank and the carried seed) at every size tried, "mul_a lane 0: fifo counts ... its words visible minus popped give ..." (the forked readers' FIFO counts against their grants), and mvt_v5 sequential at 16 × 16 and 64 × 64, "mac_x2_seed's beat -1 granted as [None, ...]" (the seeded `Mac`'s seed reader). Their recorded runs (`tests/run/fixtures/`) are at `beat` and `task` until the stall check takes them.
 
 ## Sync Reminders
 

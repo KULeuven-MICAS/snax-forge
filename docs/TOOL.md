@@ -281,12 +281,12 @@ One ELF, snax-forge's, runs on SNAX-GVSoC and on snax_cluster's RTL. The RTL run
 | Command | What it does | Writes |
 |---|---|---|
 | `pixi run forge RECIPE` | the flow, the bundle of its design point with `forge_expected.txt`, the bundle's ELF (checked to be the flow's), then snax_cluster's commands for the design | `out/forge/<name>/forge.log`, `out/bundle/<name>/` |
-| `pixi run forge-set quick\|full\|mvt\|pack\|bicg` | forge on every recipe of a set at once | `out/forge-set/<set>.md`, `out/forge-set/<set>/<design>.txt`, and one line to run in snax_cluster |
+| `pixi run forge-set quick\|full` | forge on every recipe of a set at once | `out/forge-set/<set>.md`, `out/forge-set/<set>/<design>.txt`, and one line to run in snax_cluster |
 
 - `forge` takes `--platform` (default `platforms/snax_forge.json`), `--set` and `--trace`, passed to the flow. `forge-set` takes `--sim vsim|vlt` and `-j N`.
 - `forge_expected.txt` holds the run's counter and data lines, then each counter's `forge fill`, its group's streamer fill from the estimate.
 - Beside `forge.elf`, forge leaves `forge_quiet.elf` (the same `main.c` with `-DFORGE_QUIET`: every start waited on at once, each section marked in CSR `0x7c5`, no prints) and its legend `obs_marks.json`, for a power run on the netlist.
-- The sets: `quick` is vecadd_v1_1, vsum_v1_1_2, dot_v1, dot_v1_1, dot_v4, axpy_v1, vsum_v1_1 and matvec_v3 at `types=i8`, W = 8 (packed outputs, D174), and vecadd_v1_1 at W = 1 (sliced inputs, D180). `full` adds seventeen more (the list in `snax_forge/flow/forge_set.py`), among them matvec_1, matvec_acc_v1, matvec_acc_v2 and rowsum_v2 twice. `mvt` is 36 bundles at M = N = 64, the recipes' defaults: mvt_1, mvt_v1_2, mvt_v1_2_2, mvt_v2, mvt_v2_2 and mvt_v4 at W = 4 and 8, contiguous and `padded_rows`, mvt_v2_1 and mvt_v3 (W = 8) at their defaults, mvt_v3_1 (W = 8) contiguous and `padded_rows` under each of D179's schedules, and mvt_v4 and mvt_v4_1 (W = 8) contiguous and `padded_rows` under `sequential` (D183); not in the other two. `pack` is 30 narrow designs: every recipe with narrow types at i8 and W = 8, dot_v7 at i32, and dot_v3 and matvec_v3 at W = 32, dot_v3 at i16 and i32, vecadd at W = 1 and matvec_v3 at W = 4 (sliced inputs).
+- The sets (D195): `quick` is one point per integration feature, vecadd_v1_1 at W = 1 (sliced inputs, a packed output), axpy_v1, dot_v4, mvt_v1_2_2 at W = 8 (shared movers) and bicg_v4_1 (the fork, the bank, the hold and the carry). `full` adds vecadd_v1, rowsum_v2 under `padded_rows`, matvec_acc_v2, mvt_v4_1_1 and mvt_v5 under `sequential`, mvt_v6, and one point each at i8 (vsum_v1_1), i16 and i32 (dot_v3): 14 in all (`snax_forge/flow/forge_set.py`).
 - When each set is due is CLAUDE.md's rule: the quick set on vsim before a PR that changes the emitted RTL or `main.c` merges, the full set at a phase's close, the numbers into open item 95.
 
 Example:
@@ -295,7 +295,7 @@ Example:
 pixi run forge-set quick
 ```
 
-    forge-set quick: 8 designs, 32 at a time; each forge's output in out/forge-set/quick/<design>.txt
+    forge-set quick: 5 designs, 32 at a time; each forge's output in out/forge-set/quick/<design>.txt
       vecadd_v1_1       passed
       ...
       axpy             passed

@@ -97,8 +97,8 @@ def test_the_rtl_fixtures_ctrl_registers_json_is_current():
         pytest.skip("gvsoc/snax-gvsoc is not checked out: the fixtures' accelerator.json")
     assert ctrl_regs.REGISTERS_JSON.read_text() == ctrl_regs.estimated()
     units = json.loads(ctrl_regs.REGISTERS_JSON.read_text())
-    assert units["dot_v2"]["snax_forge_dot_v2_dot_ctrl"][-2:] == [
-        ["mul_sum_occupancy", 1],
+    assert units["mvt_v5_sequential"]["snax_forge_mvt_v5_mvt_ctrl"][-2:] == [
+        ["vmul_x1_vsum_x1_occupancy", 1],
         ["done", 1],
     ]
 

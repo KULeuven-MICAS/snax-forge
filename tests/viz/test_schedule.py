@@ -154,7 +154,9 @@ def test_a_bar_has_its_class_runs_from_beat():
 
 def test_the_recorded_runs_function_band_starts_at_0_in_main(tmp_path):
     rv = api.load_run(recorded_run(tmp_path / "rec", "task"), "rec")
-    for lane in sc.lanes(rv.index)["lanes"][:2]:
+    cores = [lane for lane in sc.lanes(rv.index)["lanes"] if "funcs" in lane]
+    assert len(cores) == rv.cluster.nb_cores
+    for lane in cores:
         first, second = lane["funcs"][:2]
         assert (first["from"], first["name"]) == (0, "main")
         assert first["to"] == second["from"] and second["name"].startswith("forge_core_")

@@ -217,6 +217,9 @@ def test_the_flow_wrote_them(flows):
 def test_the_recorded_vecadd_run(flows, tmp_path):
     """The recorded SNAX-GVSoC run (tests/run/fixtures/vecadd) in a flow folder: the reports of
     real events render."""
+    from tests.run.helpers import recorded_files
+
+    made = recorded_files("vecadd_v1")
     folder = tmp_path / "vecadd_task"
     shutil.copytree(flows[("vecadd", "task")], folder)
     for f in (
@@ -225,12 +228,12 @@ def test_the_recorded_vecadd_run(flows, tmp_path):
         "accelerator.json",
         "manifest.json",
     ):
-        shutil.copy(FIXTURE / f, folder / "gen" / f)
-    shutil.copy(FIXTURE / "tasks.json", folder / "tasks.json")
+        shutil.copy(made / f, folder / "gen" / f)
+    shutil.copy(made / "tasks.json", folder / "tasks.json")
     check = json.loads((FIXTURE / "check.json").read_text())
-    cluster = load_cluster(FIXTURE / "snax_forge.hjson", FIXTURE / "design_point.json")
-    profile, trace = convert(read_events(FIXTURE / "events.log"), cluster,
-                             TaskList.load(FIXTURE / "tasks.json"), check["total_cycles"], "task",
+    cluster = load_cluster(made / "snax_forge.hjson", made / "design_point.json")
+    profile, trace = convert(read_events(FIXTURE / "events_task.log"), cluster,
+                             TaskList.load(made / "tasks.json"), check["total_cycles"], "task",
                              check["functional_check"])  # fmt: skip
     write_run(folder / "run", profile, trace)
     r = reports_of(folder)
@@ -311,10 +314,9 @@ def test_the_command_line(flows, tmp_path, capsys):
 # =============================================================================
 
 
-def designed_report(tmp_path, recipe, sets=()):
+def designed_report(tmp_path, recipe, sets=(), tech="nangate45"):
     """The design report of ``recipes/<folder>/<recipe>.json`` (``--set`` each of ``sets``) designed
-    on
-    snax_forge (no run)."""
+    on snax_forge (no run), its estimate on ``tech`` (None: no cost)."""
     from snax_forge.gen import generate
     from snax_forge.report.design import build_design
     from snax_forge.sandbox import Recipe
@@ -326,7 +328,7 @@ def designed_report(tmp_path, recipe, sets=()):
         generate(rel, tmp_path / "gen", root=tmp_path)
     point = DesignPoint.load(tmp_path / rel)
     cluster = load_cluster(tmp_path / "gen" / "snax_forge.hjson", tmp_path / rel)
-    return build_design(recipe, cluster, point, Recipe.load(recipe_path(recipe)))
+    return build_design(recipe, cluster, point, Recipe.load(recipe_path(recipe)), tech=tech)
 
 
 def test_a_mover_shows_its_dtype_k_and_channels(tmp_path):
@@ -425,73 +427,94 @@ def test_the_extents_include_the_padding(tmp_path):
 
 
 # =============================================================================
-# Several groups: dot_v1_1's recorded run
+# Several groups: dot_v1_1's and dot_v4's designs, mvt_v1_2_2's and mvt_v5_sequential's runs
 # =============================================================================
 
 
 @pytest.fixture(scope="module")
 def dot1(tmp_path_factory):
+    """dot_v1_1's design report: two groups in one accelerator (no run)."""
+    return designed_report(tmp_path_factory.mktemp("dot1"), "dot_v1_1")
+
+
+@pytest.fixture(scope="module")
+def dot4(tmp_path_factory):
+    """dot_v4's design report: a linked group, at N = 512, W = 4 (no run)."""
+    return designed_report(tmp_path_factory.mktemp("dot4"), "dot_v4")
+
+
+@pytest.fixture(scope="module")
+def shared(tmp_path_factory):
+    """mvt_v1_2_2's recorded run at task: two groups on one set's shared movers."""
+    from tests.run.helpers import RECORDED
     from tests.viz.helpers import recorded_run
 
-    fixture = Path(__file__).resolve().parents[1] / "run" / "fixtures" / "dot_v1_1"
-    return recorded_run(tmp_path_factory.mktemp("dot1") / "dot_1_enc_task", "task", fixture)
+    return recorded_run(tmp_path_factory.mktemp("shared") / "mvt_v1_2_2_task", "task",
+                        RECORDED / "mvt_v1_2_2")  # fmt: skip
 
 
-def test_the_run_report_names_each_tasks_group(dot1):
-    r = reports_of(dot1)
+@pytest.fixture(scope="module")
+def two_sets(tmp_path_factory):
+    """mvt_v5_sequential's recorded run at task: two accelerators, one set each, mvt linked."""
+    from tests.run.helpers import RECORDED
+    from tests.viz.helpers import recorded_run
+
+    return recorded_run(tmp_path_factory.mktemp("sets") / "mvt_v5_task", "task",
+                        RECORDED / "mvt_v5_sequential")  # fmt: skip
+
+
+def test_the_run_report_names_each_tasks_group(shared):
+    r = reports_of(shared)
     groups = {t.name: t.group for t in r.run.tasks}
-    assert (groups["mult_vmul"], groups["mult_vmul_a"], groups["mult_vsum_a"]) == ("vmul",) * 3
-    assert (groups["sum_vsum"], groups["sum_vmul_a"], groups["sum_vsum_out"]) == ("vsum",) * 3
+    assert (groups["tmp0_mult_mvt"], groups["tmp0_mult_vmul_x1_a"], groups["sum_vsum_x1_out"]) == (
+        "mvt",) * 3  # fmt: skip
+    assert (groups["augassign_18_4_vadd"], groups["augassign_18_4_vadd_a"]) == ("vadd",) * 2
     assert groups["load_A"] is None
     assert [(a.name, a.group, a.firings) for a in r.run.accelerators] == [
-        ("vmul", "vmul", 16), ("vsum", "vsum", 16)]  # fmt: skip
+        ("mvt", "mvt", 16), ("vadd", "vadd", 2)]  # fmt: skip
     text = render_run(r.run)
     assert (
         "| Block | Group | # | Task | Accelerator | Start | Done | Cycles | Direction | Bytes |"
         in text
     )
-    assert (
-        "| vmul | vmul | 0 | mult_vmul | dot |" in text
-        and "| vsum_a | vmul | 0 | mult_vsum_a (idle) | dot |" in text
-    )
+    assert "| mvt | mvt | 0 | tmp0_mult_mvt | mvt_vadd |" in text
+    assert "| mvt_vadd_reader0 | vadd | 1 | augassign_18_4_vadd_a | mvt_vadd |" in text
     assert "| Unit | Group | Firings |" in text
-    # the other group's movers, started only for the shared start, tagged idle
-    idle = sorted(t.name for t in r.run.tasks if t.idle)
-    assert idle == ["mult_vsum_a", "mult_vsum_out", "sum_vmul_a", "sum_vmul_b", "sum_vmul_out"]
+    # every mover is used by both groups: no idle task
+    assert not any(t.idle for t in r.run.tasks) and "(idle)" not in text
     # each group's movers in a collapsible under Accelerators
+    movers = ["mvt_vadd_reader0", "mvt_vadd_reader1", "mvt_vadd_writer0"]
     assert [(g.group, [m.name for m in g.movers]) for g in r.run.group_movers] == [
-        ("vmul", ["vmul_a", "vmul_b", "vmul_out"]), ("vsum", ["vsum_a", "vsum_out"])]  # fmt: skip
-    assert "<details>\n<summary>vmul ▸ vmul_a, vmul_b, vmul_out</summary>" in text
-    assert "<summary>vsum ▸ vsum_a, vsum_out</summary>" in text
-    assert text.index("## Accelerators") < text.index("<summary>vmul ▸") < text.index("## Cores")
+        ("mvt", movers), ("vadd", movers)]  # fmt: skip
+    assert "<details>\n<summary>mvt ▸ " + ", ".join(movers) + "</summary>" in text
+    assert text.index("## Accelerators") < text.index("<summary>mvt ▸") < text.index("## Cores")
 
 
-def test_the_port_table_leaves_out_the_idle_tasks(tmp_path):
-    """Dot 1 at stall (fixtures/dot_1): the Data movement port table has no lane of the five
-    idle streamer tasks, and one line under it says they are left out."""
+def test_the_port_table_has_every_streamer_task(tmp_path):
+    """mvt_v1_2_2 at stall: the Data movement port table has a lane of each of its 12 streamer
+    tasks, none idle, so no line about idle ones."""
     from tests.run.helpers import RECORDED
     from tests.viz.helpers import recorded_run
 
-    r = reports_of(recorded_run(tmp_path / "dot_1_enc_stall", "stall", RECORDED / "dot_v1_1")).run
+    r = reports_of(recorded_run(tmp_path / "shared_stall", "stall", RECORDED / "mvt_v1_2_2")).run
     tasks = {p.task for p in r.movement.patterns}
-    assert tasks == {"mult_vmul_a", "mult_vmul_b", "mult_vmul_out", "sum_vsum_a", "sum_vsum_out"}
-    assert r.movement.idle_left_out == 5
-    assert ("The 5 idle streamer tasks (every temporal bound 0, started only for the shared start; "
-            "tagged idle under Tasks) are left out.") in render_run(r)  # fmt: skip
+    assert len(tasks) == 12 and {"tmp0_mult_vmul_x1_a", "augassign_19_4_vadd_out"} <= tasks
+    assert r.movement.idle_left_out == 0
+    assert "idle streamer tasks" not in render_run(r)
 
 
 def test_the_bank_notes_compare_the_streamers_of_one_group(dot1):
     """Dot 1's mul_a and mul_b keep their note (A and B a whole number of bank rows
     apart); nothing pairs a mul streamer with a sum one (the groups run one after the other):
     no note on mul_a and sum_out, none on tmp0 against itself through mul_out and sum_a."""
-    notes = reports_of(dot1).design.notes
+    notes = dot1.notes
     assert any(n.startswith("vmul_a and vmul_b: A and B lie ") for n in notes), notes
     assert not any("vsum_" in n and "vmul_" in n for n in notes), notes
     assert not any("tmp0 and tmp0" in n for n in notes), notes
 
 
 def test_the_design_report_has_a_row_per_unit(dot1):
-    r = reports_of(dot1).design
+    r = dot1
     assert [(a.instance, a.group, a.kind) for a in r.accelerators] == [
         ("vmul", "vmul", "SimdLanes"), ("vsum", "vsum", "TreeAccumulate")]  # fmt: skip
     assert [c.name for c in r.components][:2] == ["vmul", "vsum"]
@@ -499,34 +522,22 @@ def test_the_design_report_has_a_row_per_unit(dot1):
         ("vmul_a", "vmul"), ("vmul_b", "vmul"), ("vsum_a", "vsum")]  # fmt: skip
 
 
-# =============================================================================
-# A linked group: dot 4's recorded run
-# =============================================================================
-
-
-@pytest.fixture(scope="module")
-def dot4(tmp_path_factory):
-    from tests.viz.helpers import recorded_run
-
-    fixture = Path(__file__).resolve().parents[1] / "run" / "fixtures" / "dot_v4"
-    return recorded_run(tmp_path_factory.mktemp("dot4") / "dot_4_task", "task", fixture)
-
-
-def test_a_linked_group_is_one_accelerator_in_the_run_report(dot4):
+def test_a_linked_group_is_one_accelerator_in_the_run_report(two_sets):
     """The group is one accelerator named after it, with its run's classes; its task and its
     movers' tasks are the group's."""
-    r = reports_of(dot4)
+    r = reports_of(two_sets)
     assert [(a.name, a.firings, a.stall_in, a.stall_out, a.flush) for a in r.run.accelerators] == [
-        ("dot", 128, 3, 0, 1)]  # fmt: skip
-    assert [(t.block, t.name) for t in r.run.tasks if t.block != "dma"] == [
-        ("mac_a", "mult_mac_a"), ("mac_b", "mult_mac_b"), ("sum_out", "sum_final_sum_out"),
-        ("dot", "mult_dot")]  # fmt: skip
+        ("mvt", 32, 0, 0, 1), ("mac_x2", 32, 3, 0, 1)]  # fmt: skip
+    assert [(t.block, t.name) for t in r.run.tasks if t.block != "dma"][:5] == [
+        ("vmul_x1_a", "tmp1_mult_vmul_x1_a"), ("vmul_x1_b", "tmp1_mult_vmul_x1_b"),
+        ("vsum_x1_out", "sum_vsum_x1_out"), ("vsum_x1_seed", "sum_vsum_x1_seed"),
+        ("mvt", "tmp1_mult_mvt")]  # fmt: skip
 
 
 def test_a_linked_groups_design_report_has_a_row_per_unit(dot4):
     """The cluster's one component for the group, its datapaths in chain order under the
     group's control unit; an accelerator row per unit, each with its BRM and ports."""
-    r = reports_of(dot4).design
+    r = dot4
     assert (r.components[0].name, r.components[0].detail) == (
         "dot", "Mac → TreeAccumulate on core0, group control unit, slot snax_forge_dot_v4")  # fmt: skip
     assert [(a.instance, a.kind, a.brm, a.latency, a.ports) for a in r.accelerators] == [
@@ -547,7 +558,7 @@ def test_design_md_costs_each_group_beside_its_cycles(dot1):
     report round-trips."""
     from snax_forge.report.design import DesignReport
 
-    r = reports_of(dot1).design
+    r = dot1
     e = r.estimate
     assert e.tech == "nangate45" and e.char_source["snax_forge_experiments"] and not e.missing
     assert [(c.group, c.block, c.datapath) for c in e.cost] == [
@@ -602,12 +613,9 @@ def test_design_md_costs_each_group_beside_its_cycles(dot1):
     assert DesignReport.from_dict(r.to_dict()).to_dict() == r.to_dict()
 
 
-def test_design_md_on_no_technology(dot1):
-    """The report's technology (``--tech``): None, no cost. (nangate15's case dropped: the
-    technology is no longer offered.)"""
-    from snax_forge.report.files import reports_of as of
-
-    plain = of(dot1, tech=None).design
+def test_design_md_on_no_technology(tmp_path):
+    """The report's technology (``--tech``): None, no cost."""
+    plain = designed_report(tmp_path, "dot_v1_1", tech=None)
     assert plain.estimate.tech is None and plain.estimate.cost == []
     text = render_design(plain)
     assert "Cost estimate" not in text and "Area (µm²)" not in text
@@ -625,66 +633,62 @@ def test_design_md_names_what_the_table_does_not_hold(tmp_path):
             "nangate45") in text  # fmt: skip
 
 
-def test_the_estimate_beside_the_counters(dot1, dot4):
+def test_the_estimate_beside_the_counters(dot1, two_sets):
     """design.md's Estimate section per group, and run.md's expected BUSY_COUNTER beside each
-    measured one: equal on the recorded runs, the cycles plus the streamers' fill."""
-    r = reports_of(dot1)
-    e = r.design.estimate
+    measured one, a guide (mvt_v5_sequential: 37 against 34 and 36)."""
+    e = dot1.estimate
     assert [(g.group, g.cycles, g.bottleneck, g.ramp, g.stall, g.counter) for g in e.groups] == [
         ("vmul", 16, 16, 0, 0, 19), ("vsum", 17, 16, 1, 0, 19)]  # fmt: skip
     assert (e.accelerator_cycles, e.not_mapped, e.l1_size) == (33, 0, 128 * 1024)
-    text = render_design(r.design)
+    text = render_design(dot1)
     assert "## Estimate" in text and "| vmul | 16 | 16 | 0 | 0 | 19 |" in text
-    assert r.run.check.expected == r.run.check.counters == {"mult_vmul": 19, "sum_vsum": 19}
-    assert "mult_vmul 19 (expected 19, a guide), sum_vsum 19 (expected 19, a guide)" in render_run(
-        r.run
-    )
-    four = reports_of(dot4)
-    assert four.run.check.expected == four.run.check.counters == {"mult_dot": 133}
+    run = reports_of(two_sets).run
+    assert run.check.expected == {"tmp1_mult_mvt": 37, "tmp4_mult_mac_x2": 37}
+    assert run.check.counters == {"tmp1_mult_mvt": 34, "tmp4_mult_mac_x2": 36}
+    assert ("tmp1_mult_mvt 34 (expected 37, a guide), tmp4_mult_mac_x2 36 (expected 37, a guide)"
+            in render_run(run))  # fmt: skip
 
 
 # =============================================================================
-# The accelerators, one streamer set each: dot_1 and dot_v1_1
+# The accelerators, one streamer set each: mvt_v5_sequential, and one set of two groups
 # =============================================================================
+
+
+def test_run_md_has_a_row_per_accelerator(two_sets, shared):
+    """mvt_v5_sequential: mvt 960-991 and mac_x2 992-1023, each its own streamer busy window and
+    BUSY_COUNTER; mvt_v1_2_2: one set mvt_vadd, 960-991, its streamer started for each of the
+    four tasks; each task names its accelerator."""
+    one, enc = (reports_of(f).run for f in (two_sets, shared))
+    assert [(a.name, a.groups, a.first, a.last, a.counters) for a in one.sets] == [
+        ("mvt", ["mvt"], 960, 991, {"mvt": [34]}),
+        ("mac_x2", ["mac_x2"], 992, 1023, {"mac_x2": [36]}),
+    ]  # fmt: skip
+    assert [len(a.busy) for a in one.sets] == [1, 1]
+    assert one.sets[0].busy[0][1] < one.sets[1].busy[0][0]  # mac_x2's starts after mvt's ends
+    (mv,) = enc.sets
+    assert (mv.name, mv.groups, mv.first, mv.last, mv.counters) == (
+        "mvt_vadd", ["mvt", "vadd"], 960, 991, {"mvt": [15, 14], "vadd": [4, 4]})  # fmt: skip
+    assert len(mv.busy) == 4  # the shared streamer, once per task
+    acc_of = {t.name: t.accelerator for t in one.tasks}
+    assert (acc_of["tmp1_mult_vmul_x1_a"], acc_of["tmp4_mult_mac_x2"], acc_of["load_A"]) == (
+        "mvt", "mac_x2", None)  # fmt: skip
+    text = render_run(one)
+    assert "| Accelerator | Groups | CSRs | Streamer busy | BUSY_COUNTER |" in text
+    assert "| mvt | mvt | 960–991 |" in text and "| mac_x2 | mac_x2 | 992–1023 |" in text
+    assert text.index("## Accelerators") < text.index("| Accelerator | Groups") < text.index(
+        "### Units")  # fmt: skip
 
 
 @pytest.fixture(scope="module")
 def dot1_sets(tmp_path_factory):
-    from tests.run.helpers import RECORDED
-    from tests.viz.helpers import recorded_run
-
-    base = tmp_path_factory.mktemp("sets")
-    return {
-        d: recorded_run(base / f"{d}_task", "task", RECORDED / d) for d in ("dot_v1", "dot_v1_1")
-    }
-
-
-def test_run_md_has_a_row_per_accelerator(dot1_sets):
-    """dot_1: vmul 960-981 and vsum 982-999, each its own streamer busy window and BUSY_COUNTER;
-    dot_v1_1: one accelerator dot, 960-996, its streamer started twice; each task names its
-    accelerator."""
-    one, enc = (reports_of(dot1_sets[d]).run for d in ("dot_v1", "dot_v1_1"))
-    assert [(a.name, a.groups, a.first, a.last, a.counters) for a in one.sets] == [
-        ("vmul", ["vmul"], 960, 981, {"vmul": [19]}), ("vsum", ["vsum"], 982, 999, {"vsum": [19]})]  # fmt: skip
-    assert [len(a.busy) for a in one.sets] == [1, 1]
-    assert one.sets[0].busy[0][1] < one.sets[1].busy[0][0]  # vsum's starts after vmul's ends
-    (dot,) = enc.sets
-    assert (dot.name, dot.groups, dot.first, dot.last, dot.counters) == (
-        "dot", ["vmul", "vsum"], 960, 996, {"vmul": [19], "vsum": [19]})  # fmt: skip
-    assert len(dot.busy) == 2  # the shared streamer, once per group's task
-    acc_of = {t.name: t.accelerator for t in one.tasks}
-    assert (acc_of["mult_vmul_a"], acc_of["sum_vsum"], acc_of["load_A"]) == ("vmul", "vsum", None)
-    text = render_run(one)
-    assert "| Accelerator | Groups | CSRs | Streamer busy | BUSY_COUNTER |" in text
-    assert "| vmul | vmul | 960–981 |" in text and "| vsum | vsum | 982–999 |" in text
-    assert text.index("## Accelerators") < text.index("| Accelerator | Groups") < text.index(
-        "### Units")  # fmt: skip
+    """dot_v1's and dot_v1_1's design reports (no run)."""
+    return {d: designed_report(tmp_path_factory.mktemp(d), d) for d in ("dot_v1", "dot_v1_1")}
 
 
 def test_design_md_has_a_row_per_accelerator_and_counts_the_streamers(dot1_sets):
     """The same rows from the design: each set's movers, channels, temporal dims, CSRs and its
     groups' own CSRs; dot_1's 2 streamer sets (40 CSRs, not costed), dot_v1_1's 1 (37)."""
-    one, enc = (reports_of(dot1_sets[d]).design for d in ("dot_v1", "dot_v1_1"))
+    one, enc = (dot1_sets[d] for d in ("dot_v1", "dot_v1_1"))
     assert [(x.name, x.movers, x.channels, x.temporal_dims, x.first, x.last, x.group_csrs)
             for x in one.sets] == [
         ("vmul", 3, 12, [1, 1, 1], 960, 981, {"vmul": [978, 981]}),

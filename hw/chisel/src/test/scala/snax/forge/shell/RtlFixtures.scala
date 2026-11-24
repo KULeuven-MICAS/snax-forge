@@ -9,11 +9,12 @@ import org.scalatest.exceptions.TestCanceledException
 import snax.forge.RepoPaths
 
 /** The fixtures of the shell specs, one folder each in `hw/chisel/src/test/resources/rtl/<design>/`: for a design of
-  * one accelerator task, `vectors.json` (`driven`; dot_v1's two groups have none: `TwoGroupsSpec` drives each itself),
+  * one accelerator task, `vectors.json` (`driven`; matvec_acc_v2's two groups have none: `TwoGroupsSpec` drives each),
   * written by the Python side (`snax_forge/gen/rtl.py`'s `write_fixture`, checked byte for byte by
   * `tests/gen/test_rtl.py`). Its `accelerator.json` and streamer hjsons (`<tag>_streamer_<set>.hjson`) are snax-gvsoc's
-  * `forge/<design>/` (gen-gvsoc's bytes), read from the submodule; a design that `forge/` does not hold (vsum_v1_1_w8,
-  * dot_v5_w1) keeps the two in its folder. A spec that needs a `forge/` file the submodule does not have is cancelled.
+  * `forge/<design>/` (gen-gvsoc's bytes), read from the submodule; a design that `forge/` does not hold (vsum_v1,
+  * vsum_v1_1_1, dot_v1_2) keeps the two in its folder. A spec that needs a `forge/` file the submodule does not have is
+  * cancelled.
   */
 object RtlFixtures {
 
