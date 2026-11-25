@@ -105,7 +105,7 @@ CLN4's sizes, before and after:
 To do, in four tracks, each task in its own thread, branch and PR (the ROAD1 plan, 16 Nov 2026). Each task runs in a clone set of its own, so tasks in parallel never share `out/`, a GVSoC build or snax_cluster's imported bundles:
 
 - **Track A, tier A and E4** (snax-forge, snax-gvsoc where a task changes the model):
-  1. **TIERA4** (`brief`, kickoff `claude/tiera4-kickoff-2026-11-25.md`): gesummv's forms at 64 × 64, the last tier A kernel: two matvecs over two matrices into one sum, $y = \alpha A x + \beta B x$; the forms by reuse, then one group reading x once for both.
+  1. **TIERA4** (plan `claude/tiera4-plan-2026-11-25.md`): gesummv's forms, the last tier A kernel, $y = \alpha A x + \beta B x$, int8 at 64 × 64 (`gesummv_types`) and int64 at 32 × 32: `factor_out` (D198) moves each scale past its sum, then the halves by reuse, two engines against one shared, shared movers, and one group reading x once; the join of the two chains in one unit is parked (open item 172).
   2. **E4S1** (kickoff from TIERA1's plan): E4's sweep script over `pixi run flow --set` (no DSE5) and its figure, first on what runs today (W on dot 3, matvec and mvt_v1; shared against dedicated ports), then on each tier A form as it lands. The bank-bound sweep at int64 and int32: a dot reads $2 W b$ bytes a cycle against $32 \cdot 8 = 256$, so it crosses at W = 16 (int64) and 32 (int32), and W stops at 32.
 - **Track B, costs** (snax-forge-experiments, snax-forge's `char`; Nangate 45 nm only): E4's energy axis reads `--energy` or the static estimate; GE1's left-overs are open items 136 and 137.
 - **Track C, the Snitch-only baseline** (snax_cluster, snax-forge-experiments; E11):
@@ -183,7 +183,7 @@ Dates: 20 Nov, track A's target (fine if it slips); 27 Nov, the softmax gate (so
 
 ## Open Items
 
-Questions not decided yet. Numbers are never reused; a closed item is removed, and where it closed is in git history. Next free number: 171.
+Questions not decided yet. Numbers are never reused; a closed item is removed, and where it closed is in git history. Next free number: 173.
 
 1. BRM dataflow notation: `affine` and `stream` (D70), frozen in M6.
 2. What automated search reads and how a sweep is configured (DSE1, M8).
@@ -276,6 +276,8 @@ Questions not decided yet. Numbers are never reused; a closed item is removed, a
 168. A group that reads through L1 what it writes in the same run is estimated as if the read waited for nothing: `atax_v4`'s steps after `fork_read A` and after `link A` (the `Mac` reads t from L1 while the vsum writes it) give 515 and 514 cycles against 523 once t is linked. LOWER could refuse a group reading a container it writes, or order the reader behind the writer's rows (open item 53).
 169. The one-group atax points on vsim are NEAR within their fill (TIERA3 B4): `atax_v4` at D = 10 and 8 and at W = 32, R = 2 run 523, 649 and 133, the estimate exactly and 3 under SNAX-GVSoC, whose streamer fill the RTL hides for the forked A; `atax_v3` runs 526 against 523, 3 over; `atax_v2_1_1`'s Mac 514 against 516. A trace of the streamers' first beats on both, as open item 65 asks, would say whose fill differs.
 170. A fork's buffer comes before the link into its reader (D196), so nothing in the graph says a FIFO is needed until `link tmp1` is refused. Ryan's later flow: `link` into a forked reader allowed, the state flagged as a design problem on that branch (a buffer of at least T beats), its fix `link A` offered on the edge; a new decision, as that state has no estimate.
+171. snax_cluster's runtime keeps each hart's stack and thread-local data at the top of L1 (`start.S`, `init_stack`), but LOWER's layout check counts all of L1 (`Layout.check`): a design that fits can overwrite the stack on the RTL. The platform could reserve L1's top for the runtime and the check refuse a layout reaching it. Low priority, a cluster matter; tier A's sizes stay well below (gesummv at int64 runs at 32 × 32 for it).
+172. The join: a unit fed by two unit-to-unit links in one group (gesummv's axpby taking both vsums, `gesummv_v4`). The rule's forward pass ANDs a unit's in-edges already; `chains_problem`, `GroupError` and the Chisel `GroupRule` refuse a unit with two. With a fork upstream the branches must meet within the link: branches d cycles apart, each a result every T cycles, keep up at link depth D while $d < D \cdot T$, and deadlock below (D196's FIFO bound is the case where the early branch is the fork). One output and one JOBS for the joined chains. High priority, a tool feature more than a gain on gesummv (4N int32 accesses and the axpby's own pass).
 
 ## Sync Reminders
 
