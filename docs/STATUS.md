@@ -123,7 +123,7 @@ To do, in four tracks, each task in its own thread, branch and PR (the ROAD1 pla
 
 ## The local RTL check
 
-The local RTL check (D123) runs one program on SNAX-GVSoC and, through snax_cluster's `snax-forge-check`, on vsim, and gives each bundle a verdict: PERFECT, NEAR (a counter's gap beyond its fill up to 10 % of its count), WARNING (up to 15 %) or FAIL. Cycles are the window, then the `forge counter`s in brackets. The full set (D195) at TIERA3's close (C1, 2026-11-24; snax-forge `ry/tiera3` at `b8ddc3a6`, SNAX-GVSoC `d45b68cb`, snax_cluster main at `baf87858`, the RTL built in image `c5db84ad7bce`), 15 bundles, every `forge data` exact, 10 PERFECT and 5 NEAR, every window and counter on both as last measured, to the cycle (the quick set's as in TIERA3 B4):
+The local RTL check (D123) runs one program on SNAX-GVSoC and, through snax_cluster's `snax-forge-check`, on vsim, and gives each bundle a verdict: PERFECT, NEAR (a counter's gap beyond its fill up to 10 % of its count), WARNING (up to 15 %) or FAIL. Cycles are the window, then the `forge counter`s in brackets. The full set (D195) at TIERA4's close (C1, 2026-11-25; snax-forge `ry/tiera4` at `c3f99db8`, SNAX-GVSoC `b333235c`, snax_cluster main at `baf87858`, the RTL built in image `c5db84ad7bce`), 17 bundles, every `forge data` exact, 10 PERFECT and 7 NEAR; the 15 of TIERA3's close (C1, 2026-11-24) give its windows and counters on both, to the cycle, and the two gesummv bundles those of TIERA4 A4 and A4c:
 
 | Bundle | SNAX-GVSoC cycles | vsim cycles | Verdict |
 |---|---:|---:|---|
@@ -139,6 +139,8 @@ The local RTL check (D123) runs one program on SNAX-GVSoC and, through snax_clus
 | mvt_v5 sequential | 1578 (518, 516) | 1646 (518, 516) | PERFECT |
 | mvt_v6 | 899 (519) | 922 (515) | NEAR 0.2 % (open item 65) |
 | atax_v4 | 796 (526) | 825 (523) | NEAR, 0.0 % beyond the fill (open item 169) |
+| gesummv_v1_1 (a one-stream op wider than its input, k from its CSR) | 2454 (528, 534, 528, 517, 11) | 2516 (522, 534, 528, 517, 11) | NEAR 0.8 % (open item 175) |
+| gesummv_v2_1 (an axpby, k1 and k2 from their CSRs) | 1372 (533, 517, 11) | 1432 (533, 514, 11) | NEAR, 0.0 % beyond the fill |
 | vsum_v1_1 at i8, W = 8 (packed d_out 2) | 158 (11) | 180 (11) | PERFECT |
 | dot_v3 at i16, W = 4 (packed d_out 2) | 323 (132) | 354 (132) | PERFECT |
 | dot_v3 at i32, W = 2 | 486 (260) | 509 (260) | PERFECT |
