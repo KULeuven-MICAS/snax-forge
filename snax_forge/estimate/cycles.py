@@ -244,7 +244,8 @@ def _datapath_blocks(graph: Graph, insts: dict[str, Any], members: list[str],
         except GenError:
             continue
         filled[u] = Unit(u, inst.brm.name, dp, f.ports, dict(f.params), inst.latency,
-                         inst.initiation_interval, [], f.op_type, inst.span)  # fmt: skip
+                         inst.initiation_interval, [], f.op_type, inst.span,
+                         dict(f.scalars))  # fmt: skip  # the CSR flags, as gen-rtl fills them
         units[u] = Block(dp, fill(None, filled[u], cat[dp]), firings[u] * inst.span)
     bits = {u: flops(b.datapath, b.params, cat) for u, b in units.items() if u in filled}
     for u, unit in filled.items():
