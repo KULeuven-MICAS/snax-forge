@@ -39,21 +39,38 @@ def nest(g: Graph, top: str) -> list[tuple[str, str]]:
     return out
 
 
-def test_each_half_reads_its_matrix_and_scales_its_sum():
+def test_each_half_reads_its_matrix_and_the_scales_land_in_the_add():
     h = both(gesummv())
-    assert "tmp0" not in h.containers and "tmp2" not in h.containers
-    assert h.containers["tmp1_sum"].shape == h.containers["tmp1"].shape == ["N"]
+    for c in ("tmp0", "tmp2", "tmp1", "tmp3"):
+        assert c not in h.containers
+    assert h.containers["tmp1_sum"].shape == ["N"] and h.containers["tmp1_sum"].transient
     assert h.node("tmp1_mult").inputs["in1"].data == "A"
     assert h.node("tmp3_mult").inputs["in1"].data == "B"
     assert h.node("sum").outputs["out"].data == "tmp1_sum"
+    add = h.node("add")
+    assert add.attrs["code"] == "out = in3 * in1 + in4 * in2"
+    assert {c: m.data for c, m in add.inputs.items()} == {
+        "in1": "tmp1_sum",
+        "in2": "tmp3_sum",
+        "in3": "alpha",
+        "in4": "beta",
+    }
+    assert [n.id for n in h.body] == ["tmp1_mult_map", "sum_map", "tmp3_mult_map", "sum_map_2",
+                                      "add_map"]  # fmt: skip
+
+
+def test_a_nest_of_its_own_when_the_sum_has_no_elementwise_reader():
+    d = gesummv().to_dict()
+    d["containers"]["tmp1"]["transient"] = False  # tmp1 an output: the scale cannot land in add
+    h = factor_out(Graph.from_dict(d), "alpha")
     assert nest(h, "tmp1_scale_map") == [("tmp1_scale_map", "0:N"),
                                          ("tmp1_scale", "out = in1 * in2")]  # fmt: skip
-    scale = h.node("tmp3_scale")
-    assert (scale.inputs["in1"].data, scale.inputs["in2"].data) == ("beta", "tmp3_sum")
-    assert scale.outputs["out"].data == "tmp3"
-    order = [n.id for n in h.body]
-    assert order == ["tmp1_mult_map", "sum_map", "tmp1_scale_map", "tmp3_mult_map", "sum_map_2",
-                     "tmp3_scale_map", "add_map"]  # fmt: skip
+    scale = h.node("tmp1_scale")
+    assert (scale.inputs["in1"].data, scale.inputs["in2"].data) == ("alpha", "tmp1_sum")
+    assert scale.outputs["out"].data == "tmp1"
+    assert h.node("add").attrs["code"] == "out = in1 + in2"
+    assert [n.id for n in h.body][:3] == ["tmp1_mult_map", "sum_map", "tmp1_scale_map"]
+    assert unfactor_out(h, "alpha").to_json() == Graph.from_dict(d).to_json()
 
 
 @pytest.mark.parametrize(("kernel", "types"), [("gesummv", None), ("gesummv_types", "i8")])
@@ -84,15 +101,20 @@ def test_exact_where_the_sums_wrap():
 
 
 def test_the_record_holds_what_went():
-    rec = both(gesummv()).node("tmp1_scale").attrs[FACTORED]
-    assert (rec["container"], rec["product"], rec["connector"], rec["fold"], rec["output"]) == (
-        "tmp0",
-        "tmp1_mult",
-        "in1",
-        "sum",
-        "tmp1",
-    )
+    recs = both(gesummv()).node("add").attrs[FACTORED]
+    assert sorted(recs) == ["alpha", "beta"]
+    rec = recs["alpha"]
+    got = tuple(rec[k] for k in ("container", "product", "connector", "fold", "output"))
+    assert got == ("tmp0", "tmp1_mult", "in1", "sum", "tmp1")
+    got = tuple(rec[k] for k in ("into", "k", "read", "code"))
+    assert got == ("add", "in3", "in1", "out = in1 + in2")
     assert rec["nest"]["id"] == "mult_map" and rec["after"] is None
+
+
+def test_a_baked_scalar():
+    g = TRANSFORMS["bake_scalar"].fn(gesummv(), container="alpha", value="csr")
+    with pytest.raises(SandboxError, match="alpha is baked already"):
+        factor_out(g, "alpha")
 
 
 def test_the_site_is_the_scalar():

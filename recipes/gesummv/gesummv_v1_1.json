@@ -1,0 +1,127 @@
+{
+ "name": "gesummv_v1_1",
+ "id": "gesummv_dot2_scale_add_i8_o32",
+ "description": "`gesummv_v1` at int8 in, int32 out (`types` i8): alpha A and beta B at int32 through L1, so each dot multiplies them by x at int8 (the cast is in the op).",
+ "kernel": "gesummv_types",
+ "params": {
+  "N": 64,
+  "W": 8
+ },
+ "symbols": {
+  "N": "N"
+ },
+ "types": "i8",
+ "steps": [
+  {
+   "transform": "bake_scalar",
+   "params": {
+    "container": "alpha",
+    "value": "csr"
+   }
+  },
+  {
+   "transform": "tag_map",
+   "params": {
+    "map": "mult_map",
+    "kind": "temporal"
+   }
+  },
+  {
+   "transform": "split_map",
+   "params": {
+    "map": "mult_map_1",
+    "factor": "W"
+   }
+  },
+  {
+   "transform": "bind",
+   "params": {
+    "node": "mult",
+    "brm": "simd",
+    "implementation": "chisel_tiled_spatial",
+    "instance": "scale_a"
+   }
+  },
+  {
+   "transform": "bake_scalar",
+   "params": {
+    "container": "beta",
+    "value": "csr"
+   }
+  },
+  {
+   "transform": "tag_map",
+   "params": {
+    "map": "mult_map_2",
+    "kind": "temporal"
+   }
+  },
+  {
+   "transform": "split_map",
+   "params": {
+    "map": "mult_map_3",
+    "factor": "W"
+   }
+  },
+  {
+   "transform": "bind",
+   "params": {
+    "node": "mult_1",
+    "brm": "simd",
+    "implementation": "chisel_tiled_spatial",
+    "instance": "scale_b"
+   }
+  },
+  {
+   "transform": "lift",
+   "params": {
+    "kernel": "matvec",
+    "at": "tmp2_mult_map"
+   }
+  },
+  {
+   "transform": "apply_recipe",
+   "params": {
+    "block": "matvec",
+    "recipe": "matvec/matvec_v2",
+    "params": {
+     "W": "W"
+    }
+   }
+  },
+  {
+   "transform": "lift",
+   "params": {
+    "kernel": "matvec",
+    "at": "tmp5_mult_map"
+   }
+  },
+  {
+   "transform": "apply_recipe",
+   "params": {
+    "block": "matvec_1",
+    "recipe": "matvec/matvec_v2",
+    "params": {
+     "W": "W"
+    }
+   }
+  },
+  {
+   "transform": "lift",
+   "params": {
+    "kernel": "vecadd",
+    "at": "add_map"
+   }
+  },
+  {
+   "transform": "apply_recipe",
+   "params": {
+    "block": "vecadd",
+    "recipe": "elementwise/vecadd_v1",
+    "params": {
+     "W": "W"
+    }
+   }
+  }
+ ]
+}

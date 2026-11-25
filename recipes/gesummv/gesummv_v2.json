@@ -1,0 +1,91 @@
+{
+ "name": "gesummv_v2",
+ "id": "gesummv_dot2_axpby",
+ "description": "Each scale moved past its sum (`factor_out` alpha and beta, D198), so the add becomes `alpha \u00b7 tmp1_sum + beta \u00b7 tmp3_sum`: each half a `dot_v2` group by reuse (`lift matvec`, `matvec/matvec_v2`) reading its matrix directly, then one `simd` axpby with alpha and beta from CSRs.",
+ "kernel": "gesummv",
+ "params": {
+  "N": 32,
+  "W": 8
+ },
+ "symbols": {
+  "N": "N"
+ },
+ "steps": [
+  {
+   "transform": "factor_out",
+   "params": {
+    "container": "alpha"
+   }
+  },
+  {
+   "transform": "factor_out",
+   "params": {
+    "container": "beta"
+   }
+  },
+  {
+   "transform": "lift",
+   "params": {
+    "kernel": "matvec",
+    "at": "tmp1_mult_map"
+   }
+  },
+  {
+   "transform": "apply_recipe",
+   "params": {
+    "block": "matvec",
+    "recipe": "matvec/matvec_v2",
+    "params": {
+     "W": "W"
+    }
+   }
+  },
+  {
+   "transform": "lift",
+   "params": {
+    "kernel": "matvec",
+    "at": "tmp3_mult_map"
+   }
+  },
+  {
+   "transform": "apply_recipe",
+   "params": {
+    "block": "matvec_1",
+    "recipe": "matvec/matvec_v2",
+    "params": {
+     "W": "W"
+    }
+   }
+  },
+  {
+   "transform": "bake_scalar",
+   "params": {
+    "container": "alpha",
+    "value": "csr"
+   }
+  },
+  {
+   "transform": "bake_scalar",
+   "params": {
+    "container": "beta",
+    "value": "csr"
+   }
+  },
+  {
+   "transform": "split_map",
+   "params": {
+    "map": "add_map",
+    "factor": "W"
+   }
+  },
+  {
+   "transform": "bind",
+   "params": {
+    "node": "add",
+    "brm": "simd",
+    "implementation": "chisel_tiled_spatial",
+    "instance": "axpby"
+   }
+  }
+ ]
+}

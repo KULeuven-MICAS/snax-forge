@@ -1,0 +1,126 @@
+{
+ "name": "gesummv_v1",
+ "id": "gesummv_dot2_scale_add",
+ "description": "gesummv as NPBench writes it, `(alpha A) x + (beta B) x`: each scale a `simd` unit over the whole matrix (alpha A and beta B through L1), each half a `dot_v2` group by reuse (`lift matvec`, `matvec/matvec_v2`), the add by `elementwise/vecadd_v1`.",
+ "kernel": "gesummv",
+ "params": {
+  "N": 32,
+  "W": 8
+ },
+ "symbols": {
+  "N": "N"
+ },
+ "steps": [
+  {
+   "transform": "bake_scalar",
+   "params": {
+    "container": "alpha",
+    "value": "csr"
+   }
+  },
+  {
+   "transform": "tag_map",
+   "params": {
+    "map": "mult_map",
+    "kind": "temporal"
+   }
+  },
+  {
+   "transform": "split_map",
+   "params": {
+    "map": "mult_map_1",
+    "factor": "W"
+   }
+  },
+  {
+   "transform": "bind",
+   "params": {
+    "node": "mult",
+    "brm": "simd",
+    "implementation": "chisel_tiled_spatial",
+    "instance": "scale_a"
+   }
+  },
+  {
+   "transform": "bake_scalar",
+   "params": {
+    "container": "beta",
+    "value": "csr"
+   }
+  },
+  {
+   "transform": "tag_map",
+   "params": {
+    "map": "mult_map_2",
+    "kind": "temporal"
+   }
+  },
+  {
+   "transform": "split_map",
+   "params": {
+    "map": "mult_map_3",
+    "factor": "W"
+   }
+  },
+  {
+   "transform": "bind",
+   "params": {
+    "node": "mult_1",
+    "brm": "simd",
+    "implementation": "chisel_tiled_spatial",
+    "instance": "scale_b"
+   }
+  },
+  {
+   "transform": "lift",
+   "params": {
+    "kernel": "matvec",
+    "at": "tmp1_mult_map"
+   }
+  },
+  {
+   "transform": "apply_recipe",
+   "params": {
+    "block": "matvec",
+    "recipe": "matvec/matvec_v2",
+    "params": {
+     "W": "W"
+    }
+   }
+  },
+  {
+   "transform": "lift",
+   "params": {
+    "kernel": "matvec",
+    "at": "tmp3_mult_map"
+   }
+  },
+  {
+   "transform": "apply_recipe",
+   "params": {
+    "block": "matvec_1",
+    "recipe": "matvec/matvec_v2",
+    "params": {
+     "W": "W"
+    }
+   }
+  },
+  {
+   "transform": "lift",
+   "params": {
+    "kernel": "vecadd",
+    "at": "add_map"
+   }
+  },
+  {
+   "transform": "apply_recipe",
+   "params": {
+    "block": "vecadd",
+    "recipe": "elementwise/vecadd_v1",
+    "params": {
+     "W": "W"
+    }
+   }
+  }
+ ]
+}

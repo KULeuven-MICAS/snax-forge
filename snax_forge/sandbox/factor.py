@@ -3,15 +3,17 @@
 ``factor_out(container)`` and ``unfactor_out(container)``, as CONTRACTS, "Recipe" defines them.
 ``container`` is a kernel scalar argument k read by one scale nest: an elementwise ``out = k * a``
 whose transient t is read by one product ``t * x`` summed by one fold (the product's own
-reduce, or a nest summing it) into s. The scale nest and t go, the product reads a, the
-fold writes a new transient ``<s>_sum``, and a nest over s's elements just after the fold's
-writes ``s = k * <s>_sum``, so s keeps its meaning. Exact on integers when every type from the
-scale to s is at least s's width (mod 2**w); refused on floats. The new scale's tasklet keeps
-what went (``sandbox.factored``), for ``unfactor_out``.
+reduce, or a nest summing it) into s. The scale nest and t go, the product reads a, and the
+fold writes a new transient ``<s>_sum``. When s is a transient read by one elementwise tasklet,
+k lands there (gesummv's add reads ``k * <s>_sum`` for s, s gone); else a nest over s's elements
+just after the fold writes ``s = k * <s>_sum``. Exact on integers when every type from the scale
+to s is at least s's width (mod 2**w); refused on floats and on a scalar baked already. The
+tasklet k lands in keeps what went (``sandbox.factored``, one record per scalar).
 """
 
 from __future__ import annotations
 
+import ast
 from typing import Any
 
 import numpy as np
@@ -20,7 +22,7 @@ from snax_forge import expr
 from snax_forge.brm.dtypes import bits
 from snax_forge.common import fresh
 from snax_forge.dfg import Container, Graph, Memlet, Node, loops
-from snax_forge.dfg.graph import FACTORED, SCALAR
+from snax_forge.dfg.graph import BAKED, FACTORED, SCALAR
 from snax_forge.expr import ExprError
 
 from .recipe import SandboxError
@@ -43,7 +45,7 @@ def _reader(g: Graph, container: str, what: str, *, factored: bool = False) -> N
         raise SandboxError(f"{what}: {container} is read by the bound unit {bound[0]} (unbind "
                            "first)")  # fmt: skip
     if factored:
-        readers = [n for n in readers if FACTORED in n.attrs]
+        readers = [n for n in readers if container in n.attrs.get(FACTORED, {})]
         if len(readers) != 1:
             raise SandboxError(f"{what}: {container} is read by {len(readers)} scales "
                                "factor_out made, not one")  # fmt: skip
@@ -104,6 +106,9 @@ def _check(g: Graph, container: str, what: str) -> dict[str, Any]:
         raise SandboxError(f"{what}: {s.id} computes {s.attrs['code']!r}; factor_out takes a scale "
                            f"nest out = {container} * a")  # fmt: skip
     (ck,) = scalars
+    if any(b.get("name") == container for b in s.attrs.get(BAKED, [])):
+        raise SandboxError(f"{what}: {container} is baked already (unbake_scalar first); "
+                           "factor_out moves the scalar, then bake it")  # fmt: skip
     (ca,) = [c for c in s.inputs if c != ck]
     ((cout, om),) = s.outputs.items()
     a, t = s.inputs[ca].data, om.data
@@ -190,8 +195,28 @@ def _check(g: Graph, container: str, what: str) -> dict[str, Any]:
             raise SandboxError(f"{what}: {name} is {d}, narrower than {out}'s "
                                f"{g.containers[out].dtype}; with the scale after the sum the "
                                f"bits would differ (cast the input, as x.astype)")  # fmt: skip
+    into = _into(g, out, f, what)
+    if into is not None and widths[-1][1][1] != dtype(out):  # the reader would see another type
+        into = None
     return {"scale": s, "ck": ck, "ca": ca, "cout": cout, "a": a, "t": t, "product": p, "ct": ct,
-            "fold": f, "fout": fout, "out": out}  # fmt: skip
+            "fold": f, "fout": fout, "out": out, "into": into, "scalar": container}  # fmt: skip
+
+
+def _into(g: Graph, out: str, fold: Node, what: str) -> tuple[Node, str] | None:
+    """The one elementwise tasklet reading the transient ``out`` (and its connector) when the
+    scale can land in it, else None (factor_out makes a nest of its own)."""
+    if not g.containers[out].transient:
+        return None
+    readers = [n for n, _ in g.walk() if any(m.data == out for m in n.inputs.values())]
+    if len(readers) != 1 or readers[0].kind != "tasklet" or _names(g, out, fold, *readers):
+        return None
+    (r,) = readers
+    conns = [c for c, m in r.inputs.items() if m.data == out]
+    if len(conns) != 1 or any(m.reduce is not None for m in r.outputs.values()):
+        return None
+    if _stripped(r, what) is None:
+        return None
+    return r, conns[0]
 
 
 def _site(g: Graph, selected: str) -> dict[str, Any]:
@@ -217,6 +242,7 @@ def factor_out(g: Graph, container: str) -> Graph:
         "container": t,
         "definition": g.containers[t].to_dict(),
         "index": names.index(t),
+        "next": names[names.index(t) + 1] if names.index(t) + 1 < len(names) else None,
         "nest": root.to_dict(),
         "parent": parent.id if parent is not None else None,
         "after": body[k - 1].id if k else None,
@@ -230,10 +256,24 @@ def factor_out(g: Graph, container: str) -> Graph:
     fm = f.outputs[found["fout"]]
     f.outputs[found["fout"]] = Memlet(summed, list(fm.subset), fm.reduce)
     del body[k]
+    kmemlet = Memlet(s.inputs[ck].data, list(s.inputs[ck].subset))
+    defn = Container(list(g.containers[out].shape), g.containers[out].dtype, transient=True)
     items = [(n, c) for n, c in g.containers.items() if n != t]
+    if found["into"] is not None:  # k lands in s's one elementwise reader, s goes
+        r, rc = found["into"]
+        taken = set(r.inputs) | set(r.outputs)
+        kc = next(f"in{i}" for i in range(1, len(taken) + 2) if f"in{i}" not in taken)
+        record |= {"into": r.id, "k": kc, "read": rc, "definition_s": g.containers[out].to_dict(),
+                   "code": r.attrs["code"]}  # fmt: skip
+        r.inputs[rc] = Memlet(summed, list(r.inputs[rc].subset))
+        r.inputs[kc] = kmemlet
+        r.attrs["code"] = expr.rename_code(r.attrs["code"], {rc: f"{kc} * {rc}"})
+        record["code_after"] = r.attrs["code"]
+        r.attrs[FACTORED] = {**r.attrs.get(FACTORED, {}), found["scalar"]: record}
+        g.containers = {(summed if n == out else n): (defn if n == out else c) for n, c in items}
+        return _result(g)
     at = next(i for i, (n, _) in enumerate(items) if n == out) + 1
-    items.insert(at, (summed, Container(list(g.containers[out].shape), g.containers[out].dtype,
-                                        transient=True)))  # fmt: skip
+    items.insert(at, (summed, defn))
     g.containers = dict(items)
     shape = g.containers[out].shape
     dims = [d if isinstance(d, str) and d.isidentifier() else None for d in fm.subset]
@@ -241,10 +281,9 @@ def factor_out(g: Graph, container: str) -> Graph:
         dims = [f"i{d}" for d in range(len(shape))]
     sub = [str(d) for d in dims]
     tasklet = Node(fresh(f"{out}_scale", taken_ids), "tasklet",
-                   {ck: Memlet(s.inputs[ck].data, list(s.inputs[ck].subset)),
-                    ca: Memlet(summed, sub)},
+                   {ck: kmemlet, ca: Memlet(summed, sub)},
                    {cout: Memlet(out, sub)},
-                   {"code": f"{cout} = {ck} * {ca}", FACTORED: record})  # fmt: skip
+                   {"code": f"{cout} = {ck} * {ca}", FACTORED: {found["scalar"]: record}})  # fmt: skip
     nest: Node = tasklet
     ids = [fresh(f"{out}_scale_map", taken_ids) for _ in dims]
     for mid, v, n in reversed(list(zip(ids, dims, shape, strict=True))):
@@ -255,13 +294,32 @@ def factor_out(g: Graph, container: str) -> Graph:
     return _result(g)
 
 
+def _drop(code: str, kc: str, rc: str) -> str | None:
+    """``code`` with its one ``kc * rc`` (either order) back to ``rc``; None if not once."""
+    tree = ast.parse(code)
+    hits = 0
+
+    class Drop(ast.NodeTransformer):
+        def visit_BinOp(self, n: ast.BinOp) -> ast.AST:
+            nonlocal hits
+            self.generic_visit(n)
+            names = {getattr(n.left, "id", None), getattr(n.right, "id", None)}
+            if isinstance(n.op, ast.Mult) and names == {kc, rc}:
+                hits += 1
+                return ast.Name(rc, ast.Load())
+            return n
+
+    out = ast.unparse(Drop().visit(tree))
+    return out if hits == 1 else None
+
+
 def _ids(n: Node) -> list[str]:
     return [n.id, *(i for c in n.body or [] for i in _ids(c))]
 
 
 def _unfactor_check(g: Graph, container: str, what: str) -> tuple[Node, dict[str, Any]]:
     t = _reader(g, container, what, factored=True)
-    rec = t.attrs[FACTORED]
+    rec = t.attrs[FACTORED][container]
     if rec["container"] in g.containers:
         raise SandboxError(f"{what}: the graph has a container {rec['container']!r} again")
     ids = {n.id for n, _ in g.walk()}
@@ -275,9 +333,17 @@ def _unfactor_check(g: Graph, container: str, what: str) -> tuple[Node, dict[str
                                "that first)")  # fmt: skip
     if rec["parent"] is not None and rec["parent"] not in ids:
         raise SandboxError(f"{what}: the map {rec['parent']!r} that held the scale is gone")
-    summed = next(m.data for c, m in t.inputs.items() if m.data in g.containers
-                  and not g.containers[m.data].attrs.get(SCALAR))  # fmt: skip
     fold = g.node(rec["fold"])
+    if fold.kind != "tasklet":
+        raise SandboxError(f"{what}: the fold {fold.id} is bound (unbind first)")
+    ((_, fm),) = fold.outputs.items()
+    summed = fm.data
+    if "into" in rec:
+        if rec["output"] in g.containers:
+            raise SandboxError(f"{what}: the graph has a container {rec['output']!r} again")
+        if t.attrs["code"] != rec["code_after"] and _drop(t.attrs["code"], rec["k"],
+                                                           rec["read"]) is None:  # fmt: skip
+            raise SandboxError(f"{what}: {t.id}'s code no longer has {rec['k']} * {rec['read']}")
     others = _names(g, summed, t, fold)
     if others:
         raise SandboxError(f"{what}: {summed} is named by {others} too (undo that first)")
@@ -301,10 +367,27 @@ def unfactor_out(g: Graph, container: str) -> Graph:
     summed = fm.data
     fold.outputs[fout] = Memlet(rec["output"], list(fm.subset), fm.reduce)
     product.inputs[rec["connector"]] = Memlet.from_dict(rec["memlet"], what)
-    root, _, body = _nest_root(g, t)
-    del body[next(i for i, n in enumerate(body) if n is root)]
+    if "into" in rec:  # k back out of the reader, which reads s again
+        code = t.attrs["code"]
+        t.attrs["code"] = rec["code"] if code == rec["code_after"] else _drop(code, rec["k"],
+                                                                              rec["read"])  # fmt: skip
+        del t.inputs[rec["k"]]
+        t.inputs[rec["read"]] = Memlet(rec["output"], list(t.inputs[rec["read"]].subset))
+        rest = {k: v for k, v in t.attrs[FACTORED].items() if k != container}
+        if rest:
+            t.attrs[FACTORED] = rest
+        else:
+            del t.attrs[FACTORED]
+        s_def = Container.from_dict(rec["definition_s"], what)
+        g.containers = {(rec["output"] if n == summed else n): (s_def if n == summed else c)
+                        for n, c in g.containers.items()}  # fmt: skip
+        summed = None
+    else:
+        root, _, body = _nest_root(g, t)
+        del body[next(i for i, n in enumerate(body) if n is root)]
     items = [(n, c) for n, c in g.containers.items() if n != summed]
-    items.insert(min(rec["index"], len(items)),
+    names = [n for n, _ in items]
+    items.insert(names.index(rec["next"]) if rec["next"] in names else min(rec["index"], len(items)),
                  (rec["container"], Container.from_dict(rec["definition"], what)))  # fmt: skip
     g.containers = dict(items)
     body = g.body if rec["parent"] is None else (g.node(rec["parent"]).body or [])

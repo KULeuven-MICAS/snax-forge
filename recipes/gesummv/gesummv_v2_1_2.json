@@ -1,0 +1,106 @@
+{
+ "name": "gesummv_v2_1_2",
+ "id": "gesummv_dot2_axpby_ports_i8_o32",
+ "description": "`gesummv_v2_1` with the two dot groups and the axpby in one accelerator sharing their movers (`share_ports` on each sum, D169).",
+ "kernel": "gesummv_types",
+ "params": {
+  "N": 64,
+  "W": 8
+ },
+ "symbols": {
+  "N": "N"
+ },
+ "types": "i8",
+ "steps": [
+  {
+   "transform": "factor_out",
+   "params": {
+    "container": "alpha"
+   }
+  },
+  {
+   "transform": "factor_out",
+   "params": {
+    "container": "beta"
+   }
+  },
+  {
+   "transform": "lift",
+   "params": {
+    "kernel": "matvec",
+    "at": "tmp2_mult_map"
+   }
+  },
+  {
+   "transform": "apply_recipe",
+   "params": {
+    "block": "matvec",
+    "recipe": "matvec/matvec_v2",
+    "params": {
+     "W": "W"
+    }
+   }
+  },
+  {
+   "transform": "lift",
+   "params": {
+    "kernel": "matvec",
+    "at": "tmp5_mult_map"
+   }
+  },
+  {
+   "transform": "apply_recipe",
+   "params": {
+    "block": "matvec_1",
+    "recipe": "matvec/matvec_v2",
+    "params": {
+     "W": "W"
+    }
+   }
+  },
+  {
+   "transform": "bake_scalar",
+   "params": {
+    "container": "alpha",
+    "value": "csr"
+   }
+  },
+  {
+   "transform": "bake_scalar",
+   "params": {
+    "container": "beta",
+    "value": "csr"
+   }
+  },
+  {
+   "transform": "split_map",
+   "params": {
+    "map": "add_map",
+    "factor": "W"
+   }
+  },
+  {
+   "transform": "bind",
+   "params": {
+    "node": "add",
+    "brm": "simd",
+    "implementation": "chisel_tiled_spatial",
+    "instance": "axpby"
+   }
+  },
+  {
+   "transform": "share_ports",
+   "params": {
+    "container": "tmp1_sum",
+    "accelerator": "gesummv"
+   }
+  },
+  {
+   "transform": "share_ports",
+   "params": {
+    "container": "tmp3_sum",
+    "accelerator": "gesummv"
+   }
+  }
+ ]
+}
