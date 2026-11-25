@@ -146,6 +146,7 @@ function legend() {
     h("li", {}, h("i", { class: "key c-packer" }), "packer, slicer"),
     h("li", {}, h("i", { class: "key c-copy" }), "copy (transpose)"),
     h("li", {}, h("i", { class: "key c-mux" }), "temporal mux (shared unit)"),
+    h("li", {}, h("i", { class: "key c-portmux" }), "shared port mux (share_ports)"),
     h("li", {}, h("i", { class: "key c-pill" }), "container"),
     h("li", {}, h("i", { class: "key c-pill transient" }), "transient"),
     h("li", {}, h("i", { class: "key c-pill scalar" }), "scalar"),
