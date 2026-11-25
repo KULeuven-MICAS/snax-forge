@@ -19,11 +19,14 @@ class Block(name: String, d: Datapaths.Datapath, p: Map[String, ujson.Value]) ex
 }
 
 /** `<tag>_datapath`: every unit's datapath, a catalogue datapath built from the unit's ports by its fill rule, in a
-  * module `<tag>_<unit>`, and every buffer's `LinkBuffer` (a link of depth >= 1), in a module `<tag>_<link>`, group by
-  * group (its units, then its buffers). Data and enables only. A link is plain wiring: a wire from its producer's
-  * output to its consumer's input; a buffer between them, loaded from the producer and read by the consumer. Outside,
-  * per unit its outer ports' data, by BRM port, and the pins its catalogue entry has live (`fire`, `first`, `read`,
-  * `lane`, `en`); per buffer its pins (`load`, `wslot`, `rslot`), group by group.
+  * module `<tag>_<unit>`, and every buffer's `LinkBuffer` (a link of depth >= 1, then a fork link), in a module
+  * `<tag>_<link>`, group by group (its units, then its buffers). Data and enables only. A link is plain wiring: a wire
+  * from its producer's output to its consumer's input; a buffer between them, loaded from the producer and read by the
+  * consumer. A held link's buffer is read by the wrapper instead (`held`, its one-lane beat, kept a row in the
+  * wrapper's `<unit>_<port>_hold` and broadcast), which gives its consumer's port as an outer one; a fork link's buffer
+  * is loaded with the fork's reader's beat (its first unit's port) and read by its consumer. Outside, per unit its
+  * outer ports' data (and a held link's port), by BRM port, and the pins its catalogue entry has live (`fire`, `first`,
+  * `read`, `lane`, `en`); per buffer its pins (`load`, `wslot`, `rslot`), group by group.
   */
 class AccDatapath(spec: AcceleratorSpec) extends Module {
   override def desiredName: String = s"${spec.tag}_datapath"
@@ -47,6 +50,13 @@ class AccDatapath(spec: AcceleratorSpec) extends Module {
         val b    = Module(new Block(s"${spec.tag}_${l.name}", d, p)).suggestName(s"bufs_${i}_4")
         i += 1
         l.name -> (d, p, b)
+      } ++ g.forkLinks.map { f =>
+        val d  = Datapaths("LinkBuffer")
+        val to = spec.unit(f.to._1).port(f.to._2)
+        val p  = d.fillLink(f.depth, to.streamLanes, to.dtype)
+        val b  = Module(new Block(s"${spec.tag}_${f.name}", d, p)).suggestName(s"bufs_${i}_4")
+        i += 1
+        f.name -> (d, p, b)
       }
     }.toMap
   }
@@ -56,19 +66,24 @@ class AccDatapath(spec: AcceleratorSpec) extends Module {
     (u, d, p, b)
   }
 
-  private val bufs = for {
+  private val bufs =
+    spec.groups.flatMap(g => g.links.filter(_.depth > 0).map(_.name) ++ g.forkLinks.map(_.name)).map { name =>
+      val (d, p, b) = made(name)
+      (name, d, p, b)
+    }
+
+  /** The held links, each into a held port: its buffer's beat goes to the wrapper (`io.held`). */
+  private val heldLinks = for {
     g <- spec.groups
-    l <- g.links if l.depth > 0
-  } yield {
-    val (d, p, b) = made(l.name)
-    (l, d, p, b)
-  }
+    l <- g.links if spec.unit(l.to._1).port(l.to._2).hold
+  } yield l
 
   /** One unit's side: its outer ports' data, by BRM port, and its live pins. */
   class UnitIo(u: AcceleratorSpec.UnitSpec, d: Datapaths.Datapath, p: Map[String, ujson.Value], b: Block)
       extends Record {
     private val dirs  = d.ports.map(x => x.name -> x.dir).toMap
-    private val outer = spec.ins(u.name).map(_._2) ++ spec.outs(u.name).map(_._2)
+    private val outer = spec.ins(u.name).map(_._2) ++ spec.outs(u.name).map(_._2) ++
+      heldLinks.filter(_.to._1 == u.name).map(_.to._2)
     val elements      = SeqMap.from(
       u.ports.filter { case (brm, _) => outer.contains(brm) }.map { case (brm, x) =>
         val t = chiselTypeOf(b.io.elements(x.port))
@@ -87,7 +102,13 @@ class AccDatapath(spec: AcceleratorSpec) extends Module {
   val io = IO(new Bundle {
     val units   = MixedVec(blocks.map { case (u, d, p, b) => new UnitIo(u, d, p, b) })
     val buffers = MixedVec(bufs.map { case (_, d, p, b) => new BufferIo(d, p, b) })
+    val held    = Option.when(heldLinks.nonEmpty)(MixedVec(heldLinks.map { l =>
+      Output(chiselTypeOf(made(l.name)._3.io.elements("out")))
+    }))
   })
+
+  /** Each held link's place in `io.held`, by its link's name. */
+  val heldOf: Map[String, Int] = heldLinks.map(_.name).zipWithIndex.toMap
 
   private def port(unit: String, brm: String): Data = {
     val (u, _, _, b) = blocks.find(_._1.name == unit).get
@@ -103,8 +124,8 @@ class AccDatapath(spec: AcceleratorSpec) extends Module {
     d.livePins(p).foreach(n => b.io.elements(n.name) := io.units(k)(n.name))
   }
 
-  /** Each buffer's index in `io.buffers`, by its link's name (a wire has none). */
-  val buffered: Map[String, Int] = bufs.map(_._1.name).zip(bufs.indices).toMap
+  /** Each buffer's index in `io.buffers`, by its link's (or fork link's) name (a wire has none). */
+  val buffered: Map[String, Int] = bufs.map(_._1).zip(bufs.indices).toMap
 
   // The links: a wire, or a buffer between the ends
   for {
@@ -118,8 +139,27 @@ class AccDatapath(spec: AcceleratorSpec) extends Module {
       case Some(i) =>
         val (_, d, p, b) = bufs(i)
         b.io.elements("in") := from.asTypeOf(b.io.elements("in"))
-        to                  := b.io.elements("out").asTypeOf(to)
+        heldOf.get(l.name) match { // NB (D197): a held link's beat to the wrapper's hold register
+          case Some(h) => io.held.get(h) := b.io.elements("out")
+          case None    => to             := b.io.elements("out").asTypeOf(to)
+        }
         d.livePins(p).foreach(n => b.io.elements(n.name) := io.buffers(i)(n.name))
     }
+  }
+
+  // The fork links: the fork's reader's beat (its first port's, as the wrapper gives it) into the buffer, its
+  // consumer's port from the buffer
+  for {
+    g <- spec.groups
+    f <- g.forkLinks
+  } {
+    val reader       = spec.forks.find(_.contains(f.to)).get.head
+    val i            = buffered(f.name)
+    val (_, d, p, b) = bufs(i)
+    val k            = spec.units.indexWhere(_.name == reader._1)
+    val to           = port(f.to._1, f.to._2)
+    b.io.elements("in") := io.units(k)(reader._2).asTypeOf(b.io.elements("in"))
+    to                  := b.io.elements("out").asTypeOf(to)
+    d.livePins(p).foreach(n => b.io.elements(n.name) := io.buffers(i)(n.name))
   }
 }

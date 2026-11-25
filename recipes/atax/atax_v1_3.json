@@ -1,0 +1,58 @@
+{
+ "name": "atax_v1_3",
+ "id": "atax_dot2_ports",
+ "description": "`atax_v1` with the halves on one accelerator whose movers they share (`share_ports` on t, D169): they run in turn, so one set of streamers serves both.",
+ "kernel": "atax",
+ "params": {
+  "M": 64,
+  "N": 64,
+  "W": 8
+ },
+ "symbols": {
+  "M": "M",
+  "N": "N"
+ },
+ "steps": [
+  {
+   "transform": "lift",
+   "params": {
+    "kernel": "matvec",
+    "at": "tmp1_mult_map"
+   }
+  },
+  {
+   "transform": "apply_recipe",
+   "params": {
+    "block": "matvec",
+    "recipe": "matvec/matvec_v2",
+    "params": {
+     "W": "W"
+    }
+   }
+  },
+  {
+   "transform": "lift",
+   "params": {
+    "kernel": "matvec",
+    "at": "y_mult_map"
+   }
+  },
+  {
+   "transform": "apply_recipe",
+   "params": {
+    "block": "matvec_1",
+    "recipe": "matvec/matvec_v2",
+    "params": {
+     "W": "W"
+    }
+   }
+  },
+  {
+   "transform": "share_ports",
+   "params": {
+    "container": "tmp1",
+    "accelerator": "atax"
+   }
+  }
+ ]
+}

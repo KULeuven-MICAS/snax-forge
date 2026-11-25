@@ -430,10 +430,11 @@ body.dfg { padding: 0; height: 100vh; font-size: 17px; /* the run viewer's 15 px
 .c-details dl.facts.c-cost { margin: 0; }
 /* Compare: a label column and the two steps' values, the left step first; a row that differs marked */
 table.c-cols { width: 100%; border-collapse: collapse; margin: 0 0 0.5rem; font-size: 0.92em; table-layout: fixed; }
-table.c-cols th, table.c-cols td { text-align: left; vertical-align: top; padding: 0.1rem 0.4rem; overflow-wrap: anywhere; }
+table.c-cols th, table.c-cols td { text-align: left; vertical-align: top; padding: 0.18rem 0.4rem; line-height: 1.35; white-space: normal; overflow-wrap: anywhere; }
+table.c-cols td > div + div { margin-top: 0.1rem; } /* a list's items ("; "), one a line */
 table.c-cols thead th { color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--rule); }
 table.c-cols thead th:first-child { width: 28%; }
-table.c-cols tbody th { color: var(--muted); font-weight: 400; }
+table.c-cols tbody th { color: var(--muted); font-weight: 400; overflow-wrap: break-word; } /* a label breaks between words */
 table.c-cols tbody th.sub { padding-left: 1rem; }
 table.c-cols tr.c-cols-section th { color: var(--ink); font-weight: 600; padding-top: 0.35rem; }
 table.c-cols tr.differs td, table.c-cols tr.differs th { background: var(--req-bg); }
@@ -821,6 +822,11 @@ table.c-cost-table tr.streamer th, table.c-cost-table tr.streamer td { color: va
 .c-part-row { display: grid; grid-template-columns: minmax(5rem, auto) 1fr; gap: 0.4rem; align-items: center; margin-bottom: 0.2rem; }
 .c-part-side { display: flex; flex-direction: column; font-size: 0.82em; line-height: 1.2; }
 .c-part-side span:first-child { font-weight: 600; }
+/* Compare's bars: one grid, the labels' column as wide as the widest, so the bars line up */
+.c-part-grid { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.2rem 0.4rem; align-items: center; margin: 0.3rem 0 0.4rem; }
+.c-part-grid .c-part-row { display: contents; }
+.c-part-grid .c-part-bar-label { grid-column: 1 / -1; margin: 0.35rem 0 0; }
+.c-part-grid .c-part-bar-label:first-child { margin-top: 0; }
 
 /* -- the step's drawing, laid out by ELK (graph.js) -----------------------------
    Boxes are placed absolutely at ELK's places and sizes; edges, labels and outlines in one SVG

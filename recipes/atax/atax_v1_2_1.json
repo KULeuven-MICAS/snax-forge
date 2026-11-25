@@ -1,0 +1,67 @@
+{
+ "name": "atax_v1_2_1",
+ "id": "atax_dot2_ports_i8_o32_dmaT",
+ "description": "`atax_v1_2` with the halves sharing their movers (`share_ports` on t, D169).",
+ "kernel": "atax_types",
+ "params": {
+  "M": 64,
+  "N": 64,
+  "W": 8
+ },
+ "symbols": {
+  "M": "M",
+  "N": "N"
+ },
+ "types": "i8",
+ "steps": [
+  {
+   "transform": "data_transpose",
+   "params": {
+    "node": "y_mult_map",
+    "container": "A",
+    "by": "dma"
+   }
+  },
+  {
+   "transform": "lift",
+   "params": {
+    "kernel": "matvec",
+    "at": "tmp2_mult_map"
+   }
+  },
+  {
+   "transform": "apply_recipe",
+   "params": {
+    "block": "matvec",
+    "recipe": "matvec/matvec_v2",
+    "params": {
+     "W": "W"
+    }
+   }
+  },
+  {
+   "transform": "lift",
+   "params": {
+    "kernel": "matvec",
+    "at": "y_mult_map"
+   }
+  },
+  {
+   "transform": "apply_recipe",
+   "params": {
+    "block": "matvec_1",
+    "recipe": "matvec/matvec_v2",
+    "params": {
+     "W": "W"
+    }
+   }
+  },
+  {
+   "transform": "share_ports",
+   "params": {
+    "container": "tmp1",
+    "accelerator": "atax"
+   }
+  }
+ ]
+}

@@ -73,7 +73,9 @@ def recipe_graphs(name: str) -> tuple[Recipe, tuple[Graph, ...]]:
 
     r = Recipe.load(recipe_path(name))
     start = (
-        recipe_graphs(START[name])[1][-1] if name in START else import_kernel(r.kernel, r.dtypes)
+        recipe_graphs(START[name])[1][-1]
+        if name in START
+        else import_kernel(r.kernel, r.dtypes, r.types)
     )
     return r, tuple(res.graph for res in apply_recipe(r, start))
 

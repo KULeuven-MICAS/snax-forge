@@ -68,7 +68,7 @@ Every node has `id` (unique, D75), `kind`, `inputs`, `outputs`, `attrs` and, for
 | `map` | `var`, `range`; `loop.kind` (absent, `tile`, `temporal`, `spatial`); `loop.dim`, `loop.piece` (D162); `loop.split` (the `var` and `range` before a split, and `valid`, the iteration count, when it is not a multiple of the factor: the lanes past it are padding, D144) | runs once per value of `var` |
 | `tasklet` | `code`: one `output = expression` per output connector; its connectors are single elements | none |
 | `link` | `container` (the transient it replaced, which writer and reader still name), `depth` (0 a wire, ≥ 1 a buffer), `from`, `to` (the units' instances) | none |
-| `fork` | `container` (read by every reader), `readers` (`"<instance>.<port>"`, the graph's order, the first's streamer reading for all), `groups` (each member's group before, null for none) | none (D189) |
+| `fork` | `container` (read by every reader), `readers` (`"<instance>.<port>"`, the graph's order, the first's streamer reading for all), `groups` (each member's group before, null for none); optional `buffers`, a reader down a chain to its buffer's depth ≥ 1 (D196) | none (D189) |
 | `transpose` | `perm` (a permutation of its input's dimensions), `by` (`dma` or `core`: what makes the copy); one input `src` and one output `dst`, each its whole container (`0:<extent>` in every dimension), the output's shape the input's permuted by `perm`, the same dtype; the reference executor copies `np.transpose(src, perm)` into it | none |
 | `accelerated` | `instance`, `brm`, `implementation`, `code` (the BRM's matched entry), `params` (design params), `replaced` (the subtree `bind` replaced), `locals`, `accelerator`, `group`, `opType` (the last four only when set; `opType` the op's type where the tasklet's casts set it, D143 · D175) | empty for a leaf block |
 
@@ -250,7 +250,7 @@ Each has an inverse, and each refuses with the fix named. The loop names follow 
 | `data_transpose` | `node`, `container`, `by` (`dma`; `core` refused, not built yet) | the container copied transposed into `<container>_T` by a `transpose` node before the nest, which reads the copy in loop order (section 2, D182). Its sites are `mark_transpose`'s. Refused: an existing `<container>_T`, a nest reading the container in two orders. No inverse yet: the step is undone by removing it |
 | `share` / `unshare` | `group`, `with` | `group` runs on `with`'s units: the same shape unit by unit (BRM, implementation, params, links and depths), its nodes renamed to `with`'s (D165). Refused naming what differs (`vmul_x2 and vmul_x1 differ: W = 4 against 8`) |
 | `share_ports` / `unshare_ports` | `container`, `accelerator` | the container's writer's and reader's groups go on one accelerator whose movers they share, the k-th widest port of each on mover k (D169); the container is marked `hw.share_ports` |
-| `link` / `unlink` | `container`, `depth`, `group` | a transient between two bound units becomes a link node, their groups merge under `group`, and the transient leaves L1. Refused: not one writer and one reader (`link.container`), an end not bound (`link.unbound`), the beats not in the same order (`link.order`), a clashing name (`link.group`), a fork or join of links (`link.chain`) |
+| `link` / `unlink` | `container`, `depth`, `group` | a transient between two bound units becomes a link node, their groups merge under `group`, and the transient leaves L1; a held input counts one beat a bank row (D197). On a forked container, a buffer of `depth` on the branch to the reader down a chain, the fork's `buffers` (D196); the link into that reader comes after it. Refused: not one writer and one reader (`link.container`), an end not bound (`link.unbound`), the beats not in the same order (`link.order`), a clashing name (`link.group`), a fork or join of links (`link.chain`), a fork's branch not buffered or not down a chain (`link.fork`) |
 | `fork_read` / `unfork_read` | `container`, `group` | the bound units reading the container (each a chain's head, one port each) get one reader, a fork node recording them and their groups, which merge under `group` (D189). Refused: fewer than two readers, a reader not bound, a seed or two ports of one unit (`fork.container`, `fork.unbound`, `fork.port`), other beats or the same in another order (`fork.order`, naming `interchange_map`), a head fed by a link (`fork.head`), a shared unit (`fork.shared`), a clashing name (`fork.group`); `unfork_read` after the group changed (`fork.changed`) |
 | `lift` / `unlift` | `kernel`, `at` | the region matching a kernel's import becomes a block, `sandbox.block` = `{name, kernel, heads}` (D166) |
 | `apply_recipe` / `unapply` | `recipe`, `region` or `block`, `params`, `name` | another recipe's steps run on the region, its names renamed onto it (`_1`, `_2` on a clash); a param its symbols name is the region's, refused in `params`; one step, one reference check (D166) |
@@ -298,13 +298,14 @@ The `drawing` is `{nodes, edges, outlines, tasks}`; positions are the page's, ne
 
 | Field | Holds |
 |---|---|
-| node `id` | a container version `A@1`, a map or node id, or a hardware key: `unit:<instance>`, `link:<from>.<port>><to>.<port>`, `slicer:<instance>.<port>`, `packer:<instance>.<port>`, `mux:<instance>[.<port>]`, `demux:<instance>.<port>` |
+| node `id` | a container version `A@1`, a map or node id, or a hardware key: `unit:<instance>`, `link:<from>.<port>><to>.<port>`, `fifo:<fork>><instance>.<port>` (a fork's buffered branch, D196), `slicer:<instance>.<port>`, `packer:<instance>.<port>`, `mux:<instance>[.<port>]`, `demux:<instance>.<port>` |
 | node `kind`, `text`, `sub` | container, loop, tasklet, unit, link, slicer, packer, mux, demux, copy or block; its text; a loop's `var · n`, a fold's `over …` |
 | node `sel` | what a click selects (a node, map or container name; a unit its first node) |
 | node `ins`, `outs` | port names in order; none on a container or loop, whose edges get a port each |
 | node `parent`, `chips` | its outline; `[node, task]` per node a unit runs, or a merged loop's other maps |
 | node `layer`, `row`, `port_tasks`, `width_of` | `first` for a kernel input; a front loop's row; a mux's port per task; the unit a mux is as wide as |
 | edge `from`, `from_port`, `to`, `to_port` | its ends |
+| edge `sel` | what a click on it selects when not the edge: a link's edges their link node, a forked read's edges and its FIFO the container (`link`, `unlink`) |
 | edge `style`, `task`, `label` | data, seed, link, fork, local, wire or empty; its task after `share`; the dtype where it changes, `↻ var` for an outer loop skipped, `Aᵀ`, `broadcast`, `held a row` (D190) |
 | edge `data`, `node`, `port`, `sub` | the container, the node and port it feeds or leaves, the memlet |
 | edge `via` | a fork's other reader's edge (D189): `{node, port}` of the first reader, whose hops to the container a click on it lights too |
@@ -508,7 +509,7 @@ A task list is `name` and `steps`, each with an `op`:
 `lower/derive.py`, per accelerated node in execution order: `load_<C>` for each input not yet in L1 (or `transpose_<C>`), a task per streamer, the accelerator task (`n` and each named rate, D102), one `start` of them all, `store_<C>` for each output written for the last time; at the end one `sync` per non-transient output.
 
 - **Encapsulated**: each task also configures the other groups' movers idle, and its `start` launches every mover.
-- **A linked group** is one task `<node>_<group>`: streamers only on the ports on no link, and one accelerator task whose `values` are each unit's, by unit. The program writes JOBS = n_u / ∏ T_v over its first unit u and its folds v, each fold's JOB_BEATS, each bank's ROWS (D191), each carried unit's CARRY (D192), and a `JOBS_<SINK>` per chain (D189).
+- **A linked group** is one task `<node>_<group>`: streamers only on the ports on no link, and one accelerator task whose `values` are each unit's, by unit. The program writes JOBS = n_s / T_s of the chain's last unit s (n_u / ∏ T_v over its first unit u and its folds v, but across a held link, D197), each fold's JOB_BEATS, each bank's ROWS (D191), each carried unit's CARRY (D192), and a `JOBS_<SINK>` per chain (D189). A fork's buffer holds at least the folds' T between the fork and its reader's held input (D196).
 - **In place**: a writer never waits for a reader it starts with, allowed only when the reader is a port of its own unit visiting the same addresses in the same order.
 - **A packed output** (D174): its writer's innermost loop of n pushes at stride s = W · b / 8 bytes becomes $(\lceil n / d_{out} \rceil, d_{out}\thinspace s)$; a sliced input's reader (D180) the same with d_in.
 - **A copy** (D182): a `transpose` node is the DMA task `transpose_<dst>`, `l1_to_l1`, one burst of an element a step (`size`). Rank 2 only.
@@ -606,7 +607,7 @@ The streamer file and `accelerator.json` have snax-forge's schemas (`gen/schema/
 | `design_point` | the design point's path, as section 9's files name it |
 | `tag` | the generated entry's name, `<accelerator_slot>_<design>` (D131); the modules are named after it |
 | `accelerators` | in CSR order, each one streamer set (D157): `name`, `inputs` and `outputs` (its outer ports as `"<unit>.<port>"`, in reader and writer order; a forked input one entry, the list of the ports its reader feeds, the first the reader's, D189), `groups`; with `share_ports` (D169) also `movers` and `port_mux` (below) |
-| a group | `name`, `csrs` (its own: START, JOBS, STATUS, BUSY_COUNTER; with several chains a `JOBS_<SINK>` per chain in place of JOBS, in the order of their sinks, D189), `units`, `links`, each link `{name, from, to, depth}` from an `out` port to an `in` port (depth 0 a wire, ≥ 1 a buffer of that many beats) |
+| a group | `name`, `csrs` (its own: START, JOBS, STATUS, BUSY_COUNTER; with several chains a `JOBS_<SINK>` per chain in place of JOBS, in the order of their sinks, D189), `units`, `links`, each link `{name, from, to, depth}` from an `out` port to an `in` port (a held, broadcast `in` port one lane, D197); `fork_links` when there is one, each `{name, to, depth}`, a forked port down a chain fed by a ring buffer of `depth` beats (D196) (depth 0 a wire, ≥ 1 a buffer of that many beats) |
 
 A unit:
 
@@ -746,7 +747,7 @@ One set of modules per design, shared by its accelerators (D168):
 | `<tag>_shell_wrapper` | the ports snax_cluster connects (below) |
 | `<tag>_csr` ⊃ `<tag>_peripherals` | the CSRs by offset (ReqRspManager's protocol, D130), STATUS's done bit, the read answer, the hold of a busy group's writes, PORT_MUX_SEL; the peripherals hold the BUSY_COUNTERs, left out of every reported figure |
 | `<tag>_ctrl` ⊃ `<tag>_<group>_ctrl` | per group: busy, the counters, the done pulse, the pins |
-| `<tag>_datapath` | a submodule per unit and per buffer; no valid, ready or counter inside |
+| `<tag>_datapath` | a submodule per unit, per buffer and per fork link (D196); no valid, ready or counter inside |
 | `<tag>_<accelerator>_port_mux` | per accelerator whose groups share its movers (D169) |
 
 A group's control unit follows snax-gvsoc's `SnaxGroupRule` (`snax/snax_group.hpp`), with a Python twin (`snax/snax_group_rule.py`) and Chisel's `GroupRule` (D147):
@@ -757,6 +758,7 @@ A group's control unit follows snax-gvsoc's `SnaxGroupRule` (`snax/snax_group.hp
 - **Span**: a unit reads lane l in place at span S, firing on lane S − 1.
 - **A bank** (D191): R rows of sums, `row` = the beat mod ROWS (ROWS ≤ R); a job of T firings gives ROWS results; a chain's sink only, seeded a beat a row (D194).
 - **A carried seed** (D192) is 0 while the unit's jobs counter is below CARRY; **a held input** (D190) is taken where `row` = 0; a **forked input** (D189) when every head fires.
+- **A held link** (D197) into a bank is popped where `row` = 0 (the unit's `take`), so its producer gives a result every ROWS of the bank's firings; **a fork link** (D196) is a ring of D beats in the control unit (`<head>_<to>_fork_occupancy` and its slots), loaded when the fork's units fire and popped by its consumer's firing, the fork held while the ring is full and its consumer does not pop.
 - **Counting** (D153): a register only for what a firing changes, counting up; every counter job_width bits, a fixed T a ⌈log₂ T⌉-bit counter. Done is the sink's JOBS-th push.
 
 ### Cycles
@@ -781,7 +783,7 @@ These plus the streamers' fill (3, or 2 for a one-input unit) are the expected B
 - `clk_i`, `rst_ni` (active low); `csr_req_addr_i`, `csr_req_data_i` (32 bits), `csr_req_write_i`, `csr_req_valid_i`, `csr_req_ready_o`, `csr_rsp_data_o` (32 bits), `csr_rsp_valid_o`, `csr_rsp_ready_i`.
 - Per input port k, numbered across the sets in set order, `stream2acc_<k>_data_i`, `_valid_i`, `_ready_o`; per output port `acc2stream_<k>_data_o`, `_valid_o`, `_ready_i`, in the order of `inputs` and `outputs`. Data is `num_channel × 64` bits, lane i at bits `[w(i+1)-1 : wi]` (D142).
 - Per group `<group>_busy_o` and `<group>_done_o`.
-- Between port and unit: a `FifoPacker` (`<unit>_<port>_packer`, D174) or `FifoSlicer` (`<unit>_<port>_slicer`, D180) on a one-word port, `<unit>_<port>_bcast` for a broadcast (D186), `<unit>_<port>_hold` for a held input (D190); a shared accelerator's (D169) movers and port mux, selected by PORT_MUX_SEL.
+- Between port and unit: a `FifoPacker` (`<unit>_<port>_packer`, D174) or `FifoSlicer` (`<unit>_<port>_slicer`, D180) on a one-word port, `<unit>_<port>_bcast` for a broadcast (D186), `<unit>_<port>_hold` for a held input (D190) or a held link's one-lane beat (D197); a shared accelerator's (D169) movers and port mux, selected by PORT_MUX_SEL.
 
 ### The shared cases
 
@@ -796,7 +798,7 @@ What `pixi run bundle DP [--out DIR]` writes per design point (D111, D130, `gen/
 | the root | section 9's files, the cluster file and `accelerator.json` among them |
 | `rtl/sv/`, `rtl/emitted.json` | what `Emit --spec` wrote (section 10) |
 | `rtl/files.f` | the RTL's file list, one path per line relative to `rtl/`, in `emitted.json`'s order |
-| `bundle.json` | `design_point`, `tag`, `snax_forge_commit` (null outside git), `dirty` (uncommitted changes to tracked files; untracked ones such as `recipes/custom/` do not count), `top` (`<tag>_shell_wrapper`), `modules` (each of the wrapper's modules with its submodules, from `accelerator.json`, section 10's names, then each stream block module once: a sliced input's `FifoSlicer`, a packed output's `FifoPacker`), `expected` (`forge_expected.txt` or null) |
+| `bundle.json` | `design_point`, `tag`, `snax_forge_commit` (null outside git), `dirty` (uncommitted changes to tracked files; untracked ones such as `recipes/custom/` do not count), `top` (`<tag>_shell_wrapper`), `modules` (each of the wrapper's modules with its submodules, from `accelerator.json`, section 10's names, a group's units, buffers and fork links in that order, then each stream block module once: a sliced input's `FifoSlicer`, a packed output's `FifoPacker`), `expected` (`forge_expected.txt` or null) |
 | `forge_expected.txt` | written by `pixi run forge` only, from the bundle's SNAX-GVSoC run: its `forge counter` lines, then its `forge data: 0 errors` line, then per counter `forge fill <task>: <n>`, the fill of the task's group (section 13's `fill`) |
 
 Refused: what sections 9 and 10 refuse, then `bundle.empty` (`emitted.json` lists no file).
@@ -990,7 +992,7 @@ What a design costs in area and energy before any synthesis: the blocks and cont
 | `<tech>/ram_table.csv` | CACTI 7: depth 32–4096 × width 8–256, `area_um2`, `e_rd_pj`, `e_wr_pj` | X47, X48 |
 
 - `pixi run import-costs` copies the five files with `<tech>/SOURCE` naming each file's origin and sha256; `tests/char/` checks them.
-- **Block lookup** (`lookup`, D176): the entry at the block's width pair (`pair_params`), then a point at its lanes (`measured`), else by `lanes_rule` (`copy`, `interpolate`, `slope`), depth, `width` or `unseeded`; a `Mac` bank from its rows-1 entry and the `bank` forms (D193). Else the comb part counts 0 (`char.missing`).
+- **Block lookup** (`lookup`, D176): the entry at the block's own pair if its inputs differ in width and that pair is measured (`exact_params`), else at its width pair (`pair_params`), then a point at its lanes (`measured`), else by `lanes_rule` (`copy`, `interpolate`, `slope`), depth, `width` or `unseeded`; a `Mac` bank from its rows-1 entry and the `bank` forms (D193). Else the comb part counts 0 (`char.missing`).
 - **Table lookup** (`streamer_cost`, `xbar_cost`, `bank`): linear along one axis at a time; outside the grid linear through the two nearest values, clamped at zero, with `cost.extrapolated`. A writer is priced as a reader.
 
 ### The model
@@ -1042,7 +1044,7 @@ $$E_j = \sum_c \sum_k n_{c,k}(j)\thinspace e_{c,k} = E_{dp}(j) + E_{ctrl}(j) + E
 | $n_{c,k}(j)$, $e_{c,k}$ | the count of transactions of kind k in component c in window j, and the price of one | below | —, pJ |
 | $f_u(j)$, $p_u(j)$ | unit u's firings and pushes (results given to its link or outer output) | the group's `snap` lines | — |
 | $S_u$ | unit u's span: the cycles one firing reads lanes in place | the graph | — |
-| $e_{fire}$ | a block's energy per fire: its comb energy plus its bits loading, $e_{comb} + n_{bits}\thinspace e_{load}$ | `char.lookup` at its width pair (D176) | pJ |
+| $e_{fire}$ | a block's energy per fire: its comb energy plus its bits loading, $e_{comb} + n_{bits}\thinspace e_{load}$ (a `LinkBuffer` of depth D loads one entry, $n_{bits}/D$, D196) | `char.lookup` at its width pair (D176) | pJ |
 | $\ell$, $src(\ell)$ | a buffer link or a packed output's packer, and the unit whose pushes it loads | the group's links | — |
 | $b_h(j)$ | group h's busy-flag cycles: its `busy`, `stall_in`, `stall_out` and `flush` added | the group's `snap` line | cycles |
 | $n_h^{ctrl}$, $e_{ctrl}$ | group h's control-unit bits, and their energy per bit and cycle (D154 · D172) | the control model | —, pJ |

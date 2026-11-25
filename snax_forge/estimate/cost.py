@@ -395,13 +395,16 @@ def shares(parts: Mapping[str, Part]) -> dict[str, tuple[float | None, float | N
 def block_cost(table: Table, block: Block, bits: int, cycles: int) -> BlockCost:
     """One block's cost on ``table`` (CONTRACTS, "Cost model"): its fires, each its comb energy
     and its bits loading (a packer's or a slicer's, the bits its table point says load per push or
-    pop); ``cycles`` is not used, a held flop costing nothing."""
+    pop; a ``LinkBuffer``'s one entry of its ``depth``, a ring); ``cycles`` is not used, a held
+    flop costing nothing."""
     p = block.params
     got = None
     if block.datapath is not None:
         got = lookup(table, block.datapath, p, p.get("lanes", 1), p.get("depth"))
     comb, e_comb = (got.comb_um2, got.e_comb_pj) if got is not None else (0.0, 0.0)
     loading = got.load_bits if got is not None and got.load_bits is not None else bits
+    if block.datapath == "LinkBuffer" and p.get("depth", 1) > 1:  # a ring: one entry a push
+        loading = bits / p["depth"]
     e_fire = e_comb + loading * table.e_load_pj
     return BlockCost(block.datapath, block.fires, got.found if got is not None else None, comb,
                      bits * table.flop_um2, e_fire, block.fires * e_fire / 1000)  # fmt: skip

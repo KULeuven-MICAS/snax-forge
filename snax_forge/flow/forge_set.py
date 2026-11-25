@@ -1,6 +1,6 @@
 """A set of bundles for the local RTL check, in one command.
 
-    python -m snax_forge.flow.forge_set quick|full [--sim vsim|vlt] [-j N]    (pixi forge-set)
+    python -m snax_forge.flow.forge_set quick|full|<task> [--sim vsim|vlt] [-j N]    (pixi forge-set)
 
 ``forge_set`` runs ``pixi run forge`` (flow/forge.py) on each ``Design`` of the set in ``SETS``
 (a recipe and its ``--set`` values, named as forge's folder), ``-j`` at a time (default the CPU
@@ -81,6 +81,7 @@ SETS = {
                       Design("mvt_v4_1_1", (SEQUENTIAL,)),  # the DMA's transposed copy
                       Design("mvt_v5", (SEQUENTIAL,)),  # two accelerators
                       "mvt_v6",  # a seeded bank, a fork
+                      "atax_v4",  # a held link into a bank, a fork's buffered branch
                       Design("vsum_v1_1", ("types=i8", "W=8")),
                       Design("dot_v3", ("types=i16", "W=4")),
                       Design("dot_v3", ("types=i32", "W=2")))],

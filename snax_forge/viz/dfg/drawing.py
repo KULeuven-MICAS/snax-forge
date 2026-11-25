@@ -108,7 +108,8 @@ class _Drawing:
     def edge(self, a: str, ap: str | None, b: str, bp: str | None, *, once: bool = False,
              **kw: Any) -> dict[str, Any] | None:  # fmt: skip
         """An edge from box ``a`` (port ``ap``) to box ``b`` (port ``bp``); ``once`` a wire of the
-        hardware, drawn once whatever uses it."""
+        hardware, drawn once whatever uses it; ``sel`` what a click on it selects (a link node, a
+        forked container), else the edge itself."""
         if once:
             key = (a, ap, b, bp)
             if key in self.wires:
@@ -142,10 +143,17 @@ def drawing(g: Graph, tops: Sequence[Node], placed: dict[str, Any] | None = None
     local = {c for c, cont in g.containers.items() if "loop.local" in cont.attrs}
     linked: dict[str, Node] = {n.attrs["container"]: n for n, _ in g.walk() if n.kind == "link"}
     forked = {r for n, _ in g.walk() if n.kind == "fork" for r in n.attrs["readers"]}
+    buffered = {r: (n, depth) for n, _ in g.walk() if n.kind == "fork"
+                for r, depth in n.attrs.get("buffers", {}).items()}  # fmt: skip
     nested = [_maps_to(t) for t in tops]
     top_of = {n.id: t.id for t, under in zip(tops, nested, strict=True) for n, _ in under}
     maps_of = {n.id: maps for under in nested for n, maps in under}
     nodes = {n.id: n for under in nested for n, _ in under}
+    # a link with an end in a folded block is drawn as its container, between the blocks
+    ends = {c: [n for n in nodes.values() if n.kind == "accelerated"
+                for m in (*n.inputs.values(), *n.outputs.values()) if m.data == c]
+            for c in linked}  # fmt: skip
+    linked = {c: ln for c, ln in linked.items() if len(ends[c]) == 2}
 
     # the instances drawn, their nodes, the tasks of a shared one
     by_inst: dict[str, list[Node]] = {}
@@ -316,11 +324,19 @@ def drawing(g: Graph, tops: Sequence[Node], placed: dict[str, Any] | None = None
                 d.edge(sl, "out", ub, port, once=True, style="seed" if port == SEED else "wire",
                        **bcast(n, port))  # fmt: skip
             return mid, f"{port}·{task_of[n.id]}"
+        to, style = (ub, port), "seed" if port == SEED else "wire"
+        if f"{inst}.{port}" in buffered:  # a fork's branch down a chain: its ring buffer
+            fork, depth = buffered[f"{inst}.{port}"]
+            fid = f"fifo:{fork.id}>{inst}.{port}"
+            d.box(fid, kind="link", text=f"{fork.attrs['container']} · FIFO {depth}",
+                  sel=fork.attrs["container"],
+                  ins=["in"], outs=["out"], links=[])["depth"] = depth  # fmt: skip
+            d.edge(fid, "out", *to, once=True, style="link", sel=fork.attrs["container"])
+            to, style = (fid, "in"), "wire"
         if sl is not None:
-            d.edge(sl, "out", ub, port, once=True, style="seed" if port == SEED else "wire",
-                   **bcast(n, port))  # fmt: skip
-            return sl, "in"
-        return ub, port
+            d.edge(sl, "out", *to, once=True, style=style, **bcast(n, port))
+            to = (sl, "in")
+        return to
 
     def bcast(n: Node, port: str) -> dict[str, Any]:
         """A broadcast input's wire into its unit: labelled ``<port> · broadcast``, and
@@ -439,7 +455,9 @@ def drawing(g: Graph, tops: Sequence[Node], placed: dict[str, Any] | None = None
                         else ln.id
                     )
                     d.edge(lb, "out", unit_box(n) if n.kind == "accelerated" else n.id, port, once=True,
-                           style="link", data=m.data, sub=api.memlet_text(m), node=n.id, port=port)  # fmt: skip
+                           style="link", data=m.data, sub=api.memlet_text(m), node=n.id, port=port,
+                           sel=ln.id,
+                           **(bcast(n, port) if n.kind == "accelerated" else {}))  # fmt: skip
                     continue
                 if m.data in written_here:
                     for a, ap in written_here[m.data]:
@@ -479,6 +497,7 @@ def drawing(g: Graph, tops: Sequence[Node], placed: dict[str, Any] | None = None
                 d.edge(a, ap, tgt, tp, task=task, skip=skipped_all, data=m.data, **via,
                        style="seed" if seeded else "fork" if fork else "data",
                        sub=api.memlet_text(m), node=n.id, port=port,
+                       **({"sel": m.data} if fork else {}),
                        mark=(api.transpose_label(m.data, perm) if perm is not None
                              else "fork" if fork
                              else "carried, 0 first" if seeded and api.carried(n) else None),
@@ -504,7 +523,7 @@ def drawing(g: Graph, tops: Sequence[Node], placed: dict[str, Any] | None = None
                         else ln.id
                     )
                     d.edge(nb, c, lb, "in", once=True, style="link", dt=dtype_changes(n, m.data),
-                           data=m.data, sub=api.memlet_text(m), node=n.id, port=c)  # fmt: skip
+                           data=m.data, sub=api.memlet_text(m), node=n.id, port=c, sel=ln.id)  # fmt: skip
                     continue
                 written_here.setdefault(m.data, []).append((nb, c))
                 pending.setdefault(m.data, []).append((n, c, m))
@@ -697,7 +716,7 @@ def _outlines(g: Graph, d: _Drawing, by_inst: dict[str, list[Node]], shared: dic
                 if len(inner) == 1 and None not in inner:
                     box["parent"] = f"block:{next(iter(inner))}"
         elif box["kind"] == "link":
-            inst = bid.split(":", 1)[1].split(".", 1)[0]
+            inst = bid.split(":", 1)[1].split(".", 1)[0].split(">")[-1]  # a fork's: its reader's
             box["parent"] = d.nodes[f"unit:{inst}"].get("parent")
         elif box["kind"] in ("loop", "tasklet", "copy", "block"):
             n = nodes.get(bid)

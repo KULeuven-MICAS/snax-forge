@@ -63,7 +63,7 @@ The ISPASS 2027 paper (PAP3) carries E1, E3, E4, E7 and E11, E2 as a sentence or
 | E1 | Fidelity: SNAX-GVSoC against snax_cluster RTL | Open item 95's 14 designs; mvt and atax (gesummv if time) at 3–5 compositions each that differ in cycles | Rank metrics and error table | in |
 | E2 | Turnaround and speed | The times the runs log anyway | One or two sentences in section 3 | a sentence, no task |
 | E3 | The composite kernels | tier done, the untiered kernels and tier A, built from basic blocks, then an MLP at batch 1 and a small conv2d; an import-level coverage table over the staged kernels | Cycles per kernel; coverage table | in |
-| E4 | Composition sweeps | tier A (mvt serial against overlapped, open item 109; atax on two engines against one shared, open item 113; shared against dedicated crossbar ports, PORT1) and W sweeps across the bank bound (int64 and int32, W ≤ 32), at MINI | Cycles against area and energy per composition, the engine-alone choice marked | in, the headline |
+| E4 | Composition sweeps | tier A (mvt serial against overlapped, open item 109; atax on two engines against one shared, `atax_v1` against `atax_v1_1`; shared against dedicated crossbar ports, PORT1) and W sweeps across the bank bound (int64 and int32, W ≤ 32), at MINI | Cycles against area and energy per composition, the engine-alone choice marked | in, the headline |
 | E5 | End-to-end case: Transformer decode | One attention head (q·Kᵀ, softmax, ·V) at a short context that fits L1 | Where the cycles go; the best composition | best effort, if softmax runs by 27 Nov 2026 (STATUS, E2E3) |
 | E6 | Familiar case | A ResNet basic-block slice that fits L1: conv, requantize, relu, skip add, with shortcuts for the GeMM and tiling not built | Where the cycles go per layer | best effort (STATUS, E2E5) |
 | E7 | Engine quality | tier done and untiered: forge against Vitis opt and dace, Bambu and XLS at W ≤ 16, 10 ns HLS clock, n2048 for tier done and Vitis's power sizes for untiered | Post-synthesis area and fmax; dynamic energy per task (PrimeTime); control apart where a tool separates it | in |
@@ -214,7 +214,7 @@ Done: SNAX-GVSoC matching snax_cluster RTL (M16; the local RTL check), the gener
 | Feature | Needed by | Where |
 |---|---|---|
 | The composite kernels | E1, E3, E4, E11 | M13 track A: tier A (open items 54, 113) |
-| One unit across DFG regions | E4 (atax) | open item 113, in tier A |
+| One unit across DFG regions | E4 (atax) | `atax_v1_1` (D165): one group for both halves, the same cycles at half the area |
 | DMA cost on the graph | Level 1's feedback | L2V1, after the paper (open item 99 for the graph-level node) |
 | Interconnect markers | Level 1's feedback | XBAR1, after the paper |
 | A sweep script | E4 | E4S1, over `pixi run flow --set`; DSE5 (M8) is not needed |

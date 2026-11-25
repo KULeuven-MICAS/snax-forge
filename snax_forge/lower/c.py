@@ -18,7 +18,6 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from math import prod
 from typing import TYPE_CHECKING, Any
 
 from snax_forge.brm import Instance
@@ -95,10 +94,11 @@ def job_writes(units: Mapping[str, Instance], values: Mapping[str, Any], fixed: 
                chains: list[list[str]] | None = None) -> list[tuple[str, str, int]]:  # fmt: skip
     """An accelerator task's CSR writes, ``(unit, CSR, value)`` in order: a unit's task
     (``units`` one, ``values`` its n and rates) as ``job_values``; a linked group's (``values``
-    by unit, the group's units in order) JOBS = n_u / ∏ T_v over its first unit u and the
-    group's folds v, then each fold's JOB_BEATS but those in ``fixed`` (CONTRACTS, "Task
+    by unit, the group's units in order) JOBS = n_s / T_s of its last unit s (its firings, T 1
+    unless a fold: n_u / ∏ T_v over its first unit u and its folds v, but for a bank fed over a
+    held link), then each fold's JOB_BEATS but those in ``fixed`` (CONTRACTS, "Task
     list"), then each bank's ROWS. A group of several ``chains`` (each head to sink) writes
-    one JOBS per chain, ``JOBS_<SINK>`` = n_head / ∏ T over the chain's folds, at its sink."""
+    one JOBS per chain, ``JOBS_<SINK>``, at its sink."""
     if "n" in values:
         ((unit, inst),) = units.items()
         return [(unit, k, v) for k, v in job_values(inst, values, unit in fixed).items()]
@@ -107,9 +107,9 @@ def job_writes(units: Mapping[str, Instance], values: Mapping[str, Any], fixed: 
         chains = [list(values)]
     out = []
     for chain in chains:
-        t = prod(folds[u] for u in chain if u in folds)
+        t = folds.get(chain[-1], 1)
         out.append((chain[-1] if len(chains) > 1 else chain[0], jobs_csr(chains, chain),
-                    values[chain[0]]["n"] // t if t else 0))  # fmt: skip
+                    values[chain[-1]]["n"] // t if t else 0))  # fmt: skip
     out += [(u, "JOB_BEATS", v) for u, v in folds.items() if u not in fixed]
     out += [(u, "ROWS", r) for u in values if (r := bank_rows(units[u])) > 1]
     return out + [(u, "CARRY", v["carry"]) for u, v in values.items() if "carry" in v]

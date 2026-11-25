@@ -526,8 +526,10 @@ function valueText(v) {
 }
 
 /** Compare's two columns (api.py's compare_view ``columns``): a label column and the two
-steps' texts, the left step first, rows that differ marked; a row's ``under`` opens a section. */
+steps' texts, the left step first, rows that differ marked; a row's ``under`` opens a section.
+A value wraps, and a list joined by "; " (L1 accesses per accelerator, lanes) takes a line an item. */
 function columnsTable(labels, rows) {
+  const lines = (v) => (typeof v === "string" && v.includes("; ") ? v.split("; ").map((x) => h("div", {}, x)) : v);
   const body = [];
   let under = null;
   for (const r of rows) {
@@ -535,7 +537,7 @@ function columnsTable(labels, rows) {
     under = r.under;
     body.push(h("tr", { class: r.differs ? "differs" : null },
       h("th", { scope: "row", class: r.under ? "sub" : null }, r.label),
-      h("td", { class: "mono" }, r.a), h("td", { class: "mono" }, r.b)));
+      h("td", { class: "mono" }, lines(r.a)), h("td", { class: "mono" }, lines(r.b))));
   }
   return h("table", { class: "c-cols" },
     h("thead", {}, h("tr", {}, h("th", {}, ""), h("th", { scope: "col" }, labels[0]), h("th", { scope: "col" }, labels[1]))),
@@ -757,7 +759,8 @@ function costParts(c) {
 }
 
 /** Compare's cost bars (api.py's compare_cost_bars): per area and energy, the two steps' bars one
-above the other on one scale, the larger total the whole width. */
+above the other on one scale, the larger total the whole width; all four in one grid, so every
+bar starts at the same left edge. */
 function compareBars(bars) {
   if (!bars) return [];
   const bar = (side, what) => {
@@ -773,8 +776,8 @@ function compareBars(bars) {
       h("div", { class: "c-part-side" }, h("span", {}, side.label), h("span", { class: "nb" }, side.total_text)),
       h("div", { class: "c-part-bar", role: "img", "aria-label": `${side.label}: ${what} by part` }, segs));
   };
-  return [["area", "area"], ["energy", "energy per run"]].map(([key, what]) => h("div", { class: "c-part-bar-wrap" },
-    h("div", { class: "c-part-bar-label muted" }, `${what}, on one scale`), ...bars[key].map((side) => bar(side, what))));
+  return [h("div", { class: "c-part-grid" }, [["area", "area"], ["energy", "energy per run"]].flatMap(([key, what]) => [
+    h("div", { class: "c-part-bar-label muted" }, `${what}, on one scale`), ...bars[key].map((side) => bar(side, what))]))];
 }
 
 async function estimate() {

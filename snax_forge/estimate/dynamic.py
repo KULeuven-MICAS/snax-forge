@@ -30,6 +30,7 @@ from snax_forge.char.tables import streamer_cost as _streamer
 from snax_forge.design.streamers import group_links, instances
 
 from .cost import PARTS
+from .cycles import buffered
 
 if TYPE_CHECKING:
     from snax_forge.dfg import Graph
@@ -56,7 +57,8 @@ class Prices:
     units' bits (in all, and per group) and e_ctrl, per mover whether it writes, its channels and its energy per beat,
     the crossbar's per request of a read-only and of a write-only input, a bank's per read
     and per write, the banks a DMA beat reads or writes (a superbank's); per slicer (``<unit>.<port>``) its unit, the count it pops on (``firings``, a
-    seed's ``pushes``) and its energy per pop."""
+    seed's ``pushes``) and its energy per pop; a fork's ring (its container) the same, loading on its reader's
+    firings."""
 
     units: dict[str, tuple[int, float]]
     links: dict[str, tuple[str, float]]
@@ -178,16 +180,27 @@ def prices_of(graph: Graph, est: Estimate, movers: Sequence[MoverSpec]) -> Price
         for u, b in g.cost.units.items():
             units[u] = (insts[u].span, b.e_fire_pj)
         src = _producers(graph, g.units)
+        rings = _rings(graph, g.units)
         for k, b in g.cost.links.items():
             if b.datapath == "FifoSlicer":
                 u, port = k.split(".", 1)
                 slicers[k] = (u, "pushes" if port == SEED else "firings", b.e_fire_pj)
+            elif k in rings:  # a fork's ring loads a beat each time its reader fires
+                slicers[k] = (rings[k], "firings", b.e_fire_pj)
             else:
                 links[k] = (src(k), b.e_fire_pj)
     beat = {s.name: (s.write, s.channels, _streamer(costs, s.depth, s.loops, s.channels).energy_pj)
             for s in movers}  # fmt: skip
     return Prices(units, links, bits, load(est.tech or "").e_ctrl_pj, beat, x.e_ro_pj, x.e_wo_pj,
                   m.e_rd_pj, m.e_wr_pj, est.superbank_banks, slicers, group_bits)  # fmt: skip
+
+
+def _rings(graph: Graph, units: Sequence[str]) -> dict[str, str]:
+    """A group's fork buffers (``LinkBuffer`` keyed by the forked container) to the unit their
+    branch feeds: one push per beat of the fork, so one per that unit's firing."""
+    return {
+        f.attrs["container"]: r.split(".", 1)[0] for r, (f, _) in buffered(graph, units).items()
+    }
 
 
 def _producers(graph: Graph, units: Sequence[str]) -> Callable[[str], str]:
@@ -264,8 +277,9 @@ def graph_counts(graph: Graph, est: Estimate) -> Counts:
             continue
         out.busy += g.cycles
         out.groups[g.name] = g.cycles
-        src = _producers(graph, g.units)
-        pushes = {src(k): b.fires for k, b in g.cost.links.items() if b.datapath != "FifoSlicer"}
+        src, rings = _producers(graph, g.units), _rings(graph, g.units)
+        pushes = {src(k): b.fires for k, b in g.cost.links.items()
+                  if b.datapath != "FifoSlicer" and k not in rings}  # fmt: skip
         for k, b in g.cost.links.items():  # a seed pops once a job, its unit's results
             if b.datapath == "FifoSlicer" and k.split(".", 1)[1] == SEED:
                 pushes.setdefault(k.split(".", 1)[0], b.fires)

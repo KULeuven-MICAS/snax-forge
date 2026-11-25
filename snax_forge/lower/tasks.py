@@ -29,6 +29,7 @@ from snax_forge.design.streamers import (
     groups,
     instance_nodes,
     instances,
+    links,
     streamer_name,
 )
 
@@ -401,7 +402,7 @@ def _check_widths(s: Configure, point: DesignPoint, units: list[str]) -> None:
     # gen and c import this module: theirs are imported here, not at the top
     from snax_forge.gen.accelerator import fixed_fold
 
-    from .c import fold_rate, job_writes
+    from .c import job_writes
 
     found, nodes = instances(point.graph), instance_nodes(point.graph)
     fixed = {u for u in units if fixed_fold(point.graph, nodes[u], found[u]) is not None}
@@ -422,16 +423,36 @@ def _check_widths(s: Configure, point: DesignPoint, units: list[str]) -> None:
             raise ValueError(f"{s.component}: the fork of {f.attrs['container']} gives its beats "
                              f"to units that fire {fired} times; a fork's units fire alike "
                              "(change the nests so each reads every beat once)")  # fmt: skip
-    firings = 0
-    for chain in chains or [units]:  # each chain's head, JOBS · ∏T over the chain
-        jobs = next(v for u, k, v in writes if k.startswith("JOBS") and u in (chain[0], chain[-1]))
-        for u in chain:
-            rate = fold_rate(found[u])
-            jobs *= 1 if rate is None else by_unit[u][rate]
-        firings = max(firings, jobs)
+        for r, depth in f.attrs.get("buffers", {}).items():
+            if r.split(".")[0] in units:
+                _check_buffer(f, r, depth, units, found, by_unit, s.component, point)
+    firings = max(by_unit[u]["n"] for u in units)
     if firings >= HEAD_FIRINGS:
-        raise ValueError(f"{s.component}: the head fires JOBS · ∏T = {firings} times, 2^32 or "
-                         "more (SNAX-GVSoC counts a run's firings in 32 bits)")  # fmt: skip
+        raise ValueError(f"{s.component}: a unit fires {firings} times, 2^32 or more "
+                         "(SNAX-GVSoC counts a run's firings in 32 bits)")  # fmt: skip
+
+
+def _check_buffer(fork: Any, reader: str, depth: int, units: list[str], found: Mapping[str, Any],
+                  by_unit: Mapping[str, Any], component: str, point: DesignPoint) -> None:  # fmt: skip
+    """A fork's buffered branch against the beats its reader waits for: the folds' T
+    along its chain back to the fork's other reader."""
+    from .c import fold_rate
+
+    # NB (D196): the reader fires only once the other branch has made its held input, T beats
+    # later; a buffer of fewer than T beats fills first and neither branch moves again
+    into = {k.attrs["to"]: k.attrs["from"] for k in links(point.graph) if k.attrs["to"] in units}
+    heads = {x.split(".")[0] for x in fork.attrs["readers"]} - {reader.split(".")[0]}
+    t, w = 1, into.get(reader.split(".")[0])
+    while w is not None:
+        rate = fold_rate(found[w])
+        t *= 1 if rate is None else by_unit[w][rate]
+        w = None if w in heads else into.get(w)
+    if depth < t:
+        c = fork.attrs["container"]
+        raise ValueError(f"{component}: the fork of {c} buffers {depth} beats for {reader}, "
+                         f"which fires only after {t} beats on the other branch; link {c} "
+                         f"with a depth of {t} or more (more by the chain's latency for full "
+                         "rate)")  # fmt: skip
 
 
 def check_values(tasks: TaskList, point: DesignPoint) -> None:

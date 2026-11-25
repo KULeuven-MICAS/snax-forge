@@ -1,0 +1,62 @@
+{
+ "name": "atax_v3",
+ "id": "atax_dot2_colbank_link_i8_o32",
+ "description": "atax in one group at int8 in, int32 out: t = A x by `matvec/matvec_v2`, y = Aᵀ t by the bank form `matvec/matvec_v8` (R rows, R · W = N), and t linked at depth 1 into the `Mac`'s broadcast input, held for its row (D197). A is read twice, t is in no memory.",
+ "kernel": "atax_types",
+ "params": {
+  "M": 64,
+  "N": 64,
+  "W": 8,
+  "R": 8
+ },
+ "symbols": {
+  "M": "M",
+  "N": "N"
+ },
+ "types": "i8",
+ "steps": [
+  {
+   "transform": "lift",
+   "params": {
+    "kernel": "matvec",
+    "at": "tmp2_mult_map"
+   }
+  },
+  {
+   "transform": "apply_recipe",
+   "params": {
+    "block": "matvec",
+    "recipe": "matvec/matvec_v2",
+    "params": {
+     "W": "W"
+    }
+   }
+  },
+  {
+   "transform": "lift",
+   "params": {
+    "kernel": "matvec",
+    "at": "y_mult_map"
+   }
+  },
+  {
+   "transform": "apply_recipe",
+   "params": {
+    "block": "matvec_1",
+    "recipe": "matvec/matvec_v8",
+    "params": {
+     "W": "W",
+     "R": "R"
+    }
+   }
+  },
+  {
+   "transform": "link",
+   "params": {
+    "container": "tmp1",
+    "depth": 1,
+    "group": "matvec"
+   }
+  }
+ ]
+}

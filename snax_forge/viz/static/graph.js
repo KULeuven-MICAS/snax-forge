@@ -686,11 +686,11 @@ class Drawn {
       const le = L.edges[i];
       if (!le || !le.pts.length) return;
       const colour = edgeColour(d, e);
-      const hit = svgEl("path", { class: "edge-hit", "data-sel": e.id });
+      const hit = svgEl("path", { class: "edge-hit", "data-sel": e.sel || e.id }); // a link's or fork's edge selects it
       const tip = svgEl("title");
       tip.textContent = [e.sub, e.task ? `task ${e.task}` : null].filter(Boolean).join(" · ") || e.id;
       hit.append(tip);
-      const path = svgEl("path", { class: `edge ${e.style}`, "data-sel": e.id, "data-edge": e.id });
+      const path = svgEl("path", { class: `edge ${e.style}`, "data-sel": e.sel || e.id, "data-edge": e.id });
       path.style.setProperty("--c", colour);
       if (e.style !== "empty") {
         path._marker = marker(colour);

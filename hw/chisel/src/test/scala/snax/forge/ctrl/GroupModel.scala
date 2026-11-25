@@ -16,8 +16,20 @@ package snax.forge.ctrl
   * in a busy cycle (None otherwise). A seeded unit (`UnitDesc.seeded`) takes `inputs(k)` for its other outer inputs and
   * `seeds(k)` for its seed: its job's first beat waits for the seed (fire = a.valid ∧ (¬first ∨ seed.valid)), and that
   * firing takes it (`UnitStep.seed`).
+  *
+  * A bank (`UnitDesc.rows` R > 1, a sink; its ROWS the start's, R by default): a firing's row is its firings mod ROWS,
+  * `first` on a job's first ROWS firings, a result on each of its last ROWS. A held link (`Link.hold`) into it is
+  * needed and taken (`UnitStep.take`) only at row 0, so its producer gives one result a ROWS firings. A fork link
+  * (`forkLinks`) gives its fork's beat, when the fork's units fire, to a unit down the chain through a ring of D beats,
+  * which that unit needs one of and pops on each firing; the fork is blocked, as a split one, while the ring is full
+  * and its consumer does not pop (snax-gvsoc's `snax/snax_group_rule.py`). A bank's held outer inputs are not modelled.
   */
-class GroupModel(val units: Seq[UnitDesc], val links: Seq[Link], val forks: Seq[Seq[Int]] = Nil) {
+class GroupModel(
+  val units:     Seq[UnitDesc],
+  val links:     Seq[Link],
+  val forks:     Seq[Seq[Int]] = Nil,
+  val forkLinks: Seq[ForkLink] = Nil
+) {
 
   case class UnitStep(
     fire:   Boolean,
@@ -27,10 +39,11 @@ class GroupModel(val units: Seq[UnitDesc], val links: Seq[Link], val forks: Seq[
     lane:   Int,
     first:  Boolean,
     frozen: Boolean,
-    seed:   Boolean = false
+    seed:   Boolean = false,
+    take:   Boolean = false
   )
   case class LinkStep(load: Boolean, take: Boolean, wslot: Int, rslot: Int, occupancy: Int)
-  case class Step(units: Seq[UnitStep], links: Seq[LinkStep], cls: Int, end: Boolean)
+  case class Step(units: Seq[UnitStep], links: Seq[LinkStep], cls: Int, end: Boolean, forks: Seq[LinkStep] = Nil)
 
   private val n    = units.size
   private val ins  = units.indices.map(k => links.indices.filter(links(_).to == k))
@@ -64,6 +77,9 @@ class GroupModel(val units: Seq[UnitDesc], val links: Seq[Link], val forks: Seq[
 
   private val u       = units.map(x => new UnitState(x.latency))
   private val l       = links.map(_ => new LinkState)
+  private val fl      = forkLinks.map(_ => new LinkState)
+  private val holding = units.indices.map(k => ins(k).exists(links(_).hold))
+  private var rows    = units.map(_.rows.toLong)
   private var started = false
   private var startAt = 0L
   private var endAt   = -1L
@@ -76,20 +92,29 @@ class GroupModel(val units: Seq[UnitDesc], val links: Seq[Link], val forks: Seq[
   def busy:        Boolean = started                  && cycle > startAt && (endAt == -1 || cycle <= endAt)
   def headFirings: Long    = u(order.head).firings
 
-  /** Each unit's firings in a run of `jobs` (one per output), unit k a result every t(k) firings. */
+  /** Each unit's firings in a run of `jobs` (one per output), unit k a result every t(k) firings; across a held link
+    * one result a bank row's ROWS firings.
+    */
   def firings(jobs: Seq[Long], t: Seq[Long]): Seq[Long] = {
     val c = Array.fill(n)(0L)
-    for (k <- order.reverse) c(k) = outs(k).headOption.map(i => c(links(i).to)).getOrElse(jobs(chain(k))) * t(k)
+    for (k <- order.reverse)
+      c(k) = outs(k).headOption.map { i =>
+        val e = links(i)
+        c(e.to) / (if (e.hold) rows(e.to) else 1L)
+      }.getOrElse(jobs(chain(k))) * t(k)
     c.toSeq
   }
 
   def start(jobs: Long, t: Seq[Long]): String = start(Seq.fill(sinks.size)(jobs), t)
 
-  def start(jobs: Seq[Long], t: Seq[Long]): String =
+  def start(jobs: Seq[Long], t: Seq[Long]): String = start(jobs, t, units.map(_.rows.toLong))
+
+  /** A start with each bank's ROWS (1 for a unit without a bank). */
+  def start(jobs: Seq[Long], t: Seq[Long], bankRows: Seq[Long]): String =
     if (!idle) "refused"
     else if (jobs.contains(0L) || t.contains(0L)) "ignored"
     else {
-      started = true; startAt = cycle; endAt = -1; beats = t
+      started = true; startAt = cycle; endAt = -1; beats = t; rows = bankRows
       counts  = firings(jobs, t)
       u.foreach { x => x.firings = 0; x.lane = 0 }
       classes = Array.fill(4)(0)
@@ -97,7 +122,8 @@ class GroupModel(val units: Seq[UnitDesc], val links: Seq[Link], val forks: Seq[
     }
 
   private def finished: Boolean =
-    u.indices.forall(k => u(k).firings == counts(k) && !u(k).slots.contains(true)) && l.forall(_.occupancy == 0)
+    u.indices.forall(k => u(k).firings == counts(k) && !u(k).slots.contains(true)) && l.forall(_.occupancy == 0) &&
+      fl.forall(_.occupancy == 0)
 
   def step(inputs: Seq[Boolean], room: Boolean, seeds: Seq[Boolean]): Option[Step] =
     step(inputs, Seq.fill(sinks.size)(room), seeds)
@@ -114,12 +140,15 @@ class GroupModel(val units: Seq[UnitDesc], val links: Seq[Link], val forks: Seq[
     val avail, wants, wouldFire, gives, head, offer = Array.fill(n)(false)
     for (k <- order) {
       val c      = units(k); val us = u(k)
-      val linked = ins(k).forall(i => if (links(i).depth == 0) offer(links(i).from) else l(i).occupancy > 0)
+      val taking = us.firings % rows(k) == 0
+      val linked = ins(k).forall { i =>
+        if (links(i).depth == 0) offer(links(i).from) else l(i).occupancy > 0 || (links(i).hold && !taking)
+      } && forkLinks.indices.filter(forkLinks(_).to == k).forall(fl(_).occupancy > 0)
       avail(k) = outer(k) && linked
       val iiOk = !us.hasFired || cycle >= us.lastFire + c.ii
-      wants(k)     = us.firings < counts(k) && iiOk            && !blocked(k)
-      wouldFire(k) = wants(k)               && avail(k)        && (c.span == 1 || us.lane == c.span - 1)
-      gives(k)     = wouldFire(k)           && (us.firings + 1) % beats(k) == 0
+      wants(k)     = us.firings < counts(k) && iiOk      && !blocked(k)
+      wouldFire(k) = wants(k)               && avail(k)  && (c.span == 1 || us.lane == c.span - 1)
+      gives(k)     = wouldFire(k)           && us.firings % beats(k) >= beats(k) - rows(k)
       head(k)      = c.latency > 0          && us.slots(c.latency - 1)
       offer(k)     = if (c.latency > 0) head(k) else gives(k)
     }
@@ -129,11 +158,11 @@ class GroupModel(val units: Seq[UnitDesc], val links: Seq[Link], val forks: Seq[
       val c        = units(k); val us = u(k)
       val mine     = if (sinks.contains(k)) rooms(sinks.indexOf(k)) else true
       val unitRoom = mine && outs(k).forall { i =>
-        val take = st(links(i).to).fire
+        val take = if (links(i).hold) st(links(i).to).take else st(links(i).to).fire
         if (links(i).depth == 0) take else l(i).occupancy < links(i).depth || take
       }
       val frozen   = (if (c.latency > 0) head(k) else gives(k)) && !unitRoom
-      val first    = us.firings % beats(k) == 0
+      val first    = us.firings % beats(k) < rows(k)
       var s        = UnitStep(false, false, false, false, 0, first, frozen)
       if (!frozen) {
         s      = s.copy(
@@ -147,7 +176,7 @@ class GroupModel(val units: Seq[UnitDesc], val links: Seq[Link], val forks: Seq[
         isBusy = isBusy || s.fire || s.read || inGap
         waits  = waits || (wants(k) && !outer(k))
       }
-      st(k) = s.copy(seed = s.fire && first && c.seeded)
+      st(k) = s.copy(seed = s.fire && first && c.seeded, take = s.fire && holding(k) && us.firings % rows(k) == 0)
     }
     (st, isBusy, waits)
   }
@@ -155,16 +184,24 @@ class GroupModel(val units: Seq[UnitDesc], val links: Seq[Link], val forks: Seq[
   def step(inputs: Seq[Boolean], rooms: Seq[Boolean], seeds: Seq[Boolean]): Option[Step] = {
     if (!busy) { cycle += 1; return None }
     val outer               = units.indices.map { k =>
-      inputs(k) && (!units(k).seeded || u(k).firings % beats(k) != 0 || seeds.lift(k).getOrElse(true))
+      inputs(k) && (!units(k).seeded || u(k).firings % beats(k) >= rows(k) || seeds.lift(k).getOrElse(true))
     }
-    // NB (D189): a forked input's units fire together; one that would fire waits while another cannot
+    // NB (D189): a forked input's units fire together; one that would fire waits while another cannot, and a fork with
+    // a buffered branch while its ring is full and its consumer does not pop
+    def split(st: Array[UnitStep]): Set[Int] =
+      forks.flatMap(f => if (f.forall(st(_).fire)) Nil else f.filter(st(_).fire)).toSet ++
+        forkLinks.indices.flatMap { i =>
+          val f     = forks(forkLinks(i).fork)
+          val stuck = fl(i).occupancy >= forkLinks(i).depth && !st(forkLinks(i).to).fire
+          if (stuck && f.exists(st(_).fire)) f else Nil
+        }
     var blocked             = Set.empty[Int]
     var d                   = decide(outer, rooms, blocked)
-    var held                = forks.flatMap(f => if (f.forall(d._1(_).fire)) Nil else f.filter(d._1(_).fire)).toSet
+    var held                = split(d._1)
     while (held.nonEmpty) {
       blocked ++= held
       d    = decide(outer, rooms, blocked)
-      held = forks.flatMap(f => if (f.forall(d._1(_).fire)) Nil else f.filter(d._1(_).fire)).toSet
+      held = split(d._1)
     }
     val (st, isBusy, waits) = d
     for (k <- units.indices) {
@@ -180,19 +217,28 @@ class GroupModel(val units: Seq[UnitDesc], val links: Seq[Link], val forks: Seq[
       val d = links(i).depth; val ls = l(i)
       if (d == 0) LinkStep(false, false, 0, 0, 0)
       else {
-        val load = st(links(i).from).push; val take = st(links(i).to).fire
-        val r    = LinkStep(load, take, ls.wptr, ls.rptr, 0)
-        if (load) ls.wptr = (ls.wptr + 1) % d
-        if (take) ls.rptr = (ls.rptr + 1) % d
-        ls.occupancy += (if (load) 1 else 0) - (if (take) 1 else 0)
-        r.copy(occupancy  = ls.occupancy)
+        val load = st(links(i).from).push
+        val take = if (links(i).hold) st(links(i).to).take else st(links(i).to).fire
+        ring(ls, d, load, take)
       }
+    }
+    val forkSteps = forkLinks.indices.map { i =>
+      ring(fl(i), forkLinks(i).depth, st(forks(forkLinks(i).fork).head).fire, st(forkLinks(i).to).fire)
     }
     val cls = if (sinks.exists(st(_).frozen)) 2 else if (isBusy) 0 else if (waits) 1 else 3
     classes(cls) += 1
     val end = finished
     if (end) endAt = cycle
     cycle += 1
-    Some(Step(st.toSeq, linkSteps, cls, end))
+    Some(Step(st.toSeq, linkSteps, cls, end, forkSteps))
+  }
+
+  /** A buffer's cycle: its slots before the load and take, then its pointers and occupancy after. */
+  private def ring(ls: LinkState, d: Int, load: Boolean, take: Boolean): LinkStep = {
+    val r = LinkStep(load, take, ls.wptr, ls.rptr, 0)
+    if (load) ls.wptr = (ls.wptr + 1) % d
+    if (take) ls.rptr = (ls.rptr + 1) % d
+    ls.occupancy += (if (load) 1 else 0) - (if (take) 1 else 0)
+    r.copy(occupancy  = ls.occupancy)
   }
 }

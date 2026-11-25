@@ -1,6 +1,7 @@
 """The accelerator's cycles under the design point's schedule: mvt_v3_1 at W = 8, two
 independent halves, adds them serial and takes the slower pipelined; mvt_v3, the halves on one
-shared group, adds them under every schedule. Every recipe is imported (DaCe), hence slow."""
+shared group, adds them under every schedule; atax_v2's halves, the second reading what the
+first writes, add them under every schedule. Every recipe is imported (DaCe), hence slow."""
 
 from __future__ import annotations
 
@@ -54,3 +55,10 @@ def test_the_runs_round_trip_and_a_chain_is_its_sum():
     chain = [RunEstimate("a", "g", "x", 3, 0), RunEstimate("b", "h", "y", 4, 0, ["a"]),
              RunEstimate("c", "k", "z", 5, 0)]  # fmt: skip
     assert longest_path(chain) == 7
+
+
+@pytest.mark.parametrize("schedule", SCHEDULES)
+def test_a_half_reading_what_the_other_writes_waits_for_it_under_every_schedule(schedule):
+    e = at("atax_v2", schedule)
+    assert [r.after for r in e.runs] == [[], [e.runs[0].name]]  # t: written, then read
+    assert e.accelerator_cycles == sum(g.cycles for g in e.groups) == 1027

@@ -59,7 +59,8 @@ def module_tree(acc: Description) -> dict[str, list[str]]:
         f"{t}_ctrl": [f"{t}_{g.name}_ctrl" for g in acc.groups],
         f"{t}_datapath": [
             *(name for g in acc.groups for name in
-              [*(f"{t}_{u.name}" for u in g.units), *(f"{t}_{k.name}" for k in g.links if k.depth)])
+              [*(f"{t}_{u.name}" for u in g.units), *(f"{t}_{k.name}" for k in g.links if k.depth),
+               *(f"{t}_{k.name}" for k in g.fork_links)])
         ],
         **{f"{t}_{a.name}_port_mux": [] for a in acc.accelerators if a.port_mux is not None},
     }  # fmt: skip

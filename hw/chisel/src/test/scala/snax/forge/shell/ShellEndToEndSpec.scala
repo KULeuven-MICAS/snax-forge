@@ -83,10 +83,11 @@ class ShellEndToEndSpec extends AnyFlatSpec with ForgeTester {
   }
 
   /** The fixtures whose readers do not stream their arrays in memory order, which `vectors.json` gives and `drive`
-    * streams: bicg_v4_1's strips read A, p and r a strip at a time, and its seed reads back q's writes through L1.
-    * Their counter, STATUS, input words and output words are checked; ShellRandomSpec checks their values on its model.
+    * streams: bicg_v4_1's strips read A, p and r a strip at a time, and its seed reads back q's writes through L1;
+    * atax_v4's x is read again for every row of A, its array padded to whole DMA beats. Their counter, STATUS, input
+    * words and output words are checked; ShellRandomSpec checks their values on its model.
     */
-  private val Strided = Set("bicg_v4_1")
+  private val Strided = Set("bicg_v4_1", "atax_v4")
 
   behavior of "the shell wrapper end to end"
 

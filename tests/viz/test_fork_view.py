@@ -30,3 +30,19 @@ def test_the_forked_reads_of_a_are_marked():
         "q_mult_map": ("grp:bicg_types", [["sum_map", None], ["s_mult_map_1", None]]),
         "q_mult_map_1": ("grp:bicg_types", [["sum_map_1", None], ["s_mult_map", None]]),
     }
+
+
+def test_a_click_on_a_fork_or_link_edge_selects_what_link_and_unlink_take():
+    """atax_v4: a forked read's edges and its FIFO select the container (``link A``, ``unlink
+    A``), t's link edges the link node (``unlink``)."""
+    from snax_forge.sandbox import TRANSFORMS
+
+    g = steps("atax_v4", M=4, N=8, W=4, R=2, D=4)[-1]
+    v = graph_view(Entry(g.name, Path(g.name), g, None), expanded=("matvec", "matvec_1"))
+    edges, boxes = v["drawing"]["edges"], {b["id"]: b for b in v["drawing"]["nodes"]}
+    assert {e["sel"] for e in edges if e["style"] == "fork"} == {"A"}
+    (fifo,) = [b for b in boxes.values() if b["id"].startswith("fifo:")]
+    assert (fifo["text"], fifo["sel"]) == ("A · FIFO 4", "A")
+    (t,) = {e["sel"] for e in edges if e["style"] == "link" and e.get("data") == "tmp1"}
+    assert TRANSFORMS["unlink"].site(g, t) == {"container": "tmp1"}
+    assert TRANSFORMS["unlink"].site(g, "A") == {"container": "A"}

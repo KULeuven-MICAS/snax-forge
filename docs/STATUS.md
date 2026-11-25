@@ -31,7 +31,7 @@ The tasks are a first cut; each milestone is planned in a round of its own.
 | Milestone | Tasks | Content |
 |---|---|---|
 | P1 | PAP3 (`done`), PAP2 (`brief`), BASE1, BASE2 | PAP3 chose the ISPASS 2027 paper's experiments and the order of the work (PAPER §6, Next Up). PAP2: related work after the reading, DSAGEN and OverGen first (PAPER §8.4). BASE1 and BASE2 (E2) are not run as tasks: a sentence or two in PAPER §3 from the times the runs log anyway |
-| M13 | B0 to VIEW3, TIERA1, TIERA2 (`done`, below); track A: E4S1; track C: SNB1; track D: E2E1–E2E5; after the paper: L2V1, XBAR1, DACE2 | Its tasks, below (M13) |
+| M13 | B0 to VIEW3, TIERA1, TIERA2, TIERA3 (`done`, below); track A: TIERA4, E4S1; track C: SNB1; track D: E2E1–E2E5; after the paper: L2V1, XBAR1, DACE2 | Its tasks, below (M13) |
 | M7 | KER0 (`done`), FE1b, FE1c, PACK0 (`done`), PACK1, FE1d, FE1e, FE2, FE3 | The tiers of PAPER §6.1 after tier A (D113), which M13 does. KER0 staged every target kernel in `kernels/`, not linked to the flow (`kernels/README.md`, `pixi run kernels`). FE1b is tier B; FE1c tier C; PACK0 packed int32 and int8 into 64-bit words with NumPy's arithmetic (D142–D144); PACK1 keeps tier P: requantization and the int8 kernels PACK1a (M13) leaves out; FE1d tier D; FE1e tier E. FE3 is C2's coverage table |
 | M15 | LOW3b | A tile transform and a DMA per tile, an L2 slice per tile, reductions over tiles (open item 44) |
 | M9 | J1 | Stencil BRM with reuse and double buffering (see open item 76) |
@@ -87,6 +87,7 @@ Done, each in git history:
 | TIERA1 | mvt's forms at 64 × 64 (`examples/dryrun/4_mvt.md`): schedules, the slicer, the DMA's transposed copy, the broadcast and seeded `Mac`, recipes named by version | D163–D165, D179, D180, D182–D184, D186–D188 |
 | TIERA2 | bicg's forms and the one pass over A for bicg and mvt (`examples/dryrun/5_bicg.md`): the fork, the bank, the hold, carried and seeded seeds | D154, D172, D177, D189–D194 |
 | CLN4 | A lean base before atax: snax-gvsoc's `forge/`, the RTL fixtures and the recorded runs one design per integration feature at their smallest sizes, `forge-set` quick and full by feature; composite tests per design, a refusal table per package, the rest cut to the coverage bar, with each composite's estimate and profile and every recipe's estimate totals checked against snapshots; dead code out; the documents cut to what holds; the markings guarded | D195 |
+| TIERA3 | atax's forms and one group reading A once (`examples/dryrun/6_atax.md`): the dependence ordered by LOWER, the DMA's copy at int8, t held over a link, a fork's buffered branch | D176, D196, D197 |
 
 
 CLN4's sizes, before and after:
@@ -104,7 +105,8 @@ CLN4's sizes, before and after:
 To do, in four tracks, each task in its own thread, branch and PR (the ROAD1 plan, 16 Nov 2026). Each task runs in a clone set of its own, so tasks in parallel never share `out/`, a GVSoC build or snax_cluster's imported bundles:
 
 - **Track A, tier A and E4** (snax-forge, snax-gvsoc where a task changes the model):
-  1. **E4S1** (kickoff from TIERA1's plan): E4's sweep script over `pixi run flow --set` (no DSE5) and its figure, first on what runs today (W on dot 3, matvec and mvt_v1; shared against dedicated ports), then on each tier A form as it lands. The bank-bound sweep at int64 and int32: a dot reads $2 W b$ bytes a cycle against $32 \cdot 8 = 256$, so it crosses at W = 16 (int64) and 32 (int32), and W stops at 32.
+  1. **TIERA4** (`brief`, kickoff `claude/tiera4-kickoff-2026-11-25.md`): gesummv's forms at 64 × 64, the last tier A kernel: two matvecs over two matrices into one sum, $y = \alpha A x + \beta B x$; the forms by reuse, then one group reading x once for both.
+  2. **E4S1** (kickoff from TIERA1's plan): E4's sweep script over `pixi run flow --set` (no DSE5) and its figure, first on what runs today (W on dot 3, matvec and mvt_v1; shared against dedicated ports), then on each tier A form as it lands. The bank-bound sweep at int64 and int32: a dot reads $2 W b$ bytes a cycle against $32 \cdot 8 = 256$, so it crosses at W = 16 (int64) and 32 (int32), and W stops at 32.
 - **Track B, costs** (snax-forge-experiments, snax-forge's `char`; Nangate 45 nm only): E4's energy axis reads `--energy` or the static estimate; GE1's left-overs are open items 136 and 137.
 - **Track C, the Snitch-only baseline** (snax_cluster, snax-forge-experiments; E11):
   1. **SNB1** (`brief`): the same kernels as hand-written C on `rv32ima` Snitch cores with no accelerator, every tier forge runs, one source per kernel, the type a typedef, the core count from the runtime, forge's inputs; three configs (one core, 1 DMA + 4 cores, 1 DMA + 8 cores) with forge's L1, banks and I-cache, synthesized gated through `pixi run cluster` (open item 88); area and energy per task in coarse parts (memory, interconnect, cores against forge's streamers and accelerators).
@@ -121,7 +123,27 @@ To do, in four tracks, each task in its own thread, branch and PR (the ROAD1 pla
 
 ## The local RTL check
 
-The local RTL check (D123) runs one program on SNAX-GVSoC and, through snax_cluster's `snax-forge-check`, on vsim, and gives each bundle a verdict: PERFECT, NEAR (a counter's gap beyond its fill up to 10 % of its count), WARNING (up to 15 %) or FAIL. The full set as last measured, 26 bundles, every `forge data` exact, 17 PERFECT and 9 NEAR; cycles are the window, then the `forge counter`s in brackets:
+The local RTL check (D123) runs one program on SNAX-GVSoC and, through snax_cluster's `snax-forge-check`, on vsim, and gives each bundle a verdict: PERFECT, NEAR (a counter's gap beyond its fill up to 10 % of its count), WARNING (up to 15 %) or FAIL. Cycles are the window, then the `forge counter`s in brackets. The full set (D195) at TIERA3's close (C1, 2026-11-24; snax-forge `ry/tiera3` at `b8ddc3a6`, SNAX-GVSoC `d45b68cb`, snax_cluster main at `baf87858`, the RTL built in image `c5db84ad7bce`), 15 bundles, every `forge data` exact, 10 PERFECT and 5 NEAR, every window and counter on both as last measured, to the cycle (the quick set's as in TIERA3 B4):
+
+| Bundle | SNAX-GVSoC cycles | vsim cycles | Verdict |
+|---|---:|---:|---|
+| vecadd_v1_1 at W = 1 (sliced) | 247 (68) | 273 (68) | PERFECT |
+| axpy_v1 | 216 (19) | 247 (19) | PERFECT |
+| dot_v4 | 422 (133) | 445 (133) | PERFECT |
+| mvt_v1_2_2 at W = 8 | 4614 (517, 11, 3240, 8) | 4707 (517, 11, 3249, 11) | NEAR 0.2 % (open item 128) |
+| bicg_v4_1 | 1408 (1030) | 1407 (1030) | PERFECT |
+| vecadd_v1 | 209 (19) | 232 (16) | NEAR, 0.0 % beyond the fill |
+| rowsum_v2 padded_rows | 363 (131) | 376 (131) | PERFECT |
+| matvec_acc_v2 | 5924 (1027, 4099) | 5944 (1027, 4099) | PERFECT |
+| mvt_v4_1_1 sequential | 12509 (514, 517) | 12593 (518, 517) | NEAR 0.2 % (open item 138) |
+| mvt_v5 sequential | 1578 (518, 516) | 1646 (518, 516) | PERFECT |
+| mvt_v6 | 899 (519) | 922 (515) | NEAR 0.2 % (open item 65) |
+| atax_v4 | 796 (526) | 825 (523) | NEAR, 0.0 % beyond the fill (open item 169) |
+| vsum_v1_1 at i8, W = 8 (packed d_out 2) | 158 (11) | 180 (11) | PERFECT |
+| dot_v3 at i16, W = 4 (packed d_out 2) | 323 (132) | 354 (132) | PERFECT |
+| dot_v3 at i32, W = 2 | 486 (260) | 509 (260) | PERFECT |
+
+The full set's earlier designs no longer in it (D195), as TIERA2 C2 last measured them (all 26 of that set `forge data` exact, 17 PERFECT and 9 NEAR):
 
 | Bundle | SNAX-GVSoC cycles | vsim cycles | Verdict |
 |---|---:|---:|---|
@@ -129,12 +151,7 @@ The local RTL check (D123) runs one program on SNAX-GVSoC and, through snax_clus
 | vsum_v1_1_2 | 156 (11) | 192 (11) | PERFECT |
 | dot_v1 | 251 (19, 19) | 266 (16, 19) | NEAR, 0.0 % beyond the fill |
 | dot_v1_1 | 303 (19, 19) | 300 (19, 17) | NEAR, 0.0 % beyond the fill |
-| dot_v4 | 422 (133) | 445 (133) | PERFECT |
-| axpy_v1 | 216 (19) | 247 (19) | PERFECT |
-| vsum_v1_1 at i8, W = 8 (packed d_out 2) | 158 (11) | 180 (11) | PERFECT |
 | matvec_v3 at i8, W = 8 (packed) | 1325 (1028) | 1345 (1028) | PERFECT |
-| vecadd_v1_1 at W = 1 (sliced) | 247 (68) | 273 (68) | PERFECT |
-| vecadd_v1 | 209 (19) | 232 (16) | NEAR, 0.0 % beyond the fill |
 | vsum_v1 | 222 (67) | 263 (65) | NEAR, 0.0 % beyond the fill |
 | rowsum_v3 | 223 (67) | 234 (67) | PERFECT |
 | vecmul_v1_1_1 | 209 (19) | 232 (16) | NEAR, 0.0 % beyond the fill |
@@ -147,10 +164,8 @@ The local RTL check (D123) runs one program on SNAX-GVSoC and, through snax_clus
 | matvec_v5 | 3353 (2101) | 3397 (2101) | PERFECT |
 | matvec_v6 | 3308 (2057) | 3349 (2057) | PERFECT |
 | matvec_acc_v1 | 2835 (1024, 1027) | 2880 (1027, 1027) | NEAR, 0.0 % beyond the fill |
-| matvec_acc_v2 | 5924 (1027, 4099) | 5944 (1027, 4099) | PERFECT |
 | relu_v1 | 163 (18) | 191 (18) | PERFECT |
 | rowsum_v2 | 357 (129) | 387 (134) | NEAR 2.3 % (open item 129) |
-| rowsum_v2 padded_rows | 363 (131) | 376 (131) | PERFECT |
 
 ## Next Up
 
@@ -168,7 +183,7 @@ Dates: 20 Nov, track A's target (fine if it slips); 27 Nov, the softmax gate (so
 
 ## Open Items
 
-Questions not decided yet. Numbers are never reused; a closed item is removed, and where it closed is in git history. Next free number: 165.
+Questions not decided yet. Numbers are never reused; a closed item is removed, and where it closed is in git history. Next free number: 171.
 
 1. BRM dataflow notation: `affine` and `stream` (D70), frozen in M6.
 2. What automated search reads and how a sweep is configured (DSE1, M8).
@@ -215,8 +230,7 @@ Questions not decided yet. Numbers are never reused; a closed item is removed, a
 108. Several `snax_acc_cfg` entries on one core: the range decoder between entries in place of `snax_acc_mux_demux` and 0x7C6, and `snaxgen.py:620` building every entry; untested since SLOT1 drops the multi-ALU cluster.
 109. Overlap of independent accelerators, left after D179's schedules: gathering starts that are not adjacent in the derived order (an independent accelerator after a dependent one waits for the latter's data), and the quiet build's power windows of a pipelined run (open item 140).
 112. A buffer link's energy against SYN2: dot 2's `tmp0` buffer, which loads every beat, is 1.59× (nangate45) and 1.49× (nangate15) high against CHAR1's `link/d1_w8` stream point, not explained.
-113. One unit across several DFG regions (atax's A and Aᵀ on one GeMM): a unit bound at several nodes, trading throughput for area; amends D112 (Ryan, 27 Oct 2026, for the paper). Tier A's atax is the first case.
-115. An ALU SIMD: the `simd` BRM's `op` as an R/W CSR, its op set a design param, so a design pays only for the ops it can select; worth it once one unit runs several ops, a unit bound at several nodes (open item 113).
+115. An ALU SIMD: the `simd` BRM's `op` as an R/W CSR, its op set a design param, so a design pays only for the ops it can select; worth it once one unit runs several ops, a unit bound at several nodes (D165, `atax_v1_1`).
 116. `gen.span` refuses a unit of span > 1 reading an outer input (a serial unit straight from its streamer: vsum or rowsum 1 on `chisel_serial` at W > 1, the beat held for span cycles); lifted when E7 or a kernel needs such a point.
 117. Reuse's leftovers (D166): a block and a group of one name (`dot`) are selected together; a collapsed matvec in mvt has no outer loop, so both halves read `A[0:M, 0:N]` and the transpose shows one level down or by its mark; `name_block` is left out of the marks (it takes any node).
 118. The run viewer (`pixi run view`: banks, interconnect, transactions) is kept working but gets no new features until after the paper (Ryan, 6 Nov 2026); the DFG views (`view-dfg`, `edit-dfg`) stay first.
@@ -237,25 +251,31 @@ Questions not decided yet. Numbers are never reused; a closed item is removed, a
 136. The dynamic energy prices a shared mover (D169) at its own channels, where the static estimate prices each user at its port's: the two agree only when every user takes all the mover's channels. A split per user needs the port mux's counts in the `snap` lines; first needed by E4's shared-port points.
 137. The dynamic energy under contention (dot 3 at W = 32): its streamers are 1.26 of the gated cluster's (0.95 at W = 16), so a refused request seems to cost a streamer less than a granted beat; and the cluster's datapath is 7.7 nJ above W = 16 for the same fires (inputs that change without a fire). A refused request's own price, or a count of input changes per unit, if E4's figure needs it.
 138. One simulator counts a task at exactly its ideal cycles (the group rule's, no fill) and the other 1 to 4 past the fill: mvt_v4 `padded_rows` (W = 8 half 1 521 on vsim against 514), mvt_1's `vsum` tasks, the shared dot forms at W = 8 `padded_rows`, mvt_v3_1 `padded_rows` serial (515 against 521), mvt_v4_1 and mvt_v4_1_1 contiguous half 1 (514 against 518); not the seeded fold, nor A's type. The question is what gives a task's streamers their head start before START on one simulator and not on the other; a stall trace of half 1 at W = 8 padded would tell.
-139. A one-bank column read (D86, contiguous) or two overlapped reads of A ordered differently on the RTL: at W = 4 the unshared dot forms run 3807 on vsim against 3785; mvt_v3_1's half 2 serial at W = 8 2998 against 3249 (NEAR 7.6 %), where mvt_v3 on the shared set is 3249 on both; bicg_v1 contiguous `pipeline` 3309 against 3263, padded 557 and 534 against 550 and 559 (NEAR 3.9 %); bicg_v2 `sequential` 532 against 523. The RTL's ordering depends on which crossbar inputs ask; first check the stall traces of half 2 at W = 4, mvt_v1_2 against mvt_v1_2_2, on both.
+139. A one-bank column read (D86, contiguous) or two overlapped reads of A ordered differently on the RTL: at W = 4 the unshared dot forms run 3807 on vsim against 3785; mvt_v3_1's half 2 serial at W = 8 2998 against 3249 (NEAR 7.6 %), where mvt_v3 on the shared set is 3249 on both; bicg_v1 contiguous `pipeline` 3309 against 3263, padded 557 and 534 against 550 and 559 (NEAR 3.9 %); bicg_v2 `sequential` 532 against 523; atax_v2 (contiguous) half 2 524 on vsim against 532, 5 beyond its fill (NEAR 0.9 %), `mac_a` refused 128 times on SNAX-GVSoC. The RTL's ordering depends on which crossbar inputs ask; first check the stall traces of half 2 at W = 4, mvt_v1_2 against mvt_v1_2_2, on both.
 140. The quiet build (D135) waits on every start right after it, so it runs a `pipeline` or `pipeline_compute` program (D179) serially and a pipelined run has no gate-level power windows (`--energy` prices it in one window of the default build, D177); a quiet build of a pipelined program would mark one window per set of overlapping runs. The default build also waits on the DMA twice at the end: harmless, left until `main.c` changes for another reason.
 142. The slicer and the packer in synthesized designs: cluster synthesis of `vecadd_v1_1` at W = 1 and the in-design check against HWCOST, later.
 143. The core transpose, `data_transpose` by `core` (D182, refused today): 4 × 4 byte tiles transposed in RV32 registers, about 10 000–11 000 cycles at 64 × 64, against the DMA's 10 923; extra information for the paper.
 144. A copy under `serial` and the pipelined schedules (D179) sits where a load of its destination would, but the core is held by the DMA's 3-deep request FIFO while it issues the copy's 64 two-dimensional copies (about 170 cycles each), so what overlaps the copy is not measured; the estimate adds `copy_cycles` to every schedule for now. With the trace off, `report/run.md` gives the DMA's total busy, not the copy's own cycles.
 146. Short bursts from L1 into DRAM are paced by the testbench's DRAM: B returns 2 per 7 cycles and at most 8 writes wait for theirs, `s-l1l2 64x1 B p64` busy 211 on the RTL against 155 on SNAX-GVSoC (snax-gvsoc NOTES, "The DMA").
 147. `mvt_v4_1_1` through the forge cluster flow (synthesis, gate level, power, snax-forge-experiments), once its design is settled; the copy alone is measured on the baseline netlist (X95).
-152. i16 and i32 for the type-preset kernels of tier A: `mvt_types` and `bicg_types` define the presets, only `i8` has run; their forms at `i16` and `i32` on SNAX-GVSoC and vsim, at the widths the bank bound allows.
+152. i16 and i32 for the type-preset kernels of tier A: `mvt_types`, `bicg_types` and `atax_types` define the presets, only `i8` has run; their forms at `i16` and `i32` on SNAX-GVSoC and vsim, at the widths the bank bound allows.
 153. A pattern library for `lift`: today `matches` searches the import of every kernel some recipe is written on (12, imported through DaCe once per process, 0.75 s) and finds neither bicg nor mvt on itself (`lift … at=` does). Proposed: stored `.snaxdfg` patterns in a base set and opt-in extension sets, matched bottom-up, a later chain joining through a container an earlier one reads; with the reuse path's leftovers (a sub-recipe's `types` dropped without a word, the span check skipping spans it cannot evaluate) and the bank form as a matvec recipe (seeded too, D194). Brainstormed after TIERA3, atax giving the matcher one more case.
 155. The estimate's check on accelerators that run at once (D179's note) adds their words a cycle against the bank count, not which banks they reach: bicg_v2 at int64 under `pipeline` reads 25 words a cycle over 32 banks (no note) and loses 44–63 % on SNAX-GVSoC, the column form's strip of A on the same 8 banks for its 64 beats; padded, 618 and 692 (+20 %, +35 %), the RTL the same. A check by the banks each stream reaches (from its base, strides and the row pitch, as D86 counts a column's banks) would name such pairs.
 156. A re-read input at N = W reads its one beat again every row: LOWER gives bicg's p the loops `[1, 64]` with strides `[32, 0]`, so the streamer's repeat (a temporal stride 0 on loop 0) does not apply and p's 4 words are read 64 times on banks 0–3, where A's rows 8k start, A waiting under the dynamic priority (bicg_v3 72 against the rule's 67, 78 on vsim). Dropping a loop of bound 1 ahead of the stride-0 one would read p once. Beside it: the expected BUSY_COUNTER's fill leaves out a sliced input's first take (D180).
 157. The converter's queue counts of a sliced input at its unit's head (D180), at `--trace stall`: `_words` pops a reader's word at the last firing that names it, where the reader's queue pops when the slicer takes it, so bicg_v2_1 and bicg_v4 at `stall` stop at `convert.invariant` (`mul_a lane 0: fifo counts ...`). Meanwhile a stall trace leaves the sliced head out (`--trace stall:mul_a,mul_b,mac_b,sum_out,mac_out,dma` on bicg_v4).
 158. The bank as a memory (D191): a `SyncReadMem` of R rows read one cycle early, the `Mac`'s latency 2, against the registers built now; a choice of the bind once a design needs R beyond what registers make cheap. Not started.
 159. A carried seed's reader started late (D192) instead of reading the first strip and dropping it: started by the control unit about CARRY jobs into the run, it would save M seed reads (32 words, about 3 % of `bicg_v4_1`'s L1 reads). It needs a reader of a streamer set to start apart from the others, which neither snax_cluster's streamer nor SNAX-GVSoC's has; for when the streamer changes anyway.
-160. `vectors.json` gives each port's array in memory order, which ShellEndToEndSpec streams beat by beat; a strided reader (`bicg_v4_1`'s strips, its seed read back through L1) needs each port's order too, or the spec the streamer's loops, before its goldens are checked on the wrapper.
+160. `vectors.json` gives each port's array in memory order, which ShellEndToEndSpec streams beat by beat; a strided reader (`bicg_v4_1`'s strips, its seed read back through L1) or a re-read one on a padded array (`atax_v4`'s x at N = 8) needs each port's order too, or the spec the streamer's loops, before its goldens are checked on the wrapper.
 161. bicg_v2_1 at W = 16 under `pipeline`: s's counter is 272 on vsim against 267 on SNAX-GVSoC, 2 beyond its fill of 3 (NEAR 0.7 %); on SNAX-GVSoC s's 10 stall_in cycles are where its reader of A is refused, 13 of 15 times a lane by q's reader of A. The RTL's 5 more cycles are not placed (no trace of its readers' refusals); next check a waveform of the two A readers' requests and grants on vsim.
 162. The converter refuses two recorded designs at trace level `stall` while their `task` and `beat` levels convert: bicg_v4_1 (the fork, the bank and the carried seed) at every size tried, "mul_a lane 0: fifo counts ... its words visible minus popped give ..." (the forked readers' FIFO counts against their grants), and mvt_v5 sequential at 16 × 16 and 64 × 64, "mac_x2_seed's beat -1 granted as [None, ...]" (the seeded `Mac`'s seed reader). Their recorded runs (`tests/run/fixtures/`) are at `beat` and `task` until the stall check takes them.
 163. `sandbox/blocks.py`'s `_outer_of` raises `_NoMatch`, a plain `Exception`, which nothing catches on `apply_recipe` → `_fuse_outer`: a sub-recipe's `fuse_map` naming a node outside the region would escape the session's refusal handling instead of coming back as a refusal (found by reading; not run).
 164. A tailed split interchanged with the loop under it (`rowsum_v2` at M = 6, W = 4) fails the reference check at `interchange_map` ('y' differs); either `interchange_map` refuses a tailed split with its own message, or the pad lanes are placed so the check passes.
+165. atax's one pass beyond the bank: strips of S = R·W columns of y, only the first a one pass (t needs whole rows), t written to L1 there and read back by the others, so A is read $MN(2 - 1/K)$ times for K strips; the first strip's FIFO takes only that strip's beats, a fork that passes part of the beats (D196 forks every beat). At one strip a design needs D ≥ N/W and R = N/W.
+166. DATA1, every kernel's inputs uniform over the whole type in every experiment (Ryan's, not scheduled); forge's small per-kernel ranges until then. At the full int8 range `atax_types`' y wraps at int32 ($|y| \le MN \cdot 2^{21}$), exact modulo $2^{32}$ on NumPy, SNAX-GVSoC and the RTL alike.
+167. `GroupRule`'s done for a bank at L 0 is early: the sink's `g + 1 = JOBS` holds on each of the last job's ROWS giving firings, so the run ends at the first of them (`GroupHoldForkSpec` keeps its bank at L 1–2). A bank is an accumulating `Mac`, L 1, so no design reaches it; `UnitDesc` could refuse rows > 1 at L 0, or done count the bank's last row.
+168. A group that reads through L1 what it writes in the same run is estimated as if the read waited for nothing: `atax_v4`'s steps after `fork_read A` and after `link A` (the `Mac` reads t from L1 while the vsum writes it) give 515 and 514 cycles against 523 once t is linked. LOWER could refuse a group reading a container it writes, or order the reader behind the writer's rows (open item 53).
+169. The one-group atax points on vsim are NEAR within their fill (TIERA3 B4): `atax_v4` at D = 10 and 8 and at W = 32, R = 2 run 523, 649 and 133, the estimate exactly and 3 under SNAX-GVSoC, whose streamer fill the RTL hides for the forked A; `atax_v3` runs 526 against 523, 3 over; `atax_v2_1_1`'s Mac 514 against 516. A trace of the streamers' first beats on both, as open item 65 asks, would say whose fill differs.
+170. A fork's buffer comes before the link into its reader (D196), so nothing in the graph says a FIFO is needed until `link tmp1` is refused. Ryan's later flow: `link` into a forked reader allowed, the state flagged as a design problem on that branch (a buffer of at least T beats), its fix `link A` offered on the edge; a new decision, as that state has no estimate.
 
 ## Sync Reminders
 

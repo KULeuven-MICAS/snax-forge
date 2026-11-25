@@ -148,13 +148,24 @@
    "required": ["name", "from", "to", "depth"],
    "additionalProperties": false
   },
+  "fork_link": {
+   "type": "object",
+   "properties": {
+    "name": {"$ref": "#/$defs/name"},
+    "to": {"description": "A forked in port, \"<unit>.<port>\", not its reader's first.", "$ref": "#/$defs/end"},
+    "depth": {"description": "A ring buffer of that many beats, one pushed each beat the fork takes.", "type": "integer", "minimum": 1}
+   },
+   "required": ["name", "to", "depth"],
+   "additionalProperties": false
+  },
   "group": {
    "type": "object",
    "properties": {
     "name": {"$ref": "#/$defs/name"},
     "csrs": {"description": "START, JOBS (with several chains a JOBS_<SINK> per chain), STATUS, BUSY_COUNTER.", "type": "array", "items": {"$ref": "#/$defs/csr"}},
     "units": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/unit"}},
-    "links": {"type": "array", "items": {"$ref": "#/$defs/link"}}
+    "links": {"type": "array", "items": {"$ref": "#/$defs/link"}},
+    "fork_links": {"description": "A fork's buffered branches, present only when there is one.", "type": "array", "minItems": 1, "items": {"$ref": "#/$defs/fork_link"}}
    },
    "required": ["name", "csrs", "units", "links"],
    "additionalProperties": false

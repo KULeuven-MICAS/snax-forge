@@ -1,0 +1,78 @@
+{
+ "name": "atax_v4",
+ "id": "atax_dot2_colbank_link_fork_i8_o32",
+ "description": "`atax_v3` with A read once (`fork_read A`): the `Mac`'s branch goes through a ring buffer of D beats (`link A`, D196). D ≥ N/W, or the run never ends (LOWER refuses it); N/W + 2 hides the vsum's latency and the link.",
+ "kernel": "atax_types",
+ "params": {
+  "M": 64,
+  "N": 64,
+  "W": 8,
+  "R": 8,
+  "D": 10
+ },
+ "symbols": {
+  "M": "M",
+  "N": "N"
+ },
+ "types": "i8",
+ "steps": [
+  {
+   "transform": "lift",
+   "params": {
+    "kernel": "matvec",
+    "at": "tmp2_mult_map"
+   }
+  },
+  {
+   "transform": "apply_recipe",
+   "params": {
+    "block": "matvec",
+    "recipe": "matvec/matvec_v2",
+    "params": {
+     "W": "W"
+    }
+   }
+  },
+  {
+   "transform": "lift",
+   "params": {
+    "kernel": "matvec",
+    "at": "y_mult_map"
+   }
+  },
+  {
+   "transform": "apply_recipe",
+   "params": {
+    "block": "matvec_1",
+    "recipe": "matvec/matvec_v8",
+    "params": {
+     "W": "W",
+     "R": "R"
+    }
+   }
+  },
+  {
+   "transform": "fork_read",
+   "params": {
+    "container": "A",
+    "group": "atax"
+   }
+  },
+  {
+   "transform": "link",
+   "params": {
+    "container": "A",
+    "depth": "D",
+    "group": "atax"
+   }
+  },
+  {
+   "transform": "link",
+   "params": {
+    "container": "tmp1",
+    "depth": 1,
+    "group": "atax"
+   }
+  }
+ ]
+}

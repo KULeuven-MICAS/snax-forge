@@ -212,13 +212,13 @@ One ELF, snax-forge's, runs on SNAX-GVSoC and on snax_cluster's RTL. The RTL run
 | Command | Reads | Writes |
 |---|---|---|
 | `pixi run forge RECIPE` | a recipe, the platform | the flow, its bundle with `forge_expected.txt` and the bundle's ELF (checked to be the flow's), then prints snax_cluster's commands: `out/forge/<name>/forge.log`, `out/bundle/<name>/` |
-| `pixi run forge-set quick\|full` | the set's recipes (`snax_forge/flow/forge_set.py`) | forge on each at once: `out/forge-set/<set>.md`, `out/forge-set/<set>/<design>.txt`, and one line to run in snax_cluster |
+| `pixi run forge-set quick\|full\|<task>` | the set's recipes (`snax_forge/flow/forge_set.py`; a task's own set while it is open, D195) | forge on each at once: `out/forge-set/<set>.md`, `out/forge-set/<set>/<design>.txt`, and one line to run in snax_cluster |
 | snax_cluster's `make snax-forge-check BUNDLES=... SIM=...` | the bundles | one verdict per bundle; `logs/snax-forge-check.txt` (the verdicts, each run's `forge cycles`), `logs/snax-forge-<name>-<sim>.txt` |
 
 - `forge` takes `--platform` (default `platforms/snax_forge.json`), `--set` and `--trace` for the flow. `forge-set` takes `--sim vsim|vlt` and `-j N`.
 - `forge_expected.txt` holds the run's counter and data lines, then each counter's `forge fill` from the estimate.
 - Beside `forge.elf`, forge leaves `forge_quiet.elf` (`-DFORGE_QUIET`: every start waited on at once, each section marked in CSR `0x7c5`, no prints) and its legend `obs_marks.json`, for a power run on the netlist.
-- The sets (D195): `quick` is one point per integration feature, vecadd_v1_1 at W = 1 (sliced inputs, a packed output), axpy_v1, dot_v4, mvt_v1_2_2 at W = 8 (shared movers) and bicg_v4_1 (the fork, the bank, the hold and the carry). `full` adds vecadd_v1, rowsum_v2 under `padded_rows`, matvec_acc_v2, mvt_v4_1_1 and mvt_v5 under `sequential`, mvt_v6, and one point each at i8 (vsum_v1_1), i16 and i32 (dot_v3): 14 in all.
+- The sets (D195): `quick` is one point per integration feature, vecadd_v1_1 at W = 1 (sliced inputs, a packed output), axpy_v1, dot_v4, mvt_v1_2_2 at W = 8 (shared movers) and bicg_v4_1 (the fork, the bank, the hold and the carry). `full` adds vecadd_v1, rowsum_v2 under `padded_rows`, matvec_acc_v2, mvt_v4_1_1 and mvt_v5 under `sequential`, mvt_v6, atax_v4 (a held link, a fork's buffered branch), and one point each at i8 (vsum_v1_1), i16 and i32 (dot_v3): 15 in all.
 - CLAUDE.md says when each set is due; the numbers go into STATUS's "The local RTL check".
 
 Example:

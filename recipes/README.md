@@ -32,12 +32,13 @@ An id is the kernel, then words in this order, each from the lists below; a word
 | | `chain` | the `vadd` linked into the same group |
 | | `seed` | the fold starts from x (D163, D187) |
 | | `strip` | the columns in strips outermost, each row's sum carried to the next strip through L1 as its own seed, the first strip's 0 (D192) |
-| Half 2 | a second form word | mvt's or bicg's half 2 when it differs from half 1 |
+| Half 2 | a second form word | mvt's, bicg's or atax's half 2 when it differs from half 1 |
 | Sharing | (none) | each half or unit its own accelerator |
 | | `shared` | both halves on one set of units (D165) |
 | | `ports` | a container on ports its writer and reader share (`share_ports`) |
 | | `enc` | a group's units encapsulated as one accelerator |
-| | `fork` | both halves read A through one reader, in one group of two chains (`fork_read`, D189) |
+| | `link` | the halves in one group, half 1's result linked into half 2's held input (D197) |
+| | `fork` | both halves read A through one reader, in one group of two chains (`fork_read`, D189), or a buffered branch down one chain (D196) |
 | Type | (none) | int64 |
 | | `i<b>` | inputs of b bits |
 | | `o<b>` | the output of b bits, when it differs from the inputs |
@@ -50,6 +51,17 @@ The one-unit kernels take a word for their fold or scalar instead of a form: `tr
 
 | Recipe | Folder | id | What it builds |
 |---|---|---|---|
+| `atax_v1` | atax | `atax_dot2` | Each half a `dot_v2` group per row, by reuse: `lift matvec` at each half, then `matvec/matvec_v2` on both. Half 2 reads t from L1 after half 1 and A down its columns, so its banks follow the layout (`padded_rows`). |
+| `atax_v1_1` | atax | `atax_dot2_shared` | `atax_v1` with one `dot_v2` group bound at both halves (`share`, D165): the halves run in turn anyway, so one engine serves both. |
+| `atax_v1_2` | atax | `atax_dot2_i8_o32_dmaT` | Matvec twice at int8 in, int32 out (`types` i8): the DMA copies A into `A_T` (`data_transpose`, D182) so half 2 reads rows, then `matvec/matvec_v2` on both halves. |
+| `atax_v2` | atax | `atax_dot2_col` | t a `dot_v2` group per row and y the column form, by reuse: `matvec/matvec_v2` on t and `matvec/matvec_v7` on y, t[i] read back from L1 and broadcast to the `Mac`'s lanes (D186). Both halves read A along its rows. |
+| `atax_v2_1` | atax | `atax_dot2_col_i8_o32` | `atax_v2` at int8 in, int32 out (`types` i8): half 2's `Mac` multiplies A at int8 by t at int32. |
+| `atax_v1_3` | atax | `atax_dot2_ports` | `atax_v1` with the halves on one accelerator whose movers they share (`share_ports` on t, D169): they run in turn, so one set of streamers serves both. |
+| `atax_v1_2_1` | atax | `atax_dot2_ports_i8_o32_dmaT` | `atax_v1_2` with the halves sharing their movers (`share_ports` on t, D169). |
+| `atax_v2_2` | atax | `atax_dot2_col_ports` | `atax_v2` with the halves sharing their movers (`share_ports` on t, D169). |
+| `atax_v2_1_1` | atax | `atax_dot2_col_ports_i8_o32` | `atax_v2_1` with the halves sharing their movers (`share_ports` on t, D169). |
+| `atax_v3` | atax | `atax_dot2_colbank_link_i8_o32` | atax in one group at int8 in, int32 out: t = A x by `matvec/matvec_v2`, y = Aᵀ t by the bank form `matvec/matvec_v8` (R rows, R · W = N), and t linked at depth 1 into the `Mac`'s broadcast input, held for its row (D197). A is read twice, t is in no memory. |
+| `atax_v4` | atax | `atax_dot2_colbank_link_fork_i8_o32` | `atax_v3` with A read once (`fork_read A`): the `Mac`'s branch goes through a ring buffer of D beats (`link A`, D196). D ≥ N/W, or the run never ends (LOWER refuses it); N/W + 2 hides the vsum's latency and the link. |
 | `bicg_v1` | bicg | `bicg_dot2` | Each half a `dot_v2` group per row, by reuse: `lift matvec` at each half, then `matvec/matvec_v2` on both. Half 2 reads A down its columns, so its banks follow the layout (`padded_rows`). |
 | `bicg_v2` | bicg | `bicg_dot2_col` | q a `dot_v2` group per row and s the column form, by reuse: `matvec/matvec_v2` on q and `matvec/matvec_v7` on s, r broadcast to the `Mac`'s lanes (D186). Both halves read A along its rows. |
 | `bicg_v2_1` | bicg | `bicg_dot2_col_i8_o32` | `bicg_v2` at int8 in, int32 out (`types` i8). |

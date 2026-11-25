@@ -103,3 +103,16 @@ def test_a_packer_by_its_lane_type_and_d_out():
     got = lookup(SMALL, "FifoPacker", {"d_out": 2, "lanes": 1, "dtype": "int32"}, 1)
     assert got == Lookup(100.0, 0.5, "measured", 17.0)
     assert lookup(SMALL, "FifoPacker", {"d_out": 2, "lanes": 2, "dtype": "int16"}, 2) is None
+
+
+def test_a_mixed_pair_at_its_own_entry_in_either_order_else_its_width_pair():
+    mac = {"opType": "int32", "outType": "int32", "accumulate": True}
+    table = _table({"Mac": [
+        {"params": {**mac, "inTypes": ["int32", "int32"]}, "lanes_rule": "copy",
+         "points": [_pt(8, 80.0, 8.0)]},
+        {"params": {**mac, "inTypes": ["int8", "int32"]}, "lanes_rule": "copy",
+         "points": [_pt(8, 40.0, 4.0)]}]})  # fmt: skip
+    for ins in (["int8", "int32"], ["int32", "int8"]):
+        assert lookup(table, "Mac", {**mac, "inTypes": ins}, 8) == Lookup(40.0, 4.0, "measured")
+    got = lookup(table, "Mac", {**mac, "inTypes": ["int16", "int32"]}, 8)  # not measured
+    assert got == Lookup(80.0, 8.0, "measured")  # its width pair, int32 x int32

@@ -41,7 +41,8 @@ import snax.forge.elementwise.{ElementwiseModel, ElementwiseOp}
   * where n mod ROWS = 0, and the Mac's sums are ROWS rows, firing f adding into row f mod ROWS, each job giving its
   * rows in order. With q carried (bicg_v4_1) the sum is seeded once a job from its seed's reader, the seed 0 in the sum
   * on its first CARRY jobs (CARRY in 0..its JOBS). mvt's one pass (mvt_v6): the sum seeded every job (x1), and the bank
-  * seeded a beat a row (x2), each job's row ρ starting from its ρ-th seed beat.
+  * seeded a beat a row (x2), each job's row ρ starting from its ρ-th seed beat. atax's one group (atax_v4): t over a
+  * held link into the bank and A forked to it through a fork link (`ataxRun`).
   */
 class ShellRandomSpec extends AnyFlatSpec with ForgeTester {
 
@@ -140,6 +141,43 @@ class ShellRandomSpec extends AnyFlatSpec with ForgeTester {
     Run(csrs, empty, spec.inputs.map(beats), spec.outputs.map(Map((sum.name, "out") -> packed, (mac.name, "out") -> s)))
   }
 
+  /** atax's one group (atax_v4): its run, or the empty run. Per run ROWS in 1..R, the sum's T = ROWS (a row of A, so
+    * the product and the bank fire alike, as LOWER makes them), the bank's T = M · ROWS for M rows of A in 1..4, JOBS
+    * 1..2; A's reader gives beat f (row f / ROWS, slice f mod ROWS) to the product's a and, through the fork link (or
+    * its own reader), the bank's; x's a beat a firing on the product's b. The model: t_i = Σ over row i's beats of A ·
+    * x (int8 to int32, wrapping), held over the link for the row and on every lane of the bank's b; the bank's row c of
+    * a job Σ over its rows i of A_(i · ROWS + c) · t_i lane by lane at int32, each job giving its rows in order.
+    */
+  private def ataxRun(spec: AcceleratorSpec, r: snax.forge.Rand, empty: Boolean): Run = {
+    val mac       = spec.units.find(_.rows > 1).get
+    val sum       = spec.units.find(_.datapath == "TreeAccumulate").get
+    val mul       = spec.units.find(_.datapath == "SimdLanes").get
+    val (i8, i32) = (IntType("int8"), IntType("int32"))
+    val w         = mul.port("a").lanes
+    val rows      = r.between(1, mac.rows)
+    val m         = r.between(1, 4)
+    val js        = if (empty) 0 else r.between(1, 2)
+    val n         = js * m * rows
+    def draw(lanes: Int) = Seq.fill(n)(Seq.fill(lanes)(r.word(8)))
+    val (a, x) = (draw(w), draw(w))
+    def wide(v: BigInt) = ElementwiseModel.cast(v, i8, i32)
+    val t        = (0 until n).grouped(rows).toSeq.map { row =>
+      LaneBits.dot(row.flatMap(a(_).map(wide)), row.flatMap(x(_).map(wide)), 32)
+    }
+    val y        = (0 until n).grouped(m * rows).toSeq.flatMap { job =>
+      (0 until rows).map { c =>
+        val fs = job.filter(_ % rows == c)
+        LaneBits.pack((0 until w).map(l => LaneBits.dot(fs.map(f => wide(a(f)(l))), fs.map(f => t(f / rows)), 32)), 32)
+      }
+    }
+    val (su, mu) = (sum.name.toUpperCase, mac.name.toUpperCase)
+    val csrs     =
+      Seq("JOBS" -> js.toLong, s"${su}_JOB_BEATS" -> rows.toLong, s"${mu}_JOB_BEATS" -> (m * rows).toLong) ++
+        Seq(s"${mu}_ROWS" -> rows.toLong)
+    val beats    = Map((mul.name, "a") -> a, (mul.name, "b") -> x, (mac.name, "a") -> a)
+    Run(csrs, empty, spec.inputs.map(beats), Seq(y))
+  }
+
   behavior of "the shell wrapper under random data and stalls"
 
   for {
@@ -164,9 +202,11 @@ class ShellRandomSpec extends AnyFlatSpec with ForgeTester {
         val forked  = spec.forks.nonEmpty
 
         val banked = spec.units.exists(_.rows > 1)
+        val held   = spec.groups.exists(g => g.links.exists(l => spec.unit(l.to._1).port(l.to._2).hold))
 
         val runs =
-          if (banked) Seq.tabulate(Runs)(i => bankRun(spec, r, i > 0 && r.chance(0.125)))
+          if (held) Seq.tabulate(Runs)(i => ataxRun(spec, r, i > 0 && r.chance(0.125)))
+          else if (banked) Seq.tabulate(Runs)(i => bankRun(spec, r, i > 0 && r.chance(0.125)))
           else if (forked) Seq.tabulate(Runs) { i =>
             val rows      = if (i > 0 && r.chance(0.125)) 0 else r.between(1, 16)
             def divisor() = r.pick((1 to (rows max 1)).filter(t => (rows max 1) % t == 0))

@@ -1,4 +1,7 @@
 {
+  "atax_v4": {
+    "snax_forge_atax_v4_atax_ctrl": [["busy", 1], ["mul_sum_job_beats_counter", 32], ["mul_mac_job_beats_counter", 32], ["mul_jobs_counter", 32], ["sum_job_beats_counter", 32], ["sum_mac_job_beats_counter", 32], ["sum_jobs_counter", 32], ["sum_v", 1], ["mac_job_beats_counter", 32], ["mac_row", 1], ["mac_jobs_counter", 32], ["mac_v", 1], ["mul_sum_occupancy", 1], ["sum_mac_occupancy", 1], ["mul_mac_fork_occupancy", 3], ["mul_mac_fork_wslot", 2], ["mul_mac_fork_rslot", 2], ["done", 1]]
+  },
   "bicg_v4_1": {
     "snax_forge_bicg_v4_1_bicg_types_ctrl": [["busy", 1], ["mul_sum_job_beats_counter", 2], ["mul_jobs_counter", 32], ["sum_job_beats_counter", 2], ["sum_jobs_counter", 32], ["sum_v", 1], ["mac_job_beats_counter", 32], ["mac_row", 2], ["mac_jobs_counter", 32], ["mac_v", 1], ["mul_sum_occupancy", 1], ["done", 1]]
   },

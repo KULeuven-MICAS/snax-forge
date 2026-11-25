@@ -76,6 +76,23 @@ def test_the_module_tree_names_every_group_unit_and_buffer():
     }  # fmt: skip
 
 
+def test_the_module_tree_names_a_fork_links_buffer():
+    """forge/atax_v4's group: its units, its link's buffers, then its fork link's (A), as
+    hw/chisel's AccDatapath makes them."""
+    import json
+
+    from snax_forge.gen.accelerator import Description
+    from tests.helpers import SUB
+
+    path = SUB / "forge" / "atax_v4" / "accelerator.json"
+    if not path.is_file():
+        pytest.skip("the submodule has no forge/atax_v4")
+    t = "snax_forge_atax_v4"
+    tree = bundle_mod.module_tree(Description.from_dict(json.loads(path.read_text())))
+    assert tree[f"{t}_datapath"] == [f"{t}_mul", f"{t}_sum", f"{t}_mac", f"{t}_tmp2_prod",
+                                     f"{t}_tmp1", f"{t}_A"]  # fmt: skip
+
+
 def test_the_module_tree_ends_with_each_stream_block_once():
     """dot_v7 with mul's a and b at int32, one lane, sliced 2, and sum's out at int32
     packed 2: one FifoSlicer module for both inputs, then the packer, after the shell's."""

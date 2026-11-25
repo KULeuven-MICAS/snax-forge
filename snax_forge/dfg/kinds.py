@@ -316,9 +316,17 @@ def _check_fork(node: Node, scope: Scope, what: str) -> None:
                                            for v in groups.values()):  # fmt: skip
         raise DfgError(f"{what}.attrs.groups: {groups!r}; each unit's group before the fork, "
                        "a name or null")  # fmt: skip
+    buffers = a.get("buffers", {})
+    if not isinstance(buffers, dict) or any(
+        r not in readers or type(d) is not int or d < 1 for r, d in buffers.items()
+    ):
+        raise DfgError(f"{what}.attrs.buffers: {buffers!r}; a buffered branch is a reader of the "
+                       "fork and its depth, 1 or more (link)")  # fmt: skip
 
 
-register_kind("fork", required=("container", "readers", "groups"), check=_check_fork)
+register_kind(
+    "fork", required=("container", "readers", "groups"), optional=("buffers",), check=_check_fork
+)
 
 
 # =============================================================================
