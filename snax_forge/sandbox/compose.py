@@ -612,6 +612,12 @@ def _fork_of(g: Graph, container: str) -> Node | None:
                 None)  # fmt: skip
 
 
+def _named(g: Graph, selected: str) -> str:
+    """A fork node's container, else ``selected`` as given."""
+    return next((n.attrs["container"] for n, _ in g.walk() if n.kind == "fork" and n.id == selected),
+                selected)  # fmt: skip
+
+
 def _linked_to(g: Graph) -> set[str]:
     return {n.attrs["to"] for n, _ in g.walk() if n.kind == "link"}
 
@@ -633,9 +639,7 @@ def _link_site(g: Graph, container: str) -> dict[str, Any]:
     """``container`` and a ``group``: an end's group name, else the graph's, or the next free
     one (``mvt_v2``) when another unit's instance or group has it (mvt's second half); a
     forked container's, its fork's group (the fork node selected names its container)."""
-    fork = next((n for n, _ in g.walk() if n.kind == "fork" and n.id == container), None)
-    if fork is not None:
-        container = fork.attrs["container"]
+    container = _named(g, container)
     if (fork := _fork_of(g, container)) is not None:
         _branch(g, fork, f"link {container!r}")  # offered only while a branch can take a buffer
         reader = fork.attrs["readers"][0].split(".")[0]
@@ -659,10 +663,10 @@ def _link_fork(g: Graph, container: str, depth: int, group: str) -> Graph:
     g = _copy(g)
     what = f"link {container!r}"
     fork = _fork_of(g, container)
+    reader = _branch(g, fork, what)  # first, as the site refuses
     if type(depth) is not int or depth < 1:
         raise LinkError("link.container", f"{what}: depth {depth!r}; a forked read's branch is "
                         "a buffer, depth 1 or more")  # fmt: skip
-    reader = _branch(g, fork, what)
     have = _link_site(g, container)["group"]
     if group != have:
         raise LinkError("link.group", f"{what}: the fork's group is {have!r}, not {group!r}")
@@ -671,6 +675,7 @@ def _link_fork(g: Graph, container: str, depth: int, group: str) -> Graph:
 
 
 def link(g: Graph, container: str, depth: int, group: str) -> Graph:
+    container = _named(g, container)
     if _fork_of(g, container) is not None:
         return _link_fork(g, container, depth, group)
     g = _copy(g)
