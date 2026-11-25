@@ -46,3 +46,25 @@ def test_a_click_on_a_fork_or_link_edge_selects_what_link_and_unlink_take():
     (t,) = {e["sel"] for e in edges if e["style"] == "link" and e.get("data") == "tmp1"}
     assert TRANSFORMS["unlink"].site(g, t) == {"container": "tmp1"}
     assert TRANSFORMS["unlink"].site(g, "A") == {"container": "A"}
+
+
+def test_a_forked_reader_with_a_chain_of_its_own_is_drawn_on_the_first():
+    """gesummv_v3: x forked into two dot chains, each a mul linked to its sum; the second
+    chain's loops are drawn on the first's boxes, and the chips its own link put on its loops
+    move with them (no box of their own is left)."""
+    g = steps("gesummv_v3", N=16, W=8)[-1]
+    v = graph_view(Entry(g.name, Path(g.name), g, None), expanded=("matvec", "matvec_1"))
+    loops = {b["id"]: (b["parent"], b.get("chips")) for b in v["drawing"]["nodes"]
+             if b["kind"] == "loop"}  # fmt: skip
+    assert loops == {
+        "tmp2_mult_map": ("grp:gesummv",
+                          [["sum_map", None], ["tmp5_mult_map", None], ["sum_map_2", None]]),
+        "tmp2_mult_map_1": ("grp:gesummv",
+                            [["sum_map_1", None], ["tmp5_mult_map_1", None], ["sum_map_3", None]]),
+        "add_map": ("grp:axpby", None),
+    }  # fmt: skip
+    reads = [
+        (e["from"], e["to"], e["style"]) for e in v["drawing"]["edges"] if e.get("data") == "x"
+    ]
+    assert reads == [("x@0", "tmp2_mult_map_1", "data"), ("tmp2_mult_map_1", "unit:mul", "fork"),
+                     ("tmp2_mult_map_1", "unit:mul_1", "fork")]  # fmt: skip

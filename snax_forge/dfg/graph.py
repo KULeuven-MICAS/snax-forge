@@ -55,6 +55,9 @@ BAKED = "sandbox.baked"
 # a fold tasklet's record of the sandbox's fuse_seed: the transient and the elementwise nest it
 # took, for unfuse_seed (sandbox/seed.py)
 SEEDED = "sandbox.seeded"
+# a scale tasklet's record of the sandbox's factor_out: the scale nest and transient it took,
+# the product's read and the fold's output, for unfactor_out (sandbox/factor.py)
+FACTORED = "sandbox.factored"
 # a tasklet's mark of the sandbox's mark_transpose: {connector: π}, the input read across its
 # loop order (sandbox/transpose.py); a bound unit's keyed by the port
 TRANSPOSE = "sandbox.transpose"

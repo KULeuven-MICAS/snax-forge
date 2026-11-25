@@ -103,3 +103,17 @@ def test_a_cost_is_shown_to_3_significant_figures():
     assert [sig3(x) for x in (26.33877, 63186.17, 97.2592, 0.1353, 999.6, 0.0, 2723.84)] == [
         "26.3", "63 200", "97.3", "0.135", "1 000", "0", "2 720"]  # fmt: skip
     assert sig3(None) is None
+
+
+@pytest.mark.parametrize("name", ["axpy_v1", "axpy_v1_1", "relu_v1", "gesummv_v1", "gesummv_v1_1",
+                                  "gesummv_v2", "gesummv_v2_1"])  # fmt: skip
+def test_simd_lanes_scalar_forms_are_priced(name):
+    """A SimdLanes with a scalar (one stream with k, axpby with k1 and k2, each baked or from a
+    CSR) is looked up at its own entry, the CSR flags as gen-rtl sets them: none is missing and
+    each unit's comb is above 0."""
+    e = estimated(name)
+    assert e.missing == []
+    units = [
+        u for g in e.groups if g.cost for u in g.cost.units.values() if u.datapath == "SimdLanes"
+    ]
+    assert units and all(u.found and u.comb_um2 > 0 for u in units)

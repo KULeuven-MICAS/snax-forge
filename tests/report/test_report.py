@@ -542,14 +542,14 @@ def test_design_md_on_no_technology(tmp_path):
 
 
 def test_design_md_names_what_the_table_does_not_hold(tmp_path):
-    """relu: a one-stream SimdLanes max, not in nangate45's table; its comb counted as 0,
-    listed under the cost and noted (char.missing)."""
-    r = designed_report(tmp_path, "relu_v1")
-    assert r.estimate.missing == ["acc"]
+    """dot_v7: a SerialAccumulate at lanes 1, not in nangate45's table (it holds it from lanes
+    2); its comb counted as 0, listed under the cost and noted (char.missing)."""
+    r = designed_report(tmp_path, "dot_v7")
+    assert r.estimate.missing == ["sum"]
     text = render_design(r)
-    assert "| acc | acc | SimdLanes | not characterized |" in text
-    assert "Not characterized on nangate45 (comb counted as 0, flops counted): acc" in text
-    assert ("- note [char.missing] acc: not characterized: SimdLanes at lanes 4 on "
+    assert "| sum | sum | SerialAccumulate | not characterized |" in text
+    assert "Not characterized on nangate45 (comb counted as 0, flops counted): sum" in text
+    assert ("- note [char.missing] sum: not characterized: SerialAccumulate at lanes 1 on "
             "nangate45") in text  # fmt: skip
 
 

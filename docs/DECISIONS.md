@@ -7,7 +7,7 @@ Rules (D117):
 - An entry is a choice with a real alternative that someone may want to reverse: direction, ownership, the interfaces between components, the order of work. Implementation details live in the module's docstring and its tests.
 - An entry says what was decided, why, and where the detail lives, in a few short bullets; an edge case only when there is one. A change is written into the entry, not chained after it.
 - Entries merged into one keep all their numbers in its heading, so a cite of any of them still finds it. A number is never changed or reused; the text of a removed entry is in git history.
-- A new decision gets the next free number, under the area it belongs to. Next free number: **D198**.
+- A new decision gets the next free number, under the area it belongs to. Next free number: **D199**.
 
 Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29–D45, D47–D50, D53, D54, D56, D58–D63, D65–D67, D69, D74, D76–D78, D80, D81, D83, D88–D97, D100, D101, D103, D104, D106, D107, D109, D110, D114, D115, D119, D124, D127, D128, D132, D133, D138–D141, D151, D156, D159, D160, D181.
 
@@ -162,6 +162,12 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 - **Decided:** a checked-in recipe's `name` (file stem, design) is `<kernel>_v<N>` plus `_<k>` per change from its parent (`mvt_v5_1`), type presets counted as the kernel: `v<N>` a new structure, `_<k>` one change (reuse, sharing, type, layout, size), never renumbered. Its `id` says what it builds in a fixed vocabulary (`mvt_dot2seed_colseed_i8_o32`), shared by recipes building the same units, its `description` the same in one to three sentences. `recipes/custom/` is free of the rule; Save writes neither field.
 - **Why:** names grown round by round (`mvt_4_i8_col_vadd`) no longer said what a recipe builds; a version keeps names short and stable, the id carries the meaning.
 - **Where:** `recipes/README.md`; CONTRACTS, "Recipe".
+
+### D198 — A scale moves past the sum it feeds, as a recipe step
+
+- **Decided:** `factor_out` (inverse `unfactor_out`) rewrites a scale by a kernel scalar whose only reader is a product summed by one fold, $\sum_j (k\thinspace a_j)\thinspace x_j \to k \sum_j a_j x_j$: the scaled transient goes, the product reads a and the fold writes `<s>_sum`. The scale lands in s's reader when that is one elementwise tasklet (gesummv's add becomes `alpha · tmp1_sum + beta · tmp3_sum`, bound as one `simd` axpby), else in a nest of its own over s. It is selected at the scalar (alpha), as `bake_scalar`, and comes before the scalar's bake. The kernel stays as NPBench writes it (`alpha * A @ x`); the reorder is the designer's step, checked by the reference like any other. Integers only, every type from the scale to s at least s's width, so the bits are equal modulo $2^w$.
+- **Why:** gesummv's `(alpha A) x` scales N² elements and keeps αA in L1 (all of L1 at int64, N = 64); after the step it scales N sums and the halves are matvecs `lift` finds. Rewriting the kernel would hide the choice and change E1's "as written" point.
+- **Where:** `sandbox/factor.py`; CONTRACTS, "Recipe".
 
 ## Accelerators
 

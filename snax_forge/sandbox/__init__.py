@@ -5,7 +5,7 @@ A recipe (recipe.py) is an ordered list of registered transforms with their para
 to an imported graph (CONTRACTS, "Recipe"). Each transform has its inverse and a site, the
 graph-shape test of where it applies: split, tag, bind, interchange and encapsulate
 (transforms.py); split_reduce, fuse_map and link (compose.py); bake_scalar (scalar.py);
-fuse_seed (seed.py); mark_transpose and data_transpose (transpose.py); share (share.py); share_ports
+fuse_seed (seed.py); factor_out (factor.py); mark_transpose and data_transpose (transpose.py); share (share.py); share_ports
 (share_ports.py); fork_read (fork.py); lift and apply_recipe (blocks.py). ``bind`` recognises a BRM's pattern
 through the matchers of patterns.py. The runner (run.py) binds the recipe's symbols, applies
 every step, checks each against the reference executor and writes every step's graph. The
@@ -15,6 +15,7 @@ session is session.py.
 
 from .blocks import lift, unlift
 from .compose import fuse_map, join_reduce, link, split_reduce, unfuse_map, unlink
+from .factor import factor_out, unfactor_out
 from .fork import fork_read, unfork_read
 from .patterns import PATTERNS, match, register_pattern
 from .recipe import Recipe, SandboxError, Step
@@ -50,6 +51,7 @@ __all__ = [
     "bind_recipe_symbols",
     "data_transpose",
     "encapsulate",
+    "factor_out",
     "fork_read",
     "fuse_map",
     "fuse_seed",
@@ -70,6 +72,7 @@ __all__ = [
     "unbake_scalar",
     "unbind",
     "unencapsulate",
+    "unfactor_out",
     "unfork_read",
     "unfuse_map",
     "unfuse_seed",

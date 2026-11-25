@@ -27,18 +27,20 @@ An id is the kernel, then words in this order, each from the lists below; a word
 | | `dotser` | multiply and a serial fold of one lane, the products through L1 |
 | | `col` | the column form: one `Mac` with its lanes on the output, the input broadcast (D186) |
 | | `colbank` | the column form rows outer: the `Mac`'s sums of a strip of R·W outputs in a bank of R rows (D191), the broadcast read once a row and held (D190) |
-| How x is added (q += A p) or the sum carried, after the form | (none) | q = A p |
+| How x is added (q += A p), the sum carried or the halves combined, after the form | (none) | q = A p |
 | | `add` | a separate `vadd` reading q through L1 |
 | | `chain` | the `vadd` linked into the same group |
 | | `seed` | the fold starts from x (D163, D187) |
 | | `strip` | the columns in strips outermost, each row's sum carried to the next strip through L1 as its own seed, the first strip's 0 (D192) |
+| | `scale` | each matrix first scaled by its kernel scalar in a `simd` unit, the scaled matrix through L1 (gesummv as written) |
+| | `axpby` | the two halves' sums scaled and added in one `simd` axpby, the scalars moved past the sums (`factor_out`, D198) |
 | Half 2 | a second form word | mvt's, bicg's or atax's half 2 when it differs from half 1 |
 | Sharing | (none) | each half or unit its own accelerator |
 | | `shared` | both halves on one set of units (D165) |
 | | `ports` | a container on ports its writer and reader share (`share_ports`) |
 | | `enc` | a group's units encapsulated as one accelerator |
 | | `link` | the halves in one group, half 1's result linked into half 2's held input (D197) |
-| | `fork` | both halves read A through one reader, in one group of two chains (`fork_read`, D189), or a buffered branch down one chain (D196) |
+| | `fork` | both halves read A (gesummv's x) through one reader, in one group of two chains (`fork_read`, D189), or a buffered branch down one chain (D196) |
 | Type | (none) | int64 |
 | | `i<b>` | inputs of b bits |
 | | `o<b>` | the output of b bits, when it differs from the inputs |
@@ -89,6 +91,14 @@ The one-unit kernels take a word for their fold or scalar instead of a form: `tr
 | `vecmul_v1` | elementwise | `vecmul` | C = A * B in one `simd` unit of W lanes. |
 | `vecmul_v1_1` | elementwise | `vecmul_i32` | `vecmul_v1` at int32. |
 | `vecmul_v1_1_1` | elementwise | `vecmul_i32_o64` | `vecmul_v1_1` with an int64 output: int32 operands, the full product kept. |
+| `gesummv_v1` | gesummv | `gesummv_dot2_scale_add` | gesummv as NPBench writes it, `(alpha A) x + (beta B) x`: each scale a `simd` unit over the whole matrix (alpha A and beta B through L1), each half a `dot_v2` group by reuse (`lift matvec`, `matvec/matvec_v2`), the add by `elementwise/vecadd_v1`. |
+| `gesummv_v1_1` | gesummv | `gesummv_dot2_scale_add_i8_o32` | `gesummv_v1` at int8 in, int32 out (`types` i8): alpha A and beta B at int32 through L1, so each dot multiplies them by x at int8 (the cast is in the op). |
+| `gesummv_v1_1_1` | gesummv | `gesummv_dot2_scale_add_ports_i8_o32` | `gesummv_v1_1` with all five units in one accelerator sharing their movers (`share_ports` on each transient between two of them, D169). |
+| `gesummv_v2` | gesummv | `gesummv_dot2_axpby` | Each scale moved past its sum (`factor_out` alpha and beta, D198), so the add becomes `alpha · tmp1_sum + beta · tmp3_sum`: each half a `dot_v2` group by reuse (`lift matvec`, `matvec/matvec_v2`) reading its matrix directly, then one `simd` axpby with alpha and beta from CSRs. |
+| `gesummv_v2_1` | gesummv | `gesummv_dot2_axpby_i8_o32` | `gesummv_v2` at int8 in, int32 out (`types` i8): each dot multiplies A or B by x at int8 into int32 sums, the axpby at int32. |
+| `gesummv_v2_1_1` | gesummv | `gesummv_dot2_axpby_shared_i8_o32` | `gesummv_v2_1` with one `dot_v2` group bound at both halves (`share`, D165): one engine reads A x, then B x. |
+| `gesummv_v2_1_2` | gesummv | `gesummv_dot2_axpby_ports_i8_o32` | `gesummv_v2_1` with the two dot groups and the axpby in one accelerator sharing their movers (`share_ports` on each sum, D169). |
+| `gesummv_v3` | gesummv | `gesummv_dot2_axpby_fork_i8_o32` | `gesummv_v2_1` with x read once for both halves (`fork_read x`, D189): one group of two chains, A x and B x side by side, their sums through L1 into the axpby. |
 | `matvec_acc_v1` | matvec | `matvec_acc_dot1seed_enc` | `matvec_v1` with the fold starting from q (`fuse_seed`, D163), so no separate add: `mul` and `sum` encapsulated, the products through L1. |
 | `matvec_acc_v2` | matvec | `matvec_acc_dotserseed_enc` | `matvec_acc_v1` with a serial fold of one lane in place of the tree. |
 | `matvec_acc_v3` | matvec | `matvec_acc_dot2seed` | A seeded `dot_v2` on each row: `mul → link → sum` in one group, the fold starting from q[i]. mvt's half 1 in `mvt_v4` and `mvt_v5`. |

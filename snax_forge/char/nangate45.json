@@ -10,7 +10,8 @@
   "snax_forge": "04165576384c4f3031e3b2d27d0ee9c058498b51",
   "snax_forge_FifoSlicer": "c5c7d3bad1eb1ccf2e4e4a3d841fea749677d3f3",
   "snax_forge_mixed": "90e9fba98c080676b22e7c95137d26a0faa9636d",
-  "snax_forge_experiments": "f61fb89e3261da0a35815b29ca3af3ebe607730e",
+  "snax_forge_scalar": "8d9128c4452542956aeb715c24a3b0f9742040bf",
+  "snax_forge_experiments": "992111672e11ac5108b464cf9907572427ce353e",
   "stimulus": "rand64 seed 0",
   "clk_gate": "1"
  },
@@ -117,6 +118,34 @@
    {"params": {"inTypes": ["int8", "int32"], "opType": "int32", "outType": "int32", "op": "mul", "streams": 2, "k": null, "k1": null, "k2": null, "kCsr": false, "k1Csr": false, "k2Csr": false}, "lanes_rule": "copy",
     "points": [
      {"lanes": 1, "comb_um2": 833.112003, "e_comb_pj": 1.425924}
+    ]},
+   {"params": {"inTypes": ["int64"], "opType": "int64", "outType": "int64", "op": "mul", "streams": 1, "k": null, "k1": null, "k2": null, "kCsr": true, "k1Csr": false, "k2Csr": false}, "lanes_rule": "copy",
+    "points": [
+     {"lanes": 1, "comb_um2": 6912.542033, "e_comb_pj": 8.891865}
+    ]},
+   {"params": {"inTypes": ["int8"], "opType": "int32", "outType": "int32", "op": "mul", "streams": 1, "k": null, "k1": null, "k2": null, "kCsr": true, "k1Csr": false, "k2Csr": false}, "lanes_rule": "copy",
+    "points": [
+     {"lanes": 1, "comb_um2": 833.112003, "e_comb_pj": 1.142523}
+    ]},
+   {"params": {"inTypes": ["int64", "int64"], "opType": "int64", "outType": "int64", "op": "axpby", "streams": 2, "k": null, "k1": null, "k2": null, "kCsr": false, "k1Csr": true, "k2Csr": true}, "lanes_rule": "copy",
+    "points": [
+     {"lanes": 1, "comb_um2": 14343.252077, "e_comb_pj": 16.87358}
+    ]},
+   {"params": {"inTypes": ["int32", "int32"], "opType": "int32", "outType": "int32", "op": "axpby", "streams": 2, "k": null, "k1": null, "k2": null, "kCsr": false, "k1Csr": true, "k2Csr": true}, "lanes_rule": "copy",
+    "points": [
+     {"lanes": 1, "comb_um2": 3840.50802, "e_comb_pj": 4.417724}
+    ]},
+   {"params": {"inTypes": ["int32", "int32"], "opType": "int32", "outType": "int32", "op": "axpby", "streams": 2, "k": null, "k1": null, "k2": null, "kCsr": false, "k1Csr": true, "k2Csr": false}, "lanes_rule": "copy",
+    "points": [
+     {"lanes": 1, "comb_um2": 1924.776009, "e_comb_pj": 2.509546}
+    ]},
+   {"params": {"inTypes": ["int32", "int32"], "opType": "int32", "outType": "int32", "op": "axpby", "streams": 2, "k": null, "k1": 3, "k2": null, "kCsr": false, "k1Csr": false, "k2Csr": false}, "lanes_rule": "copy",
+    "points": [
+     {"lanes": 1, "comb_um2": 263.074002, "e_comb_pj": 0.5689094}
+    ]},
+   {"params": {"inTypes": ["int32"], "opType": "int32", "outType": "int32", "op": "max", "streams": 1, "k": 0, "k1": null, "k2": null, "kCsr": false, "k1Csr": false, "k2Csr": false}, "lanes_rule": "copy",
+    "points": [
+     {"lanes": 1, "comb_um2": 33.516, "e_comb_pj": 0.2010275}
     ]}
   ],
   "Mac": [

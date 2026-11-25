@@ -9,7 +9,7 @@ The PolyBench and DL kernels are NPBench's DaCe sources (BSD-3, `NPBENCH_LICENSE
 - they are `int64` where the kernel is integer arithmetic, at PolyBench's MINI sizes; `softmax`, `mlp`, `lenet` and `resnet` keep NPBench's `float32` (`float-staged`) until their tier decides the integer form;
 - the tiers are PAPER §6.1's.
 
-The kernels that run at narrow types (`vecadd`, `vecmul`, `matadd`, `relu`, `axpy`, `vsum`, `rowsum`, `dot`, `matvec`, `mvt_types`, `bicg_types`, `atax_types`) list type presets in their `SPEC` (`presets`), chosen with `--set types=` (D113 · D173):
+The kernels that run at narrow types (`vecadd`, `vecmul`, `matadd`, `relu`, `axpy`, `vsum`, `rowsum`, `dot`, `matvec`, `mvt_types`, `bicg_types`, `atax_types`, `gesummv_types`) list type presets in their `SPEC` (`presets`), chosen with `--set types=` (D113 · D173):
 
 | Preset | Inputs | Outputs and `OP_TYPE` |
 |---|---|---|
@@ -194,7 +194,18 @@ mvt with each product at `OP_TYPE`: `x1 += A @ y1.astype(OP_TYPE)`, `x2 += A.T @
 $$y = \alpha A x + \beta B x$$
 
 - `x` is reused by both products and across every row: stride 0, or held in the unit.
-- Two MatMuls, two scalar scales and an add: a chain that could be one composed accelerator (D112); the scalars come with LOW4.
+- `alpha * A @ x` is `(alpha * A) @ x`: the import scales both matrices (N² multiplies each, αA and βB through L1) before two MatMuls and an add. `factor_out` (D198) moves each scale past its sum, as a recipe step.
+
+### gesummv_types
+
+`polybench/gesummv_types.py` · tier A · int64, presets `i8`, `i16`, `i32`
+
+gesummv with x cast to `OP_TYPE`: `out[:] = alpha * A @ x.astype(OP_TYPE) + beta * B @ x.astype(OP_TYPE)`.
+
+- At `i8` A, B and x are int8, alpha, beta and out int32 (`i32`: int64), as axpy's presets.
+- The cast keeps `factor_out` exact: the product stays `in1 * int32(in2)` when it reads A instead of αA; without it A x of two int8 arrays would wrap at int8.
+- The cast renames the products (`tmp2_mult_map`, `tmp5_mult_map` where gesummv has `tmp1_mult_map`, `tmp3_mult_map`); the scales, sums and add keep gesummv's names.
+- y does not wrap at int32 at the full int8 range: $|y_i| \le (\alpha + \beta)\thinspace N \cdot 2^{14}$, $5 \cdot 2^{20}$ at N = 64 with α = 3, β = 2.
 
 ### covariance
 

@@ -524,7 +524,6 @@ svg.dfg-edges { position: absolute; top: 0; left: 0; z-index: 0; pointer-events:
 .c-pill.scalar { border: none; border-radius: 0; padding: 0.14rem 1.1rem; background: color-mix(in srgb, var(--data) 28%, var(--panel)); clip-path: polygon(0.6rem 0, calc(100% - 0.6rem) 0, 100% 50%, calc(100% - 0.6rem) 100%, 0.6rem 100%, 0 50%); }
 .c-badge { font-size: 0.8em; color: var(--muted); }
 .c-dtype { color: var(--muted); } /* the container's dtype, at the pill's own size */
-.c-share { margin-left: 0.4rem; padding: 0 0.3rem; border: 1.5px dashed var(--p); border-radius: 3px; font: 600 0.72rem ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
 
 /* edges: a wide transparent stroke under each to click (graph.js) */
 path.edge-hit { fill: none; stroke: transparent; stroke-width: 12; pointer-events: stroke; cursor: pointer; }
@@ -684,6 +683,7 @@ i.key.c-fold { background: var(--ink); clip-path: polygon(0 0, 100% 0, 75% 100%,
 i.key.c-link { background: var(--busy-bg); border: 2px dashed var(--busy); }
 i.key.c-fork { height: 0; border: none; border-top: 3px solid var(--busy); align-self: center; }
 i.key.c-mux { background: var(--muted); clip-path: polygon(0 0, 100% 0, 75% 100%, 25% 100%); opacity: 0.7; }
+i.key.c-portmux { background: var(--data); clip-path: polygon(0 0, 100% 0, 75% 100%, 25% 100%); opacity: 0.7; }
 i.key.c-copy { background: color-mix(in srgb, var(--data) 18%, var(--panel)); box-shadow: inset 0 0 0 2px var(--data); }
 i.key.c-pill { background: color-mix(in srgb, var(--data) 18%, var(--panel)); box-shadow: inset 0 0 0 1.5px var(--data); border-radius: 6px; }
 i.key.c-pill.transient { background: var(--panel); box-shadow: none; border: 1.5px dashed var(--data); }
@@ -871,6 +871,14 @@ svg.dfg-edges text.c-pname { font: 500 9.5px ui-monospace, "SF Mono", Menlo, Con
 .c-mux > .c-shape { clip-path: polygon(2.5px 1.5px, calc(100% - 2.5px) 1.5px, calc(100% - var(--slant) - 1px) calc(100% - 1.5px), calc(var(--slant) + 1px) calc(100% - 1.5px)); }
 .c-demux > .c-shape { clip-path: polygon(calc(var(--slant) + 1px) 1.5px, calc(100% - var(--slant) - 1px) 1.5px, calc(100% - 2.5px) calc(100% - 1.5px), 2.5px calc(100% - 1.5px)); }
 .c-mux > .c-text, .c-demux > .c-text { color: var(--muted); font-size: 0.74em; }
+/* share_ports' port mux: a temporal mux's trapezoid in the data colour, its movers' table inside */
+.c-node.c-portmux { --mux-edge: var(--data); min-width: 0; align-items: center; gap: 0.2rem; padding: 0.2rem 2.2rem 0.5rem; cursor: default; }
+.c-portmux > .c-text { color: var(--data); font-weight: 600; }
+.c-pm { border-collapse: collapse; font: 0.72rem ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+.c-pm th, .c-pm td { padding: 0.05rem 0.45rem; text-align: left; white-space: nowrap; }
+.c-pm thead th { color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--data); }
+.c-pm tbody th { color: var(--data); font-weight: 600; }
+.c-share { margin-left: 0.4rem; padding: 0 0.3rem; border: 1.5px dashed var(--data); border-radius: 3px; font: 600 0.72rem ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
 .c-node.c-mux.sel, .c-node.c-demux.sel { box-shadow: none; --mux-edge: var(--hl); }
 /* an outline's title, in its lower right corner (graph.js) */
 svg.dfg-edges text.c-title { font-size: 0.85rem; paint-order: stroke; stroke: var(--bg); stroke-width: 4px; stroke-linejoin: round; }

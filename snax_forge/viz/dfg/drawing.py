@@ -133,10 +133,12 @@ class _Drawing:
 
 
 def drawing(g: Graph, tops: Sequence[Node], placed: dict[str, Any] | None = None,
-            blocks: Sequence[dict[str, Any]] = ()) -> dict[str, Any]:  # fmt: skip
+            blocks: Sequence[dict[str, Any]] = (),
+            port_muxes: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:  # fmt: skip
     """The step's drawing (module doc): ``{"nodes", "edges", "outlines", "tasks"}``; ``tops`` the
     top-level nodes as drawn (api's ``fold``), ``placed`` the estimate's containers (their
-    badges), ``blocks`` api's blocks list (the open ones become outlines)."""
+    badges), ``blocks`` api's blocks list (the open ones become outlines), ``port_muxes`` api's
+    shared movers per accelerator (a box in its outline each)."""
     api = _api()
     d = _Drawing(g, placed or {})
     scalars = {c for c, cont in g.containers.items() if cont.attrs.get(SCALAR)}
@@ -559,8 +561,11 @@ def drawing(g: Graph, tops: Sequence[Node], placed: dict[str, Any] | None = None
         if not any(e["from"] == a and e["to"] in reach for e in d.edges):
             task = next((e["task"] for e in d.edges if e["to"] == a), None)
             d.edge(a, None, b, bp, style="empty", task=task)
+    chips: dict[str, list[str]] = {}  # a box drawn on another's (a fork's reader) takes its chips
     for bid, maps in also.items():
-        d.nodes[bid]["chips"] = [[m, None] for m in maps]
+        chips.setdefault(find(bid), []).extend(maps)
+    for bid, maps in chips.items():
+        d.nodes[bid]["chips"] = [[m, None] for m in dict.fromkeys(maps)]
     used = {e[k].split("@")[0] for e in d.edges for k in ("from", "to") if "@" in e[k]}
     csr_read = {n.inputs[c].data for n, _ in g.walk() for c in api.csr_connectors(g, n)}
     for c in g.containers:  # what no node uses: a box of its own in the inputs' row
@@ -574,6 +579,11 @@ def drawing(g: Graph, tops: Sequence[Node], placed: dict[str, Any] | None = None
                 drives.setdefault(find(mp.id), set()).add(
                     group_of(n) if n.kind == "accelerated" else None)  # fmt: skip
     outlines = _outlines(g, d, by_inst, shared, blocks, nodes, drives)
+    drawn = {o["id"] for o in outlines}
+    for acc, mux in (port_muxes or {}).items():  # share_ports: the movers the groups take in turn
+        if f"acc:{acc}" in drawn:
+            d.box(f"portmux:{acc}", kind="portmux", text="shared_port_mux · PORT_MUX_SEL", sel=acc,
+                  groups=mux["groups"], movers=mux["movers"], parent=f"acc:{acc}")  # fmt: skip
     for n in d.nodes.values():  # a mux's or packer's outline is its unit's
         if n["kind"] in ("mux", "demux", "slicer", "packer") and "parent" not in n:
             n["parent"] = d.nodes[f"unit:{n['unit']}"].get("parent")
@@ -682,10 +692,15 @@ def _outlines(g: Graph, d: _Drawing, by_inst: dict[str, list[Node]], shared: dic
         out.append({"id": f"block:{b['name']}", "kind": "block", "text": f"▾ {b['text']}",
                     "sel": b["name"], "block": b["name"], "parent": f"block:{block_parent[b['name']]}"
                     if block_parent[b["name"]] else None})  # fmt: skip
+    every: dict[str, dict[str, None]] = {}  # each accelerator's groups, folded blocks' included
+    for x, _ in g.walk():
+        if x.kind == "accelerated":
+            every.setdefault(accelerator_of(x), {})[group_of(x)] = None
     acc_outline: dict[str, str | None] = {}
-    for acc, ks in accs.items():
+    for acc, all_ks in every.items():
+        ks = accs.get(acc, [])
         drawn = [k for k in ks if k in drawn_grp]
-        if len(ks) > 1 or (ks and ks[0] != acc):
+        if len(all_ks) > 1 or next(iter(all_ks)) != acc:
             inner = {innermost(x) for k in ks for u in groups[k]["units"] for x in by_inst[u]}
             out.append({"id": f"acc:{acc}", "kind": "accelerator", "text": f"accelerator {acc}", "sel": acc,
                         "parent": f"block:{next(iter(inner))}" if len(inner) == 1 and None not in inner
@@ -737,13 +752,20 @@ def _outlines(g: Graph, d: _Drawing, by_inst: dict[str, list[Node]], shared: dic
                 and name in [b["name"] for b in x.attrs.get(BLOCK) or []]}  # fmt: skip
         if len(mine) == 1:
             folded.setdefault(mine.pop(), []).append(bid)
+    acc_of_group = {k: acc for acc, ks in every.items() for k in ks}
     for k, bids in folded.items():
+        around = acc_outline.get(acc_of_group.get(k, ""))  # its accelerator's outline, if drawn
         if len(bids) > 1 and f"grp:{k}" not in {o["id"] for o in out}:
             ups = {d.nodes[b].get("parent") for b in bids}
+            up = ups.pop() if len(ups) == 1 else None
             out.append({"id": f"grp:{k}", "kind": "group", "text": f"group {k}", "sel": k,
-                        "parent": ups.pop() if len(ups) == 1 else None})  # fmt: skip
+                        "parent": up or around})  # fmt: skip
             for b in bids:
                 d.nodes[b]["parent"] = f"grp:{k}"
+        elif around is not None:  # a folded block whose one group sits in a drawn accelerator
+            for b in bids:
+                if d.nodes[b].get("parent") is None:
+                    d.nodes[b]["parent"] = around
     # an open block none of whose boxes stayed in it: named on the groups it fed instead
     for b in sorted(open_, key=lambda b: -len(_ancestors(blocks, b))):  # innermost first
         oid = f"block:{b['name']}"

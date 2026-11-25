@@ -218,7 +218,7 @@ One ELF, snax-forge's, runs on SNAX-GVSoC and on snax_cluster's RTL. The RTL run
 - `forge` takes `--platform` (default `platforms/snax_forge.json`), `--set` and `--trace` for the flow. `forge-set` takes `--sim vsim|vlt` and `-j N`.
 - `forge_expected.txt` holds the run's counter and data lines, then each counter's `forge fill` from the estimate.
 - Beside `forge.elf`, forge leaves `forge_quiet.elf` (`-DFORGE_QUIET`: every start waited on at once, each section marked in CSR `0x7c5`, no prints) and its legend `obs_marks.json`, for a power run on the netlist.
-- The sets (D195): `quick` is one point per integration feature, vecadd_v1_1 at W = 1 (sliced inputs, a packed output), axpy_v1, dot_v4, mvt_v1_2_2 at W = 8 (shared movers) and bicg_v4_1 (the fork, the bank, the hold and the carry). `full` adds vecadd_v1, rowsum_v2 under `padded_rows`, matvec_acc_v2, mvt_v4_1_1 and mvt_v5 under `sequential`, mvt_v6, atax_v4 (a held link, a fork's buffered branch), and one point each at i8 (vsum_v1_1), i16 and i32 (dot_v3): 15 in all.
+- The sets (D195): `quick` is one point per integration feature, vecadd_v1_1 at W = 1 (sliced inputs, a packed output), axpy_v1, dot_v4, mvt_v1_2_2 at W = 8 (shared movers) and bicg_v4_1 (the fork, the bank, the hold and the carry). `full` adds vecadd_v1, rowsum_v2 under `padded_rows`, matvec_acc_v2, mvt_v4_1_1 and mvt_v5 under `sequential`, mvt_v6, atax_v4 (a held link, a fork's buffered branch), gesummv_v1_1 (a one-stream op at an opType wider than its input, k from its CSR), gesummv_v2_1 (axpby, k1 and k2 from their CSRs), and one point each at i8 (vsum_v1_1), i16 and i32 (dot_v3): 17 in all.
 - CLAUDE.md says when each set is due; the numbers go into STATUS's "The local RTL check".
 
 Example:

@@ -1,0 +1,99 @@
+{
+ "name": "gesummv_v3",
+ "id": "gesummv_dot2_axpby_fork_i8_o32",
+ "description": "`gesummv_v2_1` with x read once for both halves (`fork_read x`, D189): one group of two chains, A x and B x side by side, their sums through L1 into the axpby.",
+ "kernel": "gesummv_types",
+ "params": {
+  "N": 64,
+  "W": 8
+ },
+ "symbols": {
+  "N": "N"
+ },
+ "types": "i8",
+ "steps": [
+  {
+   "transform": "factor_out",
+   "params": {
+    "container": "alpha"
+   }
+  },
+  {
+   "transform": "factor_out",
+   "params": {
+    "container": "beta"
+   }
+  },
+  {
+   "transform": "lift",
+   "params": {
+    "kernel": "matvec",
+    "at": "tmp2_mult_map"
+   }
+  },
+  {
+   "transform": "apply_recipe",
+   "params": {
+    "block": "matvec",
+    "recipe": "matvec/matvec_v2",
+    "params": {
+     "W": "W"
+    }
+   }
+  },
+  {
+   "transform": "lift",
+   "params": {
+    "kernel": "matvec",
+    "at": "tmp5_mult_map"
+   }
+  },
+  {
+   "transform": "apply_recipe",
+   "params": {
+    "block": "matvec_1",
+    "recipe": "matvec/matvec_v2",
+    "params": {
+     "W": "W"
+    }
+   }
+  },
+  {
+   "transform": "bake_scalar",
+   "params": {
+    "container": "alpha",
+    "value": "csr"
+   }
+  },
+  {
+   "transform": "bake_scalar",
+   "params": {
+    "container": "beta",
+    "value": "csr"
+   }
+  },
+  {
+   "transform": "split_map",
+   "params": {
+    "map": "add_map",
+    "factor": "W"
+   }
+  },
+  {
+   "transform": "bind",
+   "params": {
+    "node": "add",
+    "brm": "simd",
+    "implementation": "chisel_tiled_spatial",
+    "instance": "axpby"
+   }
+  },
+  {
+   "transform": "fork_read",
+   "params": {
+    "container": "x",
+    "group": "gesummv"
+   }
+  }
+ ]
+}

@@ -10,7 +10,8 @@ pushes, each group's busy-flag cycles, per mover its crossbar requests (grants a
 stalls) and grants. A unit fires its firings times its span, a buffer link loads and a packer
 pushes its producer's pushes, a slicer pops on its unit's firings (a seed's on its pushes, one a
 job), each control unit clocks its own group's busy cycles, a mover moves
-its requests over its channels, the crossbar serves every request at its mover's kind (a
+its requests over its channels (a shared mover each beat at the channels its user takes, from
+its lanes' requests, as the static estimate prices each user at its own), the crossbar serves every request at its mover's kind (a
 reader's read-only, a writer's write-only) and the banks the grants. A copy's beats (the
 DMA's L1 → L1 transfers on the superbank port) cost the crossbar an access each, as a
 reader's and a writer's, and the banks a read or a write on every bank of the superbank; the
@@ -41,13 +42,14 @@ if TYPE_CHECKING:
 @dataclass(frozen=True)
 class MoverSpec:
     """A mover as the tables price it: its name, whether it writes, its FIFO depth, loops and
-    channels."""
+    channels; a shared mover's users' channels (``share_ports``), empty otherwise."""
 
     name: str
     write: bool
     depth: int
     loops: int
     channels: int
+    user_channels: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -72,6 +74,8 @@ class Prices:
     superbank_banks: int
     slicers: dict[str, tuple[str, str, float]] = field(default_factory=dict)
     group_bits: dict[str, int] = field(default_factory=dict)
+    # a shared mover's energy per beat at each of its users' channels, below its own
+    narrow: dict[str, dict[int, float]] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {"units": {k: {"span": s, "e_fire": e} for k, (s, e) in self.units.items()},
@@ -81,6 +85,8 @@ class Prices:
                 "ctrl_bits": self.ctrl_bits, "group_ctrl_bits": dict(self.group_bits),
                 "e_ctrl": self.e_ctrl_pj,
                 "movers": {k: {"write": w, "channels": c, "e_beat": e}
+                           | ({"e_beat_at": {str(n): x for n, x in self.narrow[k].items()}}
+                              if k in self.narrow else {})
                            for k, (w, c, e) in self.movers.items()},
                 "e_xbar_ro": self.e_xro_pj, "e_xbar_wo": self.e_xwo_pj, "e_rd": self.e_rd_pj,
                 "e_wr": self.e_wr_pj, "superbank_banks": self.superbank_banks}  # fmt: skip
@@ -95,34 +101,42 @@ class Prices:
                    d.get("superbank_banks", 1),  # an older run's prices: 1 bank
                    {k: (v["from"], v["count"], v["e_fire"])
                     for k, v in d.get("slicers", {}).items()},
-                   dict(d.get("group_ctrl_bits", {})))  # fmt: skip
+                   dict(d.get("group_ctrl_bits", {})),
+                   {k: {int(n): x for n, x in v["e_beat_at"].items()}
+                    for k, v in d["movers"].items() if "e_beat_at" in v})  # fmt: skip
 
 
 @dataclass
 class Counts:
     """A window's counts (module doc): per unit ``(firings, pushes)``, the groups' busy-flag cycles
-    added up (``busy``) and per group (``groups``), per mover ``(requests, grants)``, and the
-    copies' beats on the superbank port ``(reads, writes)``."""
+    added up (``busy``) and per group (``groups``), per mover ``(requests, grants)``, the
+    copies' beats on the superbank port ``(reads, writes)``, and per shared mover its lanes'
+    requests, lane 0 first (``lanes``)."""
 
     units: dict[str, tuple[int, int]] = field(default_factory=dict)
     busy: int = 0
     movers: dict[str, tuple[int, int]] = field(default_factory=dict)
     copies: tuple[int, int] = (0, 0)
     groups: dict[str, int] = field(default_factory=dict)
+    lanes: dict[str, tuple[int, ...]] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {"units": {k: {"firings": f, "pushes": p} for k, (f, p) in self.units.items()},
-                "busy": self.busy, "groups": dict(self.groups),
-                "movers": {k: {"requests": r, "grants": g}
-                           for k, (r, g) in self.movers.items()},
-                "copies": {"reads": self.copies[0], "writes": self.copies[1]}}  # fmt: skip
+        out = {"units": {k: {"firings": f, "pushes": p} for k, (f, p) in self.units.items()},
+               "busy": self.busy, "groups": dict(self.groups),
+               "movers": {k: {"requests": r, "grants": g}
+                          for k, (r, g) in self.movers.items()},
+               "copies": {"reads": self.copies[0], "writes": self.copies[1]}}  # fmt: skip
+        if self.lanes:  # a shared mover's lanes' requests
+            out["lanes"] = {k: list(v) for k, v in self.lanes.items()}
+        return out
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> Counts:
         cp = d.get("copies", {"reads": 0, "writes": 0})  # none in an older window
         return cls({k: (v["firings"], v["pushes"]) for k, v in d["units"].items()}, d["busy"],
                    {k: (v["requests"], v["grants"]) for k, v in d["movers"].items()},
-                   (cp["reads"], cp["writes"]), dict(d.get("groups", {})))  # fmt: skip
+                   (cp["reads"], cp["writes"]), dict(d.get("groups", {})),
+                   {k: tuple(v) for k, v in d.get("lanes", {}).items()})  # fmt: skip
 
 
 @dataclass(frozen=True)
@@ -191,8 +205,36 @@ def prices_of(graph: Graph, est: Estimate, movers: Sequence[MoverSpec]) -> Price
                 links[k] = (src(k), b.e_fire_pj)
     beat = {s.name: (s.write, s.channels, _streamer(costs, s.depth, s.loops, s.channels).energy_pj)
             for s in movers}  # fmt: skip
+    narrow = {s.name: {n: _streamer(costs, s.depth, s.loops, n).energy_pj
+                       for n in sorted(set(s.user_channels)) if n < s.channels}
+              for s in movers if any(n < s.channels for n in s.user_channels)}  # fmt: skip
     return Prices(units, links, bits, load(est.tech or "").e_ctrl_pj, beat, x.e_ro_pj, x.e_wo_pj,
-                  m.e_rd_pj, m.e_wr_pj, est.superbank_banks, slicers, group_bits)  # fmt: skip
+                  m.e_rd_pj, m.e_wr_pj, est.superbank_banks, slicers, group_bits, narrow)  # fmt: skip
+
+
+def mover_beats(
+    channels: int,
+    e_beat: float,
+    narrow: dict[int, float],
+    lanes: Sequence[int] | None,
+    requests: int,
+) -> tuple[float, float]:
+    """A mover's beats and their energy (pJ): its requests over its channels at ``e_beat``, or, on
+    a shared mover with users narrower than it (``narrow``, their channels to their energy per
+    beat) and its lanes' requests, each beat at the channels its user takes: a user of n channels
+    uses lanes 0 to n - 1, so lane n - 1's requests less those of the next wider user's last lane
+    are the beats at n channels."""
+    if not narrow or lanes is None:
+        return requests / channels, requests / channels * e_beat
+    # a lane's requests at least the wider lanes' (their refusals may differ lane by lane)
+    at = [max(lanes[i:]) for i in range(len(lanes))]
+    widths = [*sorted(narrow), channels]
+    beats = energy = 0.0
+    for n, wider in zip(widths, [*widths[1:], None], strict=True):
+        b = at[n - 1] - (at[wider - 1] if wider is not None else 0)
+        beats += b
+        energy += b * narrow.get(n, e_beat)
+    return beats, energy
 
 
 def _rings(graph: Graph, units: Sequence[str]) -> dict[str, str]:
@@ -227,8 +269,9 @@ def price(p: Prices, c: Counts) -> Energy:
     requests = reads = writes = 0
     for name, (write, channels, e_beat) in p.movers.items():
         r, g = c.movers.get(name, (0, 0))
-        beats += r / channels
-        strm += r / channels * e_beat
+        b, e = mover_beats(channels, e_beat, p.narrow.get(name, {}), c.lanes.get(name), r)
+        beats += b
+        strm += e
         requests += r
         xbar += r * (p.e_xwo_pj if write else p.e_xro_pj)
         if write:

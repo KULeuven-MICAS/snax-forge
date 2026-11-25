@@ -82,6 +82,8 @@ SETS = {
                       Design("mvt_v5", (SEQUENTIAL,)),  # two accelerators
                       "mvt_v6",  # a seeded bank, a fork
                       "atax_v4",  # a held link into a bank, a fork's buffered branch
+                      "gesummv_v1_1",  # a one-stream op wider than its input, k from its CSR
+                      "gesummv_v2_1",  # axpby with k1 and k2 from their CSRs
                       Design("vsum_v1_1", ("types=i8", "W=8")),
                       Design("dot_v3", ("types=i16", "W=4")),
                       Design("dot_v3", ("types=i32", "W=2")))],
