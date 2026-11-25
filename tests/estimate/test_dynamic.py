@@ -74,3 +74,29 @@ def test_prices_counts_and_energies_round_trip():
     assert Prices.from_dict(p.to_dict()) == p
     assert Counts.from_dict(c.to_dict()) == c
     assert Energy.from_dict(e.to_dict()) == e
+
+
+def test_a_shared_movers_beats_at_the_channels_each_user_takes():
+    """gesummv_v2_1_2's reader0, 4 channels, shared by two dots reading A and B on 1 channel and
+    the axpby reading tmp1_sum on 4: each dot's 512 beats on lane 0 alone, the axpby's 16 on all
+    four. Priced at the channels each user takes, as the static estimate prices each port, the
+    beats are 1040, not the 1088 / 4 = 272 of the mover's 4 channels; a refusal on a wider
+    lane than lane 0 counts no narrow beat below zero."""
+    graph = steps("gesummv_v2_1_2", N=64, W=8)[-1]
+    est = estimated("gesummv_v2_1_2", N=64, W=8)
+    from snax_forge.estimate.dynamic import MoverSpec, mover_beats
+
+    spec = MoverSpec("gesummv_reader0", False, 8, 1, 4, (1, 1, 4))
+    p = prices_of(graph, est, [spec])
+    _, channels, e4 = p.movers["gesummv_reader0"]
+    (e1,) = p.narrow["gesummv_reader0"].values()
+    assert channels == 4 and 0 < e1 < e4
+    lanes = (512 + 512 + 16, 16, 16, 16)
+    c = Counts(movers={"gesummv_reader0": (sum(lanes), sum(lanes))},
+               lanes={"gesummv_reader0": lanes})  # fmt: skip
+    got = price(p, c)
+    assert got.beats == 1040
+    assert got.parts["streamers"] == pytest.approx((1024 * e1 + 16 * e4) / 1000)
+    assert mover_beats(4, e4, {1: e1}, (10, 12, 12, 12), 46) == (12, 12 * e4)
+    assert mover_beats(4, e4, {}, None, 48) == (12, 12 * e4)  # unshared: over its channels
+    assert Prices.from_dict(p.to_dict()) == p and Counts.from_dict(c.to_dict()) == c

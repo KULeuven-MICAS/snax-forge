@@ -918,7 +918,7 @@ With `--energy` (D177), the flow runs the program again with only the `summary` 
 | `energy.json` field | Holds |
 |---|---|
 | `tech`, `source` | the table's technology and `SOURCE` |
-| `prices` | per unit its `span` and `e_fire`, per buffer link or packer its producer (`from`) and `e_fire`, the control units' `ctrl_bits` and `e_ctrl`, per mover `write`, `channels`, `e_beat`, then `e_xbar_ro`, `e_xbar_wo` (the crossbar's per request of a read-only and a write-only input), `e_rd`, `e_wr` (pJ), `superbank_banks` (the banks a DMA beat reads or writes, the estimate's) |
+| `prices` | per unit its `span` and `e_fire`, per buffer link or packer its producer (`from`) and `e_fire`, the control units' `ctrl_bits` and `e_ctrl`, per mover `write`, `channels`, `e_beat` (a shared mover also `e_beat_at`, its energy per beat at each narrower user's channels), then `e_xbar_ro`, `e_xbar_wo` (the crossbar's per request of a read-only and a write-only input), `e_rd`, `e_wr` (pJ), `superbank_banks` (the banks a DMA beat reads or writes, the estimate's) |
 | `windows` | per window `index`, `mark`, `kind`, `label`, `first`, `last`, `cycles`, `counters`, and `energy`: `parts` (nJ per part), `total`, `counts` (below) |
 | `total` | nJ per part over every window |
 | `static` | the estimate's five parts for one run of the accelerator, with the counts they were priced on |

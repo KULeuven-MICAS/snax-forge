@@ -80,7 +80,7 @@ class EnergyRun(JsonFile):
 
 def mover_specs(cluster: Cluster) -> list[MoverSpec]:
     """The cluster's movers as the tables price them: depth, loops and channels its own."""
-    return [MoverSpec(m.name, m.write, m.fifo_depth, m.temporal_dim, m.lanes)
+    return [MoverSpec(m.name, m.write, m.fifo_depth, m.temporal_dim, m.lanes, m.user_channels)
             for m in cluster.accelerator.movers]  # fmt: skip
 
 
@@ -89,16 +89,20 @@ def counts_of(w: Window, cluster: Cluster) -> Counts:
     busy cycles added up and per group (a group's line is written by one of its units), per mover
     its lanes' grants and stalls (requests) and grants, and the crossbar's counts of the DMA's
     copies inside L1."""
-    movers = {}
+    movers, per_lane = {}, {}
     for m in cluster.accelerator.movers:
         lanes = [w.counters.inputs[p] for p in m.ports if p in w.counters.inputs]
         movers[m.name] = (sum(g + s for g, s in lanes), sum(g for g, _ in lanes))
+        if m.users and len(lanes) == m.lanes:  # a shared mover: its beats by the lanes they use
+            per_lane[m.name] = tuple(g + s for g, s in lanes)
     group = {u.name: u.group for u in cluster.accelerator.units}
     groups: dict[str, int] = {}
     for k, c in w.counters.groups.items():
         g = group.get(k, k)
         groups[g] = groups.get(g, 0) + sum(c.values())
-    return Counts(dict(w.counters.units), w.counters.busy(), movers, w.counters.copies, groups)
+    return Counts(
+        dict(w.counters.units), w.counters.busy(), movers, w.counters.copies, groups, per_lane
+    )
 
 
 def energy_of(lines: Sequence[Line], cluster: Cluster, marks: Sequence[dict[str, Any]] | None,

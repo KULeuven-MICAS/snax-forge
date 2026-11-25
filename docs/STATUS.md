@@ -183,7 +183,7 @@ Dates: 20 Nov, track A's target (fine if it slips); 27 Nov, the softmax gate (so
 
 ## Open Items
 
-Questions not decided yet. Numbers are never reused; a closed item is removed, and where it closed is in git history. Next free number: 175.
+Questions not decided yet. Numbers are never reused; a closed item is removed, and where it closed is in git history. Next free number: 176.
 
 1. BRM dataflow notation: `affine` and `stream` (D70), frozen in M6.
 2. What automated search reads and how a sweep is configured (DSE1, M8).
@@ -280,6 +280,7 @@ Questions not decided yet. Numbers are never reused; a closed item is removed, a
 172. The join: a unit fed by two unit-to-unit links in one group (gesummv's axpby taking both vsums, `gesummv_v4`). The rule's forward pass ANDs a unit's in-edges already; `chains_problem`, `GroupError` and the Chisel `GroupRule` refuse a unit with two. With a fork upstream the branches must meet within the link: branches d cycles apart, each a result every T cycles, keep up at link depth D while $d < D \cdot T$, and deadlock below (D196's FIFO bound is the case where the early branch is the fork). One output and one JOBS for the joined chains. High priority, a tool feature more than a gain on gesummv (4N int32 accesses and the axpby's own pass).
 173. The estimate leaves out the DMA's bank conflicts with a running group (D155): `main.c` starts the first dot of `gesummv_v2_1` and then loads B, whose copy wins banks from the dot's readers, +16 cycles at W = 8 and up to +21 at W = 32 against the estimate; the second dot, which nothing overlaps, is within 0–2, and `gesummv_v3`, which loads everything first, gives 518 against 517. Equal on vsim, so the model has it. With open item 4 and L2V1's DMA row.
 174. Two NEARs beyond the fill on gesummv, both L1 contention where SNAX-GVSoC and the RTL differ by a few cycles: `gesummv_v2_1_2` (1.1 %), the first dot 524 on SNAX-GVSoC against 533 on vsim, its shared readers losing fewer requests to B's DMA in the model; `gesummv_v2_1` at W = 32 under `pipeline` (1.3 %), the two dots side by side 154 and 139 against 159 and 143.
+175. The estimate leaves out a group's own L1 bank conflicts between a narrow reader and a wide writer (D155, open item 4): `gesummv_v1_1`'s scales read A at int8 on one channel and write it at int32 on four, 528 cycles against an expected 514 on SNAX-GVSoC, none of the refusals the DMA's. NEAR at 0.8 % beyond the fill on `gesummv_v1_1` and `gesummv_v1_1_1`: each simulator gives one scale 522 and the other three 528, not the same one, the reader's and writer's bank phase moved by a few cycles of start time.
 
 ## Sync Reminders
 
