@@ -78,3 +78,19 @@ def test_every_recipes_every_step_is_well_formed():
             if p := problems(d):
                 bad[f"{path.stem} {k}"] = p[:3]
     assert bad == {}
+
+
+def test_folded_blocks_are_drawn_in_the_accelerator_share_ports_made():
+    """gesummv_v2_1_2: each share_ports puts a dot block's group in accelerator gesummv; the
+    block, folded, is drawn inside its outline beside the axpby, and the shared container
+    carries the marker."""
+    blocks = {}
+    for k in (10, 11, 12):
+        d = drawn("gesummv_v2_1_2", k)
+        assert problems(d) == []
+        blocks[k] = {n["id"]: n.get("parent") for n in d["nodes"] if n["kind"] == "block"}
+    assert blocks[10] == {"matvec": None, "matvec_1": None}
+    assert blocks[11] == {"matvec": "acc:gesummv", "matvec_1": None}
+    assert blocks[12] == {"matvec": "acc:gesummv", "matvec_1": "acc:gesummv"}
+    assert {n["share"] for n in d["nodes"] if n.get("share")} == {
+        "share_ports · tmp1_sum", "share_ports · tmp3_sum"}  # fmt: skip
