@@ -1,9 +1,9 @@
 """A scale moved past the sum it feeds: alpha · sum_j (a_j x_j) for sum_j ((alpha · a_j) x_j).
 
-``factor_out(map)`` and ``unfactor_out(map)``, as CONTRACTS, "Recipe" defines them. ``map`` is a
-map (or the tasklet) of a scale nest: an elementwise ``out = k * a`` with k a kernel scalar
-argument, whose transient t is read by one product ``t * x`` summed by one fold (the product's
-own reduce, or a nest summing it) into s. The scale nest and t go, the product reads a, the
+``factor_out(container)`` and ``unfactor_out(container)``, as CONTRACTS, "Recipe" defines them.
+``container`` is a kernel scalar argument k read by one scale nest: an elementwise ``out = k * a``
+whose transient t is read by one product ``t * x`` summed by one fold (the product's own
+reduce, or a nest summing it) into s. The scale nest and t go, the product reads a, the
 fold writes a new transient ``<s>_sum``, and a nest over s's elements just after the fold's
 writes ``s = k * <s>_sum``, so s keeps its meaning. Exact on integers when every type from the
 scale to s is at least s's width (mod 2**w); refused on floats. The new scale's tasklet keeps
@@ -30,21 +30,27 @@ from .transforms import _copy, _locate, _result, register_transform
 _PRODUCT = "out = a * b"
 
 
-def _tasklet(g: Graph, selected: str, what: str) -> Node:
-    """The tasklet of the nest ``selected`` is a map of (down its single-child maps), or
-    ``selected`` itself when it is a tasklet."""
-    body, i, _ = _locate(g, selected)
-    n = body[i]
-    while n.kind == "map":
-        if len(n.body or []) != 1:
-            raise SandboxError(f"{what}: {n.id} holds {len(n.body or [])} nodes, not one nest "
-                               "down to a tasklet")  # fmt: skip
-        n = (n.body or [])[0]
-    if n.kind == "accelerated":
-        raise SandboxError(f"{what}: the bound unit {n.id} (unbind first)")
-    if n.kind != "tasklet":
-        raise SandboxError(f"{what}: a {n.kind!r} is neither a map of a nest nor its tasklet")
-    return n
+def _reader(g: Graph, container: str, what: str, *, factored: bool = False) -> Node:
+    """The one tasklet reading the kernel scalar ``container``: its scale nest, or with
+    ``factored`` the scale factor_out made."""
+    c = g.containers.get(container)
+    if c is None or not c.attrs.get(SCALAR):
+        raise SandboxError(f"{what}: {container!r} is not a kernel scalar argument; the step "
+                           "takes the scalar a nest scales by (gesummv's alpha)")  # fmt: skip
+    readers = [n for n, _ in g.walk() if any(m.data == container for m in n.inputs.values())]
+    bound = [n.id for n in readers if n.kind == "accelerated"]
+    if bound:
+        raise SandboxError(f"{what}: {container} is read by the bound unit {bound[0]} (unbind "
+                           "first)")  # fmt: skip
+    if factored:
+        readers = [n for n in readers if FACTORED in n.attrs]
+        if len(readers) != 1:
+            raise SandboxError(f"{what}: {container} is read by {len(readers)} scales "
+                               "factor_out made, not one")  # fmt: skip
+    elif len(readers) != 1:
+        raise SandboxError(f"{what}: {container} is read by {[n.id for n in readers]}; "
+                           "factor_out moves a scalar that scales one nest")  # fmt: skip
+    return readers[0]
 
 
 def _stripped(t: Node, what: str) -> str | None:
@@ -90,13 +96,13 @@ def _names(g: Graph, c: str, *keep: Node) -> list[str]:
     return out
 
 
-def _check(g: Graph, map: str, what: str) -> dict[str, Any]:
-    s = _tasklet(g, map, what)
+def _check(g: Graph, container: str, what: str) -> dict[str, Any]:
+    s = _reader(g, container, what)
     prod = _product(s, what)
     scalars = [c for c, m in s.inputs.items() if g.containers[m.data].attrs.get(SCALAR)]
     if prod is None or len(scalars) != 1:
         raise SandboxError(f"{what}: {s.id} computes {s.attrs['code']!r}; factor_out takes a scale "
-                           "nest out = k * a with k a kernel scalar argument")  # fmt: skip
+                           f"nest out = {container} * a")  # fmt: skip
     (ck,) = scalars
     (ca,) = [c for c in s.inputs if c != ck]
     ((cout, om),) = s.outputs.items()
@@ -189,17 +195,17 @@ def _check(g: Graph, map: str, what: str) -> dict[str, Any]:
 
 
 def _site(g: Graph, selected: str) -> dict[str, Any]:
-    """factor_out's site: a map or the tasklet of a scale nest that passes its checks."""
+    """factor_out's site: a kernel scalar whose scale nest passes the checks."""
     _check(g, selected, f"factor_out {selected!r}")
-    return {"map": selected}
+    return {"container": selected}
 
 
-def factor_out(g: Graph, map: str) -> Graph:
-    """The scale of ``map``'s nest moved past the sum it feeds (module doc)."""
-    what = f"factor_out {map!r}"
-    _check(g, map, what)
+def factor_out(g: Graph, container: str) -> Graph:
+    """The scale by ``container`` moved past the sum it feeds (module doc)."""
+    what = f"factor_out {container!r}"
+    _check(g, container, what)
     g = _copy(g)
-    found = _check(g, map, what)
+    found = _check(g, container, what)
     s, p, f = found["scale"], found["product"], found["fold"]
     ck, ca, cout, a, t, out = (found[k] for k in ("ck", "ca", "cout", "a", "t", "out"))
     root, parent, body = _nest_root(g, s)
@@ -253,11 +259,9 @@ def _ids(n: Node) -> list[str]:
     return [n.id, *(i for c in n.body or [] for i in _ids(c))]
 
 
-def _unfactor_check(g: Graph, map: str, what: str) -> tuple[Node, dict[str, Any]]:
-    t = _tasklet(g, map, what)
-    rec = t.attrs.get(FACTORED)
-    if rec is None:
-        raise SandboxError(f"{what}: {t.id} is not a scale factor_out made")
+def _unfactor_check(g: Graph, container: str, what: str) -> tuple[Node, dict[str, Any]]:
+    t = _reader(g, container, what, factored=True)
+    rec = t.attrs[FACTORED]
     if rec["container"] in g.containers:
         raise SandboxError(f"{what}: the graph has a container {rec['container']!r} again")
     ids = {n.id for n, _ in g.walk()}
@@ -281,17 +285,17 @@ def _unfactor_check(g: Graph, map: str, what: str) -> tuple[Node, dict[str, Any]
 
 
 def _unsite(g: Graph, selected: str) -> dict[str, Any]:
-    """unfactor_out's site: a map or the tasklet of a scale nest factor_out made."""
+    """unfactor_out's site: a kernel scalar read by a scale factor_out made."""
     _unfactor_check(g, selected, f"unfactor_out {selected!r}")
-    return {"map": selected}
+    return {"container": selected}
 
 
-def unfactor_out(g: Graph, map: str) -> Graph:
+def unfactor_out(g: Graph, container: str) -> Graph:
     """The inverse of factor_out: the scale nest and its container back, the fold writing s."""
-    what = f"unfactor_out {map!r}"
-    _unfactor_check(g, map, what)
+    what = f"unfactor_out {container!r}"
+    _unfactor_check(g, container, what)
     g = _copy(g)
-    t, rec = _unfactor_check(g, map, what)
+    t, rec = _unfactor_check(g, container, what)
     fold, product = g.node(rec["fold"]), g.node(rec["product"])
     ((fout, fm),) = fold.outputs.items()
     summed = fm.data

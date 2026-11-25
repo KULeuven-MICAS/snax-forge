@@ -26,7 +26,7 @@ def gesummv(kernel: str = "gesummv", types: str | None = None) -> Graph:
 
 
 def both(g: Graph) -> Graph:
-    return factor_out(factor_out(g, "mult_map"), "mult_map_2")
+    return factor_out(factor_out(g, "alpha"), "beta")
 
 
 def nest(g: Graph, top: str) -> list[tuple[str, str]]:
@@ -62,9 +62,9 @@ def test_the_outputs_are_bit_for_bit_and_unfactor_out_gives_the_import(kernel, t
     h = both(g)
     ins = kernel_inputs(kernel_spec(kernel, "test"), g, 0)
     assert np.array_equal(execute(g, ins)["out"], execute(h, ins)["out"])
-    back = unfactor_out(unfactor_out(h, "tmp3_scale_map"), "tmp1_scale")
+    back = unfactor_out(unfactor_out(h, "beta"), "alpha")
     assert back.to_json() == g.to_json()
-    other = unfactor_out(unfactor_out(h, "tmp1_scale_map"), "tmp3_scale")  # the other order
+    other = unfactor_out(unfactor_out(h, "alpha"), "beta")  # the other order
     assert other.to_json() == g.to_json()
 
 
@@ -95,20 +95,28 @@ def test_the_record_holds_what_went():
     assert rec["nest"]["id"] == "mult_map" and rec["after"] is None
 
 
-@pytest.mark.parametrize("site", ["mult_map", "mult_map_1", "mult"])
-def test_any_map_of_the_scale_nest_or_its_tasklet(site):
-    assert TRANSFORMS["factor_out"].site(gesummv(), site) == {"map": site}
-    assert factor_out(gesummv(), site).to_json() == factor_out(gesummv(), "mult_map").to_json()
+def test_the_site_is_the_scalar():
+    assert TRANSFORMS["factor_out"].site(gesummv(), "alpha") == {"container": "alpha"}
+    assert TRANSFORMS["unfactor_out"].site(both(gesummv()), "beta") == {"container": "beta"}
 
 
-@pytest.mark.parametrize(("site", "message"), [
-    ("tmp1_mult_map", "tmp1_mult computes 'out = in1 * in2'; factor_out takes a scale nest out = k * a with k a kernel scalar argument"),
-    ("sum_map", "sum computes 'out = in1'; factor_out takes a scale nest out = k * a with k a kernel scalar argument"),
-    ("add_map", "add computes 'out = in1 + in2'; factor_out takes a scale nest out = k * a with k a kernel scalar argument"),
+@pytest.mark.parametrize(("selected", "message"), [
+    ("mult_map", "'mult_map' is not a kernel scalar argument; the step takes the scalar a nest scales by (gesummv's alpha)"),
+    ("A", "'A' is not a kernel scalar argument; the step takes the scalar a nest scales by (gesummv's alpha)"),
 ])  # fmt: skip
-def test_not_a_scale_nest(site, message):
-    with pytest.raises(SandboxError, match=f"^{re.escape(f'factor_out {site!r}: {message}')}$"):
-        factor_out(gesummv(), site)
+def test_not_a_kernel_scalar(selected, message):
+    with pytest.raises(SandboxError, match=f"^{re.escape(f'factor_out {selected!r}: {message}')}$"):
+        factor_out(gesummv(), selected)
+
+
+def test_a_scalar_that_scales_two_nests():
+    d = gesummv().to_dict()
+    for n in d["body"]:  # half 2 scaled by alpha too
+        if n["id"] == "mult_map_2":
+            n["body"][0]["body"][0]["inputs"]["in1"]["data"] = "alpha"
+    with pytest.raises(SandboxError, match=r"alpha is read by \['mult', 'mult_1'\]; factor_out moves "
+                                           "a scalar that scales one nest"):  # fmt: skip
+        factor_out(Graph.from_dict(d), "alpha")
 
 
 def test_a_second_reader_of_the_scaled_matrix():
@@ -117,7 +125,7 @@ def test_a_second_reader_of_the_scaled_matrix():
         if n["id"] == "tmp3_mult_map":
             n["body"][0]["body"][0]["inputs"]["in1"]["data"] = "tmp0"
     with pytest.raises(SandboxError, match=r"tmp0 is named by \['tmp1_mult', 'tmp3_mult'\]"):
-        factor_out(Graph.from_dict(d), "mult_map")
+        factor_out(Graph.from_dict(d), "alpha")
 
 
 def test_a_product_narrower_than_the_sum():
@@ -127,7 +135,7 @@ def test_a_product_narrower_than_the_sum():
             n["body"][0]["body"][0]["attrs"]["code"] = "out = in1 * in2"
     with pytest.raises(SandboxError, match="tmp2_mult's product of A is int8, narrower than tmp1's "
                                            "int32"):  # fmt: skip
-        factor_out(Graph.from_dict(d), "mult_map")
+        factor_out(Graph.from_dict(d), "alpha")
 
 
 def test_floats():
@@ -135,9 +143,17 @@ def test_floats():
     for c in d["containers"].values():
         c["dtype"] = "float64"
     with pytest.raises(SandboxError, match="a float type"):
-        factor_out(Graph.from_dict(d), "mult_map")
+        factor_out(Graph.from_dict(d), "alpha")
 
 
 def test_unfactor_out_takes_only_factor_outs_scale():
-    with pytest.raises(SandboxError, match="add is not a scale factor_out made"):
-        unfactor_out(both(gesummv()), "add_map")
+    with pytest.raises(SandboxError, match="alpha is read by 0 scales factor_out made, not one"):
+        unfactor_out(gesummv(), "alpha")
+
+
+def test_a_scalar_that_does_not_scale():
+    d = gesummv().to_dict()
+    d["body"][0]["body"][0]["body"][0]["attrs"]["code"] = "out = in1 + in2"  # alpha + A
+    with pytest.raises(SandboxError, match=re.escape("mult computes 'out = in1 + in2'; factor_out "
+                                                     "takes a scale nest out = alpha * a")):  # fmt: skip
+        factor_out(Graph.from_dict(d), "alpha")
