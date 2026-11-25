@@ -559,8 +559,11 @@ def drawing(g: Graph, tops: Sequence[Node], placed: dict[str, Any] | None = None
         if not any(e["from"] == a and e["to"] in reach for e in d.edges):
             task = next((e["task"] for e in d.edges if e["to"] == a), None)
             d.edge(a, None, b, bp, style="empty", task=task)
+    chips: dict[str, list[str]] = {}  # a box drawn on another's (a fork's reader) takes its chips
     for bid, maps in also.items():
-        d.nodes[bid]["chips"] = [[m, None] for m in maps]
+        chips.setdefault(find(bid), []).extend(maps)
+    for bid, maps in chips.items():
+        d.nodes[bid]["chips"] = [[m, None] for m in dict.fromkeys(maps)]
     used = {e[k].split("@")[0] for e in d.edges for k in ("from", "to") if "@" in e[k]}
     csr_read = {n.inputs[c].data for n, _ in g.walk() for c in api.csr_connectors(g, n)}
     for c in g.containers:  # what no node uses: a box of its own in the inputs' row
