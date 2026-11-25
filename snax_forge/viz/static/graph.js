@@ -64,15 +64,19 @@ function chipsEl(d, n) {
 /** One box as HTML (``data-id`` its drawing id, ``data-sel`` what a click selects). */
 export function boxEl(d, n) {
   if (n.kind === "container") {
-    const own = n.share ? {} : { "data-id": n.id, "data-box": n.id };
-    const pill = h("div", { class: `c-pill${n.transient ? " transient" : ""}${n.scalar ? " scalar" : ""}`, ...own, "data-sel": n.sel },
+    return h("div", { class: `c-pill${n.transient ? " transient" : ""}${n.scalar ? " scalar" : ""}`, "data-id": n.id, "data-box": n.id, "data-sel": n.sel },
       h("b", {}, n.text), n.dtype ? h("span", { class: "c-dtype" }, n.dtype) : null,
-      n.badge ? h("span", { class: "c-badge" }, n.badge) : null);
-    if (!n.share) return pill;
-    // share_ports: its writer and reader on one streamer set, the pill inside the port mux
-    return h("div", { class: "c-node c-mux c-portmux", "data-id": n.id, "data-box": n.id, "data-sel": n.sel,
-      title: `${n.share}: its writer and its reader on one streamer set (PORT_MUX_SEL)` },
-    h("i", { class: "c-shape" }), h("div", { class: "c-text" }, "shared_port_mux"), pill);
+      n.badge ? h("span", { class: "c-badge" }, n.badge) : null,
+      n.share ? h("span", { class: "c-share", title: "the handoff that put its writer's and reader's groups on shared movers" }, n.share) : null);
+  }
+  if (n.kind === "portmux") { // share_ports: the accelerator's movers, each group's container on it in turn
+    return h("div", { class: "c-node c-mux c-portmux", "data-id": n.id, "data-sel": n.sel,
+      title: "PORT_MUX_SEL gives the movers to one group at a time" },
+    h("i", { class: "c-shape" }), h("div", { class: "c-text" }, n.text),
+    h("table", { class: "c-pm" },
+      h("thead", {}, h("tr", {}, h("th", {}, ""), ...n.groups.map((g) => h("th", {}, g)))),
+      h("tbody", {}, ...n.movers.map((m) => h("tr", {}, h("th", { title: `${m.channels} channels` }, m.mover),
+        ...m.users.map((c) => h("td", {}, c || "–")))))));
   }
   if (n.kind === "loop") {
     return h("div", { class: `c-map c-loop loop-${n.loop === "untagged" ? "none" : n.loop || "none"}${n.folded ? " c-folded" : ""}`, "data-id": n.id, "data-sel": n.sel,

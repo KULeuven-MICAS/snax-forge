@@ -92,5 +92,24 @@ def test_folded_blocks_are_drawn_in_the_accelerator_share_ports_made():
     assert blocks[10] == {"matvec": None, "matvec_1": None}
     assert blocks[11] == {"matvec": "acc:gesummv", "matvec_1": None}
     assert blocks[12] == {"matvec": "acc:gesummv", "matvec_1": "acc:gesummv"}
-    assert {n["share"] for n in d["nodes"] if n.get("share")} == {
-        "share_ports · tmp1_sum", "share_ports · tmp3_sum"}  # fmt: skip
+    shared = {n["id"]: n["share"] for n in d["nodes"] if n.get("share")}
+    assert shared == {"tmp1_sum@1": "share_ports → gesummv", "tmp3_sum@1": "share_ports → gesummv"}
+
+
+def test_share_ports_draws_the_accelerators_movers_once():
+    """gesummv_v2_1_2: one port mux box in accelerator gesummv, its three movers each serving
+    the two dots and the axpby in turn (the k-th widest port of each group on mover k)."""
+    from snax_forge.design.platform import Platform
+
+    g = graphs("gesummv_v2_1_2")[-1]
+    platform = Platform.load(REPO / "platforms" / "snax_forge.json")
+    d = graph_view(Entry("12", Path("12.snaxdfg"), g, None), platform)["drawing"]
+    assert problems(d) == []
+    (pm,) = [n for n in d["nodes"] if n["kind"] == "portmux"]
+    assert (pm["id"], pm["parent"], pm["groups"]) == ("portmux:gesummv", "acc:gesummv",
+                                                      ["matvec", "matvec_1", "axpby"])  # fmt: skip
+    assert [(m["mover"], m["channels"], m["users"]) for m in pm["movers"]] == [
+        ("reader0", 4, ["A", "B", "tmp1_sum"]),
+        ("reader1", 4, ["x", "x", "tmp3_sum"]),
+        ("writer0", 4, ["tmp1_sum", "tmp3_sum", "out"]),
+    ]

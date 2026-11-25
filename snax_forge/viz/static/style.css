@@ -871,9 +871,14 @@ svg.dfg-edges text.c-pname { font: 500 9.5px ui-monospace, "SF Mono", Menlo, Con
 .c-mux > .c-shape { clip-path: polygon(2.5px 1.5px, calc(100% - 2.5px) 1.5px, calc(100% - var(--slant) - 1px) calc(100% - 1.5px), calc(var(--slant) + 1px) calc(100% - 1.5px)); }
 .c-demux > .c-shape { clip-path: polygon(calc(var(--slant) + 1px) 1.5px, calc(100% - var(--slant) - 1px) 1.5px, calc(100% - 2.5px) calc(100% - 1.5px), 2.5px calc(100% - 1.5px)); }
 .c-mux > .c-text, .c-demux > .c-text { color: var(--muted); font-size: 0.74em; }
-/* share_ports' port mux: a temporal mux's trapezoid in the data colour, the container's pill inside */
-.c-node.c-portmux { --mux-edge: var(--data); min-width: 0; align-items: center; gap: 0.15rem; padding: 0.15rem 1.9rem 0.4rem; }
+/* share_ports' port mux: a temporal mux's trapezoid in the data colour, its movers' table inside */
+.c-node.c-portmux { --mux-edge: var(--data); min-width: 0; align-items: center; gap: 0.2rem; padding: 0.2rem 2.2rem 0.5rem; cursor: default; }
 .c-portmux > .c-text { color: var(--data); font-weight: 600; }
+.c-pm { border-collapse: collapse; font: 0.72rem ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+.c-pm th, .c-pm td { padding: 0.05rem 0.45rem; text-align: left; white-space: nowrap; }
+.c-pm thead th { color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--data); }
+.c-pm tbody th { color: var(--data); font-weight: 600; }
+.c-share { margin-left: 0.4rem; padding: 0 0.3rem; border: 1.5px dashed var(--data); border-radius: 3px; font: 600 0.72rem ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
 .c-node.c-mux.sel, .c-node.c-demux.sel { box-shadow: none; --mux-edge: var(--hl); }
 /* an outline's title, in its lower right corner (graph.js) */
 svg.dfg-edges text.c-title { font-size: 0.85rem; paint-order: stroke; stroke: var(--bg); stroke-width: 4px; stroke-linejoin: round; }

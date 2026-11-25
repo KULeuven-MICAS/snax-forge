@@ -178,12 +178,49 @@ def graph_view(e: Entry, platform: Any = None, est: Any = None,
     out["estimate_error"] = error
     out["symbols"] = dict(g.symbols)
     tops, out["blocks"] = fold(g, expanded)
-    out["drawing"] = drawing(g, tops, est.containers if est is not None else {}, out["blocks"])
+    out["drawing"] = drawing(
+        g, tops, est.containers if est is not None else {}, out["blocks"], port_muxes(g, platform)
+    )
     out["partners"] = partners(g, out["drawing"])
     out["shared"] = shared_units(g)
     out["details"] = details(g, est) | drawing_details(g, out["drawing"], est)
     for b in out["blocks"]:
         out["details"][f"block:{b['name']}"] = block_details(g, b)
+    return out
+
+
+def port_muxes(g: Graph, platform: Any = None) -> dict[str, dict[str, Any]]:
+    """Each accelerator whose groups share their movers (``share_ports``): its groups in
+    ``PORT_MUX_SEL``'s order and per mover the container each group moves through it ("" where
+    a group has no port on it), resolved on ``platform`` (snax_forge's when None); empty when
+    the streamers do not resolve."""
+    from snax_forge.design.platform import Platform
+    from snax_forge.design.streamers import instance_nodes, instances, resolve, shared_movers
+
+    if not any(SHARE_PORTS in c.attrs for c in g.containers.values()):
+        return {}
+    try:
+        p = platform or Platform.load(Path(__file__).parents[3] / "platforms" / "snax_forge.json")
+        movers = shared_movers(g, resolve(p, g, instances(g)))
+    except (ValueError, KeyError, TypeError, OSError):  # DfgError, LowerError, ShareError, ...
+        return {}
+    nodes = instance_nodes(g)
+
+    def data(port: str) -> str:
+        inst, name = port.split(".", 1)
+        n = nodes[inst]
+        return (n.inputs.get(name) or n.outputs[name]).data
+
+    out = {}
+    for acc, ms in movers.items():
+        groups = list(dict.fromkeys(u.group for m in ms for u in m.users))
+        rows = []
+        for m in ms:
+            by = {u.group: data(u.port) for u in m.users}
+            rows.append(
+                {"mover": m.name, "channels": m.num_ch, "users": [by.get(k, "") for k in groups]}
+            )
+        out[acc] = {"groups": groups, "movers": rows}
     return out
 
 
@@ -1325,9 +1362,11 @@ def container_text(g: Graph, name: str) -> str:
 def _container(g: Graph, name: str, placed: Any = None) -> dict[str, Any]:
     """A container as the drawing shows it: its name and shape, its dtype (in its box and
     beside its edges), its badge, whether it is transient, and on a ``share_ports`` container
-    its marker ``share_ports · <name>``."""
+    its marker ``share_ports → <accelerator>``, the handoff that put its writer's and reader's
+    groups on that accelerator's shared movers (``port_muxes`` lists them)."""
     c = g.containers[name]
-    shared = {"share": f"share_ports · {name}"} if SHARE_PORTS in c.attrs else {}
+    sp = c.attrs.get(SHARE_PORTS)
+    shared = {"share": f"share_ports → {sp['accelerator']}"} if sp is not None else {}
     return {"name": name, "text": container_text(g, name), "dtype": c.dtype, "badge": badge(placed),
             "transient": c.transient, "scalar": bool(c.attrs.get(SCALAR))} | shared  # fmt: skip
 

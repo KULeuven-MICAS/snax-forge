@@ -133,10 +133,12 @@ class _Drawing:
 
 
 def drawing(g: Graph, tops: Sequence[Node], placed: dict[str, Any] | None = None,
-            blocks: Sequence[dict[str, Any]] = ()) -> dict[str, Any]:  # fmt: skip
+            blocks: Sequence[dict[str, Any]] = (),
+            port_muxes: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:  # fmt: skip
     """The step's drawing (module doc): ``{"nodes", "edges", "outlines", "tasks"}``; ``tops`` the
     top-level nodes as drawn (api's ``fold``), ``placed`` the estimate's containers (their
-    badges), ``blocks`` api's blocks list (the open ones become outlines)."""
+    badges), ``blocks`` api's blocks list (the open ones become outlines), ``port_muxes`` api's
+    shared movers per accelerator (a box in its outline each)."""
     api = _api()
     d = _Drawing(g, placed or {})
     scalars = {c for c, cont in g.containers.items() if cont.attrs.get(SCALAR)}
@@ -577,6 +579,11 @@ def drawing(g: Graph, tops: Sequence[Node], placed: dict[str, Any] | None = None
                 drives.setdefault(find(mp.id), set()).add(
                     group_of(n) if n.kind == "accelerated" else None)  # fmt: skip
     outlines = _outlines(g, d, by_inst, shared, blocks, nodes, drives)
+    drawn = {o["id"] for o in outlines}
+    for acc, mux in (port_muxes or {}).items():  # share_ports: the movers the groups take in turn
+        if f"acc:{acc}" in drawn:
+            d.box(f"portmux:{acc}", kind="portmux", text="shared_port_mux · PORT_MUX_SEL", sel=acc,
+                  groups=mux["groups"], movers=mux["movers"], parent=f"acc:{acc}")  # fmt: skip
     for n in d.nodes.values():  # a mux's or packer's outline is its unit's
         if n["kind"] in ("mux", "demux", "slicer", "packer") and "parent" not in n:
             n["parent"] = d.nodes[f"unit:{n['unit']}"].get("parent")
