@@ -183,7 +183,7 @@ Dates: 20 Nov, track A's target (fine if it slips); 27 Nov, the softmax gate (so
 
 ## Open Items
 
-Questions not decided yet. Numbers are never reused; a closed item is removed, and where it closed is in git history. Next free number: 173.
+Questions not decided yet. Numbers are never reused; a closed item is removed, and where it closed is in git history. Next free number: 175.
 
 1. BRM dataflow notation: `affine` and `stream` (D70), frozen in M6.
 2. What automated search reads and how a sweep is configured (DSE1, M8).
@@ -278,6 +278,8 @@ Questions not decided yet. Numbers are never reused; a closed item is removed, a
 170. A fork's buffer comes before the link into its reader (D196), so nothing in the graph says a FIFO is needed until `link tmp1` is refused. Ryan's later flow: `link` into a forked reader allowed, the state flagged as a design problem on that branch (a buffer of at least T beats), its fix `link A` offered on the edge; a new decision, as that state has no estimate.
 171. snax_cluster's runtime keeps each hart's stack and thread-local data at the top of L1 (`start.S`, `init_stack`), but LOWER's layout check counts all of L1 (`Layout.check`): a design that fits can overwrite the stack on the RTL. The platform could reserve L1's top for the runtime and the check refuse a layout reaching it. Low priority, a cluster matter; tier A's sizes stay well below (gesummv at int64 runs at 32 × 32 for it).
 172. The join: a unit fed by two unit-to-unit links in one group (gesummv's axpby taking both vsums, `gesummv_v4`). The rule's forward pass ANDs a unit's in-edges already; `chains_problem`, `GroupError` and the Chisel `GroupRule` refuse a unit with two. With a fork upstream the branches must meet within the link: branches d cycles apart, each a result every T cycles, keep up at link depth D while $d < D \cdot T$, and deadlock below (D196's FIFO bound is the case where the early branch is the fork). One output and one JOBS for the joined chains. High priority, a tool feature more than a gain on gesummv (4N int32 accesses and the axpby's own pass).
+173. The estimate leaves out the DMA's bank conflicts with a running group (D155): `main.c` starts the first dot of `gesummv_v2_1` and then loads B, whose copy wins banks from the dot's readers, +16 cycles at W = 8 and up to +21 at W = 32 against the estimate; the second dot, which nothing overlaps, is within 0–2, and `gesummv_v3`, which loads everything first, gives 518 against 517. Equal on vsim, so the model has it. With open item 4 and L2V1's DMA row.
+174. Two NEARs beyond the fill on gesummv, both L1 contention where SNAX-GVSoC and the RTL differ by a few cycles: `gesummv_v2_1_2` (1.1 %), the first dot 524 on SNAX-GVSoC against 533 on vsim, its shared readers losing fewer requests to B's DMA in the model; `gesummv_v2_1` at W = 32 under `pipeline` (1.3 %), the two dots side by side 154 and 139 against 159 and 143.
 
 ## Sync Reminders
 
