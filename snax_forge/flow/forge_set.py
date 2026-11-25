@@ -65,7 +65,6 @@ def designs(*recipes: str | Design) -> list[Design]:
 
 PADDED = "memory.passes.layout=padded_rows"  # each row a word longer
 SEQUENTIAL = "design.schedule=sequential"
-PIPELINE = "design.schedule=pipeline"
 # One point per integration feature, the forge/ folders' at the recipes' sizes
 QUICK = designs(Design("vecadd_v1_1", ("W=1",)),  # sliced inputs, a packed output
                 "axpy_v1",  # a CSR scalar
@@ -88,12 +87,6 @@ SETS = {
                       Design("vsum_v1_1", ("types=i8", "W=8")),
                       Design("dot_v3", ("types=i16", "W=4")),
                       Design("dot_v3", ("types=i32", "W=2")))],
-    # gesummv's points while its task is open: as written, reordered, shared, forked
-    "gesummv": designs("gesummv_v1", "gesummv_v2", "gesummv_v1_1", "gesummv_v1_1_1",
-                       "gesummv_v2_1", Design("gesummv_v2_1", (PIPELINE,)), "gesummv_v2_1_1",
-                       "gesummv_v2_1_2", "gesummv_v3", Design("gesummv_v3", ("W=16",)),
-                       Design("gesummv_v3", ("W=32",)), Design("gesummv_v2_1", ("W=16", PIPELINE)),
-                       Design("gesummv_v2_1", ("W=32", PIPELINE))),
 }  # fmt: skip
 
 

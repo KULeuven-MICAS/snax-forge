@@ -31,7 +31,7 @@ The tasks are a first cut; each milestone is planned in a round of its own.
 | Milestone | Tasks | Content |
 |---|---|---|
 | P1 | PAP3 (`done`), PAP2 (`brief`), BASE1, BASE2 | PAP3 chose the ISPASS 2027 paper's experiments and the order of the work (PAPER §6, Next Up). PAP2: related work after the reading, DSAGEN and OverGen first (PAPER §8.4). BASE1 and BASE2 (E2) are not run as tasks: a sentence or two in PAPER §3 from the times the runs log anyway |
-| M13 | B0 to VIEW3, TIERA1, TIERA2, TIERA3 (`done`, below); track A: TIERA4, E4S1; track C: SNB1; track D: E2E1–E2E5; after the paper: L2V1, XBAR1, DACE2 | Its tasks, below (M13) |
+| M13 | B0 to VIEW3, TIERA1 to TIERA4, SNB1 (`done`, below); track A: E4S1; track D: E2E1–E2E5; after the paper: L2V1, XBAR1, DACE2 | Its tasks, below (M13) |
 | M7 | KER0 (`done`), FE1b, FE1c, PACK0 (`done`), PACK1, FE1d, FE1e, FE2, FE3 | The tiers of PAPER §6.1 after tier A (D113), which M13 does. KER0 staged every target kernel in `kernels/`, not linked to the flow (`kernels/README.md`, `pixi run kernels`). FE1b is tier B; FE1c tier C; PACK0 packed int32 and int8 into 64-bit words with NumPy's arithmetic (D142–D144); PACK1 keeps tier P: requantization and the int8 kernels PACK1a (M13) leaves out; FE1d tier D; FE1e tier E. FE3 is C2's coverage table |
 | M15 | LOW3b | A tile transform and a DMA per tile, an L2 slice per tile, reductions over tiles (open item 44) |
 | M9 | J1 | Stencil BRM with reuse and double buffering (see open item 76) |
@@ -88,6 +88,8 @@ Done, each in git history:
 | TIERA2 | bicg's forms and the one pass over A for bicg and mvt (`examples/dryrun/5_bicg.md`): the fork, the bank, the hold, carried and seeded seeds | D154, D172, D177, D189–D194 |
 | CLN4 | A lean base before atax: snax-gvsoc's `forge/`, the RTL fixtures and the recorded runs one design per integration feature at their smallest sizes, `forge-set` quick and full by feature; composite tests per design, a refusal table per package, the rest cut to the coverage bar, with each composite's estimate and profile and every recipe's estimate totals checked against snapshots; dead code out; the documents cut to what holds; the markings guarded | D195 |
 | TIERA3 | atax's forms and one group reading A once (`examples/dryrun/6_atax.md`): the dependence ordered by LOWER, the DMA's copy at int8, t held over a link, a fork's buffered branch | D176, D196, D197 |
+| TIERA4 | gesummv's forms (`examples/dryrun/7_gesummv.md`): `factor_out` moves each scale past its sum, the axpby with both scalars from CSRs, x read once by two chains; a one-stream op at an opType wider than its input; a shared mover priced per user in the run; tier A done | D198 |
+| SNB1 | The Snitch-only baseline (E11): tier done, untiered and tier A as hand-written C on `rv32ima` Snitch clusters of 1, 5 and 9 cores (snax_cluster's `snitch-forge/`), synthesized gated with the macros, cycles on the RTL and energy at gate level for dot, matvec, mvt and atax (snax-forge-experiments' `snb`); track D's programs come with track D | — |
 
 
 CLN4's sizes, before and after:
@@ -105,11 +107,9 @@ CLN4's sizes, before and after:
 To do, in four tracks, each task in its own thread, branch and PR (the ROAD1 plan, 16 Nov 2026). Each task runs in a clone set of its own, so tasks in parallel never share `out/`, a GVSoC build or snax_cluster's imported bundles:
 
 - **Track A, tier A and E4** (snax-forge, snax-gvsoc where a task changes the model):
-  1. **TIERA4** (plan `claude/tiera4-plan-2026-11-25.md`): gesummv's forms, the last tier A kernel, $y = \alpha A x + \beta B x$, int8 at 64 × 64 (`gesummv_types`) and int64 at 32 × 32: `factor_out` (D198) moves each scale past its sum, then the halves by reuse, two engines against one shared, shared movers, and one group reading x once; the join of the two chains in one unit is parked (open item 172).
-  2. **E4S1** (kickoff from TIERA1's plan): E4's sweep script over `pixi run flow --set` (no DSE5) and its figure, first on what runs today (W on dot 3, matvec and mvt_v1; shared against dedicated ports), then on each tier A form as it lands. The bank-bound sweep at int64 and int32: a dot reads $2 W b$ bytes a cycle against $32 \cdot 8 = 256$, so it crosses at W = 16 (int64) and 32 (int32), and W stops at 32.
-- **Track B, costs** (snax-forge-experiments, snax-forge's `char`; Nangate 45 nm only): E4's energy axis reads `--energy` or the static estimate; GE1's left-overs are open items 136 and 137.
-- **Track C, the Snitch-only baseline** (snax_cluster, snax-forge-experiments; E11):
-  1. **SNB1** (`brief`): the same kernels as hand-written C on `rv32ima` Snitch cores with no accelerator, every tier forge runs, one source per kernel, the type a typedef, the core count from the runtime, forge's inputs; three configs (one core, 1 DMA + 4 cores, 1 DMA + 8 cores) with forge's L1, banks and I-cache, synthesized gated through `pixi run cluster` (open item 88); area and energy per task in coarse parts (memory, interconnect, cores against forge's streamers and accelerators).
+  1. **E4S1** (kickoff `claude/e4s1-kickoff-2026-11-17.md`, to refresh now that tier A is done): E4's sweep script over `pixi run flow --set` (no DSE5) and its figure, on tier A's forms: W, shared against dedicated ports, serial against side by side, one shared engine against two, one read against two. The bank-bound sweep at int64 and int32: a dot reads $2 W b$ bytes a cycle against $32 \cdot 8 = 256$, so it crosses at W = 16 (int64) and 32 (int32), and W stops at 32.
+- **Track B, costs** (snax-forge-experiments, snax-forge's `char`; Nangate 45 nm only): E4's energy axis reads `--energy` or the static estimate; GE1's left-over is open item 137.
+- **Track C, the Snitch-only baseline** (snax_cluster, snax-forge-experiments; E11): SNB1 done; its track D programs (its R12) come with track D.
 - **Track D, end to end** (snax-forge; after track A, best effort, cut from the bottom; each case sized to fit L1, shortcuts allowed for what is not built):
   1. **E2E1**: an MLP at batch 1 (matvec, bias add, relu, matvec).
   2. **E2E2**: a small conv2d.
@@ -171,14 +171,14 @@ The full set's earlier designs no longer in it (D195), as TIERA2 C2 last measure
 
 ## Next Up
 
-The ISPASS 2027 plan (PAP3, PAPER §6), as ROAD1 set it on 16 Nov: SNB1 and E4S1 now, track D after track A. Then, as each lands:
+The ISPASS 2027 plan (PAP3, PAPER §6), as ROAD1 set it on 16 Nov: tier A and SNB1 are done, E4S1 now, track D after it. Then, as each lands:
 
 | Step | Waits for | Gives |
 |---|---|---|
-| E4: the composition sweeps (E4S1) | tier A; GE1's energy and CHAR2's tables for the final sweeps | C3 |
+| E4: the composition sweeps (E4S1) | tier A, GE1's energy and CHAR2's tables (all done) | C3 |
 | E7: forge against Vitis opt and dace, Bambu and XLS on tier done and untiered, W ≤ 16 | HSYN1, CSYN1 Part A (both done) | the blocks against HLS |
-| E1: mvt and atax (gesummv if time) on vsim, 3–5 compositions each, from tier A's rounds | tier A | C4, C5 |
-| E11: the Snitch-only clusters against forge's (SNB1) | SNB1's flow; CSYN1's and PWR1's (done) | cluster PPA, the Snitch baseline |
+| E1: mvt, bicg, atax and gesummv on vsim, from tier A's rounds (the dry runs 4 to 7) | tier A (done) | C4, C5 |
+| E11: the Snitch-only clusters against forge's (SNB1) | SNB1, CSYN1 and PWR1 (done) | cluster PPA, the Snitch baseline |
 | E5, E6 and E12: the end-to-end cases (E2E1–E2E5) | track A | where the cycles go per case |
 
 Dates: 20 Nov, track A's target (fine if it slips); 27 Nov, the softmax gate (softmax not running on SNAX-GVSoC by then moves E2E3, E5, to future work); 4 Dec, the abstract's result sentence from E4; 11 Dec, the abstract and the data freeze (figure fixes only after it); 12–18 Dec, writing. PAPER §2 and §3 are written alongside.
@@ -250,8 +250,7 @@ Questions not decided yet. Numbers are never reused; a closed item is removed, a
 132. Tier A at int8, left: the fold type of `@` and `np.dot` (the operands', so a sum that wraps, D143 · D175), mvt's transposed read by the core (open item 143), the outputs the paper needs, mvt's reuse recipes off `matvec_v2_1` if matvec_v2 is ever removed, and E4's int8 W sweep (dot_v3 crosses the 32-bank bound at W = 128 at int8, 16 at int64: W up to 256 needs 67 crossbar inputs).
 134. Whether `Mac` and `SimdLanes` take a narrow multiplier (w_a + w_b bits sign-extended to `opType`, bit-identical to NumPy's product at `opType`), the experiment ROAD1 left for later; the char table would then gain its pairs.
 135. snax-forge-experiments' `cluster-breakdown`, `cluster-energy` and `cluster-sweep` no longer reproduce their files: they read the forge points' ungated `alone` rows, which CG5 removed; `breakdown.json` and `energy.json` hold the dot 3 hwcost from before CHAR2 and D178 (control 0.4 % low, the crossbar at the read-write price). `ge-check` reads `hwcost/` directly instead.
-136. The dynamic energy prices a shared mover (D169) at its own channels, where the static estimate prices each user at its port's: the two agree only when every user takes all the mover's channels. A split per user needs the port mux's counts in the `snap` lines; first needed by E4's shared-port points.
-137. The dynamic energy under contention (dot 3 at W = 32): its streamers are 1.26 of the gated cluster's (0.95 at W = 16), so a refused request seems to cost a streamer less than a granted beat; and the cluster's datapath is 7.7 nJ above W = 16 for the same fires (inputs that change without a fire). A refused request's own price, or a count of input changes per unit, if E4's figure needs it.
+137. The dynamic energy under contention (dot 3 at W = 32): its streamers are 1.26 of the gated cluster's (0.95 at W = 16), so a refused request seems to cost a streamer less than a granted beat; and the cluster's datapath is 7.7 nJ above W = 16 for the same fires (inputs that change without a fire). A refused request's own price, or a count of input changes per unit, if E4's figure needs it. A second, larger case: `mvt_v1_2_2` at W = 8, streamers and crossbar 2.4 times their static from 21 731 refused requests on one reader of its second group.
 138. One simulator counts a task at exactly its ideal cycles (the group rule's, no fill) and the other 1 to 4 past the fill: mvt_v4 `padded_rows` (W = 8 half 1 521 on vsim against 514), mvt_1's `vsum` tasks, the shared dot forms at W = 8 `padded_rows`, mvt_v3_1 `padded_rows` serial (515 against 521), mvt_v4_1 and mvt_v4_1_1 contiguous half 1 (514 against 518); not the seeded fold, nor A's type. The question is what gives a task's streamers their head start before START on one simulator and not on the other; a stall trace of half 1 at W = 8 padded would tell.
 139. A one-bank column read (D86, contiguous) or two overlapped reads of A ordered differently on the RTL: at W = 4 the unshared dot forms run 3807 on vsim against 3785; mvt_v3_1's half 2 serial at W = 8 2998 against 3249 (NEAR 7.6 %), where mvt_v3 on the shared set is 3249 on both; bicg_v1 contiguous `pipeline` 3309 against 3263, padded 557 and 534 against 550 and 559 (NEAR 3.9 %); bicg_v2 `sequential` 532 against 523; atax_v2 (contiguous) half 2 524 on vsim against 532, 5 beyond its fill (NEAR 0.9 %), `mac_a` refused 128 times on SNAX-GVSoC. The RTL's ordering depends on which crossbar inputs ask; first check the stall traces of half 2 at W = 4, mvt_v1_2 against mvt_v1_2_2, on both.
 140. The quiet build (D135) waits on every start right after it, so it runs a `pipeline` or `pipeline_compute` program (D179) serially and a pipelined run has no gate-level power windows (`--energy` prices it in one window of the default build, D177); a quiet build of a pipelined program would mark one window per set of overlapping runs. The default build also waits on the DMA twice at the end: harmless, left until `main.c` changes for another reason.
