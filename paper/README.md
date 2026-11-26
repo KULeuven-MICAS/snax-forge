@@ -19,7 +19,7 @@ pixi run paper limits --run -j 8        # also each flow with --energy, in the i
 pixi run paper forms --run --only mvt_column atax_read_once   # those rows replaced in the CSV
 ```
 
-Without `--run`, a row keeps its run columns from the CSV while its recipe and sets are unchanged, so the estimate can be refreshed alone.
+Without `--run`, a row keeps its run columns from the CSV while its recipe and sets are unchanged, so the estimate can be refreshed alone. A point that fails keeps its row with the reason in `status`, and the command exits 1.
 
 `paper/data/<set>.csv` has one row per point, in the set's order:
 

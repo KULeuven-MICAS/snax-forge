@@ -594,7 +594,7 @@ streamer $k$ at $[b_k, b_k + s_k)$, its own at $[b_k + s_k, b_{k+1})$, and $b_K 
 
 ### Checks
 
-The streamer file and `accelerator.json` have snax-forge's schemas (`gen/schema/`, JSON Schema 2020-12); the cluster file validates against snax_cluster's. `gen.platform`, `gen.source` and `gen.slot` refuse a platform the cluster file cannot express, one without a source, and a source without exactly one slot.
+The streamer file and `accelerator.json` have snax-forge's schemas (`gen/schema/`, JSON Schema 2020-12); the cluster file validates against snax_cluster's. `gen.platform`, `gen.source` and `gen.slot` refuse a platform the cluster file cannot express (the design check's limits `l1.max_xbar_inputs` and `l1.warn_xbar_inputs` aside, which are not in it), one without a source, and a source without exactly one slot.
 
 <!-- snippet: snax_forge/gen/schema/accelerator.schema.json -->
 ```json

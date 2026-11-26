@@ -9,8 +9,9 @@ CONTRACTS "Estimate" and "Cost model"). With ``--run`` each point also runs thro
 flow --energy`` (``-j`` at once, into ``out/paper/<set>/<id>/``), adding the run's window and
 dynamic energy by part (CONTRACTS, "The energy run"). The rows go to ``paper/data/<set>.csv``
 in the set's order (with ``--only``, those points' rows replaced in the file as it is); a point
-that fails keeps its row with the reason in ``status``. Without ``--run`` a row keeps its run
-columns from the file while its recipe and sets are unchanged.
+that fails keeps its row with the reason in ``status``, and the exit code is 1 if a point of
+this call failed. Without ``--run`` a row keeps its run columns from the file while its recipe
+and sets are unchanged.
 """
 
 from __future__ import annotations
@@ -170,6 +171,7 @@ def main(argv: list[str] | None = None) -> int:
         points = [p for p in points if p.id in args.only]
     with ThreadPoolExecutor(max_workers=args.j if args.run else 1) as pool:
         rows = list(pool.map(lambda p: row_of(p, platform, args.run), points))
+    failed = sum(r.get("status") != "ok" for r in rows)
     out = PAPER / "data" / f"{args.set}.csv"
     old = list(csv.DictReader(out.open())) if out.is_file() else []
     if not args.run:  # a row's run columns stay while its recipe and sets are the same
@@ -187,7 +189,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"{shown}: {len(rows)} points, {len(bad)} not ok")
     for r in bad:
         print(f"  {r['id']}: {r['status']}")
-    return 0
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":
