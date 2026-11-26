@@ -910,8 +910,7 @@ def xbar_inputs(design: Design) -> tuple[int, int] | None:
 
 
 def _connect_xbar_inputs(design: Design) -> Iterable[Problem]:
-    """No more crossbar inputs than the platform's ``l1.max_xbar_inputs``, where SNAX-GVSoC
-    asserts."""
+    """No more crossbar inputs than the platform's ``l1.max_xbar_inputs``."""
     counted = xbar_inputs(design)
     limit = design.platform.l1.max_xbar_inputs
     if counted is None or sum(counted) <= limit:
@@ -922,7 +921,7 @@ def _connect_xbar_inputs(design: Design) -> Iterable[Problem]:
         "connect.xbar_inputs", where,
         f"{channels + others} TCDM crossbar inputs, the platform takes at most {limit} "
         f"({channels} streamer channels, {others} for the core{'s' if others > 2 else ''} and AXI; "
-        "l1.max_xbar_inputs, the limit SNAX-GVSoC's crossbar asserts)",
+        "l1.max_xbar_inputs, 128 as checked against SNAX's crossbar RTL)",
         "fewer lanes, or share_ports on a container between two accelerators",
     )  # fmt: skip
 

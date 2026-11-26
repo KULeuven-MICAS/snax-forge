@@ -253,8 +253,8 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 
 ### D85 — Design checks name every problem and its fix
 
-- **Decided:** the design checks report every problem, each with its fix, before anything is written. A limit of the model's cluster is a platform field the checks hold the design to, such as the TCDM crossbar's inputs (`l1.max_xbar_inputs`, SNAX-GVSoC's 128), with a note above `l1.warn_xbar_inputs` (64).
-- **Why:** a design is refused before a run would assert, and the note marks costs extrapolated beyond the tables.
+- **Decided:** the design checks report every problem, each with its fix, before anything is written. A limit of the model's cluster is a platform field the checks hold the design to, such as the TCDM crossbar's inputs (`l1.max_xbar_inputs`, 128, the size checked against SNAX's crossbar RTL), with a note above `l1.warn_xbar_inputs` (64). SNAX-GVSoC's crossbar takes up to 256 inputs, so a point may raise the limit that far by `--set` to see a design past SNAX's crossbar, checked model against model only.
+- **Why:** a design is refused before a run would assert, and the note marks costs extrapolated beyond the tables; the model's larger crossbar lets an exploration measure a design it then marks as past SNAX's own.
 - **Where:** CONTRACTS, "Platform" and "Design checks".
 
 ### D12 · D142 · D169 · D174 · D180 — Streamers: one per port, packed and sliced words, shared movers

@@ -38,6 +38,8 @@ PROVENANCE = ("name", "base", "changes")
 NULLABLE = ("hjson", "accelerator_slot")
 # Section fields that are an int or null (null: follow another field)
 INT_OR_NULL = {"acc_csr": ("busy_counter_width",)}
+# NB (D85): the most crossbar inputs SNAX-GVSoC takes, kMaxInputs in snax_sparse_arb.hpp
+XBAR_MODEL_MAX = 256
 
 
 @dataclass(frozen=True)
@@ -49,18 +51,18 @@ class L1Config(Config):
     rows: int = 512  # words per bank; 32 * 512 * 8 B = 128 KiB
     base_addr: int = 0  # byte address of the first L1 word
     wide_bits: int = 512  # widest port, the DMA's: one superbank of 8 banks in SNAX
-    # the TCDM crossbar's most inputs: snax-gvsoc's snax_tcdm_xbar.cpp asserts nb_inputs in
-    # (0, 128] (the check connect.xbar_inputs); above warn_xbar_inputs a note
-    # (design.xbar_inputs): the cost extrapolated beyond the tables and beyond SNAX's own crossbar
-    # NB (D85): SNAX-GVSoC's crossbar takes at most 128 inputs; raise both together.
+    # the TCDM crossbar's most inputs (the check connect.xbar_inputs): 128, the size checked
+    # against snax_cluster's crossbar RTL; above warn_xbar_inputs a note (design.xbar_inputs):
+    # the cost extrapolated beyond the tables and beyond SNAX's own crossbar; up to
+    # XBAR_MODEL_MAX by --set, beyond what the RTL check covers
     max_xbar_inputs: int = 128
     warn_xbar_inputs: int = 64
 
     def __post_init__(self) -> None:
         if self.n_banks < 1 or self.rows < 1:
             raise ValueError("n_banks and rows must be >= 1")
-        if self.max_xbar_inputs < 1:
-            raise ValueError("max_xbar_inputs must be >= 1")
+        if not 1 <= self.max_xbar_inputs <= XBAR_MODEL_MAX:
+            raise ValueError(f"max_xbar_inputs must be 1 to {XBAR_MODEL_MAX}, SNAX-GVSoC's most")
         if not 1 <= self.warn_xbar_inputs <= self.max_xbar_inputs:
             raise ValueError("warn_xbar_inputs must be 1 to max_xbar_inputs")
         if self.width_bits % 8:

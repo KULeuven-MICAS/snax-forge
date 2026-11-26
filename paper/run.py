@@ -9,9 +9,8 @@ CONTRACTS "Estimate" and "Cost model"). With ``--run`` each point also runs thro
 flow --energy`` (``-j`` at once, into ``out/paper/<set>/<id>/``), adding the run's window and
 dynamic energy by part (CONTRACTS, "The energy run"). The rows go to ``paper/data/<set>.csv``
 in the set's order (with ``--only``, those points' rows replaced in the file as it is); a point
-that fails keeps its row with the reason in ``status``. A point with ``"run": false`` gets the
-estimate only (one SNAX-GVSoC cannot run, such as a crossbar above its inputs); without ``--run``
-a row keeps its run columns from the file while its recipe and sets are unchanged.
+that fails keeps its row with the reason in ``status``. Without ``--run`` a row keeps its run
+columns from the file while its recipe and sets are unchanged.
 """
 
 from __future__ import annotations
@@ -30,7 +29,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from snax_forge.design import DesignError, DesignPoint, Platform, load, run_checks
+from snax_forge.design import DesignError, DesignPoint, load, run_checks
 from snax_forge.design.check import xbar_inputs
 from snax_forge.dfg import DfgError
 from snax_forge.dfg.import_sdfg import import_kernel
@@ -61,7 +60,6 @@ class Point:
     recipe: Path
     sets: list[str]
     labels: dict[str, Any] = field(default_factory=dict)
-    run: bool = True
 
 
 def load_set(name: str) -> tuple[Path, list[Point]]:
@@ -70,9 +68,9 @@ def load_set(name: str) -> tuple[Path, list[Point]]:
     common = list(d.get("sets", []))
     points = []
     for p in d["points"]:
-        labels = {k: v for k, v in p.items() if k not in ("id", "recipe", "sets", "run")}
+        labels = {k: v for k, v in p.items() if k not in ("id", "recipe", "sets")}
         points.append(Point(d["name"], p["id"], ROOT / p["recipe"], common + list(p["sets"]),
-                            labels, p.get("run", True)))  # fmt: skip
+                            labels))  # fmt: skip
     ids = [p.id for p in points]
     if len(set(ids)) != len(ids):
         raise SystemExit(f"paper/{name}.json: an id is used twice")
@@ -141,12 +139,7 @@ def row_of(point: Point, platform: Path, run: bool) -> dict[str, Any]:
     except (DfgError, SandboxError, OSError, ValueError) as e:
         row["status"] = f"refused: {str(e).splitlines()[0][:300]}"
         return row
-    if not point.run:
-        limit = Platform.load(platform).l1.max_xbar_inputs
-        row["status"] = (
-            f"estimate only: {row['xbar_inputs']} crossbar inputs, SNAX-GVSoC takes {limit}"
-        )
-    elif run:
+    if run:
         row |= run_row(point, platform)
         row.setdefault("status", "ok")
     return row
