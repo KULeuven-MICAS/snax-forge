@@ -1,8 +1,10 @@
 # HWCOST's tables, copied as they are by util/import_costs.py (pixi run import-costs)
 repo: https://github.com/KULeuven-MICAS/snax-forge-experiments
-commit: f6537e14742b2cbc82b5f802733c27135dad8206
-block_table: results/char/nangate45/char.json sha256 d30c143c389b26a2c18766ddad87d1107ef58d0eeb4d49eab8ea6000009a031d
-ram_table.csv: results/ram/nangate45/ram_table.csv sha256 061b988c635e25ff83e8ab5371ee530f8e992bba8b1ff47012b0a001688338fe
-streamer.csv: results/strm/nangate45/streamer.csv sha256 1e07485ec08f96566fe97c23772d0eba880f6e9f349c49478d942ec159166f8e
-xbar.csv: results/strm/nangate45/xbar.csv sha256 3751226d02013cf717f7eae97eab9457908a9828b87fc588619ae1d0c8f4088c
+commit: 4daf376296e5635a5702a0b21c820ab5b9f1c325
+block_table: results/char/nangate45/char.json sha256 789f486f89222a92a1c25caa7a712b73307f5b350bdaae183232db3cf2b6fd24
+ram_table.csv: results/ram/nangate45/ram_table.csv sha256 bcc260759f272102ee599f9a57aa16be0d498b550a71d2720748a7a94b1da138
+streamer.csv: results/strm/nangate45/streamer.csv sha256 7bd1e862b269b345a63c88375ada6d167491274abde73369ab992876d7cb61b2
+xbar.csv: results/strm/nangate45/xbar.csv sha256 47d5a9fee05f4761fd255c566da7d6328f2d17b72bb31df7c58f2496858dafd3
 xbar_kinds.json: results/strm/nangate45/xbar_kinds.json sha256 da21ec95c0d7e4f378ca5853ac35b563a4533eeeb62d9fe454240d55cec3b82e
+cluster_fixed.json: results/cluster/nangate45/cluster_fixed.json sha256 9f9d8a718b58202dcc281cd0d816af905459d7861983cf12d161b3079f07485d
+dma_copy.json: results/snb/nangate45/dma_copy.json sha256 3d42bd326ffeba28401c6b3e0f115dae3e30ce889e3b2d4cba360963843303bf

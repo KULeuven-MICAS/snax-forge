@@ -57,18 +57,20 @@ class Table:
     e_ctrl_pj: float
     blocks: dict[str, list[dict[str, Any]]]
     bank: dict[str, float] | None = None  # a Mac bank's forms over its rows-1 entry
+    flop_leak_uw: float = 0.0  # a flop's leakage (µW), as flop_um2 its area
 
 
 @dataclass(frozen=True)
 class Lookup:
     """A block's comb area and comb energy per fire, and how it was found (``FOUND``);
     ``load_bits`` the bits that load on a fire where not all of them do (a packer's or a
-    slicer's), else None."""
+    slicer's), else None; ``leak_uw`` its comb leakage (µW), found by the same rule as its area."""
 
     comb_um2: float
     e_comb_pj: float
     found: str
     load_bits: float | None = None
+    leak_uw: float = 0.0
 
 
 @functools.cache
@@ -81,7 +83,12 @@ def load(tech: str) -> Table:
     return Table(d["tech"], d["clock_ns"], dict(d["source"]), d["flop"]["area_um2"],
                  d["flop"]["e_load_fj"] / 1000,
                  d["ctrl"]["counter_factor"] * d["flop"]["e_hold_fj"] / 1000, d["blocks"],
-                 d.get("bank"))  # fmt: skip
+                 d.get("bank"), d["flop"].get("leak_uw", 0.0))  # fmt: skip
+
+
+def _point(p: Mapping[str, Any], found: str = "measured") -> Lookup:
+    """A table point as a Lookup."""
+    return Lookup(p["comb_um2"], p["e_comb_pj"], found, leak_uw=p.get("leak_comb_uw", 0.0))
 
 
 def _between(x: int, pts: list[tuple[int, Lookup]]) -> Lookup | None:
@@ -91,7 +98,8 @@ def _between(x: int, pts: list[tuple[int, Lookup]]) -> Lookup | None:
         if a < x < b:
             t = (x - a) / (b - a)
             return Lookup(pa.comb_um2 + t * (pb.comb_um2 - pa.comb_um2),
-                          pa.e_comb_pj + t * (pb.e_comb_pj - pa.e_comb_pj), "interpolate")  # fmt: skip
+                          pa.e_comb_pj + t * (pb.e_comb_pj - pa.e_comb_pj), "interpolate",
+                          leak_uw=pa.leak_uw + t * (pb.leak_uw - pa.leak_uw))  # fmt: skip
     return None
 
 
@@ -101,11 +109,10 @@ def _at_depth(points: list[dict[str, Any]], lanes: int, depth: int | None) -> Lo
     at = [p for p in points if p["lanes"] == lanes]
     for p in at:
         if p.get("depth") == depth:
-            return Lookup(p["comb_um2"], p["e_comb_pj"], "measured")
+            return _point(p)
     if depth is None:
         return None
-    return _between(depth, [(p["depth"], Lookup(p["comb_um2"], p["e_comb_pj"], "measured"))
-                            for p in at])  # fmt: skip
+    return _between(depth, [(p["depth"], _point(p)) for p in at])
 
 
 def _width(dtype: str) -> int:
@@ -149,7 +156,8 @@ def pair_params(datapath: str, params: Mapping[str, Any]) -> dict[str, Any]:
 def _scaled(got: Lookup | None, k: float, found: str | None = None) -> Lookup | None:
     if got is None:
         return None
-    return Lookup(k * got.comb_um2, k * got.e_comb_pj, found or got.found, got.load_bits)
+    return Lookup(k * got.comb_um2, k * got.e_comb_pj, found or got.found, got.load_bits,
+                  k * got.leak_uw)  # fmt: skip
 
 
 def _over_lanes(entry: dict[str, Any], lanes: int, depth: int | None) -> Lookup | None:
@@ -167,13 +175,13 @@ def _over_lanes(entry: dict[str, Any], lanes: int, depth: int | None) -> Lookup 
         found = "interpolate" if one.found == "interpolate" else "copy"
         return _scaled(one, lanes / w0, found)
     if rule == "interpolate" and depth is None:
-        return _between(lanes, [(p["lanes"], Lookup(p["comb_um2"], p["e_comb_pj"], "measured"))
-                                for p in points])  # fmt: skip
+        return _between(lanes, [(p["lanes"], _point(p)) for p in points])
     if rule == "slope" and depth is None:
         near = min(points, key=lambda p: (abs(p["lanes"] - lanes), p["lanes"]))
         d, s = lanes - near["lanes"], entry["slope"]
         return Lookup(near["comb_um2"] + d * s["comb_um2"], near["e_comb_pj"] + d * s["e_comb_pj"],
-                      "slope")  # fmt: skip
+                      "slope", leak_uw=near.get("leak_comb_uw", 0.0)
+                      + d * s.get("leak_comb_uw", 0.0))  # fmt: skip
     return None
 
 
@@ -182,15 +190,17 @@ def _banked(table: Table, one: Lookup, params: Mapping[str, Any], lanes: int, ro
     table's ``bank`` forms (the two R:1 read muxes and the row enables), and a fire loads
     one row of sums, not R. Without the forms, ``one`` (a lower bound, all rows loading). Past the
     largest read mux the forms were fitted to, found ``bank_beyond`` (DC builds the mux otherwise
-    and costs more, about 2× at 4 096 bits; snax-forge-experiments' PITFALLS DC20)."""
+    and costs more, about 2× at 4 096 bits; snax-forge-experiments' PITFALLS DC20). Its leakage
+    grows with its comb area, at the rows-1 entry's leakage per µm²."""
     b = table.bank
     if b is None:
         return one
     row = lanes * _width(params["outType"])
     e = lanes * (b["e_pj_lane_log2_rows"] * math.log2(rows) + b["e_pj_lane"])
     found = "bank" if row * rows <= b["mux_bits_max"] else "bank_beyond"
-    return Lookup(one.comb_um2 + b["comb_um2_lane_row"] * lanes * rows, one.e_comb_pj + e, found,
-                  row)  # fmt: skip
+    comb = one.comb_um2 + b["comb_um2_lane_row"] * lanes * rows
+    leak = one.leak_uw * comb / one.comb_um2 if one.comb_um2 else 0.0
+    return Lookup(comb, one.e_comb_pj + e, found, row, leak)
 
 
 def exact_params(datapath: str, params: Mapping[str, Any]) -> dict[str, Any] | None:
@@ -243,7 +253,8 @@ def _lookup(table: Table, datapath: str, params: Mapping[str, Any], want: dict[s
         if entry is None:
             return None
         p = entry["points"][0]
-        return Lookup(p["comb_um2"], p["e_comb_pj"], "measured", p["load_bits"])
+        return Lookup(p["comb_um2"], p["e_comb_pj"], "measured", p["load_bits"],
+                      p.get("leak_comb_uw", 0.0))  # fmt: skip
     if entry is None and datapath == "LinkBuffer" and "dtype" in want:
         # a narrower dtype: the int64 entry by the width
         k64 = {**want, "dtype": "int64"}

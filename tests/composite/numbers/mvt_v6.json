@@ -29,9 +29,9 @@
   "copy_cycles": 0,
   "total_cycles": 67,
   "l1_footprint": 872,
-  "cost.area": 567589.5384818546,
-  "cost.area_design": 134863.13848185458,
-  "cost.energy": 3.91539956070322,
+  "cost.area": 566955.9384818546,
+  "cost.area_design": 134863.13848185464,
+  "cost.energy": 3.8896999707032203,
   "cost.kernel_energy": 2.1077203208000004,
   "cost.parts.datapath.area": 24378.8080045,
   "cost.parts.datapath.energy": 2.0346956808000005,
@@ -41,8 +41,8 @@
   "cost.parts.streamers.energy": 0.635193845,
   "cost.parts.crossbar.area": 50742.73230835465,
   "cost.parts.crossbar.energy": 0.35584684490321994,
-  "cost.parts.memory.area": 432726.4,
-  "cost.parts.memory.energy": 0.8166385500000001,
+  "cost.parts.memory.area": 432092.8,
+  "cost.parts.memory.energy": 0.7909389600000001,
   "cost.xbar.inputs": 15,
   "cost.xbar.banks": 32,
   "cost.xbar.accesses": 201,
@@ -60,9 +60,9 @@
   "cost.memory.width": 64,
   "cost.memory.reads": 165,
   "cost.memory.writes": 36,
-  "cost.memory.area": 432726.4,
-  "cost.memory.e_rd": 3.53819,
-  "cost.memory.e_wr": 6.4677,
-  "cost.memory.energy": 0.8166385500000001
+  "cost.memory.area": 432092.8,
+  "cost.memory.e_rd": 3.38552,
+  "cost.memory.e_wr": 6.45356,
+  "cost.memory.energy": 0.7909389600000001
  }
 }

@@ -72,3 +72,30 @@ def test_xbar_example_6_all_read_only(costs):
 def test_xbar_kinds_refused(costs, args, match):
     with pytest.raises(ValueError, match=match):
         xbar_cost(costs, *args)
+
+
+def test_leakage_beside_the_area(costs):
+    """Every table carries leakage (µW), read as its area is: a bank's by lookup (512 × 64 at
+    itrs-lstp, subthreshold plus gate), a streamer's at a grid point, the crossbar's as its area
+    scaled by the table's leakage per µm² at its inputs and banks."""
+    from snax_forge.char.tables import bank
+
+    assert bank(costs, 512, 64).leak_uw == pytest.approx(0.140432)
+    s = streamer_cost(costs, 8, 2, 4)
+    assert 0.0179 < s.leak_uw / s.area_um2 < 0.0191
+    full = xbar_cost(costs, 16, 32)
+    ro = xbar_cost(costs, 16, 32, 8, 4)
+    assert ro.leak_uw / ro.area_um2 == pytest.approx(full.leak_uw / full.area_um2)
+    assert 0.024 < full.leak_uw / full.area_um2 < 0.0292
+
+
+def test_the_fixed_parts_and_the_dma_engine(costs):
+    """cluster_fixed.json's three parts add up to what the cost model leaves of the cluster
+    (390 555 µm² at dot3_w8_cg); dma_copy.json's engine is 106.40 pJ a burst."""
+    from snax_forge.char.tables import FIXED_PARTS
+
+    assert tuple(costs.fixed) == FIXED_PARTS
+    assert sum(p.area_um2 for p in costs.fixed.values()) == pytest.approx(390555, abs=1)
+    assert sum(p.leak_uw for p in costs.fixed.values()) == pytest.approx(6271.8, abs=0.1)
+    assert sum(p.idle_pj_cycle for p in costs.fixed.values()) == pytest.approx(23.60, abs=0.01)
+    assert costs.dma_burst_pj == pytest.approx(106.40, abs=0.01)

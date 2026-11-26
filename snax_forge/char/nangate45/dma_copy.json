@@ -1,0 +1,155 @@
+{
+ "tech": "nangate45",
+ "labels": {
+  "tcdm_banks": "TCDM banks (macros)",
+  "icache_macros": "I-cache macros (data and tag)",
+  "acc_datapath": "accelerator datapath",
+  "acc_control": "accelerator control",
+  "acc_csr": "accelerator csr (with its peripherals)",
+  "streamers": "streamers",
+  "acc_interface": "SNAX CSR path (the cores' translators, the accelerator wrapper's demux and glue)",
+  "tcdm_interconnect": "TCDM interconnect (sparse or logarithmic)",
+  "tcdm_logic": "TCDM bank logic (AMO shims, muxes)",
+  "dma": "DMA (iDMA, its AXI-to-memory and interconnect)",
+  "cores": "RISC-V cores (Snitch, with the shared mul/div)",
+  "icache_logic": "I-cache logic (the hive without its macros and mul/div)",
+  "axi": "AXI: the external cuts, both crossbars, the converters",
+  "peripherals": "cluster peripherals (with the barrier)",
+  "others": "others (what no rule names)"
+ },
+ "runs": {
+  "snitch1_cg_dma_transpose_int64": {
+   "run": "snitch1_cg_dma_transpose_int64",
+   "type": "int64",
+   "sizes": {
+    "M": "64",
+    "N": "64"
+   },
+   "cycles": 10967,
+   "nj": 1039.4195783399998,
+   "check": {
+    "power_pt_e_dyn_pj": 94.77701,
+    "ok": true
+   },
+   "groups": {
+    "tcdm_banks": 250.99415502529493,
+    "icache_macros": 0.10175525240445621,
+    "acc_datapath": 0.0,
+    "acc_control": 0.0,
+    "acc_csr": 0.0,
+    "streamers": 0.0,
+    "acc_interface": 0.47769773458000014,
+    "tcdm_interconnect": 17.349935474299997,
+    "tcdm_logic": 94.8032656363102,
+    "dma": 364.6273416544,
+    "cores": 17.357203743880007,
+    "icache_logic": 4.357135335065544,
+    "axi": 205.20408499357322,
+    "peripherals": 80.93776629353063,
+    "others": 3.209237196661891
+   },
+   "d184": {
+    "bursts": 4096,
+    "superbank_banks": 8,
+    "e_rd_pj": 3.38552,
+    "e_wr_pj": 6.45356,
+    "e_ro_pj": 1.8392993176799999,
+    "e_wo_pj": 1.454512707945,
+    "banks_nj": 322.40697344000006,
+    "crossbar_nj": 13.491454056959999,
+    "nj": 335.89842749696004
+   },
+   "against": {
+    "banks": {
+     "measured_nj": 250.99415502529493,
+     "d184_nj": 322.40697344000006
+    },
+    "crossbar": {
+     "measured_nj": 381.97727712870005,
+     "d184_nj": 13.491454056959999
+    },
+    "not_priced_nj": 406.4481461860048,
+    "ratio": 3.094446098141995
+   },
+   "e_burst": {
+    "dma_pj": 76.13242136857178,
+    "axi_pj": 33.94010027927587,
+    "pj": 110.07252164784765
+   }
+  },
+  "snitch1_cg_dma_transpose_int8": {
+   "run": "snitch1_cg_dma_transpose_int8",
+   "type": "int8",
+   "sizes": {
+    "M": "64",
+    "N": "64"
+   },
+   "cycles": 10967,
+   "nj": 1016.1744734899999,
+   "check": {
+    "power_pt_e_dyn_pj": 92.65746,
+    "ok": true
+   },
+   "groups": {
+    "tcdm_banks": 251.00575491989795,
+    "icache_macros": 0.1017569880418762,
+    "acc_datapath": 0.0,
+    "acc_control": 0.0,
+    "acc_csr": 0.0,
+    "streamers": 0.0,
+    "acc_interface": 0.47302673574200016,
+    "tcdm_interconnect": 17.45257124049999,
+    "tcdm_logic": 101.43053687767016,
+    "dma": 349.02896987750006,
+    "cores": 17.349021703859954,
+    "icache_logic": 4.353354590568123,
+    "axi": 190.74530423902542,
+    "peripherals": 80.93969648553063,
+    "others": 3.2944798316646624
+   },
+   "d184": {
+    "bursts": 4096,
+    "superbank_banks": 8,
+    "e_rd_pj": 3.38552,
+    "e_wr_pj": 6.45356,
+    "e_ro_pj": 1.8392993176799999,
+    "e_wo_pj": 1.454512707945,
+    "banks_nj": 322.40697344000006,
+    "crossbar_nj": 13.491454056959999,
+    "nj": 335.89842749696004
+   },
+   "against": {
+    "banks": {
+     "measured_nj": 251.00575491989795,
+     "d184_nj": 322.40697344000006
+    },
+    "crossbar": {
+     "measured_nj": 366.48154111800005,
+     "d184_nj": 13.491454056959999
+    },
+    "not_priced_nj": 398.6871774521018,
+    "ratio": 3.0252433185302614
+   },
+   "e_burst": {
+    "dma_pj": 72.32422513397708,
+    "axi_pj": 30.4101245091226,
+    "pj": 102.73434964309968
+   }
+  }
+ },
+ "engine": {
+  "groups": [
+   "dma",
+   "axi"
+  ],
+  "idle": {
+   "point": "dot3_w8_cg",
+   "window": "5_run",
+   "pj_cycle": {
+    "dma": 4.81343519,
+    "axi": 6.034962546700032
+   }
+  },
+  "e_burst_pj": 106.40343564547366
+ }
+}

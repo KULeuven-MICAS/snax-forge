@@ -986,13 +986,15 @@ What a design costs in area and energy before any synthesis: the blocks and cont
 
 | File in `snax_forge/char/` | Holds | From |
 |---|---|---|
-| `<tech>.json` | `tech`, `clock_ns`, `units`, `source`; `flop` (`area_um2`, `e_load_fj`, `e_hold_fj`); `ctrl.counter_factor`; `blocks`, per datapath (and `FifoPacker`, `FifoSlicer`) one entry per params, so per width pair: `params`, `lanes_rule` (`copy`, `interpolate`, `slope`, `none`), a narrow fold's `slope` (`comb_um2`, `e_comb_pj` per lane) and `points` (`lanes`, `depth`, `comb_um2`, `e_comb_pj`; a packer's and a slicer's `flops`, `load_bits`); $e_{\mathit{ctrl}}$ is `counter_factor` × `e_hold_fj` | snax-forge-experiments' `results/char/<tech>/char.json`, X37, X83 · X85, X89, X94 |
-| `<tech>/streamer.csv` | one reader: FIFO depth 2–16 × loops 1–7 × channels 1–16, `area_um2`, `e_beat_pj` | X52 · X82, X83 · X85 |
-| `<tech>/xbar.csv` | the sparse interconnect: inputs 4–64 × banks 16, 32, 64, `area_um2`, `e_access_pj` where inputs ≤ banks | X53 · X54, X83 · X85 |
+| `<tech>.json` | `tech`, `clock_ns`, `units`, `source`; `flop` (`area_um2`, `leak_uw`, `e_load_fj`, `e_hold_fj`); `ctrl.counter_factor`; `blocks`, per datapath (and `FifoPacker`, `FifoSlicer`) one entry per params, so per width pair: `params`, `lanes_rule` (`copy`, `interpolate`, `slope`, `none`), a narrow fold's `slope` (`comb_um2`, `e_comb_pj`, `leak_comb_uw` per lane) and `points` (`lanes`, `depth`, `comb_um2`, `e_comb_pj`, `leak_comb_uw`; a packer's and a slicer's `flops`, `load_bits`); $e_{\mathit{ctrl}}$ is `counter_factor` × `e_hold_fj` | snax-forge-experiments' `results/char/<tech>/char.json`, X37, X83 · X85, X89, X94, X101 |
+| `<tech>/streamer.csv` | one reader: FIFO depth 2–16 × loops 1–7 × channels 1–16, `area_um2`, `leak_uw`, `e_beat_pj` | X52 · X82, X83 · X85, X101 |
+| `<tech>/xbar.csv` | the sparse interconnect: inputs 4–64 × banks 16, 32, 64, `area_um2`, `leak_uw`, `e_access_pj` where inputs ≤ banks | X53 · X54, X83 · X85, X101 |
 | `<tech>/xbar_kinds.json` | the area's factor form's $f_{\mathit{ro}}$ and $f_{\mathit{wo}}$ (0.395299, 0.409746), the crosspoint form's coefficients; the energy's $g_{\mathit{ro}}(b)$, $g_{\mathit{wo}}(b)$ at 16, 32 and 64 banks (`energy.by_banks`; 0.331792, 0.471583 at 32) | X71, X93 |
-| `<tech>/ram_table.csv` | CACTI 7: depth 32–4096 × width 8–256, `area_um2`, `e_rd_pj`, `e_wr_pj` | X47, X48 |
+| `<tech>/ram_table.csv` | CACTI 7, itrs-lstp cells: depth 32–4096 × width 8–256, `area_um2`, `e_rd_pj`, `e_wr_pj`, `leak_uw` (subthreshold plus gate) | X47 · X100, X48 |
+| `<tech>/cluster_fixed.json` | the cluster's fixed parts (`parts`: `core`, `dma`, `rest`), each its `area_um2`, `leak_uw` and `idle_pj_cycle`, from one synthesized cluster's run window | X103 |
+| `<tech>/dma_copy.json` | the DMA engine's energy per burst of a copy, `engine.e_burst_pj` | X95, X102 |
 
-- `pixi run import-costs` copies the five files with `<tech>/SOURCE` naming each file's origin and sha256; `tests/char/` checks them.
+- `pixi run import-costs` copies the seven files with `<tech>/SOURCE` naming each file's origin and sha256; `tests/char/` checks them. A lookup gives a block's, a streamer's, the crossbar's and a bank's leakage (µW) beside its area, by the same rule; the crossbar's at the table's leakage per µm² at its inputs and banks.
 - **Block lookup** (`lookup`, D176): the entry at the block's own pair if its inputs differ in width and that pair is measured (`exact_params`), else at its width pair (`pair_params`), then a point at its lanes (`measured`), else by `lanes_rule` (`copy`, `interpolate`, `slope`), depth, `width` or `unseeded`; a `Mac` bank from its rows-1 entry and the `bank` forms (D193). Else the comb part counts 0 (`char.missing`).
 - **Table lookup** (`streamer_cost`, `xbar_cost`, `bank`): linear along one axis at a time; outside the grid linear through the two nearest values, clamped at zero, with `cost.extrapolated`. A writer is priced as a reader.
 

@@ -3,9 +3,10 @@
     pixi run import-costs [--experiments DIR] [--tech nangate45]
 
 Copies, as they are, the block table ``results/char/<tech>/char.json`` (clock-gated) to
-``<tech>.json`` and, into ``<tech>/``, ``results/ram/<tech>/ram_table.csv`` and
+``<tech>.json`` and, into ``<tech>/``, ``results/ram/<tech>/ram_table.csv``,
 ``results/strm/<tech>/``'s ``streamer.csv``, ``xbar.csv`` and ``xbar_kinds.json`` (the crossbar's
-read-only and write-only inputs); then writes ``<tech>/SOURCE`` with the repository, its commit
+read-only and write-only inputs), ``results/cluster/<tech>/cluster_fixed.json`` (the cluster's
+fixed parts) and ``results/snb/<tech>/dma_copy.json`` (the DMA engine's price per burst); then writes ``<tech>/SOURCE`` with the repository, its commit
 and each file's path and sha256 (no date, so a re-run that brings nothing new changes nothing). By default it fetches the latest main of
 snax-forge-experiments (a shallow ``git clone`` into a temporary folder); ``--experiments DIR``
 takes a local checkout instead, which must be clean. Run by hand when the tables change, never
@@ -32,6 +33,11 @@ PATHS = {
     "streamer.csv": ("{tech}/streamer.csv", "results/strm/{tech}/streamer.csv"),
     "xbar.csv": ("{tech}/xbar.csv", "results/strm/{tech}/xbar.csv"),
     "xbar_kinds.json": ("{tech}/xbar_kinds.json", "results/strm/{tech}/xbar_kinds.json"),
+    "cluster_fixed.json": (
+        "{tech}/cluster_fixed.json",
+        "results/cluster/{tech}/cluster_fixed.json",
+    ),
+    "dma_copy.json": ("{tech}/dma_copy.json", "results/snb/{tech}/dma_copy.json"),
 }
 
 
@@ -45,7 +51,7 @@ def sha256(path: Path) -> str:
 
 
 def copy(src: Path, tech: str, out: Path) -> str:
-    """Copy the five files of ``tech`` from the checkout ``src`` under ``out`` (``snax_forge/char/``)
+    """Copy the seven files of ``tech`` from the checkout ``src`` under ``out`` (``snax_forge/char/``)
     and write ``<tech>/SOURCE``; returns the commit."""
     if git(src, "status", "--porcelain"):
         sys.exit(f"{src} has uncommitted changes: import from a clean checkout")
