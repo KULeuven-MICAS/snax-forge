@@ -3,7 +3,8 @@
 ``arrays`` gives the containers' arrays and ``data_h`` writes the file CONTRACTS, "Generated hjson
 files" describes, in the graph's container order: every container the DMA moves, and every one
 the core reads to write a CSR (a slot's container, in L2 only: axpy's ``alpha``). An input is
-the kernel's ``make_inputs`` at the bound size (``dfg.reference.kernel_inputs``); an output is
+the kernel's ``make_inputs`` at the bound size (``dfg.reference.kernel_inputs``), or uniform over
+its dtype when the design point's ``data`` is ``full``; an output is
 zeroed, or ``make_inputs``' value when it gives one (an in-place update, axpy's ``y``), with its
 ``<name>_golden`` from the reference executor (dfg/execute.py). Inputs and goldens are
 ``const``; main.c (lower/c.py) reads the arrays by name.
@@ -89,7 +90,7 @@ def arrays(point: DesignPoint, seed: int = 0, kernel: str | None = None,
     try:
         spec = kernel_spec(kernel or graph.name, "--kernel" if kernel else "the graph's name")
         if goldens is None:
-            inputs = kernel_inputs(spec, graph, seed)
+            inputs = kernel_inputs(spec, graph, seed, point.data)
             golden = execute(graph, {k: np.copy(v) for k, v in on_graph(graph, inputs).items()})
         else:
             inputs, golden = goldens

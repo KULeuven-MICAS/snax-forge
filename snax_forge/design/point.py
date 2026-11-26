@@ -6,7 +6,8 @@ point". The design step writes it once every check has passed; it is not edited 
 ``design_of`` gives the design's name. Loading runs every check again and requires
 ``streamers`` to be the platform's shell for the graph, so an edited or stale file is caught
 rather than lowered. ``schedule`` (one of ``SCHEDULES``, default ``serial``) is how LOWER orders
-the accelerators; a file without it is serial.
+the accelerators; a file without it is serial. ``data`` (one of ``DATA``, default ``kernel``,
+written only when another) is where data.h's inputs come from.
 """
 
 from __future__ import annotations
@@ -20,14 +21,14 @@ from typing import Any
 from snax_forge.common import JsonFile, check_keys
 from snax_forge.dfg import DfgError, Graph
 
-from .check import SCHEDULES, Design, run_checks
+from .check import DATA, SCHEDULES, Design, run_checks
 from .memory import MemoryPlan
 from .platform import OPTIONS, Platform, StreamerOptions
 from .problems import DesignError, Problem, read_json
 from .streamers import Streamer, resolve
 
 KEYS = ("name", "graph_from", "graph", "platform", "streamers", "memory")
-OPTIONAL = ("schedule",)
+OPTIONAL = ("schedule", "data")
 STEP = re.compile(r"\d+_\w+\.snaxdfg")
 
 
@@ -64,6 +65,7 @@ class DesignPoint(JsonFile):
     streamers: dict[str, Streamer]
     memory: MemoryPlan
     schedule: str = "serial"
+    data: str = "kernel"
 
     @classmethod
     def of(cls, design: Design, name: str) -> DesignPoint:
@@ -78,13 +80,14 @@ class DesignPoint(JsonFile):
             resolve(design.platform, design.graph, design.instances),
             design.memory,
             design.schedule,
+            design.data,
         )
 
     def design(self) -> Design:
         """The Design it holds, for the checks."""
         return Design(
             self.platform, self.graph, graph_path=self.graph_from, memory=self.memory,
-            memory_spec=self.memory.spec, schedule=self.schedule,
+            memory_spec=self.memory.spec, schedule=self.schedule, data=self.data,
         )  # fmt: skip
 
     def check(self) -> None:
@@ -109,7 +112,7 @@ class DesignPoint(JsonFile):
     # --- files ---
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        d = {
             "name": self.name,
             "graph_from": self.graph_from,
             "graph": self.graph.to_dict(),
@@ -118,6 +121,9 @@ class DesignPoint(JsonFile):
             "memory": self.memory.to_dict(),
             "schedule": self.schedule,
         }
+        if self.data != DATA[0]:  # a file with the default stays as it was
+            d["data"] = self.data
+        return d
 
     @classmethod
     def from_dict(cls, d: Any) -> DesignPoint:
@@ -139,6 +145,7 @@ class DesignPoint(JsonFile):
             streamers,
             MemoryPlan.from_dict(d["memory"]),
             str(d.get("schedule", SCHEDULES[0])),
+            str(d.get("data", DATA[0])),
         )
         point.check()
         return point

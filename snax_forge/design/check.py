@@ -71,6 +71,9 @@ STAGES: dict[str, tuple[str, ...]] = {
 SCHEDULES = ("serial", "pipeline", "pipeline_compute", "sequential")
 # The schedules that run the accelerators one after another; the others are pipelined
 IN_SERIES = ("serial", "sequential")
+# The design point's ``data``: the kernel's own ``make_inputs``, or every input uniform
+# over its dtype
+DATA = ("kernel", "full")
 # Component names besides the shell and the accelerators: the DMA's (lower/derive.py).
 FIXED = ("dma",)
 # snRuntime's top of L1 (snax-gvsoc sw/snRuntime/src/start.S): a stack of
@@ -93,6 +96,7 @@ class Design:
     memory_spec: MemorySpec | None = field(default_factory=MemorySpec)
     memory: MemoryPlan | None = None  # made by the memory.pin check, or given (a design point)
     schedule: str = "serial"  # one of SCHEDULES, checked by design.schedule
+    data: str = "kernel"  # one of DATA, checked by design.data
 
     def context(self) -> MemoryContext:
         return MemoryContext(self.graph, self.platform)
@@ -134,17 +138,20 @@ def load(
     applied when they are given. The memory spec starts from ``memory_path``
     (a memory working copy) or the default passes, with ``memory_sets``
     applied; the plan itself is made by the memory checks. ``design_sets`` set the
-    design point's own fields (``schedule``), checked by design.schedule.
+    design point's own fields (``schedule``, ``data``), checked by design.schedule and
+    design.data.
     """
     problems: list[Problem] = []
-    schedule = "serial"
+    schedule, data = "serial", DATA[0]
     for path, value in design_sets:
         if path == "schedule":
             schedule = value
+        elif path == "data":
+            data = value
         else:
             problems.append(Problem("design.schedule", f"design.{path}",
-                                    "no such field; the design point's own field is schedule",
-                                    f"--set design.schedule={SCHEDULES[0]}"))  # fmt: skip
+                                    "no such field; the design point's own fields are schedule "
+                                    "and data", f"--set design.schedule={SCHEDULES[0]}"))  # fmt: skip
     platform = None
     try:
         platform = Platform.load(platform_path).with_changes(sets)
@@ -161,7 +168,8 @@ def load(
         spec = start.with_changes(memory_sets)
     except DesignError as e:
         problems += e.problems
-    return Design(platform, graph, problems, str(graph_path), memory_spec=spec, schedule=schedule)
+    return Design(platform, graph, problems, str(graph_path), memory_spec=spec, schedule=schedule,
+                  data=data)  # fmt: skip
 
 
 NOTES: dict[str, Check] = {}
@@ -254,6 +262,14 @@ def _design_schedule(design: Design) -> Iterable[Problem]:
         yield Problem("design.schedule", "design.schedule",
                       f"{design.schedule!r} is no schedule; give one of {', '.join(SCHEDULES)}",
                       f"--set design.schedule={SCHEDULES[0]}")  # fmt: skip
+
+
+def _design_data(design: Design) -> Iterable[Problem]:
+    """The data is one of ``DATA``."""
+    if design.data not in DATA:
+        yield Problem("design.data", "design.data",
+                      f"{design.data!r} is no data choice; give one of {', '.join(DATA)}",
+                      f"--set design.data={DATA[0]}")  # fmt: skip
 
 
 def _platform_l2(design: Design) -> Iterable[Problem]:
@@ -1241,6 +1257,7 @@ for _code, _stage, _fn in (
     ("platform.l2", "platform", _platform_l2),
     ("platform.banks", "platform", _platform_banks),
     ("design.schedule", "platform", _design_schedule),
+    ("design.data", "platform", _design_data),
     ("graph.load", "graph", _graph_load),
     ("graph.symbols", "graph", _graph_symbols),
     ("graph.unbound", "graph", _graph_unbound),

@@ -43,6 +43,38 @@ def test_the_golden_is_the_kernels_own_reference(tmp_path, design):
             assert a.role == "input" and list(a.values[: a.elements]) == v.tolist()
 
 
+@pytest.mark.parametrize("design", list(GRAPHS))
+def test_full_range_data_spans_the_dtype_and_keeps_the_golden_the_kernels(tmp_path, design):
+    """design.data=full: each input drawn over its whole dtype, the golden still the
+    kernel's own reference on those inputs; the default keeps make_inputs' values."""
+    p = load(tmp_path, design)
+    full = replace(p, data="full")
+    spec = kernel_spec(design, "test")
+    ins = kernel_inputs(spec, p.graph, 0, "full")
+    assert ins.keys() == kernel_inputs(spec, p.graph, 0).keys()
+    for c, v in ins.items():
+        assert v.shape == kernel_inputs(spec, p.graph, 0)[c].shape
+        assert np.abs(v.astype(np.float64)).max() > 2**60, c  # int64: far past make_inputs'
+    ref = {k: np.copy(v) for k, v in ins.items()}
+    spec.reference(**ref)
+    got = {a.name: a for a in arrays(full)}
+    for c in spec.inout:
+        g = got[f"{c}_golden"]
+        assert np.array_equal(np.array(g.values[: g.elements]), ref[c].reshape(-1)), c
+    for c, v in ins.items():
+        if c not in spec.inout:
+            assert list(got[c].values[: got[c].elements]) == v.tolist()
+    assert "data" not in p.to_dict() and full.to_dict()["data"] == "full"
+
+
+def test_full_range_data_refuses_another_choice(tmp_path):
+    from snax_forge.dfg.reference import KernelError
+
+    p = load(tmp_path, "vecadd")
+    with pytest.raises(KernelError, match="neither kernel nor full"):
+        kernel_inputs(kernel_spec("vecadd", "test"), p.graph, 0, "wide")
+
+
 def test_literals():
     assert literal(-(2**63), "int64_t") == "(-INT64_C(9223372036854775807) - 1)"
     assert literal(2**40, "int64_t") == "INT64_C(1099511627776)"

@@ -87,6 +87,12 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 - **Why:** the check against the executor stays exact and DaCe's CPU reference is not needed; the check against NumPy is a tolerance.
 - **Where:** `dfg/execute.py`.
 
+### D199 — Full-range data, by choice
+
+- **Decided:** `--set design.data=full` draws every input of data.h uniform over its integer dtype, both ends included, at the shapes the kernel's `make_inputs` gives, from the flow's seed; the default `kernel` keeps `make_inputs`' own small values. The design point holds it (written only when `full`), so the flow, `forge` and the bundles agree. Sums and products wrap as NumPy's (D143), on the reference, SNAX-GVSoC and the RTL alike.
+- **Why:** gate-level energy depends on the data, and the cost tables were measured on full-range random inputs; a default left as it was keeps every fixture and bundle byte for byte.
+- **Where:** `dfg/reference.py` (`full_range`); CONTRACTS, "Memory plan and design point".
+
 ## BRMs and blocks
 
 ### D68 · D70 · D129 — A BRM is a hand-written JSON file
