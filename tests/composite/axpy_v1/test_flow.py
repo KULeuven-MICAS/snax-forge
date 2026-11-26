@@ -36,7 +36,7 @@ def worked(monkeypatch):
     """The kernel's inputs as the worked example's (alpha 3)."""
     from snax_forge.dfg import reference
 
-    def inputs(spec, graph, seed):
+    def inputs(spec, graph, seed, data="kernel"):
         return {"alpha": np.int32(3), "x": np.array(X, np.int32), "y": np.array(Y, np.int32)}
 
     monkeypatch.setattr(reference, "kernel_inputs", inputs)

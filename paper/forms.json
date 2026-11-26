@@ -1,0 +1,29 @@
+{
+  "name": "forms",
+  "about": "Each tier A kernel's forms at int8, 64 x 64, W = 8: a tree from a shared base, branches by technique",
+  "platform": "platforms/snax_forge.json",
+  "sets": ["design.data=full"],
+  "points": [
+    {"id": "mvt_dma_copy", "kernel": "mvt", "branch": "transposed by DMA", "label": "DMA copies A^T", "recipe": "recipes/mvt/mvt_v4_1_1.json", "sets": ["design.schedule=sequential"]},
+    {"id": "mvt_column", "kernel": "mvt", "branch": "column form", "label": "column form", "recipe": "recipes/mvt/mvt_v5.json", "sets": ["design.schedule=sequential"]},
+    {"id": "mvt_column_pipeline", "kernel": "mvt", "branch": "column form", "label": "+ pipeline", "recipe": "recipes/mvt/mvt_v5.json", "sets": ["design.schedule=pipeline"]},
+    {"id": "mvt_column_chain", "kernel": "mvt", "branch": "column form", "label": "chained, not seeded", "recipe": "recipes/mvt/mvt_v5_2.json", "sets": ["design.schedule=sequential"]},
+    {"id": "mvt_read_once", "kernel": "mvt", "branch": "read once", "label": "A read once", "recipe": "recipes/mvt/mvt_v6.json", "sets": []},
+    {"id": "bicg_two_pass", "kernel": "bicg", "branch": "two passes", "label": "two passes", "recipe": "recipes/bicg/bicg_v2_1.json", "sets": ["design.schedule=sequential"]},
+    {"id": "bicg_two_pass_pipeline", "kernel": "bicg", "branch": "two passes", "label": "+ pipeline", "recipe": "recipes/bicg/bicg_v2_1.json", "sets": ["design.schedule=pipeline"]},
+    {"id": "bicg_read_once", "kernel": "bicg", "branch": "read once", "label": "A read once", "recipe": "recipes/bicg/bicg_v4.json", "sets": ["W=8", "R=8"]},
+    {"id": "atax_dma_copy", "kernel": "atax", "branch": "transposed by DMA", "label": "DMA copies A^T", "recipe": "recipes/atax/atax_v1_2.json", "sets": ["design.schedule=sequential"]},
+    {"id": "atax_dma_copy_shared_movers", "kernel": "atax", "branch": "transposed by DMA", "label": "+ shared movers", "recipe": "recipes/atax/atax_v1_2_1.json", "sets": ["design.schedule=sequential"]},
+    {"id": "atax_column", "kernel": "atax", "branch": "column form", "label": "column form", "recipe": "recipes/atax/atax_v2_1.json", "sets": []},
+    {"id": "atax_column_shared_movers", "kernel": "atax", "branch": "column form", "label": "+ shared movers", "recipe": "recipes/atax/atax_v2_1_1.json", "sets": []},
+    {"id": "atax_t_linked", "kernel": "atax", "branch": "one group", "label": "t linked", "recipe": "recipes/atax/atax_v3.json", "sets": []},
+    {"id": "atax_read_once", "kernel": "atax", "branch": "one group", "label": "A read once", "recipe": "recipes/atax/atax_v4.json", "sets": []},
+    {"id": "gesummv_literal", "kernel": "gesummv", "branch": "literal", "label": "literal", "recipe": "recipes/gesummv/gesummv_v1_1.json", "sets": []},
+    {"id": "gesummv_literal_shared_movers", "kernel": "gesummv", "branch": "literal", "label": "+ shared movers", "recipe": "recipes/gesummv/gesummv_v1_1_1.json", "sets": []},
+    {"id": "gesummv_factor_out", "kernel": "gesummv", "branch": "factor_out", "label": "factor_out", "recipe": "recipes/gesummv/gesummv_v2_1.json", "sets": []},
+    {"id": "gesummv_factor_out_pipeline", "kernel": "gesummv", "branch": "factor_out", "label": "+ pipeline", "recipe": "recipes/gesummv/gesummv_v2_1.json", "sets": ["design.schedule=pipeline"]},
+    {"id": "gesummv_factor_out_shared_engine", "kernel": "gesummv", "branch": "factor_out", "label": "+ shared engine", "recipe": "recipes/gesummv/gesummv_v2_1_1.json", "sets": []},
+    {"id": "gesummv_factor_out_shared_movers", "kernel": "gesummv", "branch": "factor_out", "label": "+ shared movers", "recipe": "recipes/gesummv/gesummv_v2_1_2.json", "sets": []},
+    {"id": "gesummv_x_read_once", "kernel": "gesummv", "branch": "read once", "label": "x read once", "recipe": "recipes/gesummv/gesummv_v3.json", "sets": []}
+  ]
+}

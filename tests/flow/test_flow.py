@@ -738,7 +738,7 @@ def test_relu_on_one_stream_on_snax_gvsoc(tmp_path, monkeypatch):
     JOBS = 2 firings, each beat 2 channels (4 int32 in 2 words) on the reader and the writer."""
     from snax_forge.dfg import reference
 
-    def inputs(spec, graph, seed):
+    def inputs(spec, graph, seed, data="kernel"):
         return {"A": np.array(RELU_A, np.int32), "B": np.zeros(8, np.int32)}
 
     monkeypatch.setattr(reference, "kernel_inputs", inputs)

@@ -209,6 +209,29 @@ def test_a_platform_value_the_hjson_cannot_express(tmp_path, sets, text):
     assert text in _refused(tmp_path, "gen.platform", p)
 
 
+def test_the_design_checks_limits_are_not_the_cluster_files(tmp_path):
+    """l1.max_xbar_inputs and l1.warn_xbar_inputs hold the design check only: raised by --set,
+    the cluster file is written as on the default platform."""
+    p = Platform.load(SNAX_FORGE).with_changes(
+        [("l1.max_xbar_inputs", 256), ("l1.warn_xbar_inputs", 128)]
+    )
+    generate(
+        point(tmp_path / "raised", platform=p),
+        tmp_path / "raised" / "out",
+        root=tmp_path / "raised",
+    )
+    generate(point(tmp_path / "plain"), tmp_path / "plain" / "out", root=tmp_path / "plain")
+    written = sorted(
+        f.relative_to(tmp_path / "raised" / "out")
+        for f in (tmp_path / "raised" / "out").rglob("*.hjson")
+    )
+    assert written
+    for f in written:
+        assert (tmp_path / "raised" / "out" / f).read_text() == (
+            tmp_path / "plain" / "out" / f
+        ).read_text()
+
+
 def _instance(edit=None, params=None, name="simd", impl=IMPL) -> Instance:
     """An instance (simd's by default), its BRM dict edited (no resolve: the
     datapath adapter's checks only)."""

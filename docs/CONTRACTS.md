@@ -341,7 +341,7 @@ The SNAX cluster around the accelerators (D84): a file in `platforms/` that neve
 | `rows` | words per bank | 512 | ≥ 1 |
 | `base_addr` | the first L1 byte | 0 | |
 | `wide_bits` | the widest port (the DMA's) | 512 | a power-of-two multiple of `width_bits` |
-| `max_xbar_inputs` | the most crossbar inputs, as SNAX-GVSoC's crossbar asserts (D85) | 128 | ≥ 1 |
+| `max_xbar_inputs` | the most crossbar inputs: 128 as checked against SNAX's crossbar RTL, up to SNAX-GVSoC's 256 by `--set` (D85) | 128 | 1 to 256 |
 | `warn_xbar_inputs` | above it the note `design.xbar_inputs`: the cost is extrapolated beyond the tables | 64 | 1 to `max_xbar_inputs` |
 
 `L2Config`:
@@ -399,7 +399,8 @@ The `platform` and `graph` stages run independently, `connect` when both passed,
 | `platform.streamer` | a streamer value below 1, spatial bounds not a non-empty list of ints ≥ 1, a `num_ch` not an int ≥ 1 |
 | `platform.l2` | L2 and L1 disagree on the beat or the word |
 | `platform.banks` | with an L2, `n_banks` not a multiple of `wide_bits / width_bits` |
-| `design.schedule` | a schedule other than `serial`, `pipeline`, `pipeline_compute` and `sequential` (the message names them), or a `--set design.` path other than `schedule`; checked in the `platform` stage |
+| `design.schedule` | a schedule other than `serial`, `pipeline`, `pipeline_compute` and `sequential` (the message names them), or a `--set design.` path other than `schedule` and `data`; checked in the `platform` stage |
+| `design.data` | a data choice other than `kernel` and `full` (D199); checked in the `platform` stage |
 | `graph.load` | the graph does not load (section 2) |
 | `graph.symbols` | a symbol still null: bind it in the recipe |
 | `graph.unbound` | work outside every accelerated node, or no accelerated node: the program drives accelerators only |
@@ -469,6 +470,7 @@ A note is registered (`register_note(code, fn)`) and runs once the checks passed
 | `streamers` | the resolved shell, `<instance>_<port>` → `instance`, `port`, `write`, `n_ports`, `spatial_bounds`, `temporal_dims`, `dtype`, `num_slc`, `num_ch`, `d_out` (1 unless packed), `d_in` (1 unless sliced), `fifo_depth` |
 | `memory` | the plan: `passes`, `changes`, `layouts` (container → memory → layout) |
 | `schedule` | how LOWER orders the accelerators (D179, section 8): `serial` (the default; a file without the field), `pipeline`, `pipeline_compute` or `sequential` (D183), from `--set design.schedule=` |
+| `data` | where data.h's inputs come from (D199): `kernel`, the kernel's `make_inputs` (the default; a file without the field, and the field is written only when it is not), or `full`, each input uniform over its dtype; from `--set design.data=` |
 
 
 ## 8. Task list
@@ -593,7 +595,7 @@ streamer $k$ at $[b_k, b_k + s_k)$, its own at $[b_k + s_k, b_{k+1})$, and $b_K 
 
 ### Checks
 
-The streamer file and `accelerator.json` have snax-forge's schemas (`gen/schema/`, JSON Schema 2020-12); the cluster file validates against snax_cluster's. `gen.platform`, `gen.source` and `gen.slot` refuse a platform the cluster file cannot express, one without a source, and a source without exactly one slot.
+The streamer file and `accelerator.json` have snax-forge's schemas (`gen/schema/`, JSON Schema 2020-12); the cluster file validates against snax_cluster's. `gen.platform`, `gen.source` and `gen.slot` refuse a platform the cluster file cannot express (the design check's limits `l1.max_xbar_inputs` and `l1.warn_xbar_inputs` aside, which are not in it), one without a source, and a source without exactly one slot.
 
 <!-- snippet: snax_forge/gen/schema/accelerator.schema.json -->
 ```json
