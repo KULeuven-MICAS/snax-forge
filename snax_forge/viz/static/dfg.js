@@ -768,7 +768,7 @@ function costParts(c) {
         h("tbody", {}, parts.map(row),
           h("tr", { class: "total" }, h("th", { scope: "row" }, "total"), h("td", { class: "num" }, c.area_text), h("td", {}), h("td", { class: "num" }, c.energy_text), h("td", {})),
           h("tr", {}, h("th", { scope: "row" }, "the design alone"), h("td", { class: "num" }, c.area_design_text), h("td", {}), h("td", {}), h("td", {})),
-          c.leakage ? h("tr", {}, h("th", { scope: "row" }, h("i", { class: "c-part-key p-leakage" }), "leakage, lumped"), h("td", { class: "num" }, c.leakage.power_text), h("td", {}), h("td", { class: "num" }, c.leakage.energy_text), h("td", {})) : null)))))];
+          c.leakage ? h("tr", {}, h("th", { scope: "row" }, h("i", { class: "c-part-key p-leakage" }), "leakage, lumped"), h("td", { class: "num" }, c.leakage.power_text), h("td", {}), h("td", { class: "num" }, c.leakage.energy_text), h("td", {})) : null))))];
 }
 
 /** Compare's cost bars (api.py's compare_cost_bars): per area and energy, the two steps' bars one
