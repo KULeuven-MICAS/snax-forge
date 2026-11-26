@@ -28,7 +28,7 @@ Without `--run`, a row keeps its run columns from the CSV while its recipe and s
 | `set`, `id`, `kernel`, `branch`, `label`, `row`, `layout`, `W`, `banks`, `schedule`, `recipe`, `sets` | the set |
 | `est_cycles`, `est_accelerator_cycles`, `est_copy_cycles`, `est_bank_bound`, `xbar_inputs` | the ideal estimate (CONTRACTS, "Estimate"); `est_bank_bound` the largest group's fewest cycles of L1 time; `xbar_inputs` the TCDM crossbar's inputs (streamer channels, cores and AXI) |
 | `static_<part>_nj`, `static_nj`, `area_<part>_um2`, `area_um2`, `area_design_um2`, `leak_uw`, `static_leak_nj` | the cost model's six parts (datapath, control, streamers, crossbar, memory, DMA) and, in area only, the core and the rest of the cluster (CONTRACTS, "Cost model"); `area_um2` all of them, `area_design_um2` the datapath, control, streamers and crossbar; the six parts' leakage power and its energy over `est_cycles` |
-| `cycles`, `dynamic_<part>_nj`, `dynamic_nj`, `leak_design_nj`, `leak_core_nj`, `leak_rest_nj`, `idle_nj`, `passed` | with `--run`: the program's window, the energy run's dynamic totals by part and its background lines over the windows (CONTRACTS, "The energy run") |
+| `cycles`, `dynamic_<part>_nj`, `dynamic_nj`, `leak_design_nj`, `leak_core_nj`, `leak_rest_nj`, `idle_nj`, `passed` | with `--run`: the program's window, the energy run's dynamic totals by part, and the background lines (the leakage of the design, the core and the rest, and the idle floor, at the estimate's rates) over the program window, `cycles`; the energy run itself also counts boot and the result check (CONTRACTS, "The energy run") |
 | `status` | `ok`, or why the point was refused or failed |
 
 ## What the estimate says

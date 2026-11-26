@@ -11,7 +11,8 @@ dynamic energy by part (CONTRACTS, "The energy run"). The rows go to ``paper/dat
 in the set's order (with ``--only``, those points' rows replaced in the file as it is); a point
 that fails keeps its row with the reason in ``status``, and the exit code is 1 if a point of
 this call failed. Without ``--run`` a row keeps its run columns from the file while its recipe
-and sets are unchanged.
+and sets are unchanged. The background lines (the leakage of the design, the core and the rest,
+and the idle floor) are taken over the program window, the run's ``cycles``.
 """
 
 from __future__ import annotations
@@ -37,7 +38,7 @@ from snax_forge.dfg.import_sdfg import import_kernel
 from snax_forge.estimate import estimate
 from snax_forge.estimate.cost import FIXED, PARTS
 from snax_forge.flow.__main__ import setting
-from snax_forge.flow.energy import BACKGROUND
+from snax_forge.flow.energy import BACKGROUND, background_of
 from snax_forge.flow.run import split_sets
 from snax_forge.sandbox import Recipe, SandboxError, apply_recipe
 
@@ -96,14 +97,15 @@ def static_row(point: Point, platform: Path) -> dict[str, Any]:
             raise DesignError(problems, f"{point.id}: design check")
         dp = DesignPoint.of(design, recipe.name)
         counted = xbar_inputs(design)
-    est = estimate(dp.graph, dp.platform, schedule=dp.schedule).to_dict()
-    cost = est["cost"]
+    found = estimate(dp.graph, dp.platform, schedule=dp.schedule)
+    est, cost = found.to_dict(), found.to_dict()["cost"]
     row = {"est_cycles": est["total_cycles"], "est_accelerator_cycles": est["accelerator_cycles"],
            "est_copy_cycles": est["copy_cycles"], "static_nj": cost["energy"],
            "est_bank_bound": max((g["bank_bound"] or 0 for g in est["groups"]), default=0),
            "area_um2": cost["area"], "area_design_um2": cost["area_design"],
            "leak_uw": cost["leakage"]["power"], "static_leak_nj": cost["leakage"]["energy"],
-           "xbar_inputs": sum(counted) if counted else 0}  # fmt: skip
+           "xbar_inputs": sum(counted) if counted else 0,
+           "_background": background_of(found)}  # fmt: skip
     for p in PARTS:
         row[f"static_{p}_nj"] = cost["parts"][p]["energy"]
         row[f"area_{p}_um2"] = cost["parts"][p]["area"]
@@ -129,8 +131,6 @@ def run_row(point: Point, platform: Path) -> dict[str, Any]:
            "dynamic_nj": sum(energy["total"][p] for p in PARTS)}  # fmt: skip
     for p in PARTS:
         row[f"dynamic_{p}_nj"] = energy["total"][p]
-    for b in BACKGROUND:
-        row[f"{b}_nj"] = energy.get("background_total", {}).get(b, "")
     return row
 
 
@@ -158,7 +158,7 @@ def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
     """The rows, numbers rounded so a rerun with the same numbers gives the same file."""
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=COLUMNS, lineterminator="\n")
+        w = csv.DictWriter(f, fieldnames=COLUMNS, lineterminator="\n", extrasaction="ignore")
         w.writeheader()
         for r in rows:
             w.writerow({k: round(v, 4) if isinstance(v, float) else v for k, v in r.items()})
@@ -191,6 +191,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.only and old:  # the other points' rows stay as they were
         new = {r["id"]: r for r in rows}
         rows = [new.pop(r["id"], r) for r in old] + list(new.values())
+    for r in rows:  # the background over the program window, the cycles the row counts
+        if r.get("_background") is not None and r.get("cycles", "") != "":
+            r |= {f"{b}_nj": v for b, v in r["_background"].over(int(r["cycles"])).items()}
     write_csv(out, rows)
     bad = [r for r in rows if r.get("status") != "ok"]
     shown = out.relative_to(ROOT) if out.is_relative_to(ROOT) else out
