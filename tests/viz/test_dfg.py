@@ -251,13 +251,11 @@ def test_compare_gives_two_columns_when_the_groups_differ():
     # 24 + 9 and 16 + 1 read-only and write-only inputs priced as such
     bars = c["cost_bars"]
     assert [b["label"] for b in bars["area"]] == ["5 bind", "6 link"]
-    assert [b["total_text"] for b in bars["area"]] == ["739 000 µm²", "626 000 µm²"]
+    assert [b["total_text"] for b in bars["area"]] == ["813 000 µm²", "699 000 µm²"]
     assert sum(x["width"] for x in bars["area"][0]["segments"]) == pytest.approx(1.0)
-    assert sum(x["width"] for x in bars["area"][1]["segments"]) == pytest.approx(
-        626283.5 / 739652.6, rel=1e-3
-    )
+    assert sum(x["width"] for x in bars["area"][1]["segments"]) == pytest.approx(0.8604, rel=1e-3)
     assert _rows(rows, "Cost estimate (first-order) on nangate45") == {
-        "area": ("739 000 µm²", "626 000 µm²", True),
+        "area": ("1 130 000 µm²", "1 020 000 µm²", True),
         "area without the banks": ("307 000 µm²", "194 000 µm²", True),
         "energy per run": ("59.128 nJ", "59.031 nJ", True),
         "datapath": ("61 000 µm² · 25.951 nJ", "61 000 µm² · 25.951 nJ", False),
@@ -265,6 +263,7 @@ def test_compare_gives_two_columns_when_the_groups_differ():
         "streamers": ("132 000 µm² · 11.568 nJ", "68 000 µm² · 11.523 nJ", True),
         "crossbar": ("113 000 µm² · 7.562 nJ", "63 500 µm² · 7.535 nJ", True),
         "memory (banks)": ("432 000 µm² · 13.952 nJ", "432 000 µm² · 13.874 nJ", True),
+        "DMA": ("73 700 µm² · 0.000 nJ", "73 700 µm² · 0.000 nJ", False),
         "L1 accesses": ("mac: 4104 words, 21.464 nJ; sum: 9 words, 0.050 nJ",
                         "dot: 4097 words, 21.409 nJ", True),
         "not characterized": ("none", "none", False)}  # fmt: skip

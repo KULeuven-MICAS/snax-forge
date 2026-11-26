@@ -5,7 +5,9 @@
 What a mapping buys before any run, on ideal streams (no bank conflicts, no streamer fill, no
 DMA, no core control): per group its cycles, their split and its register bits (cycles.py,
 bits.py), per accelerator its streamer set and CSRs (accelerators.py), the data side (data.py)
-and, on a technology, the cost (cost.py; ``tech=None`` leaves it out). The work no unit runs is
+and, on a technology, the cost (cost.py; ``tech=None`` leaves it out): the dynamic energy in
+``PARTS``, the cluster's ``FIXED`` parts in area, every part's leakage (``leakage``, apart from
+the energy). The work no unit runs is
 ``unmapped_iterations`` at ``UNMAPPED_CYCLES_PER_ITERATION`` cycles each, an assumption held in
 this one constant so a measured value can replace it; a copy (data_transpose's) at the DMA's
 measured rate (copies.py); ``total_cycles`` adds both to the accelerator's. Under a pipelined
@@ -31,6 +33,7 @@ from .accelerators import AcceleratorEstimate, StreamerEstimate, accelerators
 from .bits import ctrl_bits, ctrl_registers
 from .copies import DMA_CYCLES_PER_BURST, CopyEstimate, copies
 from .cost import (
+    FIXED,
     PARTS,
     BlockCost,
     GroupCost,
@@ -42,6 +45,7 @@ from .cost import (
     XbarCost,
     group_cost,
     l1_cost,
+    leakage_nj,
     memory_cost,
     streamer_cost,
     xbar_cost,
@@ -160,8 +164,8 @@ class Estimate(JsonFile):
     @property
     def copy_bursts(self) -> int:
         """The copies' bursts, each one beat: one read and one write on the superbank port, each a
-        crossbar access, and a read and a write on every bank of the superbank; the DMA
-        engine is not costed."""
+        crossbar access, and a read and a write on every bank of the superbank; and the DMA
+        engine's energy per burst (``dma_copy.json``)."""
         return sum(x.bursts for x in self.copies)
 
     @property
@@ -176,33 +180,68 @@ class Estimate(JsonFile):
 
     @property
     def parts(self) -> dict[str, Part] | None:
-        """The design's cost in its five parts (``PARTS``), None with no technology; a part not
-        costed has None in it."""
+        """The design's cost in its six parts (``PARTS``), each with its leakage, None with no
+        technology; a part not costed has None in it. The DMA's area and leakage are the
+        cluster's DMA, its energy the copies' bursts."""
         if self.tech is None:
             return None
         cost = [g.cost for g in self.groups if g.cost]
         blocks = [b for c in cost for b in (*c.units.values(), *c.links.values())]
-        s, x, m = self.streamer_costs, self.xbar, self.memory
+        s, x, m, c = self.streamer_costs, self.xbar, self.memory, self.costs
         return {
-            "datapath": Part(sum(b.total_um2 for b in blocks), sum(b.task_nj for b in blocks)),
-            "control": Part(sum(c.ctrl_um2 for c in cost), sum(c.ctrl_nj for c in cost)),
-            "streamers": Part(sum(y.area_um2 for y in s), sum(y.energy_nj for y in s))
-            if self.costs is not None else Part(None, None),
-            "crossbar": Part(x.area_um2, x.energy_nj) if x else Part(None, None),
-            "memory": Part(m.area_um2, m.energy_nj) if m else Part(None, None),
+            "datapath": Part(sum(b.total_um2 for b in blocks), sum(b.task_nj for b in blocks),
+                             sum(b.leak_uw for b in blocks)),
+            "control": Part(sum(g.ctrl_um2 for g in cost), sum(g.ctrl_nj for g in cost),
+                            sum(g.ctrl_leak_uw for g in cost)),
+            "streamers": Part(sum(y.area_um2 for y in s), sum(y.energy_nj for y in s),
+                              sum(y.leak_uw for y in s))
+            if c is not None else Part(None, None),
+            "crossbar": Part(x.area_um2, x.energy_nj, x.leak_uw) if x else Part(None, None),
+            "memory": Part(m.area_um2, m.energy_nj, m.leak_uw) if m else Part(None, None),
+            "dma": Part(c.fixed["dma"].area_um2, self.copy_bursts * c.dma_burst_pj / 1000,
+                        c.fixed["dma"].leak_uw) if c is not None else Part(None, None),
         }  # fmt: skip
 
     @property
+    def fixed(self) -> dict[str, Part] | None:
+        """The cluster's parts every design pays (``FIXED``: the core, the rest), in area and
+        leakage only, from ``cluster_fixed.json``; None without the tables."""
+        c = self.costs
+        if c is None:
+            return None
+        return {k: Part(c.fixed[k].area_um2, None, c.fixed[k].leak_uw) for k in FIXED}
+
+    @property
     def area(self) -> float | None:
-        """µm²: every part costed added up, the banks included; None with no technology."""
+        """µm²: every part costed added up, the banks and the cluster's fixed parts included;
+        None with no technology."""
         p = self.parts
-        return None if p is None else sum(x.area_um2 or 0.0 for x in p.values())
+        if p is None:
+            return None
+        return sum(x.area_um2 or 0.0 for x in (*p.values(), *(self.fixed or {}).values()))
 
     @property
     def area_design(self) -> float | None:
-        """µm²: ``area`` without the banks, the part every variant shares."""
+        """µm²: ``area`` without what every variant shares, the banks, the DMA and the
+        cluster's fixed parts: the datapath, control, streamers and crossbar."""
         p = self.parts
-        return None if p is None else self.area - (p["memory"].area_um2 or 0.0)
+        if p is None:
+            return None
+        shared = (p["memory"], p["dma"], *(self.fixed or {}).values())
+        return self.area - sum(x.area_um2 or 0.0 for x in shared)
+
+    @property
+    def leakage(self) -> dict[str, float] | None:
+        """The parts' leakage over ``total_cycles`` at the table's clock: ``power`` (µW,
+        the six parts'), ``cycles``, ``clock_ns``, ``energy`` (nJ); apart from ``energy``, which
+        stays dynamic. None when not costed."""
+        p = self.parts
+        if p is None or self.costs is None:
+            return None
+        power = sum(x.leak_uw or 0.0 for x in p.values())
+        clock = load(self.tech or DEFAULT_TECH).clock_ns
+        return {"power": power, "cycles": self.total_cycles, "clock_ns": clock,
+                "energy": leakage_nj(power, self.total_cycles, clock)}  # fmt: skip
 
     @property
     def kernel_energy(self) -> float | None:
@@ -227,9 +266,9 @@ class Estimate(JsonFile):
         if self.tech is None:
             return []
         if self.bank_shape is None:
-            return ["streamers, crossbar and memory: no platform"]
+            return ["streamers, crossbar, memory, DMA and the cluster: no platform"]
         if self.costs is None:
-            return [f"streamers, crossbar and memory: no tables for {self.tech}"]
+            return [f"streamers, crossbar, memory, DMA and the cluster: no tables for {self.tech}"]
         out = []
         if self.xbar_inputs is None:
             out.append("crossbar: its inputs do not resolve")
@@ -317,6 +356,8 @@ class Estimate(JsonFile):
                 "area_design": self.area_design, "energy": self.energy,
                 "kernel_energy": self.kernel_energy, "missing": self.missing,
                 "parts": {k: v.to_dict() for k, v in (self.parts or {}).items()},
+                "fixed": {k: v.to_dict() for k, v in (self.fixed or {}).items()},
+                "leakage": self.leakage,
                 "xbar": None if xbar is None else xbar.to_dict(),
                 "memory": None if memory is None else memory.to_dict(),
                 "not_costed": self.not_costed, "extrapolated": self.extrapolated},

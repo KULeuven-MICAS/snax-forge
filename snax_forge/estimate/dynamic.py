@@ -1,4 +1,4 @@
-"""The dynamic energy (CONTRACTS, "Cost model"): the cost model's five parts with a run's counts
+"""The dynamic energy (CONTRACTS, "Cost model"): the cost model's six parts with a run's counts
 in place of the graph's, each priced at the instance's existing price.
 
     prices_of(graph, est, movers) -> Prices     what one transaction of each instance costs
@@ -14,8 +14,8 @@ its requests over its channels (a shared mover each beat at the channels its use
 its lanes' requests, as the static estimate prices each user at its own), the crossbar serves every request at its mover's kind (a
 reader's read-only, a writer's write-only) and the banks the grants. A copy's beats (the
 DMA's L1 → L1 transfers on the superbank port) cost the crossbar an access each, as a
-reader's and a writer's, and the banks a read or a write on every bank of the superbank; the
-DMA engine nothing. With ``graph_counts`` the parts are the static estimate's
+reader's and a writer's, the banks a read or a write on every bank of the superbank, and the
+DMA engine its energy per burst on each read beat. With ``graph_counts`` the parts are the static estimate's
 (``Estimate.parts``).
 """
 
@@ -58,7 +58,8 @@ class Prices:
     link or packer (``<unit>.<port>``) its producer and energy per load or push, the control
     units' bits (in all, and per group) and e_ctrl, per mover whether it writes, its channels and its energy per beat,
     the crossbar's per request of a read-only and of a write-only input, a bank's per read
-    and per write, the banks a DMA beat reads or writes (a superbank's); per slicer (``<unit>.<port>``) its unit, the count it pops on (``firings``, a
+    and per write, the banks a DMA beat reads or writes (a superbank's), the DMA engine's per
+    burst; per slicer (``<unit>.<port>``) its unit, the count it pops on (``firings``, a
     seed's ``pushes``) and its energy per pop; a fork's ring (its container) the same, loading on its reader's
     firings."""
 
@@ -76,6 +77,7 @@ class Prices:
     group_bits: dict[str, int] = field(default_factory=dict)
     # a shared mover's energy per beat at each of its users' channels, below its own
     narrow: dict[str, dict[int, float]] = field(default_factory=dict)
+    e_dma_pj: float = 0.0  # the DMA engine's per burst of a copy
 
     def to_dict(self) -> dict[str, Any]:
         return {"units": {k: {"span": s, "e_fire": e} for k, (s, e) in self.units.items()},
@@ -89,7 +91,8 @@ class Prices:
                               if k in self.narrow else {})
                            for k, (w, c, e) in self.movers.items()},
                 "e_xbar_ro": self.e_xro_pj, "e_xbar_wo": self.e_xwo_pj, "e_rd": self.e_rd_pj,
-                "e_wr": self.e_wr_pj, "superbank_banks": self.superbank_banks}  # fmt: skip
+                "e_wr": self.e_wr_pj, "superbank_banks": self.superbank_banks,
+                "e_dma_burst": self.e_dma_pj}  # fmt: skip
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> Prices:
@@ -103,7 +106,8 @@ class Prices:
                     for k, v in d.get("slicers", {}).items()},
                    dict(d.get("group_ctrl_bits", {})),
                    {k: {int(n): x for n, x in v["e_beat_at"].items()}
-                    for k, v in d["movers"].items() if "e_beat_at" in v})  # fmt: skip
+                    for k, v in d["movers"].items() if "e_beat_at" in v},
+                   d.get("e_dma_burst", 0.0))  # fmt: skip
 
 
 @dataclass
@@ -209,7 +213,8 @@ def prices_of(graph: Graph, est: Estimate, movers: Sequence[MoverSpec]) -> Price
                        for n in sorted(set(s.user_channels)) if n < s.channels}
               for s in movers if any(n < s.channels for n in s.user_channels)}  # fmt: skip
     return Prices(units, links, bits, load(est.tech or "").e_ctrl_pj, beat, x.e_ro_pj, x.e_wo_pj,
-                  m.e_rd_pj, m.e_wr_pj, est.superbank_banks, slicers, group_bits, narrow)  # fmt: skip
+                  m.e_rd_pj, m.e_wr_pj, est.superbank_banks, slicers, group_bits, narrow,
+                  costs.dma_burst_pj)  # fmt: skip
 
 
 def mover_beats(
@@ -300,6 +305,7 @@ def price(p: Prices, c: Counts) -> Energy:
         "streamers": strm / 1000,
         "crossbar": xbar / 1000,
         "memory": (reads * p.e_rd_pj + writes * p.e_wr_pj) / 1000,
+        "dma": cr * p.e_dma_pj / 1000,  # one burst a read beat
     }
     assert tuple(parts) == PARTS
     return Energy(parts, sum(fires.values()) + sum(loads.values()) + sum(pops.values()), c.busy,

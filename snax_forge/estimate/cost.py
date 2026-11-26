@@ -6,8 +6,10 @@ control unit from a technology's table; ``streamer_cost`` prices one port's stre
 (``StreamerCounts``; a shared mover once, on its first user), ``xbar_cost`` the TCDM crossbar
 (its read-only and write-only inputs from ``xbar_kinds``; the factor form by default,
 ``form="crosspoint"`` the option), ``memory_cost`` the L1 banks, and ``l1_cost`` an
-accelerator's words through the crossbar and the banks (``L1Cost``). ``PARTS`` are the five
-parts a design's cost is shown in and ``shares`` each one's share of the totals. The fields keep
+accelerator's words through the crossbar and the banks (``L1Cost``). ``PARTS`` are the six
+parts a design's cost is shown in (the DMA a copy's bursts), ``FIXED`` the cluster's parts priced
+in area only, ``shares`` each one's share of the totals; every block and part also carries its
+leakage (µW), which ``leakage_nj`` turns into energy over cycles. The fields keep
 full precision; what a reader sees is rounded by ``sig3`` (an area, 3 significant figures) and
 ``dec3`` (an energy, 3 decimal places) and headed by ``heading`` and ``CAVEAT``.
 """
@@ -26,8 +28,9 @@ from snax_forge.char.tables import xbar_cost as _xbar
 
 CAVEAT = ("First-order: aimed at the large costs (about 30 % of synthesis there; small blocks "
           "can be much further off); the control unit's comb area (equal to its flops') is a "
-          "rough estimate; the streamers are priced per beat and the crossbar per access; the csr, "
-          "the cores, the I-cache and the DMA are left out.")  # fmt: skip
+          "rough estimate; the streamers are priced per beat, the crossbar per access and the DMA "
+          "per burst of a copy; the core and the rest of the cluster are priced in area only; "
+          "energy is dynamic, leakage apart.")  # fmt: skip
 
 
 def caveat() -> str:
@@ -37,7 +40,14 @@ def caveat() -> str:
 
 L1_LABEL = "L1 accesses (crossbar and banks)"  # its row in every cost table
 # The parts a design's cost is shown in, in order
-PARTS = ("datapath", "control", "streamers", "crossbar", "memory")
+PARTS = ("datapath", "control", "streamers", "crossbar", "memory", "dma")
+# The cluster's parts every design pays, priced in area (and leakage) only, in order
+FIXED = ("core", "rest")
+
+
+def leakage_nj(power_uw: float, cycles: int, clock_ns: float) -> float:
+    """nJ leaked by ``power_uw`` over ``cycles`` at ``clock_ns`` (µW × ns = fJ)."""
+    return power_uw * cycles * clock_ns * 1e-6
 
 
 def heading(tech: str) -> str:
@@ -88,6 +98,7 @@ class BlockCost:
     flops_um2: float
     e_fire_pj: float
     task_nj: float
+    leak_uw: float = 0.0
 
     @property
     def total_um2(self) -> float:
@@ -96,13 +107,14 @@ class BlockCost:
     def to_dict(self) -> dict[str, Any]:
         return {"datapath": self.datapath, "fires": self.fires, "found": self.found,
                 "area": {"comb": self.comb_um2, "flops": self.flops_um2, "total": self.total_um2},
-                "energy": {"fire": self.e_fire_pj, "task": self.task_nj}}  # fmt: skip
+                "energy": {"fire": self.e_fire_pj, "task": self.task_nj},
+                "leak": self.leak_uw}  # fmt: skip
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> BlockCost:
         a, e = d["area"], d["energy"]
         return cls(d["datapath"], d["fires"], d["found"], a["comb"], a["flops"], e["fire"],
-                   e["task"])  # fmt: skip
+                   e["task"], d.get("leak", 0.0))  # fmt: skip
 
 
 @dataclass
@@ -115,6 +127,7 @@ class GroupCost:
     ctrl_bits: int = 0
     ctrl_flops_um2: float = 0.0
     ctrl_nj: float = 0.0
+    ctrl_leak_uw: float = 0.0
 
     @property
     def ctrl_comb_um2(self) -> float:
@@ -139,6 +152,12 @@ class GroupCost:
             self.ctrl_nj)  # fmt: skip
 
     @property
+    def leak_uw(self) -> float:
+        """µW: units, buffer links and the control unit."""
+        return sum(b.leak_uw for b in (*self.units.values(), *self.links.values())) + (
+            self.ctrl_leak_uw)  # fmt: skip
+
+    @property
     def missing(self) -> list[str]:
         """The units and links not characterized (``found`` None)."""
         return [k for k, b in (*self.units.items(), *self.links.items()) if b.found is None]
@@ -148,8 +167,9 @@ class GroupCost:
                 "links": {k: b.to_dict() for k, b in self.links.items()},
                 "ctrl": {"bits": self.ctrl_bits,
                          "area": {"flops": self.ctrl_flops_um2, "comb": self.ctrl_comb_um2,
-                                  "total": self.ctrl_um2}, "energy": self.ctrl_nj},
-                "area": self.area, "energy": self.energy}  # fmt: skip
+                                  "total": self.ctrl_um2}, "energy": self.ctrl_nj,
+                         "leak": self.ctrl_leak_uw},
+                "area": self.area, "energy": self.energy, "leak": self.leak_uw}  # fmt: skip
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> GroupCost:
@@ -157,7 +177,7 @@ class GroupCost:
         area = c["area"]["flops"] if isinstance(c["area"], dict) else c["area"]  # older: flops
         return cls({k: BlockCost.from_dict(b) for k, b in d["units"].items()},
                    {k: BlockCost.from_dict(b) for k, b in d["links"].items()}, c["bits"],
-                   area, c["energy"])  # fmt: skip
+                   area, c["energy"], c.get("leak", 0.0))  # fmt: skip
 
 
 @dataclass(frozen=True)
@@ -207,10 +227,11 @@ class StreamerCost:
     e_beat_pj: float
     energy_nj: float
     extrapolated: tuple[str, ...] = ()
+    leak_uw: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
         return self.counts.to_dict() | {"area": self.area_um2, "e_beat": self.e_beat_pj,
-                                        "energy": self.energy_nj,
+                                        "energy": self.energy_nj, "leak": self.leak_uw,
                                         "extrapolated": list(self.extrapolated)}  # fmt: skip
 
 
@@ -218,13 +239,14 @@ def streamer_cost(costs: Costs, c: StreamerCounts) -> StreamerCost:
     """A streamer's area and energy per run on ``costs`` (CONTRACTS, "Cost model"); on a shared
     mover its area at the mover's channels, on its first user only, its energy at the port's."""
     got = _streamer(costs, c.depth, c.loops, c.channels)
-    area = got.area_um2
+    area, leak = got.area_um2, got.leak_uw
     extrapolated = got.extrapolated
     if c.mover_channels is not None:
         mover = _streamer(costs, c.depth, c.loops, c.mover_channels)
-        area = mover.area_um2 if c.area else 0.0
+        area, leak = (mover.area_um2, mover.leak_uw) if c.area else (0.0, 0.0)
         extrapolated = tuple(dict.fromkeys((*got.extrapolated, *mover.extrapolated)))
-    return StreamerCost(c, area, got.energy_pj, c.beats * got.energy_pj / 1000, extrapolated)
+    return StreamerCost(c, area, got.energy_pj, c.beats * got.energy_pj / 1000, extrapolated,
+                        leak)  # fmt: skip
 
 
 @dataclass(frozen=True)
@@ -247,6 +269,7 @@ class XbarCost:
     read_only: int = 0
     write_only: int = 0
     form: str = "factor"
+    leak_uw: float = 0.0
 
     @property
     def accesses(self) -> int:
@@ -262,7 +285,7 @@ class XbarCost:
                 "e_access": self.e_access_pj, "e_ro": self.e_ro_pj, "e_wo": self.e_wo_pj,
                 "energy": self.energy_nj, "extrapolated": list(self.extrapolated),
                 "read_only": self.read_only, "write_only": self.write_only,
-                "form": self.form}  # fmt: skip
+                "form": self.form, "leak": self.leak_uw}  # fmt: skip
 
 
 def xbar_kinds(counts: list[StreamerCounts]) -> tuple[int, int]:
@@ -293,7 +316,7 @@ def xbar_cost(costs: Costs, inputs: int, banks: int, reads: int, writes: int, re
     out = tuple(dict.fromkeys(area.extrapolated + price.extrapolated))
     return XbarCost(inputs, banks, reads, writes, area.area_um2, price.energy_pj,
                     price.energy_pj * (1 - g_ro), price.energy_pj * (1 - g_wo), out, read_only,
-                    write_only, form)  # fmt: skip
+                    write_only, form, area.leak_uw)  # fmt: skip
 
 
 @dataclass(frozen=True)
@@ -311,6 +334,7 @@ class MemoryCost:
     e_rd_pj: float
     e_wr_pj: float
     found: bool = True
+    leak_uw: float = 0.0
 
     @property
     def energy_nj(self) -> float:
@@ -320,7 +344,7 @@ class MemoryCost:
         return {"banks": self.n, "depth": self.depth, "width": self.width,
                 "reads": self.reads, "writes": self.writes, "area": self.area_um2,
                 "e_rd": self.e_rd_pj, "e_wr": self.e_wr_pj, "energy": self.energy_nj,
-                "found": self.found}  # fmt: skip
+                "found": self.found, "leak": self.leak_uw}  # fmt: skip
 
 
 def memory_cost(costs: Costs, n: int, depth: int, width: int, reads: int,
@@ -330,7 +354,8 @@ def memory_cost(costs: Costs, n: int, depth: int, width: int, reads: int,
     b = bank(costs, depth, width)
     if b is None:
         return MemoryCost(n, depth, width, reads, writes, 0.0, 0.0, 0.0, False)
-    return MemoryCost(n, depth, width, reads, writes, n * b.area_um2, b.e_rd_pj, b.e_wr_pj)
+    return MemoryCost(n, depth, width, reads, writes, n * b.area_um2, b.e_rd_pj, b.e_wr_pj, True,
+                      n * b.leak_uw)  # fmt: skip
 
 
 @dataclass
@@ -370,14 +395,15 @@ def l1_cost(xbar: XbarCost, memory: MemoryCost, reads: int, writes: int) -> L1Co
 
 @dataclass(frozen=True)
 class Part:
-    """One part of a design's cost (``PARTS``): its area (µm²) and energy per run (nJ), None
-    where not costed."""
+    """One part of a design's cost (``PARTS``, ``FIXED``): its area (µm²), energy per run (nJ)
+    and leakage (µW), None where not costed (a fixed part's energy)."""
 
     area_um2: float | None
     energy_nj: float | None
+    leak_uw: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {"area": self.area_um2, "energy": self.energy_nj}
+        return {"area": self.area_um2, "energy": self.energy_nj, "leak": self.leak_uw}
 
 
 def shares(parts: Mapping[str, Part]) -> dict[str, tuple[float | None, float | None]]:
@@ -401,22 +427,26 @@ def block_cost(table: Table, block: Block, bits: int, cycles: int) -> BlockCost:
     got = None
     if block.datapath is not None:
         got = lookup(table, block.datapath, p, p.get("lanes", 1), p.get("depth"))
-    comb, e_comb = (got.comb_um2, got.e_comb_pj) if got is not None else (0.0, 0.0)
+    comb, e_comb, leak = (got.comb_um2, got.e_comb_pj, got.leak_uw) if got is not None else (
+        0.0, 0.0, 0.0)  # fmt: skip
     loading = got.load_bits if got is not None and got.load_bits is not None else bits
     if block.datapath == "LinkBuffer" and p.get("depth", 1) > 1:  # a ring: one entry a push
         loading = bits / p["depth"]
     e_fire = e_comb + loading * table.e_load_pj
     return BlockCost(block.datapath, block.fires, got.found if got is not None else None, comb,
-                     bits * table.flop_um2, e_fire, block.fires * e_fire / 1000)  # fmt: skip
+                     bits * table.flop_um2, e_fire, block.fires * e_fire / 1000,
+                     leak + bits * table.flop_leak_uw)  # fmt: skip
 
 
 def group_cost(table: Table, units: Mapping[str, Block], links: Mapping[str, Block],
                bits: Mapping[str, int], ctrl_bits: int | None, cycles: int) -> GroupCost:  # fmt: skip
     """A group's cost on ``table``: ``units`` by name and buffer ``links`` by container, their
     ``bits`` the estimate's, ``ctrl_bits`` its control unit's, clocked over the group's own
-    ``cycles`` (CONTRACTS, "Cost model")."""
+    ``cycles`` (CONTRACTS, "Cost model"); the control unit leaks as its area is counted, its flops
+    and as much comb."""
     n = ctrl_bits or 0
     return GroupCost({k: block_cost(table, b, bits.get(k, 0), cycles) for k, b in units.items()},
                      {k: block_cost(table, b, bits.get(k, 0), cycles) for k, b in links.items()},
                      n, n * table.flop_um2,
-                     table.e_ctrl_pj * n * cycles / 1000)  # fmt: skip
+                     table.e_ctrl_pj * n * cycles / 1000,
+                     (1 + CTRL_COMB_PER_FLOP) * n * table.flop_leak_uw)  # fmt: skip

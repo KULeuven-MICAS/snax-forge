@@ -488,12 +488,15 @@ def test_design_md_costs_each_group_beside_its_cycles(dot1):
     # The groups are the datapath and control parts; the total adds the streamers, the
     # crossbar and the banks, and the accelerators' L1 rows are the crossbar's and banks' energy
     parts = {p.part: p for p in e.parts}
-    assert list(parts) == ["datapath", "control", "streamers", "crossbar", "memory"]
+    assert list(parts) == ["datapath", "control", "streamers", "crossbar", "memory", "dma",
+                           "core", "rest"]  # fmt: skip
     assert parts["datapath"].area_um2 + parts["control"].area_um2 == pytest.approx(
         sum(g.area_um2 for g in e.groups))  # fmt: skip
     assert e.area_um2 == pytest.approx(sum(p.area_um2 for p in e.parts))
-    assert e.area_design_um2 == pytest.approx(e.area_um2 - parts["memory"].area_um2)
-    assert e.energy_nj == pytest.approx(sum(p.energy_nj for p in e.parts))
+    shared = ("memory", "dma", "core", "rest")
+    assert e.area_design_um2 == pytest.approx(e.area_um2 - sum(parts[k].area_um2 for k in shared))
+    assert parts["dma"].energy_nj == 0.0 and parts["core"].energy_nj is None
+    assert e.energy_nj == pytest.approx(sum(p.energy_nj or 0.0 for p in e.parts))
     assert sum(p.area_share for p in e.parts) == pytest.approx(1.0)
     (l1,) = e.l1
     assert (l1.accelerator, l1.bits) == ("dot", 64 * l1.words) and l1.words > 0
@@ -513,7 +516,8 @@ def test_design_md_costs_each_group_beside_its_cycles(dot1):
         in text
     )
     assert (f"Design on nangate45: about {sig3(e.area_um2)} µm² ({sig3(e.area_design_um2)} µm² "
-            f"without the banks) and {e.energy_nj:.3f} nJ per run.") in text  # fmt: skip
+            "without the banks, the DMA and the cluster's core and rest) and "
+            f"{e.energy_nj:.3f} nJ per run.") in text  # fmt: skip
     # an area shown to 3 significant figures, an energy to 3 decimals
     assert (
         "| vsum | vsum | TreeAccumulate | measured | 16 | 64 | 1 140 | 339 | 2.635 | 0.042 |"
@@ -528,7 +532,10 @@ def test_design_md_costs_each_group_beside_its_cycles(dot1):
     m = parts["memory"]
     assert (f"| memory | {sig3(m.area_um2)} | {100 * m.area_share:.1f} % | {m.energy_nj:.3f} | "
             f"{100 * m.energy_share:.1f} % |") in text  # fmt: skip
-    assert "Cost by part:" in text and "| without the banks |" in text
+    assert (
+        "Cost by part:" in text
+        and "| the design alone (datapath, control, streamers, crossbar) |" in text
+    )
     assert "Not characterized" not in text and "Not costed" not in text
     assert DesignReport.from_dict(r.to_dict()).to_dict() == r.to_dict()
 

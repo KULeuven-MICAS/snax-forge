@@ -918,7 +918,8 @@ def cost_summary(est: Any, g: Graph | None = None) -> dict[str, Any] | None:
 
 
 PART_LABELS = {"datapath": "datapath", "control": "control", "streamers": "streamers",
-               "crossbar": "crossbar", "memory": "memory (banks)"}  # fmt: skip
+               "crossbar": "crossbar", "memory": "memory (banks)", "dma": "DMA",
+               "core": "core (Snitch, I-cache)", "rest": "rest of the cluster"}  # fmt: skip
 
 
 def cost_parts(est: Any) -> list[dict[str, Any]]:
