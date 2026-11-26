@@ -280,7 +280,7 @@ def test_compare_gives_two_columns_when_the_groups_differ():
     first = compare_view(e[0], e[6], platform)["columns"]["estimate"]
     assert _rows(first, "Cost estimate (first-order) on nangate45")["area"] == (
         "–",
-        "626 000 µm²",
+        "1 020 000 µm²",
         True,
     )
     assert step_view(e[0], "0", platform)["summary"]["cost"] is None  # nothing bound

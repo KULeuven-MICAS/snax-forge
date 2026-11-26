@@ -77,8 +77,8 @@ Nothing is compiled per design point: SNAX-GVSoC's `snax_hjson` target reads the
 
 `--energy` prices what the run did with the static estimate's prices per transaction (D177; CONTRACTS, "Profile and trace", the energy run, and "Cost model"). It reads the run's `summary` lines only, so it adds one run's time.
 
-- Under `serial` and `sequential` it runs the quiet build `sw/forge_quiet.elf`, which marks each section in CSR `0x7C5`; on each mark SNAX-GVSoC writes every SNAX counter, and each window between two marks is priced in the five parts. A pipelined schedule runs `sw/forge.elf` instead (the quiet build would run it serially): one window, `the whole run`, from boot to the end.
-- `report/energy.md` lists every window (index, kind, label as in `gen/obs_marks.json`, cycles) with its five parts in nJ, their sum and the static estimate's, then the counts they were priced on. The numbers are first-order, for trends over a sweep: a refused request costs a granted one's price, and the tables were measured on random data.
+- Under `serial` and `sequential` it runs the quiet build `sw/forge_quiet.elf`, which marks each section in CSR `0x7C5`; on each mark SNAX-GVSoC writes every SNAX counter, and each window between two marks is priced in the six parts. A pipelined schedule runs `sw/forge.elf` instead (the quiet build would run it serially): one window, `the whole run`, from boot to the end.
+- `report/energy.md` lists every window (index, kind, label as in `gen/obs_marks.json`, cycles) with its six parts in nJ, their sum and the static estimate's; then per window its leakage (the design's, the core's, the rest's) and the idle floor beside the dynamic energy, at a 10 ns clock; then the counts they were priced on. The numbers are first-order, for trends over a sweep: a refused request costs a granted one's price, and the tables were measured on random data.
 
 ### The trace levels
 

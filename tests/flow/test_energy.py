@@ -116,6 +116,32 @@ def test_the_energy_run_round_trips_and_reports():
     assert "| 2 | run | run acc | 30 |" in text
     assert "| static |  | one run of the accelerator | 16 |" in text
     assert "| crossbar: requests | 204 | 192 |" in text
+    assert "## Leakage and the idle floor" in text and "| all | 140 | 1.830 |" in text
+
+
+def test_every_window_pays_the_leakage_and_the_idle_floor_beside_its_dynamic_energy():
+    """The background over a window: the design's six parts' leakage (the estimate's), the core's
+    and the rest's, each over its cycles at 10 ns, and the fixed parts' idle floor; the dynamic
+    energy stays as it was. An energy.json written before the background reads with none."""
+    e = run()
+    est = estimate(steps("vecadd_v1")[-1], Platform.load(SNAX_FORGE))
+    b, fixed = e.background, est.costs.fixed
+    assert b.design_uw == pytest.approx(est.leakage["power"]) and b.clock_ns == 10.0
+    assert (b.core_uw, b.rest_uw) == (fixed["core"].leak_uw, fixed["rest"].leak_uw)
+    assert b.idle_pj_cycle == pytest.approx(23.6, abs=0.05)
+    w = e.windows[2]
+    x = e.background_of(w)
+    assert x["leak_design"] == pytest.approx(b.design_uw * w.cycles * 10e-6)
+    assert x["idle"] == pytest.approx(b.idle_pj_cycle * w.cycles / 1000)
+    assert e.background_total["leak_core"] == pytest.approx(b.core_uw * 140 * 10e-6)
+    assert e.energies[2].total == pytest.approx(e.static.total, rel=1e-12)
+    d = e.to_dict()
+    del d["background"], d["background_total"]
+    for v in d["windows"]:
+        del v["background"]
+    old = EnergyRun.from_dict(d)
+    assert old.background is None and old.background_total == {}
+    assert "## Leakage and the idle floor" not in render_energy(old)
 
 
 def test_a_run_without_marks_is_priced_in_one_window_of_the_whole_run():

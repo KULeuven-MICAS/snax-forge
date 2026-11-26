@@ -918,10 +918,14 @@ With `--energy` (D177), the flow runs the program again with only the `summary` 
 | `energy.json` field | Holds |
 |---|---|
 | `tech`, `source` | the table's technology and `SOURCE` |
-| `prices` | per unit its `span` and `e_fire`, per buffer link or packer its producer (`from`) and `e_fire`, the control units' `ctrl_bits` and `e_ctrl`, per mover `write`, `channels`, `e_beat` (a shared mover also `e_beat_at`, its energy per beat at each narrower user's channels), then `e_xbar_ro`, `e_xbar_wo` (the crossbar's per request of a read-only and a write-only input), `e_rd`, `e_wr` (pJ), `superbank_banks` (the banks a DMA beat reads or writes, the estimate's) |
-| `windows` | per window `index`, `mark`, `kind`, `label`, `first`, `last`, `cycles`, `counters`, and `energy`: `parts` (nJ per part), `total`, `counts` (below) |
+| `prices` | per unit its `span` and `e_fire`, per buffer link or packer its producer (`from`) and `e_fire`, the control units' `ctrl_bits` and `e_ctrl`, per mover `write`, `channels`, `e_beat` (a shared mover also `e_beat_at`, its energy per beat at each narrower user's channels), then `e_xbar_ro`, `e_xbar_wo` (the crossbar's per request of a read-only and a write-only input), `e_rd`, `e_wr`, `e_dma_burst` (pJ), `superbank_banks` (the banks a DMA beat reads or writes, the estimate's) |
+| `windows` | per window `index`, `mark`, `kind`, `label`, `first`, `last`, `cycles`, `counters`, `energy`: `parts` (nJ per part), `total`, `counts` (below), and `background` (nJ per line over its cycles) |
 | `total` | nJ per part over every window |
-| `static` | the estimate's five parts for one run of the accelerator, with the counts they were priced on |
+| `static` | the estimate's six parts for one run of the accelerator, with the counts they were priced on |
+| `background` | what a cycle costs whatever the accelerators do (D201): `design_uw` (the six parts' leakage), `core_uw`, `rest_uw`, `idle_pj_cycle` (the core's, the DMA's and the rest's idle floor), `clock_ns` |
+| `background_total` | nJ per line over every window: `leak_design`, `leak_core`, `leak_rest`, `idle` |
+
+The background stands beside the dynamic energy and never enters `total`; `energy.md` shows it per window in its own table. An `energy.json` written before it reads with none.
 
 ## 13. Estimate
 
@@ -1012,7 +1016,8 @@ $$A = \sum_b A_b + \sum_g A_{\mathit{ctrl},g} + \sum_p A_{\mathit{strm}}(D_p, L_
 
 $$E = \sum_b E_b + \sum_g E_{\mathit{ctrl},g} + \sum_p \frac{W_p}{C_p}\thinspace e_{\mathit{beat}}(D_p, L_p, C_p) + e_{\mathit{acc}}(n_{\mathit{banks}}, n_{\mathit{banks}})\thinspace\big(N_{\mathit{rd}}\thinspace(1 - g_{\mathit{ro}}) + N_{\mathit{wr}}\thinspace(1 - g_{\mathit{wo}})\big) + N_{\mathit{rd}}\thinspace e_{\mathit{rd}} + N_{\mathit{wr}}\thinspace e_{\mathit{wr}}$$
 
-- **The five parts** (`PARTS`): datapath, control, streamers, crossbar, memory. The csr, the cores, the I-cache and the DMA are not costed.
+- **The six parts** (`PARTS`, D200): datapath, control, streamers, crossbar, memory, dma. The DMA's area and leakage are the cluster's DMA (`cluster_fixed.json`), its energy the copies' bursts × `e_burst` (D184). **The fixed parts** (`FIXED`): the core (Snitch and I-cache) and the rest of the cluster, in area and leakage only. The csr is not costed.
+- **Leakage** (D201): each part's beside its area, by the same lookup; a block's $P_{\mathit{comb}} + n_{\mathit{bits}}\thinspace P_{\mathit{flop}}$, a control unit's $2\thinspace n_{\mathit{bits}}^{\mathit{ctrl}}\thinspace P_{\mathit{flop}}$, a bank's from `ram_table.csv`. Over C cycles at the table's clock $T_{clk}$ (10 ns, for illustration: it scales with the period), $E_{\mathit{leak}} = P_{\mathit{leak}}\thinspace C\thinspace T_{clk}$. The estimate's `leakage` lumps the six parts' over `total_cycles`; its `energy` stays dynamic.
 - **A copy** (D184) is one beat read and one written on L1's superbank port per burst, on each of its S banks (`superbank_banks`).
 - **By input kind** (D178): a read priced at $e_{\mathit{acc}}(1 - g_{ro})$, a write at $e_{\mathit{acc}}(1 - g_{wo})$; the crosspoint area form is an option (`Estimate.xbar_in("crosspoint")`).
 - **A shared set's movers** (D169) are priced once each, at the mover's channels.
@@ -1028,7 +1033,7 @@ $$E = \sum_b E_b + \sum_g E_{\mathit{ctrl},g} + \sum_p \frac{W_p}{C_p}\thinspace
 | a group's `cost.area`, `cost.energy` | its units', links' and control unit's added up |
 | an accelerator's `cost.streamers` | per port's streamer: its counts (`depth`, `loops`, `channels`, `words`, `beats`), `area`, `e_beat`, `energy`, `extrapolated` |
 | an accelerator's `cost.l1` | its words through the crossbar and banks: `reads`, `writes`, `xbar`, `banks`, `energy` |
-| the estimate's `cost` | `tech`, `source`, `area`, `area_design` (without the banks), `energy`, `kernel_energy` (datapath and control), `missing`, `parts`, `xbar` (`inputs`, `banks`, `accesses`, `reads`, `writes`, `area`, `e_access`, `e_ro`, `e_wo`, `energy`, `read_only`, `write_only`, `form`), `memory` (`banks`, `depth`, `width`, `reads`, `writes`, `area`, `e_rd`, `e_wr`, `energy`, `found`), `not_costed`, `extrapolated` |
+| the estimate's `cost` | `tech`, `source`, `area` (every part and the fixed ones), `area_design` (without the banks, the DMA, the core and the rest), `energy` (the six parts', dynamic), `kernel_energy` (datapath and control), `missing`, `parts` (per part `area`, `energy`, `leak`), `fixed` (the core and the rest: `area`, `leak`), `leakage` (`power` µW, `cycles`, `clock_ns`, `energy` nJ), `xbar` (`inputs`, `banks`, `accesses`, `reads`, `writes`, `area`, `e_access`, `e_ro`, `e_wo`, `energy`, `read_only`, `write_only`, `form`), `memory` (`banks`, `depth`, `width`, `reads`, `writes`, `area`, `e_rd`, `e_wr`, `energy`, `found`), `not_costed`, `extrapolated` |
 | the estimate's `hw_counts` | what HWCOST prices, so `from_dict` rebuilds the cost: `streamers`, `xbar_inputs`, `bank_shape`, `superbank_banks` |
 
 ### What is shown
@@ -1039,7 +1044,7 @@ An area to 3 significant figures (`sig3`) and an energy to 3 decimals (`dec3`), 
 
 The dynamic energy prices what a run did rather than what the graph says (D177, `estimate/dynamic.py`): each window's counts times the static estimate's prices, part by part.
 
-$$E_j = \sum_c \sum_k n_{c,k}(j)\thinspace e_{c,k} = E_{dp}(j) + E_{ctrl}(j) + E_{strm}(j) + E_{xbar}(j) + E_{mem}(j)$$
+$$E_j = \sum_c \sum_k n_{c,k}(j)\thinspace e_{c,k} = E_{dp}(j) + E_{ctrl}(j) + E_{strm}(j) + E_{xbar}(j) + E_{mem}(j) + E_{dma}(j)$$
 
 | Symbol | Meaning | From | Unit |
 |---|---|---|---|
@@ -1058,6 +1063,7 @@ $$E_j = \sum_c \sum_k n_{c,k}(j)\thinspace e_{c,k} = E_{dp}(j) + E_{ctrl}(j) + E
 | $g_{ro}(b)$, $g_{wo}(b)$ | the share a read-only or write-only input saves against a read-write one, at b banks (D178) | `xbar_kinds.json`'s `energy` | — |
 | $e_{rd}$, $e_{wr}$ | a bank's energy per read and per write | `ram_table.csv` | pJ |
 | $rd$, $wr$ | the movers that read and those that write | the cluster | — |
+| $c_{rd}(j)$, $e_{burst}$ | the DMA's read beats inside L1 (one a burst), and the engine's energy per burst | the crossbar's `copies`; `dma_copy.json` | —, pJ |
 
 $$E_{dp}(j) = \sum_u f_u(j)\thinspace S_u\thinspace e_{fire,u} + \sum_{\ell} p_{src(\ell)}(j)\thinspace e_{fire,\ell} + \sum_{s} f_{u(s)}(j)\thinspace e_{fire,s}$$
 
@@ -1068,6 +1074,10 @@ $$E_{strm}(j) = \sum_m \frac{\sum_{i \in I_m} r_i(j)}{C_m}\thinspace e_{beat}(D_
 $$E_{xbar}(j) = e_{acc}(b, b) \Big((1 - g_{ro}) \sum_{m \in rd} \sum_{i \in I_m} r_i(j) + (1 - g_{wo}) \sum_{m \in wr} \sum_{i \in I_m} r_i(j)\Big)$$
 
 $$E_{mem}(j) = e_{rd} \sum_{m \in rd} \sum_{i \in I_m} a_i(j) + e_{wr} \sum_{m \in wr} \sum_{i \in I_m} a_i(j)$$
+
+$$E_{dma}(j) = c_{rd}(j)\thinspace e_{burst}$$
+
+A copy's own L1 accesses add to $E_{xbar}$ and $E_{mem}$ (D184). Beside $E_j$, never in it, each window pays its background (D201): $(P_{\mathit{design}} + P_{\mathit{core}} + P_{\mathit{rest}})\thinspace (\mathit{last} - \mathit{first})\thinspace T_{clk}$ of leakage and $e_{\mathit{idle}}\thinspace(\mathit{last} - \mathit{first})$ of idle floor (23.6 pJ a cycle on nangate45).
 
 A request costs an access whether granted or refused; only a grant reaches a bank; held and idle cycles cost nothing. `graph_counts` puts the graph's counts in this form, so each part equals the static estimate's (`tests/estimate/test_dynamic.py`, to 1e-12).
 
