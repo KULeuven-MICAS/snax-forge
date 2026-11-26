@@ -398,7 +398,8 @@ The `platform` and `graph` stages run independently, `connect` when both passed,
 | `platform.streamer` | a streamer value below 1, spatial bounds not a non-empty list of ints ≥ 1, a `num_ch` not an int ≥ 1 |
 | `platform.l2` | L2 and L1 disagree on the beat or the word |
 | `platform.banks` | with an L2, `n_banks` not a multiple of `wide_bits / width_bits` |
-| `design.schedule` | a schedule other than `serial`, `pipeline`, `pipeline_compute` and `sequential` (the message names them), or a `--set design.` path other than `schedule`; checked in the `platform` stage |
+| `design.schedule` | a schedule other than `serial`, `pipeline`, `pipeline_compute` and `sequential` (the message names them), or a `--set design.` path other than `schedule` and `data`; checked in the `platform` stage |
+| `design.data` | a data choice other than `kernel` and `full` (D199); checked in the `platform` stage |
 | `graph.load` | the graph does not load (section 2) |
 | `graph.symbols` | a symbol still null: bind it in the recipe |
 | `graph.unbound` | work outside every accelerated node, or no accelerated node: the program drives accelerators only |
@@ -468,6 +469,7 @@ A note is registered (`register_note(code, fn)`) and runs once the checks passed
 | `streamers` | the resolved shell, `<instance>_<port>` → `instance`, `port`, `write`, `n_ports`, `spatial_bounds`, `temporal_dims`, `dtype`, `num_slc`, `num_ch`, `d_out` (1 unless packed), `d_in` (1 unless sliced), `fifo_depth` |
 | `memory` | the plan: `passes`, `changes`, `layouts` (container → memory → layout) |
 | `schedule` | how LOWER orders the accelerators (D179, section 8): `serial` (the default; a file without the field), `pipeline`, `pipeline_compute` or `sequential` (D183), from `--set design.schedule=` |
+| `data` | where data.h's inputs come from (D199): `kernel`, the kernel's `make_inputs` (the default; a file without the field, and the field is written only when it is not), or `full`, each input uniform over its dtype; from `--set design.data=` |
 
 
 ## 8. Task list

@@ -7,7 +7,7 @@ Rules (D117):
 - An entry is a choice with a real alternative that someone may want to reverse: direction, ownership, the interfaces between components, the order of work. Implementation details live in the module's docstring and its tests.
 - An entry says what was decided, why, and where the detail lives, in a few short bullets; an edge case only when there is one. A change is written into the entry, not chained after it.
 - Entries merged into one keep all their numbers in its heading, so a cite of any of them still finds it. A number is never changed or reused; the text of a removed entry is in git history.
-- A new decision gets the next free number, under the area it belongs to. Next free number: **D199**.
+- A new decision gets the next free number, under the area it belongs to. Next free number: **D200**.
 
 Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29–D45, D47–D50, D53, D54, D56, D58–D63, D65–D67, D69, D74, D76–D78, D80, D81, D83, D88–D97, D100, D101, D103, D104, D106, D107, D109, D110, D114, D115, D119, D124, D127, D128, D132, D133, D138–D141, D151, D156, D159, D160, D181.
 
@@ -86,6 +86,12 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 - **Decided:** the reference executor runs any `.snaxdfg` in NumPy, accelerated nodes through their BRM's function, a slot's value from its params or its slot connector; every sandbox step and every run is compared with it. Reductions are exact: integers first, a float reduction in the accumulation order its BRM defines.
 - **Why:** the check against the executor stays exact and DaCe's CPU reference is not needed; the check against NumPy is a tolerance.
 - **Where:** `dfg/execute.py`.
+
+### D199 — Full-range data, by choice
+
+- **Decided:** `--set design.data=full` draws every input of data.h uniform over its integer dtype, both ends included, at the shapes the kernel's `make_inputs` gives, from the flow's seed; the default `kernel` keeps `make_inputs`' own small values. The design point holds it (written only when `full`), so the flow, `forge` and the bundles agree. Sums and products wrap as NumPy's (D143), on the reference, SNAX-GVSoC and the RTL alike.
+- **Why:** gate-level energy depends on the data, and the cost tables were measured on full-range random inputs; a default left as it was keeps every fixture and bundle byte for byte.
+- **Where:** `dfg/reference.py` (`full_range`); CONTRACTS, "Memory plan and design point".
 
 ## BRMs and blocks
 

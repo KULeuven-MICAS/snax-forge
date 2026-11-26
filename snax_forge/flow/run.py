@@ -719,7 +719,7 @@ def _from_graph(
     with _timed(times, "gen"):
         try:
             spec = kernel_spec(kernel or point.graph.name, kernel_why)
-            goldens = reference_check(spec, point.graph, o.seed)
+            goldens = reference_check(spec, point.graph, o.seed, point.data)
         except KernelError as e:
             raise FlowError(str(e)) from None
         gen = out / "gen"

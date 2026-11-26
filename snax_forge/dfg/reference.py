@@ -2,7 +2,8 @@
 
 ``kernel_spec`` loads a kernel's spec and ``make_inputs`` its inputs at given sizes;
 ``kernel_inputs`` calls it at every size the graph binds, each array cast to its container's
-dtype (data.h's inputs and the flow's check). A scalar the sandbox baked (``sandbox.baked``)
+dtype (data.h's inputs and the flow's check), or with ``data="full"`` draws each input
+anew, uniform over its dtype, at the shapes ``make_inputs`` gives. A scalar the sandbox baked (``sandbox.baked``)
 takes its baked value: the reference runs at it, and the graph, which has no such container,
 never reads it (``on_graph``). ``mismatches`` is the one comparison of a run with the kernel's
 reference (``execute.against_reference``): ``reference_check``'s (the flow's guard that the
@@ -48,11 +49,14 @@ def make_inputs(spec: Any, seed: int = 0, **sizes: int) -> dict[str, Any]:
     return spec.make_inputs(np.random.default_rng(seed), **sizes)
 
 
-def kernel_inputs(spec: Any, graph: Graph, seed: int) -> dict[str, np.ndarray]:
+def kernel_inputs(
+    spec: Any, graph: Graph, seed: int, data: str = "kernel"
+) -> dict[str, np.ndarray]:
     """The kernel's ``make_inputs`` at every size the graph binds: each bound symbol by its
     lower-case name (``M`` gives ``m=``, ``N`` gives ``n=``); then the arrays' shapes must give
     the graph's values (``spec.bind_symbols``). Each array is cast to its container's dtype
-    (``astype``, wrapping: a recipe's ``dtypes``)."""
+    (``astype``, wrapping: a recipe's ``dtypes``). With ``data="full"`` each array the graph
+    has a container for is then drawn again, uniform over its dtype (``full_range``)."""
     params = inspect.signature(spec.make_inputs).parameters
     kw = {}
     for sym, v in graph.bound_symbols.items():
@@ -83,7 +87,30 @@ def kernel_inputs(spec: Any, graph: Graph, seed: int) -> dict[str, np.ndarray]:
             )
         if str(np.asarray(arr).dtype) != cont.dtype:
             inputs[c] = np.asarray(arr).astype(cont.dtype)
+    if data == "full":
+        return full_range(graph, inputs, seed)
+    if data != "kernel":
+        raise KernelError(f"inputs: data {data!r} is neither kernel nor full")
     return inputs
+
+
+def full_range(graph: Graph, inputs: Mapping[str, Any], seed: int) -> dict[str, np.ndarray]:
+    """Every input the graph has a container for drawn uniform over its integer dtype, both
+    ends included, at its shape, from a generator seeded with ``seed`` in the graph's container
+    order; a baked scalar keeps its value. Products and sums wrap as NumPy's, so the
+    reference, SNAX-GVSoC and the RTL agree on every bit (open item 166)."""
+    rng = np.random.default_rng(seed)
+    out = dict(inputs)
+    for c in graph.containers:
+        if c not in out:
+            continue
+        dt = np.dtype(graph.containers[c].dtype)
+        if dt.kind not in "iu":
+            raise KernelError(f"inputs: full-range data needs an integer dtype; {c} is {dt}")
+        info = np.iinfo(dt)
+        shape = np.shape(out[c])
+        out[c] = rng.integers(info.min, info.max, size=shape, dtype=dt, endpoint=True)
+    return out
 
 
 def mismatches(
@@ -110,13 +137,13 @@ class Goldens(NamedTuple):
     outputs: dict[str, Any]
 
 
-def reference_check(spec: Any, graph: Graph, seed: int) -> Goldens:
+def reference_check(spec: Any, graph: Graph, seed: int, data: str = "kernel") -> Goldens:
     """The reference executor on ``graph`` against the kernel's reference, on the kernel's
     inputs: data.h's goldens are the first, so a graph that computes something else (one
     edited by hand) would pass its own check; a KernelError naming each output that
     differs. The reference runs at the graph's type parameters (``type_params``). The inputs and the executor's outputs, which data.h takes as they are."""
     spec = spec.with_types(graph.type_params, f"{graph.name}.type_params")
-    inputs = kernel_inputs(spec, graph, seed)
+    inputs = kernel_inputs(spec, graph, seed, data)
     pairs = against_reference(spec, inputs, lambda x: execute(graph, on_graph(graph, x)))
     wrong = _differing(pairs)
     if wrong:

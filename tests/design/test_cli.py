@@ -61,6 +61,21 @@ def test_the_schedule_is_set_kept_and_checked(tmp_path, capsys):
     assert "[design.schedule] design.order: no such field" in capsys.readouterr().err
 
 
+def test_the_data_is_set_kept_and_checked(tmp_path, capsys):
+    """--set design.data: kept in design_point.json only when full; another value is a
+    design error that names the choices."""
+    out = tmp_path / "d"
+    assert run(BOUND, "--platform", SMALL16, "--out", out) == 0
+    point = DesignPoint.load(out / "design_point.json")
+    assert point.data == "kernel" and "data" not in point.to_dict()
+    assert run(BOUND, "--platform", SMALL16, "--out", out, "--set", "design.data=full") == 0
+    assert DesignPoint.load(out / "design_point.json").data == "full"
+    capsys.readouterr()
+    assert run(BOUND, "--platform", SMALL16, "--set", "design.data=wide") == 1
+    assert "[design.data] design.data: 'wide' is no data choice; give one of kernel, full" \
+        in capsys.readouterr().err  # fmt: skip
+
+
 @pytest.mark.parametrize("arg", ["l1.n_banks=32", "mem.A.l1.base=0", "platform.l1.n_banks"])
 def test_a_bad_set_argument_exits_2(arg):
     with pytest.raises(SystemExit) as e:
