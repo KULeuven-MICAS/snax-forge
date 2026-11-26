@@ -36,9 +36,9 @@ class Reports:
 
 
 def reports_of(folder: str | Path, out: str | Path | None = None,
-               tech: str | None = DEFAULT_TECH) -> Reports:  # fmt: skip
+               tech: str | None = DEFAULT_TECH, leakage: bool = False) -> Reports:  # fmt: skip
     """Both reports of a flow folder (module doc), not yet written; ``design.md``'s cost on
-    ``tech`` (None: none)."""
+    ``tech`` (None: none), with the parts' leakage beside it when ``leakage``."""
     try:
         rv = api.load_run(folder)
     except RunError as e:
@@ -52,14 +52,14 @@ def reports_of(folder: str | Path, out: str | Path | None = None,
         recipe = Recipe.load(flow / "sandbox" / "recipe.json")
     check = rv.outputs.profile.functional_check or {}
     design = build_design(rv.name, rv.cluster, point, recipe, check.get("kernel", ""),
-                          rv.outputs.elf_symbols, tech)  # fmt: skip
+                          rv.outputs.elf_symbols, tech, leakage)  # fmt: skip
     return Reports(design, build_run(rv), Path(out) if out is not None else flow / "report")
 
 
 def write_reports(folder: str | Path, out: str | Path | None = None,
-                  tech: str | None = DEFAULT_TECH) -> Reports:  # fmt: skip
+                  tech: str | None = DEFAULT_TECH, leakage: bool = False) -> Reports:  # fmt: skip
     """Build and write ``design.md`` and ``run.md``; returns what was written."""
-    r = reports_of(folder, out, tech)
+    r = reports_of(folder, out, tech, leakage)
     r.out.mkdir(parents=True, exist_ok=True)
     (r.out / DESIGN_MD).write_text(render_design(r.design))
     (r.out / RUN_MD).write_text(render_run(r.run))

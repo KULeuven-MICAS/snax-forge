@@ -37,7 +37,7 @@ ESTIMATE = re.compile(
 )
 PROFILE = re.compile(r"total_cycles|(accelerators|streamers)\.[^.]+\.(cycles\.[a-z_]+|firings)")
 TOTAL = re.compile(r"total_cycles|l1_footprint|cost\.(area|area_design|energy|kernel_energy)"
-                   r"|cost\.parts\.[a-z]+\.(area|energy)")  # fmt: skip
+                   r"|cost\.parts\.[a-z]+\.(area|energy|leak)|cost\.leakage\.(power|energy)")  # fmt: skip
 
 
 def flat(x: Any, path: str = "") -> Iterator[tuple[str, int | float]]:

@@ -21,7 +21,7 @@ import numpy as np
 
 from snax_forge.char import DEFAULT_TECH
 from snax_forge.design.check import IN_SERIES
-from snax_forge.estimate.cost import L1_LABEL, PARTS, caveat, dec3, heading, shares, sig3
+from snax_forge.estimate.cost import FIXED, L1_LABEL, PARTS, caveat, dec3, heading, shares, sig3
 from snax_forge.lower.layout import Layout, round_up
 from snax_forge.run import Cluster, Region, padding_of, regions_of
 
@@ -222,8 +222,9 @@ class EstimateTable(Record):
     l1: list[L1Row] = field(default_factory=list)  # per accelerator, its words in L1
     streamers: int = 1  # the streamer sets, one per accelerator
     csrs: int | None = None  # every CSR of the entry; None without a platform
-    parts: list[PartRow] = field(default_factory=list)  # the cost by part
-    area_design_um2: float | None = None  # the area without the banks
+    parts: list[PartRow] = field(default_factory=list)  # the cost by part, the fixed ones last
+    area_design_um2: float | None = None  # the area without the banks, DMA and fixed parts
+    leakage: dict[str, float] | None = None  # with --leakage: power, cycles, clock_ns, energy
     streamer_cost: list[StreamerCostRow] = field(default_factory=list)
     xbar: dict[str, Any] | None = None  # its inputs, banks, accesses, area and energy
     memory: dict[str, Any] | None = None  # its banks, shape, reads, writes, area and energy
@@ -399,10 +400,11 @@ def build_design(
     kernel: str = "",
     elf_symbols: dict[str, Any] | None = None,
     tech: str | None = DEFAULT_TECH,
+    leakage: bool = False,
 ) -> DesignReport:
     """The design report of a flow (``point`` its DesignPoint, ``recipe`` its recipe, or for a
     flow from a bound graph its ``kernel``; ``elf_symbols`` its run.json's; ``tech`` the
-    estimate's technology, None for no cost)."""
+    estimate's technology, None for no cost; ``leakage`` the parts' leakage beside the cost)."""
     from snax_forge.design import note_text, run_checks, run_notes
     from snax_forge.design.streamers import accelerated, streamer_name
 
@@ -480,10 +482,11 @@ def build_design(
     return DesignReport(name, header, components, accels, streamers,
                         _memory_tables(cluster, regions, point),
                         design_notes + _notes(cluster, regions, point, streamers), len(a.units),
-                        estimate_table(point, tech), sets)  # fmt: skip
+                        estimate_table(point, tech, leakage), sets)  # fmt: skip
 
 
-def estimate_table(point: Any, tech: str | None = DEFAULT_TECH) -> EstimateTable:
+def estimate_table(point: Any, tech: str | None = DEFAULT_TECH,
+                   leakage: bool = False) -> EstimateTable:  # fmt: skip
     """The design point's ideal estimate as the report shows it, costed on ``tech``."""
     from snax_forge.estimate import estimate
 
@@ -503,9 +506,10 @@ def estimate_table(point: Any, tech: str | None = DEFAULT_TECH) -> EstimateTable
                             c.ctrl_comb_um2, c.ctrl_flops_um2, None, c.ctrl_nj))  # fmt: skip
     notes = [g.bank_bound_note for g in e.groups if g.bank_bound_note]
     notes += [e.overlap_note] if e.overlap_note else []
-    got = e.parts
+    got = {**e.parts, **(e.fixed or {})} if e.parts else {}
     share = shares(got) if got else {}
-    parts = [PartRow(k, got[k].area_um2, got[k].energy_nj, *share[k]) for k in PARTS] if got else []
+    parts = [PartRow(k, got[k].area_um2, got[k].energy_nj, *share[k])
+             for k in (*PARTS, *FIXED) if k in got]  # fmt: skip
     return EstimateTable(rows, e.accelerator_cycles, e.not_mapped, e.l1_footprint, e.l1_size,
                          e.tech, dict(e.char_source or {}), e.area, e.energy, e.missing, cost,
                          notes, unmapped_cycles=e.unmapped_cycles,
@@ -517,6 +521,7 @@ def estimate_table(point: Any, tech: str | None = DEFAULT_TECH) -> EstimateTable
                                    x.banks_nj) for a, x in e.l1.items()],
                          streamers=e.streamers, csrs=e.csrs, parts=parts,
                          area_design_um2=e.area_design,
+                         leakage=e.leakage if leakage else None,
                          streamer_cost=[StreamerCostRow(
                              c.counts.accelerator, c.counts.name,
                              "write" if c.counts.write else "read", c.counts.depth,
@@ -773,10 +778,18 @@ def render_cost(e: EstimateTable) -> list[str]:
         out += ["", "Cost by part:", "", *table(
             ["Part", "Area (µm²)", "Area share", "Energy (nJ)", "Energy share"],
             [[p.part, sig3(p.area_um2) or "not costed", _share(p.area_share),
-              dec3(p.energy_nj) or "not costed", _share(p.energy_share)] for p in e.parts]
+              dec3(p.energy_nj) or ("area only" if p.part in FIXED else "not costed"),
+              _share(p.energy_share)] for p in e.parts]
             + [["total", sig3(e.area_um2), None, dec3(e.energy_nj), None],
-               ["without the banks", sig3(e.area_design_um2), None, None, None]],
+               ["the design alone (datapath, control, streamers, crossbar)",
+                sig3(e.area_design_um2), None, None, None]],
             {1, 2, 3, 4})]  # fmt: skip
+    if e.leakage is not None:
+        lk = e.leakage
+        out += ["", (f"Leakage, apart from the energy above: the six parts leak "
+                     f"{sig3(lk['power'], ' µW')}, {dec3(lk['energy'], ' nJ')} over "
+                     f"{lk['cycles']} cycles at {lk['clock_ns']:g} ns; with it "
+                     f"{dec3((e.energy_nj or 0.0) + lk['energy'], ' nJ')}.")]  # fmt: skip
     x, m = e.xbar, e.memory
     if x is not None and m is not None:
         out += ["", (f"The crossbar: {x['inputs']} inputs on {x['banks']} banks, "
@@ -787,7 +800,8 @@ def render_cost(e: EstimateTable) -> list[str]:
                      f"at {dec3(m['e_rd'], ' pJ')} and {m['writes']} writes at "
                      f"{dec3(m['e_wr'], ' pJ')}.")]  # fmt: skip
     out += ["", (f"Design on {e.tech}: about {sig3(e.area_um2, ' µm²')} "
-                 f"({sig3(e.area_design_um2, ' µm²')} without the banks) and "
+                 f"({sig3(e.area_design_um2, ' µm²')} without the banks, the DMA and the "
+                 "cluster's core and rest) and "
                  f"{dec3(e.energy_nj, ' nJ')} per run.")]  # fmt: skip
     if e.missing:
         out += ["", (f"Not characterized on {e.tech} (comb counted as 0, flops counted): "

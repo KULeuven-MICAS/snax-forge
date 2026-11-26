@@ -1,4 +1,5 @@
-"""The cost tables: the streamers, the TCDM crossbar and the L1 banks.
+"""The cost tables: the streamers, the TCDM crossbar, the L1 banks, the cluster's fixed parts and
+the DMA engine.
 
     load_costs(tech) -> Costs | None                       snax_forge/char/<tech>/, None without
     streamer_cost(costs, depth, loops, channels) -> Cost   one reader (a writer priced as one)
@@ -6,8 +7,10 @@
     bank(costs, depth, width) -> Bank | None               one SRAM bank, a lookup
     Grid.at(field, **q) -> (value, extrapolated axes)      the rule both interpolated tables use
 
-The four files of ``<tech>/`` are copied from snax-forge-experiments by ``pixi run
-import-costs``, their commit and sha256 in ``<tech>/SOURCE``. The tables, the interpolation and
+The six files of ``<tech>/`` are copied from snax-forge-experiments by ``pixi run
+import-costs``, their commit and sha256 in ``<tech>/SOURCE``. Every table carries leakage
+beside area (``leak_uw``); ``cluster_fixed.json`` gives the core, the DMA and the rest of the
+cluster (``Fixed``), ``dma_copy.json`` the DMA engine's energy per burst. The tables, the interpolation and
 extrapolation rule, the crossbar's two forms (``XBAR_FORMS``, factor the default) and the banks'
 lookup are in CONTRACTS, "Cost model"; char/README.md walks through them.
 """
@@ -26,7 +29,10 @@ from pathlib import Path
 
 HERE = Path(__file__).parent
 LOG = logging.getLogger(__name__)
-FILES = ("ram_table.csv", "streamer.csv", "xbar.csv", "xbar_kinds.json")
+FILES = ("ram_table.csv", "streamer.csv", "xbar.csv", "xbar_kinds.json", "cluster_fixed.json",
+         "dma_copy.json")  # fmt: skip
+# The cluster's fixed parts in cluster_fixed.json, in the order shown
+FIXED_PARTS = ("core", "dma", "rest")
 # The crossbar's input-kind forms (CONTRACTS, "Cost model"), the default first
 XBAR_FORMS = ("factor", "crosspoint")
 READER_AXES = ("depth", "loops", "channels")
@@ -84,22 +90,35 @@ class Grid:
 @dataclass(frozen=True)
 class Cost:
     """An area (µm²) and an energy (pJ per beat for a streamer, per access for the crossbar),
-    and the axes the query lay outside the grid on (empty when inside)."""
+    the axes the query lay outside the grid on (empty when inside), and the leakage (µW)."""
 
     area_um2: float
     energy_pj: float
     extrapolated: tuple[str, ...] = ()
+    leak_uw: float = 0.0
 
 
 @dataclass(frozen=True)
 class Bank:
-    """One SRAM bank of ``depth`` words of ``width`` bits: its area and energy per access."""
+    """One SRAM bank of ``depth`` words of ``width`` bits: its area, energy per access and
+    leakage (µW)."""
 
     depth: int
     width: int
     area_um2: float
     e_rd_pj: float
     e_wr_pj: float
+    leak_uw: float = 0.0
+
+
+@dataclass(frozen=True)
+class FixedPart:
+    """One of the cluster's fixed parts (``FIXED_PARTS``): its area (µm²), its leakage (µW) and
+    its idle floor, the dynamic energy it spends per cycle whatever the accelerators do (pJ)."""
+
+    area_um2: float
+    leak_uw: float
+    idle_pj_cycle: float
 
 
 @dataclass(frozen=True)
@@ -141,6 +160,8 @@ class Costs:
     xbar: Grid
     banks: dict[tuple[int, int], Bank]
     kinds: XbarKinds
+    fixed: dict[str, FixedPart] = field(default_factory=dict)
+    dma_burst_pj: float = 0.0
 
 
 def _rows(path: Path) -> list[dict[str, str]]:
@@ -172,6 +193,19 @@ def _complete_xbar(g: Grid) -> Grid:
     return Grid(g.axes, {**g.fields, "e_access_pj": e}, g.scales)
 
 
+def read_fixed(path: Path) -> dict[str, FixedPart]:
+    """``cluster_fixed.json``'s parts, which snax-forge-experiments' report/cluster_fixed.py
+    writes."""
+    parts = json.loads(path.read_text())["parts"]
+    return {k: FixedPart(parts[k]["area_um2"], parts[k]["leak_uw"], parts[k]["idle_pj_cycle"])
+            for k in FIXED_PARTS}  # fmt: skip
+
+
+def read_dma_burst(path: Path) -> float:
+    """``dma_copy.json``'s ``engine.e_burst_pj``: the DMA engine's energy per burst of a copy."""
+    return float(json.loads(path.read_text())["engine"]["e_burst_pj"])
+
+
 def read_kinds(path: Path) -> XbarKinds:
     """``xbar_kinds.json``, which snax-forge-experiments' report/xbar_kinds.py writes."""
     d = json.loads(path.read_text())
@@ -201,13 +235,14 @@ def load_costs(tech: str) -> Costs | None:
         return None
     banks = {(int(r["depth"]), int(r["width"])):
              Bank(int(r["depth"]), int(r["width"]), float(r["area_um2"]), float(r["e_rd_pj"]),
-                  float(r["e_wr_pj"]))
+                  float(r["e_wr_pj"]), float(r["leak_uw"]))
              for r in _rows(d / "ram_table.csv")}  # fmt: skip
-    streamer = _grid(_rows(d / "streamer.csv"), READER_AXES, ("area_um2", "e_beat_pj"))
-    xbar = _complete_xbar(_grid(_rows(d / "xbar.csv"), XBAR_AXES, ("area_um2", "e_access_pj"),
-                                XBAR_SCALES))  # fmt: skip
+    streamer = _grid(_rows(d / "streamer.csv"), READER_AXES, ("area_um2", "e_beat_pj", "leak_uw"))
+    xbar = _complete_xbar(_grid(_rows(d / "xbar.csv"), XBAR_AXES,
+                                ("area_um2", "e_access_pj", "leak_uw"), XBAR_SCALES))  # fmt: skip
     return Costs(tech, read_source(d / "SOURCE"), streamer, xbar, banks,
-                 read_kinds(d / "xbar_kinds.json"))  # fmt: skip
+                 read_kinds(d / "xbar_kinds.json"), read_fixed(d / "cluster_fixed.json"),
+                 read_dma_burst(d / "dma_copy.json"))  # fmt: skip
 
 
 def _warn(what: str, q: Mapping[str, float], axes: tuple[str, ...]) -> None:
@@ -221,21 +256,25 @@ def streamer_cost(costs: Costs, depth: int, loops: int, channels: int) -> Cost:
     q = {"depth": depth, "loops": loops, "channels": channels}
     area, out_a = costs.streamer.at("area_um2", **q)
     e, out_e = costs.streamer.at("e_beat_pj", **q)
+    leak, _ = costs.streamer.at("leak_uw", **q)
     out = tuple(dict.fromkeys(out_a + out_e))
     _warn("streamer", q, out)
-    return Cost(area, e, out)
+    return Cost(area, e, out, leak)
 
 
 def xbar_cost(costs: Costs, inputs: int, banks: int, read_only: int = 0, write_only: int = 0,
               form: str = "factor") -> Cost:  # fmt: skip
     """The crossbar's area and energy per access, ``read_only`` and ``write_only`` of its
-    ``inputs`` priced as such in ``form`` (CONTRACTS, "Cost model"); with none, the table's area."""
+    ``inputs`` priced as such in ``form`` (CONTRACTS, "Cost model"); with none, the table's area.
+    Its leakage follows its area: the table's leakage per µm² at its inputs and banks."""
     if form not in XBAR_FORMS:
         raise ValueError(f"crossbar form {form!r}: one of {', '.join(XBAR_FORMS)}")
     if read_only < 0 or write_only < 0 or read_only + write_only > inputs:
         raise ValueError(f"{read_only} read-only and {write_only} write-only of {inputs} inputs")
     q = {"inputs": inputs, "banks": banks}
     e, out_e = costs.xbar.at("e_access_pj", **q)
+    table_area, _ = costs.xbar.at("area_um2", **q)
+    table_leak, _ = costs.xbar.at("leak_uw", **q)
     k = costs.kinds
     if form == "factor":
         table, out_a = costs.xbar.at("area_um2", **q)
@@ -248,7 +287,7 @@ def xbar_cost(costs: Costs, inputs: int, banks: int, read_only: int = 0, write_o
                       if not min(getattr(k, a)) <= v <= max(getattr(k, a)))  # fmt: skip
     out = tuple(dict.fromkeys(out_a + out_e))
     _warn("crossbar", q, out)
-    return Cost(area, e, out)
+    return Cost(area, e, out, area * table_leak / table_area if table_area else 0.0)
 
 
 def bank(costs: Costs, depth: int, width: int) -> Bank | None:

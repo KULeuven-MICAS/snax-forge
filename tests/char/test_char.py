@@ -116,3 +116,16 @@ def test_a_mixed_pair_at_its_own_entry_in_either_order_else_its_width_pair():
         assert lookup(table, "Mac", {**mac, "inTypes": ins}, 8) == Lookup(40.0, 4.0, "measured")
     got = lookup(table, "Mac", {**mac, "inTypes": ["int16", "int32"]}, 8)  # not measured
     assert got == Lookup(80.0, 8.0, "measured")  # its width pair, int32 x int32
+
+
+def test_leakage_follows_the_area_rule():
+    """A point's comb leakage is read by its entry's rule, as its comb area: measured, copied over
+    lanes, interpolated; a flop's leakage is the table's."""
+    table = load("nangate45")
+    assert 0.08 < table.flop_leak_uw < 0.09
+    simd = next(e for e in table.blocks["SimdLanes"] if e["lanes_rule"] == "copy")
+    p = simd["points"][0]
+    one = lookup(table, "SimdLanes", simd["params"], p["lanes"])
+    assert one.leak_uw == p["leak_comb_uw"]
+    many = lookup(table, "SimdLanes", simd["params"], 3 * p["lanes"] + 1)
+    assert many.leak_uw / many.comb_um2 == pytest.approx(one.leak_uw / one.comb_um2)

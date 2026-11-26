@@ -803,8 +803,8 @@ button.trace-toggle[aria-pressed="true"] { background: var(--req-bg); border-col
 
 /* The cost by part: two bars to scale, area and energy, a segment per part; these
    colours mean the part on the Estimate panel only, as a region's colour does on the memory tab */
-:root { --part-datapath: #2f8a55; --part-control: #7a5bc2; --part-streamers: #13838c; --part-crossbar: #a87400; --part-memory: #8a96a3; }
-@media (prefers-color-scheme: dark) { :root { --part-datapath: #45b07a; --part-control: #9c83e0; --part-streamers: #3fb3bb; --part-crossbar: #e0a83a; --part-memory: #6b7682; } }
+:root { --part-datapath: #2f8a55; --part-control: #7a5bc2; --part-streamers: #13838c; --part-crossbar: #a87400; --part-memory: #8a96a3; --part-dma: #b5476a; --part-core: #4a6fa5; --part-rest: #b9c1ca; --part-leakage: #c4572a; }
+@media (prefers-color-scheme: dark) { :root { --part-datapath: #45b07a; --part-control: #9c83e0; --part-streamers: #3fb3bb; --part-crossbar: #e0a83a; --part-memory: #6b7682; --part-dma: #d86d90; --part-core: #6e93cc; --part-rest: #4c555f; --part-leakage: #e07a4e; } }
 .c-part-bar-wrap { margin: 0.3rem 0 0.4rem; }
 .c-part-bar-label { font-size: 0.82em; margin-bottom: 0.1rem; }
 .c-part-bar { position: relative; height: 1.4rem; background: var(--panel); border: 1px solid var(--rule); border-radius: 4px; overflow: hidden; }
@@ -815,6 +815,14 @@ button.trace-toggle[aria-pressed="true"] { background: var(--req-bg); border-col
 .c-part-seg.p-streamers, .c-part-key.p-streamers { background: var(--part-streamers); }
 .c-part-seg.p-crossbar, .c-part-key.p-crossbar { background: var(--part-crossbar); }
 .c-part-seg.p-memory, .c-part-key.p-memory { background: var(--part-memory); }
+.c-part-seg.p-dma, .c-part-key.p-dma { background: var(--part-dma); }
+.c-part-seg.p-core, .c-part-key.p-core { background: var(--part-core); }
+.c-part-seg.p-rest, .c-part-key.p-rest { background: var(--part-rest); color: var(--ink); }
+/* leakage is not a part of the design's dynamic energy: striped, so it reads as added on top */
+.c-part-seg.p-leakage, .c-part-key.p-leakage { background: repeating-linear-gradient(135deg, var(--part-leakage) 0 6px, color-mix(in srgb, var(--part-leakage) 60%, transparent) 6px 12px); }
+.c-leak-line { font-size: 0.85em; margin: 0.1rem 0 0.4rem; }
+.c-leak-toggle { cursor: pointer; white-space: nowrap; }
+.c-leak-toggle input { vertical-align: middle; margin: 0 0.2rem 0 0; }
 .c-part-key { display: inline-block; width: 0.7em; height: 0.7em; border-radius: 2px; margin-right: 0.3em; vertical-align: baseline; }
 table.c-cost-table tr.streamer th, table.c-cost-table tr.streamer td { color: var(--ink); }
 .c-part-details { margin: 0.1rem 0 0.4rem; }

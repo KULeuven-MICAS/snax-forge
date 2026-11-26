@@ -77,8 +77,8 @@ Nothing is compiled per design point: SNAX-GVSoC's `snax_hjson` target reads the
 
 `--energy` prices what the run did with the static estimate's prices per transaction (D177; CONTRACTS, "Profile and trace", the energy run, and "Cost model"). It reads the run's `summary` lines only, so it adds one run's time.
 
-- Under `serial` and `sequential` it runs the quiet build `sw/forge_quiet.elf`, which marks each section in CSR `0x7C5`; on each mark SNAX-GVSoC writes every SNAX counter, and each window between two marks is priced in the five parts. A pipelined schedule runs `sw/forge.elf` instead (the quiet build would run it serially): one window, `the whole run`, from boot to the end.
-- `report/energy.md` lists every window (index, kind, label as in `gen/obs_marks.json`, cycles) with its five parts in nJ, their sum and the static estimate's, then the counts they were priced on. The numbers are first-order, for trends over a sweep: a refused request costs a granted one's price, and the tables were measured on random data.
+- Under `serial` and `sequential` it runs the quiet build `sw/forge_quiet.elf`, which marks each section in CSR `0x7C5`; on each mark SNAX-GVSoC writes every SNAX counter, and each window between two marks is priced in the six parts. A pipelined schedule runs `sw/forge.elf` instead (the quiet build would run it serially): one window, `the whole run`, from boot to the end.
+- `report/energy.md` lists every window (index, kind, label as in `gen/obs_marks.json`, cycles) with its six parts in nJ, their sum and the static estimate's; then per window its leakage (the design's, the core's, the rest's) and the idle floor beside the dynamic energy, at a 10 ns clock; then the counts they were priced on. The numbers are first-order, for trends over a sweep: a refused request costs a granted one's price, and the tables were measured on random data.
 
 ### The trace levels
 
@@ -171,7 +171,7 @@ pixi run view-dfg out/sandbox/dot_v4/ out/sandbox/dot_v5/ --platform platforms/s
 
 - Each step is named `<folder>/<stem>`; Compare lays Details and the Estimate out as two columns, the cost cells as `before → after`.
 - The step is a flat graph (D185): the inputs on top, each loop a box chained down to what it drives, an edge through the loops its subset uses (`↻ m_t` where it skips one), the hardware drawn once, after `share` a temporal mux and demux per task. Each container shows its dtype (`A[N] int8 L1 · 64 B`); a port's packing, loops and beats are in its Details.
-- The Estimate: the accelerator's cycles, the unmapped work's (one cycle per iteration, an assumption), their total, and the cost per accelerator in µm² and nJ (CONTRACTS, "Cost model"). The left column lists the Symbols, Containers and Bindings.
+- The Estimate: the accelerator's cycles, the unmapped work's (one cycle per iteration, an assumption), their total, and the cost per accelerator in µm² and nJ (CONTRACTS, "Cost model"); its bars show the area with the core and the rest of the cluster, and the energy dynamic, with a "with leakage" checkbox that adds the design's leakage as one segment. The left column lists the Symbols, Containers and Bindings.
 
 Moving around the drawing, in `view-dfg` and `edit-dfg` alike:
 
@@ -286,4 +286,4 @@ The Makefile names the image's Python, CMake and host compilers, so it runs the 
 | `pixi run fmt` | ruff's fixes and format, then the Markdown rule (`util/md_reflow.py`) |
 | `pixi run clean` | removes `out/` (but the GVSoC build and the editor's sessions, unless `--all`), caches and Chisel build trees; `--dry-run` lists first |
 | `pixi run -e hw chisel-test`, `chisel-gen`, `chisel-check`, `chisel-fmt`, `chisel-compile`, `chisel-clean` | the Chisel specs, elaboration, scalafmt check and format, compile and clean in `hw/chisel/` (its README) |
-| `pixi run import-costs [--experiments DIR]` | copies snax-forge-experiments' clock-gated block table (`results/char/<tech>/char.json`) to `snax_forge/char/<tech>.json` and its streamer, crossbar and bank tables into `snax_forge/char/<tech>/`, each named with its sha256 in `<tech>/SOURCE` |
+| `pixi run import-costs [--experiments DIR]` | copies snax-forge-experiments' clock-gated block table (`results/char/<tech>/char.json`) to `snax_forge/char/<tech>.json` and its streamer, crossbar and bank tables, the cluster's fixed parts (`cluster_fixed.json`) and the DMA engine's price (`dma_copy.json`) into `snax_forge/char/<tech>/`, each named with its sha256 in `<tech>/SOURCE` |

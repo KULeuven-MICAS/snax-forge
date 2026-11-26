@@ -7,7 +7,7 @@ Rules (D117):
 - An entry is a choice with a real alternative that someone may want to reverse: direction, ownership, the interfaces between components, the order of work. Implementation details live in the module's docstring and its tests.
 - An entry says what was decided, why, and where the detail lives, in a few short bullets; an edge case only when there is one. A change is written into the entry, not chained after it.
 - Entries merged into one keep all their numbers in its heading, so a cite of any of them still finds it. A number is never changed or reused; the text of a removed entry is in git history.
-- A new decision gets the next free number, under the area it belongs to. Next free number: **D199**.
+- A new decision gets the next free number, under the area it belongs to. Next free number: **D202**.
 
 Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29–D45, D47–D50, D53, D54, D56, D58–D63, D65–D67, D69, D74, D76–D78, D80, D81, D83, D88–D97, D100, D101, D103, D104, D106, D107, D109, D110, D114, D115, D119, D124, D127, D128, D132, D133, D138–D141, D151, D156, D159, D160, D181.
 
@@ -331,7 +331,7 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 
 ### D154 · D172 — A first-order cost model on clock-gated blocks, before synthesis
 
-- **Decided:** a block costs its fires, each its comb energy and its register bits loading (e_load); a holding flop costs nothing, as clock gating makes it. Control is its bits × e_ctrl every cycle its own group is busy, e_ctrl measured on the clock-gated forge accelerators (5.45 fJ a bit and cycle on nangate45); its area is its flops' plus an equal comb area. The table is `snax_forge/char/<tech>.json`, snax-forge-experiments' clock-gated `char.json` (X37).
+- **Decided:** a block costs its fires, each its comb energy and its register bits loading (e_load); a holding flop costs nothing dynamic, as clock gating makes it (leakage apart, D201). Control is its bits × e_ctrl every cycle its own group is busy, e_ctrl measured on the clock-gated forge accelerators (5.45 fJ a bit and cycle on nangate45); its area is its flops' plus an equal comb area. The table is `snax_forge/char/<tech>.json`, snax-forge-experiments' clock-gated `char.json` (X37).
 - **Why:** an early estimate (about 30 % on the large costs), no synthesis in the loop. Clock-gated (X79 · X87 · X88), a held bit costs about 0.07 fJ a cycle against 7.1 fJ ungated, so the hold term (0.004 pJ on dot 3) is dropped.
 - **Where:** CONTRACTS, "Cost model"; `snax_forge/char/README.md`.
 
@@ -341,23 +341,29 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 - **Why:** synthesis removes logic on copied sign bits, so a narrow block costs what it computes; one point per pair and one rule over lanes keep the table small.
 - **Where:** CONTRACTS, "Cost model"; `snax_forge/char/README.md`.
 
-### D167 · D178 — The cost in five parts, the crossbar by input kind
+### D167 · D178 · D200 — The cost in six parts and the cluster's fixed ones, the crossbar by input kind
 
-- **Decided:** a design's cost is reported in five parts (datapath, control, streamers, crossbar, memory), with shares, the total and the total without banks. Streamers, crossbar and banks use snax-forge-experiments' clock-gated tables (`pixi run import-costs`), extrapolated with a note. A reader's crossbar inputs are read-only, a writer's write-only, an access $e_{access}\thinspace(1 - g_k(b))$, the full $e_{access}(b, b)$ less its kind's saving (`xbar_kinds.json`, X93). Cores, I-cache, DMA engine and csr are not costed; a copy's L1 accesses are (D184). nangate45 only.
-- **Why:** the estimate shows the parts a user can change. The table's $e_{access}$ is a read-write input's (X71): dot 3 paid 0.67 to 0.81 of it, by kind 0.94 to 0.99 at W ≤ 8.
+- **Decided:** a design's cost is reported in six parts (datapath, control, streamers, crossbar, memory, DMA), with shares, the total and the design alone (datapath, control, streamers, crossbar). The core (Snitch and I-cache) and the rest of the cluster are fixed parts, in area and leakage only, from one synthesized cluster (`cluster_fixed.json`, X103); the DMA's area and leakage are that cluster's DMA. Streamers, crossbar and banks use snax-forge-experiments' clock-gated tables (`pixi run import-costs`), extrapolated with a note. A reader's crossbar inputs are read-only, a writer's write-only, an access $e_{access}\thinspace(1 - g_k(b))$, the full $e_{access}(b, b)$ less its kind's saving (`xbar_kinds.json`, X93). The csr is not costed. nangate45 only.
+- **Why:** the estimate shows the parts a user can change, and the area beside a side-by-side cluster's needs the core and the DMA too; the core's energy is never in the design's. The table's $e_{access}$ is a read-write input's (X71): dot 3 paid 0.67 to 0.81 of it, by kind 0.94 to 0.99 at W ≤ 8.
 - **Where:** CONTRACTS, "Cost model"; `char/tables.py`, `estimate/cost.py`.
 
 ### D177 — The dynamic energy: the model's counts at the static prices
 
-- **Decided:** a run's dynamic energy is D167's five parts with SNAX-GVSoC's counts at the static prices (D154 · D172, D176), per window between counter snapshots (core 0's writes to CSR `0x7C5`, D135; the end). A unit costs firings × span, a link or packer its producer's pushes, a slicer its pops, control its group's busy cycles, a mover its requests by kind (D178), banks the grants, a copy its L1 accesses (D184); a refused request costs a granted one's. A pipelined run (D179) is one window of the default build.
+- **Decided:** a run's dynamic energy is D167's six parts with SNAX-GVSoC's counts at the static prices (D154 · D172, D176), per window between counter snapshots (core 0's writes to CSR `0x7C5`, D135; the end). A unit costs firings × span, a link or packer its producer's pushes, a slicer its pops, control its group's busy cycles, a mover its requests by kind (D178), banks the grants, a copy its L1 accesses (D184); a refused request costs a granted one's. A pipelined run (D179) is one window of the default build.
 - **Why:** prices are full-rate granted requests, so static and dynamic differ only where the run differs from the graph; trends, not accuracy.
 - **Where:** CONTRACTS, "Cost model"; `estimate/dynamic.py`, `run/snapshots.py`, `flow/energy.py`.
 
 ### D184 — A copy is costed by its L1 accesses
 
-- **Decided:** a copy (D182) costs its L1 accesses: a DMA beat is one access on its superbank's port, touching all its banks, so a one-element burst is 8 bank reads and 8 bank writes plus one read-only and one write-only crossbar access (D178), in the static estimate and in the dynamic energy (D177). The DMA engine, core, loads and stores stay uncosted (D167): a lower bound; X95 measures the copy at gate level, X96 its 8 accesses each way a burst. Amends D167, D177 and D182.
-- **Why:** a copy's traffic is memory and interconnect accesses, priced from existing tables.
+- **Decided:** a copy (D182) costs its L1 accesses and the DMA engine's bursts: a DMA beat is one access on its superbank's port, touching all its banks, so a one-element burst is 8 bank reads and 8 bank writes plus one read-only and one write-only crossbar access (D178), and the engine's $e_{burst}$ (106.40 pJ on nangate45, X102: the DMA's and the AXI's energy over a 4096-burst copy, less their idle floor), in the static estimate and in the dynamic energy (D177). The core's loads and stores stay uncosted. X95 measures the copy at gate level, X96 its 8 accesses each way a burst. Amends D167, D177 and D182.
+- **Why:** a copy's traffic is memory and interconnect accesses and the engine's own work, priced from existing tables.
 - **Where:** CONTRACTS, "Cost model"; `estimate/__init__.py` (`copy_bursts`), `estimate/dynamic.py`; snax-gvsoc's `snax_tcdm_xbar.cpp`.
+
+### D201 — Leakage beside the dynamic energy, never in it
+
+- **Decided:** every part's leakage is looked up beside its area (banks from CACTI's itrs-lstp cells, X47 · X100; blocks, streamers and crossbar from their synthesis, X101), and everything placed leaks for the whole run, with no power gating. The estimate's `energy` and the paper's figures stay dynamic; its `leakage` lumps the six parts' over `total_cycles`, shown in the viewer behind a checkbox and in `design.md` with `--leakage`, for comparison. The energy run always reports, per window beside the unchanged dynamic energy, the six parts' leakage, the core's, the rest's and the fixed parts' idle floor (23.6 pJ a cycle). One clock, 10 ns, for illustration: leakage scales with the period.
+- **Why:** at 10 ns leakage outweighs the dynamic energy of small int8 designs and turns two of §C's picks to the pipelined forms (mvt, bicg), so it is shown, not folded in, until the gate-level runs say how far to trust it.
+- **Where:** CONTRACTS, "Cost model" and "The energy run"; `estimate/cost.py` (`leakage_nj`), `flow/energy.py` (`Background`).
 
 ## Viewers, reports and docs
 

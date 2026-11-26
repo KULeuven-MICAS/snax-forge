@@ -47,7 +47,17 @@ from snax_forge.dfg.execute import carried_ports
 from snax_forge.dfg.graph import BAKED, SCALAR, TRANSPOSE
 from snax_forge.dfg.subset import dim_names, map_range, parse_dim
 from snax_forge.estimate.bits import packer_bits, slicer_bits
-from snax_forge.estimate.cost import L1_LABEL, PARTS, L1Cost, caveat, dec3, heading, shares, sig3
+from snax_forge.estimate.cost import (
+    FIXED,
+    L1_LABEL,
+    PARTS,
+    L1Cost,
+    caveat,
+    dec3,
+    heading,
+    shares,
+    sig3,
+)
 from snax_forge.expr import ExprError
 from snax_forge.sandbox.blocks import BLOCK
 from snax_forge.sandbox.session import map_ids
@@ -692,26 +702,32 @@ def compare_view(a: Entry, b: Entry, platform: Any = None, tech: str = DEFAULT_T
 
 def compare_cost_bars(labels: list[str], sa: dict[str, Any] | None,
                       sb: dict[str, Any] | None) -> dict[str, list[dict[str, Any]]] | None:  # fmt: skip
-    """Compare's cost bars: for ``area`` and for ``energy``, one bar per side (the left
-    step first), both on one scale, the larger total the whole width, so the shorter bar is the
-    cheaper design; each its ``label``, ``total`` and ``total_text`` and its ``segments``, per
-    part costed its ``name``, ``label``, ``width`` (0..1 of the scale) and ``text``. None when
+    """Compare's cost bars: for ``area``, ``energy`` and ``energy_leakage`` (the energy with
+    the design's lumped leakage as one more segment, for the page's checkbox), one bar per side
+    (the left step first), both on one scale, the larger total the whole width, so the shorter bar
+    is the cheaper design; each its ``label``, ``total`` and ``total_text`` and its ``segments``,
+    per part costed its ``name``, ``label``, ``width`` (0..1 of the scale) and ``text``. None when
     neither side has a cost."""
-    sides = [
-        (lbl, ((s or {}).get("cost") or {}).get("parts") or [])
-        for lbl, s in zip(labels, (sa, sb), strict=True)
-    ]
-    if not any(p for _, p in sides):
+    costs = [(s or {}).get("cost") or {} for s in (sa, sb)]
+    if not any(c.get("parts") for c in costs):
         return None
+
+    def segments(c: dict[str, Any], key: str) -> list[dict[str, Any]]:
+        leak = (c.get("leakage") or {}).get("parts") if key == "energy_leakage" else None
+        part = "area" if key == "area" else "energy"
+        return [{"name": p["name"], "label": p["label"], "value": p[part],
+                 "text": p[f"{part}_text"]} for p in leak or c.get("parts") or []]  # fmt: skip
+
     out: dict[str, list[dict[str, Any]]] = {}
-    for key, unit in (("area", _um2), ("energy", _nj)):
-        totals = [sum(p[key] or 0.0 for p in parts) for _, parts in sides]
+    for key, unit in (("area", _um2), ("energy", _nj), ("energy_leakage", _nj)):
+        sides = [segments(c, key) for c in costs]
+        totals = [sum(p["value"] or 0.0 for p in x) for x in sides]
         scale = max(totals) or 1.0
-        out[key] = [{"label": lbl, "total": t, "total_text": unit(t) if parts else "–",
+        out[key] = [{"label": lbl, "total": t, "total_text": unit(t) if x else "–",
                      "segments": [{"name": p["name"], "label": p["label"],
-                                   "width": p[key] / scale, "text": p[f"{key}_text"]}
-                                  for p in parts if p[key]]}
-                    for (lbl, parts), t in zip(sides, totals, strict=True)]  # fmt: skip
+                                   "width": p["value"] / scale, "text": p["text"]}
+                                  for p in x if p["value"]]}
+                    for lbl, x, t in zip(labels, sides, totals, strict=True)]  # fmt: skip
     return out
 
 
@@ -815,11 +831,17 @@ def estimate_rows(sa: dict[str, Any] | None, sb: dict[str, Any] | None) -> list[
             p = next(x for x in s["cost"]["parts"] if x["name"] == name)
             return f"{p['area_text']} · {p['energy_text']}"
 
+        def leak(s: dict[str, Any]) -> str | None:
+            x = s["cost"]["leakage"]
+            return None if x is None else f"{x['power_text']} · {x['energy_text']}"
+
         rows += [_row("area", *both(lambda s: s["cost"]["area_text"]), under),
-                 _row("area without the banks", *both(lambda s: s["cost"]["area_design_text"]),
+                 _row("area of the design alone", *both(lambda s: s["cost"]["area_design_text"]),
                       under),
                  _row("energy per run", *both(lambda s: s["cost"]["energy_text"]), under),
-                 *[_row(PART_LABELS[k], *both(lambda s, k=k: part(s, k)), under) for k in PARTS],
+                 _row("leakage over the run", *both(leak), under),
+                 *[_row(PART_LABELS[k], *both(lambda s, k=k: part(s, k)), under)
+                   for k in (*PARTS, *FIXED)],
                  _row("L1 accesses", *both(lambda s: s["cost"]["l1_text"]), under),
                  _row("not characterized", *both(missing), under)]  # fmt: skip
     return rows
@@ -912,31 +934,62 @@ def cost_summary(est: Any, g: Graph | None = None) -> dict[str, Any] | None:
     return {"tech": est.tech, "heading": heading(est.tech), "caveat": caveat(),
             "area_text": _um2(est.area), "energy_text": _nj(est.energy),
             "area_design_text": _um2(est.area_design),
+            "leakage": leakage_summary(est),
             "l1_text": l1 or None, "missing": list(est.missing),
             "not_costed": list(est.not_costed), "extrapolated": list(est.extrapolated),
             "parts": cost_parts(est), "tables": cost_tables(est, g)}  # fmt: skip
 
 
 PART_LABELS = {"datapath": "datapath", "control": "control", "streamers": "streamers",
-               "crossbar": "crossbar", "memory": "memory (banks)"}  # fmt: skip
+               "crossbar": "crossbar", "memory": "memory (banks)", "dma": "DMA",
+               "core": "core (Snitch, I-cache)", "rest": "rest of the cluster"}  # fmt: skip
 
 
 def cost_parts(est: Any) -> list[dict[str, Any]]:
-    """The cost by part, in ``PARTS``' order: each its ``name``, ``label``, ``area`` and
-    ``energy`` (None where not costed), their texts and their ``share`` of the totals (0..1)
-    with its text; what the page's two bars draw to scale."""
-    parts = est.parts or {}
+    """The cost by part, in ``PARTS``' order then the cluster's ``FIXED`` parts (area only): each
+    its ``name``, ``label``, ``area`` and ``energy`` (None where not costed), their texts and
+    their ``share`` of the totals (0..1) with its text; what the page's two bars draw to
+    scale."""
+    parts = (est.parts or {}) | (est.fixed or {})
     share = shares(parts)
     out = []
     for k, p in parts.items():
         sa, se = share[k]
+        none = "area only" if k in FIXED else "not costed"
         out.append({"name": k, "label": PART_LABELS[k], "area": p.area_um2, "energy": p.energy_nj,
                     "area_text": "not costed" if p.area_um2 is None else _um2(p.area_um2),
-                    "energy_text": "not costed" if p.energy_nj is None else _nj(p.energy_nj),
+                    "energy_text": none if p.energy_nj is None else _nj(p.energy_nj),
                     "area_share": sa, "energy_share": se,
                     "area_share_text": "–" if sa is None else f"{100 * sa:.1f}%",
                     "energy_share_text": "–" if se is None else f"{100 * se:.1f}%"})  # fmt: skip
     return out
+
+
+LEAKAGE_LABEL = "leakage (the design's parts, lumped)"
+
+
+def leakage_summary(est: Any) -> dict[str, Any] | None:
+    """The design's leakage for the page's checkbox: ``power_text``, ``energy`` over the
+    estimate's cycles at the table's clock with its text, the ``note`` the page shows, and
+    ``parts``: the energy bar's segments with leakage, each part's energy then the ``leakage``
+    segment, their shares of that total. None when not costed."""
+    x, parts = est.leakage, est.parts
+    if x is None or parts is None:
+        return None
+    total = sum(p.energy_nj or 0.0 for p in parts.values()) + x["energy"]
+    segs = [(k, PART_LABELS[k], p.energy_nj) for k, p in parts.items()]
+    segs.append(("leakage", LEAKAGE_LABEL, x["energy"]))
+    power = f"{x['power']:,.1f}".replace(",", " ") + " µW"
+    return {"power": x["power"], "power_text": power, "energy": x["energy"],
+            "energy_text": _nj(x["energy"]), "total_text": _nj(total),
+            "note": (f"Leakage: the design's parts leak {power}, {_nj(x['energy'])} over "
+                     f"{x['cycles']} cycles at {x['clock_ns']:g} ns, for illustration (it scales "
+                     f"with the period); beside the dynamic energy, not in it."),
+            "parts": [{"name": k, "label": lbl, "energy": e,
+                       "energy_text": "not costed" if e is None else _nj(e),
+                       "energy_share": None if e is None or not total else e / total,
+                       "energy_share_text": "–" if e is None or not total
+                       else f"{100 * e / total:.1f}%"} for k, lbl, e in segs]}  # fmt: skip
 
 
 def cost_tables(est: Any, g: Graph | None = None) -> list[dict[str, Any]]:

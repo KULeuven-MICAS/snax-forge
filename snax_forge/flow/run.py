@@ -517,8 +517,10 @@ def summary(f: Flow) -> str:
         got = ", ".join(f"window {w.index} {x.total:.3f} nJ" for w, x in e.runs())
         got = got or "no run window"
         n = f"{len(e.windows)} window" + "s" * (len(e.windows) != 1)
+        bg = sum(e.background_total.values())
+        bg = f"; leakage and idle floor {bg:.3f} nJ over the run" if e.background else ""
         lines.append(f"  energy    sw/{energy_elf(f.point.schedule)}, {n}; {got} (static "
-                     f"{e.static.total:.3f} nJ) -> {ENERGY}/{ENERGY_JSON}, "
+                     f"{e.static.total:.3f} nJ){bg} -> {ENERGY}/{ENERGY_JSON}, "
                      f"{REPORT}/energy.md")  # fmt: skip
     lines += [f"  WARNING   {w}" for w in f.warnings]
     return "\n".join(lines)

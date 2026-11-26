@@ -1,10 +1,11 @@
 """The report command line.
 
-    python -m snax_forge.report DIR [--out OUT] [--tech TECH]
+    python -m snax_forge.report DIR [--out OUT] [--tech TECH] [--leakage]
 
 DIR is a flow folder (``out/flow/<name>``) or its ``run/`` directory; the
 reports go to ``DIR/report/`` unless ``--out`` says otherwise (files.py);
-``design.md``'s cost estimate is on ``--tech`` (default nangate45).
+``design.md``'s cost estimate is on ``--tech`` (default nangate45); ``--leakage`` adds the
+parts' leakage beside it, apart from the dynamic energy.
 Exit 0 when both were written, 1 when DIR cannot be read, 2 on bad
 arguments. pixi: ``report``.
 """
@@ -26,9 +27,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", type=Path, help="where to write design.md and run.md")
     ap.add_argument("--tech", choices=TECHS, default=DEFAULT_TECH,
                     help=f"the technology of design.md's cost estimate (default {DEFAULT_TECH})")  # fmt: skip
+    ap.add_argument(
+        "--leakage",
+        action="store_true",
+        help="add the parts' leakage beside design.md's cost (off by default)",
+    )
     args = ap.parse_args(argv)
     try:
-        r = write_reports(args.folder, args.out, args.tech)
+        r = write_reports(args.folder, args.out, args.tech, args.leakage)
     except (OSError, ValueError, KeyError) as e:  # ReportError a ValueError
         print(f"FAILED {args.folder}: {e}", file=sys.stderr)
         return 1

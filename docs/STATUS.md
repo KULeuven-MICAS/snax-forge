@@ -68,7 +68,7 @@ Done, each in git history:
 | REUSE1 | A recipe as the unit of reuse: `lift`, `apply_recipe`, `name_block` | D164–D166 |
 | CTRL2 | The settings in the csr, read live by the control unit | D168 |
 | PORT1 | Shared movers behind a data-side mux (`share_ports`); `snax-forge-check`'s four verdicts | D85, D123, D169 |
-| HWCOST | A design's cost in five parts from snax-forge-experiments' tables (`import-costs`) | D167 |
+| HWCOST | A design's cost in six parts from snax-forge-experiments' tables (`import-costs`) | D167 |
 | CSYN1 | The HLS comparison (`results/compare/`); a design to a synthesized cluster (`pixi run cluster rtl\|syn\|gls`) | D123 |
 | CORE1 | One Snitch core drives the DMA and the accelerator; run tests; the quiet build | D131, D135, D170, D171 |
 | CLN3 | Housekeeping; TOOL.md as the command reference | — |
@@ -108,7 +108,7 @@ To do, in four tracks, each task in its own thread, branch and PR (the ROAD1 pla
 
 - **Track A, tier A and E4** (snax-forge, snax-gvsoc where a task changes the model):
   1. **E4S1** (kickoff `claude/e4s1-kickoff-2026-11-17.md`, to refresh now that tier A is done): E4's sweep script over `pixi run flow --set` (no DSE5) and its figure, on tier A's forms: W, shared against dedicated ports, serial against side by side, one shared engine against two, one read against two. The bank-bound sweep at int64 and int32: a dot reads $2 W b$ bytes a cycle against $32 \cdot 8 = 256$, so it crosses at W = 16 (int64) and 32 (int32), and W stops at 32.
-- **Track B, costs** (snax-forge-experiments, snax-forge's `char`; Nangate 45 nm only): E4's energy axis reads `--energy` or the static estimate; GE1's left-over is open item 137.
+- **Track B, costs** (snax-forge-experiments, snax-forge's `char`; Nangate 45 nm only): E4's energy axis reads `--energy` or the static estimate; GE1's left-over is open item 137. **COST2** now: leakage beside every part, the DMA engine per burst, the core and the rest as fixed parts (D200, D201); the viewers show the area with the core and the rest and a leakage checkbox; CSYN2 checks the leakage at gate level (open item 176).
 - **Track C, the Snitch-only baseline** (snax_cluster, snax-forge-experiments; E11): SNB1 done; its track D programs (its R12) come with track D.
 - **Track D, end to end** (snax-forge; after track A, best effort, cut from the bottom; each case sized to fit L1, shortcuts allowed for what is not built):
   1. **E2E1**: an MLP at batch 1 (matvec, bias add, relu, matvec).
@@ -185,7 +185,7 @@ Dates: 20 Nov, track A's target (fine if it slips); 27 Nov, the softmax gate (so
 
 ## Open Items
 
-Questions not decided yet. Numbers are never reused; a closed item is removed, and where it closed is in git history. Next free number: 176.
+Questions not decided yet. Numbers are never reused; a closed item is removed, and where it closed is in git history. Next free number: 177.
 
 1. BRM dataflow notation: `affine` and `stream` (D70), frozen in M6.
 2. What automated search reads and how a sweep is configured (DSE1, M8).
@@ -282,6 +282,7 @@ Questions not decided yet. Numbers are never reused; a closed item is removed, a
 173. The estimate leaves out the DMA's bank conflicts with a running group (D155): `main.c` starts the first dot of `gesummv_v2_1` and then loads B, whose copy wins banks from the dot's readers, +16 cycles at W = 8 and up to +21 at W = 32 against the estimate; the second dot, which nothing overlaps, is within 0–2, and `gesummv_v3`, which loads everything first, gives 518 against 517. Equal on vsim, so the model has it. With open item 4 and L2V1's DMA row.
 174. Two NEARs beyond the fill on gesummv, both L1 contention where SNAX-GVSoC and the RTL differ by a few cycles: `gesummv_v2_1_2` (1.1 %), the first dot 524 on SNAX-GVSoC against 533 on vsim, its shared readers losing fewer requests to B's DMA in the model; `gesummv_v2_1` at W = 32 under `pipeline` (1.3 %), the two dots side by side 154 and 139 against 159 and 143.
 175. The estimate leaves out a group's own L1 bank conflicts between a narrow reader and a wide writer (D155, open item 4): `gesummv_v1_1`'s scales read A at int8 on one channel and write it at int32 on four, 528 cycles against an expected 514 on SNAX-GVSoC, none of the refusals the DMA's. NEAR at 0.8 % beyond the fill on `gesummv_v1_1` and `gesummv_v1_1_1`: each simulator gives one scale 522 and the other three 528, not the same one, the reader's and writer's bank phase moved by a few cycles of start time.
+176. The TCDM bank logic (the banks' wrappers and their request paths, about 2 pJ a cycle idle and 5 to 16 running in `dot3_w8_cg`) moves with L1 traffic, so it is neither in the fixed parts' idle floor nor priced per access (D201, X103): a lower bound on memory. Price it per L1 access from CSYN2's per-instance reports, and compare the gate-level picks against COST2's (`mvt_column` against `mvt_column_pipeline`, `bicg_two_pass` against `bicg_two_pass_pipeline`).
 
 ## Sync Reminders
 

@@ -60,7 +60,7 @@ The inner loop, kernel to a SNAX-GVSoC run and back to the thinker who edits the
 | SNAX-BRM | `brm/` | C§3 | hand-written BRMs | instances |
 | SNAX-SANDBOX | `sandbox/` | C§4 | `.snaxdfg`, BRMs, recipe | a `.snaxdfg` per step |
 | Design step | `design/` | C§5–C§7 | bound graph, platform | design point |
-| Estimate | `estimate/` | C§13, C§14 | bound graph; platform, technology (optional) | cycles, expected BUSY_COUNTER (D155), cost in five parts (D154, D167), a run's counts priced (D177) |
+| Estimate | `estimate/` | C§13, C§14 | bound graph; platform, technology (optional) | cycles, expected BUSY_COUNTER (D155), cost in six parts and the fixed ones, leakage beside (D154, D167, D201), a run's counts priced (D177) |
 | Cost tables | `char/` ([guide](../snax_forge/char/README.md)) | C§14 | snax-forge-experiments' tables (`import-costs`) | area and energy per block, streamer, crossbar, bank |
 | SNAX-LOWER | `lower/` | C§8, C§9 | design point | task list, `main.c` |
 | Generator | `gen/gvsoc.py`, `accelerator.py`, `headers.py`, `data.py` | C§9, C§10 | design point, source hjson | cluster and streamer hjson, `accelerator.json`, headers, `data.h`, `main.c` |

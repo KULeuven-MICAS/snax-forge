@@ -41,7 +41,7 @@ function status(msg, err = false) {
 // -- state ----------------------------------------------------------------------
 
 const state = { mode: "view", steps: [], k: 0, cmp: null, sel: null, sels: [], t: null, session: null, platform: null, tech: null, techs: [], expanded: new Set(),
-  folded: new Set(), focus: false, lock: false, wantZoom: {} };
+  folded: new Set(), focus: false, lock: false, wantZoom: {}, leakage: false };
 
 // The selection: ``sels`` every selected item in the order selected (shift-click adds or
 // removes one), ``sel`` the last, which Details, the Bindings and the hash's ``t`` follow; the
@@ -742,21 +742,33 @@ function partBar(parts, key, label) {
     h("div", { class: "c-part-bar", role: "img", "aria-label": `${label} by part` }, segs));
 }
 
-/** The cost by part: its two bars, then, folded, a row per part (area, share, energy, share) and
-the totals, with and without the banks. */
+/** The "with leakage" checkbox (off by default): the energy bars add the design's leakage as one
+lumped segment, for comparison; the energy figures stay dynamic. */
+function leakToggle(on) {
+  return h("label", { class: "c-leak-toggle", title: "add the design's leakage over the run, one lumped segment, at the table's clock" },
+    h("input", { type: "checkbox", checked: on, onchange: (e) => { state.leakage = e.target.checked; estimate(); } }), " with leakage");
+}
+
+/** The cost by part: its two bars (the energy's with the lumped leakage when ticked), then,
+folded, a row per part (area, share, energy, share) and the totals, the design alone, and the
+leakage. */
 function costParts(c) {
   const parts = c.parts || [];
   if (!parts.length) return [];
+  const leak = state.leakage && c.leakage ? c.leakage : null;
   const row = (p) => h("tr", {},
     h("th", { scope: "row" }, h("i", { class: `c-part-key p-${p.name}` }), p.label),
     ...["area_text", "area_share_text", "energy_text", "energy_share_text"].map((k) => h("td", { class: "num" }, p[k])));
-  return [partBar(parts, "area", "area"), partBar(parts, "energy", "energy per run"),
+  const energy = leak ? partBar(leak.parts, "energy", "energy per run, with leakage") : partBar(parts, "energy", "energy per run");
+  return [partBar(parts, "area", "area"), energy,
+    c.leakage ? h("div", { class: "c-leak-line" }, leakToggle(state.leakage), leak ? h("span", { class: "muted" }, ` ${leak.note}`) : null) : null,
     h("details", { class: "c-part-details" }, h("summary", {}, "cost by part, as a table"),
       h("div", { class: "c-cost-wrap" }, h("table", { class: "c-cost-table" },
         h("thead", {}, h("tr", {}, ["part", "area", "share", "energy", "share"].map((x, i) => h("th", { scope: "col", class: i ? "num" : null }, x)))),
         h("tbody", {}, parts.map(row),
           h("tr", { class: "total" }, h("th", { scope: "row" }, "total"), h("td", { class: "num" }, c.area_text), h("td", {}), h("td", { class: "num" }, c.energy_text), h("td", {})),
-          h("tr", {}, h("th", { scope: "row" }, "without the banks"), h("td", { class: "num" }, c.area_design_text), h("td", {}), h("td", {}), h("td", {}))))))];
+          h("tr", {}, h("th", { scope: "row" }, "the design alone"), h("td", { class: "num" }, c.area_design_text), h("td", {}), h("td", {}), h("td", {})),
+          c.leakage ? h("tr", {}, h("th", { scope: "row" }, h("i", { class: "c-part-key p-leakage" }), "leakage, lumped"), h("td", { class: "num" }, c.leakage.power_text), h("td", {}), h("td", { class: "num" }, c.leakage.energy_text), h("td", {})) : null))))];
 }
 
 /** Compare's cost bars (api.py's compare_cost_bars): per area and energy, the two steps' bars one
@@ -764,6 +776,7 @@ above the other on one scale, the larger total the whole width; all four in one 
 bar starts at the same left edge. */
 function compareBars(bars) {
   if (!bars) return [];
+  const energy = state.leakage && bars.energy_leakage ? "energy_leakage" : "energy";
   const bar = (side, what) => {
     let left = 0;
     const segs = side.segments.map((p) => {
@@ -777,8 +790,9 @@ function compareBars(bars) {
       h("div", { class: "c-part-side" }, h("span", {}, side.label), h("span", { class: "nb" }, side.total_text)),
       h("div", { class: "c-part-bar", role: "img", "aria-label": `${side.label}: ${what} by part` }, segs));
   };
-  return [h("div", { class: "c-part-grid" }, [["area", "area"], ["energy", "energy per run"]].flatMap(([key, what]) => [
-    h("div", { class: "c-part-bar-label muted" }, `${what}, on one scale`), ...bars[key].map((side) => bar(side, what))]))];
+  return [h("div", { class: "c-part-grid" }, [["area", "area"], [energy, energy === "energy" ? "energy per run" : "energy per run, with leakage"]].flatMap(([key, what]) => [
+    h("div", { class: "c-part-bar-label muted" }, `${what}, on one scale`), ...bars[key].map((side) => bar(side, what))])),
+  bars.energy_leakage ? h("div", { class: "c-leak-line" }, leakToggle(state.leakage)) : null].filter(Boolean);
 }
 
 async function estimate() {

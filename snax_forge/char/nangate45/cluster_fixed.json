@@ -1,0 +1,116 @@
+{
+ "tech": "nangate45",
+ "clock_ns": 10.0,
+ "source": {
+  "point": "dot3_w8_cg",
+  "window": "5_run",
+  "macros": "results/ram/<tech>/ram_table.csv (itrs-lstp)",
+  "no_idle_floor": [
+   "tcdm_logic"
+  ]
+ },
+ "units": {
+  "area": "um2",
+  "leakage": "uW",
+  "idle": "pJ per cycle"
+ },
+ "parts": {
+  "core": {
+   "groups": [
+    "cores",
+    "icache_logic",
+    "icache_macros"
+   ],
+   "area_um2": 88914.36799999993,
+   "leak_uw": 847.4222147999999,
+   "idle_pj_cycle": 4.7575002300000095
+  },
+  "dma": {
+   "groups": [
+    "dma"
+   ],
+   "area_um2": 73719.24169999966,
+   "leak_uw": 1407.3610099999976,
+   "idle_pj_cycle": 4.81343519
+  },
+  "rest": {
+   "groups": [
+    "axi",
+    "peripherals",
+    "tcdm_logic",
+    "acc_csr",
+    "acc_interface",
+    "others"
+   ],
+   "area_um2": 227921.3060999996,
+   "leak_uw": 4017.033298599993,
+   "idle_pj_cycle": 14.028610270000058
+  }
+ },
+ "groups": {
+  "cores": {
+   "part": "core",
+   "area_um2": 26442.52809999994,
+   "leak_uw": 481.6517914000005,
+   "idle_pj_cycle": 3.71652360000001
+  },
+  "icache_logic": {
+   "part": "core",
+   "area_um2": 19407.359899999992,
+   "leak_uw": 365.4502999999994,
+   "idle_pj_cycle": 0.7733800232899998
+  },
+  "icache_macros": {
+   "part": "core",
+   "area_um2": 43064.479999999996,
+   "leak_uw": 0.3201234,
+   "idle_pj_cycle": 0.26759660671
+  },
+  "dma": {
+   "part": "dma",
+   "area_um2": 73719.24169999966,
+   "leak_uw": 1407.3610099999976,
+   "idle_pj_cycle": 4.81343519
+  },
+  "axi": {
+   "part": "rest",
+   "area_um2": 155612.66379999986,
+   "leak_uw": 2613.7369429999867,
+   "idle_pj_cycle": 6.034962546700032
+  },
+  "peripherals": {
+   "part": "rest",
+   "area_um2": 16377.620400000029,
+   "leak_uw": 295.65881409999656,
+   "idle_pj_cycle": 7.113430459000004
+  },
+  "tcdm_logic": {
+   "part": "rest",
+   "area_um2": 52536.063999999875,
+   "leak_uw": 1042.8115799999975,
+   "idle_pj_cycle": null
+  },
+  "acc_csr": {
+   "part": "rest",
+   "area_um2": 949.3539999999999,
+   "leak_uw": 16.08262,
+   "idle_pj_cycle": 0.52278673
+  },
+  "acc_interface": {
+   "part": "rest",
+   "area_um2": 1960.9520999999827,
+   "leak_uw": 37.56732000000003,
+   "idle_pj_cycle": 0.3290486000000029
+  },
+  "others": {
+   "part": "rest",
+   "area_um2": 484.65179999987856,
+   "leak_uw": 11.17602150001226,
+   "idle_pj_cycle": 0.02838193430001807
+  }
+ },
+ "check": {
+  "pt_leak_uw": 89757.24,
+  "groups_leak_uw": 89757.23999999999
+ }
+}
