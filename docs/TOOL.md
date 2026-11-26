@@ -12,6 +12,7 @@ Every command of snax-forge by job: what it does, reads and writes, the flags th
 | Check against snax_cluster's RTL | `forge`, `forge-set`, snax_cluster's `snax-forge-check` | 6 |
 | Work on SNAX-GVSoC | `gvsoc/Makefile`, refreshing a fixture | 7 |
 | Keep the repository clean | `test`, `lint`, `fmt`, `clean`, the `chisel-*` tasks, `import-costs` | 8 |
+| Make the paper's data | `paper` | 9 |
 
 ## 1. Set up
 
@@ -287,3 +288,13 @@ The Makefile names the image's Python, CMake and host compilers, so it runs the 
 | `pixi run clean` | removes `out/` (but the GVSoC build and the editor's sessions, unless `--all`), caches and Chisel build trees; `--dry-run` lists first |
 | `pixi run -e hw chisel-test`, `chisel-gen`, `chisel-check`, `chisel-fmt`, `chisel-compile`, `chisel-clean` | the Chisel specs, elaboration, scalafmt check and format, compile and clean in `hw/chisel/` (its README) |
 | `pixi run import-costs [--experiments DIR]` | copies snax-forge-experiments' clock-gated block table (`results/char/<tech>/char.json`) to `snax_forge/char/<tech>.json` and its streamer, crossbar and bank tables into `snax_forge/char/<tech>/`, each named with its sha256 in `<tech>/SOURCE` |
+
+## 9. Make the paper's data: `paper`
+
+`pixi run paper SET` puts every point of `paper/<SET>.json` (a recipe and its `--set`s) through the design step and the ideal estimate and writes `paper/data/<SET>.csv`, one row per point; `--run` also runs each point through `flow --energy` (in the image, `-j` at once, into `out/paper/<SET>/<id>/`); `--only ID ...` replaces those rows in the file as it is. `paper/README.md` lists the sets and the columns.
+
+```bash
+pixi run paper limits
+paper/data/limits.csv: 36 points, 4 not ok
+  bicg_sequential_contiguous_w32: refused: [connect.xbar_inputs] matvec, mac: 132 TCDM crossbar inputs, the platform takes at most 128 ...
+```

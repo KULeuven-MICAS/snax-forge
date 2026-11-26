@@ -106,9 +106,10 @@ test-report = "pytest -q tests/report"
 test-gen   = "pytest -q tests/gen"
 test-kernels = "pytest -q tests/kernels"
 test-viz   = "pytest -q tests/viz"
+test-paper = "pytest -q tests/paper"
 test-docs  = "pytest -q tests/test_contracts.py tests/test_md_reflow.py tests/test_markings.py"
-lint       = "ruff check util kernels snax_forge tests && ruff format --check util kernels snax_forge tests && python util/md_reflow.py --check"
-fmt        = "ruff check --fix util kernels snax_forge tests && ruff format util kernels snax_forge tests && python util/md_reflow.py"
+lint       = "ruff check util kernels snax_forge paper tests && ruff format --check util kernels snax_forge paper tests && python util/md_reflow.py --check"
+fmt        = "ruff check --fix util kernels snax_forge paper tests && ruff format util kernels snax_forge paper tests && python util/md_reflow.py"
 # SDFG ingest: `pixi run sdfg vecadd` writes out/sdfg/vecadd.raw.sdfg and .simplified.sdfg
 sdfg       = "python -m snax_forge.sdfg"
 # SNAX-DFG importer: `pixi run import-dfg vecadd` writes out/dfg/vecadd.snaxdfg
@@ -153,6 +154,9 @@ forge      = "python -m snax_forge.flow.forge"
 # A set of bundles for the local RTL check: `pixi run forge-set quick|full [--sim vsim|vlt] [-j N]` runs forge on
 # each recipe of the set and writes out/forge-set/<set>.md, with the one line that checks them all in snax_cluster
 forge-set  = "python -m snax_forge.flow.forge_set"
+# The paper's data (paper/README.md): `pixi run paper forms` writes paper/data/forms.csv from the estimate;
+# `--run` also runs every point through the flow with --energy (SNAX-GVSoC, in the image)
+paper      = "python paper/run.py"
 # HWCOST's tables (CONTRACTS, "Cost model"): `pixi run import-costs [--experiments DIR]` copies the streamer, crossbar
 # and bank tables from snax-forge-experiments (its main, or a clean checkout) into snax_forge/char/<tech>/
 import-costs = "python util/import_costs.py"
