@@ -27,14 +27,14 @@ Without `--run`, a row keeps its run columns from the CSV while its recipe and s
 |---|---|
 | `set`, `id`, `kernel`, `branch`, `label`, `row`, `layout`, `W`, `banks`, `schedule`, `recipe`, `sets` | the set |
 | `est_cycles`, `est_accelerator_cycles`, `est_copy_cycles`, `est_bank_bound`, `xbar_inputs` | the ideal estimate (CONTRACTS, "Estimate"); `est_bank_bound` the largest group's fewest cycles of L1 time; `xbar_inputs` the TCDM crossbar's inputs (streamer channels, cores and AXI) |
-| `static_<part>_nj`, `static_nj`, `area_<part>_um2`, `area_um2`, `area_without_banks_um2` | the cost model's five parts (CONTRACTS, "Cost model"), area with the banks |
-| `cycles`, `dynamic_<part>_nj`, `dynamic_nj`, `passed` | with `--run`: the program's window and the energy run's totals (CONTRACTS, "The energy run") |
+| `static_<part>_nj`, `static_nj`, `area_<part>_um2`, `area_um2`, `area_design_um2`, `leak_uw`, `static_leak_nj` | the cost model's six parts (datapath, control, streamers, crossbar, memory, DMA) and, in area only, the core and the rest of the cluster (CONTRACTS, "Cost model"); `area_um2` all of them, `area_design_um2` the datapath, control, streamers and crossbar; the six parts' leakage power and its energy over `est_cycles` |
+| `cycles`, `dynamic_<part>_nj`, `dynamic_nj`, `leak_design_nj`, `leak_core_nj`, `leak_rest_nj`, `idle_nj`, `passed` | with `--run`: the program's window, the energy run's dynamic totals by part and its background lines over the windows (CONTRACTS, "The energy run") |
 | `status` | `ok`, or why the point was refused or failed |
 
 ## What the estimate says
 
 From `pixi run paper forms` and `pixi run paper limits` (checked by `tests/paper/`):
 
-- `mvt_column` (`mvt_v5`, sequential): 1028 cycles, 26.44 nJ static, 561 514 µm² with the banks; `mvt_dma_copy`: 11 951 cycles, 373.35 nJ, of which 10 923 cycles are the copy.
-- `mvt_contiguous_w8` and `mvt_padded_w8`: the same 1028 cycles and 243.60 nJ, as the estimate does not see bank conflicts (D155); at W = 32, 260 cycles against a bank bound of 520.
+- `mvt_column` (`mvt_v5`, sequential): 1028 cycles, 26.18 nJ static, 951 435 µm² with the banks, the DMA, the core and the rest; `mvt_dma_copy`: 11 951 cycles, 803.39 nJ, of which 10 923 cycles and 435.83 nJ (the DMA's bursts) are the copy.
+- `mvt_contiguous_w8` and `mvt_padded_w8`: the same 1028 cycles and 241.08 nJ, as the estimate does not see bank conflicts (D155); at W = 32, 260 cycles against a bank bound of 520.
 - `bicg_pipeline_padded_w32` needs 132 crossbar inputs, past the 128 of SNAX's crossbar (`l1.max_xbar_inputs`): its point raises the limit to 256, SNAX-GVSoC's most (D85), and the estimate prices its crossbar extrapolated. Without the raise it is refused at design.

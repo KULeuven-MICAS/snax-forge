@@ -35,19 +35,22 @@ from snax_forge.design.check import xbar_inputs
 from snax_forge.dfg import DfgError
 from snax_forge.dfg.import_sdfg import import_kernel
 from snax_forge.estimate import estimate
+from snax_forge.estimate.cost import FIXED, PARTS
 from snax_forge.flow.__main__ import setting
+from snax_forge.flow.energy import BACKGROUND
 from snax_forge.flow.run import split_sets
 from snax_forge.sandbox import Recipe, SandboxError, apply_recipe
 
 PAPER = ROOT / "paper"
 OUT = ROOT / "out" / "paper"
-PARTS = ("datapath", "control", "streamers", "crossbar", "memory")
 LABELS = ("set", "id", "kernel", "branch", "label", "row", "layout", "W", "banks", "schedule",
           "recipe", "sets")  # fmt: skip
 STATIC = ("est_cycles", "est_accelerator_cycles", "est_copy_cycles", "est_bank_bound", "xbar_inputs",
           *(f"static_{p}_nj" for p in PARTS), "static_nj",
-          *(f"area_{p}_um2" for p in PARTS), "area_um2", "area_without_banks_um2")  # fmt: skip
-RUN = ("cycles", *(f"dynamic_{p}_nj" for p in PARTS), "dynamic_nj", "passed")
+          *(f"area_{p}_um2" for p in (*PARTS, *FIXED)), "area_um2", "area_design_um2",
+          "leak_uw", "static_leak_nj")  # fmt: skip
+RUN = ("cycles", *(f"dynamic_{p}_nj" for p in PARTS), "dynamic_nj",
+       *(f"{b}_nj" for b in BACKGROUND), "passed")  # fmt: skip
 COLUMNS = (*LABELS, *STATIC, *RUN, "status")
 
 
@@ -98,11 +101,14 @@ def static_row(point: Point, platform: Path) -> dict[str, Any]:
     row = {"est_cycles": est["total_cycles"], "est_accelerator_cycles": est["accelerator_cycles"],
            "est_copy_cycles": est["copy_cycles"], "static_nj": cost["energy"],
            "est_bank_bound": max((g["bank_bound"] or 0 for g in est["groups"]), default=0),
-           "area_um2": cost["area"], "area_without_banks_um2": cost["area_design"],
+           "area_um2": cost["area"], "area_design_um2": cost["area_design"],
+           "leak_uw": cost["leakage"]["power"], "static_leak_nj": cost["leakage"]["energy"],
            "xbar_inputs": sum(counted) if counted else 0}  # fmt: skip
     for p in PARTS:
         row[f"static_{p}_nj"] = cost["parts"][p]["energy"]
         row[f"area_{p}_um2"] = cost["parts"][p]["area"]
+    for p in FIXED:
+        row[f"area_{p}_um2"] = cost["fixed"][p]["area"]
     return row
 
 
@@ -123,6 +129,8 @@ def run_row(point: Point, platform: Path) -> dict[str, Any]:
            "dynamic_nj": sum(energy["total"][p] for p in PARTS)}  # fmt: skip
     for p in PARTS:
         row[f"dynamic_{p}_nj"] = energy["total"][p]
+    for b in BACKGROUND:
+        row[f"{b}_nj"] = energy.get("background_total", {}).get(b, "")
     return row
 
 
