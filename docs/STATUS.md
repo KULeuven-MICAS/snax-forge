@@ -107,7 +107,7 @@ CLN4's sizes, before and after:
 To do, in four tracks, each task in its own thread, branch and PR (the ROAD1 plan, 16 Nov 2026). Each task runs in a clone set of its own, so tasks in parallel never share `out/`, a GVSoC build or snax_cluster's imported bundles:
 
 - **Track A, tier A and E4** (snax-forge, snax-gvsoc where a task changes the model):
-  1. **E4S1** (kickoff `claude/e4s1-kickoff-2026-11-25.md`, plan `claude/e4s1-plan-2026-11-26.md`): section 4's §C, what each kernel asks of the cluster. `paper/forms.json` (each tier A kernel's forms at int8, W = 8) and `paper/limits.json` (`mvt_v4` against the layout, `bicg_v2` with two engines at once, W 4–32, 16, 32 and 64 banks at int64) through `pixi run paper`, the estimate's columns in `paper/data/`; the runs on SNAX-GVSoC, the figures and vsim of Fig. 11's points to follow. `--set design.data=full` (D199) for its runs and CSYN2's bundles.
+  1. **E4S1** (kickoff `claude/e4s1-kickoff-2026-11-25.md`, plan `claude/e4s1-plan-2026-11-26.md`): section 4's §C, what each kernel asks of the cluster. `paper/forms.json` (each tier A kernel's forms at int8, W = 8) and `paper/limits.json` (`mvt_v4` against the layout, `bicg_v2` with two engines at once, W 4–32, 16, 32 and 64 banks at int64) through `pixi run paper`, both sets run on SNAX-GVSoC into `paper/data/` (53 runs, data errors 0, the four bicg W = 32 points refused at 132 crossbar inputs); the figures and vsim of Fig. 11's points to follow. `--set design.data=full` (D199) for its runs and CSYN2's bundles.
 - **Track B, costs** (snax-forge-experiments, snax-forge's `char`; Nangate 45 nm only): E4's energy axis reads `--energy` or the static estimate; GE1's left-over is open item 137. **COST2** now: leakage beside every part, the DMA engine per burst, the core and the rest as fixed parts (D200, D201); the viewers show the area with the core and the rest and a leakage checkbox; CSYN2 checks the leakage at gate level (open item 176).
 - **Track C, the Snitch-only baseline** (snax_cluster, snax-forge-experiments; E11): SNB1 done; its track D programs (its R12) come with track D.
 - **Track D, end to end** (snax-forge; after track A, best effort, cut from the bottom; each case sized to fit L1, shortcuts allowed for what is not built):
@@ -185,7 +185,7 @@ Dates: 20 Nov, track A's target (fine if it slips); 27 Nov, the softmax gate (so
 
 ## Open Items
 
-Questions not decided yet. Numbers are never reused; a closed item is removed, and where it closed is in git history. Next free number: 177.
+Questions not decided yet. Numbers are never reused; a closed item is removed, and where it closed is in git history. Next free number: 178.
 
 1. BRM dataflow notation: `affine` and `stream` (D70), frozen in M6.
 2. What automated search reads and how a sweep is configured (DSE1, M8).
@@ -283,6 +283,7 @@ Questions not decided yet. Numbers are never reused; a closed item is removed, a
 174. Two NEARs beyond the fill on gesummv, both L1 contention where SNAX-GVSoC and the RTL differ by a few cycles: `gesummv_v2_1_2` (1.1 %), the first dot 524 on SNAX-GVSoC against 533 on vsim, its shared readers losing fewer requests to B's DMA in the model; `gesummv_v2_1` at W = 32 under `pipeline` (1.3 %), the two dots side by side 154 and 139 against 159 and 143.
 175. The estimate leaves out a group's own L1 bank conflicts between a narrow reader and a wide writer (D155, open item 4): `gesummv_v1_1`'s scales read A at int8 on one channel and write it at int32 on four, 528 cycles against an expected 514 on SNAX-GVSoC, none of the refusals the DMA's. NEAR at 0.8 % beyond the fill on `gesummv_v1_1` and `gesummv_v1_1_1`: each simulator gives one scale 522 and the other three 528, not the same one, the reader's and writer's bank phase moved by a few cycles of start time.
 176. The TCDM bank logic (the banks' wrappers and their request paths, about 2 pJ a cycle idle and 5 to 16 running in `dot3_w8_cg`) moves with L1 traffic, so it is neither in the fixed parts' idle floor nor priced per access (D201, X103): a lower bound on memory. Price it per L1 access from CSYN2's per-instance reports, and compare the gate-level picks against COST2's (`mvt_column` against `mvt_column_pipeline`, `bicg_two_pass` against `bicg_two_pass_pipeline`).
+177. A program's window moves with its image, not only its work: with `--set design.data=full` an output that is all zeros on the kernel's data moves from `.bss` to `.data` and `.text` shifts, so boot, the DMA and the configuration windows each move by about ±10 cycles (I-cache refills) and some BUSY_COUNTERs by up to 6. Across the 21 `paper/forms.json` points the windows moved by −26 to +51 cycles (up to 3.6 %), the firings and dynamic energy by under 0.05 %. Forms closer than about 1 % in cycles are reported as the same; a check of a `full` run takes a `kernel` reference from the same commit or a 4 % margin.
 
 ## Sync Reminders
 
