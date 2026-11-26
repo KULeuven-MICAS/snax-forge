@@ -9,7 +9,9 @@ CONTRACTS "Estimate" and "Cost model"). With ``--run`` each point also runs thro
 flow --energy`` (``-j`` at once, into ``out/paper/<set>/<id>/``), adding the run's window and
 dynamic energy by part (CONTRACTS, "The energy run"). The rows go to ``paper/data/<set>.csv``
 in the set's order (with ``--only``, those points' rows replaced in the file as it is); a point
-that fails keeps its row with the reason in ``status``.
+that fails keeps its row with the reason in ``status``. A point with ``"run": false`` gets the
+estimate only (one SNAX-GVSoC cannot run, such as a crossbar above its inputs); without ``--run``
+a row keeps its run columns from the file while its recipe and sets are unchanged.
 """
 
 from __future__ import annotations
@@ -28,7 +30,8 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from snax_forge.design import DesignError, DesignPoint, load, run_checks
+from snax_forge.design import DesignError, DesignPoint, Platform, load, run_checks
+from snax_forge.design.check import xbar_inputs
 from snax_forge.dfg import DfgError
 from snax_forge.dfg.import_sdfg import import_kernel
 from snax_forge.estimate import estimate
@@ -41,7 +44,7 @@ OUT = ROOT / "out" / "paper"
 PARTS = ("datapath", "control", "streamers", "crossbar", "memory")
 LABELS = ("set", "id", "kernel", "branch", "label", "row", "layout", "W", "banks", "schedule",
           "recipe", "sets")  # fmt: skip
-STATIC = ("est_cycles", "est_accelerator_cycles", "est_copy_cycles", "est_bank_bound",
+STATIC = ("est_cycles", "est_accelerator_cycles", "est_copy_cycles", "est_bank_bound", "xbar_inputs",
           *(f"static_{p}_nj" for p in PARTS), "static_nj",
           *(f"area_{p}_um2" for p in PARTS), "area_um2", "area_without_banks_um2")  # fmt: skip
 RUN = ("cycles", *(f"dynamic_{p}_nj" for p in PARTS), "dynamic_nj", "passed")
@@ -58,6 +61,7 @@ class Point:
     recipe: Path
     sets: list[str]
     labels: dict[str, Any] = field(default_factory=dict)
+    run: bool = True
 
 
 def load_set(name: str) -> tuple[Path, list[Point]]:
@@ -66,9 +70,9 @@ def load_set(name: str) -> tuple[Path, list[Point]]:
     common = list(d.get("sets", []))
     points = []
     for p in d["points"]:
-        labels = {k: v for k, v in p.items() if k not in ("id", "recipe", "sets")}
+        labels = {k: v for k, v in p.items() if k not in ("id", "recipe", "sets", "run")}
         points.append(Point(d["name"], p["id"], ROOT / p["recipe"], common + list(p["sets"]),
-                            labels))  # fmt: skip
+                            labels, p.get("run", True)))  # fmt: skip
     ids = [p.id for p in points]
     if len(set(ids)) != len(ids):
         raise SystemExit(f"paper/{name}.json: an id is used twice")
@@ -89,12 +93,14 @@ def static_row(point: Point, platform: Path) -> dict[str, Any]:
         if problems:
             raise DesignError(problems, f"{point.id}: design check")
         dp = DesignPoint.of(design, recipe.name)
+        counted = xbar_inputs(design)
     est = estimate(dp.graph, dp.platform, schedule=dp.schedule).to_dict()
     cost = est["cost"]
     row = {"est_cycles": est["total_cycles"], "est_accelerator_cycles": est["accelerator_cycles"],
            "est_copy_cycles": est["copy_cycles"], "static_nj": cost["energy"],
            "est_bank_bound": max((g["bank_bound"] or 0 for g in est["groups"]), default=0),
-           "area_um2": cost["area"], "area_without_banks_um2": cost["area_design"]}  # fmt: skip
+           "area_um2": cost["area"], "area_without_banks_um2": cost["area_design"],
+           "xbar_inputs": sum(counted) if counted else 0}  # fmt: skip
     for p in PARTS:
         row[f"static_{p}_nj"] = cost["parts"][p]["energy"]
         row[f"area_{p}_um2"] = cost["parts"][p]["area"]
@@ -135,7 +141,12 @@ def row_of(point: Point, platform: Path, run: bool) -> dict[str, Any]:
     except (DfgError, SandboxError, OSError, ValueError) as e:
         row["status"] = f"refused: {str(e).splitlines()[0][:300]}"
         return row
-    if run:
+    if not point.run:
+        limit = Platform.load(platform).l1.max_xbar_inputs
+        row["status"] = (
+            f"estimate only: {row['xbar_inputs']} crossbar inputs, SNAX-GVSoC takes {limit}"
+        )
+    elif run:
         row |= run_row(point, platform)
         row.setdefault("status", "ok")
     return row
@@ -167,10 +178,15 @@ def main(argv: list[str] | None = None) -> int:
     with ThreadPoolExecutor(max_workers=args.j if args.run else 1) as pool:
         rows = list(pool.map(lambda p: row_of(p, platform, args.run), points))
     out = PAPER / "data" / f"{args.set}.csv"
-    if args.only and out.is_file():  # the other points' rows stay as they were
+    old = list(csv.DictReader(out.open())) if out.is_file() else []
+    if not args.run:  # a row's run columns stay while its recipe and sets are the same
+        was = {r["id"]: r for r in old}
+        for r in rows:
+            o = was.get(r["id"])
+            if o and (o["recipe"], o["sets"]) == (r["recipe"], r["sets"]) and r["status"] == "ok":
+                r |= {k: o[k] for k in RUN if o.get(k, "") != ""}
+    if args.only and old:  # the other points' rows stay as they were
         new = {r["id"]: r for r in rows}
-        with out.open() as f:
-            old = list(csv.DictReader(f))
         rows = [new.pop(r["id"], r) for r in old] + list(new.values())
     write_csv(out, rows)
     bad = [r for r in rows if r.get("status") != "ok"]

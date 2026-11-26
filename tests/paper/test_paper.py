@@ -51,8 +51,17 @@ def test_the_estimate_does_not_see_the_layout_and_flags_the_bank_bound():
     assert (w32["est_cycles"], w32["est_bank_bound"]) == (260, 520)
 
 
+def test_a_point_above_the_crossbar_gets_the_estimate_only():
+    p, platform = point("limits", "bicg_pipeline_padded_w32")
+    row = paper.row_of(p, platform, run=True)  # not run, as "run": false
+    assert row["status"] == "estimate only: 132 crossbar inputs, SNAX-GVSoC takes 128"
+    assert row["xbar_inputs"] == 132 and row["est_cycles"] > 0 and "cycles" not in row
+
+
 def test_a_refused_point_keeps_its_row_with_the_reason():
-    row = paper.row_of(*point("limits", "bicg_pipeline_padded_w32"), run=False)
+    p, platform = point("limits", "bicg_pipeline_padded_w32")
+    p.sets = [s for s in p.sets if not s.startswith("platform.l1.max_xbar_inputs")]
+    row = paper.row_of(p, platform, run=False)
     assert row["status"].startswith("refused: [connect.xbar_inputs]") and "132" in row["status"]
     assert "est_cycles" not in row
 
@@ -69,3 +78,16 @@ def test_only_replaces_those_rows(tmp_path, monkeypatch):
     rows = list(csv.DictReader((data / "forms.csv").open()))
     assert [r["id"] for r in rows] == ["mvt_column", "atax_column"]
     assert rows[0]["status"] == "x" and rows[1]["status"] == "ok"
+
+
+def test_the_estimate_alone_keeps_the_run_columns(tmp_path, monkeypatch):
+    monkeypatch.setattr(paper, "PAPER", tmp_path)
+    (tmp_path / "forms.json").write_text((paper.ROOT / "paper" / "forms.json").read_text())
+    (tmp_path / "data").mkdir()
+    assert paper.main(["forms", "--only", "mvt_column"]) == 0
+    path = tmp_path / "data" / "forms.csv"
+    rows = list(csv.DictReader(path.open()))
+    paper.write_csv(path, [rows[0] | {"cycles": "1578", "passed": "True"}])
+    assert paper.main(["forms", "--only", "mvt_column"]) == 0
+    row = next(csv.DictReader(path.open()))
+    assert (row["cycles"], row["passed"], row["est_cycles"]) == ("1578", "True", "1028")

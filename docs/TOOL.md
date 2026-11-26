@@ -291,10 +291,11 @@ The Makefile names the image's Python, CMake and host compilers, so it runs the 
 
 ## 9. Make the paper's data: `paper`
 
-`pixi run paper SET` puts every point of `paper/<SET>.json` (a recipe and its `--set`s) through the design step and the ideal estimate and writes `paper/data/<SET>.csv`, one row per point; `--run` also runs each point through `flow --energy` (in the image, `-j` at once, into `out/paper/<SET>/<id>/`); `--only ID ...` replaces those rows in the file as it is. `paper/README.md` lists the sets and the columns.
+`pixi run paper SET` puts every point of `paper/<SET>.json` (a recipe and its `--set`s) through the design step and the ideal estimate and writes `paper/data/<SET>.csv`, one row per point; `--run` also runs each point through `flow --energy` (in the image, `-j` at once, into `out/paper/<SET>/<id>/`); `--only ID ...` replaces those rows in the file as it is. Without `--run` a row keeps its run columns while its recipe and sets are unchanged; a point marked `"run": false` gets the estimate only. `paper/README.md` lists the sets and the columns.
 
 ```bash
 pixi run paper limits
 paper/data/limits.csv: 36 points, 4 not ok
-  bicg_sequential_contiguous_w32: refused: [connect.xbar_inputs] matvec, mac: 132 TCDM crossbar inputs, the platform takes at most 128 ...
+  bicg_sequential_contiguous_w32: estimate only: 132 crossbar inputs, SNAX-GVSoC takes 128
+  ...
 ```
