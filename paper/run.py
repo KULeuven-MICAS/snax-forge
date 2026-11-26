@@ -7,7 +7,7 @@ a recipe with its own ``--set``s and the labels the figures use. Every point get
 step and the ideal estimate in this process (its cycles, and area and energy by part,
 CONTRACTS "Estimate" and "Cost model"). With ``--run`` each point also runs through ``pixi run
 flow --energy`` (``-j`` at once, into ``out/paper/<set>/<id>/``), adding the run's window and
-dynamic energy by part (CONTRACTS, "The energy run"). The rows go to ``paper/data/<set>.csv``
+dynamic energy by part (CONTRACTS, "Profile and trace"). The rows go to ``paper/data/<set>.csv``
 in the set's order (with ``--only``, those points' rows replaced in the file as it is); a point
 that fails keeps its row with the reason in ``status``, and the exit code is 1 if a point of
 this call failed. Without ``--run`` a row keeps its run columns from the file while its recipe
