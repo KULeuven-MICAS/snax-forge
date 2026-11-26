@@ -341,7 +341,7 @@ The SNAX cluster around the accelerators (D84): a file in `platforms/` that neve
 | `rows` | words per bank | 512 | ≥ 1 |
 | `base_addr` | the first L1 byte | 0 | |
 | `wide_bits` | the widest port (the DMA's) | 512 | a power-of-two multiple of `width_bits` |
-| `max_xbar_inputs` | the most crossbar inputs, as SNAX-GVSoC's crossbar asserts (D85) | 128 | ≥ 1 |
+| `max_xbar_inputs` | the most crossbar inputs: 128 as checked against SNAX's crossbar RTL, up to SNAX-GVSoC's 256 by `--set` (D85) | 128 | 1 to 256 |
 | `warn_xbar_inputs` | above it the note `design.xbar_inputs`: the cost is extrapolated beyond the tables | 64 | 1 to `max_xbar_inputs` |
 
 `L2Config`:

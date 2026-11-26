@@ -171,8 +171,8 @@ def test_a_set_the_config_rejects_is_a_value_problem():
 
 
 def test_the_crossbar_limit_is_a_platform_value():
-    """l1.max_xbar_inputs: 128 by default and in both platform files, at least 1; the
-    warning l1.warn_xbar_inputs 64, from 1 to the limit."""
+    """l1.max_xbar_inputs: 128 by default and in both platform files, 1 to 256 (SNAX-GVSoC's
+    most); the warning l1.warn_xbar_inputs 64, from 1 to the limit."""
     assert (L1Config().max_xbar_inputs, L1Config().warn_xbar_inputs) == (128, 64)
     for path in (SMALL16, SNAX_FORGE):
         l1 = Platform.load(path).l1
@@ -180,9 +180,13 @@ def test_the_crossbar_limit_is_a_platform_value():
     assert (
         Platform.load(SMALL16).with_changes([("l1.max_xbar_inputs", 96)]).l1.max_xbar_inputs == 96
     )
-    with pytest.raises(DesignError, match="max_xbar_inputs must be >= 1") as e:
-        Platform.load(SMALL16).with_changes([("l1.max_xbar_inputs", 0)])
-    assert e.value.codes == ["platform.values"]
+    assert (
+        Platform.load(SMALL16).with_changes([("l1.max_xbar_inputs", 256)]).l1.max_xbar_inputs == 256
+    )
+    for bad in (0, 257):
+        with pytest.raises(DesignError, match="max_xbar_inputs must be 1 to 256") as e:
+            Platform.load(SMALL16).with_changes([("l1.max_xbar_inputs", bad)])
+        assert e.value.codes == ["platform.values"]
     with pytest.raises(DesignError, match="warn_xbar_inputs must be 1 to max_xbar_inputs"):
         Platform.load(SMALL16).with_changes([("l1.max_xbar_inputs", 32)])
 

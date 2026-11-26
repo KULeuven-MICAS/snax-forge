@@ -51,15 +51,10 @@ def test_the_estimate_does_not_see_the_layout_and_flags_the_bank_bound():
     assert (w32["est_cycles"], w32["est_bank_bound"]) == (260, 520)
 
 
-def test_a_point_above_the_crossbar_gets_the_estimate_only():
+def test_a_point_past_snaxs_crossbar_raises_the_limit_or_is_refused():
     p, platform = point("limits", "bicg_pipeline_padded_w32")
-    row = paper.row_of(p, platform, run=True)  # not run, as "run": false
-    assert row["status"] == "estimate only: 132 crossbar inputs, SNAX-GVSoC takes 128"
-    assert row["xbar_inputs"] == 132 and row["est_cycles"] > 0 and "cycles" not in row
-
-
-def test_a_refused_point_keeps_its_row_with_the_reason():
-    p, platform = point("limits", "bicg_pipeline_padded_w32")
+    row = paper.row_of(p, platform, run=False)
+    assert row["status"] == "ok" and row["xbar_inputs"] == 132 and row["est_cycles"] > 0
     p.sets = [s for s in p.sets if not s.startswith("platform.l1.max_xbar_inputs")]
     row = paper.row_of(p, platform, run=False)
     assert row["status"].startswith("refused: [connect.xbar_inputs]") and "132" in row["status"]
