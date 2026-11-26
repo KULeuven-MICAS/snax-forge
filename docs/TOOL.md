@@ -171,7 +171,7 @@ pixi run view-dfg out/sandbox/dot_v4/ out/sandbox/dot_v5/ --platform platforms/s
 
 - Each step is named `<folder>/<stem>`; Compare lays Details and the Estimate out as two columns, the cost cells as `before → after`.
 - The step is a flat graph (D185): the inputs on top, each loop a box chained down to what it drives, an edge through the loops its subset uses (`↻ m_t` where it skips one), the hardware drawn once, after `share` a temporal mux and demux per task. Each container shows its dtype (`A[N] int8 L1 · 64 B`); a port's packing, loops and beats are in its Details.
-- The Estimate: the accelerator's cycles, the unmapped work's (one cycle per iteration, an assumption), their total, and the cost per accelerator in µm² and nJ (CONTRACTS, "Cost model"). The left column lists the Symbols, Containers and Bindings.
+- The Estimate: the accelerator's cycles, the unmapped work's (one cycle per iteration, an assumption), their total, and the cost per accelerator in µm² and nJ (CONTRACTS, "Cost model"); its bars show the area with the core and the rest of the cluster, and the energy dynamic, with a "with leakage" checkbox that adds the design's leakage as one segment. The left column lists the Symbols, Containers and Bindings.
 
 Moving around the drawing, in `view-dfg` and `edit-dfg` alike:
 

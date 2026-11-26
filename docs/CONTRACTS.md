@@ -292,7 +292,7 @@ Python builds every box, port, edge, text and number (`viz/dfg/api.py`, `viz/dfg
 | `GET /api/steps` | each step's `name` (`<folder>/<stem>` when the files come from several folders, `-2`, `-3` on a clash), `folder`, `label` |
 | `GET /api/step/<k>` | `drawing`, Details, the Estimate (section 13), the cost (section 14), the left column (`symbols_section`, `containers_section`, `bindings_section`), `blocks`, `shared`, `partners`, in edit mode `problems` and `notes` |
 | `GET /api/step/<k>/site?sel=<id>&sel=<id>` | each transform's site for the selection, in the order selected; a transform that takes one item refuses several (`site.one`) |
-| `GET /api/compare/<j>/<k>` | `columns`: `labels`, Details' and the Estimate's rows `{label, under, a, b, differs}`, `caveat`, `cost_tables` |
+| `GET /api/compare/<j>/<k>` | `columns`: `labels`, Details' and the Estimate's rows `{label, under, a, b, differs}`, `caveat`, `cost_tables`, `cost_bars` (`area`, `energy`, `energy_leakage`: per side its segments on one scale) |
 | `GET /api/find?step=<ref>` | a step from a bare stem or a number |
 
 The `drawing` is `{nodes, edges, outlines, tasks}`; positions are the page's, never in the API.
@@ -312,6 +312,7 @@ The `drawing` is `{nodes, edges, outlines, tasks}`; positions are the page's, ne
 | edge `via` | a fork's other reader's edge (D189): `{node, port}` of the first reader, whose hops to the container a click on it lights too |
 | outline | `id` (`grp:`, `acc:`, `block:`), `kind`, `text`, `sel`, `parent`; a group that took an open block's boxes also `block` (the first), its text naming the others (`group bicg_types · from matvec, matvec_1`) |
 
+- **The cost's bars**: the area in the six parts and the core and the rest (D200); the energy in the six parts, dynamic. A "with leakage" checkbox, off by default, adds the design's leakage as one striped segment (the cost's `leakage`: its power, its energy over the estimate's cycles at 10 ns, the bar's `parts`; D201), for comparison only.
 - The URL hash holds the whole view: `step=`, `sel=`, `cmp=`, `tech=`, `open=`, `fold=`, `focus=1`, `zoom=` and `zoomc=`.
 - **Bindings** is a tree, `{kind: accelerator | group, name, children}` down to `{kind: entry, index}` into `entries`.
 - **One box per configuration**: every bound group is an outline holding its units, links, slicers and packers (D174, D180) and the loops that drive only it; a closed block (D166) is one box inside its firing loops.
