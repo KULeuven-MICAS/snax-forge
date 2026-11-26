@@ -289,6 +289,10 @@ def _local_refs(node: Any) -> list[str]:
     return []
 
 
+# The design check's limits, not the cluster's: the hjson has no place for them
+CHECK_ONLY = ("max_xbar_inputs", "warn_xbar_inputs")
+
+
 def write_back(d: dict[str, Any], platform: Platform) -> None:
     """The platform's values into the parsed cluster file ``d``; see the module doc."""
     l1, l2 = platform.l1, platform.l2
@@ -317,7 +321,8 @@ def write_back(d: dict[str, Any], platform: Platform) -> None:
     differ = [
         f"{mem}.{k} {getattr(ours, k)!r} (the hjson gives {getattr(theirs, k)!r})"
         for mem, ours, theirs in (("l1", l1, back.l1), ("l2", l2, back.l2))
-        for k in ours.to_dict() if getattr(ours, k) != getattr(theirs, k)
+        for k in ours.to_dict()
+        if k not in CHECK_ONLY and getattr(ours, k) != getattr(theirs, k)
     ]  # fmt: skip
     if differ:
         raise GenError(
