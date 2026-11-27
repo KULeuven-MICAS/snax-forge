@@ -5,8 +5,8 @@ into one nest by ``fuse_map`` alone (gray's three products a tree, the rest chai
 4 and binds to ``simd`` at its option: requant at one stream (d 1024, lo 0, hi 127, int32 into
 int8), gray and both blurs at axpbypcz over three streams (k = 77, 150, 29 and d 256; k2 = 2,
 d 4, k1 and k3 unset), threshold at one stream with k from the scalar t (hi 255); the bound
-graph's reference run equals NumPy on full-range data; ``unbind`` and ``unfuse_map`` give the
-import back. Refused: a divisor that is no power of two, and the fuse of two nests no value
+graph's reference run equals NumPy on full-range data; gen fills each at the op type the
+casts set; ``unbind`` and ``unfuse_map`` give the import back. Refused: a divisor that is no power of two, and the fuse of two nests no value
 joins. The tree fuse itself (``fused_tree``, a local in each step) is checked on gray.
 """
 
@@ -15,8 +15,10 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from snax_forge.design.streamers import instances
 from snax_forge.dfg import Graph, execute
 from snax_forge.dfg.import_sdfg import import_sdfg
+from snax_forge.gen.blocks import fill_node
 from snax_forge.sandbox import SandboxError, bind, fuse_map, split_map, unbind, unfuse_map
 from snax_forge.sandbox.compose import fuse_pairs
 from snax_forge.sandbox.patterns import fused_tree, fused_view
@@ -194,3 +196,24 @@ def test_two_nests_no_value_joins_are_not_fused():
     g = imported(progs.gray, N=8)
     with pytest.raises(SandboxError, match="mult and mult_1 are not joined by a transient"):
         fuse_map(g, "mult_map", "mult_map_1")
+
+
+@pytest.mark.parametrize(
+    ("prog", "symbols", "op_type", "params", "scalars"),
+    [
+        (progs.requant, {"N": 8}, "int32", {"op": "requant", "d": 1024, "lo": 0, "hi": 127}, {}),
+        (progs.gray, {"N": 8}, "uint16",
+         {"op": "axpbypcz", "k1": 77, "k2": 150, "k3": 29, "d": 256}, {}),
+        (progs.blur_cols, {"H": 6, "W": 8}, "uint16", {"op": "axpbypcz", "k2": 2, "d": 4}, {}),
+        (progs.threshold, {"N": 8}, "int16", {"op": "threshold", "hi": 255}, {"k": "int16"}),
+    ],
+    ids=["requant", "gray", "blur_cols", "threshold"],
+)  # fmt: skip
+def test_gen_fills_each_option_at_the_op_type_the_casts_set(prog, symbols, op_type, params,
+                                                            scalars):  # fmt: skip
+    """gray's d = 256 fits its uint16 op type, not its uint8 inputs': the slots are checked
+    against the node's op type."""
+    g = bound(prog, {}, **symbols)
+    n = accelerated(g)
+    f = fill_node("SimdLanes", instances(g)[n.attrs["instance"]], g, n)
+    assert (f.op_type, f.params, f.scalars) == (op_type, params, scalars)

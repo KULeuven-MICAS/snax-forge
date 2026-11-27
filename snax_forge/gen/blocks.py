@@ -86,7 +86,7 @@ class Fill:
     scalars: dict[str, str] = field(default_factory=dict)
 
 
-Adapter = Callable[..., Fill]  # (inst, dtypes=None) -> Fill
+Adapter = Callable[..., Fill]  # (inst, dtypes=None, op_type=None) -> Fill
 
 
 @dataclass(frozen=True)
@@ -118,8 +118,8 @@ def fill_node(datapath: str, inst: Instance, graph: Any, node: Any) -> Fill:
 
     from snax_forge.brm import port_dtypes
 
-    f = DATAPATHS[datapath].fill(inst, port_dtypes(graph, node))
     op_type = node.attrs.get("opType")
+    f = DATAPATHS[datapath].fill(inst, port_dtypes(graph, node), op_type=op_type)
     if op_type is None or f.op_type is None:
         return f
     return replace(f, op_type=op_type, scalars={s: op_type for s in f.scalars})
@@ -213,8 +213,10 @@ NAMED_OPS = {
 SLOTS = ("k", "k1", "k2", "k3", "d", "lo", "hi")
 
 
-def simd_lanes(inst: Instance, dtypes: Mapping[str, str] | None = None) -> Fill:
-    """SimdLanes' fill; see the module doc."""
+def simd_lanes(inst: Instance, dtypes: Mapping[str, str] | None = None,
+               op_type: str | None = None) -> Fill:  # fmt: skip
+    """SimdLanes' fill; see the module doc. ``op_type`` is the node's where the kernel's casts
+    set one (D175; gray's uint16 over uint8 inputs), so a baked slot is checked against it."""
     brm, b = inst.brm, inst.impl.binding
     what = f"{brm.name}.{inst.implementation}"
     if not {"lanes", "op"} <= set(b["args"]) <= {"lanes", "op", "streams", *SLOTS}:
@@ -268,7 +270,8 @@ def simd_lanes(inst: Instance, dtypes: Mapping[str, str] | None = None) -> Fill:
     names = [p.name for p in inst.ports]
     _lanes(inst, {p: lanes for p in names}, what)
     ports = _fill_ports(inst, dtypes, set(names), what)
-    op_type = None if dtypes is None else result_type([dtypes[p.name] for p in ins])
+    if op_type is None and dtypes is not None:
+        op_type = result_type([dtypes[p.name] for p in ins])
     baked = {s: v for s, v in slots.items() if v is not None}
     for s, v in baked.items():
         if type(v) is not int:
@@ -297,7 +300,7 @@ register_datapath("SimdLanes", 0, simd_lanes, lanewise=True)
 
 
 def tree_accumulate(inst: Instance, dtypes: Mapping[str, str] | None = None,
-                    who: str = "TreeAccumulate") -> Fill:  # fmt: skip
+                    who: str = "TreeAccumulate", op_type: str | None = None) -> Fill:  # fmt: skip
     """TreeAccumulate's fill (SerialAccumulate's as ``who``); see the module doc."""
     brm, b = inst.brm, inst.impl.binding
     what = f"{brm.name}.{inst.implementation}"
@@ -327,7 +330,8 @@ def tree_accumulate(inst: Instance, dtypes: Mapping[str, str] | None = None,
 register_datapath("TreeAccumulate", 1, tree_accumulate)
 
 
-def serial_accumulate(inst: Instance, dtypes: Mapping[str, str] | None = None) -> Fill:
+def serial_accumulate(inst: Instance, dtypes: Mapping[str, str] | None = None,
+                      op_type: str | None = None) -> Fill:  # fmt: skip
     """SerialAccumulate's fill; see the module doc."""
     return tree_accumulate(inst, dtypes, "SerialAccumulate")
 
@@ -335,7 +339,8 @@ def serial_accumulate(inst: Instance, dtypes: Mapping[str, str] | None = None) -
 register_datapath("SerialAccumulate", 1, serial_accumulate, span="lanes")
 
 
-def mac(inst: Instance, dtypes: Mapping[str, str] | None = None) -> Fill:
+def mac(inst: Instance, dtypes: Mapping[str, str] | None = None,
+        op_type: str | None = None) -> Fill:  # fmt: skip
     """Mac's fill; see the module doc."""
     brm, b = inst.brm, inst.impl.binding
     what = f"{brm.name}.{inst.implementation}"
@@ -384,7 +389,8 @@ def mac(inst: Instance, dtypes: Mapping[str, str] | None = None) -> Fill:
 register_datapath("Mac", "max(accumulate, regOut)", mac, lanewise=True)
 
 
-def lane_accumulate(inst: Instance, dtypes: Mapping[str, str] | None = None) -> Fill:
+def lane_accumulate(inst: Instance, dtypes: Mapping[str, str] | None = None,
+                    op_type: str | None = None) -> Fill:  # fmt: skip
     """LaneAccumulate's fill; see the module doc."""
     brm, b = inst.brm, inst.impl.binding
     what = f"{brm.name}.{inst.implementation}"
