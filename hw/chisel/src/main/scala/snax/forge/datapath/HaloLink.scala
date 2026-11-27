@@ -6,7 +6,7 @@ import snax.forge.IntType
 
 /** A halo link (the catalogue entry `HaloLink` of CONTRACTS, "Accelerator RTL spec"): one stream's beats as `taps`
   * windows of a row, shifted by 0 … T − 1 elements, for a unit whose T inputs read neighbouring elements that start
-  * mid-word (D206). Data and enables only.
+  * mid-word (a packed stream starts on a word). Data and enables only.
   *
   * It holds H = ⌈(T − 1) / W⌉ beats. Number the elements of the held beats, oldest first, then the incoming beat: e_0,
   * e_1, …, e_((H+1)W−1). Tap t, lane l is e_(l+t): a wire from a held register or from the input, so the taps read `in`

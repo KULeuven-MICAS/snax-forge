@@ -216,7 +216,7 @@ SLOTS = ("k", "k1", "k2", "k3", "d", "lo", "hi")
 def simd_lanes(inst: Instance, dtypes: Mapping[str, str] | None = None,
                op_type: str | None = None) -> Fill:  # fmt: skip
     """SimdLanes' fill; see the module doc. ``op_type`` is the node's where the kernel's casts
-    set one (D175; gray's uint16 over uint8 inputs), so a baked slot is checked against it."""
+    set one (gray's uint16 over uint8 inputs), so a baked slot is checked against it."""
     brm, b = inst.brm, inst.impl.binding
     what = f"{brm.name}.{inst.implementation}"
     if not {"lanes", "op"} <= set(b["args"]) <= {"lanes", "op", "streams", *SLOTS}:

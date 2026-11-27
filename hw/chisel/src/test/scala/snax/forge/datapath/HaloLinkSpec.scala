@@ -6,7 +6,7 @@ import org.scalatest.flatspec.AnyFlatSpec
 
 import snax.forge.{ForgeTester, IntType, LaneBits, Rand, Seeds}
 
-/** `HaloLink` against `HaloModel`, written from CONTRACTS, "Accelerator RTL spec" (D206): H = ⌈(T − 1) / W⌉ beats held,
+/** `HaloLink` against `HaloModel`, written from CONTRACTS, "Accelerator RTL spec": H = ⌈(T − 1) / W⌉ beats held,
   * the elements of the held beats oldest first then the incoming beat's, tap t lane l the element l + t, every tap read
   * in the cycle its input comes; on load the held beats shift by one. Its name, flops and refusals; the worked examples
   * (W 4, 1 and 2 at T 3, 3 and 5; W 8 at T 3 as bit slices of {incoming, held}; W 4's taps into axpbypcz, k2 2 and d 4,

@@ -118,7 +118,7 @@ def test_a_type_param_must_be_type_names():
 
 
 def test_a_halo_link_fills_from_its_link_and_holds_its_taps_minus_one_elements():
-    """HaloLink's params from a halo link's taps and its ends' lanes and dtype (link.taps, D206),
+    """HaloLink's params from a halo link's taps and its ends' lanes and dtype (link.taps),
     checked against the catalogue; its flops H * W * width, H = ceil((T - 1) / W): 1 beat at W >= 2
     with T 3, 2 at W 1. LinkBuffer's fill is unchanged; a rule a link has not is refused."""
     cat = catalogue()

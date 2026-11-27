@@ -33,7 +33,7 @@ import snax.forge.shell.AcceleratorSpec
   *   - `unit.scalars.<slot>`: whether the unit reads that slot from its CSR (a `bool`: its `scalars` has it);
   *   - `unit.ports.seed`: whether the unit has a seed port (a `bool`: a fold's start, read once per job);
   *   - `link.depth`, `link.lanes`, `link.dtype`: a buffer's link's depth and its ends' lanes and dtype;
-  *   - `link.taps`: a halo link's taps (`HaloLink`, D206).
+  *   - `link.taps`: a halo link's taps (`HaloLink`).
   *
   * A port is `"in"` or `"out"`, or `{"dir": ..., "when": {param: value, ...}}`; a pin is a name, or `{"name": ...,
   * "when": {...}}`. `when` is a match: the port or pin exists only when every listed param has that value, or, for a

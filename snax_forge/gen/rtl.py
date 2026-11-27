@@ -10,7 +10,7 @@ Per unit the checks run in order: the params by its fill rule, its live ports an
 (``live``), its ports, its timing; then each buffer's ``LinkBuffer`` params. The fill rule's
 keys: ``inputs.dtype``, ``outputs.dtype``, ``inputs.lanes``, ``inputs.count``, ``unit.opType``,
 ``unit.params.<name>`` (None where unset), ``unit.scalars.<slot>``, ``unit.ports.seed`` and a
-link's (``LINK_RULES``): a buffer's ``link.depth``, a halo link's ``link.taps`` (D206), and their
+link's (``LINK_RULES``): a buffer's ``link.depth``, a halo link's ``link.taps``, and their
 ends' ``link.lanes``, ``link.dtype``. ``vectors`` and ``write_fixture`` write
 the Chisel specs' ``vectors.json``: per outer port its data.h array (lane i of beat t is element
 t * lanes + i, modulo the array's size) and per task its CSR values and expected counter, from
@@ -150,7 +150,7 @@ def buffer_params(depth: int, lanes: int, dtype: str, sig: Mapping[str, Any]) ->
 
 def halo_params(taps: int, lanes: int, dtype: str, sig: Mapping[str, Any]) -> dict[str, Any]:
     """A ``HaloLink``'s params by its fill rule from a halo link's taps and its ends' lanes and
-    dtype (D206)."""
+    dtype."""
     return _link_fill("HaloLink", {"link.taps": taps, "link.lanes": lanes, "link.dtype": dtype},
                       sig)  # fmt: skip
 
