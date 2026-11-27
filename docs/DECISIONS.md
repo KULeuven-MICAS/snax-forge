@@ -7,7 +7,7 @@ Rules (D117):
 - An entry is a choice with a real alternative that someone may want to reverse: direction, ownership, the interfaces between components, the order of work. Implementation details live in the module's docstring and its tests.
 - An entry says what was decided, why, and where the detail lives, in a few short bullets; an edge case only when there is one. A change is written into the entry, not chained after it.
 - Entries merged into one keep all their numbers in its heading, so a cite of any of them still finds it. A number is never changed or reused; the text of a removed entry is in git history.
-- A new decision gets the next free number, under the area it belongs to. Next free number: **D202**.
+- A new decision gets the next free number, under the area it belongs to. Next free number: **D204**.
 
 Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29–D45, D47–D50, D53, D54, D56, D58–D63, D65–D67, D69, D74, D76–D78, D80, D81, D83, D88–D97, D100, D101, D103, D104, D106, D107, D109, D110, D114, D115, D119, D124, D127, D128, D132, D133, D138–D141, D151, D156, D159, D160, D181.
 
@@ -109,9 +109,15 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 
 ### D143 · D175 — Arithmetic follows NumPy; types follow the program
 
-- **Decided:** each op runs at its operands' result type, signedness from each port's container, then extends or wraps into its target. A kernel's cast (`np.sum(A.astype(OP_TYPE) * B.astype(OP_TYPE))`) is a type: the importer folds DaCe's convert map into its consumer as a value cast setting `opType`, stripped at `bind`. A fold runs at NumPy's type (`np.sum` of a narrower int at `int64`, `@` and `np.dot` at the operands'), the same bits as the hardware's cast before the tree. A literal is weak, as NEP 50 says (relu's `k`). `bind` wants an output as wide as every input.
+- **Decided:** each op runs at its operands' result type, signedness from each port's container, then extends or wraps into its target. A kernel's cast (`np.sum(A.astype(OP_TYPE) * B.astype(OP_TYPE))`) is a type: the importer folds DaCe's convert map into its consumer as a value cast setting `opType`, stripped at `bind`. A fold runs at NumPy's type (`np.sum` of a narrower int at `int64`, `@` and `np.dot` at the operands'), the same bits as the hardware's cast before the tree. A literal is weak, as NEP 50 says (relu's `k`). `bind` wants an output as wide as every input, but a bounded SIMD body (D203).
 - **Why:** model, RTL and reference compute the same bits, and the program alone gives the types.
 - **Where:** CONTRACTS, "SNAX-DFG" and "Block runtime model"; `brm/dtypes.py`; snax-gvsoc's `snax/snax_types.hpp`.
+
+### D203 — A bounded SIMD body may write a narrower output
+
+- **Decided:** a SIMD node may write an output narrower than an input when every value its code can give fits the output's dtype: `check_dtypes` takes the node's code and `value_span` bounds it from each input's whole dtype (`expr.bounds`; a scalar read from a CSR unbounded), so a clamp (requant's `min(max(z // 1024, 0), 127)` into int8) passes and a shift alone does not. A fold's output never narrows. The importer keeps a narrowing `astype` of a transient (a computed value) as its own nest, so the narrow transient is what goes through memory; one of a kernel input still folds into its reader, which `bind` refuses (the datapaths only extend); `bind` drops an output's cast at least as wide as the output and refuses a narrower one.
+- **Why:** the MLP's requant writes int8 from int32 sums and the image passes write uint8 from uint16 sums; folded into its reader, `a.astype(int8)` would move int32 through L1 and need a narrowing input cast, which the datapaths do not have. The range keeps the guard D143's rule gave: an output too narrow for its values is still refused.
+- **Where:** `brm/dtypes.py`, `expr.py` (`bounds`, `strip_casts`), `dfg/import_sdfg.py` (`_fold_converts`); CONTRACTS, "SNAX-DFG" and "Design checks".
 
 ### D149 — Blocks with variants, not chains
 

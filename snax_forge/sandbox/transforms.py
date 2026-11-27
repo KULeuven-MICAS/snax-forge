@@ -498,12 +498,12 @@ def _bind_check(g: Graph, site: _Site, brm: str, implementation: str,
     seeds = _bind_seeds(site, b, brm, given, what)
     scalars = _scalar_inputs(g, site, what)
     ports = match(site.pattern, b, conn_dtypes, frozenset(scalars))
-    _check_port_dtypes(b, ports, conn_dtypes, what)
+    _check_port_dtypes(b, ports, conn_dtypes, what, tasklet)
     if seeds:
         given[SEED] = 1  # the seed's port, on the seed's element (_bind_rewrite)
     names = _scalar_names(b, scalars)
     entry, ports, slots = _bind_entry(b, brm, tasklet, ports, names, given, what)
-    _check_port_dtypes(b, ports, conn_dtypes, what)  # the entry's assignment of the inputs
+    _check_port_dtypes(b, ports, conn_dtypes, what, tasklet)  # the entry's assignment
     computes = _computes(tasklet, ports, names)
     op_type, cast_op_type = _op_types(tasklet, ports, conn_dtypes, casts)
     from_scalar = _bind_slots(b, brm, entry, tasklet, ports, slots, names, conn_dtypes, given,
@@ -553,13 +553,22 @@ def _without_casts(site: _Site, conn_dtypes: Mapping[str, str],
     """The site with its tasklets' value casts stripped (a copy: the graph keeps them, and
     ``replaced`` with them), and the dtype each input connector of the bound tasklet is cast
     to. A cast that does not hold every value of its input (int32 to int8, int8 to uint32) is
-    refused: the datapaths only extend."""
+    refused: the datapaths only extend. A cast of an output's whole value is dropped when it is
+    as wide as the output, whose own wrap gives the same bits, and refused when
+    narrower."""
     try:
         _, casts = expr.strip_casts(site.tasklet.attrs["code"], what)
     except ExprError as e:
         raise SandboxError(str(e)) from None
     if not casts:
         return site, {}
+    for c in [c for c in casts if c in site.tasklet.outputs]:
+        dt = casts.pop(c)
+        if np.dtype(dt).itemsize < np.dtype(conn_dtypes[c]).itemsize:
+            raise SandboxError(f"{what}: the cast {dt}(...) of output {c} ({conn_dtypes[c]}) "
+                               f"wraps its value narrower than the output; the hardware wraps "
+                               f"only into the output's dtype: drop the cast or give {c} "
+                               f"the dtype {dt}")  # fmt: skip
     for c, dt in casts.items():
         if not np.can_cast(conn_dtypes[c], dt, "safe"):
             raise SandboxError(f"{what}: the cast {dt}({c}) of {conn_dtypes[c]} does not hold "
@@ -806,11 +815,15 @@ def _computes(tasklet: Node, ports: Mapping[str, str], names: Mapping[str, str])
 
 
 def _check_port_dtypes(b: Any, ports: Mapping[str, str], conn_dtypes: Mapping[str, str],
-                       what: str) -> None:  # fmt: skip
+                       what: str, tasklet: Node) -> None:  # fmt: skip
+    """``check_dtypes`` on the ports' dtypes and the tasklet's code on the ports (a scalar
+    operand under a name of its own, unbounded)."""
     from snax_forge.brm import accepted, check_dtypes
 
     dtypes = {p: conn_dtypes[c] for c, p in ports.items()}
-    if refused := check_dtypes(b, dtypes):
+    names = {c: ports.get(c, f"scalar_{c}") for c in tasklet.inputs | tasklet.outputs}
+    code = expr.rename_code(tasklet.attrs["code"], names)
+    if refused := check_dtypes(b, dtypes, code):
         raise SandboxError(
             f"{what}: {'; '.join(refused)}; accepted output dtypes for these inputs: "
             f"{accepted(b, dtypes)}"

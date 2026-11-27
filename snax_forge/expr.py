@@ -8,8 +8,8 @@ on Python ints, NumPy integer scalars and arrays (``max``, ``min`` elementwise),
 reference executor can evaluate a subset for a whole map nest at once. What binds the names (a
 BRM's params, a graph's symbols and map variables) is the caller's.
 
-Entry points: ``check``, ``names``, ``is_name``, ``constant``, ``evaluate`` and ``outside`` on
-one expression; ``canonical``, the stored form (an int, or the text ``ast.unparse`` writes), so
+Entry points: ``check``, ``names``, ``is_name``, ``constant``, ``evaluate``, ``bounds`` (its
+range of values) and ``outside`` on one expression; ``canonical``, the stored form (an int, or the text ``ast.unparse`` writes), so
 rewritten and hand-written files diff cleanly; ``substitute``; ``linear``, an affine value's
 constant and per-variable coefficients; and, on tasklet code, ``statements``,
 ``canonical_code``, ``rename_code``, ``check_code``, ``strip_casts`` and ``unify``, a match
@@ -218,6 +218,52 @@ def evaluate(v: Value, env: Mapping[str, Any]) -> Any:
     return walk(_parsed(v))
 
 
+def bounds(v: Value, ranges: Mapping[str, tuple[int, int]]) -> tuple[float, float]:
+    """The smallest and largest value of ``v`` when each name lies in its ``ranges`` entry
+    (both ends included), a name without one unbounded (``-inf``, ``inf``). Exact for one use
+    of each name; a cast keeps its argument's range when every value fits, else gives its
+    dtype's."""
+    inf = float("inf")
+    if type(v) is int:
+        return v, v
+
+    def mul(x: float, y: float) -> float:
+        return 0 if x == 0 or y == 0 else x * y  # an unbounded value times 0 is 0
+
+    def div(x: float, y: float) -> float:
+        return x // y if abs(x) != inf else x * (1 if y > 0 else -1)
+
+    def walk(node: ast.expr) -> tuple[float, float]:
+        if isinstance(node, ast.Constant):
+            return node.value, node.value
+        if isinstance(node, ast.Name):
+            return ranges.get(node.id, (-inf, inf))
+        if isinstance(node, ast.UnaryOp):
+            lo, hi = walk(node.operand)
+            return -hi, -lo
+        if isinstance(node, ast.Call) and node.func.id in CASTS:
+            (lo, hi), info = walk(node.args[0]), np.iinfo(node.func.id)
+            return (lo, hi) if info.min <= lo and hi <= info.max else (int(info.min), int(info.max))
+        if isinstance(node, ast.Call) and node.func.id in CALLS:
+            (a0, a1), (b0, b1) = (walk(x) for x in node.args)
+            pick = max if node.func.id == "max" else min
+            return pick(a0, b0), pick(a1, b1)
+        if isinstance(node, ast.BinOp) and type(node.op) in _BINOPS:
+            (a0, a1), (b0, b1) = walk(node.left), walk(node.right)
+            if isinstance(node.op, ast.Add):
+                return a0 + b0, a1 + b1
+            if isinstance(node.op, ast.Sub):
+                return a0 - b1, a1 - b0
+            if isinstance(node.op, ast.FloorDiv) and (b0 <= 0 <= b1 or inf in (-b0, b1)):
+                return -inf, inf  # a divisor that may be 0, or is unbounded
+            f = mul if isinstance(node.op, ast.Mult) else div
+            corners = [f(x, y) for x in (a0, a1) for y in (b0, b1)]  # monotone in each
+            return min(corners), max(corners)
+        raise ExprError(f"{v!r}: no range for {ast.unparse(node)!r}")
+
+    return walk(_parse(v))
+
+
 # =============================================================================
 # Stored form, substitution, affine parts
 # =============================================================================
@@ -424,7 +470,10 @@ def check_code(
 def strip_casts(code: str, what: str) -> tuple[str, dict[str, str]]:
     """``code`` (valid, see ``statements``) without its value casts, and the dtype each name
     was cast to: ``out = int32(a) * int32(b)`` gives ``out = a * b`` and ``{a: int32, b:
-    int32}``. A cast of anything but a name, or one name cast to two types, is an ExprError."""
+    int32}``. A cast of a statement's whole value (``out = int8(min(a, 127))``) is given under
+    its target, the narrowest where there are several: whether the output's own wrap makes it
+    redundant is the caller's to say. Any other cast of anything but a name, or one name cast
+    to two types, is an ExprError."""
     casts: dict[str, str] = {}
 
     class Strip(ast.NodeTransformer):
@@ -443,7 +492,13 @@ def strip_casts(code: str, what: str) -> tuple[str, dict[str, str]]:
 
     lines = []
     for t, e in statements(code, what):
-        tree = Strip().visit(_parse(str(e)))
+        tree = _parse(str(e))
+        while (isinstance(tree, ast.Call) and tree.func.id in CASTS
+               and not isinstance(tree.args[0], ast.Name)):  # fmt: skip
+            if t not in casts or np.dtype(tree.func.id).itemsize < np.dtype(casts[t]).itemsize:
+                casts[t] = tree.func.id
+            tree = tree.args[0]
+        tree = Strip().visit(tree)
         lines.append(f"{t} = {canonical(ast.unparse(tree))}")
     return "\n".join(lines), casts
 

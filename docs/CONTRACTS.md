@@ -78,7 +78,7 @@ Every node has `id` (unique, D75), `kind`, `inputs`, `outputs`, `attrs` and, for
 
 ### Import
 
-`dfg/import_sdfg.py` derives the graph from the kernel's simplified SDFG and decides nothing: a Scalar becomes a `[1]` container with `sdfg.scalar`, a Map one map per parameter, a Reduce one map per input dimension around `out = in1`; a map over `0:X` is named `lower(X)` (D162); a convert map is folded into its consumer as a value cast `int32(x)` (D143 · D175); control flow is refused by name.
+`dfg/import_sdfg.py` derives the graph from the kernel's simplified SDFG and decides nothing: a Scalar becomes a `[1]` container with `sdfg.scalar`, a Map one map per parameter, a Reduce one map per input dimension around `out = in1`; a map over `0:X` is named `lower(X)` (D162); a convert map is folded into its consumer as a value cast `int32(x)` (D143 · D175), a chain of them composed, and one that narrows a transient stays a nest so its narrow output is kept (D203); control flow is refused by name.
 
 ### Folding writes
 
@@ -164,7 +164,7 @@ The first four are shared: designs that differ only in timing, supported values 
 
 ### The function and its code
 
-`code` is one `output = expression` per output port over the input ports, per lane of one firing, with the ops `add`, `sub`, `mul`, `min`, `max`, `and`, `or` and `xor` (types: D143). A tasklet's operand casts set the unit's `opType` and are stripped before matching (D175). `code` may instead be a list of entries, `{"params": {...}, "code": ...}`, each fixing design params. How `bind` picks an entry (D82):
+`code` is one `output = expression` per output port over the input ports, per lane of one firing, with the ops `add`, `sub`, `mul`, `min`, `max`, `and`, `or` and `xor` (types: D143). A tasklet's operand casts set the unit's `opType` and are stripped before matching (D175); a cast of an output's whole value is dropped when it is as wide as the output and refused when narrower (D203). `code` may instead be a list of entries, `{"params": {...}, "code": ...}`, each fixing design params. How `bind` picks an entry (D82):
 
 1. It tries the entries in order, and every assignment of the tasklet's array inputs to the entry's present ports.
 2. The code must equal the tasklet's, with `+`, `*`, `min` and `max` commuting.
@@ -409,7 +409,7 @@ The `platform` and `graph` stages run independently, `connect` when both passed,
 | `connect.streamer_key` | a streamer entry that matches no port (the fix names the closest) |
 | `connect.derived` | a streamer entry that sets `write` or `n_ports` |
 | `connect.lanes` | an entry's `spatial_bounds` that are not the port's lanes |
-| `connect.dtype` | containers that break the BRM's dtype rule (`brm/dtypes.py`, D143: each port's dtype allowed, every output at least as wide as every input, no signed input with a `uint64` one), or two dtypes on one port of an instance |
+| `connect.dtype` | containers that break the BRM's dtype rule (`brm/dtypes.py`, D143: each port's dtype allowed, every output at least as wide as every input unless a SIMD node's code bounds its values to the output's range (D203), no signed input with a `uint64` one), or two dtypes on one port of an instance |
 | `connect.pack` | a port neither wired nor sliced (an input) or packed (an output) (D142 · D174 · D180), below |
 | `connect.pad` | a fold reading through a tail what an accelerator wrote, unless the producer's tasklet on its pad values gives the fold's identity (D144), below |
 | `connect.num_ch` | a `num_ch` other than the derived one (W / num_slc, or 1 for a packed output or a sliced input; D142 · D174 · D180); the message lists the values that would fit |
