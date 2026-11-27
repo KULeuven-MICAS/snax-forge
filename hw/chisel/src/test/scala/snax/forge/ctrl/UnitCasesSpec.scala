@@ -14,7 +14,9 @@ import snax.forge.elementwise.ElementwiseOp
   * inputs at L 0 `SimdLanes` (at op axpby with the case's k1 and k2, each baked or on its pin, `k1` and `k2` here), one
   * input with `k` at L 0 the one-stream `SimdLanes` (op(a, k) at a's type), one input at L 1 `TreeAccumulate`, or
   * `LaneAccumulate` with `fold lanes` (each lane its own sum, W results per push), at the case's `types` (int64 without
-  * them), lanes and op; any other shape (L 1 or 2 with two inputs) the controller alone, no data.
+  * them), lanes and op; at L 0 axpbypcz (three inputs), requant or threshold (one) the named `SimdLanes`, at the case's
+  * `optype` (the inputs' result type without it), its slots baked or on their pins (`k`, `k1` ... `k3`); any other
+  * shape (L 1 or 2 with two inputs) the controller alone, no data.
   */
 class UnitHarness(val c: Case) extends Module {
   private val ctrl =
@@ -23,13 +25,14 @@ class UnitHarness(val c: Case) extends Module {
   private def t(i: Int): IntType = IntType(if (c.types.isEmpty) "int64" else c.types(i))
 
   val datapath: Option[String] =
-    if (c.inputs == 2 && c.latency == 0) Some("SimdLanes")
+    if (c.named && c.latency == 0) Some("SimdLanesNamed")
+    else if (c.inputs == 2 && c.latency == 0) Some("SimdLanes")
     else if (c.inputs == 1 && c.latency == 0 && c.k.nonEmpty) Some("SimdLanesK")
     else if (c.inputs == 1 && c.latency == 1 && c.laneFold) Some("LaneAccumulate")
     else if (c.inputs == 1 && c.latency == 1) Some("TreeAccumulate")
     else None
 
-  private val outLanes = if (c.inputs == 1 && c.k.isEmpty && !c.laneFold) 1 else c.lanes
+  private val outLanes = if (c.inputs == 1 && c.k.isEmpty && !c.laneFold && !c.named) 1 else c.lanes
 
   val io = IO(new Bundle {
     val start    = Flipped(Decoupled(UInt(0.W)))
@@ -43,6 +46,8 @@ class UnitHarness(val c: Case) extends Module {
     val cls      = Output(UInt(2.W))
     val k1       = Input(UInt(64.W)) // axpby's slots on their pins (a CSR's value)
     val k2       = Input(UInt(64.W))
+    val k3       = Input(UInt(64.W))
+    val k        = Input(UInt(64.W)) // threshold's k on its pin
   })
 
   ctrl.io.start <> io.start
@@ -80,6 +85,39 @@ class UnitHarness(val c: Case) extends Module {
         dp.io.a(l)     := lane(io.data(0)(l), t(0))
         dp.io.b.get(l) := lane(io.data(1)(l), t(1))
         io.res(l)      := dp.io.out(l).asUInt
+      }
+    case Some("SimdLanesNamed") =>
+      val ins    = (0 until c.inputs).map(t)
+      val opType = c.opType.map(IntType(_)).getOrElse(ins.reduce(snax.forge.elementwise.ElementwiseModel.resultType))
+      def at(v: BigInt): BigInt =
+        if (opType.signed) LaneBits.signed(v, opType.width) else v & LaneBits.mask(opType.width)
+      def baked(s: Option[SnaxUnitCases.Slot]) = s.filter(!_.csr).map(x => at(x.value))
+      val dp    = Module(
+        new SimdLanes(
+          ins.map(_.name),
+          opType.name,
+          t(c.inputs).name,
+          c.lanes,
+          SimdLanes.opByName(c.op),
+          k     = if (c.kCsr) None else c.k.map(at),
+          k1    = baked(c.k1),
+          k2    = baked(c.k2),
+          kCsr  = c.kCsr,
+          k1Csr = c.k1.exists(_.csr),
+          k2Csr = c.k2.exists(_.csr),
+          k3    = baked(c.k3),
+          k3Csr = c.k3.exists(_.csr),
+          d     = c.d,
+          lo    = c.lo.map(at),
+          hi    = c.hi.map(at)
+        )
+      )
+      for ((pin, v) <- Seq(dp.io.k -> io.k, dp.io.k1 -> io.k1, dp.io.k2 -> io.k2, dp.io.k3 -> io.k3))
+        pin.foreach(_ := v(opType.width - 1, 0))
+      val ports = Seq(Some(dp.io.a), dp.io.b, dp.io.c)
+      for (l <- 0 until c.lanes) {
+        for (i <- 0 until c.inputs) ports(i).get(l) := lane(io.data(i)(l), ins(i))
+        io.res(l) := dp.io.out(l).asUInt
       }
     case Some("SimdLanesK")     =>
       val dp = Module(new SimdLanes(Seq(t(0).name), t(0).name, t(1).name, c.lanes, ElementwiseOp.byName(c.op), c.k))
@@ -144,6 +182,8 @@ class UnitCasesSpec extends AnyFlatSpec with ForgeTester {
         cyc.valids.zipWithIndex.foreach { case (v, k) => dut.io.in(k).valid.poke(v.B) }
         dut.io.k1.poke((c.k1.map(_.value).getOrElse(BigInt(0)) & LaneBits.mask(64)).U)
         dut.io.k2.poke((c.k2.map(_.value).getOrElse(BigInt(0)) & LaneBits.mask(64)).U)
+        dut.io.k3.poke((c.k3.map(_.value).getOrElse(BigInt(0)) & LaneBits.mask(64)).U)
+        dut.io.k.poke((c.k.getOrElse(BigInt(0)) & LaneBits.mask(64)).U)
         dut.io.out.ready.poke(cyc.ready.B)
         for {
           k <- 0 until c.inputs

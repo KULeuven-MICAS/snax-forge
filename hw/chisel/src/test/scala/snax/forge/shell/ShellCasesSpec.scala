@@ -15,11 +15,12 @@ import snax.forge.shell.AcceleratorSpec.CsrSpec
   * (START 0, JOBS 1, STATUS 2, BUSY_COUNTER 3); `START JOBS JOB_BEATS` with a fold (L 1, one input) is vsum's
   * (TreeAccumulate, one lane: START 0, JOBS 1, JOB_BEATS 2, STATUS 3, BUSY_COUNTER 4). Its `job_width` and
   * `busy_counter_width` lines set the widths of JOBS and JOB_BEATS and of BUSY_COUNTER in the wrapper's description.
-  * `START JOBS` and a unit's scalar CSRs (`K1`, `K1_LO K1_HI`, `K2`, each `NAME:W`) with an SimdLanes unit is vecadd's
-  * turned into axpy's unit (`axpyScalars`): op axpby, its slots read from those CSRs (pin `k1` or `k2`), at their
-  * width's type (64 bits for `_LO`/`_HI`), the CSRs after JOBS; with a fold, vsum's with those CSRs after its
-  * JOB_BEATS, plain registers (`foldScalars`). The `words` lines are snax-gvsoc's message to its group; here the pins
-  * follow the CSRs, which `ShellScalarSpec` checks through the datapath.
+  * `START JOBS` with three inputs is vecadd's turned into a three-input unit (`threeInputs`): a port `c` read by a
+  * third reader, op axpbypcz, d 1. `START JOBS` and a unit's scalar CSRs (`K1`, `K1_LO K1_HI`, `K2`, each `NAME:W`)
+  * with an SimdLanes unit is vecadd's turned into axpy's unit (`axpyScalars`): op axpby, its slots read from those CSRs
+  * (pin `k1` or `k2`), at their width's type (64 bits for `_LO`/`_HI`), the CSRs after JOBS; with a fold, vsum's with
+  * those CSRs after its JOB_BEATS, plain registers (`foldScalars`). The `words` lines are snax-gvsoc's message to its
+  * group; here the pins follow the CSRs, which `ShellScalarSpec` checks through the datapath.
   *
   * Each case drives the wrapper cycle by cycle: each input offers a beat from the cycles its valid column is 1 (a
   * Decoupled valid stays up until its beat is taken, so a case may not drop it before), the output is ready as the case
@@ -35,12 +36,32 @@ class ShellCasesSpec extends AnyFlatSpec with ForgeTester {
     val name =
       if (
         c.csrs.take(2) == Seq("START", "JOBS") && !c.csrs.contains("JOB_BEATS") && c.latency == 0 && c.ii == 1 &&
-        c.inputs == 2
+        Seq(2, 3).contains(c.inputs)
       ) "vecadd_v1"
       else if (c.csrs.take(3) == Seq("START", "JOBS", "JOB_BEATS") && c.latency == 1 && c.ii == 1 && c.inputs == 1)
         "vsum_v1"
       else fail(s"${c.name}: no wrapper for csrs ${c.csrs.mkString(" ")}, L ${c.latency}, II ${c.ii}, ${c.inputs} in")
     RtlFixtures.all.find(_.name == name).get
+  }
+
+  /** vecadd's description with a third input: the unit's port `c` after `b`, at `a`'s type and lanes, on a third reader
+    * after the others (its set's too); op axpbypcz, `(a + b + c) // 1`. Two inputs leave it as it is.
+    */
+  private def threeInputs(spec: AcceleratorSpec, c: Case): AcceleratorSpec = {
+    if (c.inputs != 3) return spec
+    val g    = spec.groups.head
+    val u    = g.units.head
+    val a    = u.port("a")
+    val unit = u.copy(
+      ports  = u.ports.flatMap { case (b, x) => if (b == "b") Seq(b -> x, "c" -> a.copy(port = "c")) else Seq(b -> x) },
+      params = Map("op" -> ujson.Str("axpbypcz"), "d" -> ujson.Num(1))
+    )
+    val c3   = u.name -> "c"
+    spec.copy(
+      inputs = spec.inputs :+ c3,
+      groups = Seq(g.copy(units = Seq(unit))),
+      sets   = spec.sets.map(s => s.copy(inputs = s.inputs :+ c3))
+    )
   }
 
   /** vecadd's description as axpy's with the case's scalar CSRs: op axpby, each CSR's pin its slot (`K1_LO` gives
@@ -105,7 +126,7 @@ class ShellCasesSpec extends AnyFlatSpec with ForgeTester {
 
   private def run(c: Case): Unit = {
     val f    = fixture(c)
-    val spec = widths(axpyScalars(f.spec, c), c)
+    val spec = widths(axpyScalars(threeInputs(f.spec, c), c), c)
     test(new ShellHarness(spec)) { dut =>
       val g       = spec.groups.head
       assert(g.window.map(_.name).take(c.csrs.size) == c.csrs, s"${c.name}: ${f.name}'s CSRs")

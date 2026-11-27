@@ -16,7 +16,10 @@ import snax.forge.elementwise.{ElementwiseModel, ElementwiseOp}
   * and k from its pin (a CSR), random per beat. axpby (`k1 * a + k2 * b` at the op type, `k2` unset `+ b`): its names
   * and refusals, then per seed at int32 and int64 (and a narrower `b` extended into int64) random data with k1 from its
   * CSR pin, k1 baked, k1 and k2 both from pins, and k1 baked with k2 from its pin, each against `axpbyModel`: NumPy's
-  * products and sum at the op type, wrapping, cast into the output's type.
+  * products and sum at the op type, wrapping, cast into the output's type. requant, axpbypcz and threshold: names,
+  * refusals, the worked lanes, the edge slots (k at the type's min and max, lo = hi, d = 1 and the largest power of two
+  * the op type holds) at 1, 4 and 8 lanes, then per seed random slots and data, each CSR slot rewritten every few
+  * beats, against `NamedModel`, written from the options' definitions in values, not bits.
   */
 class SimdLanesSpec extends AnyFlatSpec with ForgeTester {
 
@@ -351,7 +354,7 @@ class SimdLanesSpec extends AnyFlatSpec with ForgeTester {
     refused(new SimdLanes(Seq("int32"), "int32", "int32", 4, SimdLanes.Axpby, k = Some(1)), "axpby takes two inputs")
     refused(
       new SimdLanes(two, "int32", "int32", 4, ElementwiseOp.Add, k1 = Some(1)),
-      "k1 and k2 are axpby's, not add's"
+      "k1 and k2 are axpby's and axpbypcz's, not add's"
     )
     refused(
       new SimdLanes(two, "int32", "int32", 4, SimdLanes.Axpby, k1 = Some(BigInt(1) << 31)),
@@ -412,6 +415,379 @@ class SimdLanesSpec extends AnyFlatSpec with ForgeTester {
             dut.clock.step()
           }
         }
+      }
+    }
+
+  behavior of "SimdLanes at requant, axpbypcz and threshold"
+
+  private def refused(body: => SimdLanes, text: String): Unit = {
+    val e = intercept[Exception](circt.stage.ChiselStage.emitCHIRRTL(body))
+    assert(e.getMessage.contains(text), e.getMessage)
+  }
+
+  private def nameOf(body: => SimdLanes): String =
+    raw"module (SimdLanes\w*)".r.findFirstMatchIn(circt.stage.ChiselStage.emitCHIRRTL(body)).get.group(1)
+
+  it should "end its name in the op and each slot, _lo, _hi and _d with m for minus" in {
+    assert(
+      nameOf(
+        new SimdLanes(Seq("int32"), "int32", "int8", 8, SimdLanes.Requant, d = Some(1024), lo = Some(0), hi = Some(127))
+      ) == "SimdLanes_i32_i32_i8_n8_requant_d1024_lo0_hi127"
+    )
+    assert(
+      nameOf(
+        new SimdLanes(Seq("int16"), "int16", "int8", 4, SimdLanes.Requant, d = Some(1), lo = Some(-5), hi = Some(-5))
+      ) == "SimdLanes_i16_i16_i8_n4_requant_d1_lom5_him5"
+    )
+    val u8 = Seq.fill(3)("uint8")
+    assert(
+      nameOf(
+        new SimdLanes(
+          u8,
+          "uint16",
+          "uint8",
+          8,
+          SimdLanes.Axpbypcz,
+          k1 = Some(77),
+          k2 = Some(150),
+          k3 = Some(29),
+          d  = Some(256)
+        )
+      ) == "SimdLanes_u8xu8xu8_u16_u8_n8_axpbypcz_k177_k2150_k329_d256"
+    )
+    assert(
+      nameOf(new SimdLanes(u8, "uint16", "uint8", 8, SimdLanes.Axpbypcz, k2 = Some(2), d = Some(4))) ==
+        "SimdLanes_u8xu8xu8_u16_u8_n8_axpbypcz_k22_d4"
+    )
+    assert(
+      nameOf(new SimdLanes(u8, "uint16", "uint8", 8, SimdLanes.Axpbypcz, k1Csr = true, k3Csr = true, d = Some(1))) ==
+        "SimdLanes_u8xu8xu8_u16_u8_n8_axpbypcz_k1r_k3r_d1"
+    )
+    assert(
+      nameOf(new SimdLanes(Seq("uint8"), "int16", "uint8", 8, SimdLanes.Threshold, kCsr = true, hi = Some(255))) ==
+        "SimdLanes_u8_i16_u8_n8_threshold_kr_hi255"
+    )
+    assert(
+      nameOf(new SimdLanes(Seq("uint8"), "int16", "uint8", 8, SimdLanes.Threshold, Some(-32768), hi = Some(255))) ==
+        "SimdLanes_u8_i16_u8_n8_threshold_km32768_hi255"
+    )
+  }
+
+  it should "refuse a slot not the op's, a missing one, the wrong stream count, and a d that is no power of two" in {
+    val (one, two, three) = (Seq("int32"), Seq("int32", "int32"), Seq("int32", "int32", "int32"))
+    def rq(
+      ins: Seq[String]    = one,
+      d:   Option[BigInt] = Some(4),
+      lo:  Option[BigInt] = Some(0),
+      hi:  Option[BigInt] = Some(9)
+    ) = new SimdLanes(ins, "int32", "int32", 4, SimdLanes.Requant, d = d, lo = lo, hi = hi)
+    refused(rq(two), "requant takes one input")
+    refused(rq(three), "three inputs are axpbypcz's, not requant's")
+    refused(rq(d = None), "requant takes d, baked (1 for no shift)")
+    refused(rq(lo = None), "requant takes lo and hi, both baked")
+    refused(rq(d = Some(6)), "d = 6 must be a power of two at least 1: the lanes shift by log2(d)")
+    refused(rq(d = Some(0)), "d = 0 must be a power of two at least 1")
+    refused(rq(lo = Some(BigInt(1) << 31)), "lo = 2147483648 does not fit opType int32")
+    refused(
+      new SimdLanes(one, "int32", "int32", 4, SimdLanes.Requant, Some(1), d = Some(4), lo = Some(0), hi = Some(9)),
+      "k = 1 is not requant's; it takes d, lo and hi"
+    )
+    // the largest power of two a signed type holds is 2^(w-2): 2^(w-1) is its min's magnitude
+    refused(
+      new SimdLanes(Seq("int16"), "int16", "int8", 4, SimdLanes.Requant, d = Some(32768), lo = Some(0), hi = Some(9)),
+      "d = 32768 does not fit opType int16"
+    )
+    refused(new SimdLanes(two, "int32", "int32", 4, SimdLanes.Axpbypcz, d = Some(1)), "axpbypcz takes three inputs")
+    refused(new SimdLanes(three, "int32", "int32", 4, ElementwiseOp.Add), "three inputs are axpbypcz's, not add's")
+    refused(new SimdLanes(three, "int32", "int32", 4, SimdLanes.Axpbypcz), "axpbypcz takes d, baked (1 for no shift)")
+    refused(
+      new SimdLanes(three, "int32", "int32", 4, SimdLanes.Axpbypcz, k3 = Some(1), k3Csr = true, d = Some(1)),
+      "k3 = 1 is baked and read from its CSR too"
+    )
+    refused(
+      new SimdLanes(three, "int32", "int32", 4, SimdLanes.Axpbypcz, k1 = Some(1), k1Csr = true, d = Some(1)),
+      "k1 = 1 is baked and read from its CSR too"
+    )
+    refused(
+      new SimdLanes(three, "int32", "int32", 4, SimdLanes.Axpbypcz, d = Some(1), lo = Some(0)),
+      "lo is requant's, not axpbypcz's"
+    )
+    refused(
+      new SimdLanes(two, "int32", "int32", 4, SimdLanes.Axpby, k1 = Some(1), k3 = Some(1)),
+      "k3 is axpbypcz's, not axpby's"
+    )
+    refused(
+      new SimdLanes(two, "int32", "int32", 4, SimdLanes.Axpby, k1 = Some(1), d = Some(2)),
+      "d is axpbypcz's and requant's, not axpby's"
+    )
+    refused(
+      new SimdLanes(one, "int32", "int32", 4, SimdLanes.Threshold, hi = Some(1)),
+      "threshold takes k, baked or from its CSR"
+    )
+    refused(new SimdLanes(one, "int32", "int32", 4, SimdLanes.Threshold, Some(1)), "threshold takes hi, baked")
+    refused(
+      new SimdLanes(two, "int32", "int32", 4, SimdLanes.Threshold, hi = Some(1)),
+      "threshold takes one input"
+    )
+    refused(
+      new SimdLanes(one, "int32", "int32", 4, ElementwiseOp.Max, Some(0), hi = Some(1)),
+      "hi is requant's and threshold's, not max's"
+    )
+  }
+
+  /** One SimdLanes config of a named op: types, lanes and slots (a baked value, or None and its pin). */
+  private case class Named(
+    op:    Int,
+    ins:   Seq[IntType],
+    opT:   IntType,
+    out:   IntType,
+    lanes: Int,
+    k:     Option[BigInt]      = None,
+    kCsr:  Boolean             = false,
+    ks:    Seq[Option[BigInt]] = Seq(None, None, None),
+    kCsrs: Seq[Boolean]        = Seq(false, false, false),
+    d:     Option[BigInt]      = None,
+    lo:    Option[BigInt]      = None,
+    hi:    Option[BigInt]      = None
+  ) {
+    def build: SimdLanes =
+      new SimdLanes(
+        ins.map(_.name),
+        opT.name,
+        out.name,
+        lanes,
+        op,
+        k,
+        ks(0),
+        ks(1),
+        kCsr,
+        kCsrs(0),
+        kCsrs(1),
+        ks(2),
+        kCsrs(2),
+        d,
+        lo,
+        hi
+      )
+
+    def clue: String =
+      s"${SimdLanes.opName(op)} ${ins.map(_.name).mkString(" ")} -> ${opT.name} -> ${out.name}, $lanes lanes, k " +
+        s"${if (kCsr) "csr" else k.getOrElse("-")}, ks ${ks
+            .zip(kCsrs)
+            .map { case (v, c) => if (c) "csr" else v.getOrElse("-") }
+            .mkString(" ")}, d ${d.getOrElse("-")}, lo ${lo.getOrElse("-")}, hi ${hi.getOrElse("-")}"
+  }
+
+  /** The options' lanes, from their definitions: every value an integer of its type, NumPy's arithmetic at the op type
+    * (each step wrapped there as `astype` does), floor division by d, min and max as integers of the op type, and the
+    * result cast into the output's type. Bit patterns of the inputs' types in, of the output's out; a CSR slot is given
+    * as its bits.
+    */
+  private object NamedModel {
+
+    /** The integer of type `t` with bits `v` (its low width bits). */
+    def value(v: BigInt, t: IntType): BigInt = if (t.signed) LaneBits.signed(v, t.width) else v & LaneBits.mask(t.width)
+
+    /** `v`, any integer, wrapped into `t` (`astype`). */
+    def wrap(v: BigInt, t: IntType): BigInt = value(v & LaneBits.mask(t.width), t)
+
+    /** NumPy's `x // d`: rounded towards minus infinity. */
+    def floorDiv(x: BigInt, d: BigInt): BigInt = {
+      val (q, r) = x /% d
+      if (r != 0 && (r < 0) != (d < 0)) q - 1 else q
+    }
+
+    private def in(x: BigInt, from: IntType, opT: IntType): BigInt = wrap(value(x, from), opT)
+
+    private def out(v: BigInt, opT: IntType, t: IntType): BigInt = wrap(v, opT) & LaneBits.mask(t.width)
+
+    /** One lane of `c` on the inputs `xs` (bits of `c.ins`), the CSR slots' bits in `csr` (k, k1, k2, k3). */
+    def lane(c: Named, xs: Seq[BigInt], csr: Map[String, BigInt]): BigInt = {
+      val t = c.opT
+      val v = xs.zip(c.ins).map { case (x, ti) => in(x, ti, t) }
+      def at(s: String, baked: Option[BigInt], fromCsr: Boolean): Option[BigInt] =
+        if (fromCsr) Some(value(csr(s), t)) else baked
+      val r = c.op match {
+        case SimdLanes.Requant   => floorDiv(v(0), c.d.get).max(c.lo.get).min(c.hi.get)
+        case SimdLanes.Axpbypcz  =>
+          val terms = Seq("k1", "k2", "k3").indices.map { i =>
+            at(s"k${i + 1}", c.ks(i), c.kCsrs(i)).map(kv => wrap(kv * v(i), t)).getOrElse(v(i))
+          }
+          floorDiv(wrap(terms.sum, t), c.d.get)
+        case SimdLanes.Threshold =>
+          val delta = wrap(v(0) - at("k", c.k, c.kCsr).get + 1, t)
+          if (delta >= 1) c.hi.get else BigInt(0)
+      }
+      out(r, t, c.out)
+    }
+  }
+
+  private def range(t: IntType): (BigInt, BigInt) =
+    if (t.signed) (-(BigInt(1) << (t.width - 1)), (BigInt(1) << (t.width - 1)) - 1)
+    else (BigInt(0), LaneBits.mask(t.width))
+
+  /** The largest power of two `t` holds: 2^(w-1) unsigned, 2^(w-2) signed. */
+  private def dMax(t: IntType): BigInt = BigInt(1) << (t.width - (if (t.signed) 2 else 1))
+
+  /** A random value of `t`; one in four at its min or max. */
+  private def any(r: snax.forge.Rand, t: IntType): BigInt =
+    if (r.chance(0.25)) r.pick(Seq(range(t)._1, range(t)._2)) else value(r.word(t.width), t)
+
+  private def value(bits: BigInt, t: IntType) = NamedModel.value(bits, t)
+
+  /** `c` over `beats` beats of random inputs, each lane against `NamedModel`; every CSR slot written again every
+    * `every` beats, at random or (one in four) at its type's min or max.
+    */
+  private def drive(r: snax.forge.Rand, c: Named, beats: Int = 16, every: Int = 3): Unit =
+    test(c.build) { dut =>
+      val pins = Seq("k" -> dut.io.k, "k1" -> dut.io.k1, "k2" -> dut.io.k2, "k3" -> dut.io.k3).collect {
+        case (s, Some(p)) => s -> p
+      }
+      assert(dut.io.c.isDefined == (c.ins.size == 3), s"${c.clue}: a c port at ${c.ins.size} inputs")
+      var csr  = Map.empty[String, BigInt]
+      for (beat <- 0 until beats) {
+        if (beat % every == 0)
+          for ((s, p) <- pins) {
+            val v = any(r, c.opT) & LaneBits.mask(c.opT.width)
+            csr += s -> v
+            LaneBits.poke(p, v)
+          }
+        val xs = Seq.fill(c.lanes)(c.ins.map(t => r.word(t.width)))
+        val port = Seq(Some(dut.io.a), dut.io.b, dut.io.c)
+        for {
+          l    <- 0 until c.lanes
+          i    <- c.ins.indices
+        } LaneBits.poke(port(i).get(l), xs(l)(i))
+        for (l <- 0 until c.lanes) {
+          val want = NamedModel.lane(c, xs(l), csr)
+          val got  = LaneBits.peek(dut.io.out(l))
+          assert(
+            got == want,
+            s"${c.clue}, beat $beat, lane $l: in ${xs(l).mkString(" ")}, csr $csr: $got, the model $want"
+          )
+        }
+        dut.clock.step()
+      }
+    }
+
+  /** The given lanes of `c`, inputs as values of their types, each output a value of `c.out`. */
+  private def worked(c: Named, xs: Seq[Seq[BigInt]], want: Seq[BigInt]): Unit = {
+    val bits  = xs.map(_.zip(c.ins).map { case (v, t) => v & LaneBits.mask(t.width) })
+    val wantB = want.map(_ & LaneBits.mask(c.out.width))
+    assert(bits.map(NamedModel.lane(c, _, Map.empty)) == wantB, s"${c.clue}: the model")
+    test(c.build) { dut =>
+      val port = Seq(Some(dut.io.a), dut.io.b, dut.io.c)
+      for {
+        l <- bits.indices
+        i <- c.ins.indices
+      } LaneBits.poke(port(i).get(l), bits(l)(i))
+      val got = bits.indices.map(l => value(LaneBits.peek(dut.io.out(l)), c.out))
+      assert(got == want, s"${c.clue}: lanes $got, NumPy $want")
+    }
+  }
+
+  private val (i32, i16, i8, u32, u16, u8) =
+    (IntType("int32"), IntType("int16"), IntType("int8"), IntType("uint32"), IntType("uint16"), IntType("uint8"))
+
+  it should "give the worked lanes: requant, gray and blur at axpbypcz, threshold at the type's ends" in {
+    def big(xs: Int*) = xs.map(BigInt(_))
+    worked(
+      Named(SimdLanes.Requant, Seq(i32), i32, i8, 2, d = Some(1024), lo = Some(0), hi = Some(127)),
+      Seq(big(150000), big(-5000)),
+      big(127, 0)
+    )
+    worked(
+      Named(SimdLanes.Axpbypcz, Seq(u8, u8, u8), u16, u8, 1, ks = big(77, 150, 29).map(Some(_)), d = Some(256)),
+      Seq(big(200, 100, 50)),
+      big(124)
+    )
+    worked(
+      Named(SimdLanes.Axpbypcz, Seq(u8, u8, u8), u16, u8, 1, ks = Seq(None, Some(2), None), d = Some(4)),
+      Seq(big(10, 20, 30)),
+      big(20)
+    )
+    worked(Named(SimdLanes.Threshold, Seq(u8), i16, u8, 1, Some(128), hi = Some(255)), Seq(big(128)), big(255))
+    // a - k + 1 = 33024 wraps at int16 to -32512: 0, where a comparator a >= k would give 255
+    worked(Named(SimdLanes.Threshold, Seq(u8), i16, u8, 1, Some(-32768), hi = Some(255)), Seq(big(255)), big(0))
+  }
+
+  /** requant's, axpbypcz's and threshold's type triples (in, op, out): the worked ones and signed and unsigned others.
+    */
+  private val RequantTypes   = Seq((i32, i32, i8), (i16, i16, i8), (u32, u32, u8))
+  private val AxpbypczTypes  = Seq((u8, u16, u8), (i32, i32, i32), (i32, i32, i8))
+  private val ThresholdTypes = Seq((u8, i16, u8), (u16, u16, u16), (i32, i32, i8))
+
+  private val Lanes = Seq(1, 4, 8)
+
+  it should "give the model's lanes at the edge slots, at 1, 4 and 8 lanes" in Seeds.run(1) { r =>
+    var at      = 0
+    def lanes() = { at += 1; Lanes(at % Lanes.size) }
+    for ((ti, t, tr) <- RequantTypes) {
+      val (lo, hi) = range(t)
+      val edges    = Seq(
+        (BigInt(1), lo, hi),
+        (dMax(t), lo, hi),
+        (BigInt(1), BigInt(0), BigInt(0)),
+        (dMax(t), hi, hi),
+        (BigInt(4), lo, lo),
+        (BigInt(2), hi, lo) // lo above hi: NumPy's min(max(q, lo), hi) is hi
+      )
+      for ((d, l, h) <- edges)
+        drive(r, Named(SimdLanes.Requant, Seq(ti), t, tr, lanes(), d = Some(d), lo = Some(l), hi = Some(h)))
+    }
+    for ((ti, t, tr) <- AxpbypczTypes) {
+      val (lo, hi) = range(t)
+      for {
+        ks <- Seq(Seq(lo, lo, lo), Seq(hi, hi, hi), Seq(lo, hi, BigInt(1))).map(_.map(Some(_))) :+ Seq(None, None, None)
+        d  <- Seq(BigInt(1), dMax(t))
+      } drive(r, Named(SimdLanes.Axpbypcz, Seq.fill(3)(ti), t, tr, lanes(), ks = ks, d = Some(d)))
+    }
+    for ((ti, t, tr) <- ThresholdTypes) {
+      val (lo, hi) = range(t)
+      for {
+        k <- Seq(lo, hi, BigInt(0), BigInt(1))
+        h <- Seq(hi, BigInt(1))
+      } drive(r, Named(SimdLanes.Threshold, Seq(ti), t, tr, lanes(), Some(k), hi = Some(h)))
+    }
+  }
+
+  /** A slot of `t`: baked (a random value, a third of them at the type's ends) or, at `csr`, None and its pin. */
+  private def slotOf(r: snax.forge.Rand, t: IntType): (Option[BigInt], Boolean) =
+    r.between(0, 1) match {
+      case 0 => (Some(any(r, t)), false)
+      case _ => (None, true)
+    }
+
+  for (seed <- Seeds())
+    it should s"give the model's requant, axpbypcz and threshold at random slots and data (seed $seed)" in Seeds.run(
+      seed
+    ) { r =>
+      def d(t: IntType) =
+        if (r.chance(0.3)) r.pick(Seq(BigInt(1), dMax(t))) else BigInt(1) << r.between(0, dMax(t).bitLength - 1)
+      for ((ti, t, tr) <- RequantTypes) {
+        val (lo, hi) = (any(r, t), any(r, t))
+        val (l, h)   = if (r.chance(0.2)) (lo, lo) else (lo.min(hi), lo.max(hi))
+        drive(r, Named(SimdLanes.Requant, Seq(ti), t, tr, r.pick(Lanes), d = Some(d(t)), lo = Some(l), hi = Some(h)))
+      }
+      for ((ti, t, tr) <- AxpbypczTypes) {
+        val slots = Seq.fill(3)(if (r.chance(0.25)) (None, false) else slotOf(r, t))
+        drive(
+          r,
+          Named(
+            SimdLanes.Axpbypcz,
+            Seq.fill(3)(ti),
+            t,
+            tr,
+            r.pick(Lanes),
+            ks    = slots.map(_._1),
+            kCsrs = slots.map(_._2),
+            d     = Some(d(t))
+          )
+        )
+      }
+      for ((ti, t, tr) <- ThresholdTypes) {
+        val (k, csr) = slotOf(r, t)
+        drive(r, Named(SimdLanes.Threshold, Seq(ti), t, tr, r.pick(Lanes), k, csr, hi = Some(any(r, t))))
       }
     }
 }

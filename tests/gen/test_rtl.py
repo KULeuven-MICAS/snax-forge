@@ -57,8 +57,10 @@ DESIGNS = {
     "dot_v1_2": ("dot_v1_2", []),  # ShellEndToEndSpec's port mux run through two tasks
 }
 
-# SimdLanes' slot params of a unit with none (axpby's k1 and k2, each slot from its CSR or not)
-NO_SLOTS = {"k1": None, "k2": None, "kCsr": False, "k1Csr": False, "k2Csr": False}
+# SimdLanes' slot params of a unit with none (axpby's and axpbypcz's k1, k2 and k3, d, requant's lo,
+# hi; each k from its CSR or not)
+NO_SLOTS = {"k1": None, "k2": None, "kCsr": False, "k1Csr": False, "k2Csr": False, "k3": None,
+            "d": None, "lo": None, "hi": None, "k3Csr": False}  # fmt: skip
 
 
 @pytest.fixture
@@ -312,5 +314,49 @@ def test_axpys_unit_fills_k1_from_its_csr_and_k1_is_a_live_pin(tmp_path):
         )
         assert list(live(sig["pins"], params)) == (["k1"] if "k1Csr" in slots else [])
         check_unit(acc, u, catalogue())
-    with pytest.raises(GenError, match=r"scalar k3 is no pin of SimdLanes here \(\[\]\)"):
-        check_unit(acc, replace(u, scalars={"k3": "int32"}), catalogue())
+    with pytest.raises(GenError, match=r"scalar lo is no pin of SimdLanes here \(\[\]\)"):
+        check_unit(acc, replace(u, scalars={"lo": "int32"}), catalogue())
+
+
+def test_a_three_stream_unit_fills_axpbypcz_with_the_port_c_and_the_pin_k3(tmp_path):
+    """SimdLanes at axpbypcz: three inputs (streams 3, the ports a, b and c live), k2 and d baked,
+    k3 from its CSR (k3Csr, the pin k3); requant and threshold at one stream fill d, lo and hi, or
+    k and hi, with no b or c. A c with no b is refused (gen.port_map): two streams are a and b."""
+    from dataclasses import replace
+
+    from .test_axpy import axpy
+
+    sig = catalogue()["SimdLanes"]
+    acc = accelerator_spec(point(tmp_path / "axpy", name="axpy", graph=axpy()), tmp_path / "axpy")
+    (u,) = acc.groups[0].units
+    a = next(p for p in u.ports.values() if p.port == "a")
+    out = next(p for p in u.ports.values() if p.port == "out")
+    three = replace(
+        u,
+        ports={"x": a, "y": replace(a, port="b"), "z": replace(a, port="c"), "out": out},
+        params={"op": "axpbypcz", "k2": 2, "d": 4},
+        scalars={"k3": "int32"},
+    )
+    params = fill(acc, three, sig)
+    assert params == {"inTypes": ["int32"] * 3, "opType": "int32", "outType": "int32", "lanes": 2,
+                      "op": "axpbypcz", "streams": 3, "k": None} | NO_SLOTS | {
+                          "k2": 2, "d": 4, "k3Csr": True}  # fmt: skip
+    assert list(live(sig["ports"], params)) == ["a", "b", "c", "out"]
+    assert list(live(sig["pins"], params)) == ["k3"]
+    check_unit(acc, three, catalogue())
+    one = {"x": a, "out": out}
+    for params_, want in (({"op": "requant", "d": 1024, "lo": 0, "hi": 127}, []),
+                          ({"op": "threshold", "hi": 255}, ["k"])):  # fmt: skip
+        unit = replace(u, ports=one, params=params_, scalars={"k": "int32"} if want else {})
+        filled = fill(acc, unit, sig)
+        assert {k: filled[k] for k in params_} == params_
+        assert list(live(sig["ports"], filled)) == ["a", "out"]
+        assert list(live(sig["pins"], filled)) == want
+        check_unit(acc, unit, catalogue())
+    with pytest.raises(GenError) as e:
+        check_unit(acc, replace(u, ports={"x": a, "z": replace(a, port="c"), "out": out}),
+                   catalogue())  # fmt: skip
+    assert e.value.code == "gen.port_map"
+    with pytest.raises(GenError) as e:
+        check_params("E", {**params, "d": 4.0}, sig["params"])
+    assert e.value.code == "gen.params"

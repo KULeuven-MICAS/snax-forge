@@ -23,29 +23,42 @@ class BlockFlopsSpec extends AnyFlatSpec {
   private def blocks(r: Rand): Seq[(String, ujson.Obj)] = {
     def lanes       = r.between(1, 8)
     val elementwise = {
-      val (a, b)       = (dtype(r), dtype(r))
-      // two streams at an ElementwiseOp; one stream with k baked or from its CSR; or axpby, k1 baked or from its CSR
-      // and k2 baked, from its CSR or neither. A baked value is in 0..100, which every type holds.
-      val form         = r.between(0, 2)
-      val (one, axpby) = (form == 1, form == 2)
-      def baked        = ujson.Num(r.between(0, 100))
-      def pick(csr: Boolean, none: Boolean): ujson.Value = if (csr || none) ujson.Null else baked
-      val kCsr  = one   && r.between(0, 1) == 0
-      val k1Csr = axpby && r.between(0, 1) == 0
-      val k2    = if (axpby) r.between(0, 2) else 0 // 0 none, 1 baked, 2 from its CSR
+      // two streams at an ElementwiseOp; one stream with k baked or from its CSR; axpby, k1 baked or from its CSR and
+      // k2 baked, from its CSR or neither; axpbypcz (three streams), each k baked, from its CSR or neither, d baked;
+      // requant, d, lo and hi baked; or threshold, k baked or from its CSR, hi baked. A baked value is in 0..100, which
+      // every type holds, and d is 1, 2, 4, ... 64.
+      val form                = r.between(0, 5)
+      val op                  = Seq("", "", SimdLanes.AxpbyName, "axpbypcz", "requant", "threshold")(form)
+      val n                   = Seq(2, 1, 2, 3, 1, 1)(form)
+      val ins                 = Seq.fill(n)(dtype(r))
+      def baked               = ujson.Num(r.between(0, 100))
+      def slot                = r.between(0, 2) // 0 none, 1 baked, 2 from its CSR
+      val (kS, k1S, k2S, k3S) = form match {
+        case 1 | 5 => (1 + r.between(0, 1), 0, 0, 0)
+        case 2     => (0, 1 + r.between(0, 1), slot, 0)
+        case 3     => (0, slot, slot, slot)
+        case _     => (0, 0, 0, 0)
+      }
+      def value(s: Int): ujson.Value = if (s == 1) baked else ujson.Null
+      val dS                  = form == 3 || form == 4
       ujson.Obj(
-        "inTypes" -> (if (one) ujson.Arr(a) else ujson.Arr(a, b)),
-        "opType"  -> dtype(r, IntType(a).width max (if (one) 0 else IntType(b).width)),
+        "inTypes" -> ujson.Arr.from(ins),
+        "opType"  -> dtype(r, ins.map(IntType(_).width).max),
         "outType" -> dtype(r),
         "lanes"   -> lanes,
-        "op"      -> (if (axpby) SimdLanes.AxpbyName else r.pick(ElementwiseOp.all.map(ElementwiseOp.name))),
-        "streams" -> (if (one) 1 else 2),
-        "k"       -> pick(kCsr, !one),
-        "k1"      -> pick(k1Csr, !axpby),
-        "k2"      -> pick(k2 == 2, k2 == 0),
-        "kCsr"    -> kCsr,
-        "k1Csr"   -> k1Csr,
-        "k2Csr"   -> (k2 == 2)
+        "op"      -> (if (op.isEmpty) r.pick(ElementwiseOp.all.map(ElementwiseOp.name)) else op),
+        "streams" -> n,
+        "k"       -> value(kS),
+        "k1"      -> value(k1S),
+        "k2"      -> value(k2S),
+        "kCsr"    -> (kS == 2),
+        "k1Csr"   -> (k1S == 2),
+        "k2Csr"   -> (k2S == 2),
+        "k3"      -> value(k3S),
+        "d"       -> (if (dS) ujson.Num(1 << r.between(0, 6)) else ujson.Null),
+        "lo"      -> (if (form == 4) baked else ujson.Null),
+        "hi"      -> (if (form >= 4) baked else ujson.Null),
+        "k3Csr"   -> (k3S == 2)
       )
     }
     val tree        = {

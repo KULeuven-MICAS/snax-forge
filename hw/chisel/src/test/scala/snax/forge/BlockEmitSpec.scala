@@ -41,7 +41,12 @@ class BlockEmitSpec extends AnyFlatSpec {
     k2:      ujson.Value = ujson.Null,
     kCsr:    Boolean     = false,
     k1Csr:   Boolean     = false,
-    k2Csr:   Boolean     = false
+    k2Csr:   Boolean     = false,
+    k3:      ujson.Value = ujson.Null,
+    d:       ujson.Value = ujson.Null,
+    lo:      ujson.Value = ujson.Null,
+    hi:      ujson.Value = ujson.Null,
+    k3Csr:   Boolean     = false
   ): Case =
     Case(
       "SimdLanes",
@@ -57,7 +62,12 @@ class BlockEmitSpec extends AnyFlatSpec {
         "k2"      -> k2,
         "kCsr"    -> kCsr,
         "k1Csr"   -> k1Csr,
-        "k2Csr"   -> k2Csr
+        "k2Csr"   -> k2Csr,
+        "k3"      -> k3,
+        "d"       -> d,
+        "lo"      -> lo,
+        "hi"      -> hi,
+        "k3Csr"   -> k3Csr
       ),
       Set.empty,
       registered = false
@@ -65,10 +75,13 @@ class BlockEmitSpec extends AnyFlatSpec {
 
   private val cases = Seq(
     simd(2, "add"),
-    simd(1, "max", k       = 0),
-    simd(1, "max", kCsr    = true), // the pin k
-    simd(2, "axpby", k1Csr = true, k2Csr = true), // the pins k1 and k2
-    simd(2, "axpby", k1    = 3) // no pin
+    simd(1, "max", k          = 0),
+    simd(1, "max", kCsr       = true), // the pin k
+    simd(2, "axpby", k1Csr    = true, k2Csr = true), // the pins k1 and k2
+    simd(2, "axpby", k1       = 3), // no pin
+    simd(3, "axpbypcz", k2    = 2, d        = 4, k3Csr = true), // the port c and the pin k3
+    simd(1, "requant", d      = 1024, lo    = 0, hi    = 127),
+    simd(1, "threshold", kCsr = true, hi    = 255)
   ) ++ Seq(false, true).map { seed => // seeded, the port seed
     Case(
       "TreeAccumulate",

@@ -44,10 +44,11 @@ import snax.forge.shell.AcceleratorSpec
   * The Python side (`snax_forge/gen/rtl.py`) checks each unit's timing and ports against it; `Emit --spec` builds from
   * the unit with `build`. A spec checks `describe` equal to `blocks.json`.
   *
-  * Param types: `int` (`min`), `bool`, `op` (one op name of `values`: SimdLanes takes every ElementwiseOp,
-  * TreeAccumulate `add` only), `dtype` (an element type's NumPy name of `values`, `IntType`'s eight), `dtypes` (a list
-  * of them) and `const` (an integer of any size or null, SimdLanes' `k`: null at two streams, where the unit has no
-  * such param; `const`). A `unit.params.<name>` the unit does not have fills null, or an `int`'s `min`.
+  * Param types: `int` (`min`), `bool`, `op` (one op name of `values`: SimdLanes takes every ElementwiseOp and its own
+  * `SimdLanes.NamedNames`, TreeAccumulate `add` only), `dtype` (an element type's NumPy name of `values`, `IntType`'s
+  * eight), `dtypes` (a list of them) and `const` (an integer of any size or null, SimdLanes' slots `k` ... `hi`: null
+  * where the unit has no such param, `k` at two streams; `const`). A `unit.params.<name>` the unit does not have fills
+  * null, or an `int`'s `min`.
   */
 object Datapaths {
 
@@ -199,23 +200,34 @@ object Datapaths {
         ("opType", DtypeParam, "unit.opType"),
         ("outType", DtypeParam, "outputs.dtype"),
         ("lanes", IntParam(1), "inputs.lanes"),
-        ("op", OpParam(ElementwiseOp.all.map(ElementwiseOp.name) :+ SimdLanes.AxpbyName), "unit.params.op"),
+        ("op", OpParam(ElementwiseOp.all.map(ElementwiseOp.name) ++ SimdLanes.NamedNames), "unit.params.op"),
         ("streams", IntParam(1), "inputs.count"),
         ("k", ConstParam, "unit.params.k"),
         ("k1", ConstParam, "unit.params.k1"),
         ("k2", ConstParam, "unit.params.k2"),
         ("kCsr", BoolParam, "unit.scalars.k"),
         ("k1Csr", BoolParam, "unit.scalars.k1"),
-        ("k2Csr", BoolParam, "unit.scalars.k2")
+        ("k2Csr", BoolParam, "unit.scalars.k2"),
+        ("k3", ConstParam, "unit.params.k3"),
+        ("d", ConstParam, "unit.params.d"),
+        ("lo", ConstParam, "unit.params.lo"),
+        ("hi", ConstParam, "unit.params.hi"),
+        ("k3Csr", BoolParam, "unit.scalars.k3")
       ),
-      Seq(Port("a", "in"), Port("b", "in", Seq("streams" -> ujson.Num(2))), Port("out", "out")),
+      Seq(
+        Port("a", "in"),
+        Port("b", "in", Seq("streams" -> atLeast(2))),
+        Port("c", "in", Seq("streams" -> ujson.Num(3))),
+        Port("out", "out")
+      ),
       ujson.Num(0),
       ujson.Num(1),
       ujson.Num(0),
       Seq(
         Pin("k", Seq("kCsr" -> ujson.Bool(true))),
         Pin("k1", Seq("k1Csr" -> ujson.Bool(true))),
-        Pin("k2", Seq("k2Csr" -> ujson.Bool(true)))
+        Pin("k2", Seq("k2Csr" -> ujson.Bool(true))),
+        Pin("k3", Seq("k3Csr" -> ujson.Bool(true)))
       ),
       p => {
         val inTypes = p("inTypes").arr.toSeq.map(_.str)
@@ -234,7 +246,12 @@ object Datapaths {
           const(p("k2")),
           p("kCsr").bool,
           p("k1Csr").bool,
-          p("k2Csr").bool
+          p("k2Csr").bool,
+          const(p("k3")),
+          p("k3Csr").bool,
+          const(p("d")),
+          const(p("lo")),
+          const(p("hi"))
         )
       },
       Map(
@@ -249,7 +266,12 @@ object Datapaths {
         "k2"      -> ujson.Null,
         "kCsr"    -> ujson.Bool(false),
         "k1Csr"   -> ujson.Bool(false),
-        "k2Csr"   -> ujson.Bool(false)
+        "k2Csr"   -> ujson.Bool(false),
+        "k3"      -> ujson.Null,
+        "d"       -> ujson.Null,
+        "lo"      -> ujson.Null,
+        "hi"      -> ujson.Null,
+        "k3Csr"   -> ujson.Bool(false)
       )
     ),
     Datapath(
