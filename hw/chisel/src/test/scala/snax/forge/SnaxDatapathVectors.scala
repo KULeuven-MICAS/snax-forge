@@ -104,6 +104,12 @@ object SnaxDatapathVectors {
             "lanes" -> ujson.Num(one("lanes").toInt),
             "dtype" -> ujson.Str(one("out"))
           )
+        case "HaloLink"         =>
+          Map(
+            "taps"  -> ujson.Num(one("taps").toInt),
+            "lanes" -> ujson.Num(one("lanes").toInt),
+            "dtype" -> ujson.Str(one("out"))
+          )
         case other              => throw new IllegalArgumentException(s"$name: no datapath $other")
       }
     }

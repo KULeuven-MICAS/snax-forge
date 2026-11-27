@@ -100,8 +100,9 @@ class BlockFlopsSpec extends AnyFlatSpec {
       ujson.Obj("inType" -> in, "outType" -> dtype(r, IntType(in).width), "lanes" -> lanes)
     }
     val link        = ujson.Obj("depth" -> r.between(1, 6), "lanes" -> lanes, "dtype" -> dtype(r))
+    val halo        = ujson.Obj("taps" -> r.between(2, 9), "lanes" -> lanes, "dtype" -> dtype(r))
     Seq("SimdLanes" -> elementwise, "TreeAccumulate" -> tree) ++ macs.map("Mac" -> _) ++
-      Seq("SerialAccumulate" -> serial, "LaneAccumulate" -> lane, "LinkBuffer" -> link)
+      Seq("SerialAccumulate" -> serial, "LaneAccumulate" -> lane, "LinkBuffer" -> link, "HaloLink" -> halo)
   }
 
   private val Reg = raw"\s*reg\s+(?:\[(\d+):0\]\s+)?(\w+)\s*(?:\[(\d+):(\d+)\])?\s*;.*".r

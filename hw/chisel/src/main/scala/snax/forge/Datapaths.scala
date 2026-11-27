@@ -4,6 +4,7 @@ import chisel3._
 
 import snax.forge.datapath.{
   DatapathModule,
+  HaloLink,
   LaneAccumulate,
   LinkBuffer,
   Mac,
@@ -31,7 +32,8 @@ import snax.forge.shell.AcceleratorSpec
   *     have, its `min`: a `Mac`'s `rows` 1, the plain `Mac`);
   *   - `unit.scalars.<slot>`: whether the unit reads that slot from its CSR (a `bool`: its `scalars` has it);
   *   - `unit.ports.seed`: whether the unit has a seed port (a `bool`: a fold's start, read once per job);
-  *   - `link.depth`, `link.lanes`, `link.dtype`: a buffer's link's depth and its ends' lanes and dtype.
+  *   - `link.depth`, `link.lanes`, `link.dtype`: a buffer's link's depth and its ends' lanes and dtype;
+  *   - `link.taps`: a halo link's taps (`HaloLink`, D206).
   *
   * A port is `"in"` or `"out"`, or `{"dir": ..., "when": {param: value, ...}}`; a pin is a name, or `{"name": ...,
   * "when": {...}}`. `when` is a match: the port or pin exists only when every listed param has that value, or, for a
@@ -112,11 +114,14 @@ object Datapaths {
         n -> value
       }.toMap
 
-    /** A buffer's params by the fill rule: its link's depth, and its ends' lanes and dtype. */
-    def fillLink(depth: Int, lanes: Int, dtype: String): Map[String, ujson.Value] =
+    /** A link's datapath's params by the fill rule: its ends' lanes and dtype, and a buffer's depth or a halo link's
+      * taps (the one its rule names; 0 for the other, which it does not read).
+      */
+    def fillLink(depth: Int, lanes: Int, dtype: String, taps: Int = 0): Map[String, ujson.Value] =
       params.map { case (n, _, rule) =>
         n -> (rule match {
           case "link.depth" => ujson.Num(depth)
+          case "link.taps"  => ujson.Num(taps)
           case "link.lanes" => ujson.Num(lanes)
           case "link.dtype" => ujson.Str(dtype)
           case other        => throw new IllegalArgumentException(s"$name.$n: fill rule $other")
@@ -408,6 +413,21 @@ object Datapaths {
         new LinkBuffer(int(p, "depth"), int(p, "lanes"), str(p, "dtype"))
       },
       Map("depth" -> ujson.Num(2), "lanes" -> ujson.Num(4), "dtype" -> ujson.Str("int64"))
+    ),
+    Datapath(
+      "HaloLink",
+      Seq(
+        ("taps", IntParam(2), "link.taps"),
+        ("lanes", IntParam(1), "link.lanes"),
+        ("dtype", DtypeParam, "link.dtype")
+      ),
+      Seq(Port("in", "in"), Port("taps", "out")),
+      ujson.Num(0),
+      ujson.Num(1),
+      ujson.Str("(taps + lanes - 2) // lanes * lanes * width(dtype)"), // H = ⌈(taps − 1) / lanes⌉ beats
+      Seq(Pin("load")),
+      p => new HaloLink(int(p, "taps"), int(p, "lanes"), str(p, "dtype")),
+      Map("taps" -> ujson.Num(3), "lanes" -> ujson.Num(8), "dtype" -> ujson.Str("uint8"))
     )
   )
 

@@ -12,12 +12,13 @@ import org.scalatest.flatspec.AnyFlatSpec
   *
   * The ports, read off the top's SystemVerilog header (`SvHeader`): `clock` and `reset`, then per live port of
   * `blocks.json` (its `when` holding on the params) `io_<port>` (a scalar) or `io_<port>_0` to `io_<port>_<lanes - 1>`
-  * (a Vec of the params' lanes), in its direction, and per live pin an input `io_<pin>`, but for a pin of no bits,
-  * which firtool leaves out: `LinkBuffer`'s `wslot` and `rslot` at depth 1, `SerialAccumulate`'s `lane` at lanes 1. A
-  * registered block (all but `SimdLanes` and the plain `Mac`) has every `always` block of its files on `posedge clock
-  * or posedge reset`, a flop with an asynchronous reset; the others none. The stream blocks FifoPacker at its three
-  * char configs and FifoSlicer at one word of int32 (1 lane), int16 (1, 2) and int8 (1, 2, 4), and at int32 the very
-  * modules `ShellWrapper` holds on a packed output and a sliced input. A `Mac` without `rows` is built at rows 1.
+  * (a Vec of the params' lanes), or `io_<port>_<t>_<l>` for a Vec of `taps` such Vecs (`HaloLink`'s `taps`), in its
+  * direction, and per live pin an input `io_<pin>`, but for a pin of no bits, which firtool leaves out: `LinkBuffer`'s
+  * `wslot` and `rslot` at depth 1, `SerialAccumulate`'s `lane` at lanes 1. A registered block (all but `SimdLanes` and
+  * the plain `Mac`) has every `always` block of its files on `posedge clock or posedge reset`, a flop with an
+  * asynchronous reset; the others none. The stream blocks FifoPacker at its three char configs and FifoSlicer at one
+  * word of int32 (1 lane), int16 (1, 2) and int8 (1, 2, 4), and at int32 the very modules `ShellWrapper` holds on a
+  * packed output and a sliced input. A `Mac` without `rows` is built at rows 1.
   */
 class BlockEmitSpec extends AnyFlatSpec {
 
@@ -133,6 +134,8 @@ class BlockEmitSpec extends AnyFlatSpec {
       if (d == 1) Set("wslot", "rslot") else Set.empty,
       registered = true
     )
+  } ++ Seq((3, 8, "uint8"), (3, 1, "uint8"), (5, 2, "int32")).map { case (t, w, d) => // H 1, 2 and 2
+    Case("HaloLink", ujson.Obj("taps" -> t, "lanes" -> w, "dtype" -> d), Set.empty, registered = true)
   }
 
   /** Every case through one `Emit` call, each into a folder of its own. */
@@ -145,7 +148,12 @@ class BlockEmitSpec extends AnyFlatSpec {
     dirs.toMap
   }
 
-  private val Indexed = raw"(\w+)_(\d+)".r
+  /** A port's or pin's name and its indices, `taps_2_7` as ("taps", Seq(2, 7)), among the datapath's names. */
+  private def indexed(n: String, names: Seq[String]): (String, Seq[Int]) =
+    names
+      .find(b => n == b || (n.startsWith(b + "_") && n.drop(b.length + 1).split("_").forall(_.matches("\\d+"))))
+      .map(b => b -> (if (n == b) Seq.empty else n.drop(b.length + 1).split("_").toSeq.map(_.toInt)))
+      .getOrElse(n -> Seq.empty)
 
   behavior of "Emit --block"
 
@@ -168,21 +176,27 @@ class BlockEmitSpec extends AnyFlatSpec {
       val ports   = SvHeader.ports(dir.resolve(s"sv/$top.sv"), top)
       assert(ports.filter(x => Set("clock", "reset")(x._1)) == Set(("clock", "input", 1), ("reset", "input", 1)))
       val io      = ports.collect { case (n, dir, _) if n.startsWith("io_") => (n.stripPrefix("io_"), dir) }
-      val grouped = io.groupBy { case (n, _) =>
-        n match {
-          case Indexed(base, _) if !d.ports.exists(_.name == n) && !d.pins.exists(_.name == n) => base
-          case _ => n
-        }
-      }
+      val names   = d.ports.map(_.name) ++ d.pins.map(_.name)
+      val grouped = io.groupBy { case (n, _) => indexed(n, names)._1 }
       val want    =
         d.ports.filter(x => Datapaths.holds(x.when, p)).map(x => x.name -> x.dir) ++
           d.livePins(p).map(_.name).filterNot(c.empty).map(_ -> "in")
       assert(grouped.keySet == want.map(_._1).toSet, s"$top: ${ports.toSeq.sorted}")
       for ((name, dirn) <- want) {
-        val got = grouped(name)
+        val got   = grouped(name)
         assert(got.map(_._2) == Set(s"${dirn}put"), s"$name: $got")
-        val idx = got.map(_._1).collect { case Indexed(_, i) => i.toInt }
-        assert(got == Set((name, s"${dirn}put")) || idx == (0 until p("lanes").num.toInt).toSet, s"$name: $got")
+        val idx   = got.map(x => indexed(x._1, names)._2)
+        val lanes = (0 until p("lanes").num.toInt).map(Seq(_))
+        val taps  = p
+          .get("taps")
+          .map(t =>
+            for {
+              k <- 0 until t.num.toInt
+              l <- lanes
+            } yield k +: l
+          )
+          .getOrElse(Nil)
+        assert(idx == Set(Seq.empty) || idx == lanes.toSet || idx == taps.toSet, s"$name: $got")
       }
 
       // Every flop on an asynchronous reset

@@ -29,11 +29,14 @@ from snax_forge.gen.accelerator import ACCELERATOR_JSON, Link
 from snax_forge.gen.gvsoc import generate
 from snax_forge.gen.rtl import (
     accelerator_spec,
+    buffer_params,
     catalogue,
     check_params,
     check_unit,
     fill,
+    flops,
     group_counter,
+    halo_params,
     live,
     write_accelerator,
     write_fixture,
@@ -112,6 +115,31 @@ def test_a_type_param_must_be_type_names():
         with pytest.raises(GenError) as e:
             check_params("E", {**good, k: v}, sig)
         assert e.value.code == "gen.params"
+
+
+def test_a_halo_link_fills_from_its_link_and_holds_its_taps_minus_one_elements():
+    """HaloLink's params from a halo link's taps and its ends' lanes and dtype (link.taps, D206),
+    checked against the catalogue; its flops H * W * width, H = ceil((T - 1) / W): 1 beat at W >= 2
+    with T 3, 2 at W 1. LinkBuffer's fill is unchanged; a rule a link has not is refused."""
+    cat = catalogue()
+    sig = cat["HaloLink"]
+    params = halo_params(3, 8, "uint8", sig)
+    assert params == {"taps": 3, "lanes": 8, "dtype": "uint8"}
+    check_params("HaloLink", params, sig["params"])
+    assert list(live(sig["ports"], params)) == ["in", "taps"]
+    assert list(live(sig["pins"], params)) == ["load"]
+    for (taps, lanes, dtype), want in (((3, 8, "uint8"), 64), ((3, 1, "uint8"), 16),
+                                       ((3, 32, "uint8"), 256), ((5, 8, "uint16"), 128),
+                                       ((5, 2, "uint8"), 32), ((2, 4, "int32"), 128)):  # fmt: skip
+        assert flops("HaloLink", halo_params(taps, lanes, dtype, sig), cat) == want
+    assert buffer_params(2, 4, "int64", cat["LinkBuffer"]) == {"depth": 2, "lanes": 4,
+                                                               "dtype": "int64"}  # fmt: skip
+    with pytest.raises(GenError) as e:
+        halo_params(3, 8, "uint8", {**sig, "fill": {**sig["fill"], "taps": "link.depth"}})
+    assert e.value.code == "gen.catalogue"
+    with pytest.raises(GenError) as e:
+        check_params("HaloLink", {**params, "taps": 1}, sig["params"])
+    assert e.value.code == "gen.params"
 
 
 @requires_submodule

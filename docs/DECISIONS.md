@@ -7,7 +7,7 @@ Rules (D117):
 - An entry is a choice with a real alternative that someone may want to reverse: direction, ownership, the interfaces between components, the order of work. Implementation details live in the module's docstring and its tests.
 - An entry says what was decided, why, and where the detail lives, in a few short bullets; an edge case only when there is one. A change is written into the entry, not chained after it.
 - Entries merged into one keep all their numbers in its heading, so a cite of any of them still finds it. A number is never changed or reused; the text of a removed entry is in git history.
-- A new decision gets the next free number, under the area it belongs to. Next free number: **D204**.
+- A new decision gets the next free number, under the area it belongs to. Next free number: **D207** (D204 and D205 reserved for B1).
 
 Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29–D45, D47–D50, D53, D54, D56, D58–D63, D65–D67, D69, D74, D76–D78, D80, D81, D83, D88–D97, D100, D101, D103, D104, D106, D107, D109, D110, D114, D115, D119, D124, D127, D128, D132, D133, D138–D141, D151, D156, D159, D160, D181.
 
@@ -236,6 +236,12 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 - **Decided:** `link` on a forked container buffers the branch to the one reader down a chain (atax's `Mac` behind vmul → vsum): a ring `LinkBuffer` of depth D, recorded on the fork node (`buffers`) and in `accelerator.json` (`fork_links`). A beat is taken when the other heads fire and the buffer has room; the reader pops one a firing. LOWER refuses D < T, the folds' T between the fork and the reader's held input (N/W for atax), which never ends; T ≤ D < T + L stalls, which the estimate shows. A push loads one entry of D. The branch joins its reader's chain to the fork's group, as a fork's direct reader does, so the state between `link A` and the link into that reader is a group of two chains.
 - **Why:** atax's one pass reads A once for t = A x and y = Aᵀ t, but row i's `Mac` firings need t[i], which comes T beats after row i's first beat; the buffer holds those beats instead of a second read. A depth beside the fork node keeps `fork_read` as it is (Ryan, 24 Nov).
 - **Where:** `sandbox/compose.py` (`link`), `lower/tasks.py`, `estimate/cycles.py`; CONTRACTS, "SNAX-DFG", "Accelerator RTL spec" and "Cost model"; snax-gvsoc's `snax/snax_group_rule.py`.
+
+### D206 — A halo link: one stream as a row's shifted windows
+
+- **Decided:** a halo link gives one stream's beat to a unit's T inputs as windows shifted by 0 … T − 1 elements. It holds ⌈(T − 1)/W⌉ beats, the taps are wires, `load` is its one pin, and a job gives beats in − H outputs.
+- **Why:** a row's neighbours start mid-word and a packed stream starts on a word (D12 · D142), so three shifted streams cannot read them; a 3 × 3 window needs line buffers (open item 179).
+- **Where:** `datapath/HaloLink.scala`, SNAX-GVSoC's `SnaxHaloLink`; CONTRACTS, "Accelerator RTL spec".
 
 ### D197 — A held input may come over a link
 

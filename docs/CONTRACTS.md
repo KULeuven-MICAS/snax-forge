@@ -739,6 +739,7 @@ The header names a CSR `<ACC>_<RW|RO>_[<GROUP>_][<UNIT>_]<NAME>` (`Accelerator.d
 | `LaneAccumulate(inType, outType, lanes)` | per lane s ← first ? a : s + a | 1 | `fire`, `first` | `lanes * width(outType)` |
 | `SerialAccumulate(inType, outType, lanes, seed)` | lane k in cycle k, acc ← (first ∧ k = 0) ? x_k : acc + x_k; span = lanes | 1 | `read`, `lane`, `first` | `width(outType)` |
 | `LinkBuffer(depth, lanes, dtype)` | D beats, depth ≥ 1 | 1 | `load`, `wslot`, `rslot` | `depth * lanes * width(dtype)` |
+| `HaloLink(taps, lanes, dtype)` | one stream as T ≥ 2 windows (D206): H = ⌈(T − 1)/W⌉ beats held; with e the held beats' elements, oldest first, then `in`'s, `taps` (T beats of W lanes) tap t lane l = e_(l+t), wires read in `in`'s cycle; on `load` the held beats shift by one, `in` the newest; a job's first H beats only fill (the control's count), so beats in − H outputs; filled from a link by `link.taps`, `link.lanes`, `link.dtype` | 0 | `load` | `(taps + lanes - 2) // lanes * lanes * width(dtype)` |
 
 A wire is no datapath: plain connections with the same dtype and lanes at both ends.
 

@@ -200,5 +200,21 @@
   "flops": "depth * lanes * width(dtype)",
   "pins": ["load", "wslot", "rslot"],
   "fill": {"depth": "link.depth", "lanes": "link.lanes", "dtype": "link.dtype"}
+ },
+ "HaloLink": {
+  "params": {
+   "taps": {"type": "int", "min": 2},
+   "lanes": {"type": "int", "min": 1},
+   "dtype": {
+    "type": "dtype",
+    "values": ["int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64"]
+   }
+  },
+  "ports": {"in": "in", "taps": "out"},
+  "latency": 0,
+  "span": 1,
+  "flops": "(taps + lanes - 2) // lanes * lanes * width(dtype)",
+  "pins": ["load"],
+  "fill": {"taps": "link.taps", "lanes": "link.lanes", "dtype": "link.dtype"}
  }
 }
