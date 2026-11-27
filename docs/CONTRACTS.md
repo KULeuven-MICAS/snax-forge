@@ -583,7 +583,7 @@ streamer $k$ at $[b_k, b_k + s_k)$, its own at $[b_k + s_k, b_{k+1})$, and $b_K 
 
 ### The program
 
-`main.c` (`lower/c.py`, D135): `main` reads `mcycle`, runs one function per core and stores each accelerator task's counter after its wait (`forge_counter[]`); `forge_check()` prints `forge cycles: <n>`, checks the outputs against their goldens (`forge data:`) and each counter against its beats (`forge counter <task>:`), and prints `forge errors:`. The quiet build (`-DFORGE_QUIET`) waits on every start right after it and marks each section by a write to CSR `0x7c5`, listed in `obs_marks.json` (`mark` 1 up, at most 255; `kind`; `label`).
+`main.c` (`lower/c.py`, D135): `main` reads `mcycle`, runs one function per core and stores each accelerator task's counter after its wait (`forge_counter[]`); `forge_check()` prints `forge cycles: <n>`, checks the outputs against their goldens (`forge data:`) and each counter against its beats (`forge counter <task>:`), and prints `forge errors:`. The quiet build (`-DFORGE_QUIET`) waits on every start right after it and marks each section by a write to CSR `0x7c5`, listed in `obs_marks.json` (`mark` 1 up, at most 255; `kind`; `label`); a pipelined program's quiet build (D202) keeps the default build's waits and marks one section, `run` labelled `program window`, from its first step, then the check.
 
 ### The manifest
 
@@ -916,7 +916,7 @@ class Profile:
 
 ### The energy run
 
-With `--energy` (D177), the flow runs the program again with only the `summary` traces on, into `energy/`, and prices its windows: `energy/energy.json` (`flow/energy.py`'s `EnergyRun`) and `report/energy.md`. Under `serial` and `sequential` it is the quiet build, priced between its marks; under a pipelined schedule (D179) the default build, in one window. Each core 0 write to CSR `0x7C5` and the end (mark −1) make every component write its running totals (`run/snapshots.py`); window k is $n(k) = N(S_{k+1}) - N(S_k)$ for every counter N.
+With `--energy` (D177), the flow runs the program again with only the `summary` traces on, into `energy/`, and prices its windows: `energy/energy.json` (`flow/energy.py`'s `EnergyRun`) and `report/energy.md`. It is the quiet build, priced between its marks; under a pipelined schedule (D179) its one section is the program window (D202). Each core 0 write to CSR `0x7C5` and the end (mark −1) make every component write its running totals (`run/snapshots.py`); window k is $n(k) = N(S_{k+1}) - N(S_k)$ for every counter N.
 
 | `energy.json` field | Holds |
 |---|---|

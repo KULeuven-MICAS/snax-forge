@@ -49,7 +49,7 @@ LABELS = ("set", "id", "kernel", "branch", "label", "row", "layout", "W", "banks
 STATIC = ("est_cycles", "est_accelerator_cycles", "est_copy_cycles", "est_bank_bound", "xbar_inputs",
           *(f"static_{p}_nj" for p in PARTS), "static_nj",
           *(f"area_{p}_um2" for p in (*PARTS, *FIXED)), "area_um2", "area_design_um2",
-          "leak_uw", "static_leak_nj")  # fmt: skip
+          "leak_uw", *(f"leak_{p}_uw" for p in (*PARTS, *FIXED)), "static_leak_nj")  # fmt: skip
 RUN = ("cycles", *(f"dynamic_{p}_nj" for p in PARTS), "dynamic_nj",
        *(f"{b}_nj" for b in BACKGROUND), "passed")  # fmt: skip
 COLUMNS = (*LABELS, *STATIC, *RUN, "status")
@@ -109,8 +109,10 @@ def static_row(point: Point, platform: Path) -> dict[str, Any]:
     for p in PARTS:
         row[f"static_{p}_nj"] = cost["parts"][p]["energy"]
         row[f"area_{p}_um2"] = cost["parts"][p]["area"]
+        row[f"leak_{p}_uw"] = cost["parts"][p]["leak"]
     for p in FIXED:
         row[f"area_{p}_um2"] = cost["fixed"][p]["area"]
+        row[f"leak_{p}_uw"] = cost["fixed"][p]["leak"]
     return row
 
 
