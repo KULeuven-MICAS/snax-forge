@@ -62,10 +62,11 @@ def _signed_with_uint64(dtypes: list[tuple[str, str]]) -> tuple[str, str] | None
 
 # NB (D203): a SIMD body whose values fit a narrower output may write it; the datapath wraps
 # into the output's dtype as NumPy's astype does, so the bits are the reference's.
-def value_span(brm: Any, port: str, dtypes: Mapping[str, str],
-               code: str | None) -> tuple[float, float] | None:  # fmt: skip
+def value_span(brm: Any, port: str, dtypes: Mapping[str, str], code: str | None,
+               params: Mapping[str, Any] | None = None) -> tuple[float, float] | None:  # fmt: skip
     """The range of values a SIMD ``brm``'s ``code`` (on its ports) writes to output ``port``,
-    each input over its whole dtype and a scalar unbounded; None for another kind or no code."""
+    each input over its whole dtype, a slot at its value in ``params`` (a bound node's code
+    names its slots) and a scalar unbounded; None for another kind or no code."""
     from snax_forge import expr
 
     if code is None or brm.function.accel != "simd":
@@ -73,14 +74,16 @@ def value_span(brm: Any, port: str, dtypes: Mapping[str, str],
     ins = {p.name for p in brm.interface.ports if p.direction == "in"}
     ranges = {p: (int(np.iinfo(d).min), int(np.iinfo(d).max))
               for p, d in dtypes.items() if p in ins and d in INT_DTYPES}  # fmt: skip
+    ranges |= {k: (v, v) for k, v in (params or {}).items() if type(v) is int and k not in ins}
     found = [e for t, e in expr.statements(code, brm.name) if t == port]
     return expr.bounds(found[0], ranges) if len(found) == 1 else None
 
 
-def check_dtypes(brm: Any, dtypes: Mapping[str, str], code: str | None = None) -> list[str]:
+def check_dtypes(brm: Any, dtypes: Mapping[str, str], code: str | None = None,
+                 params: Mapping[str, Any] | None = None) -> list[str]:  # fmt: skip
     """Why ``dtypes`` (port -> dtype) do not fit ``brm``'s ports; empty when they do. With
-    ``code`` (what the node computes, on the ports), a SIMD output may be narrower than an input
-    when every value it can take fits its dtype (``value_span``)."""
+    ``code`` (what the node computes, on the ports; its slots at ``params``), a SIMD output may
+    be narrower than an input when every value it can take fits its dtype (``value_span``)."""
     ports = {p.name: p for p in brm.interface.ports}
     out = []
     for name, dt in dtypes.items():
@@ -93,7 +96,7 @@ def check_dtypes(brm: Any, dtypes: Mapping[str, str], code: str | None = None) -
         if do not in INT_DTYPES:
             continue
         wider = [(i, di) for i, di in ints if bits(do) < bits(di)]
-        span = value_span(brm, o, dtypes, code) if wider else None
+        span = value_span(brm, o, dtypes, code, params) if wider else None
         if span is not None and fits(span[0], do) and fits(span[1], do):
             continue
         widest = max((di for _, di in ints), key=bits)

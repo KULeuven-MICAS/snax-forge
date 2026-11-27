@@ -93,7 +93,7 @@ A bound graph nests accelerator ⊃ groups ⊃ units and links (D146, D148):
 
 - A **unit** is an accelerated node. A **group** is a connected set of units and links, one chain or several a fork joins (D189); an unlinked unit is a group of its own, named after its instance; a linked group's units carry its name in `group`.
 - By default each group is its own **accelerator**; `encapsulate` puts several into one, sharing one streamer set (section 9). An accelerator's name is no instance's.
-- A **fused map** (`fuse_map`) is one nest of two tasklets joined by a local value (`loop.local`, `loop.fused`), kept by `bind` in the node's `locals`; `split_reduce` records its parts in `loop.split_reduce`.
+- A **fused map** (`fuse_map`) is one nest of tasklets joined by local values (`loop.local`, `loop.fused`; a record's `first` may be a fused nest itself), kept by `bind` in the node's `locals`; `split_reduce` records its parts in `loop.split_reduce`.
 - **Shared instances** (D165): several nodes may share one instance, run once per node in body order, each its own task on the same streamers; `share` does it for a linked group.
 
 ### A transposed read
@@ -146,7 +146,7 @@ The first four are shared: designs that differ only in timing, supported values 
 |---|---|
 | `name` | not a Python keyword, not starting with `_`; by convention `a`, `b`, ... in, `out` out |
 | `rate` | a beat every `rate` firings, an int or a runtime param's name: an input at firings `0, r, 2r, ...`, an output at `r-1, 2r-1, ...` (a SIMD block 1 everywhere; a reduction 1 in, `T` out) |
-| `when` | `{param: value, ...}` over design params: the port exists only when every one holds (`simd`'s `b` only at `streams` 2, `accumulate`'s and `mac`'s `seed` only at `seed` 1) |
+| `when` | `{param: value, ...}` over design params, a value or `{"min": m}` (an int of at least m): the port exists only when every one holds (`simd`'s `b` at `streams` 2 or more and `c` at 3, `accumulate`'s and `mac`'s `seed` only at `seed` 1) |
 | `dtypes` | the dtypes the port takes (`brm/dtypes.py`); every integer dtype by default, written only when narrowed |
 
 ### Timing and params
@@ -164,9 +164,9 @@ The first four are shared: designs that differ only in timing, supported values 
 
 ### The function and its code
 
-`code` is one `output = expression` per output port over the input ports, per lane of one firing, with the ops `add`, `sub`, `mul`, `min`, `max`, `and`, `or` and `xor` (types: D143). A tasklet's operand casts set the unit's `opType` and are stripped before matching (D175); a cast of an output's whole value is dropped when it is as wide as the output and refused when narrower (D203). `code` may instead be a list of entries, `{"params": {...}, "code": ...}`, each fixing design params. How `bind` picks an entry (D82):
+`code` is one `output = expression` per output port over the input ports, per lane of one firing, with the ops `add`, `sub`, `mul`, `min`, `max`, `and`, `or` and `xor` (types: D143); `simd` also names `axpby` (`k1 * a + k2 * b`), `axpbypcz` (`(k1 * a + k2 * b + k3 * c) // d`, an unset k one), `requant` (`min(max(a // d, lo), hi)`) and `threshold` (`hi * min(max(a - k + 1, 0), 1)`), d a power of two (the unit shifts) and baked, as lo and hi are. A tasklet's operand casts set the unit's `opType` and are stripped before matching (D175); a cast of an output's whole value is dropped when it is as wide as the output and refused when narrower (D203). `code` may instead be a list of entries, `{"params": {...}, "code": ...}`, each fixing design params. How `bind` picks an entry (D82):
 
-1. It tries the entries in order, and every assignment of the tasklet's array inputs to the entry's present ports.
+1. It tries the entries in order with the matcher's assignment (the array inputs in the order they first appear, onto the present ports in order), then the entries again with every other assignment, so a match without swapping inputs wins.
 2. The code must equal the tasklet's, with `+`, `*`, `min` and `max` commuting.
 3. A **slot** (a design param the code names that is not a port) matches either an int that fits the op type, baked (D143), or a scalar read at run time from an R/W CSR (D161).
 4. An entry fits only when every slot its code names has a value and every other slot is unset.
@@ -241,7 +241,7 @@ Each has an inverse, and each refuses with the fix named. The loop names follow 
 | `bind` / `unbind` | `node`, `brm`, `implementation`, `instance`, `params` | the tasklet (or a fused nest's spatial map, or a folding spatial map for `lane_accumulate`) and its spatial map become an accelerated node (below); `unbind` gives back what it `replaced` |
 | `encapsulate` / `unencapsulate` | `accelerator`, `units` | the units' groups become one accelerator sharing one streamer set (D148), in graph order |
 | `split_reduce` / `join_reduce` | `map`, `factor` | a folding map is split as `split_map` splits it, each lane writing a partial into `<output>_partial`; a final sum `<tasklet>_final` in a spatial map `<map>_final` over `0:factor` folds them (a seed stays on the final sum) |
-| `fuse_map` / `unfuse_map` | `first`, `second` | two nests with the same ranges and tags down to one tasklet each, joined by a transient at the same index, become one nest of two tasklets; the transient becomes a local value. An untagged level takes the other's tag; a split on one side only is refused with the split that fixes it (D150), and lanes on different dimensions of the transient (one nest in the row form, the other in the column form) naming both dimensions |
+| `fuse_map` / `unfuse_map` | `first`, `second` | two nests with the same ranges and tags down to one tasklet each, or a fused nest's tasklets on either side, joined by one transient at the same index, become one nest of their tasklets; the transient becomes a local value. Fused again and again, the tasklets form a tree (gray's `77 R` and `150 G` joined by an add), which binds as the one tasklet it composes to when each local is read once. An untagged level takes the other's tag; a split on one side only is refused with the split that fixes it (D150), and lanes on different dimensions of the transient (one nest in the row form, the other in the column form) naming both dimensions |
 | `carry_seed` / `uncarry_seed` | `map` | a fold whose output a map outside the ones it moves with revisits (the strips of `matvec_v9`) becomes carried (`reduce.carry`, D192); refused for a seeded fold or one written once per element |
 | `fuse_seed` / `unfuse_seed` | `first`, `second` | a fold writing t with ⊕, read only by a nest computing `t ⊕ x` in place over t: the nest and t go and the fold starts from x (`reduce.seed`, D163; matvec_acc's q += A p). Refused for another reader, op, subset, a float or a bound fold |
 | `factor_out` / `unfactor_out` | `container` | a kernel scalar k read by one scale nest `t = k * a`, t read only by a product `t * x` that one fold sums into s: the nest and t go, the product reads a and the fold writes `<s>_sum`. When s is a transient read by one elementwise tasklet, k lands there (it reads `k * <s>_sum` for s, s goes); else a nest over s just after the fold writes `s = k * <s>_sum` (D198; gesummv's α A x). The tasklet k lands in keeps what went in `sandbox.factored`, one record per scalar. Refused for a k that scales several nests or is baked already, another reader of t, a fold that is not an unseeded sum, a type narrower than s's from the scale to s, a float, or a bound node |

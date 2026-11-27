@@ -11,7 +11,7 @@ scalar operands, which map to no port.
   ``bind``'s code match (CONTRACTS, "Block runtime model").
 - ``reduce``: a copy (``out = in1``) whose output folds with ``attrs.op``, as the importer
   makes DaCe's ``Reduce``; the one place the SNAX-DFG's ``reduce`` and a BRM meet.
-- ``lane_fold`` (``mac``): a fused nest (``fused_view``), a ``simd`` front op then a ``reduce``
+- ``lane_fold`` (``mac``): a fused nest of two (``fused_view``), a ``simd`` front op then a ``reduce``
   copy with ``attrs.fold``, one partial per lane. Without ``attrs.op`` (``lane_accumulate``):
   a spatial map of one folding copy, each lane folding its own element over the temporal maps.
 """
@@ -103,14 +103,16 @@ def _simd(
     scalars: frozenset[str],
 ) -> dict[str, str]:  # fmt: skip
     what = f"node {node.id!r} as {brm.name!r}"
-    if node.kind == "map":  # a fused nest of two plain tasklets: the one they compose
-        found = fused_view(node)
-        if found is None:
-            raise SandboxError(f"{what}: not a fused nest of two tasklets (fuse_map)")
-        if any(m.reduce is not None for m in found[1].outputs.values()):
-            raise SandboxError(f"{what}: {found[1].id} folds its input; simd binds a fused nest "
+    if node.kind == "map":  # a fused nest of plain tasklets: the one they compose
+        tree = fused_tree(node)
+        if tree is None:
+            raise SandboxError(f"{what}: not a fused nest whose tasklets compose into one "
+                               "(fuse_map)")  # fmt: skip
+        last = tree[0][-1]
+        if any(m.reduce is not None for m in last.outputs.values()):
+            raise SandboxError(f"{what}: {last.id} folds its input; simd binds a fused nest "
                                "of two plain tasklets")  # fmt: skip
-        node = found[2]
+        node = tree[1]
     if node.kind != "tasklet":
         raise SandboxError(f"{what}: a {node.kind!r} is not a tasklet")
     code = node.attrs["code"]
@@ -181,18 +183,55 @@ register_pattern("reduce", _reduce)
 
 
 def fused_view(smap: Node) -> tuple[Node, Node, Node] | None:
-    """A fused nest's two tasklets and the one tasklet they stand for to ``bind``: the first's
-    inputs and the second's other inputs (one clashing with a first's connector renamed to
-    the next free ``in<k>``), the second's output, and the second's code with the first's
-    expression in place of the local value (axpy's ``out = in3 + in1 * in2``: ``y`` plus
-    ``alpha`` times ``x``; a fold's ``out = in1 * in2``). None when ``smap`` is not a spatial
-    map of two tasklets, the first's one output read once by the second at the same index."""
+    """A fused nest's two tasklets and the one tasklet they stand for to ``bind`` (``_compose``);
+    None when ``smap`` is not a spatial map of two tasklets, the first's one output read once
+    by the second at the same index."""
     if smap.kind != "map" or smap.attrs.get("loop.kind") != "spatial":
         return None
     kids = smap.body or []
     if len(kids) != 2 or any(k.kind != "tasklet" for k in kids):
         return None
-    first, second = kids
+    view = _compose(*kids)
+    return None if view is None else (kids[0], kids[1], view)
+
+
+def fused_tree(smap: Node) -> tuple[list[Node], Node] | None:
+    """A fused nest's tasklets, in order, and the one tasklet they stand for to ``bind``: the
+    first composed into the one later tasklet reading its output (``_compose``), again until
+    one is left (gray's ``uint8((77 * R + 150 * G + 29 * B) // 256)`` from seven). Two
+    tasklets give ``fused_view``'s. None when ``smap`` is not a spatial map of two tasklets or
+    more, each but the last writing one output that exactly one later tasklet reads once, at
+    the same index."""
+    if smap.kind != "map" or smap.attrs.get("loop.kind") != "spatial":
+        return None
+    kids = smap.body or []
+    if len(kids) < 2 or any(k.kind != "tasklet" for k in kids):
+        return None
+    left = list(kids)
+    while len(left) > 1:
+        first = left[0]
+        if len(first.outputs) != 1:
+            return None
+        (m1,) = first.outputs.values()
+        readers = [k for k, t in enumerate(left[1:], 1)
+                   if any((m.data, m.subset) == (m1.data, m1.subset) for m in t.inputs.values())]  # fmt: skip
+        if len(readers) != 1:
+            return None
+        view = _compose(first, left[readers[0]])
+        if view is None:
+            return None
+        left[readers[0]] = view
+        left.pop(0)
+    return list(kids), left[0]
+
+
+def _compose(first: Node, second: Node) -> Node | None:
+    """The one tasklet ``first`` and ``second`` stand for: the first's inputs and the second's
+    other inputs (one clashing with a first's connector renamed to the next free ``in<k>``),
+    the second's output, and the second's code with the first's expression in place of the
+    local value (axpy's ``out = in3 + in1 * in2``: ``y`` plus ``alpha`` times ``x``; a fold's
+    ``out = in1 * in2``); named as the first. None when the first's one output is not read
+    once by the second at the same index."""
     if len(first.outputs) != 1 or len(second.outputs) != 1:
         return None
     (m1,) = first.outputs.values()
@@ -219,10 +258,9 @@ def fused_view(smap: Node) -> tuple[Node, Node, Node] | None:
     code = f"{c2} = {ast.unparse(body)}"
     inputs = dict(first.inputs) | {rename.get(c, c): m for c, m in second.inputs.items()
                                    if c != local[0]}  # fmt: skip
-    view = Node(first.id, "tasklet", inputs=inputs,
+    return Node(first.id, "tasklet", inputs=inputs,
                 outputs={c2: Memlet.from_dict(second.outputs[c2].to_dict(), first.id)},
                 attrs={"code": code})  # fmt: skip
-    return first, second, view
 
 
 def _swap_names(tree: ast.expr, rename: Mapping[str, str], value: ast.expr) -> ast.expr:

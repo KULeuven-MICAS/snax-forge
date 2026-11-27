@@ -7,9 +7,10 @@ it refuses with a ``GenError``. ``register_datapath`` registers an adapter by th
 name with its latency and span (an int or an ``expr.py`` expression over its params and
 ``lanes``). The datapaths, their ports and the refusals are CONTRACTS, "Accelerator RTL spec".
 
-The args each adapter reads: ``simd_lanes`` lanes, op, streams (2 by default) and k, or k1 and
-k2 for axpby, each baked (an int that fits opType, else ``gen.k``) or read from a container (a
-CSR); ``tree_accumulate`` and ``serial_accumulate`` lanes, op add only, a seed port when the
+The args each adapter reads: ``simd_lanes`` lanes, op, streams (2 by default) and k, or the
+slots of an op that has its own (``NAMED_OPS``: axpby's k1 and k2; axpbypcz's k1, k2, k3 and d;
+requant's d, lo and hi; threshold's k and hi), each baked (an int that fits opType, else
+``gen.k``) or read from a container (a CSR) where the op allows, d a power of two; ``tree_accumulate`` and ``serial_accumulate`` lanes, op add only, a seed port when the
 BRM's design param ``seed`` is 1; ``mac`` lanes, ``accumulate`` and ``regOut``;
 ``lane_accumulate`` lanes. ``mac`` takes a seed port of its lanes when the BRM's design param
 ``seed`` is 1. Every port is whole 64-bit channels, a packed output or a sliced
@@ -200,39 +201,69 @@ def _lanes_arg(inst: Instance, what: str) -> int:
     return lanes
 
 
-AXPBY = "axpby"  # SimdLanes' one ternary op, k1 * a + k2 * b (k2 unset: + b)
+AXPBY = "axpby"  # SimdLanes' k1 * a + k2 * b (k2 unset: + b)
+# SimdLanes' ops with slots of their own: streams, the slots it needs, those it may take, and
+# those that must be baked (the unit shifts by d; requant's bounds are wires)
+NAMED_OPS = {
+    AXPBY: (2, {"k1"}, {"k1", "k2"}, set()),
+    "axpbypcz": (3, {"d"}, {"k1", "k2", "k3", "d"}, {"d"}),
+    "requant": (1, {"d", "lo", "hi"}, {"d", "lo", "hi"}, {"d", "lo", "hi"}),
+    "threshold": (1, {"k", "hi"}, {"k", "hi"}, {"hi"}),
+}
+SLOTS = ("k", "k1", "k2", "k3", "d", "lo", "hi")
 
 
 def simd_lanes(inst: Instance, dtypes: Mapping[str, str] | None = None) -> Fill:
     """SimdLanes' fill; see the module doc."""
     brm, b = inst.brm, inst.impl.binding
     what = f"{brm.name}.{inst.implementation}"
-    if not {"lanes", "op"} <= set(b["args"]) <= {"lanes", "op", "streams", "k", "k1", "k2"}:
+    if not {"lanes", "op"} <= set(b["args"]) <= {"lanes", "op", "streams", *SLOTS}:
         raise GenError("gen.args", f"{what}: args {sorted(b['args'])}; SimdLanes takes lanes and "
-                       "op, and optionally streams, k, k1 and k2")  # fmt: skip
+                       f"op, and optionally streams and the slots {', '.join(SLOTS)}")  # fmt: skip
     lanes = _lanes_arg(inst, what)
     op = expr.evaluate(b["args"]["op"], inst.params)
-    if op not in ELEMENTWISE_OP and op != AXPBY:
+    if op not in ELEMENTWISE_OP and op not in NAMED_OPS:
         raise GenError("gen.op", f"{what}: op {op!r} is not one of ElementwiseOp's "
-                       f"{list(ELEMENTWISE_OP)} nor {AXPBY}")  # fmt: skip
+                       f"{list(ELEMENTWISE_OP)} nor {', '.join(NAMED_OPS)}")  # fmt: skip
     streams = expr.evaluate(b["args"].get("streams", 2), inst.params)
-    if streams not in (1, 2):
-        raise GenError("gen.args", f"{what}: streams {streams!r}; SimdLanes takes 1 or 2")
-    slots = {s: _set_arg(inst, s) for s in ("k", "k1", "k2")}
-    k = slots["k"]
-    if streams == 2 and k is not None:
-        raise GenError("gen.args", f"{what}: k = {k} at two streams; k is one stream's constant")
-    if op == AXPBY and streams != 2:
-        raise GenError("gen.args", f"{what}: {AXPBY} at one stream; it takes two")
+    if streams not in (1, 2, 3):
+        raise GenError("gen.args", f"{what}: streams {streams!r}; SimdLanes takes 1, 2 or 3")
+    slots = {s: _set_arg(inst, s) for s in SLOTS}
     read = {s for s in slots if _read_arg(inst, s)}
-    if op != AXPBY and ({"k1", "k2"} & read or (slots["k1"], slots["k2"]) != (None, None)):
-        raise GenError("gen.args", f"{what}: k1 and k2 are {AXPBY}'s, not {op}'s")
-    if streams == 1 and k is None and "k" not in read:
-        raise GenError("gen.args", f"{what}: one stream takes the constant k, got None (neither "
-                       "baked nor read from a container)")  # fmt: skip
-    if op == AXPBY and slots["k1"] is None and "k1" not in read:
-        raise GenError("gen.args", f"{what}: {AXPBY} takes k1, got None (neither baked nor read "
-                       "from a container)")  # fmt: skip
+    have = {s for s, v in slots.items() if v is not None} | read
+    if op in NAMED_OPS:
+        n, needs, takes, baked_only = NAMED_OPS[op]
+        if streams != n:
+            raise GenError("gen.args", f"{what}: {op} at {streams} stream(s); it takes {n}")
+        if have - takes:
+            raise GenError("gen.args", f"{what}: {', '.join(sorted(have - takes))} not {op}'s; "
+                           f"it takes {', '.join(sorted(takes))}")  # fmt: skip
+        for s in sorted(needs - have):
+            raise GenError("gen.args", f"{what}: {op} takes {s}, got None (neither baked nor "
+                           "read from a container)")  # fmt: skip
+        if read & baked_only:
+            raise GenError("gen.args", f"{what}: {', '.join(sorted(read & baked_only))} read "
+                           f"from a container; {op} bakes it into the hardware")  # fmt: skip
+        d = slots["d"]
+        if type(d) is int and (d <= 0 or d & (d - 1)):
+            raise GenError("gen.args", f"{what}: d = {d} is not a power of two: the unit divides "
+                           "by shifting")  # fmt: skip
+    else:
+        k = slots["k"]
+        if streams == 3:
+            raise GenError("gen.args", f"{what}: {op} at three streams; only axpbypcz takes "
+                           "three")  # fmt: skip
+        if streams == 2 and k is not None:
+            raise GenError("gen.args", f"{what}: k = {k} at two streams; k is one stream's "
+                           "constant")  # fmt: skip
+        if have - {"k"}:
+            owners = sorted(o for o, (_, _, t, _) in NAMED_OPS.items() if have & t - {"k"})
+            raise GenError("gen.args", f"{what}: {', '.join(sorted(have - {'k'}))} "
+                           f"{'are' if len(have - {'k'}) > 1 else 'is'} "
+                           f"{' and '.join(owners)}'s, not {op}'s")  # fmt: skip
+        if streams == 1 and k is None and "k" not in read:
+            raise GenError("gen.args", f"{what}: one stream takes the constant k, got None "
+                           "(neither baked nor read from a container)")  # fmt: skip
     ins, _ = _ports(inst, streams, 1, "SimdLanes", what)
     names = [p.name for p in inst.ports]
     _lanes(inst, {p: lanes for p in names}, what)

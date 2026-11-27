@@ -87,7 +87,7 @@ def test_every_one_stream_entry_binds_with_its_slot(op, k):
 
 LISTED = (r"'simd' computes one of 'out = a \+ b' \(op = 'add', streams = 2\), .*"
           r"'out = max\(a, k\)' \(op = 'max', streams = 1\), .*"
-          r"'out = k1 \* a \+ b' \(op = 'axpby', streams = 2\)$")  # fmt: skip
+          r"'out = hi \* min\(max\(a - k \+ 1, 0\), 1\)' \(op = 'threshold', streams = 1\)$")  # fmt: skip
 
 
 @pytest.mark.parametrize(

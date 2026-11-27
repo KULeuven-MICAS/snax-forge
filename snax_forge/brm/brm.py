@@ -100,18 +100,19 @@ SEED = "seed"
 @dataclass
 class Port:
     """One data port: ``lanes`` elements per beat, one beat every ``rate`` firings; present only
-    at the design params ``when`` gives (every one holding; always when None)."""
+    at the design params ``when`` gives (every one holding, a value or ``{"min": m}``, an int of
+    at least m; always when None)."""
 
     name: str
     direction: str
     lanes: Value
     rate: Value = 1
     dtypes: list[str] = field(default_factory=lambda: list(INT_DTYPES))  # the rule: dtypes.py
-    when: dict[str, int | str] | None = None
+    when: dict[str, Any] | None = None
 
     def present(self, params: Mapping[str, Any]) -> bool:
         """The port exists at design ``params``: each of its ``when`` holds there."""
-        return all(k in params and params[k] == v for k, v in (self.when or {}).items())
+        return all(k in params and _holds(params[k], v) for k, v in (self.when or {}).items())
 
     def to_dict(self) -> dict[str, Any]:
         d = {"name": self.name, "direction": self.direction, "lanes": self.lanes, "rate": self.rate}
@@ -600,8 +601,18 @@ def _check_function(b: Brm, design: dict[str, Param], what: str) -> None:
         seen[key] = i
 
 
+def _holds(x: Any, v: Any) -> bool:
+    """A ``when`` match: ``x`` equal to ``v``, or with ``v`` ``{"min": m}`` an int of at least m
+    (``simd``'s ``b`` at two streams or more), as the catalogue's (gen/rtl.py)."""
+    if isinstance(v, Mapping) and set(v) == {"min"}:
+        return type(x) is int and x >= v["min"]
+    return x == v
+
+
 def _allowed_value(design: dict[str, Param], k: str, v: Any, what: str) -> None:
-    """``k`` is a design param and ``v`` one of its values."""
+    """``k`` is a design param and ``v`` one of its values (or ``{"min": m}``, m one)."""
+    if isinstance(v, Mapping) and set(v) == {"min"}:
+        v = v["min"]
     if k not in design:
         raise BrmError(f"{what}: not a design param ({sorted(design)})")
     p = design[k]

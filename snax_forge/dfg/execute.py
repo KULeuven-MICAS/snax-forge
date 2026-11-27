@@ -456,7 +456,7 @@ def _run_accelerated(node: Node, ctx: Context) -> None:
         p.name: ctx.graph.containers[(node.inputs | node.outputs)[p.name].data].dtype
         for p in cfg.ports
     }
-    if refused := check_dtypes(instance.brm, dtypes, node.attrs["code"]):
+    if refused := check_dtypes(instance.brm, dtypes, node.attrs["code"], node.attrs["params"]):
         raise ExecutionError(
             f"{what}: {'; '.join(refused)}; accepted output dtypes for these inputs: "
             f"{accepted(instance.brm, dtypes)}"

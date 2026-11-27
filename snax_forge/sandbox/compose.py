@@ -256,17 +256,33 @@ def _lanes_refusal(first: Node, second: Node, what: str) -> SandboxError | None:
                         "in the second")  # fmt: skip
 
 
+def _tasklets_only(n: Node) -> list[Node] | None:
+    """A map's body when it is tasklets only, else None."""
+    kids = n.body or []
+    return kids if n.kind == "map" and kids and all(k.kind == "tasklet" for k in kids) else None
+
+
 def _fuse(g: Graph, first: Node, second: Node, what: str) -> tuple[Node, str, list[list[str]]]:
     """``first`` and ``second`` fused (CONTRACTS, "Recipe"), the local container and the tags an
     untagged side takes first (``[map, kind]`` each; the fused node is then the first's
-    untagged at those levels: fuse_map tags and fuses again); SandboxError."""
+    untagged at those levels: fuse_map tags and fuses again); SandboxError. Either side may be a
+    fused nest already, its tasklets side by side at its innermost map (a tree: gray's ``77 R``
+    and ``150 G`` joined by an add); one value the first writes and the second reads joins
+    them either way."""
     lanes = _lanes_refusal(first, second, what)
     if lanes is not None:
         raise lanes
     rename: dict[str, str] = {}
     pairs: list[tuple[Node, Node]] = []
+    tree = False
     f, s = first, second
     while f.kind == "map" and s.kind == "map":
+        lf, ls = _tasklets_only(f), _tasklets_only(s)
+        if lf is not None and ls is not None and (len(lf) > 1 or len(ls) > 1):
+            rename[s.attrs["var"]] = f.attrs["var"]
+            pairs.append((f, s))
+            tree = True
+            break
         if len(f.body or []) != 1 or not s.body:
             raise SandboxError(f"{what}: {f.id} and {s.id} are not nests of the same depth down "
                                "to one tasklet each")  # fmt: skip
@@ -277,7 +293,7 @@ def _fuse(g: Graph, first: Node, second: Node, what: str) -> tuple[Node, str, li
     _substitute_body([second], rename)
     f, s = first, second
     levels, tags = [], []
-    for of, os_ in pairs:
+    for k, (of, os_) in enumerate(pairs):
         if f.attrs["range"] != s.attrs["range"]:
             raise _range_refusal(g, of, os_, what)
         kf, ks = f.attrs.get("loop.kind"), s.attrs.get("loop.kind")
@@ -286,27 +302,42 @@ def _fuse(g: Graph, first: Node, second: Node, what: str) -> tuple[Node, str, li
                                "tags (an untagged map takes the other's)")  # fmt: skip
         if kf != ks:
             tags.append([of.id, ks] if kf is None else [os_.id, kf])
+        if tree and k == len(pairs) - 1:
+            levels.append((f, []))
+            break
         levels.append((f, s.body[1:]))
         f, s = f.body[0], s.body[0]
-    if f.kind != "tasklet" or s.kind != "tasklet":
+    if tree:
+        firsts, seconds = list(f.body), list(s.body)
+    elif f.kind != "tasklet" or s.kind != "tasklet":
         raise SandboxError(f"{what}: {f.id} and {s.id} are not nests of the same depth down to "
                            "one tasklet each")  # fmt: skip
-    t1, t2 = f, s
-    writes = list(t1.outputs.values())
-    reads = [m for m in t2.inputs.values() if writes and m.data == writes[0].data]
-    if len(writes) != 1 or len(reads) != 1 or (reads[0].subset != writes[0].subset):
-        raise SandboxError(f"{what}: {t1.id} and {t2.id} are not joined by a transient the first "
-                           "writes and the second reads at the same index")  # fmt: skip
-    local = writes[0].data
-    if not g.containers[local].transient or writes[0].reduce is not None:
+    else:
+        firsts, seconds = [f], [s]
+    joins = [(t, m) for t in firsts for m in t.outputs.values()
+             if any(r.data == m.data for t2 in seconds for r in t2.inputs.values())]  # fmt: skip
+    if len(joins) != 1:
+        names = [t.id for t in firsts]
+        raise SandboxError(
+            f"{what}: {', '.join(names)} and {', '.join(t.id for t in seconds)} are "
+            "not joined by a transient the first writes and the second reads at "
+            "the same index" + ("" if len(joins) < 2 else " (one, not several)")
+        )
+    t1, write = joins[0]
+    reads = [r for t2 in seconds for r in t2.inputs.values() if r.data == write.data]
+    if len(t1.outputs) != 1 or len(reads) != 1 or reads[0].subset != write.subset:
+        raise SandboxError(f"{what}: {t1.id} and {seconds[-1].id} are not joined by a transient "
+                           "the first writes and the second reads at the same index")  # fmt: skip
+    local = write.data
+    if not g.containers[local].transient or write.reduce is not None:
         raise SandboxError(f"{what}: {local} is not a transient written plainly")
     users = {n.id for n, _ in g.walk()
              for m in n.memlets() if m.data == local}  # fmt: skip
-    others = users - {t1.id, t2.id}
+    others = users - {t.id for t in (*firsts, *seconds)}
     if others:
         raise SandboxError(f"{what}: {local} is named by {sorted(others)} too; a local value is "
-                           "the two tasklets' only")  # fmt: skip
-    inner: list[Node] = [copy.deepcopy(t1), t2]
+                           f"the {'fused' if tree else 'two'} tasklets' only")  # fmt: skip
+    inner: list[Node] = [*copy.deepcopy(firsts), *seconds]
     for f, extra in reversed(levels):
         node = Node(f.id, "map", attrs=copy.deepcopy(f.attrs), body=[*inner, *extra])
         inner = [node]

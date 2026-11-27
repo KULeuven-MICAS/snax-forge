@@ -103,7 +103,7 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 
 ### D82 — A BRM says what one lane computes
 
-- **Decided:** a BRM gives one lane's `function.code`, or a table of codes each fixing design params and naming scalar slots (`simd`'s per `op` and `streams`, with `k`, `k1`, `k2`), matched with `+`, `*`, `min` and `max` commuting. `bind` checks the tasklet, or a fused map's tasklets joined by a local value, against it; the first match gives the instance its params and slots. `unbind` and `join_map` take it back.
+- **Decided:** a BRM gives one lane's `function.code`, or a table of codes each fixing design params and naming scalar slots (`simd`'s per `op` and `streams`, with `k`, `k1`, `k2`, `k3`, `d`, `lo`, `hi`), matched with `+`, `*`, `min` and `max` commuting. `bind` checks the tasklet, or the one a fused map's tasklets compose to, against it; the first match gives the instance its params and slots, a match without swapping inputs before any with. `unbind` and `join_map` take it back.
 - **Why:** one block serves several ops, and binding is checked, not trusted.
 - **Where:** CONTRACTS, "Block runtime model".
 
