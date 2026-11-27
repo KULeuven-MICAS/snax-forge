@@ -49,7 +49,8 @@ def _background(run: EnergyRun) -> list[str]:
         f"What every cycle costs whatever the accelerators do, beside the dynamic energy: the "
         f"leakage of the design's own parts ({_uw(b.design_uw)}), of the core "
         f"({_uw(b.core_uw)}) and of the rest of the cluster ({_uw(b.rest_uw)}), and the "
-        f"idle floor of the core, the DMA and the rest ({b.idle_pj_cycle:.2f} pJ a cycle). "
+        f"idle floor of the core and the rest ({b.idle_pj_cycle:.2f} pJ a cycle; the DMA's, the "
+        "streamers' and the crossbar's are in their parts). "
         f"Leakage at a {b.clock_ns:g} ns clock, for illustration: it scales with the period."
     )
     out = ["", "## Leakage and the idle floor", "", lead,

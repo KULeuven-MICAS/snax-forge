@@ -260,20 +260,20 @@ def test_compare_gives_two_columns_when_the_groups_differ():
     assert sum(x["width"] for x in bars["area"][1]["segments"]) == pytest.approx(0.8996, rel=1e-3)
     assert [x["name"] for x in bars["area"][0]["segments"]][-3:] == ["dma", "core", "rest"]
     # the checkbox's bars: the dynamic energy and the design's leakage as one segment more
-    assert [b["total_text"] for b in bars["energy_leakage"]] == ["81.067 nJ", "73.838 nJ"]
+    assert [b["total_text"] for b in bars["energy_leakage"]] == ["138.562 nJ", "130.476 nJ"]
     assert bars["energy_leakage"][1]["segments"][-1]["name"] == "leakage"
     assert "leakage" not in [x["name"] for x in bars["energy"][1]["segments"]]
     assert _rows(rows, "Cost estimate (first-order) on nangate45") == {
         "area": ("1 130 000 µm²", "1 020 000 µm²", True),
         "area of the design alone": ("307 000 µm²", "194 000 µm²", True),
-        "energy per run": ("59.128 nJ", "59.031 nJ", True),
+        "energy per run": ("116.624 nJ", "115.669 nJ", True),
         "leakage over the run": ("8 247.7 µW · 21.939 nJ", "5 587.4 µW · 14.807 nJ", True),
         "datapath": ("61 000 µm² · 25.951 nJ", "61 000 µm² · 25.951 nJ", False),
         "control": ("1 110 µm² · 0.096 nJ", "1 090 µm² · 0.149 nJ", True),
-        "streamers": ("132 000 µm² · 11.568 nJ", "68 000 µm² · 11.523 nJ", True),
-        "crossbar": ("113 000 µm² · 7.562 nJ", "63 500 µm² · 7.535 nJ", True),
-        "memory (banks)": ("432 000 µm² · 13.952 nJ", "432 000 µm² · 13.874 nJ", True),
-        "DMA": ("73 700 µm² · 0.000 nJ", "73 700 µm² · 0.000 nJ", False),
+        "streamers": ("132 000 µm² · 12.844 nJ", "68 000 µm² · 12.192 nJ", True),
+        "crossbar": ("113 000 µm² · 8.475 nJ", "63 500 µm² · 8.202 nJ", True),
+        "memory (banks)": ("432 000 µm² · 40.413 nJ", "432 000 µm² · 40.334 nJ", True),
+        "DMA": ("73 700 µm² · 28.845 nJ", "73 700 µm² · 28.842 nJ", True),
         "core (Snitch, I-cache)": ("88 900 µm² · area only", "88 900 µm² · area only", False),
         "rest of the cluster": ("228 000 µm² · area only", "228 000 µm² · area only", False),
         "L1 accesses": ("mac: 4104 words, 21.464 nJ; sum: 9 words, 0.050 nJ",

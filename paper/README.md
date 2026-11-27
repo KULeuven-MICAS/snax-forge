@@ -35,6 +35,6 @@ Without `--run`, a row keeps its run columns from the CSV while its recipe and s
 
 From `pixi run paper forms` and `pixi run paper limits` (checked by `tests/paper/`):
 
-- `mvt_column` (`mvt_v5`, sequential): 1028 cycles, 26.18 nJ static, 951 435 µm² with the banks, the DMA, the core and the rest; `mvt_dma_copy`: 11 951 cycles, 803.39 nJ, of which 10 923 cycles and 435.83 nJ (the DMA's bursts) are the copy.
-- `mvt_contiguous_w8` and `mvt_padded_w8`: the same 1028 cycles and 241.08 nJ, as the estimate does not see bank conflicts (D155); at W = 32, 260 cycles against a bank bound of 520.
+- `mvt_column` (`mvt_v5`, sequential): 1028 cycles, 43.43 nJ static, 951 435 µm² with the banks, the DMA, the core and the rest; `mvt_dma_copy`: 11 951 cycles, 755.99 nJ, of which 10 923 cycles and 319.82 nJ (the DMA's bursts) are the copy.
+- `mvt_contiguous_w8` and `mvt_padded_w8`: the same 1028 cycles and 309.08 nJ, as the estimate does not see bank conflicts (D155); at W = 32, 260 cycles against a bank bound of 520.
 - `bicg_pipeline_padded_w32` needs 132 crossbar inputs, past the 128 of SNAX's crossbar (`l1.max_xbar_inputs`): its point raises the limit to 256, SNAX-GVSoC's most (D85), and the estimate prices its crossbar extrapolated. Without the raise it is refused at design.

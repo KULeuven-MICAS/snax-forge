@@ -7,10 +7,11 @@ with ``marks`` its ``obs_marks.json``, or, ``marks`` None, the default build's (
 which writes no mark: one window, the whole run (a pipelined schedule's). ``est`` is the
 design's costed estimate. Each window between two snapshots (run/snapshots.py) is priced at the
 instances' prices (estimate/dynamic.py): its units' firings and pushes, its groups' busy cycles,
-its movers' requests and grants, the crossbar's counts of the DMA's copies inside L1, the DMA's
-bursts. ``static`` is the estimate's own six parts with the counts they were priced on. Beside
-the dynamic energy, each window's ``Background``: the design's leakage, the core's and the
-rest's, and the cluster's idle floor, each over the window's cycles. ``EnergyRun`` round-trips
+its movers' requests and grants, the crossbar's counts of the DMA's copies inside L1, the banks'
+reads and writes (the DMA's transfers among them), its cycles. ``static`` is the estimate's own
+six parts with the counts they were priced on. Beside the dynamic energy, each window's
+``Background``: the design's leakage, the core's and the rest's, and the core's and the rest's idle
+floor (the DMA's is in its part), each over the window's cycles. ``EnergyRun`` round-trips
 through ``to_dict`` / ``from_dict``.
 """
 
@@ -49,8 +50,8 @@ BACKGROUND = ("leak_design", "leak_core", "leak_rest", "idle")
 @dataclass(frozen=True)
 class Background:
     """What a cycle costs whatever the accelerators do: the leakage (µW) of the design's own six
-    parts (the ADFG's lumped segment), of the core and of the rest of the cluster, the fixed
-    parts' idle floor (pJ a cycle: core, DMA, rest), at the table's clock (ns)."""
+    parts (the ADFG's lumped segment), of the core and of the rest of the cluster, the core's and
+    the rest's idle floor (pJ a cycle; the DMA's is in its part), at the table's clock (ns)."""
 
     design_uw: float
     core_uw: float
@@ -81,7 +82,8 @@ def background_of(est: Estimate) -> Background:
         raise ValueError("the estimate is not costed on a platform: no leakage")
     f = costs.fixed
     return Background(leak["power"], f["core"].leak_uw, f["rest"].leak_uw,
-                      sum(f[k].idle_pj_cycle for k in FIXED_PARTS), leak["clock_ns"])  # fmt: skip
+                      sum(f[k].idle_pj_cycle for k in FIXED_PARTS if k != "dma"),
+                      leak["clock_ns"])  # fmt: skip
 
 
 @dataclass
@@ -148,8 +150,8 @@ def mover_specs(cluster: Cluster) -> list[MoverSpec]:
 def counts_of(w: Window, cluster: Cluster) -> Counts:
     """A window's counts as the pricing reads them: per unit its firings and pushes, the groups'
     busy cycles added up and per group (a group's line is written by one of its units), per mover
-    its lanes' grants and stalls (requests) and grants, and the crossbar's counts of the DMA's
-    copies inside L1."""
+    its lanes' grants and stalls (requests) and grants, the crossbar's counts of the DMA's
+    copies inside L1, the banks' reads and writes added up and the window's cycles."""
     movers, per_lane = {}, {}
     for m in cluster.accelerator.movers:
         lanes = [w.counters.inputs[p] for p in m.ports if p in w.counters.inputs]
@@ -161,9 +163,9 @@ def counts_of(w: Window, cluster: Cluster) -> Counts:
     for k, c in w.counters.groups.items():
         g = group.get(k, k)
         groups[g] = groups.get(g, 0) + sum(c.values())
-    return Counts(
-        dict(w.counters.units), w.counters.busy(), movers, w.counters.copies, groups, per_lane
-    )
+    banks = (sum(b[0] for b in w.counters.banks), sum(b[1] for b in w.counters.banks))
+    return Counts(dict(w.counters.units), w.counters.busy(), movers, w.counters.copies, groups,
+                  per_lane, banks, w.cycles)  # fmt: skip
 
 
 def energy_of(lines: Sequence[Line], cluster: Cluster, marks: Sequence[dict[str, Any]] | None,

@@ -1,5 +1,5 @@
-"""The cost tables: the streamers, the TCDM crossbar, the L1 banks, the cluster's fixed parts and
-the DMA engine.
+"""The cost tables: the streamers, the TCDM crossbar, the L1 banks, the cluster's fixed parts, the
+DMA engine and the terms fitted at gate level.
 
     load_costs(tech) -> Costs | None                       snax_forge/char/<tech>/, None without
     streamer_cost(costs, depth, loops, channels) -> Cost   one reader (a writer priced as one)
@@ -7,10 +7,11 @@ the DMA engine.
     bank(costs, depth, width) -> Bank | None               one SRAM bank, a lookup
     Grid.at(field, **q) -> (value, extrapolated axes)      the rule both interpolated tables use
 
-The six files of ``<tech>/`` are copied from snax-forge-experiments by ``pixi run
+The seven files of ``<tech>/`` are copied from snax-forge-experiments by ``pixi run
 import-costs``, their commit and sha256 in ``<tech>/SOURCE``. Every table carries leakage
 beside area (``leak_uw``); ``cluster_fixed.json`` gives the core, the DMA and the rest of the
-cluster (``Fixed``), ``dma_copy.json`` the DMA engine's energy per burst. The tables, the interpolation and
+cluster (``Fixed``), ``dma_copy.json`` the DMA engine's energy per burst, ``model_fit.json`` the
+refusal fractions, the idle floor and the transfer beat (``Terms``). The tables, the interpolation and
 extrapolation rule, the crossbar's two forms (``XBAR_FORMS``, factor the default) and the banks'
 lookup are in CONTRACTS, "Cost model"; char/README.md walks through them.
 """
@@ -30,7 +31,7 @@ from pathlib import Path
 HERE = Path(__file__).parent
 LOG = logging.getLogger(__name__)
 FILES = ("ram_table.csv", "streamer.csv", "xbar.csv", "xbar_kinds.json", "cluster_fixed.json",
-         "dma_copy.json")  # fmt: skip
+         "dma_copy.json", "model_fit.json")  # fmt: skip
 # The cluster's fixed parts in cluster_fixed.json, in the order shown
 FIXED_PARTS = ("core", "dma", "rest")
 # The crossbar's input-kind forms (CONTRACTS, "Cost model"), the default first
@@ -122,6 +123,28 @@ class FixedPart:
 
 
 @dataclass(frozen=True)
+class Terms:
+    """``model_fit.json``'s terms (CONTRACTS, "Cost model"): a refused request's fraction of a granted
+    one in the streamers and the crossbar; the idle floor a cycle (pJ) of the streamers per mover
+    or channel, of the crossbar as a constant plus a cost per input, of the DMA; the DMA engine's
+    energy per L2 <-> L1 beat. The defaults price nothing new: a refusal as a grant, no floor."""
+
+    r_strm: float = 1.0
+    r_xbar: float = 1.0
+    floor_strm_pj: float = 0.0
+    floor_xbar_pj: float = 0.0
+    floor_xbar_input_pj: float = 0.0
+    floor_dma_pj: float = 0.0
+    e_l2_pj: float = 0.0
+
+    def floor(self, streamer_units: int, xbar_inputs: int) -> dict[str, float]:
+        """pJ a cycle per part: the streamers', the crossbar's and the DMA's."""
+        return {"streamers": self.floor_strm_pj * streamer_units,
+                "crossbar": self.floor_xbar_pj + self.floor_xbar_input_pj * xbar_inputs,
+                "dma": self.floor_dma_pj}  # fmt: skip
+
+
+@dataclass(frozen=True)
 class XbarKinds:
     """``xbar_kinds.json``'s forms (CONTRACTS, "Cost model"): the area's factor form's ``f_ro`` and
     ``f_wo``, its crosspoint form's coefficients (µm²) and the grid they were fitted on, and the
@@ -162,6 +185,7 @@ class Costs:
     kinds: XbarKinds
     fixed: dict[str, FixedPart] = field(default_factory=dict)
     dma_burst_pj: float = 0.0
+    terms: Terms = field(default_factory=Terms)
 
 
 def _rows(path: Path) -> list[dict[str, str]]:
@@ -206,6 +230,14 @@ def read_dma_burst(path: Path) -> float:
     return float(json.loads(path.read_text())["engine"]["e_burst_pj"])
 
 
+def read_terms(path: Path) -> Terms:
+    """``model_fit.json``, which snax-forge-experiments' report/model_fit.py writes."""
+    d = json.loads(path.read_text())
+    f, r = d["floor"], d["refusal"]
+    return Terms(r["r_strm"], r["r_xbar"], f["streamers"]["k_pj"], f["crossbar"]["a_pj"],
+                 f["crossbar"]["b_pj"], f["dma"]["pj"], d["l2"]["e_l2_pj"])  # fmt: skip
+
+
 def read_kinds(path: Path) -> XbarKinds:
     """``xbar_kinds.json``, which snax-forge-experiments' report/xbar_kinds.py writes."""
     d = json.loads(path.read_text())
@@ -242,7 +274,7 @@ def load_costs(tech: str) -> Costs | None:
                                 ("area_um2", "e_access_pj", "leak_uw"), XBAR_SCALES))  # fmt: skip
     return Costs(tech, read_source(d / "SOURCE"), streamer, xbar, banks,
                  read_kinds(d / "xbar_kinds.json"), read_fixed(d / "cluster_fixed.json"),
-                 read_dma_burst(d / "dma_copy.json"))  # fmt: skip
+                 read_dma_burst(d / "dma_copy.json"), read_terms(d / "model_fit.json"))  # fmt: skip
 
 
 def _warn(what: str, q: Mapping[str, float], axes: tuple[str, ...]) -> None:

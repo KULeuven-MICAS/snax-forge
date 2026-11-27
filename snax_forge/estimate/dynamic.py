@@ -7,15 +7,18 @@ in place of the graph's, each priced at the instance's existing price.
 
 ``Counts`` are what SNAX-GVSoC counts in a window (run/snapshots.py): per unit its firings and
 pushes, each group's busy-flag cycles, per mover its crossbar requests (grants and
-stalls) and grants. A unit fires its firings times its span, a buffer link loads and a packer
-pushes its producer's pushes, a slicer pops on its unit's firings (a seed's on its pushes, one a
-job), each control unit clocks its own group's busy cycles, a mover moves
-its requests over its channels (a shared mover each beat at the channels its user takes, from
-its lanes' requests, as the static estimate prices each user at its own), the crossbar serves every request at its mover's kind (a
-reader's read-only, a writer's write-only) and the banks the grants. A copy's beats (the
-DMA's L1 → L1 transfers on the superbank port) cost the crossbar an access each, as a
-reader's and a writer's, the banks a read or a write on every bank of the superbank, and the
-DMA engine its energy per burst on each read beat. With ``graph_counts`` the parts are the static estimate's
+stalls) and grants, the banks' reads and writes, the window's cycles. A unit fires its firings
+times its span, a buffer link loads and a packer pushes its producer's pushes, a slicer pops on its
+unit's firings (a seed's on its pushes, one a job), each control unit clocks its own group's busy
+cycles, a mover moves its grants and ``r_strm`` of its refusals over its channels (a shared mover
+each beat at the channels its user takes, from its lanes' requests, as the static estimate prices
+each user at its own), the crossbar serves every grant and ``r_xbar`` of every refusal at its
+mover's kind (a reader's read-only, a writer's write-only) and the banks the grants. A
+copy's beats (the DMA's L1 → L1 transfers on the superbank port) cost the banks a read or a write
+on every bank of the superbank and the DMA engine its energy per burst on each read beat; the
+banks' other reads and writes are the DMA's L2 ↔ L1 transfers, each beat (a superbank's
+accesses) the engine's ``e_l2``. The streamers, the crossbar and the DMA pay their idle
+floor every cycle. With ``graph_counts`` the parts are the static estimate's
 (``Estimate.parts``).
 """
 
@@ -78,6 +81,11 @@ class Prices:
     # a shared mover's energy per beat at each of its users' channels, below its own
     narrow: dict[str, dict[int, float]] = field(default_factory=dict)
     e_dma_pj: float = 0.0  # the DMA engine's per burst of a copy
+    # A refusal's fraction of a granted request, streamers and crossbar: 1 prices it as one
+    r_strm: float = 1.0
+    r_xbar: float = 1.0
+    floor: dict[str, float] = field(default_factory=dict)  # pJ a cycle per part
+    e_l2_pj: float = 0.0  # the DMA engine's per L2 <-> L1 beat
 
     def to_dict(self) -> dict[str, Any]:
         return {"units": {k: {"span": s, "e_fire": e} for k, (s, e) in self.units.items()},
@@ -92,7 +100,8 @@ class Prices:
                            for k, (w, c, e) in self.movers.items()},
                 "e_xbar_ro": self.e_xro_pj, "e_xbar_wo": self.e_xwo_pj, "e_rd": self.e_rd_pj,
                 "e_wr": self.e_wr_pj, "superbank_banks": self.superbank_banks,
-                "e_dma_burst": self.e_dma_pj}  # fmt: skip
+                "e_dma_burst": self.e_dma_pj, "r_strm": self.r_strm, "r_xbar": self.r_xbar,
+                "floor": dict(self.floor), "e_l2": self.e_l2_pj}  # fmt: skip
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> Prices:
@@ -107,15 +116,17 @@ class Prices:
                    dict(d.get("group_ctrl_bits", {})),
                    {k: {int(n): x for n, x in v["e_beat_at"].items()}
                     for k, v in d["movers"].items() if "e_beat_at" in v},
-                   d.get("e_dma_burst", 0.0))  # fmt: skip
+                   d.get("e_dma_burst", 0.0), d.get("r_strm", 1.0), d.get("r_xbar", 1.0),
+                   dict(d.get("floor", {})), d.get("e_l2", 0.0))  # fmt: skip
 
 
 @dataclass
 class Counts:
     """A window's counts (module doc): per unit ``(firings, pushes)``, the groups' busy-flag cycles
     added up (``busy``) and per group (``groups``), per mover ``(requests, grants)``, the
-    copies' beats on the superbank port ``(reads, writes)``, and per shared mover its lanes'
-    requests, lane 0 first (``lanes``)."""
+    copies' beats on the superbank port ``(reads, writes)``, per shared mover its lanes'
+    requests, lane 0 first (``lanes``), the banks' reads and writes added up (``banks``) and the
+    window's cycles."""
 
     units: dict[str, tuple[int, int]] = field(default_factory=dict)
     busy: int = 0
@@ -123,13 +134,17 @@ class Counts:
     copies: tuple[int, int] = (0, 0)
     groups: dict[str, int] = field(default_factory=dict)
     lanes: dict[str, tuple[int, ...]] = field(default_factory=dict)
+    banks: tuple[int, int] = (0, 0)
+    cycles: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         out = {"units": {k: {"firings": f, "pushes": p} for k, (f, p) in self.units.items()},
                "busy": self.busy, "groups": dict(self.groups),
                "movers": {k: {"requests": r, "grants": g}
                           for k, (r, g) in self.movers.items()},
-               "copies": {"reads": self.copies[0], "writes": self.copies[1]}}  # fmt: skip
+               "copies": {"reads": self.copies[0], "writes": self.copies[1]},
+               "banks": {"reads": self.banks[0], "writes": self.banks[1]},
+               "cycles": self.cycles}  # fmt: skip
         if self.lanes:  # a shared mover's lanes' requests
             out["lanes"] = {k: list(v) for k, v in self.lanes.items()}
         return out
@@ -137,10 +152,12 @@ class Counts:
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> Counts:
         cp = d.get("copies", {"reads": 0, "writes": 0})  # none in an older window
+        bk = d.get("banks", {"reads": 0, "writes": 0})
         return cls({k: (v["firings"], v["pushes"]) for k, v in d["units"].items()}, d["busy"],
                    {k: (v["requests"], v["grants"]) for k, v in d["movers"].items()},
                    (cp["reads"], cp["writes"]), dict(d.get("groups", {})),
-                   {k: tuple(v) for k, v in d.get("lanes", {}).items()})  # fmt: skip
+                   {k: tuple(v) for k, v in d.get("lanes", {}).items()},
+                   (bk["reads"], bk["writes"]), d.get("cycles", 0))  # fmt: skip
 
 
 @dataclass(frozen=True)
@@ -179,10 +196,17 @@ def prices_of(graph: Graph, est: Estimate, movers: Sequence[MoverSpec]) -> Price
     """Each instance's price per transaction from a costed estimate's own (cost.py): a unit's and
     a link's energy per fire, the control units' bits and e_ctrl, each mover's energy per beat at
     its depth, loops and channels, the crossbar's energy per access, the banks' per read and
-    write, the banks a DMA beat reaches. Raises ValueError when ``est`` has no cost on a
-    platform."""
+    write, the banks a DMA beat reaches, the DMA engine's per burst and per transfer beat, the
+    refusal fractions and the idle floor of the movers and the crossbar's inputs. Raises
+    ValueError when ``est`` has no cost on a platform."""
     costs, x, m = est.costs, est.xbar, est.memory
-    if costs is None or x is None or m is None or est.superbank_banks is None:
+    if (
+        costs is None
+        or x is None
+        or m is None
+        or est.superbank_banks is None
+        or est.xbar_inputs is None
+    ):
         raise ValueError("the estimate is not costed on a platform: no prices")
     insts = instances(graph)
     units: dict[str, tuple[int, float]] = {}
@@ -212,9 +236,11 @@ def prices_of(graph: Graph, est: Estimate, movers: Sequence[MoverSpec]) -> Price
     narrow = {s.name: {n: _streamer(costs, s.depth, s.loops, n).energy_pj
                        for n in sorted(set(s.user_channels)) if n < s.channels}
               for s in movers if any(n < s.channels for n in s.user_channels)}  # fmt: skip
+    t = costs.terms
+    floor = t.floor(sum(1 + s.channels for s in movers), sum(est.xbar_inputs))
     return Prices(units, links, bits, load(est.tech or "").e_ctrl_pj, beat, x.e_ro_pj, x.e_wo_pj,
                   m.e_rd_pj, m.e_wr_pj, est.superbank_banks, slicers, group_bits, narrow,
-                  costs.dma_burst_pj)  # fmt: skip
+                  costs.dma_burst_pj, t.r_strm, t.r_xbar, floor, t.e_l2_pj)  # fmt: skip
 
 
 def mover_beats(
@@ -275,21 +301,26 @@ def price(p: Prices, c: Counts) -> Energy:
     for name, (write, channels, e_beat) in p.movers.items():
         r, g = c.movers.get(name, (0, 0))
         b, e = mover_beats(channels, e_beat, p.narrow.get(name, {}), c.lanes.get(name), r)
+        # NB (D203): a refusal costs r_strm of a beat in the streamers, r_xbar of an access
+        paid = (g + p.r_strm * (r - g)) / r if r else 0.0
         beats += b
-        strm += e
+        strm += e * paid
         requests += r
-        xbar += r * (p.e_xwo_pj if write else p.e_xro_pj)
+        xbar += (g + p.r_xbar * (r - g)) * (p.e_xwo_pj if write else p.e_xro_pj)
         if write:
             writes += g
         else:
             reads += g
-    # A copy's beats: an access each on the crossbar, as a reader's and a writer's, and a read or
-    # a write on every bank of the superbank
+    # A copy's beats: a read or a write on every bank of the superbank, no crossbar access (the
+    # DMA's own port), and the engine's burst on each read beat
     cr, cw = c.copies
-    requests += cr + cw
-    xbar += cr * p.e_xro_pj + cw * p.e_xwo_pj
     reads += cr * p.superbank_banks
     writes += cw * p.superbank_banks
+    # The banks' other accesses are the DMA's L2 <-> L1 transfers: a beat a superbank's
+    l2_rd, l2_wr = max(c.banks[0] - reads, 0), max(c.banks[1] - writes, 0)
+    reads += l2_rd
+    writes += l2_wr
+    l2_beats = (l2_rd + l2_wr) / p.superbank_banks
     # Each control unit over its own group's busy cycles; a window counted before
     # the groups were kept apart prices every control unit over all of them
     if c.groups and p.group_bits:
@@ -299,13 +330,15 @@ def price(p: Prices, c: Counts) -> Energy:
         ctrl = sum(p.group_bits[g] * n for g, n in c.groups.items())
     else:
         ctrl = p.ctrl_bits * c.busy
+    floor = {k: p.floor.get(k, 0.0) * c.cycles for k in ("streamers", "crossbar", "dma")}
     parts = {
         "datapath": dp / 1000,
         "control": p.e_ctrl_pj * ctrl / 1000,
-        "streamers": strm / 1000,
-        "crossbar": xbar / 1000,
+        "streamers": (strm + floor["streamers"]) / 1000,
+        "crossbar": (xbar + floor["crossbar"]) / 1000,
         "memory": (reads * p.e_rd_pj + writes * p.e_wr_pj) / 1000,
-        "dma": cr * p.e_dma_pj / 1000,  # one burst a read beat
+        "dma": (cr * p.e_dma_pj + l2_beats * p.e_l2_pj + floor["dma"])
+        / 1000,  # a burst a read beat
     }
     assert tuple(parts) == PARTS
     return Energy(parts, sum(fires.values()) + sum(loads.values()) + sum(pops.values()), c.busy,
@@ -317,7 +350,8 @@ def graph_counts(graph: Graph, est: Estimate) -> Counts:
     span) and its pushes (its links' and packer's loads, a seeded unit's seed pops), each group's
     cycles (whatever the schedule), per port's
     streamer its words as requests and grants (none refused), the copies' bursts as their beats,
-    one read and one write each. Priced at ``prices_of`` with the
+    one read and one write each, the banks' accesses with the memory plan's transfers
+    (``Estimate.transfers``), the cycles ``total_cycles``. Priced at ``prices_of`` with the
     ports' streamers as movers, the parts are ``est.parts``' energies."""
     insts = instances(graph)
     out = Counts()
@@ -337,6 +371,11 @@ def graph_counts(graph: Graph, est: Estimate) -> Counts:
     for s in est.streamer_counts:
         out.movers[s.name] = (s.words, s.words)
     out.copies = (est.copy_bursts, est.copy_bursts)
+    sb = est.superbank_banks or 0
+    rd, wr = est.l1_accesses
+    loads, stores = est.transfers
+    out.banks = (rd + stores * sb, wr + loads * sb)
+    out.cycles = est.total_cycles
     return out
 
 

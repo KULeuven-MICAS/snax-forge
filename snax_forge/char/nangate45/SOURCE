@@ -1,10 +1,11 @@
 # HWCOST's tables, copied as they are by util/import_costs.py (pixi run import-costs)
 repo: https://github.com/KULeuven-MICAS/snax-forge-experiments
-commit: 3dc732c0e4054ff000be98255e664d9aed2c1f44
+commit: 823aaa044cddcc192f1d37088d5e120b65eeca3a
 block_table: results/char/nangate45/char.json sha256 789f486f89222a92a1c25caa7a712b73307f5b350bdaae183232db3cf2b6fd24
 ram_table.csv: results/ram/nangate45/ram_table.csv sha256 bcc260759f272102ee599f9a57aa16be0d498b550a71d2720748a7a94b1da138
 streamer.csv: results/strm/nangate45/streamer.csv sha256 7bd1e862b269b345a63c88375ada6d167491274abde73369ab992876d7cb61b2
 xbar.csv: results/strm/nangate45/xbar.csv sha256 47d5a9fee05f4761fd255c566da7d6328f2d17b72bb31df7c58f2496858dafd3
 xbar_kinds.json: results/strm/nangate45/xbar_kinds.json sha256 da21ec95c0d7e4f378ca5853ac35b563a4533eeeb62d9fe454240d55cec3b82e
 cluster_fixed.json: results/cluster/nangate45/cluster_fixed.json sha256 9f9d8a718b58202dcc281cd0d816af905459d7861983cf12d161b3079f07485d
-dma_copy.json: results/snb/nangate45/dma_copy.json sha256 3d42bd326ffeba28401c6b3e0f115dae3e30ce889e3b2d4cba360963843303bf
+dma_copy.json: results/snb/nangate45/dma_copy.json sha256 5c649acfe28df51670bdbfac79952b70d6b1ad1ae74857e7942249c357f5fd4e
+model_fit.json: results/cluster/nangate45/model_fit.json sha256 d25a71b0b9ee307b560dc1fdf6cfe02537dc0cc9d3482bcbf4320c204ab9deee

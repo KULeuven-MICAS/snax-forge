@@ -495,12 +495,13 @@ def test_design_md_costs_each_group_beside_its_cycles(dot1):
     assert e.area_um2 == pytest.approx(sum(p.area_um2 for p in e.parts))
     shared = ("memory", "dma", "core", "rest")
     assert e.area_design_um2 == pytest.approx(e.area_um2 - sum(parts[k].area_um2 for k in shared))
-    assert parts["dma"].energy_nj == 0.0 and parts["core"].energy_nj is None
+    assert parts["dma"].energy_nj > 0 and parts["core"].energy_nj is None  # transfers and floor
     assert e.energy_nj == pytest.approx(sum(p.energy_nj or 0.0 for p in e.parts))
     assert sum(p.area_share for p in e.parts) == pytest.approx(1.0)
     (l1,) = e.l1
     assert (l1.accelerator, l1.bits) == ("dot", 64 * l1.words) and l1.words > 0
-    assert l1.energy_nj == pytest.approx(parts["crossbar"].energy_nj + parts["memory"].energy_nj)
+    # the crossbar's and banks' energy of its words: the parts add the floor and the transfers
+    assert 0 < l1.energy_nj < parts["crossbar"].energy_nj + parts["memory"].energy_nj
     assert [x.streamer for x in e.streamer_cost] == [
         "vmul_a",
         "vmul_b",

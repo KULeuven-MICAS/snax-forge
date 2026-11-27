@@ -7,7 +7,7 @@ Rules (D117):
 - An entry is a choice with a real alternative that someone may want to reverse: direction, ownership, the interfaces between components, the order of work. Implementation details live in the module's docstring and its tests.
 - An entry says what was decided, why, and where the detail lives, in a few short bullets; an edge case only when there is one. A change is written into the entry, not chained after it.
 - Entries merged into one keep all their numbers in its heading, so a cite of any of them still finds it. A number is never changed or reused; the text of a removed entry is in git history.
-- A new decision gets the next free number, under the area it belongs to. Next free number: **D203**.
+- A new decision gets the next free number, under the area it belongs to. Next free number: **D206**.
 
 Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29–D45, D47–D50, D53, D54, D56, D58–D63, D65–D67, D69, D74, D76–D78, D80, D81, D83, D88–D97, D100, D101, D103, D104, D106, D107, D109, D110, D114, D115, D119, D124, D127, D128, D132, D133, D138–D141, D151, D156, D159, D160, D181.
 
@@ -361,21 +361,39 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 
 ### D177 — The dynamic energy: the model's counts at the static prices
 
-- **Decided:** a run's dynamic energy is D167's six parts with SNAX-GVSoC's counts at the static prices (D154 · D172, D176), per window between counter snapshots (core 0's writes to CSR `0x7C5`, D135; the end). A unit costs firings × span, a link or packer its producer's pushes, a slicer its pops, control its group's busy cycles, a mover its requests by kind (D178), banks the grants, a copy its L1 accesses (D184); a refused request costs a granted one's. A pipelined run (D179) is its quiet build's one window, the program window (D202).
+- **Decided:** a run's dynamic energy is D167's six parts with SNAX-GVSoC's counts at the static prices (D154 · D172, D176), per window between counter snapshots (core 0's writes to CSR `0x7C5`, D135; the end). A unit costs firings × span, a link or packer its producer's pushes, a slicer its pops, control its group's busy cycles, a mover its requests by kind (D178), banks the grants, a copy its L1 accesses (D184); a refused request a fraction of a granted one's (D203). Amended by D203–D205. A pipelined run (D179) is its quiet build's one window, the program window (D202).
 - **Why:** prices are full-rate granted requests, so static and dynamic differ only where the run differs from the graph; trends, not accuracy.
 - **Where:** CONTRACTS, "Cost model"; `estimate/dynamic.py`, `run/snapshots.py`, `flow/energy.py`.
 
 ### D184 — A copy is costed by its L1 accesses
 
-- **Decided:** a copy (D182) costs its L1 accesses and the DMA engine's bursts: a DMA beat is one access on its superbank's port, touching all its banks, so a one-element burst is 8 bank reads and 8 bank writes plus one read-only and one write-only crossbar access (D178), and the engine's $e_{burst}$ (106.40 pJ on nangate45, X102: the DMA's and the AXI's energy over a 4096-burst copy, less their idle floor), in the static estimate and in the dynamic energy (D177). The core's loads and stores stay uncosted. X95 measures the copy at gate level, X96 its 8 accesses each way a burst. Amends D167, D177 and D182.
+- **Decided:** a copy (D182) costs its L1 accesses and the DMA engine's bursts: a DMA beat is one access on its superbank's port, touching all its banks, so a one-element burst is 8 bank reads and 8 bank writes plus one read-only and one write-only crossbar access (D178), and the engine's $e_{burst}$ (106.40 pJ on nangate45, X102: the DMA's and the AXI's energy over a 4096-burst copy, less their idle floor), in the static estimate and in the dynamic energy (D177). The core's loads and stores stay uncosted. X95 measures the copy at gate level, X96 its 8 accesses each way a burst. Amends D167, D177 and D182; amended by D204 (no crossbar access, $e_{burst}$ the DMA alone, 78.08 pJ, X113).
 - **Why:** a copy's traffic is memory and interconnect accesses and the engine's own work, priced from existing tables.
 - **Where:** CONTRACTS, "Cost model"; `estimate/__init__.py` (`copy_bursts`), `estimate/dynamic.py`; snax-gvsoc's `snax_tcdm_xbar.cpp`.
 
 ### D201 — Leakage beside the dynamic energy, never in it
 
-- **Decided:** every part's leakage is looked up beside its area (banks from CACTI's itrs-lstp cells, X47 · X100; blocks, streamers and crossbar from their synthesis, X101), and everything placed leaks for the whole run, with no power gating. The estimate's `energy` and the paper's figures stay dynamic; its `leakage` lumps the six parts' over `total_cycles`, shown in the viewer behind a checkbox and in `design.md` with `--leakage`, for comparison. The energy run always reports, per window beside the unchanged dynamic energy, the six parts' leakage, the core's, the rest's and the fixed parts' idle floor (23.6 pJ a cycle). One clock, 10 ns, for illustration: leakage scales with the period.
+- **Decided:** every part's leakage is looked up beside its area (banks from CACTI's itrs-lstp cells, X47 · X100; blocks, streamers and crossbar from their synthesis, X101), and everything placed leaks for the whole run, with no power gating. The estimate's `energy` and the paper's figures stay dynamic; its `leakage` lumps the six parts' over `total_cycles`, shown in the viewer behind a checkbox and in `design.md` with `--leakage`, for comparison. The energy run always reports, per window beside the unchanged dynamic energy, the six parts' leakage, the core's and the rest's, and the core's and the rest's idle floor (18.79 pJ a cycle; the DMA's is in its part since D205). One clock, 10 ns, for illustration: leakage scales with the period.
 - **Why:** at 10 ns leakage outweighs the dynamic energy of small int8 designs and turns two of §C's picks to the pipelined forms (mvt, bicg), so it is shown, not folded in, until the gate-level runs say how far to trust it.
 - **Where:** CONTRACTS, "Cost model" and "The energy run"; `estimate/cost.py` (`leakage_nj`), `flow/energy.py` (`Background`).
+
+### D203 — A refused request costs a fraction of a granted one
+
+- **Decided:** in SNAX-GVSoC's energy run a refused request costs $r_s$ of a granted beat in the streamers and $r_x$ of a granted access in the crossbar, and nothing in the banks; $r_s$ = 0.085, $r_x$ = 0 on nangate45, fitted on `mvt_v4`'s contiguous and padded rows at gate level after the floor over the extra cycles (X111), checked on `bicg_v2` int64 sequential against pipeline. The static estimate stays conflict-free (D155). A stalled datapath's input changes stay unpriced (open item 137). Amends D177.
+- **Why:** priced as a grant, contiguous mvt came out 32 % above its padded twin against the netlist's 10 %; at gate level a refusal costs the stall cycle's clock, which D205's floor already pays.
+- **Where:** CONTRACTS, "Cost model"; `estimate/dynamic.py` (`price`), `char/tables.py` (`Terms`).
+
+### D204 — The DMA's L2 ↔ L1 transfers are priced, a copy takes no crossbar access
+
+- **Decided:** a DMA beat between L2 and L1 costs the engine $e_{l2}$ (54.48 pJ, X112) and a write (load) or a read (store) on each bank of its superbank; in the energy run the banks' accesses beyond the movers' grants and the copies' beats are the transfers, in the static estimate the memory plan's (each L1 container with an L2 home, loaded if read, stored if written, in whole beats). A copy's beats take the DMA's port, not the crossbar, and the engine's $e_{burst}$ is the `dma` group alone (78.08 pJ, X113). Both go to the DMA part, the figures included; the program window is compared on every design. Amends D184.
+- **Why:** at gate level the transfers cost 7–16 nJ a program at int8 and about 57 nJ at int64, the model nothing; the copies' crossbar sits at its floor; the AXI's share is in the rest.
+- **Where:** CONTRACTS, "Cost model"; `estimate/__init__.py` (`transfers`, `parts`), `estimate/dynamic.py`.
+
+### D205 — The idle floor of the parts that stay clocked
+
+- **Decided:** the streamers (0.126 pJ a cycle per streamer and per channel), the crossbar (1.424 + 0.0574 pJ per input) and the DMA (3.378 pJ) pay their idle floor every cycle, in the dynamic energy: an energy-run window over its cycles, the static estimate over `total_cycles`; fitted on the five `dot3` netlists' configuration windows (X112), checked on tier A. The datapath, control (at most 0.27 pJ a cycle together, clock-gated) and banks have none. The DMA's floor leaves the background (D201), which keeps the core's and the rest's. Amends D154 · D172 for those parts and D201.
+- **Why:** clock and idle logic are dynamic energy; without them the long forms came out 0.57–0.79 of the netlist and dynamic energy did not fall with cycles as at gate level.
+- **Where:** CONTRACTS, "Cost model"; `char/tables.py` (`Terms.floor`), `estimate/__init__.py` (`floor`), `estimate/dynamic.py`, `flow/energy.py` (`Background`).
 
 ## Viewers, reports and docs
 

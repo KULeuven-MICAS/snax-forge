@@ -91,11 +91,18 @@ def test_leakage_beside_the_area(costs):
 
 def test_the_fixed_parts_and_the_dma_engine(costs):
     """cluster_fixed.json's three parts add up to what the cost model leaves of the cluster
-    (390 555 µm² at dot3_w8_cg); dma_copy.json's engine is 106.40 pJ a burst."""
+    (390 555 µm² at dot3_w8_cg); dma_copy.json's engine is 78.08 pJ a burst, the DMA alone;
+    model_fit.json's terms."""
     from snax_forge.char.tables import FIXED_PARTS
 
     assert tuple(costs.fixed) == FIXED_PARTS
     assert sum(p.area_um2 for p in costs.fixed.values()) == pytest.approx(390555, abs=1)
     assert sum(p.leak_uw for p in costs.fixed.values()) == pytest.approx(6271.8, abs=0.1)
     assert sum(p.idle_pj_cycle for p in costs.fixed.values()) == pytest.approx(23.60, abs=0.01)
-    assert costs.dma_burst_pj == pytest.approx(106.40, abs=0.01)
+    assert costs.dma_burst_pj == pytest.approx(78.08, abs=0.01)
+    t = costs.terms
+    assert (round(t.r_strm, 3), t.r_xbar) == (0.085, 0.0)
+    assert t.floor(22, 16) == pytest.approx(
+        {"streamers": 2.778, "crossbar": 2.343, "dma": 3.378}, abs=0.001
+    )
+    assert t.e_l2_pj == pytest.approx(54.48, abs=0.01)

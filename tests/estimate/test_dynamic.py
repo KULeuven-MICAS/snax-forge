@@ -44,26 +44,32 @@ def test_a_sliced_seed_pops_once_a_job():
     assert e.fires == 40 + 4 + 40
 
 
-def test_dot_3_at_w8_counts_and_a_refusal_at_a_grants_price():
+def test_dot_3_at_w8_counts_and_a_refusal_at_its_fraction():
     """dot 3 at W = 8, N = 2048: 4097 words through the crossbar, 4096 read at a read-only input's
-    price and 1 written at a write-only one's; 100 refused requests on reader A's lanes add
-    100 read-only accesses and 100 / 8 of A's beats, and no bank access."""
+    price and 1 written at a write-only one's, the banks also 512 load beats and 1 store beat of a
+    superbank (8 banks each), as SNAX-GVSoC counts them; 100 refused requests on reader A's lanes add
+    r_xbar of 100 read-only accesses, r_strm of 100 / 8 of A's beats, and no bank access."""
     graph = steps("dot_v3", W=8, N=2048)[-1]
     est = estimated("dot_v3", W=8, N=2048)
     p, c = _static(graph, est)
     base = price(p, c)
-    assert (base.requests, base.reads, base.writes, base.cycles) == (4097, 4096, 1, 257)
-    assert base.parts["crossbar"] == pytest.approx((4096 * p.e_xro_pj + p.e_xwo_pj) / 1000)
+    assert est.transfers == (512, 1)
+    assert (base.requests, base.reads, base.writes, base.cycles) == (4097, 4096 + 8, 1 + 4096, 257)
+    floor = p.floor["crossbar"] * c.cycles
+    assert base.parts["crossbar"] == pytest.approx((4096 * p.e_xro_pj + p.e_xwo_pj + floor) / 1000)
     assert (round(p.e_xro_pj, 6), round(p.e_xwo_pj, 6)) == (1.839299, 1.454513)
     a = next(m for m in c.movers if m.endswith("_a"))
     r, g = c.movers[a]
     c.movers[a] = (r + 100, g)
     got = price(p, c)
     _, channels, e_beat = p.movers[a]
-    assert got.parts["crossbar"] - base.parts["crossbar"] == pytest.approx(100 * p.e_xro_pj / 1000)
-    assert got.parts["streamers"] - base.parts["streamers"] == pytest.approx(
-        100 / channels * e_beat / 1000
+    assert got.parts["crossbar"] - base.parts["crossbar"] == pytest.approx(
+        p.r_xbar * 100 * p.e_xro_pj / 1000
     )
+    assert got.parts["streamers"] - base.parts["streamers"] == pytest.approx(
+        p.r_strm * 100 / channels * e_beat / 1000
+    )
+    assert 0 < p.r_strm < 0.2 and p.r_xbar == 0
     assert got.parts["memory"] == base.parts["memory"]
 
 

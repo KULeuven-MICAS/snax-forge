@@ -3,11 +3,12 @@
     estimate(graph, platform=None, tech="nangate45") -> Estimate
 
 What a mapping buys before any run, on ideal streams (no bank conflicts, no streamer fill, no
-DMA, no core control): per group its cycles, their split and its register bits (cycles.py,
+DMA cycles, no core control): per group its cycles, their split and its register bits (cycles.py,
 bits.py), per accelerator its streamer set and CSRs (accelerators.py), the data side (data.py)
 and, on a technology, the cost (cost.py; ``tech=None`` leaves it out): the dynamic energy in
 ``PARTS``, the cluster's ``FIXED`` parts in area, every part's leakage (``leakage``, apart from
-the energy). The work no unit runs is
+the energy), the memory plan's L2 ↔ L1 transfers in beats and the idle floor over ``total_cycles``
+in the energy. The work no unit runs is
 ``unmapped_iterations`` at ``UNMAPPED_CYCLES_PER_ITERATION`` cycles each, an assumption held in
 this one constant so a measured value can replace it; a copy (data_transpose's) at the DMA's
 measured rate (copies.py); ``total_cycles`` adds both to the accelerator's. Under a pipelined
@@ -93,6 +94,9 @@ class Estimate(JsonFile):
     # The banks a DMA beat on L1 reads or writes: the DMA's beat over the bank's word, the
     # platform's wide_bits / width_bits (a superbank); None without a platform
     superbank_banks: int | None = None
+    # The memory plan's L2 -> L1 and L1 -> L2 transfers in DMA beats: every L1 container
+    # with an L2 home loaded if it is read, stored if it is written
+    transfers: tuple[int, int] = (0, 0)
 
     @property
     def streamers(self) -> int:
@@ -141,25 +145,43 @@ class Estimate(JsonFile):
         if ro + wo != self.xbar_inputs[0]:
             raise ValueError(f"the streamers' {ro} read and {wo} write channels are not the "
                              f"crossbar's {self.xbar_inputs[0]} (crossbar_inputs)")  # fmt: skip
-        reads, writes = self._rw()
-        k = self.copy_bursts
-        return xbar_cost(c, sum(self.xbar_inputs), self.bank_shape[0], reads + k, writes + k, ro, wo,
-                         form)  # fmt: skip
+        reads, writes = self._rw()  # a copy's beats take the DMA's port, not the crossbar
+        return xbar_cost(c, sum(self.xbar_inputs), self.bank_shape[0], reads, writes, ro, wo, form)
 
-    @cached_property
-    def memory(self) -> MemoryCost | None:
-        """The L1 banks priced, the streamers' words and the copies' accesses (copies.py);
-        None when not costed."""
-        c = self.costs
-        if c is None or self.bank_shape is None:
-            return None
+    @property
+    def l1_accesses(self) -> tuple[int, int]:
+        """The banks' reads and writes the streamers' words and the copies' beats make (a
+        superbank's each)."""
         reads, writes = self._rw()
         k = self.copy_bursts
         if k and self.superbank_banks is None:
             raise ValueError("the estimate has copies and no superbank_banks: estimate it again "
                              "on its platform")  # fmt: skip
         k *= self.superbank_banks or 0
-        return memory_cost(c, *self.bank_shape, reads + k, writes + k)
+        return reads + k, writes + k
+
+    @cached_property
+    def memory(self) -> MemoryCost | None:
+        """The L1 banks priced: the streamers' words, the copies' accesses (copies.py) and the
+        transfers' (a store reads a superbank a beat, a load writes one); None when not costed."""
+        c = self.costs
+        if c is None or self.bank_shape is None:
+            return None
+        reads, writes = self.l1_accesses
+        sb = self.superbank_banks or 0
+        return memory_cost(c, *self.bank_shape, reads + self.transfers[1] * sb,
+                           writes + self.transfers[0] * sb)  # fmt: skip
+
+    @property
+    def floor(self) -> dict[str, float] | None:
+        """pJ a cycle of the streamers', the crossbar's and the DMA's idle floor: per
+        streamer and channel, per crossbar input; None when not costed."""
+        c = self.costs
+        if c is None or self.xbar_inputs is None:
+            return None
+        return c.terms.floor(
+            sum(1 + x.channels for x in self.streamer_counts), sum(self.xbar_inputs)
+        )
 
     @property
     def copy_bursts(self) -> int:
@@ -182,23 +204,29 @@ class Estimate(JsonFile):
     def parts(self) -> dict[str, Part] | None:
         """The design's cost in its six parts (``PARTS``), each with its leakage, None with no
         technology; a part not costed has None in it. The DMA's area and leakage are the
-        cluster's DMA, its energy the copies' bursts."""
+        cluster's DMA, its energy the copies' bursts and the transfers' beats; the streamers,
+        the crossbar and the DMA add their idle floor over ``total_cycles``."""
         if self.tech is None:
             return None
         cost = [g.cost for g in self.groups if g.cost]
         blocks = [b for c in cost for b in (*c.units.values(), *c.links.values())]
         s, x, m, c = self.streamer_costs, self.xbar, self.memory, self.costs
+        fl = {k: v * self.total_cycles / 1000 for k, v in (self.floor or {}).items()}
+        dma_nj = None if c is None else (self.copy_bursts * c.dma_burst_pj
+                                         + sum(self.transfers) * c.terms.e_l2_pj) / 1000  # fmt: skip
         return {
             "datapath": Part(sum(b.total_um2 for b in blocks), sum(b.task_nj for b in blocks),
                              sum(b.leak_uw for b in blocks)),
             "control": Part(sum(g.ctrl_um2 for g in cost), sum(g.ctrl_nj for g in cost),
                             sum(g.ctrl_leak_uw for g in cost)),
-            "streamers": Part(sum(y.area_um2 for y in s), sum(y.energy_nj for y in s),
+            "streamers": Part(sum(y.area_um2 for y in s),
+                              sum(y.energy_nj for y in s) + fl.get("streamers", 0.0),
                               sum(y.leak_uw for y in s))
             if c is not None else Part(None, None),
-            "crossbar": Part(x.area_um2, x.energy_nj, x.leak_uw) if x else Part(None, None),
+            "crossbar": Part(x.area_um2, x.energy_nj + fl.get("crossbar", 0.0), x.leak_uw)
+            if x else Part(None, None),
             "memory": Part(m.area_um2, m.energy_nj, m.leak_uw) if m else Part(None, None),
-            "dma": Part(c.fixed["dma"].area_um2, self.copy_bursts * c.dma_burst_pj / 1000,
+            "dma": Part(c.fixed["dma"].area_um2, dma_nj + fl.get("dma", 0.0),  # type: ignore[operator]
                         c.fixed["dma"].leak_uw) if c is not None else Part(None, None),
         }  # fmt: skip
 
@@ -365,7 +393,8 @@ class Estimate(JsonFile):
                 "streamers": [x.to_dict() for x in self.streamer_counts],
                 "xbar_inputs": None if self.xbar_inputs is None else list(self.xbar_inputs),
                 "bank_shape": None if self.bank_shape is None else list(self.bank_shape),
-                "superbank_banks": self.superbank_banks},
+                "superbank_banks": self.superbank_banks,
+                "transfers": {"loads": self.transfers[0], "stores": self.transfers[1]}},
         }  # fmt: skip
 
     @classmethod
@@ -391,6 +420,7 @@ class Estimate(JsonFile):
             [RunEstimate.from_dict(r) for r in d.get("runs", [])],
             [CopyEstimate.from_dict(x) for x in d.get("copies", [])],
             hw.get("superbank_banks"),
+            (hw.get("transfers", {}).get("loads", 0), hw.get("transfers", {}).get("stores", 0)),
         )  # fmt: skip
 
 
@@ -436,7 +466,21 @@ def estimate(graph: Graph, platform: Platform | None = None,
                     tech, None if table is None else dict(table.source),
                     not_mapped(graph, spatial=True), l1_words,
                     accelerators(graph, platform), counts, xin, shape, schedule, run_list,
-                    copies(graph), None if l1 is None else l1.wide_bits // l1.width_bits)  # fmt: skip
+                    copies(graph), None if l1 is None else l1.wide_bits // l1.width_bits,
+                    (0, 0) if l1 is None else transfers(graph, data, l1.wide_bits // 8))  # fmt: skip
+
+
+def transfers(graph: Graph, data: dict[str, ContainerData], beat_bytes: int) -> tuple[int, int]:
+    """The memory plan's L2 -> L1 and L1 -> L2 beats: each L1 container that is not
+    transient, loaded if read and stored if written, its bytes in whole beats."""
+    loads = stores = 0
+    for c, x in data.items():
+        if x.placement != "l1" or graph.containers[c].transient:
+            continue
+        beats = -(-x.bytes // beat_bytes)
+        loads += beats if x.reads else 0
+        stores += beats if x.writes else 0
+    return loads, stores
 
 
 def _hw_counts(graph: Graph, platform: Platform, data: dict[str, ContainerData]

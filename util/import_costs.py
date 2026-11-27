@@ -6,7 +6,8 @@ Copies, as they are, the block table ``results/char/<tech>/char.json`` (clock-ga
 ``<tech>.json`` and, into ``<tech>/``, ``results/ram/<tech>/ram_table.csv``,
 ``results/strm/<tech>/``'s ``streamer.csv``, ``xbar.csv`` and ``xbar_kinds.json`` (the crossbar's
 read-only and write-only inputs), ``results/cluster/<tech>/cluster_fixed.json`` (the cluster's
-fixed parts) and ``results/snb/<tech>/dma_copy.json`` (the DMA engine's price per burst); then writes ``<tech>/SOURCE`` with the repository, its commit
+fixed parts), ``results/snb/<tech>/dma_copy.json`` (the DMA engine's price per burst) and
+``results/cluster/<tech>/model_fit.json`` (the refusal fractions, the idle floor, the transfer beat); then writes ``<tech>/SOURCE`` with the repository, its commit
 and each file's path and sha256 (no date, so a re-run that brings nothing new changes nothing). By default it fetches the latest main of
 snax-forge-experiments (a shallow ``git clone`` into a temporary folder); ``--experiments DIR``
 takes a local checkout instead, which must be clean. Run by hand when the tables change, never
@@ -38,6 +39,7 @@ PATHS = {
         "results/cluster/{tech}/cluster_fixed.json",
     ),
     "dma_copy.json": ("{tech}/dma_copy.json", "results/snb/{tech}/dma_copy.json"),
+    "model_fit.json": ("{tech}/model_fit.json", "results/cluster/{tech}/model_fit.json"),
 }
 
 

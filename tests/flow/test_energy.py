@@ -6,16 +6,21 @@ On SNAX-GVSoC (marker ``gvsoc``: in the image), vecadd and dot_v3 at N = 2048, W
 (each mover's grants its words, each unit's firings times its span its fires), every mover's
 requests are at least its grants, and the windows' energies add up to the run's total. A
 pipelined schedule (bicg_v2_1's ``pipeline``) is priced in its quiet build's one section, the
-program window, its control part the static estimate's within 10 %.
+program window, its control part the static estimate's within 10 %. The tests that compare a
+window with the static estimate price events only (``events_only``: no refusal fraction, floor or
+transfer beat, which depend on the window's cycles and the memory plan); the terms have their own.
 """
 
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from itertools import pairwise
 
 import pytest
 
+import snax_forge.estimate as estimate_mod
+from snax_forge.char.tables import Terms, load_costs
 from snax_forge.design import Platform
 from snax_forge.estimate import estimate
 from snax_forge.estimate.dynamic import graph_counts
@@ -42,6 +47,24 @@ REAL = {
 }  # the recipes run on SNAX-GVSoC, their --set
 
 
+@pytest.fixture
+def events_only(monkeypatch):
+    """The tables with neutral terms: a refusal at a grant's price, no idle floor, no transfer beat."""
+    monkeypatch.setattr(
+        estimate_mod, "load_costs", lambda tech: replace(load_costs(tech), terms=Terms())
+    )
+
+
+def events(e: EnergyRun, est) -> dict[str, float]:
+    """The static estimate's parts without its memory plan's transfers, which a run window does not
+    make: the banks' accesses of their beats (the engine's beat is 0 under ``events_only``)."""
+    loads, stores = est.transfers
+    sb, p = est.superbank_banks, e.prices
+    return e.static.parts | {
+        "memory": e.static.parts["memory"] - sb * (stores * p.e_rd_pj + loads * p.e_wr_pj) / 1000
+    }
+
+
 def totals(grants: int, stalls: int, firings: int, busy: int) -> dict:
     """Running totals: each of the three movers' 4 lanes ``grants`` and ``stalls``, core0 9 grants,
     the unit ``firings``, the group ``busy`` cycles."""
@@ -62,17 +85,20 @@ def run(stalls: int = 0) -> EnergyRun:
     return energy_of(lines, cluster, MARKS, graph, estimate(graph, Platform.load(SNAX_FORGE)))
 
 
+@pytest.mark.usefixtures("events_only")
 def test_a_run_window_counted_as_the_graph_costs_what_the_static_estimate_says():
     e = run()
     assert [(w.kind, w.cycles) for w in e.windows] == [("boot", 50), ("acc_config", 20),
                                                         ("run", 30), ("dma_out", 40)]  # fmt: skip
     ((w, got),) = e.of_kind("run")
-    for part, want in e.static.parts.items():
+    est = estimate(steps("vecadd_v1")[-1], Platform.load(SNAX_FORGE))
+    for part, want in events(e, est).items():
         assert got.parts[part] == pytest.approx(want, rel=1e-12), part
     assert (got.requests, got.cycles, got.fires) == (192, 16, 16)
     assert all(x.total == 0 for v, x in zip(e.windows, e.energies, strict=True) if v is not w)
 
 
+@pytest.mark.usefixtures("events_only")
 def test_refusals_cost_the_crossbar_and_the_streamers_and_the_windows_add_up():
     e, base = run(stalls=2), run()
     ((_, got),) = e.of_kind("run")
@@ -85,10 +111,11 @@ def test_refusals_cost_the_crossbar_and_the_streamers_and_the_windows_add_up():
     assert sum(e.total.values()) == pytest.approx(sum(x.total for x in e.energies))
 
 
-def test_a_copy_window_costs_its_beats_at_the_crossbar_and_its_superbanks_banks():
+@pytest.mark.usefixtures("events_only")
+def test_a_copy_window_costs_its_beats_at_its_superbanks_banks_and_the_engine():
     """The crossbar's copy counts reach the window's Counts and are priced by their L1 accesses:
-    each beat read a crossbar read and a read on every bank of the superbank, each beat written a
-    crossbar write and a write on every bank of it."""
+    each beat read a read on every bank of the superbank and the engine's burst, each beat written
+    a write on every bank of it; no crossbar access (the DMA's own port)."""
     cluster = cluster_from(*files())
     graph = steps("vecadd_v1")[-1]
     snaps = [(1, 50, totals(0, 0, 0, 0) | {"copies": (0, 0)}),
@@ -102,9 +129,10 @@ def test_a_copy_window_costs_its_beats_at_the_crossbar_and_its_superbanks_banks(
     p = e.prices
     l1 = Platform.load(SNAX_FORGE).l1
     assert p.superbank_banks == l1.wide_bits // l1.width_bits == 8
-    assert (got.requests, got.reads, got.writes) == (96, 64 * 8, 32 * 8)
-    assert got.parts["crossbar"] == pytest.approx((64 * p.e_xro_pj + 32 * p.e_xwo_pj) / 1000)
+    assert (got.requests, got.reads, got.writes) == (0, 64 * 8, 32 * 8)
+    assert got.parts["crossbar"] == 0
     assert got.parts["memory"] == pytest.approx(8 * (64 * p.e_rd_pj + 32 * p.e_wr_pj) / 1000)
+    assert got.parts["dma"] == pytest.approx(64 * p.e_dma_pj / 1000)
     assert all(x.total == 0 for k, x in enumerate(e.energies) if k != 1)
 
 
@@ -116,7 +144,7 @@ def test_the_energy_run_round_trips_and_reports():
     assert "| 2 | run | run acc | 30 |" in text
     assert "| static |  | one run of the accelerator | 16 |" in text
     assert "| crossbar: requests | 204 | 192 |" in text
-    assert "## Leakage and the idle floor" in text and "| all | 140 | 1.830 |" in text
+    assert "## Leakage and the idle floor" in text and "| all | 140 | 2.829 |" in text
 
 
 def test_every_window_pays_the_leakage_and_the_idle_floor_beside_its_dynamic_energy():
@@ -128,13 +156,14 @@ def test_every_window_pays_the_leakage_and_the_idle_floor_beside_its_dynamic_ene
     b, fixed = e.background, est.costs.fixed
     assert b.design_uw == pytest.approx(est.leakage["power"]) and b.clock_ns == 10.0
     assert (b.core_uw, b.rest_uw) == (fixed["core"].leak_uw, fixed["rest"].leak_uw)
-    assert b.idle_pj_cycle == pytest.approx(23.6, abs=0.05)
+    assert b.idle_pj_cycle == pytest.approx(
+        fixed["core"].idle_pj_cycle + fixed["rest"].idle_pj_cycle
+    )
     w = e.windows[2]
     x = e.background_of(w)
     assert x["leak_design"] == pytest.approx(b.design_uw * w.cycles * 10e-6)
     assert x["idle"] == pytest.approx(b.idle_pj_cycle * w.cycles / 1000)
     assert e.background_total["leak_core"] == pytest.approx(b.core_uw * 140 * 10e-6)
-    assert e.energies[2].total == pytest.approx(e.static.total, rel=1e-12)
     d = e.to_dict()
     del d["background"], d["background_total"]
     for v in d["windows"]:
@@ -144,6 +173,7 @@ def test_every_window_pays_the_leakage_and_the_idle_floor_beside_its_dynamic_ene
     assert "## Leakage and the idle floor" not in render_energy(old)
 
 
+@pytest.mark.usefixtures("events_only")
 def test_a_run_without_marks_is_priced_in_one_window_of_the_whole_run():
     """The default build's end snapshot alone, priced with no marks: one window, boot to the end,
     named the whole run, costing what the quiet build's run window costs."""
@@ -159,6 +189,7 @@ def test_a_run_without_marks_is_priced_in_one_window_of_the_whole_run():
     assert "## The counts the whole run was priced on" in render_energy(e)
 
 
+@pytest.mark.usefixtures("events_only")
 def test_the_flow_runs_the_quiet_build_again_and_prices_it(tmp_path, monkeypatch):
     """vecadd through the flow with --energy, SNAX-GVSoC stubbed: the quiet build's run window
     counted as the static estimate counts it costs the static estimate's five parts."""
@@ -177,7 +208,7 @@ def test_the_flow_runs_the_quiet_build_again_and_prices_it(tmp_path, monkeypatch
     ).is_file()
     assert (out / "report" / "energy.md").read_text() == render_energy(f.energy)
     ((w, got),) = f.energy.of_kind("run")
-    for part, want in f.energy.static.parts.items():
+    for part, want in events(f.energy, estimate(f.point.graph, f.point.platform)).items():
         assert got.parts[part] == pytest.approx(want, rel=1e-12), part
     assert f"energy    sw/forge_quiet.elf, {len(f.energy.windows)} windows; window {w.index}" in (
         summary(f)
@@ -185,6 +216,7 @@ def test_the_flow_runs_the_quiet_build_again_and_prices_it(tmp_path, monkeypatch
     assert "energy" in f.times
 
 
+@pytest.mark.usefixtures("events_only")
 def test_a_pipelined_flow_prices_its_quiet_build_in_the_program_window(tmp_path, monkeypatch):
     """vecadd at ``pipeline`` through the flow with --energy, SNAX-GVSoC stubbed: the
     energy run is the quiet build, whose one section is the program window, priced as the static
@@ -201,12 +233,62 @@ def test_a_pipelined_flow_prices_its_quiet_build_in_the_program_window(tmp_path,
     ((w, got),) = f.energy.of_kind("run")
     assert w.label == "program window"
     assert [x.kind for x in f.energy.windows if x.mark > 0] == ["run", "check"]
-    for part, want in f.energy.static.parts.items():
+    for part, want in events(f.energy, estimate(f.point.graph, f.point.platform)).items():
         assert got.parts[part] == pytest.approx(want, rel=1e-12), part
     assert (
         f"energy    sw/forge_quiet.elf, {len(f.energy.windows)} windows; window {w.index}"
         in summary(f)
     )
+
+
+def test_a_refusal_costs_its_fraction_and_every_cycle_its_floor():
+    """With the tables' terms: two refusals a lane cost r_strm of their beats in the streamers and
+    r_xbar of their accesses in the crossbar; every cycle of a window costs the streamers', the
+    crossbar's and the DMA's floor, an empty window its floor alone."""
+    e, base = run(stalls=2), run()
+    p = e.prices
+    ((w, got),) = e.of_kind("run")
+    ((_, want),) = base.of_kind("run")
+    granted = (16 * p.e_xro_pj + 8 * p.e_xwo_pj) / 1000
+    assert got.parts["crossbar"] - want.parts["crossbar"] == pytest.approx(p.r_xbar * granted)
+    assert 0 < got.parts["streamers"] - want.parts["streamers"] < 0.2 * granted * 4
+    assert got.parts["memory"] == want.parts["memory"]
+    assert 0 < p.r_strm < 0.2 and p.r_xbar == 0
+    assert set(p.floor) == {"streamers", "crossbar", "dma"} and p.floor["dma"] == pytest.approx(
+        3.378, abs=0.001
+    )
+    assert got.parts["dma"] == pytest.approx(p.floor["dma"] * w.cycles / 1000)
+    dma_out = e.windows[3]
+    assert e.energies[3].parts == pytest.approx(
+        {
+            "datapath": 0,
+            "control": 0,
+            **{k: v * dma_out.cycles / 1000 for k, v in p.floor.items()},
+            "memory": 0,
+        }
+        | {"dma": p.floor["dma"] * dma_out.cycles / 1000}
+    )
+
+
+def test_a_transfer_costs_its_superbanks_accesses_and_the_engines_beat():
+    """The banks' accesses beyond the grants and the copies are the DMA's L2 <-> L1 transfers: 16
+    beats in (128 bank writes) and 2 out (16 bank reads), each beat e_l2 in the DMA and its
+    superbank's accesses in the banks."""
+    cluster = cluster_from(*files())
+    graph = steps("vecadd_v1")[-1]
+    zero = [(0, 0, 0)] * 2
+    snaps = [(1, 50, totals(0, 0, 0, 0) | {"banks": zero}),
+             (2, 70, totals(0, 0, 0, 0) | {"banks": [(0, 64, 0), (0, 64, 0)]}),
+             (3, 100, totals(0, 0, 0, 0) | {"banks": [(0, 64, 0), (0, 64, 0)]}),
+             (-1, 140, totals(0, 0, 0, 0) | {"banks": [(8, 64, 0), (8, 64, 0)]})]  # fmt: skip
+    lines = [parse_line(x) for x in snap_lines(cluster, snaps)]
+    e = energy_of(lines, cluster, MARKS, graph, estimate(graph, Platform.load(SNAX_FORGE)))
+    p = e.prices
+    load, store = e.energies[1], e.energies[3]
+    assert (load.reads, load.writes, store.reads, store.writes) == (0, 128, 16, 0)
+    assert load.parts["memory"] == pytest.approx(128 * p.e_wr_pj / 1000)
+    assert load.parts["dma"] == pytest.approx((16 * p.e_l2_pj + p.floor["dma"] * 20) / 1000)
+    assert store.parts["dma"] == pytest.approx((2 * p.e_l2_pj + p.floor["dma"] * 40) / 1000)
 
 
 @pytest.fixture(scope="module", params=sorted(REAL))

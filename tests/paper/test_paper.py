@@ -35,18 +35,18 @@ def test_the_sets_load_with_unique_ids_and_full_range_data():
 def test_the_estimate_gives_the_readmes_numbers():
     row = paper.row_of(*point("forms", "mvt_column"), run=False)
     assert row["status"] == "ok" and row["est_cycles"] == 1028
-    assert row["static_nj"] == pytest.approx(26.18, abs=0.01)
+    assert row["static_nj"] == pytest.approx(43.43, abs=0.01)
     assert row["area_um2"] == pytest.approx(951435, rel=1e-3)
     copy = paper.row_of(*point("forms", "mvt_dma_copy"), run=False)
     assert (copy["est_cycles"], copy["est_copy_cycles"]) == (11951, 10923)
-    assert copy["static_nj"] == pytest.approx(803.39, abs=0.01)
+    assert copy["static_nj"] == pytest.approx(755.99, abs=0.01)
 
 
 def test_the_estimate_does_not_see_the_layout_and_flags_the_bank_bound():
     a = paper.row_of(*point("limits", "mvt_contiguous_w8"), run=False)
     b = paper.row_of(*point("limits", "mvt_padded_w8"), run=False)
     assert a["est_cycles"] == b["est_cycles"] == 1028
-    assert a["static_nj"] == pytest.approx(b["static_nj"]) == pytest.approx(241.08, abs=0.01)
+    assert a["static_nj"] == pytest.approx(b["static_nj"]) == pytest.approx(309.08, abs=0.01)
     w32 = paper.row_of(*point("limits", "mvt_contiguous_w32"), run=False)
     assert (w32["est_cycles"], w32["est_bank_bound"]) == (260, 520)
 
