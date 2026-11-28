@@ -9,11 +9,12 @@
  },
  "source": {
   "snax_forge": "04165576384c4f3031e3b2d27d0ee9c058498b51",
+  "snax_forge_FifoPacker": "3b1e6af1de6f2d4d6976fca5ae2874d7ccee57db",
   "snax_forge_FifoSlicer": "c5c7d3bad1eb1ccf2e4e4a3d841fea749677d3f3",
   "snax_forge_mixed": "90e9fba98c080676b22e7c95137d26a0faa9636d",
   "snax_forge_scalar": "8d9128c4452542956aeb715c24a3b0f9742040bf",
   "snax_forge_e2e1": "aac5c2115f841032c869f09ea4694ad3b3de2769",
-  "snax_forge_experiments": "51336e34708e5def8316a78be652647146d317fb",
+  "snax_forge_experiments": "75efb5f7893389d3af042e543024496e28872a19",
   "stimulus": "rand64 seed 0",
   "clk_gate": "1"
  },
@@ -336,6 +337,14 @@
    {"params": {"inLanes": 1, "laneType": "int8", "words": 1}, "lanes_rule": "none",
     "points": [
      {"comb_um2": 151.088, "e_comb_pj": 0.2436895, "leak_comb_uw": 4.397099, "flops": 59, "load_bits": 10.0}
+    ]},
+   {"params": {"inLanes": 2, "laneType": "int8", "words": 1}, "lanes_rule": "none",
+    "points": [
+     {"comb_um2": 143.108001, "e_comb_pj": 0.3950415, "leak_comb_uw": 4.362302, "flops": 50, "load_bits": 14.0}
+    ]},
+   {"params": {"inLanes": 4, "laneType": "int8", "words": 1}, "lanes_rule": "none",
+    "points": [
+     {"comb_um2": 102.676, "e_comb_pj": 0.5225555, "leak_comb_uw": 2.116067, "flops": 33, "load_bits": 17.0}
     ]}
   ],
   "FifoSlicer": [
