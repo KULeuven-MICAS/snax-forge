@@ -49,8 +49,20 @@ def test_one_stream_without_k_or_two_with_one_is_refused():
         ({"op": "max", "streams": 1}, (), "one stream takes the constant k, got None"),
         ({"op": "axpby", "k1": 3}, ("k1",), "k1 = 3 is set, and read from a container too"),
         ({"op": "add"}, ("alpha",), "'alpha' is read from a container, but it is no slot"),
-        ({"op": "add"}, ("k1",), "k1 and k2 are axpby's, not add's"),
-        ({"op": "axpby", "streams": 1, "k": 2}, (), "axpby at one stream"),
+        ({"op": "add"}, ("k1",), "k1 is axpby and axpbypcz's, not add's"),
+        ({"op": "axpby", "streams": 1, "k": 2}, (), "axpby at 1 stream\\(s\\); it takes 2"),
+        (
+            {"op": "requant", "streams": 1, "d": 1000, "lo": 0, "hi": 127},
+            (),
+            "d = 1000 is not a power of two",
+        ),
+        ({"op": "axpbypcz", "streams": 3, "d": 4}, ("d",), "d = 4 is set, and read from"),
+        (
+            {"op": "axpbypcz", "streams": 3, "k1": 1},
+            ("d",),
+            "d read from a container; axpbypcz bakes it",
+        ),
+        ({"op": "threshold", "streams": 1, "hi": 255, "lo": 0}, ("k",), "lo not threshold's"),
     ],
 )
 def test_an_instance_no_entry_fits_is_refused(params, read, message):

@@ -12,7 +12,8 @@
   "snax_forge_FifoSlicer": "c5c7d3bad1eb1ccf2e4e4a3d841fea749677d3f3",
   "snax_forge_mixed": "90e9fba98c080676b22e7c95137d26a0faa9636d",
   "snax_forge_scalar": "8d9128c4452542956aeb715c24a3b0f9742040bf",
-  "snax_forge_experiments": "2237a048526f2a3c7bf08f364df270489c67b547",
+  "snax_forge_e2e1": "aac5c2115f841032c869f09ea4694ad3b3de2769",
+  "snax_forge_experiments": "51336e34708e5def8316a78be652647146d317fb",
   "stimulus": "rand64 seed 0",
   "clk_gate": "1"
  },
@@ -148,6 +149,26 @@
    {"params": {"inTypes": ["int32"], "opType": "int32", "outType": "int32", "op": "max", "streams": 1, "k": 0, "k1": null, "k2": null, "kCsr": false, "k1Csr": false, "k2Csr": false}, "lanes_rule": "copy",
     "points": [
      {"lanes": 1, "comb_um2": 33.516, "e_comb_pj": 0.2010275, "leak_comb_uw": 0.7914011}
+    ]},
+   {"params": {"inTypes": ["int32"], "opType": "int32", "outType": "int8", "op": "requant", "streams": 1, "k": null, "k1": null, "k2": null, "kCsr": false, "k1Csr": false, "k2Csr": false, "k3": null, "d": 1024, "lo": 0, "hi": 127, "k3Csr": false}, "lanes_rule": "copy",
+    "points": [
+     {"lanes": 1, "comb_um2": 19.418, "e_comb_pj": 0.07195594, "leak_comb_uw": 0.4719228}
+    ]},
+   {"params": {"inTypes": ["int32"], "opType": "int32", "outType": "int8", "op": "requant", "streams": 1, "k": null, "k1": null, "k2": null, "kCsr": false, "k1Csr": false, "k2Csr": false, "k3": null, "d": 512, "lo": 0, "hi": 127, "k3Csr": false}, "lanes_rule": "copy",
+    "points": [
+     {"lanes": 1, "comb_um2": 18.886, "e_comb_pj": 0.05996752, "leak_comb_uw": 0.4653558}
+    ]},
+   {"params": {"inTypes": ["uint8", "uint8", "uint8"], "opType": "uint16", "outType": "uint8", "op": "axpbypcz", "streams": 3, "k": null, "k1": 77, "k2": 150, "kCsr": false, "k1Csr": false, "k2Csr": false, "k3": 29, "d": 256, "lo": null, "hi": null, "k3Csr": false}, "lanes_rule": "copy",
+    "points": [
+     {"lanes": 1, "comb_um2": 331.436003, "e_comb_pj": 0.5343333, "leak_comb_uw": 6.442117}
+    ]},
+   {"params": {"inTypes": ["uint8", "uint8", "uint8"], "opType": "uint16", "outType": "uint8", "op": "axpbypcz", "streams": 3, "k": null, "k1": null, "k2": 2, "kCsr": false, "k1Csr": false, "k2Csr": false, "k3": null, "d": 4, "lo": null, "hi": null, "k3Csr": false}, "lanes_rule": "copy",
+    "points": [
+     {"lanes": 1, "comb_um2": 60.914001, "e_comb_pj": 0.131051, "leak_comb_uw": 1.102884}
+    ]},
+   {"params": {"inTypes": ["uint8"], "opType": "int16", "outType": "uint8", "op": "threshold", "streams": 1, "k": null, "k1": null, "k2": null, "kCsr": true, "k1Csr": false, "k2Csr": false, "k3": null, "d": null, "lo": null, "hi": 255, "k3Csr": false}, "lanes_rule": "copy",
+    "points": [
+     {"lanes": 1, "comb_um2": 59.85, "e_comb_pj": 0.1210451, "leak_comb_uw": 1.466047}
     ]}
   ],
   "Mac": [

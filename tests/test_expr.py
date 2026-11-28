@@ -150,8 +150,60 @@ def test_strip_casts():
         "out = in1 * in2", {"in1": "int32", "in2": "int32"})  # fmt: skip
     assert expr.strip_casts("out = in1 + 3", "t") == ("out = in1 + 3", {})
     with pytest.raises(ExprError, match="the cast 'int32\\(in1 \\+ in2\\)' is of an expression"):
-        expr.strip_casts("out = int32(in1 + in2)", "t")
+        expr.strip_casts("out = 3 * int32(in1 + in2)", "t")
+
+
+def test_strip_casts_gives_a_whole_value_cast_under_its_target():
+    """A narrowing astype's nest fused before it: the output's cast, the narrowest of several,
+    and its inputs' as before."""
+    assert expr.strip_casts("out = int8(min(max(in1 // 1024, 0), 127))", "t") == (
+        "out = min(max(in1 // 1024, 0), 127)", {"out": "int8"})  # fmt: skip
+    assert expr.strip_casts("out = int16(int8(int32(in1) + 1))", "t") == (
+        "out = in1 + 1", {"out": "int8", "in1": "int32"})  # fmt: skip
     with pytest.raises(ExprError, match="in1 is cast to int16 and to int32"):
         expr.strip_casts("out = int16(in1) + int32(in1)", "t")
     with pytest.raises(ExprError, match="the cast int32 takes exactly one argument"):
         expr.check("int32(a, b)", "t")
+
+
+# =============================================================================
+# Ranges of values (a SIMD body's output)
+# =============================================================================
+
+I32 = (-(2**31), 2**31 - 1)
+U8 = (0, 255)
+INF = float("inf")
+
+
+@pytest.mark.parametrize(
+    ("v", "ranges", "span"),
+    [
+        ("min(max(a // 1024, 0), 127)", {"a": I32}, (0, 127)),  # requant's clamp
+        ("a // 1024", {"a": I32}, (-(2**21), 2**21 - 1)),
+        ("(77 * a + 150 * b + 29 * c) // 256", {"a": U8, "b": U8, "c": U8}, (0, 255)),  # gray
+        ("(a + 2 * b + c) // 4", {"a": U8, "b": U8, "c": U8}, (0, 255)),  # a blur
+        ("255 * min(max(int16(a) - t + 1, 0), 1)", {"a": U8}, (0, 255)),  # t unbounded
+        ("a - t", {"a": U8}, (-INF, INF)),
+        ("-a * 3", {"a": (-2, 5)}, (-15, 6)),
+        ("a // b", {"a": (-7, 7), "b": (2, 3)}, (-4, 3)),
+        ("a // b", {"a": U8, "b": (-1, 1)}, (-INF, INF)),  # b may be 0
+        ("int8(a)", {"a": (0, 127)}, (0, 127)),
+        ("int8(a)", {"a": U8}, (-128, 127)),  # wraps: the dtype's range
+        (12, {}, (12, 12)),
+    ],
+)
+def test_bounds(v, ranges, span):
+    assert expr.bounds(v, ranges) == span
+
+
+def test_bounds_matches_every_value_on_a_small_grid():
+    import itertools
+
+    import numpy as np
+
+    v = "min(max((3 * a - b) // 4, -5), 9) + int8(a * b)"
+    ranges = {"a": (-3, 20), "b": (-2, 17)}
+    values = [expr.evaluate(v, {"a": a, "b": b})
+              for a, b in itertools.product(range(-3, 21), range(-2, 18))]  # fmt: skip
+    lo, hi = expr.bounds(v, ranges)
+    assert lo <= int(np.min(values)) and int(np.max(values)) <= hi

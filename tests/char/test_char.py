@@ -17,7 +17,9 @@ def test_every_entry_is_a_catalogue_datapath_with_complete_params(tech):
     """Each entry's datapath is the catalogue's (or a stream block, FifoPacker or FifoSlicer), its params with
     each point's lanes (and depth) a valid and complete param set there, its rule known, its
     points unique, a narrow fold's slope given. A block measured before it took a seed (a Mac)
-    or a bank has no seed or rows key in any entry, its unseeded one-row form."""
+    or a bank has no seed or rows key in any entry, its unseeded one-row form; one measured
+    before it took a slot or a CSR pin (SimdLanes' k3, d, lo, hi, k3Csr) has no key for it, the
+    slot unset and the pin off, which build no hardware."""
     cat, t = catalogue(), load(tech)
     assert t.tech == tech and t.source["snax_forge"] and t.source["snax_forge_experiments"]
     assert t.flop_um2 > 0 and t.e_load_pj > t.e_ctrl_pj > 0
@@ -32,10 +34,13 @@ def test_every_entry_is_a_catalogue_datapath_with_complete_params(tech):
             assert (rule == "slope") == ("slope" in e), (dp, e["params"])
             keys = [(p.get("lanes"), p.get("depth")) for p in e["points"]]
             assert len(keys) == len(set(keys)), (dp, keys)
+            later = {k for k, v in sig.items()
+                     if k not in e["params"] and v.get("type") in ("const", "bool")}  # fmt: skip
+            own = {k: v for k, v in sig.items() if k not in later}
             for p in e["points"]:
                 full = {**e["params"], **{k: p[k] for k in ("lanes", "depth") if k in p}}
-                assert set(full) == set(sig), (dp, sorted(full), sorted(sig))
-                check_params(dp, full, sig)
+                assert set(full) == set(own), (dp, sorted(full), sorted(own))
+                check_params(dp, full, own)
                 # >= 0: a LinkBuffer of depth 1 is its flops alone, no comb energy when gated
                 assert p["comb_um2"] > 0 and p["e_comb_pj"] >= 0
 
@@ -129,3 +134,59 @@ def test_leakage_follows_the_area_rule():
     assert one.leak_uw == p["leak_comb_uw"]
     many = lookup(table, "SimdLanes", simd["params"], 3 * p["lanes"] + 1)
     assert many.leak_uw / many.comb_um2 == pytest.approx(one.leak_uw / one.comb_um2)
+
+
+def test_requant_axpbypcz_and_threshold_are_keyed_at_their_own_types_and_slots():
+    """A shift keeps a sum's high bits and a clamp or compare reads all of opType, so these ops
+    are not priced at their output's width; a slot or type not measured is not characterized."""
+    requant = {
+        "inTypes": ["int32"],
+        "opType": "int32",
+        "outType": "int8",
+        "op": "requant",
+        "streams": 1,
+        "d": 1024,
+        "lo": 0,
+        "hi": 127,
+    }
+    gray = {
+        "inTypes": ["uint8"] * 3,
+        "opType": "uint16",
+        "outType": "uint8",
+        "op": "axpbypcz",
+        "streams": 3,
+        "k1": 77,
+        "k2": 150,
+        "k3": 29,
+        "d": 256,
+    }
+    table = _table({"SimdLanes": [
+        {"params": requant, "lanes_rule": "copy", "points": [_pt(1, 30.0, 0.3)]},
+        {"params": gray, "lanes_rule": "copy", "points": [_pt(1, 90.0, 0.9)]}]})  # fmt: skip
+    unset = {"k": None, "k1": None, "k2": None, "k3": None, "kCsr": False}
+    assert lookup(table, "SimdLanes", {**requant, **unset}, 8) == Lookup(240.0, 2.4, "copy")
+    assert lookup(table, "SimdLanes", {**gray, "kCsr": False}, 2) == Lookup(180.0, 1.8, "copy")
+    assert lookup(table, "SimdLanes", {**requant, "d": 512}, 8) is None
+    assert lookup(table, "SimdLanes", {**gray, "inTypes": ["int8"] * 3}, 2) is None
+
+
+def test_a_halo_link_is_wires_priced_by_its_flops():
+    """A HaloLink's taps are wires and its load a clock gate: no table entry, comb 0 at any lanes
+    (not ``char.missing``); the estimate prices its flops from the catalogue, the reset inverters
+    its flops have alone left out."""
+    from snax_forge.estimate.cost import Block, block_cost
+
+    halo = {"taps": 3, "lanes": 8, "dtype": "uint8"}
+    for table in (SMALL, load("nangate45")):
+        assert "HaloLink" not in table.blocks
+        for lanes in (1, 8, 32):
+            assert lookup(table, "HaloLink", {**halo, "lanes": lanes}, lanes) == Lookup(
+                0.0, 0.0, "wires"
+            )
+    table = load("nangate45")
+    bits = 64  # H = 1 beat of 8 lanes of 8 bits
+    got = block_cost(table, Block("HaloLink", halo, 100), bits, 100)
+    assert (got.found, got.comb_um2) == ("wires", 0.0)
+    assert got.flops_um2 == pytest.approx(bits * table.flop_um2)
+    assert got.e_fire_pj == pytest.approx(bits * table.e_load_pj)
+    assert got.leak_uw == pytest.approx(bits * table.flop_leak_uw)

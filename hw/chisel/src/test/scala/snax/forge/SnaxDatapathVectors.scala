@@ -13,8 +13,8 @@ object SnaxDatapathVectors {
   val Env = "SNAX_GVSOC_DATAPATH_VECTORS"
 
   /** One step: fire, first, read, lane, en, load, wslot, rslot, and a bank's row and drain (0 without); each input's
-    * lanes; the output's lanes; the CSR slots set before it (`set SLOT V` lines: SimdLanes' `k`, `k1`, `k2` from their
-    * pins).
+    * lanes; the output's lanes; the CSR slots set before it (`set SLOT V` lines: SimdLanes' `k`, `k1`, `k2`, `k3` from
+    * their pins).
     */
   case class Step(
     fire:  Boolean,
@@ -51,12 +51,18 @@ object SnaxDatapathVectors {
             "streams" -> ujson.Num(ins.size),
             // one input's constant, as its decimal text: exact at every int64 (Datapaths.const)
             "k"       -> header.get("k").map(v => ujson.Str(v.head)).getOrElse(ujson.Null),
-            // axpby's k1 and k2: baked (decimal) or `csr`, read from its pin
+            // axpby's and axpbypcz's k1, k2 and k3: baked (decimal) or `csr`, read from its pin
             "k1"      -> baked("k1"),
             "k2"      -> baked("k2"),
             "kCsr"    -> ujson.Bool(header.contains("kcsr")),
             "k1Csr"   -> ujson.Bool(header.get("k1").contains(Seq("csr"))),
-            "k2Csr"   -> ujson.Bool(header.get("k2").contains(Seq("csr")))
+            "k2Csr"   -> ujson.Bool(header.get("k2").contains(Seq("csr"))),
+            "k3"      -> baked("k3"),
+            // axpbypcz's and requant's d, requant's lo and hi, threshold's hi: baked
+            "d"       -> baked("d"),
+            "lo"      -> baked("lo"),
+            "hi"      -> baked("hi"),
+            "k3Csr"   -> ujson.Bool(header.get("k3").contains(Seq("csr")))
           )
         case "TreeAccumulate"   =>
           Map(
@@ -95,6 +101,12 @@ object SnaxDatapathVectors {
         case "LinkBuffer"       =>
           Map(
             "depth" -> ujson.Num(one("depth").toInt),
+            "lanes" -> ujson.Num(one("lanes").toInt),
+            "dtype" -> ujson.Str(one("out"))
+          )
+        case "HaloLink"         =>
+          Map(
+            "taps"  -> ujson.Num(one("taps").toInt),
             "lanes" -> ujson.Num(one("lanes").toInt),
             "dtype" -> ujson.Str(one("out"))
           )

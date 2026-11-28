@@ -46,7 +46,7 @@ from snax_forge.dfg.graph import SCALAR, TRANSPOSE
 from snax_forge.dfg.subset import dim_names, format_dim, map_range
 from snax_forge.expr import ExprError
 
-from .patterns import fused_view, match
+from .patterns import fused_tree, match
 from .recipe import SandboxError
 
 Transform = Callable[..., Graph]
@@ -413,10 +413,10 @@ def _bind_site(g: Graph, node: str, what: str) -> _Site:
     """The match: the node is the only node of a spatial map, or a fused nest's spatial map,
     and every map around it is tagged temporal."""
     body, i, outer = _locate(g, node)
-    if body[i].kind == "map":  # a fused nest's spatial map (fuse_map): its two tasklets as one
-        smap, found = body[i], fused_view(body[i])
+    if body[i].kind == "map":  # a fused nest's spatial map (fuse_map): its tasklets as one
+        smap, found = body[i], fused_tree(body[i])
         if found is not None:
-            tasklet, pattern_node = found[2], smap
+            tasklet, pattern_node = found[1], smap
         elif _lane_fold_map(smap):  # a spatial map of one folding tasklet (lane_accumulate)
             tasklet, pattern_node = smap.body[0], smap
         else:
@@ -482,7 +482,7 @@ def _bind_check(g: Graph, site: _Site, brm: str, implementation: str,
     """The check: the BRM's ports match the tasklet's, their dtypes are accepted, it computes
     what the tasklet computes, and its lanes are the spatial bound (the design params: the
     lanes param from that bound, the rest given or default)."""
-    from snax_forge.brm import BrmError
+    from snax_forge.brm import BrmError, function_of
 
     try:
         b = load_brm(brm)
@@ -498,12 +498,12 @@ def _bind_check(g: Graph, site: _Site, brm: str, implementation: str,
     seeds = _bind_seeds(site, b, brm, given, what)
     scalars = _scalar_inputs(g, site, what)
     ports = match(site.pattern, b, conn_dtypes, frozenset(scalars))
-    _check_port_dtypes(b, ports, conn_dtypes, what)
+    _check_port_dtypes(b, ports, conn_dtypes, what, tasklet)
     if seeds:
         given[SEED] = 1  # the seed's port, on the seed's element (_bind_rewrite)
     names = _scalar_names(b, scalars)
     entry, ports, slots = _bind_entry(b, brm, tasklet, ports, names, given, what)
-    _check_port_dtypes(b, ports, conn_dtypes, what)  # the entry's assignment of the inputs
+    _check_port_dtypes(b, ports, conn_dtypes, what, tasklet)  # the entry's assignment
     computes = _computes(tasklet, ports, names)
     op_type, cast_op_type = _op_types(tasklet, ports, conn_dtypes, casts)
     from_scalar = _bind_slots(b, brm, entry, tasklet, ports, slots, names, conn_dtypes, given,
@@ -513,6 +513,7 @@ def _bind_check(g: Graph, site: _Site, brm: str, implementation: str,
     )
     try:
         inst = b.resolve(implementation, given, from_scalar)
+        function_of(inst)  # the params its kind refuses (simd's d not a power of two)
     except BrmError as e:
         raise SandboxError(f"{what}: {e}") from None
     if inst.code != entry.code:  # a slot given that the matched entry leaves unset
@@ -553,13 +554,22 @@ def _without_casts(site: _Site, conn_dtypes: Mapping[str, str],
     """The site with its tasklets' value casts stripped (a copy: the graph keeps them, and
     ``replaced`` with them), and the dtype each input connector of the bound tasklet is cast
     to. A cast that does not hold every value of its input (int32 to int8, int8 to uint32) is
-    refused: the datapaths only extend."""
+    refused: the datapaths only extend. A cast of an output's whole value is dropped when it is
+    as wide as the output, whose own wrap gives the same bits, and refused when
+    narrower."""
     try:
         _, casts = expr.strip_casts(site.tasklet.attrs["code"], what)
     except ExprError as e:
         raise SandboxError(str(e)) from None
     if not casts:
         return site, {}
+    for c in [c for c in casts if c in site.tasklet.outputs]:
+        dt = casts.pop(c)
+        if np.dtype(dt).itemsize < np.dtype(conn_dtypes[c]).itemsize:
+            raise SandboxError(f"{what}: the cast {dt}(...) of output {c} ({conn_dtypes[c]}) "
+                               f"wraps its value narrower than the output; the hardware wraps "
+                               f"only into the output's dtype: drop the cast or give {c} "
+                               f"the dtype {dt}")  # fmt: skip
     for c, dt in casts.items():
         if not np.can_cast(conn_dtypes[c], dt, "safe"):
             raise SandboxError(f"{what}: the cast {dt}({c}) of {conn_dtypes[c]} does not hold "
@@ -575,8 +585,8 @@ def _without_casts(site: _Site, conn_dtypes: Mapping[str, str],
     pattern = strip(site.pattern)
     if site.pattern is site.tasklet:
         tasklet = pattern
-    elif (found := fused_view(pattern)) is not None:
-        tasklet = found[2]
+    elif (found := fused_tree(pattern)) is not None:
+        tasklet = found[1]
     else:  # a lane fold: the spatial map of one tasklet
         tasklet = pattern.body[0]
     return _Site(tasklet, pattern, site.smap, site.temporal), casts
@@ -806,11 +816,15 @@ def _computes(tasklet: Node, ports: Mapping[str, str], names: Mapping[str, str])
 
 
 def _check_port_dtypes(b: Any, ports: Mapping[str, str], conn_dtypes: Mapping[str, str],
-                       what: str) -> None:  # fmt: skip
+                       what: str, tasklet: Node) -> None:  # fmt: skip
+    """``check_dtypes`` on the ports' dtypes and the tasklet's code on the ports (a scalar
+    operand under a name of its own, unbounded)."""
     from snax_forge.brm import accepted, check_dtypes
 
     dtypes = {p: conn_dtypes[c] for c, p in ports.items()}
-    if refused := check_dtypes(b, dtypes):
+    names = {c: ports.get(c, f"scalar_{c}") for c in tasklet.inputs | tasklet.outputs}
+    code = expr.rename_code(tasklet.attrs["code"], names)
+    if refused := check_dtypes(b, dtypes, code):
         raise SandboxError(
             f"{what}: {'; '.join(refused)}; accepted output dtypes for these inputs: "
             f"{accepted(b, dtypes)}"
@@ -823,23 +837,25 @@ def _entry(b: Any, entries: list[Any], ports: Mapping[str, str], tasklet: Node,
     """The first code entry whose present ports (at the defaults, ``given`` and its params) take
     the tasklet's array inputs, in some assignment, and whose code is the tasklet's on them up
     to its slots (``expr.unify``, a slot an int or a scalar operand's name, ``names``): the
-    entry, connector -> port, and the slot values; or ``(None, ports, {})``. The assignments
-    are tried port order first: the matcher's (the inputs in the order they first appear onto
-    the ports in order), then every other."""
+    entry, connector -> port, and the slot values; or ``(None, ports, {})``. The matcher's
+    assignment (the inputs in the order they first appear onto the ports in order) is tried on
+    every entry first, then every other assignment, entry by entry: a blur's ``a + 2 b + c``
+    takes the entry that scales b before one that scales a with the inputs swapped."""
     arrays = [c for c in ports if c in tasklet.inputs]
     outs = {c: p for c, p in ports.items() if c in tasklet.outputs}
-    for e in entries:
-        present = b.present(b.defaults() | dict(given) | e.params)
-        ins = [p.name for p in present if p.direction == "in" and p.name != SEED]
-        if {p.name for p in present if p.direction == "out"} != set(outs.values()):
-            continue
-        if len(ins) != len(arrays):
-            continue
-        for perm in itertools.permutations(ins):
-            mapping = dict(zip(arrays, perm, strict=True)) | outs
-            found = expr.unify(e.code, _computes(tasklet, mapping, names), b.slots(e), names)
-            if found is not None:
-                return e, mapping, found
+    for in_order in (True, False):
+        for e in entries:
+            present = b.present(b.defaults() | dict(given) | e.params)
+            ins = [p.name for p in present if p.direction == "in" and p.name != SEED]
+            if {p.name for p in present if p.direction == "out"} != set(outs.values()):
+                continue
+            if len(ins) != len(arrays):
+                continue
+            for perm in [tuple(ins)] if in_order else itertools.permutations(ins):
+                mapping = dict(zip(arrays, perm, strict=True)) | outs
+                found = expr.unify(e.code, _computes(tasklet, mapping, names), b.slots(e), names)
+                if found is not None:
+                    return e, mapping, found
     return None, dict(ports), {}
 
 
@@ -935,7 +951,7 @@ def _bind_rewrite(g: Graph, site: _Site, bound: _Bound, brm: str, implementation
     marks = tasklet.attrs.get(TRANSPOSE, {})  # mark_transpose's, onto the port (transpose.py)
     if any(c in ports for c in marks):
         acc.attrs[TRANSPOSE] = {ports[c]: list(p) for c, p in marks.items() if c in ports}
-    fused = site.pattern is smap and fused_view(smap) is not None
+    fused = site.pattern is smap and fused_tree(smap) is not None
     if fused and (taken := _take_locals(g, smap)):  # a fused nest's local value
         acc.attrs["locals"] = taken  # goes with its two tasklets
     parent_body, j, _ = _locate(g, smap.id)
@@ -944,17 +960,21 @@ def _bind_rewrite(g: Graph, site: _Site, bound: _Bound, brm: str, implementation
 
 
 def _take_locals(g: Graph, smap: Node) -> list[dict[str, Any]]:
-    """The fused nest's local values (``loop.local``: the first tasklet's output, which only the
-    two tasklets name) taken out of the graph, each with its index among the containers, for
-    ``unbind`` to put back."""
-    found = fused_view(smap)
+    """The fused nest's local values (``loop.local``: each tasklet's output but the last's,
+    which only the fused tasklets name) taken out of the graph, each with its index among the
+    containers, for ``unbind`` to put back."""
+    found = fused_tree(smap)
     assert found is not None  # _bind_site took the map as a fused nest
-    (m,) = found[0].outputs.values()
     names = list(g.containers)
-    if "loop.local" not in g.containers[m.data].attrs:
-        return []
-    cont = g.containers.pop(m.data)
-    return [{"name": m.data, "index": names.index(m.data), "container": cont.to_dict()}]
+    out = []
+    for t in found[0][:-1]:
+        (m,) = t.outputs.values()
+        if "loop.local" in g.containers[m.data].attrs:
+            out.append((names.index(m.data), m.data))
+    taken = [{"name": n, "index": i, "container": g.containers[n].to_dict()} for i, n in out]
+    for _, n in out:
+        del g.containers[n]
+    return taken
 
 
 def _length(m: Node) -> str:

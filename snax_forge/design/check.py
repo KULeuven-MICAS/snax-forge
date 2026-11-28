@@ -511,7 +511,7 @@ def _connect_dtype(design: Design) -> Iterable[Problem]:
     for n in accelerated(g):
         inst = design.instances[n.attrs["instance"]]
         dtypes = port_dtypes(g, n)
-        refused = check_dtypes(inst.brm, dtypes)
+        refused = check_dtypes(inst.brm, dtypes, n.attrs.get("code"), n.attrs.get("params"))
         if refused:
             yield Problem(
                 "connect.dtype", f"node {n.id}", "; ".join(refused),

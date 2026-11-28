@@ -32,16 +32,26 @@ object SnaxUnitCases {
     lanes:    Int,
     types:    Seq[String],
     op:       String,
-    laneFold: Boolean,        // `fold lanes`: a one-input fold whose lanes keep their own sums
-    k:        Option[BigInt], // one input's constant: a one-stream SimdLanes (relu's)
-    k1:       Option[Slot],   // axpby's (op axpby, axpy's): k1 required, k2 optional
+    laneFold: Boolean, // `fold lanes`: a one-input fold whose lanes keep their own sums
+    k:        Option[BigInt], // one input's constant: a one-stream SimdLanes (relu's), or threshold's k
+    k1:       Option[Slot], // axpby's (op axpby, axpy's): k1 required, k2 optional; axpbypcz's
     k2:       Option[Slot],
     starts:   Map[Int, Start],
     runs:     Seq[RunLine],
     beats:    Map[Int, Seq[BigInt]],
     results:  Map[Int, Seq[BigInt]],
-    cycles:   Seq[Cycle]
-  )
+    cycles:   Seq[Cycle],
+    kCsr:     Boolean        = false, // k read from its CSR (`k V csr`, threshold's)
+    k3:       Option[Slot]   = None,  // axpbypcz's, as k1 and k2
+    d:        Option[BigInt] = None,  // axpbypcz's and requant's divisor, a power of two
+    lo:       Option[BigInt] = None,  // requant's bounds; hi threshold's too
+    hi:       Option[BigInt] = None,
+    opType:   Option[String] = None   // `optype`: the op's type, else the inputs' result type
+  ) {
+
+    /** One of SimdLanes' ops with slots of their own past axpby: axpbypcz, requant or threshold. */
+    def named: Boolean = Seq("axpbypcz", "requant", "threshold").contains(op)
+  }
 
   def parse(path: Path): Case = {
     val (header, rows) = CaseFile.read(path)
@@ -55,6 +65,10 @@ object SnaxUnitCases {
     var k              = Option.empty[BigInt]
     var k1             = Option.empty[Slot]
     var k2             = Option.empty[Slot]
+    var k3             = Option.empty[Slot]
+    var kCsr           = false
+    var bounds         = Map.empty[String, BigInt] // d, lo, hi
+    var opType         = Option.empty[String]
     var starts         = Map.empty[Int, Start]
     var runs           = Seq.empty[RunLine]
     var beats          = Map.empty[Int, Seq[BigInt]]
@@ -67,9 +81,15 @@ object SnaxUnitCases {
       case "types" :: ts if ts.nonEmpty                            => types    = ts
       case "op" :: o :: Nil                                        => op       = o
       case "fold" :: how :: Nil if how == "tree" || how == "lanes" => laneFold = how == "lanes"
-      case "k" :: v :: Nil                                         => k        = Some(BigInt(v))
+      case "k" :: v :: from                                        =>
+        val x = slot(path, line, v, from)
+        k    = Some(x.value)
+        kCsr = x.csr
       case "k1" :: v :: from                                       => k1       = Some(slot(path, line, v, from))
       case "k2" :: v :: from                                       => k2       = Some(slot(path, line, v, from))
+      case "k3" :: v :: from                                       => k3       = Some(slot(path, line, v, from))
+      case (b @ ("d" | "lo" | "hi")) :: v :: Nil                   => bounds += b -> CaseFile.number(v)
+      case "optype" :: t :: Nil                                    => opType   = Some(t)
       case "start" :: c :: j :: t :: a :: Nil                      =>
         starts += c.toInt -> Start(j.toInt, t.toInt, a)
       case "expect" :: "run" :: RunLine.Fields(i, run)             =>
@@ -84,8 +104,20 @@ object SnaxUnitCases {
     require(k.isEmpty || inputs == 1, s"$path: k is one input's constant; inputs is $inputs")
     require(!laneFold || (inputs == 1 && k.isEmpty), s"$path: fold lanes is a one-input fold, without k")
     require(
-      (op == "axpby") == k1.nonEmpty && (k2.isEmpty || k1.nonEmpty) && (op != "axpby" || inputs == 2),
-      s"$path: op axpby takes two inputs and k1 (k2 optional), and only it"
+      (op != "axpby" || (k1.nonEmpty && inputs == 2)) && (Seq("axpby", "axpbypcz")
+        .contains(op) || k1.isEmpty  && k2.isEmpty),
+      s"$path: op axpby takes two inputs and k1 (k2 optional); k1 and k2 are axpby's and axpbypcz's"
+    )
+    require(
+      (op == "axpbypcz") == (inputs == 3)  && (op != "axpbypcz" || bounds.keySet == Set("d")) &&
+        (k3.isEmpty || op == "axpbypcz"),
+      s"$path: op axpbypcz takes three inputs and d (k1, k2, k3 optional), and only it"
+    )
+    require(
+      (op != "requant" || (inputs == 1     && bounds.keySet == Set("d", "lo", "hi")           && k.isEmpty))  &&
+        (op != "threshold" || (inputs == 1 && bounds.keySet == Set("hi")                      && k.nonEmpty)) &&
+        (Seq("axpbypcz", "requant", "threshold").contains(op) || bounds.isEmpty),
+      s"$path: op requant takes one input, d, lo and hi; threshold one input, k and hi"
     )
     val cycles = rows.map { line =>
       val v = line.split("\\s+").map(_ == "1").toSeq
@@ -108,7 +140,13 @@ object SnaxUnitCases {
       runs,
       beats,
       results,
-      cycles
+      cycles,
+      kCsr,
+      k3,
+      bounds.get("d"),
+      bounds.get("lo"),
+      bounds.get("hi"),
+      opType
     )
   }
 

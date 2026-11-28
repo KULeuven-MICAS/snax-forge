@@ -10,7 +10,8 @@ Per unit the checks run in order: the params by its fill rule, its live ports an
 (``live``), its ports, its timing; then each buffer's ``LinkBuffer`` params. The fill rule's
 keys: ``inputs.dtype``, ``outputs.dtype``, ``inputs.lanes``, ``inputs.count``, ``unit.opType``,
 ``unit.params.<name>`` (None where unset), ``unit.scalars.<slot>``, ``unit.ports.seed`` and a
-buffer's ``link.depth``, ``link.lanes``, ``link.dtype``. ``vectors`` and ``write_fixture`` write
+link's (``LINK_RULES``): a buffer's ``link.depth``, a halo link's ``link.taps``, and their
+ends' ``link.lanes``, ``link.dtype``. ``vectors`` and ``write_fixture`` write
 the Chisel specs' ``vectors.json``: per outer port its data.h array (lane i of beat t is element
 t * lanes + i, modulo the array's size) and per task its CSR values and expected counter, from
 the control unit's rule (``counter``) or, for a linked group, snax-gvsoc's group rule
@@ -124,16 +125,34 @@ def link_params(acc: Description, link: Link, sig: Mapping[str, Any]) -> dict[st
     return buffer_params(link.depth, end.lanes, end.dtype, sig)
 
 
-def buffer_params(depth: int, lanes: int, dtype: str, sig: Mapping[str, Any]) -> dict[str, Any]:
-    """A ``LinkBuffer``'s params by its fill rule from a link's depth and its ends' lanes and
-    dtype."""
-    have = {"link.depth": depth, "link.lanes": lanes, "link.dtype": dtype}
+# The fill rules of a link's datapath (``LinkBuffer``, ``HaloLink``): its depth or taps, and its
+# ends' lanes and dtype
+LINK_RULES = ("link.depth", "link.taps", "link.lanes", "link.dtype")
+
+
+def _link_fill(datapath: str, have: Mapping[str, Any], sig: Mapping[str, Any]) -> dict[str, Any]:
+    """A link's datapath's params by its fill rule from ``have`` (rule -> value)."""
     out = {}
     for name, rule in sig["fill"].items():
         if rule not in have:
-            raise GenError("gen.catalogue", f"LinkBuffer.{name}: the fill rule {rule!r} is unknown")
+            raise GenError("gen.catalogue", f"{datapath}.{name}: the fill rule {rule!r} is unknown "
+                           f"(a link's are {', '.join(have)})")  # fmt: skip
         out[name] = have[rule]
     return out
+
+
+def buffer_params(depth: int, lanes: int, dtype: str, sig: Mapping[str, Any]) -> dict[str, Any]:
+    """A ``LinkBuffer``'s params by its fill rule from a link's depth and its ends' lanes and
+    dtype."""
+    return _link_fill("LinkBuffer", {"link.depth": depth, "link.lanes": lanes,
+                                     "link.dtype": dtype}, sig)  # fmt: skip
+
+
+def halo_params(taps: int, lanes: int, dtype: str, sig: Mapping[str, Any]) -> dict[str, Any]:
+    """A ``HaloLink``'s params by its fill rule from a halo link's taps and its ends' lanes and
+    dtype."""
+    return _link_fill("HaloLink", {"link.taps": taps, "link.lanes": lanes, "link.dtype": dtype},
+                      sig)  # fmt: skip
 
 
 def live(entries: Any, params: Mapping[str, Any]) -> dict[str, Any]:

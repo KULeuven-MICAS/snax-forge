@@ -325,9 +325,9 @@ def test_the_accumulator_adapter_refuses(case, edit, params, code, dtypes):
 
 def test_three_ports_are_refused():
     def three_inputs(d):
-        d["interface"]["ports"].insert(2, dict(d["interface"]["ports"][1], name="c"))
-        d["dataflow"]["ports"]["c"] = d["dataflow"]["ports"]["b"]
-        d["function"]["code"] = "out = a + b + c"
+        d["interface"]["ports"].insert(2, dict(d["interface"]["ports"][1], name="e", when=None))
+        d["dataflow"]["ports"]["e"] = d["dataflow"]["ports"]["b"]
+        d["function"]["code"] = "out = a + b + e"
 
     with pytest.raises(GenError) as e:
         simd_lanes(_instance(three_inputs))

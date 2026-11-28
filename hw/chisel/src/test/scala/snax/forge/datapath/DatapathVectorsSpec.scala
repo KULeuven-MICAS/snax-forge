@@ -10,10 +10,17 @@ import snax.forge.shell.Block
 /** Every catalogue datapath on snax-gvsoc's NumPy vectors (`SnaxDatapathVectors`): each test's datapath built from the
   * registry (`Datapaths`) by its params, then per step its enables and inputs poked, its output peeked before the clock
   * edge and compared lane by lane, as snax-gvsoc's `tests/snax/datapath/tb.cpp` checks its classes on the same file; a
-  * step's `set` lines poke SimdLanes' scalar pins (`k`, `k1`, `k2`, a CSR's value) first. Without
-  * `SNAX_GVSOC_DATAPATH_VECTORS` the spec cancels.
+  * step's `set` lines poke SimdLanes' scalar pins (`k`, `k1`, `k2`, `k3`, a CSR's value) first. A HaloLink's output is
+  * its `taps`, tap by tap, as the vectors list them. Without `SNAX_GVSOC_DATAPATH_VECTORS` the spec cancels.
   */
 class DatapathVectorsSpec extends AnyFlatSpec with ForgeTester {
+
+  /** The lanes of `d`, a Vec of Vecs (a HaloLink's taps) flattened in order. */
+  private def leaves(d: Data): Seq[Data] =
+    d match {
+      case v: Vec[_] => v.toSeq.flatMap(x => leaves(x.asInstanceOf[Data]))
+      case other => Seq(other)
+    }
 
   private def run(t: SnaxDatapathVectors.Test): Unit =
     test(new Block(s"vectors_${t.datapath}", Datapaths(t.datapath), t.params)) { dut =>
@@ -36,7 +43,7 @@ class DatapathVectorsSpec extends AnyFlatSpec with ForgeTester {
           (v, l) <- lanes.zipWithIndex
         }
           LaneBits.poke(LaneBits.lanes(d)(l), v)
-        val out = LaneBits.lanes(io("out"))
+        val out = leaves(io(if (t.datapath == "HaloLink") "taps" else "out"))
         for ((want, l) <- s.out.zipWithIndex) {
           val w = out(l).getWidth
           assert(LaneBits.peek(out(l)) == (want & LaneBits.mask(w)), s"${t.name}: step $k, lane $l")

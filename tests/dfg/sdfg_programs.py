@@ -4,7 +4,8 @@ DaCe reads a program's source, so the programs the tests import live in this fil
 transient between two maps), ``shift`` (offset subsets, a shortened range), ``amax`` and
 ``total`` (reductions through a scalar), ``row_sum`` and ``row_sum_view`` (a Reduce over one
 axis, by hand and through a view), ``three_params``, the MatMul and Transpose cases of
-``expand`` (``matmat``, ``batched``, ``vecvec``, ``transpose_only``), and ``unsupported_*``,
+``expand`` (``matmat``, ``batched``, ``vecvec``, ``transpose_only``), the convert maps of
+``requantized``, ``widened_twice`` and ``widened_through_unsigned``, and ``unsupported_*``,
 each one construct the importer must reject by name.
 
 No ``from __future__ import annotations`` here: DaCe reads a program's type hints as objects,
@@ -21,6 +22,22 @@ M, K = dace.symbol("M"), dace.symbol("K")
 @dace.program
 def two(A: dace.int64[N], B: dace.int64[N], C: dace.int64[N]):
     C[:] = (A + B) * B
+
+
+@dace.program
+def requantized(z: dace.int32[N], b: dace.int32[N], out: dace.int32[N]):
+    a = np.minimum(np.maximum(z // np.int32(1024), 0), 127).astype(np.int8)
+    out[:] = a.astype(np.int32) + b
+
+
+@dace.program
+def widened_twice(x: dace.int8[N], out: dace.int32[N]):
+    out[:] = x.astype(np.int16).astype(np.int32) + np.int32(1)
+
+
+@dace.program
+def widened_through_unsigned(x: dace.int8[N], out: dace.int32[N]):
+    out[:] = x.astype(np.uint16).astype(np.int32) + np.int32(1)
 
 
 @dace.program

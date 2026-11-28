@@ -30,12 +30,28 @@ HERE = Path(__file__).parent
 # The technologies offered: nangate45 only (snax-forge-experiments synthesizes nothing else).
 TECHS = ("nangate45",)
 DEFAULT_TECH = "nangate45"
-FOUND = ("measured", "copy", "interpolate", "slope", "width", "unseeded", "bank", "bank_beyond")
+FOUND = (
+    "measured",
+    "copy",
+    "interpolate",
+    "slope",
+    "width",
+    "unseeded",
+    "bank",
+    "bank_beyond",
+    "wires",
+)
+# The datapaths whose comb part is wires (a HaloLink's taps, its load a clock gate): no table
+# entry, comb 0, priced by their flops alone
+WIRES = ("HaloLink",)
 # A control unit's comb area is CTRL_COMB_PER_FLOP × its flops' area, a rough early estimate (its
 # comb energy taken as negligible); not in the table, a byte copy of snax-forge-experiments'
 # char.json. The L1 side is tables.py's tables.
 CTRL_COMB_PER_FLOP = 1.0
 _IGNORED = ("lanes", "depth")
+# SimdLanes' ops keyed at their own types: a shift keeps a sum's high bits (gray's [15:8]), a
+# clamp or a compare reads all of opType, and the signedness picks the shift
+EXACT_OPS = ("axpbypcz", "requant", "threshold")
 WORD_BITS = 64
 
 
@@ -119,6 +135,12 @@ def _width(dtype: str) -> int:
     return int(dtype.removeprefix("u").removeprefix("int"))
 
 
+def _unset(k: str, v: Any) -> bool:
+    """A param that changes no hardware: None, or a CSR pin that is off (``k3Csr`` False, a block
+    measured before the pin existed has none)."""
+    return v is None or (k.endswith("Csr") and v is False)
+
+
 def _signed(w: int) -> str:
     return f"int{w}"
 
@@ -127,11 +149,12 @@ def pair_params(datapath: str, params: Mapping[str, Any]) -> dict[str, Any]:
     """``params`` as the table keys them: lanes, depth and None values dropped; a
     SimdLanes' and a Mac's inputs at their widest input, the op and output at the pair's output
     (a SimdLanes' the smaller of its op and output: the low bits of a sum or product need only
-    the operands' low bits, a wider output only copies the sign); the folds' and a LinkBuffer's
+    the operands' low bits, a wider output only copies the sign; ``EXACT_OPS`` at their own types
+    and slots, as measured; a CSR pin that is off dropped as None is); the folds' and a LinkBuffer's
     types signed; a packer's ``d_out``, ``lanes`` and ``dtype`` as its ``inLanes``,
     ``laneType`` and ``words``, a slicer's ``d_in``, ``lanes`` and ``dtype`` as its ``words``,
     ``laneType`` and ``outLanes``."""
-    p = {k: v for k, v in params.items() if k not in _IGNORED and v is not None}
+    p = {k: v for k, v in params.items() if k not in _IGNORED and not _unset(k, v)}
     if datapath == "FifoPacker" and "d_out" in p:
         w = _width(p["dtype"])
         return {"inLanes": params["lanes"], "laneType": _signed(w),
@@ -140,6 +163,8 @@ def pair_params(datapath: str, params: Mapping[str, Any]) -> dict[str, Any]:
         w = _width(p["dtype"])
         return {"words": p["d_in"] * params["lanes"] * w // WORD_BITS, "laneType": _signed(w),
                 "outLanes": params["lanes"]}  # fmt: skip
+    if datapath == "SimdLanes" and p.get("op") in EXACT_OPS:
+        return p
     if datapath in ("SimdLanes", "Mac") and "inTypes" in p and "outType" in p:
         ins = list(p["inTypes"])
         w_in, w_out = max(_width(t) for t in ins), _width(p["outType"])
@@ -220,7 +245,9 @@ def lookup(table: Table, datapath: str, params: Mapping[str, Any], lanes: int,
            depth: int | None = None) -> Lookup | None:  # fmt: skip
     """A block's comb area and energy per fire on ``table`` (CONTRACTS, "Cost model"), or None:
     a block of mixed inputs at its own pair if measured (``exact_params``), else at its width
-    pair."""
+    pair; a ``WIRES`` datapath comb 0, found ``wires``."""
+    if datapath in WIRES:
+        return Lookup(0.0, 0.0, "wires")
     exact = exact_params(datapath, params)
     if exact is not None:  # either order: a and b reach the same multiplier
         for ins in (exact["inTypes"], exact["inTypes"][::-1]):
@@ -236,7 +263,7 @@ def _lookup(table: Table, datapath: str, params: Mapping[str, Any], want: dict[s
     entries = table.blocks.get(datapath, [])
 
     def key(e: Mapping[str, Any]) -> dict[str, Any]:
-        return {k: v for k, v in e["params"].items() if v is not None}
+        return {k: v for k, v in e["params"].items() if not _unset(k, v)}
 
     keyed = any("seed" in e["params"] for e in entries)
     if want.get("seed") is False and not keyed:  # measured before it took a seed (a Mac)
@@ -282,6 +309,7 @@ __all__ = [
     "DEFAULT_TECH",
     "FOUND",
     "TECHS",
+    "WIRES",
     "CharError",
     "Lookup",
     "Table",

@@ -6,7 +6,9 @@ example's B; every entry of the table binds on a graph of its own form, its para
 set; vecadd and vecmul still bind at two streams with no k; ``+``, ``*``, ``min`` and ``max``
 commute (``max(0, a)`` is relu, ``3 + a`` the add at k = 3); and each refusal names what it
 found: a contradicting bind param or slot, a slot that does not fit the op type, and no
-matching entry (``3 - a``: ``-`` does not commute). Scalar operands and axpy are
+matching entry (``3 - a``: ``-`` does not commute). An output's cast as wide as the output is
+dropped and a narrower one refused, and an output narrower than its input is refused unless
+every value fits it. Scalar operands and axpy are
 test_axpy.py's.
 """
 
@@ -85,7 +87,7 @@ def test_every_one_stream_entry_binds_with_its_slot(op, k):
 
 LISTED = (r"'simd' computes one of 'out = a \+ b' \(op = 'add', streams = 2\), .*"
           r"'out = max\(a, k\)' \(op = 'max', streams = 1\), .*"
-          r"'out = k1 \* a \+ b' \(op = 'axpby', streams = 2\)$")  # fmt: skip
+          r"'out = hi \* min\(max\(a - k \+ 1, 0\), 1\)' \(op = 'threshold', streams = 1\)$")  # fmt: skip
 
 
 @pytest.mark.parametrize(
@@ -112,3 +114,43 @@ LISTED = (r"'simd' computes one of 'out = a \+ b' \(op = 'add', streams = 2\), .
 def test_bind_refuses(make, params, message):
     with pytest.raises(SandboxError, match=message):
         bind(make(), **(RELU | {"params": params}))
+
+
+# =============================================================================
+# Output casts and narrower outputs
+# =============================================================================
+
+
+def test_an_output_cast_as_wide_as_the_output_is_dropped():
+    """``out = int32(max(in1, 0))`` into an int32 B: the output's own wrap gives the same bits,
+    so it binds as relu."""
+    g = bind(relu(code="out = int32(max(in1, 0))"), **RELU)
+    n = g.node("numpy_maximum")
+    assert n.attrs["params"] == {"W": 4, "op": "max", "streams": 1, "k": 0}
+    A = np.arange(-4, 4, dtype=np.int32)
+    assert np.array_equal(execute(g, {"A": A, "B": np.zeros(8, np.int32)})["B"], np.maximum(A, 0))
+
+
+def _narrow_out(code: str) -> Graph:
+    """relu with an int32 A and an int8 B."""
+    d = graph_dict("relu")
+    d["symbols"]["N"] = 8
+    d["body"][0]["body"][0]["attrs"]["code"] = code
+    d["containers"]["B"]["dtype"] = "int8"
+    return split_map(Graph.from_dict(d), "numpy_maximum_map", 4)
+
+
+@pytest.mark.parametrize(
+    ("make", "message"),
+    [
+        (lambda: relu(code="out = int8(max(in1, 0))"),
+         (r"the cast int8\(\.\.\.\) of output out \(int32\) wraps its value narrower than the "
+         r"output; the hardware wraps only into the output's dtype")),
+        (lambda: _narrow_out("out = max(in1, 0)"),
+         (r"output out is int8, narrower than input a \(int32\), and its values span \[0, "
+         r"2147483647\]: a narrower output needs every value to fit it")),
+    ],
+)  # fmt: skip
+def test_a_narrower_output_is_refused_unless_its_values_fit(make, message):
+    with pytest.raises(SandboxError, match=message):
+        bind(make(), **RELU)
