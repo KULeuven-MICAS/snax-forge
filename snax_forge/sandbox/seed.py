@@ -1,4 +1,5 @@
-"""The fold's seed: the reduction x' = x (+) fold_j(a_j) done in the fold itself.
+"""The fold's seed: the reduction x' = x (+) fold_j(a_j) done in the fold itself, in place or
+into a new container z = x (+) fold_j(a_j) (a layer's bias added into new sums).
 
 ``fuse_seed(first, second)`` and ``unfuse_seed(map)``, as CONTRACTS, "Recipe" defines them;
 ``carry_seed(map)`` and ``uncarry_seed(map)``, a fold carried across a strip loop.
@@ -232,14 +233,16 @@ def _check(g: Graph, map: str, what: str) -> dict[str, Any]:
     if expr.unify(want, r.attrs["code"], ()) is None:
         raise SandboxError(f"{what}: {t}'s reader {r.id} computes {r.attrs['code']!r}, a "
                            f"different op from the fold's {red.op} ({want!r})")  # fmt: skip
-    if wm.reduce is not None or wm.data != x:
-        raise SandboxError(f"{what}: {r.id} writes {wm.data}, not {x} in place: a different "
-                           f"subset (x' = x {red.op} {t})")  # fmt: skip
+    z = wm.data
+    if wm.reduce is not None:
+        raise SandboxError(f"{what}: {r.id} folds into {z}; the seed takes an elementwise "
+                           f"x {red.op} {t}")  # fmt: skip
     _, _, r_outer = _locate(g, r.id)
     shape = _shape(g, t, what)
-    if _shape(g, x, what) != shape:
-        raise SandboxError(f"{what}: {x} has shape {_shape(g, x, what)}, {t} {shape}: a "
-                           "different subset")  # fmt: skip
+    for c in dict.fromkeys((x, z)):
+        if _shape(g, c, what) != shape:
+            raise SandboxError(f"{what}: {c} has shape {_shape(g, c, what)}, {t} {shape}: a "
+                               "different subset")  # fmt: skip
     rt = _valid(_indices(g, r_outer, r.inputs[ct], what), shape, r_outer)
     rx = _valid(_indices(g, r_outer, r.inputs[cx], what), shape, r_outer)
     rw = _valid(_indices(g, r_outer, wm, what), shape, r_outer)
@@ -257,10 +260,12 @@ def _check(g: Graph, map: str, what: str) -> dict[str, Any]:
     between = order[order.index(fold) : order.index(r)]
     for n in between:
         names = [m.data for m in n.memlets()]
-        if x in names or (n.kind == "link" and n.attrs.get("container") == x):
-            raise SandboxError(f"{what}: {n.id} names {x} between the fold and its reader; the "
-                               f"seed would read {x} before it")  # fmt: skip
-    return {"fold": fold, "cout": cout, "reader": r, "x": x, "t": t}
+        for c in dict.fromkeys((x, z)):
+            if c in names or (n.kind == "link" and n.attrs.get("container") == c):
+                raise SandboxError(f"{what}: {n.id} names {c} between the fold and its reader; "
+                                   f"the fold would {'read' if c == x else 'write'} {c} before "
+                                   "it")  # fmt: skip
+    return {"fold": fold, "cout": cout, "reader": r, "x": x, "t": t, "z": z}
 
 
 # NB (D163): the seed is read once per job, on its first firing; TreeAccumulate and
@@ -271,7 +276,7 @@ def fuse_seed(g: Graph, first: str, second: str) -> Graph:
     _second(g, first, second)
     g = _copy(g)
     found = _check(g, first, what)
-    fold, cout, r, x, t = (found[k] for k in ("fold", "cout", "reader", "x", "t"))
+    fold, cout, r, x, t, z = (found[k] for k in ("fold", "cout", "reader", "x", "t", "z"))
     om = fold.outputs[cout]
     assert om.reduce is not None
     root, parent, body = _nest_root(g, r)
@@ -287,7 +292,7 @@ def fuse_seed(g: Graph, first: str, second: str) -> Graph:
         # null: right after the node holding the fold (or first), whatever its id becomes
         "after": None if k == 0 or _holds(body[k - 1], fold) else body[k - 1].id,
     }
-    fold.outputs[cout] = Memlet(x, list(om.subset), Reduction(om.reduce.op, None,
+    fold.outputs[cout] = Memlet(z, list(om.subset), Reduction(om.reduce.op, None,
                                                               Seed(x, tuple(om.subset))))  # fmt: skip
     del body[k]
     del g.containers[t]

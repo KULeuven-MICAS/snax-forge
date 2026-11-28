@@ -139,7 +139,7 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 
 ### D163 · D187 — A fold's seed is a port
 
-- **Decided:** a fold's result read only by an elementwise nest of the same op (mvt's x₁ + A y₁) is folded in as the fold's seed, a per-job port read on a job's first firing, by `fuse_seed` (inverse `unfuse_seed`). A seed has its output's lanes: one for a lane fold (`TreeAccumulate`, `SerialAccumulate`), W for a `Mac` (BRM `mac`'s `seed` port at design param `seed` 1, first firing `seed + a·b`). Only these three take one; their unseeded RTL and the group's rule are unchanged.
+- **Decided:** a fold's result read only by an elementwise nest of the same op (mvt's x₁ + A y₁, in place, or a layer's z = W a + b into a new container) is folded in as the fold's seed, a per-job port read on a job's first firing, by `fuse_seed` (inverse `unfuse_seed`). A seed has its output's lanes: one for a lane fold (`TreeAccumulate`, `SerialAccumulate`), W for a `Mac` (BRM `mac`'s `seed` port at design param `seed` 1, first firing `seed + a·b`). Only these three take one; their unseeded RTL and the group's rule are unchanged.
 - **Why:** no vecadd after the fold and no "init" port on every block; the column form (mvt's x₂ + Aᵀ y₂) needs no link and no second unit.
 - **Where:** CONTRACTS, "Block runtime model" and "Recipe".
 

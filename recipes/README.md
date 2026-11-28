@@ -41,6 +41,8 @@ An id is the kernel, then words in this order, each from the lists below; a word
 | | `enc` | a group's units encapsulated as one accelerator |
 | | `link` | the halves in one group, half 1's result linked into half 2's held input (D197) |
 | | `fork` | both halves read A (gesummv's x) through one reader, in one group of two chains (`fork_read`, D189), or a buffered branch down one chain (D196) |
+| Requant (the MLP) | (none) | each requant a unit of its own, a and z through L1 |
+| | `rqlink` | each requant linked behind its layer's fold in the layer's group, one lane |
 | Type | (none) | int64 |
 | | `i<b>` | inputs of b bits |
 | | `o<b>` | the output of b bits, when it differs from the inputs |
@@ -70,6 +72,9 @@ The one-unit kernels take a word for their fold or scalar instead of a form: `tr
 | `bicg_v3` | bicg | `bicg_dot2_col_fork_i8_o32` | One pass over A at N = W: `bicg_v2_1`'s halves by reuse, then `fork_read` A, so one reader gives each beat of A to q's `dot_v2` group and s's `Mac` in one group of two chains (D189). M = 64, N = W = 32; the bank for N > W is `bicg_v4` (D191). |
 | `bicg_v4` | bicg | `bicg_dot2_colbank_fork_i8_o32` | The one pass over A with a bank: q's half `matvec/matvec_v2` (a `dot_v2` group per row), s's half `matvec/matvec_v8`, so s's N sums stay in the `Mac`'s bank of R rows of W (D191) and r is read once a row and held (D190); A is read once by both (`fork_read`, D189). One strip: N = R·W (64 × 64 at W = 4, R = 16). |
 | `bicg_v4_1` | bicg | `bicg_dot2strip_colbank_fork_i8_o32` | `bicg_v4` for N beyond one bank, in strips of R·W columns outermost: q's half `matvec/matvec_v9`, each row's sum carried to the next strip through L1 as the tree's own seed, 0 on the first (D192); s's half `matvec/matvec_v8`, its bank one strip deep; A still read once (`fork_read`, D189). Two strips at 64 × 64, W = 4, R = 8. |
+| `mlp_int_v1` | dl | `mlp_int_dot2seed_shared_i8_o32` | One seeded `dot_v2` group (the fold starts from the bias, D163) and one requant `simd` unit of W lanes, each bound at every layer it serves (`share`, D165): the layers run in turn, so one engine does all three matvecs and one unit both requants. Every z and a goes through L1. |
+| `mlp_int_v2` | dl | `mlp_int_dot2seed_rqlink_i8_o32` | A seeded `dot_v2` group per layer, the requant of layers 1 and 2 linked behind its fold in the same group at one lane (the fold gives a sum a row): only a1 and a2 go through L1. |
+| `mlp_int_col3_v1` | dl | `mlp_int_col3_dot2seed_colbank_rqlink_link_i8_o32` | `mlp_int_v2`'s layers 1 and 2, then layer 3 in the column form's bank: one `Mac` of W3 lanes and R3 rows (R3 · W3 = D3, D191) seeded with b3, w3 read along its rows, a2 linked from requant 2 into the `Mac`'s held input, read once a row (D190, D197). Only a1 goes through L1. |
 | `dot_v1` | dot | `dot1` | A `vmul` and a `vsum` as two accelerators, the products written to L1 and read back. The first of the six dot variants, the one the others are measured against. |
 | `dot_v1_1` | dot | `dot1_enc` | `dot_v1` with its two units encapsulated as one accelerator: one streamer set, two tasks. |
 | `dot_v1_2` | dot | `dot1_ports` | `dot_v1` with the products' container on shared ports (`share_ports`): `vmul`'s writer and `vsum`'s reader on one streamer set. |

@@ -24,6 +24,7 @@ from snax_forge.sandbox import (
     join_reduce,
     split_map,
     split_reduce,
+    unfuse_seed,
 )
 from snax_forge.sandbox.seed import seed_pairs, seed_seconds
 from snax_forge.sandbox.transforms import site_of, tag_map
@@ -81,6 +82,30 @@ STEPS = {
 BIND = {"transform": "bind", "params": {"node": "sum", **TREE}}
 
 
+def _into_z(d):
+    """The elementwise nest writes a new container, ``z[m] = q[m] + tmp1[m]`` (a layer's
+    bias add), q left as it was."""
+    d["containers"]["z"] = {"shape": ["M"], "dtype": "int64", "transient": False, "attrs": {}}
+    _reader(d)["outputs"]["out"]["data"] = "z"
+
+
+def test_the_seed_may_write_a_new_container():
+    """``z = q + A p``: the sum folds into z from the seed q, q is never written, and
+    unfuse_seed gives the import back; bound, the same."""
+    g = _edited(_into_z)
+    s = fuse_seed(g, FOLD, EW)
+    out = s.node("sum").outputs["out"].to_dict()
+    assert out["data"] == "z" and out["reduce"]["seed"] == {"data": "q", "subset": ["m"]}
+    got = execute(s, {"A": A, "p": P, "q": Q.copy(), "z": np.zeros(3, np.int64)})
+    assert got["z"].tolist() == WANT and got["q"].tolist() == Q.tolist()
+    assert unfuse_seed(s, FOLD) == g
+    b = bind(tagged(s), node="sum", **TREE)
+    assert (
+        execute(b, {"A": A, "p": P, "q": Q.copy(), "z": np.zeros(3, np.int64)})["z"].tolist()
+        == WANT
+    )
+
+
 # =============================================================================
 # The refusals
 # =============================================================================
@@ -123,10 +148,12 @@ def _reader(d):
         (lambda: fuse_seed(matvec_acc(), FOLD, EW), r"sum is seeded from q already \(unfuse_seed first\)"),
         (lambda: bind(tagged(matvec_acc()), node="sum", **TREE),
          r"its fold is bound as 'sum' \(unbind first\)"),
+        (lambda: _edited(lambda d: (_into_z(d), d["containers"]["z"].update(shape=["N"]))),
+         r"z has shape \(4,\), tmp1 \(3,\): a different subset"),
         (matvec_acc, None),
     ],
     ids=["another-reader", "another-op", "another-subset", "x-elsewhere", "not-transient",
-         "float", "seeded", "bound", "ok"],
+         "float", "seeded", "bound", "z-shape", "ok"],
 )  # fmt: skip
 def test_fuse_seed_refuses(make, message):
     g = make()
