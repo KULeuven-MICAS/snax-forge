@@ -7,7 +7,8 @@ body, each MapEntry/MapExit pair one map per parameter (outermost first), a Task
 and a Reduce library node one map per input dimension around ``out = in1`` with a ``reduce``.
 The only folds done here: a Reduce's scalar copied into an array, or its view copied whole into
 a non-transient array, becomes a direct write; the casts and an ``astype``'s convert map fold
-as CONTRACTS, "SNAX-DFG" says (into value casts ``int32(x)`` on their readers).
+as CONTRACTS, "SNAX-DFG" says (into value casts ``int32(x)`` on their readers, a chain of
+them composed); a convert map narrowing a transient stays a nest, its narrow output kept.
 
 Names: containers keep the kernel's (a transient's without underscores); maps, tasklets and
 connectors take their DaCe name lower case without underscores (``clean``, ``fresh_all``),
@@ -601,8 +602,11 @@ def _convert(top: Node, containers: dict[str, Container]) -> tuple[str, str, str
     dtype = next((t for t in expr.CASTS if rhs == f"{t}({cin})"), src.dtype if rhs == cin else None)
     variables = [m.attrs["var"] for m in chain]
     whole = all(m.attrs["range"] == f"0:{dim}" for m, dim in zip(chain, tmp.shape, strict=False))
+    # a computed value cast narrower stays a nest: its narrow transient goes through memory
+    narrows = src.transient and np.dtype(tmp.dtype).itemsize < np.dtype(src.dtype).itemsize
     ok = (
         dtype == tmp.dtype
+        and not narrows
         and tmp.transient
         and m_in.data != m_out.data
         and len(chain) == len(tmp.shape) == len(src.shape)
@@ -625,7 +629,12 @@ def _fold_converts(body: list[Node], containers: dict[str, Container],
             folds[id(top)] = found
     if not folds:
         return body
-    by_tmp = {tmp: (src, dt) for src, tmp, dt in folds.values()}
+    by_tmp = {tmp: (src, [dt]) for src, tmp, dt in folds.values()}
+    for tmp, (src, casts) in by_tmp.items():  # a convert of a folded one's transient: compose
+        while src in by_tmp:
+            src, inner = by_tmp[src]
+            casts = [*inner, *casts]  # innermost first
+        by_tmp[tmp] = (src, _needed_casts(containers[src].dtype, casts))
 
     def visit(nodes: list[Node]) -> None:
         for n in nodes:
@@ -636,11 +645,14 @@ def _fold_converts(body: list[Node], containers: dict[str, Container],
             for c, m in n.inputs.items():
                 if m.data not in by_tmp:
                     continue
-                src, dt = by_tmp[m.data]
+                src, casts = by_tmp[m.data]
                 m.data = src
-                if containers[src].dtype != dt:
+                if casts:
+                    value = c
+                    for dt in casts:
+                        value = f"{dt}({value})"
                     n.attrs["code"] = "\n".join(
-                        f"{t} = {expr.substitute(e, {c: f'{dt}({c})'})}"
+                        f"{t} = {expr.substitute(e, {c: value})}"
                         for t, e in expr.statements(n.attrs["code"], n.id)
                     )
 
@@ -659,6 +671,20 @@ def _fold_converts(body: list[Node], containers: dict[str, Container],
         containers.clear()
         containers.update(kept)
         _rename_data(out, renamed)
+    return out
+
+
+def _needed_casts(dtype: str, casts: list[str]) -> list[str]:
+    """The casts (innermost first) a value of ``dtype`` needs to give what ``casts`` give: a
+    cast that holds every value it is given (int8 to int16) changes no value, so only the
+    outermost of those stays, and none when the value is already of its type."""
+    out: list[str] = []
+    for k, dt in enumerate(casts):
+        last = k == len(casts) - 1
+        if np.can_cast(dtype, dt, "safe") and not (last and dt != dtype):
+            continue
+        out.append(dt)
+        dtype = dt
     return out
 
 

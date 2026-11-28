@@ -7,7 +7,7 @@ Rules (D117):
 - An entry is a choice with a real alternative that someone may want to reverse: direction, ownership, the interfaces between components, the order of work. Implementation details live in the module's docstring and its tests.
 - An entry says what was decided, why, and where the detail lives, in a few short bullets; an edge case only when there is one. A change is written into the entry, not chained after it.
 - Entries merged into one keep all their numbers in its heading, so a cite of any of them still finds it. A number is never changed or reused; the text of a removed entry is in git history.
-- A new decision gets the next free number, under the area it belongs to. Next free number: **D202**.
+- A new decision gets the next free number, under the area it belongs to. Next free number: **D207** (D204 and D205 are taken on `ry/cost3`).
 
 Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29–D45, D47–D50, D53, D54, D56, D58–D63, D65–D67, D69, D74, D76–D78, D80, D81, D83, D88–D97, D100, D101, D103, D104, D106, D107, D109, D110, D114, D115, D119, D124, D127, D128, D132, D133, D138–D141, D151, D156, D159, D160, D181.
 
@@ -103,15 +103,21 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 
 ### D82 — A BRM says what one lane computes
 
-- **Decided:** a BRM gives one lane's `function.code`, or a table of codes each fixing design params and naming scalar slots (`simd`'s per `op` and `streams`, with `k`, `k1`, `k2`), matched with `+`, `*`, `min` and `max` commuting. `bind` checks the tasklet, or a fused map's tasklets joined by a local value, against it; the first match gives the instance its params and slots. `unbind` and `join_map` take it back.
+- **Decided:** a BRM gives one lane's `function.code`, or a table of codes each fixing design params and naming scalar slots (`simd`'s per `op` and `streams`, with `k`, `k1`, `k2`, `k3`, `d`, `lo`, `hi`), matched with `+`, `*`, `min` and `max` commuting. `bind` checks the tasklet, or the one a fused map's tasklets compose to, against it; the first match gives the instance its params and slots, a match without swapping inputs before any with. `unbind` and `join_map` take it back.
 - **Why:** one block serves several ops, and binding is checked, not trusted.
 - **Where:** CONTRACTS, "Block runtime model".
 
 ### D143 · D175 — Arithmetic follows NumPy; types follow the program
 
-- **Decided:** each op runs at its operands' result type, signedness from each port's container, then extends or wraps into its target. A kernel's cast (`np.sum(A.astype(OP_TYPE) * B.astype(OP_TYPE))`) is a type: the importer folds DaCe's convert map into its consumer as a value cast setting `opType`, stripped at `bind`. A fold runs at NumPy's type (`np.sum` of a narrower int at `int64`, `@` and `np.dot` at the operands'), the same bits as the hardware's cast before the tree. A literal is weak, as NEP 50 says (relu's `k`). `bind` wants an output as wide as every input.
+- **Decided:** each op runs at its operands' result type, signedness from each port's container, then extends or wraps into its target. A kernel's cast (`np.sum(A.astype(OP_TYPE) * B.astype(OP_TYPE))`) is a type: the importer folds DaCe's convert map into its consumer as a value cast setting `opType`, stripped at `bind`. A fold runs at NumPy's type (`np.sum` of a narrower int at `int64`, `@` and `np.dot` at the operands'), the same bits as the hardware's cast before the tree. A literal is weak, as NEP 50 says (relu's `k`). `bind` wants an output as wide as every input, but a bounded SIMD body (D203).
 - **Why:** model, RTL and reference compute the same bits, and the program alone gives the types.
 - **Where:** CONTRACTS, "SNAX-DFG" and "Block runtime model"; `brm/dtypes.py`; snax-gvsoc's `snax/snax_types.hpp`.
+
+### D203 — A bounded SIMD body may write a narrower output
+
+- **Decided:** a SIMD node may write an output narrower than an input when every value its code can give fits the output's dtype: `check_dtypes` takes the node's code and `value_span` bounds it from each input's whole dtype (`expr.bounds`; a scalar read from a CSR unbounded), so a clamp (requant's `min(max(z // 1024, 0), 127)` into int8) passes and a shift alone does not. A fold's output never narrows. The importer keeps a narrowing `astype` of a transient (a computed value) as its own nest, so the narrow transient is what goes through memory; one of a kernel input still folds into its reader, which `bind` refuses (the datapaths only extend); `bind` drops an output's cast at least as wide as the output and refuses a narrower one.
+- **Why:** the MLP's requant writes int8 from int32 sums and the image passes write uint8 from uint16 sums; folded into its reader, `a.astype(int8)` would move int32 through L1 and need a narrowing input cast, which the datapaths do not have. The range keeps the guard D143's rule gave: an output too narrow for its values is still refused.
+- **Where:** `brm/dtypes.py`, `expr.py` (`bounds`, `strip_casts`), `dfg/import_sdfg.py` (`_fold_converts`); CONTRACTS, "SNAX-DFG" and "Design checks".
 
 ### D149 — Blocks with variants, not chains
 
@@ -231,6 +237,12 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 - **Why:** atax's one pass reads A once for t = A x and y = Aᵀ t, but row i's `Mac` firings need t[i], which comes T beats after row i's first beat; the buffer holds those beats instead of a second read. A depth beside the fork node keeps `fork_read` as it is (Ryan, 24 Nov).
 - **Where:** `sandbox/compose.py` (`link`), `lower/tasks.py`, `estimate/cycles.py`; CONTRACTS, "SNAX-DFG", "Accelerator RTL spec" and "Cost model"; snax-gvsoc's `snax/snax_group_rule.py`.
 
+### D206 — A halo link: one stream as a row's shifted windows
+
+- **Decided:** a halo link gives one stream's beat to a unit's T inputs as windows shifted by 0 … T − 1 elements. It holds ⌈(T − 1)/W⌉ beats, the taps are wires, `load` is its one pin, and a job gives beats in − H outputs.
+- **Why:** a row's neighbours start mid-word and a packed stream starts on a word (D12 · D142), so three shifted streams cannot read them; a 3 × 3 window needs line buffers (open item 180).
+- **Where:** `datapath/HaloLink.scala`, SNAX-GVSoC's `SnaxHaloLink`; CONTRACTS, "Accelerator RTL spec".
+
 ### D197 — A held input may come over a link
 
 - **Decided:** a banked unit's held, broadcast input (D190, D186) may be fed by a link instead of a streamer: its beat is taken on a row's first firing, so `link` counts it once a row (M beats against the writer's M) and the writer's T need not be the bank's. JOBS is the last unit's firings over its T. Link depth 1; t lives in no memory.
@@ -285,9 +297,15 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 
 ### D135 — The task list becomes C on snRuntime
 
-- **Decided:** one program per design point: each step on the core owning its component, D64's waits as polls, the DMA waited on for dependences only, two `mcycle` reads bounding the window. The quiet build (`-DFORGE_QUIET`, `forge_quiet.elf`) waits on every start, marks each section in CSR `0x7c5` (core 0's `obs_o`) and prints nothing, in preprocessor blocks, so the default build is unchanged.
+- **Decided:** one program per design point: each step on the core owning its component, D64's waits as polls, the DMA waited on for dependences only, two `mcycle` reads bounding the window. The quiet build (`-DFORGE_QUIET`, `forge_quiet.elf`) waits on every start (a pipelined program's: D202), marks each section in CSR `0x7c5` (core 0's `obs_o`) and prints nothing, in preprocessor blocks, so the default build is unchanged.
 - **Why:** RTL and model run the same program; the quiet sections serve power.
 - **Where:** CONTRACTS, "Generated hjson files"; `lower/c.py`.
+
+### D202 — A pipelined program's quiet build marks the program window
+
+- **Decided:** under `pipeline` and `pipeline_compute` the quiet build keeps the default build's waits (no wait on every start) and marks one section, `run` labelled `program window`, from the program's first step to the check; the energy run prices every schedule's quiet build. Serial and sequential programs, and every default build, are unchanged. Amends D135 and D177.
+- **Why:** a quiet build that waits on every start runs a pipelined program serially, so neither its gate-level power nor its energy run saw the overlap; the program window is the span every level compares (CSYN2).
+- **Where:** `lower/c.py`, `flow/run.py` (`energy_elf`); CONTRACTS, "Generated hjson files".
 
 ## SNAX-GVSoC
 
@@ -355,7 +373,7 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 
 ### D177 — The dynamic energy: the model's counts at the static prices
 
-- **Decided:** a run's dynamic energy is D167's six parts with SNAX-GVSoC's counts at the static prices (D154 · D172, D176), per window between counter snapshots (core 0's writes to CSR `0x7C5`, D135; the end). A unit costs firings × span, a link or packer its producer's pushes, a slicer its pops, control its group's busy cycles, a mover its requests by kind (D178), banks the grants, a copy its L1 accesses (D184); a refused request costs a granted one's. A pipelined run (D179) is one window of the default build.
+- **Decided:** a run's dynamic energy is D167's six parts with SNAX-GVSoC's counts at the static prices (D154 · D172, D176), per window between counter snapshots (core 0's writes to CSR `0x7C5`, D135; the end). A unit costs firings × span, a link or packer its producer's pushes, a slicer its pops, control its group's busy cycles, a mover its requests by kind (D178), banks the grants, a copy its L1 accesses (D184); a refused request costs a granted one's. A pipelined run (D179) is its quiet build's one window, the program window (D202).
 - **Why:** prices are full-rate granted requests, so static and dynamic differ only where the run differs from the graph; trends, not accuracy.
 - **Where:** CONTRACTS, "Cost model"; `estimate/dynamic.py`, `run/snapshots.py`, `flow/energy.py`.
 

@@ -40,7 +40,8 @@ class DatapathsSpec extends AnyFlatSpec {
   }
 
   /** The params each datapath is built at: its least at both flags; SimdLanes' at two streams, at one with k from its
-    * CSR pin, and at axpby with k1 and k2 from theirs, so every pin is live once.
+    * CSR pin, at axpby with k1 and k2 from theirs, and at axpbypcz (three streams, the port c) with k1, k2 and k3 from
+    * theirs, so every port and pin is live once.
     */
   private def variants(d: Datapaths.Datapath): Seq[Map[String, ujson.Value]] =
     if (d.name != "SimdLanes") Seq(false, true).map(least(d, _))
@@ -49,7 +50,16 @@ class DatapathsSpec extends AnyFlatSpec {
       Seq(
         two,
         two ++ Map("streams" -> ujson.Num(1), "inTypes" -> ujson.Arr(IntType.names.head), "kCsr" -> ujson.Bool(true)),
-        two ++ Map("op" -> ujson.Str("axpby"), "k1Csr" -> ujson.Bool(true), "k2Csr" -> ujson.Bool(true))
+        two ++ Map("op" -> ujson.Str("axpby"), "k1Csr" -> ujson.Bool(true), "k2Csr" -> ujson.Bool(true)),
+        two ++ Map(
+          "op"      -> ujson.Str("axpbypcz"),
+          "streams" -> ujson.Num(3),
+          "inTypes" -> ujson.Arr.from(Seq.fill(3)(IntType.names.head)),
+          "d"       -> ujson.Num(1),
+          "k1Csr"   -> ujson.Bool(true),
+          "k2Csr"   -> ujson.Bool(true),
+          "k3Csr"   -> ujson.Bool(true)
+        )
       )
     }
 

@@ -6,7 +6,7 @@ with its params resolved and the node's port dtypes, as an ``AccelFunction``: it
 ``k``'s outputs from the inputs due at it, ``state`` living for one task. The reference executor
 runs an accelerated node through it; timing is the implementation's, not the kind's. Kinds:
 ``simd`` (every rate 1; the inputs folded lane by lane at their dtype, or ``op(a, k)``, or
-``axpby``), ``reduce`` (``a`` at rate 1, cast to the output's dtype and folded over T beats,
+``axpby``, ``axpbypcz``, ``requant`` or ``threshold``), ``reduce`` (``a`` at rate 1, cast to the output's dtype and folded over T beats,
 the lanes too when ``lanes_out`` is 1; at ``seed`` 1 a ``seed`` input at rate T), ``mac`` (``a *
 b`` folded per lane over T beats; at ``seed`` 1 a ``seed`` input of its lanes at rate T) and ``lane_accumulate`` (``a`` folded per lane over T beats),
 each with an op registered by name (``register_op``). A slot read from a scalar is unset in the
@@ -123,6 +123,12 @@ class AccelFunction:
 
 
 AXPBY = "axpby"  # simd's k1 * a + k2 * b
+AXPBYPCZ = "axpbypcz"  # simd's (k1 * a + k2 * b + k3 * c) // d
+REQUANT = "requant"  # simd's min(max(a // d, lo), hi)
+THRESHOLD = "threshold"  # simd's hi * min(max(a - k + 1, 0), 1)
+# simd's ops by name that are no registered op: (inputs, the slots they take)
+NAMED = {AXPBY: (2, {"k1", "k2"}), AXPBYPCZ: (3, {"k1", "k2", "k3", "d"}),
+         REQUANT: (1, {"d", "lo", "hi"}), THRESHOLD: (1, {"k", "hi"})}  # fmt: skip
 
 
 def simd(
@@ -132,6 +138,10 @@ def simd(
     k: int | None = None,
     k1: int | None = None,
     k2: int | None = None,
+    k3: int | None = None,
+    d: int | None = None,
+    lo: int | None = None,
+    hi: int | None = None,
     dtypes: Mapping[str, str] | None = None,
     op_type: str | None = None,
 ) -> AccelFunction:
@@ -140,22 +150,59 @@ def simd(
     to it first (``dtypes`` is not read: the result is cast when written). One input takes
     the constant ``k`` as its second operand, ``op(a, k)``, k cast to a's dtype; two or more
     take none. ``op`` ``"axpby"`` (two inputs): ``k1 * a + k2 * b``, or ``k1 * a + b`` with
-    ``k2`` unset, at the inputs' result type. A slot read from a scalar is unset here (module
-    doc): the firing needs it."""
+    ``k2`` unset, at the inputs' result type; ``"axpbypcz"`` (three) ``(k1 * a + k2 * b + k3 *
+    c) // d``, an unset k one; ``"requant"`` (one) ``min(max(a // d, lo), hi)``;
+    ``"threshold"`` (one) ``hi * min(max(a - k + 1, 0), 1)``, hi where a >= k (no wrap at
+    a's type). d is a power of two: the hardware shifts. A slot read from a scalar is unset
+    here (module doc): the firing needs it."""
 
     def at(x: Any) -> Any:
         return np.asarray(x) if op_type is None else np.asarray(x).astype(op_type)
 
     names = [chr(ord("a") + i) for i in range(n_inputs)]
     axpby = op == AXPBY
+    named = op if isinstance(op, str) else None
+    given = {n for n, v in (("k1", k1), ("k2", k2), ("k3", k3), ("d", d), ("lo", lo),
+                            ("hi", hi)) if v is not None}  # fmt: skip
+    if named is not None and k is not None:
+        given.add("k")
+    if named is not None and named not in NAMED:
+        raise ValueError(f"unknown op {named!r}")
+    if named is not None and n_inputs != NAMED[named][0]:
+        raise ValueError(f"{named} takes {NAMED[named][0]} inputs, not {n_inputs}")
     if n_inputs != 1 and k is not None:
         raise ValueError(f"k = {k} is one input's constant; {n_inputs} inputs take none")
-    if axpby and n_inputs != 2:
-        raise ValueError(f"{AXPBY} takes two inputs, not {n_inputs}")
-    if not axpby and (k1, k2) != (None, None):
-        raise ValueError(f"k1 and k2 are {AXPBY}'s")
+    if named is None and given:
+        raise ValueError(f"{', '.join(sorted(given))}: the named ops' ({', '.join(NAMED)}), not "
+                         "a registered op's")  # fmt: skip
+    if named is not None and given - NAMED[named][1]:
+        raise ValueError(f"{', '.join(sorted(given - NAMED[named][1]))}: not {named}'s")
+    if d is not None and (d <= 0 or d & (d - 1)):
+        raise ValueError(f"d = {d} is not a power of two: the unit divides by shifting")
+
+    def slot(name: str, v: int | None, t: Any) -> Any:
+        if v is None:
+            raise ValueError(f"{name} has no value: a slot read from a scalar needs it")
+        return np.asarray(v).astype(t)
 
     def fn(i, ins, state, params):
+        if named == AXPBYPCZ:
+            xs = [at(ins[n]) for n in names]
+            t = np.result_type(*(x.dtype for x in xs))
+            terms = [x.astype(t) if kv is None else np.asarray(kv).astype(t) * x.astype(t)
+                     for x, kv in zip(xs, (k1, k2, k3), strict=True)]  # fmt: skip
+            return {"out": (terms[0] + terms[1] + terms[2]) // slot("d", d, t)}
+        if named == REQUANT:
+            a = at(ins["a"])
+            q = a // slot("d", d, a.dtype)
+            return {
+                "out": np.minimum(np.maximum(q, slot("lo", lo, a.dtype)), slot("hi", hi, a.dtype))
+            }
+        if named == THRESHOLD:
+            a = at(ins["a"])
+            one = np.asarray(1).astype(a.dtype)
+            step = np.minimum(np.maximum(a - slot("k", k, a.dtype) + one, 0), one)
+            return {"out": slot("hi", hi, a.dtype) * step}
         if axpby:
             if k1 is None:
                 raise ValueError("k1 has no value: a slot read from a scalar needs it")
@@ -337,7 +384,7 @@ def _with_op(kind: Callable[..., AccelFunction]) -> KindFactory:
 
     def factory(**params: Any) -> AccelFunction:
         name = params.get("op", "add")
-        if name == AXPBY and kind is simd:  # simd's one ternary op, by name
+        if name in NAMED and kind is simd:  # simd's ops with slots of their own, by name
             return kind(**params)
         if name not in OPS:
             raise ValueError(f"unknown op {name!r} (registered: {sorted(OPS)})")

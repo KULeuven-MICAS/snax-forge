@@ -135,5 +135,5 @@ def affine_simd() -> Any:
 
     d = json.loads((LIBRARY / "simd.json").read_text())
     nest = vector_nest("n", "W")
-    d["dataflow"] = {"notation": "affine", "ports": {"a": nest, "b": nest, "out": nest}}
+    d["dataflow"] = {"notation": "affine", "ports": {"a": nest, "b": nest, "c": nest, "out": nest}}
     return Brm.from_dict(d)

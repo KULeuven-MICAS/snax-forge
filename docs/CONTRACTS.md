@@ -78,7 +78,7 @@ Every node has `id` (unique, D75), `kind`, `inputs`, `outputs`, `attrs` and, for
 
 ### Import
 
-`dfg/import_sdfg.py` derives the graph from the kernel's simplified SDFG and decides nothing: a Scalar becomes a `[1]` container with `sdfg.scalar`, a Map one map per parameter, a Reduce one map per input dimension around `out = in1`; a map over `0:X` is named `lower(X)` (D162); a convert map is folded into its consumer as a value cast `int32(x)` (D143 · D175); control flow is refused by name.
+`dfg/import_sdfg.py` derives the graph from the kernel's simplified SDFG and decides nothing: a Scalar becomes a `[1]` container with `sdfg.scalar`, a Map one map per parameter, a Reduce one map per input dimension around `out = in1`; a map over `0:X` is named `lower(X)` (D162); a convert map is folded into its consumer as a value cast `int32(x)` (D143 · D175), a chain of them composed, and one that narrows a transient stays a nest so its narrow output is kept (D203); control flow is refused by name.
 
 ### Folding writes
 
@@ -93,7 +93,7 @@ A bound graph nests accelerator ⊃ groups ⊃ units and links (D146, D148):
 
 - A **unit** is an accelerated node. A **group** is a connected set of units and links, one chain or several a fork joins (D189); an unlinked unit is a group of its own, named after its instance; a linked group's units carry its name in `group`.
 - By default each group is its own **accelerator**; `encapsulate` puts several into one, sharing one streamer set (section 9). An accelerator's name is no instance's.
-- A **fused map** (`fuse_map`) is one nest of two tasklets joined by a local value (`loop.local`, `loop.fused`), kept by `bind` in the node's `locals`; `split_reduce` records its parts in `loop.split_reduce`.
+- A **fused map** (`fuse_map`) is one nest of tasklets joined by local values (`loop.local`, `loop.fused`; a record's `first` may be a fused nest itself), kept by `bind` in the node's `locals`; `split_reduce` records its parts in `loop.split_reduce`.
 - **Shared instances** (D165): several nodes may share one instance, run once per node in body order, each its own task on the same streamers; `share` does it for a linked group.
 
 ### A transposed read
@@ -146,7 +146,7 @@ The first four are shared: designs that differ only in timing, supported values 
 |---|---|
 | `name` | not a Python keyword, not starting with `_`; by convention `a`, `b`, ... in, `out` out |
 | `rate` | a beat every `rate` firings, an int or a runtime param's name: an input at firings `0, r, 2r, ...`, an output at `r-1, 2r-1, ...` (a SIMD block 1 everywhere; a reduction 1 in, `T` out) |
-| `when` | `{param: value, ...}` over design params: the port exists only when every one holds (`simd`'s `b` only at `streams` 2, `accumulate`'s and `mac`'s `seed` only at `seed` 1) |
+| `when` | `{param: value, ...}` over design params, a value or `{"min": m}` (an int of at least m): the port exists only when every one holds (`simd`'s `b` at `streams` 2 or more and `c` at 3, `accumulate`'s and `mac`'s `seed` only at `seed` 1) |
 | `dtypes` | the dtypes the port takes (`brm/dtypes.py`); every integer dtype by default, written only when narrowed |
 
 ### Timing and params
@@ -164,9 +164,9 @@ The first four are shared: designs that differ only in timing, supported values 
 
 ### The function and its code
 
-`code` is one `output = expression` per output port over the input ports, per lane of one firing, with the ops `add`, `sub`, `mul`, `min`, `max`, `and`, `or` and `xor` (types: D143). A tasklet's operand casts set the unit's `opType` and are stripped before matching (D175). `code` may instead be a list of entries, `{"params": {...}, "code": ...}`, each fixing design params. How `bind` picks an entry (D82):
+`code` is one `output = expression` per output port over the input ports, per lane of one firing, with the ops `add`, `sub`, `mul`, `min`, `max`, `and`, `or` and `xor` (types: D143); `simd` also names `axpby` (`k1 * a + k2 * b`), `axpbypcz` (`(k1 * a + k2 * b + k3 * c) // d`, an unset k one), `requant` (`min(max(a // d, lo), hi)`) and `threshold` (`hi * min(max(a - k + 1, 0), 1)`), d a power of two (the unit shifts) and baked, as lo and hi are. A tasklet's operand casts set the unit's `opType` and are stripped before matching (D175); a cast of an output's whole value is dropped when it is as wide as the output and refused when narrower (D203). `code` may instead be a list of entries, `{"params": {...}, "code": ...}`, each fixing design params. How `bind` picks an entry (D82):
 
-1. It tries the entries in order, and every assignment of the tasklet's array inputs to the entry's present ports.
+1. It tries the entries in order with the matcher's assignment (the array inputs in the order they first appear, onto the present ports in order), then the entries again with every other assignment, so a match without swapping inputs wins.
 2. The code must equal the tasklet's, with `+`, `*`, `min` and `max` commuting.
 3. A **slot** (a design param the code names that is not a port) matches either an int that fits the op type, baked (D143), or a scalar read at run time from an R/W CSR (D161).
 4. An entry fits only when every slot its code names has a value and every other slot is unset.
@@ -241,7 +241,7 @@ Each has an inverse, and each refuses with the fix named. The loop names follow 
 | `bind` / `unbind` | `node`, `brm`, `implementation`, `instance`, `params` | the tasklet (or a fused nest's spatial map, or a folding spatial map for `lane_accumulate`) and its spatial map become an accelerated node (below); `unbind` gives back what it `replaced` |
 | `encapsulate` / `unencapsulate` | `accelerator`, `units` | the units' groups become one accelerator sharing one streamer set (D148), in graph order |
 | `split_reduce` / `join_reduce` | `map`, `factor` | a folding map is split as `split_map` splits it, each lane writing a partial into `<output>_partial`; a final sum `<tasklet>_final` in a spatial map `<map>_final` over `0:factor` folds them (a seed stays on the final sum) |
-| `fuse_map` / `unfuse_map` | `first`, `second` | two nests with the same ranges and tags down to one tasklet each, joined by a transient at the same index, become one nest of two tasklets; the transient becomes a local value. An untagged level takes the other's tag; a split on one side only is refused with the split that fixes it (D150), and lanes on different dimensions of the transient (one nest in the row form, the other in the column form) naming both dimensions |
+| `fuse_map` / `unfuse_map` | `first`, `second` | two nests with the same ranges and tags down to one tasklet each, or a fused nest's tasklets on either side, joined by one transient at the same index, become one nest of their tasklets; the transient becomes a local value. Fused again and again, the tasklets form a tree (gray's `77 R` and `150 G` joined by an add), which binds as the one tasklet it composes to when each local is read once. An untagged level takes the other's tag; a split on one side only is refused with the split that fixes it (D150), and lanes on different dimensions of the transient (one nest in the row form, the other in the column form) naming both dimensions |
 | `carry_seed` / `uncarry_seed` | `map` | a fold whose output a map outside the ones it moves with revisits (the strips of `matvec_v9`) becomes carried (`reduce.carry`, D192); refused for a seeded fold or one written once per element |
 | `fuse_seed` / `unfuse_seed` | `first`, `second` | a fold writing t with ⊕, read only by a nest computing `t ⊕ x` in place over t: the nest and t go and the fold starts from x (`reduce.seed`, D163; matvec_acc's q += A p). Refused for another reader, op, subset, a float or a bound fold |
 | `factor_out` / `unfactor_out` | `container` | a kernel scalar k read by one scale nest `t = k * a`, t read only by a product `t * x` that one fold sums into s: the nest and t go, the product reads a and the fold writes `<s>_sum`. When s is a transient read by one elementwise tasklet, k lands there (it reads `k * <s>_sum` for s, s goes); else a nest over s just after the fold writes `s = k * <s>_sum` (D198; gesummv's α A x). The tasklet k lands in keeps what went in `sandbox.factored`, one record per scalar. Refused for a k that scales several nests or is baked already, another reader of t, a fold that is not an unseeded sum, a type narrower than s's from the scale to s, a float, or a bound node |
@@ -409,7 +409,7 @@ The `platform` and `graph` stages run independently, `connect` when both passed,
 | `connect.streamer_key` | a streamer entry that matches no port (the fix names the closest) |
 | `connect.derived` | a streamer entry that sets `write` or `n_ports` |
 | `connect.lanes` | an entry's `spatial_bounds` that are not the port's lanes |
-| `connect.dtype` | containers that break the BRM's dtype rule (`brm/dtypes.py`, D143: each port's dtype allowed, every output at least as wide as every input, no signed input with a `uint64` one), or two dtypes on one port of an instance |
+| `connect.dtype` | containers that break the BRM's dtype rule (`brm/dtypes.py`, D143: each port's dtype allowed, every output at least as wide as every input unless a SIMD node's code bounds its values to the output's range (D203), no signed input with a `uint64` one), or two dtypes on one port of an instance |
 | `connect.pack` | a port neither wired nor sliced (an input) or packed (an output) (D142 · D174 · D180), below |
 | `connect.pad` | a fold reading through a tail what an accelerator wrote, unless the producer's tasklet on its pad values gives the fold's identity (D144), below |
 | `connect.num_ch` | a `num_ch` other than the derived one (W / num_slc, or 1 for a packed output or a sliced input; D142 · D174 · D180); the message lists the values that would fit |
@@ -583,7 +583,7 @@ streamer $k$ at $[b_k, b_k + s_k)$, its own at $[b_k + s_k, b_{k+1})$, and $b_K 
 
 ### The program
 
-`main.c` (`lower/c.py`, D135): `main` reads `mcycle`, runs one function per core and stores each accelerator task's counter after its wait (`forge_counter[]`); `forge_check()` prints `forge cycles: <n>`, checks the outputs against their goldens (`forge data:`) and each counter against its beats (`forge counter <task>:`), and prints `forge errors:`. The quiet build (`-DFORGE_QUIET`) waits on every start right after it and marks each section by a write to CSR `0x7c5`, listed in `obs_marks.json` (`mark` 1 up, at most 255; `kind`; `label`).
+`main.c` (`lower/c.py`, D135): `main` reads `mcycle`, runs one function per core and stores each accelerator task's counter after its wait (`forge_counter[]`); `forge_check()` prints `forge cycles: <n>`, checks the outputs against their goldens (`forge data:`) and each counter against its beats (`forge counter <task>:`), and prints `forge errors:`. The quiet build (`-DFORGE_QUIET`) waits on every start right after it and marks each section by a write to CSR `0x7c5`, listed in `obs_marks.json` (`mark` 1 up, at most 255; `kind`; `label`); a pipelined program's quiet build (D202) keeps the default build's waits and marks one section, `run` labelled `program window`, from its first step, then the check.
 
 ### The manifest
 
@@ -733,12 +733,13 @@ The header names a CSR `<ACC>_<RW|RO>_[<GROUP>_][<UNIT>_]<NAME>` (`Accelerator.d
 
 | Datapath | Computes | L | Pins | Flops |
 |---|---|---|---|---|
-| `SimdLanes(inTypes, opType, outType, lanes, op, streams, k)` | per lane `a op b`; at one stream `k` (a `const`) drives `b`, the module name ending `_k<k>` (`_km3` for −3); axpby `k1 * a + k2 * b`; a slot read from a scalar is a pin (`_k1r`) | 0 | | 0 |
+| `SimdLanes(inTypes, opType, outType, lanes, op, streams, k, k1, k2, k3, d, lo, hi)` | per lane `a op b`; at one stream `k` (a `const`) drives `b`, the module name ending `_k<k>` (`_km3` for −3); axpby `k1 * a + k2 * b`; axpbypcz (three streams, port `c`) `(k1 * a + k2 * b + k3 * c) >> log2(d)`, an unset k the input itself; requant `min(max(a >> log2(d), lo), hi)`; threshold `hi` where `a − k + 1` at `opType` is at least 1, else 0; the shift arithmetic at a signed `opType`; `d` (a power of two), `lo` and `hi` baked; a slot read from a scalar is a pin (`_k1r`; `k`, `k1`, `k2`, `k3`); ports `b` at `streams` 2 or more, `c` at 3 | 0 | `k`, `k1`, `k2`, `k3` when read from a scalar | 0 |
 | `TreeAccumulate(inType, outType, lanes, op, seed)` | acc ← (first ? seed : acc) + tree(in); unseeded, acc ← first ? tree(in) : acc + tree(in) | 1 | `fire`, `first` | `width(outType)` |
 | `Mac(inTypes, opType, outType, lanes, accumulate, regOut, seed, rows)` | with `accumulate`, per lane s ← first ? a·b : s + a·b; seeded (`seed`, only with `accumulate`), s ← (first ? seed : s) + a·b, the seed of the output's type and lanes (D187); a bank (`rows` R ≥ 2, D191) R rows of such s, a firing into row `row` and `out` row `drain`, seeded each row from its own seed beat on `first` (D194), the module name ending `_r<R>`; otherwise a·b + c | 1 (0, or 1 with `regOut` and pin `en`) | `fire`, `first`; `row`, `drain` at R ≥ 2 | `lanes * width(outType) * max(accumulate, regOut) * rows` |
 | `LaneAccumulate(inType, outType, lanes)` | per lane s ← first ? a : s + a | 1 | `fire`, `first` | `lanes * width(outType)` |
 | `SerialAccumulate(inType, outType, lanes, seed)` | lane k in cycle k, acc ← (first ∧ k = 0) ? x_k : acc + x_k; span = lanes | 1 | `read`, `lane`, `first` | `width(outType)` |
 | `LinkBuffer(depth, lanes, dtype)` | D beats, depth ≥ 1 | 1 | `load`, `wslot`, `rslot` | `depth * lanes * width(dtype)` |
+| `HaloLink(taps, lanes, dtype)` | one stream as T ≥ 2 windows (D206): H = ⌈(T − 1)/W⌉ beats held; with e the held beats' elements, oldest first, then `in`'s, `taps` (T beats of W lanes) tap t lane l = e_(l+t), wires read in `in`'s cycle; on `load` the held beats shift by one, `in` the newest; a job's first H beats only fill (the control's count), so beats in − H outputs; filled from a link by `link.taps`, `link.lanes`, `link.dtype` | 0 | `load` | `(taps + lanes - 2) // lanes * lanes * width(dtype)` |
 
 A wire is no datapath: plain connections with the same dtype and lanes at both ends.
 
@@ -916,7 +917,7 @@ class Profile:
 
 ### The energy run
 
-With `--energy` (D177), the flow runs the program again with only the `summary` traces on, into `energy/`, and prices its windows: `energy/energy.json` (`flow/energy.py`'s `EnergyRun`) and `report/energy.md`. Under `serial` and `sequential` it is the quiet build, priced between its marks; under a pipelined schedule (D179) the default build, in one window. Each core 0 write to CSR `0x7C5` and the end (mark −1) make every component write its running totals (`run/snapshots.py`); window k is $n(k) = N(S_{k+1}) - N(S_k)$ for every counter N.
+With `--energy` (D177), the flow runs the program again with only the `summary` traces on, into `energy/`, and prices its windows: `energy/energy.json` (`flow/energy.py`'s `EnergyRun`) and `report/energy.md`. It is the quiet build, priced between its marks; under a pipelined schedule (D179) its one section is the program window (D202). Each core 0 write to CSR `0x7C5` and the end (mark −1) make every component write its running totals (`run/snapshots.py`); window k is $n(k) = N(S_{k+1}) - N(S_k)$ for every counter N.
 
 | `energy.json` field | Holds |
 |---|---|
@@ -1002,7 +1003,7 @@ What a design costs in area and energy before any synthesis: the blocks and cont
 | `<tech>/dma_copy.json` | the DMA engine's energy per burst of a copy, `engine.e_burst_pj` | X95, X102 |
 
 - `pixi run import-costs` copies the seven files with `<tech>/SOURCE` naming each file's origin and sha256; `tests/char/` checks them. A lookup gives a block's, a streamer's, the crossbar's and a bank's leakage (µW) beside its area, by the same rule; the crossbar's at the table's leakage per µm² at its inputs and banks.
-- **Block lookup** (`lookup`, D176): the entry at the block's own pair if its inputs differ in width and that pair is measured (`exact_params`), else at its width pair (`pair_params`), then a point at its lanes (`measured`), else by `lanes_rule` (`copy`, `interpolate`, `slope`), depth, `width` or `unseeded`; a `Mac` bank from its rows-1 entry and the `bank` forms (D193). Else the comb part counts 0 (`char.missing`).
+- **Block lookup** (`lookup`, D176): the entry at the block's own pair if its inputs differ in width and that pair is measured (`exact_params`), else at its width pair (`pair_params`; SimdLanes' requant, axpbypcz and threshold at their own types and slots, a CSR pin that is off as unset), then a point at its lanes (`measured`), else by `lanes_rule` (`copy`, `interpolate`, `slope`), depth, `width` or `unseeded`; a `Mac` bank from its rows-1 entry and the `bank` forms (D193); a `HaloLink` comb 0 with no entry (`wires`: its taps are wires, its load a clock gate, so its flops alone). Else the comb part counts 0 (`char.missing`).
 - **Table lookup** (`streamer_cost`, `xbar_cost`, `bank`): linear along one axis at a time; outside the grid linear through the two nearest values, clamped at zero, with `cost.extrapolated`. A writer is priced as a reader.
 
 ### The model
@@ -1031,7 +1032,7 @@ $$E = \sum_b E_b + \sum_g E_{\mathit{ctrl},g} + \sum_p \frac{W_p}{C_p}\thinspace
 
 | Field | Holds |
 |---|---|
-| a group's `cost.units`, `cost.links` | per unit and buffer link (and a packed output's packer, `FifoPacker` by `<unit>.<port>`, a fire per result, its point's `load_bits` loading per push; a sliced input's slicer, `FifoSlicer` by `<unit>.<port>`, a fire per pop (its unit's firings, a seed's once a job), its point's `load_bits` loading per pop): `datapath`, `fires`, `found` (`measured`, `copy`, `interpolate`, `slope`, `width`, `unseeded`, or null), `area` (`comb`, `flops`, `total`, µm²), `energy` (`fire` in pJ, `task` in nJ) |
+| a group's `cost.units`, `cost.links` | per unit and buffer link (and a packed output's packer, `FifoPacker` by `<unit>.<port>`, a fire per result, its point's `load_bits` loading per push; a sliced input's slicer, `FifoSlicer` by `<unit>.<port>`, a fire per pop (its unit's firings, a seed's once a job), its point's `load_bits` loading per pop): `datapath`, `fires`, `found` (`measured`, `copy`, `interpolate`, `slope`, `width`, `unseeded`, `wires`, or null), `area` (`comb`, `flops`, `total`, µm²), `energy` (`fire` in pJ, `task` in nJ) |
 | a group's `cost.ctrl` | `bits`, `area` (`flops`, `comb`, `total`), `energy` |
 | a group's `cost.area`, `cost.energy` | its units', links' and control unit's added up |
 | an accelerator's `cost.streamers` | per port's streamer: its counts (`depth`, `loops`, `channels`, `words`, `beats`), `area`, `e_beat`, `energy`, `extrapolated` |

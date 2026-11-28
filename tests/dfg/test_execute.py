@@ -147,8 +147,8 @@ GRAPH_CASES = [
     ("vecadd_accelerated", lambda d: accel(d)["attrs"]["params"].update(W=8), "has 8 lanes, got 4"),
     (
         "vecadd_accelerated",
-        lambda d: accel(d)["inputs"].update(c=accel(d)["inputs"]["a"]),
-        "inputs.c: neither a port of 'simd' nor an unset slot of it",
+        lambda d: accel(d)["inputs"].update(e=accel(d)["inputs"]["a"]),
+        "inputs.e: neither a port of 'simd' nor an unset slot of it",
     ),
     ("vecadd_accelerated", lambda d: accel(d)["attrs"].update(brm="nope"), "no BRM 'nope'"),
     (

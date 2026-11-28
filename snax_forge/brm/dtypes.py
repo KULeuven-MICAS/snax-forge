@@ -3,8 +3,10 @@
 A port lists the integer dtypes it takes (``Port.dtypes``, all eight by default); a node's
 dtype on a port is its container's, read through the port's memlet (``port_dtypes``), never
 stored. ``check_dtypes`` passes when each port's dtype is one it lists, every output is at least
-as wide as every input (the op runs at the inputs' result type and is extended), and no signed
-input meets a ``uint64`` one (NumPy's result is float64, which snax-gvsoc's SnaxUnit refuses).
+as wide as every input (the op runs at the inputs' result type and is extended) or, given the
+node's code, is a SIMD output whose values all fit it (``value_span``, a clamp's min and max),
+and no signed input meets a ``uint64`` one (NumPy's result is float64, which snax-gvsoc's
+SnaxUnit refuses).
 ``output_dtypes`` lists the output dtypes given inputs accept, what a refusal's fix names;
 ``result_type`` is NumPy's result type of the inputs (the Chisel blocks' ``opType``); ``fits``
 says whether a constant (a slot's value) is one of a dtype's values.
@@ -58,8 +60,30 @@ def _signed_with_uint64(dtypes: list[tuple[str, str]]) -> tuple[str, str] | None
     return (signed[0], wide[0]) if signed and wide else None
 
 
-def check_dtypes(brm: Any, dtypes: Mapping[str, str]) -> list[str]:
-    """Why ``dtypes`` (port -> dtype) do not fit ``brm``'s ports; empty when they do."""
+# NB (D203): a SIMD body whose values fit a narrower output may write it; the datapath wraps
+# into the output's dtype as NumPy's astype does, so the bits are the reference's.
+def value_span(brm: Any, port: str, dtypes: Mapping[str, str], code: str | None,
+               params: Mapping[str, Any] | None = None) -> tuple[float, float] | None:  # fmt: skip
+    """The range of values a SIMD ``brm``'s ``code`` (on its ports) writes to output ``port``,
+    each input over its whole dtype, a slot at its value in ``params`` (a bound node's code
+    names its slots) and a scalar unbounded; None for another kind or no code."""
+    from snax_forge import expr
+
+    if code is None or brm.function.accel != "simd":
+        return None
+    ins = {p.name for p in brm.interface.ports if p.direction == "in"}
+    ranges = {p: (int(np.iinfo(d).min), int(np.iinfo(d).max))
+              for p, d in dtypes.items() if p in ins and d in INT_DTYPES}  # fmt: skip
+    ranges |= {k: (v, v) for k, v in (params or {}).items() if type(v) is int and k not in ins}
+    found = [e for t, e in expr.statements(code, brm.name) if t == port]
+    return expr.bounds(found[0], ranges) if len(found) == 1 else None
+
+
+def check_dtypes(brm: Any, dtypes: Mapping[str, str], code: str | None = None,
+                 params: Mapping[str, Any] | None = None) -> list[str]:  # fmt: skip
+    """Why ``dtypes`` (port -> dtype) do not fit ``brm``'s ports; empty when they do. With
+    ``code`` (what the node computes, on the ports; its slots at ``params``), a SIMD output may
+    be narrower than an input when every value it can take fits its dtype (``value_span``)."""
     ports = {p.name: p for p in brm.interface.ports}
     out = []
     for name, dt in dtypes.items():
@@ -71,11 +95,23 @@ def check_dtypes(brm: Any, dtypes: Mapping[str, str]) -> list[str]:
     for o, do in outs:
         if do not in INT_DTYPES:
             continue
-        for i, di in ints:
-            if bits(do) < bits(di):
+        wider = [(i, di) for i, di in ints if bits(do) < bits(di)]
+        span = value_span(brm, o, dtypes, code, params) if wider else None
+        if span is not None and fits(span[0], do) and fits(span[1], do):
+            continue
+        widest = max((di for _, di in ints), key=bits)
+        bounded = span is not None and fits(span[0], widest) and fits(span[1], widest)
+        for i, di in wider:
+            if not bounded:  # the body bounds nothing: the plain rule
                 out.append(
                     f"output {o} is {do}, narrower than input {i} ({di}): an output is at "
                     "least as wide as every input"
+                )
+            else:
+                out.append(
+                    f"output {o} is {do}, narrower than input {i} ({di}), and its values span "
+                    f"[{_end(span[0])}, {_end(span[1])}]: a narrower output needs every value "
+                    f"to fit it (bound them with min and max)"
                 )
     pair = _signed_with_uint64(ints)
     if pair is not None:
@@ -85,6 +121,10 @@ def check_dtypes(brm: Any, dtypes: Mapping[str, str]) -> list[str]:
             "integer result type (NumPy gives float64)"
         )
     return out
+
+
+def _end(x: float) -> str:
+    return str(int(x)) if abs(x) != float("inf") else ("inf" if x > 0 else "-inf")
 
 
 def output_dtypes(brm: Any, inputs: Mapping[str, str]) -> dict[str, list[str]]:

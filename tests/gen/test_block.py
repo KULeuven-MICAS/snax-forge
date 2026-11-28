@@ -63,6 +63,18 @@ def test_an_entry_the_catalogue_refuses(tmp_path, code, change):
     assert e.value.code == code
 
 
+def test_a_halo_link_is_an_entry_with_its_taps(tmp_path):
+    """HaloLink takes taps, lanes and dtype, all written out (none is filled from a unit), taps
+    at least 2."""
+    halo = {"taps": 3, "lanes": 8, "dtype": "uint8"}
+    check_entry(entry(tmp_path, "HaloLink", **halo))
+    for bad in ({**halo, "taps": 1}, {k: v for k, v in halo.items() if k != "taps"},
+                {**halo, "depth": 1}):  # fmt: skip
+        with pytest.raises(GenError) as e:
+            check_entry(entry(tmp_path, "HaloLink", **bad))
+        assert e.value.code == "gen.params"
+
+
 def test_a_bad_entry_stops_the_list_before_java(tmp_path, monkeypatch):
     monkeypatch.setattr(block_mod, "emit_classpath", lambda: pytest.fail("java called"))
     bad = entry(tmp_path, "Mac", **{**MAC, "accumulate": 1})
