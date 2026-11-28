@@ -379,9 +379,9 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 
 ### D203 — A refused request costs a fraction of a granted one
 
-- **Decided:** in SNAX-GVSoC's energy run a refused request costs $r_s$ of a granted beat in the streamers and $r_x$ of a granted access in the crossbar, and nothing in the banks; $r_s$ = 0.085, $r_x$ = 0 on nangate45, fitted on `mvt_v4`'s contiguous and padded rows at gate level after the floor over the extra cycles (X111), checked on `bicg_v2` int64 sequential against pipeline. The static estimate stays conflict-free (D155). A stalled datapath's input changes stay unpriced (open item 137). Amends D177.
+- **Decided:** in SNAX-GVSoC's energy run a refused request costs $r_s$ of a granted beat in the streamers and $r_x$ of a granted access in the crossbar, and nothing in the banks. Both are measured on the blocks alone (snax-forge-experiments X116): $r_s$ per mover, its reader's `r_refused` in `streamer.csv` (0.07–0.26 on nangate45, falling with FIFO depth and channels; `r_strm` 0.1505, their mean, where a table has none), $r_x$ = 0.0018 (the interconnect's refused requests against the same grants with none refused). `mvt_v4`'s contiguous and padded rows and `bicg_v2` int64 sequential against pipeline are the checks at gate level; R1's fit on the first gave 0.085 and 0 (X111). The static estimate stays conflict-free (D155). A stalled datapath's input changes stay unpriced (open item 137). Amends D177.
 - **Why:** priced as a grant, contiguous mvt came out 32 % above its padded twin against the netlist's 10 %; at gate level a refusal costs the stall cycle's clock, which D205's floor already pays.
-- **Where:** CONTRACTS, "Cost model"; `estimate/dynamic.py` (`price`), `char/tables.py` (`Terms`).
+- **Where:** CONTRACTS, "Cost model"; `estimate/dynamic.py` (`price`, `Prices.r_movers`), `char/tables.py` (`Terms`, `streamer_refusal`).
 
 ### D204 — The DMA's L2 ↔ L1 transfers are priced, a copy takes no crossbar access
 

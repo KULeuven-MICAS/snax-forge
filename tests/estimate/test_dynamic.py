@@ -48,7 +48,7 @@ def test_dot_3_at_w8_counts_and_a_refusal_at_its_fraction():
     """dot 3 at W = 8, N = 2048: 4097 words through the crossbar, 4096 read at a read-only input's
     price and 1 written at a write-only one's, the banks also 512 load beats and 1 store beat of a
     superbank (8 banks each), as SNAX-GVSoC counts them; 100 refused requests on reader A's lanes add
-    r_xbar of 100 read-only accesses, r_strm of 100 / 8 of A's beats, and no bank access."""
+    r_xbar of 100 read-only accesses, A's own r (its reader's) of 100 / 8 of its beats, and no bank access."""
     graph = steps("dot_v3", W=8, N=2048)[-1]
     est = estimated("dot_v3", W=8, N=2048)
     p, c = _static(graph, est)
@@ -67,9 +67,9 @@ def test_dot_3_at_w8_counts_and_a_refusal_at_its_fraction():
         p.r_xbar * 100 * p.e_xro_pj / 1000
     )
     assert got.parts["streamers"] - base.parts["streamers"] == pytest.approx(
-        p.r_strm * 100 / channels * e_beat / 1000
+        p.r_movers[a] * 100 / channels * e_beat / 1000
     )
-    assert 0 < p.r_strm < 0.2 and p.r_xbar == 0
+    assert 0.05 < p.r_movers[a] < 0.3 and p.r_movers[a] != p.r_strm and 0 <= p.r_xbar < 0.01
     assert got.parts["memory"] == base.parts["memory"]
 
 

@@ -101,8 +101,22 @@ def test_the_fixed_parts_and_the_dma_engine(costs):
     assert sum(p.idle_pj_cycle for p in costs.fixed.values()) == pytest.approx(23.60, abs=0.01)
     assert costs.dma_burst_pj == pytest.approx(78.08, abs=0.01)
     t = costs.terms
-    assert (round(t.r_strm, 3), t.r_xbar) == (0.085, 0.0)
+    assert (round(t.r_strm, 3), round(t.r_xbar, 4)) == (0.151, 0.0018)
     assert t.floor(22, 16) == pytest.approx(
         {"streamers": 2.778, "crossbar": 2.343, "dma": 3.378}, abs=0.001
     )
     assert t.e_l2_pj == pytest.approx(54.48, abs=0.01)
+
+
+def test_a_readers_refusal(costs):
+    """streamer.csv's r_refused per reader, falling with FIFO depth; the mean without the column."""
+    from dataclasses import replace
+
+    from snax_forge.char.tables import Grid, streamer_refusal
+
+    assert streamer_refusal(costs, 2, 1, 1) == pytest.approx(0.2615, abs=1e-4)
+    assert streamer_refusal(costs, 16, 1, 8) < streamer_refusal(costs, 2, 1, 8)
+    assert 0.05 < streamer_refusal(costs, 8, 3, 4) < 0.2
+    bare = replace(costs, streamer=Grid(costs.streamer.axes, {k: v for k, v in costs.streamer.fields.items()
+                                                              if k != "r_refused"}))  # fmt: skip
+    assert streamer_refusal(bare, 8, 3, 4) == costs.terms.r_strm

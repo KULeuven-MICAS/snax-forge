@@ -921,9 +921,10 @@ With `--energy` (D177), the flow runs the program again with only the `summary` 
 | `energy.json` field | Holds |
 |---|---|
 | `tech`, `source` | the table's technology and `SOURCE` |
-| `prices` | per unit its `span` and `e_fire`, per buffer link or packer its producer (`from`) and `e_fire`, the control units' `ctrl_bits` and `e_ctrl`, per mover `write`, `channels`, `e_beat` (a shared mover also `e_beat_at`, its energy per beat at each narrower user's channels), then `e_xbar_ro`, `e_xbar_wo` (the crossbar's per request of a read-only and a write-only input), `e_rd`, `e_wr`, `e_dma_burst` (pJ), `superbank_banks` (the banks a DMA beat reads or writes, the estimate's) |
+| `prices` | per unit its `span` and `e_fire`, per buffer link or packer its producer (`from`) and `e_fire`, the control units' `ctrl_bits` and `e_ctrl`, per mover `write`, `channels`, `e_beat` (a shared mover also `e_beat_at`, its energy per beat at each narrower user's channels) and `r` (its refused request-cycle's share of a lane's beat, its reader's `r_refused`), then `e_xbar_ro`, `e_xbar_wo` (the crossbar's per request of a read-only and a write-only input), `e_rd`, `e_wr`, `e_dma_burst` (pJ), `superbank_banks` (the banks a DMA beat reads or writes, the estimate's) |
 | `windows` | per window `index`, `mark`, `kind`, `label`, `first`, `last`, `cycles`, `counters`, `energy`: `parts` (nJ per part), `total`, `counts` (below), and `background` (nJ per line over its cycles) |
 | `total` | nJ per part over every window |
+| `program` | nJ per part over the program's windows, every one but `boot` and `check` (the default build's one window), the cycles a profile's `total_cycles` counts; `paper/`'s dynamic columns |
 | `static` | the estimate's six parts for one run of the accelerator, with the counts they were priced on |
 | `background` | what a cycle costs whatever the accelerators do (D201): `design_uw` (the six parts' leakage), `core_uw`, `rest_uw`, `idle_pj_cycle` (the core's and the rest's idle floor; the DMA's is in its part, D205), `clock_ns` |
 | `background_total` | nJ per line over every window: `leak_design`, `leak_core`, `leak_rest`, `idle` |
@@ -994,13 +995,13 @@ What a design costs in area and energy before any synthesis: the blocks and cont
 | File in `snax_forge/char/` | Holds | From |
 |---|---|---|
 | `<tech>.json` | `tech`, `clock_ns`, `units`, `source`; `flop` (`area_um2`, `leak_uw`, `e_load_fj`, `e_hold_fj`); `ctrl.counter_factor`; `blocks`, per datapath (and `FifoPacker`, `FifoSlicer`) one entry per params, so per width pair: `params`, `lanes_rule` (`copy`, `interpolate`, `slope`, `none`), a narrow fold's `slope` (`comb_um2`, `e_comb_pj`, `leak_comb_uw` per lane) and `points` (`lanes`, `depth`, `comb_um2`, `e_comb_pj`, `leak_comb_uw`; a packer's and a slicer's `flops`, `load_bits`); $e_{\mathit{ctrl}}$ is `counter_factor` × `e_hold_fj` | snax-forge-experiments' `results/char/<tech>/char.json`, X37, X83 · X85, X89, X94, X101 |
-| `<tech>/streamer.csv` | one reader: FIFO depth 2–16 × loops 1–7 × channels 1–16, `area_um2`, `leak_uw`, `e_beat_pj` | X52 · X82, X83 · X85, X101 |
+| `<tech>/streamer.csv` | one reader: FIFO depth 2–16 × loops 1–7 × channels 1–16, `area_um2`, `leak_uw`, `e_beat_pj`, `r_refused` (a refused request-cycle's share of a lane's beat) | X52 · X82, X83 · X85, X101, X116 |
 | `<tech>/xbar.csv` | the sparse interconnect: inputs 4–64 × banks 16, 32, 64, `area_um2`, `leak_uw`, `e_access_pj` where inputs ≤ banks | X53 · X54, X83 · X85, X101 |
 | `<tech>/xbar_kinds.json` | the area's factor form's $f_{\mathit{ro}}$ and $f_{\mathit{wo}}$ (0.395299, 0.409746), the crosspoint form's coefficients; the energy's $g_{\mathit{ro}}(b)$, $g_{\mathit{wo}}(b)$ at 16, 32 and 64 banks (`energy.by_banks`; 0.331792, 0.471583 at 32) | X71, X93 |
 | `<tech>/ram_table.csv` | CACTI 7, itrs-lstp cells: depth 32–4096 × width 8–256, `area_um2`, `e_rd_pj`, `e_wr_pj`, `leak_uw` (subthreshold plus gate) | X47 · X100, X48 |
 | `<tech>/cluster_fixed.json` | the cluster's fixed parts (`parts`: `core`, `dma`, `rest`), each its `area_um2`, `leak_uw` and `idle_pj_cycle`, from one synthesized cluster's run window | X103 |
 | `<tech>/dma_copy.json` | the DMA engine's energy per burst of a copy, `engine.e_burst_pj`, the `dma` group alone | X95, X113 |
-| `<tech>/model_fit.json` | the terms fitted at gate level: `refusal` (`r_strm`, `r_xbar`), `floor` (`streamers.k_pj` a mover or channel, `crossbar.a_pj` + `b_pj` an input, `dma.pj`, pJ a cycle), `l2.e_l2_pj` (the DMA engine's per L2 ↔ L1 beat) | X111, X112 |
+| `<tech>/model_fit.json` | the terms fitted at gate level: `refusal` (`r_strm` the readers' mean, `r_xbar`, measured on the blocks, X116), `floor` (`streamers.k_pj` a mover or channel, `crossbar.a_pj` + `b_pj` an input, `dma.pj`, pJ a cycle), `l2.e_l2_pj` (the DMA engine's per L2 ↔ L1 beat) | X111, X112, X116 |
 
 - `pixi run import-costs` copies the eight files with `<tech>/SOURCE` naming each file's origin and sha256; `tests/char/` checks them. A lookup gives a block's, a streamer's, the crossbar's and a bank's leakage (µW) beside its area, by the same rule; the crossbar's at the table's leakage per µm² at its inputs and banks.
 - **Block lookup** (`lookup`, D176): the entry at the block's own pair if its inputs differ in width and that pair is measured (`exact_params`), else at its width pair (`pair_params`), then a point at its lanes (`measured`), else by `lanes_rule` (`copy`, `interpolate`, `slope`), depth, `width` or `unseeded`; a `Mac` bank from its rows-1 entry and the `bank` forms (D193). Else the comb part counts 0 (`char.missing`).
@@ -1024,7 +1025,7 @@ $$E = \sum_b E_b + \sum_g E_{\mathit{ctrl},g} + \sum_p \frac{W_p}{C_p}\thinspace
 - **Leakage** (D201): each part's beside its area, by the same lookup; a block's $P_{\mathit{comb}} + n_{\mathit{bits}}\thinspace P_{\mathit{flop}}$, a control unit's $2\thinspace n_{\mathit{bits}}^{\mathit{ctrl}}\thinspace P_{\mathit{flop}}$, a bank's from `ram_table.csv`. Over C cycles at the table's clock $T_{clk}$ (10 ns, for illustration: it scales with the period), $E_{\mathit{leak}} = P_{\mathit{leak}}\thinspace C\thinspace T_{clk}$. The estimate's `leakage` lumps the six parts' over `total_cycles`; its `energy` stays dynamic.
 - **A copy** (D184) is one beat read and one written on L1's superbank port per burst, on each of its S banks (`superbank_banks`), with no crossbar access (D204).
 - **The memory plan's transfers** (D204, `Estimate.transfers`): each L1 container with an L2 home in whole DMA beats (the platform's `wide_bits`), loaded if it is read, stored if it is written; a beat costs $e_{l2}$ and a write (load) or a read (store) on each of its superbank's S banks.
-- **The idle floor** (D205): the parts that stay clocked pay a floor every cycle of `total_cycles`, $p_{strm} = k_s	hinspace n_s$ with $n_s$ the streamers plus their channels, $p_{xbar} = a_x + b_x	hinspace n_{in}$, $p_{dma}$ (`model_fit.json`); the datapath, control and banks none.
+- **The idle floor** (D205): the parts that stay clocked pay a floor every cycle of `total_cycles`, $p_{strm} = k_s\thinspace n_s$ with $n_s$ the streamers plus their channels, $p_{xbar} = a_x + b_x\thinspace n_{in}$, $p_{dma}$ (`model_fit.json`); the datapath, control and banks none.
 - **By input kind** (D178): a read priced at $e_{\mathit{acc}}(1 - g_{ro})$, a write at $e_{\mathit{acc}}(1 - g_{wo})$; the crosspoint area form is an option (`Estimate.xbar_in("crosspoint")`).
 - **A shared set's movers** (D169) are priced once each, at the mover's channels.
 
@@ -1072,7 +1073,7 @@ $$E_j = \sum_c \sum_k n_{c,k}(j)\thinspace e_{c,k} = E_{dp}(j) + E_{ctrl}(j) + E
 | $c_{rd}(j)$, $e_{burst}$ | the DMA's read beats inside L1 (one a burst), and the engine's energy per burst | the crossbar's `copies`; `dma_copy.json` | —, pJ |
 | $R(j)$, $W(j)$ | the banks' reads and writes, added up | the banks' `snap` lines | — |
 | $C(j)$ | the window's cycles, $\mathit{last} - \mathit{first}$ | `run/snapshots.py` | cycles |
-| $r_s$, $r_x$ | a refusal's fraction of a granted request, in the streamers and the crossbar (D203) | `model_fit.json` | — |
+| $r_s$, $r_x$ | a refused request-cycle's fraction of a granted request, in the streamers (each mover's reader's, `streamer.csv`'s `r_refused`) and the crossbar (D203) | `streamer.csv`, `model_fit.json` | — |
 | $p_q$, $e_{l2}$ | part q's idle floor a cycle (D205), the engine's energy per L2 ↔ L1 beat (D204) | `model_fit.json` | pJ |
 
 $$E_{dp}(j) = \sum_u f_u(j)\thinspace S_u\thinspace e_{fire,u} + \sum_{\ell} p_{src(\ell)}(j)\thinspace e_{fire,\ell} + \sum_{s} f_{u(s)}(j)\thinspace e_{fire,s}$$

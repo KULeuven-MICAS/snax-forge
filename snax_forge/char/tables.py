@@ -3,6 +3,7 @@ DMA engine and the terms fitted at gate level.
 
     load_costs(tech) -> Costs | None                       snax_forge/char/<tech>/, None without
     streamer_cost(costs, depth, loops, channels) -> Cost   one reader (a writer priced as one)
+    streamer_refusal(costs, depth, loops, channels) -> float   a refused request-cycle's share of a lane's grant
     xbar_cost(costs, inputs, banks, read_only, write_only, form) -> Cost    the crossbar
     bank(costs, depth, width) -> Bank | None               one SRAM bank, a lookup
     Grid.at(field, **q) -> (value, extrapolated axes)      the rule both interpolated tables use
@@ -203,7 +204,7 @@ def _grid(rows: list[dict[str, str]], axes: tuple[str, ...], names: tuple[str, .
             continue
         key = tuple(int(r[a]) for a in axes)
         for n in names:
-            if r[n] not in ("", None):
+            if r.get(n) not in ("", None):
                 fv[n][key] = float(r[n])
     return Grid(ax, fv, dict(scales or {}))
 
@@ -269,7 +270,9 @@ def load_costs(tech: str) -> Costs | None:
              Bank(int(r["depth"]), int(r["width"]), float(r["area_um2"]), float(r["e_rd_pj"]),
                   float(r["e_wr_pj"]), float(r["leak_uw"]))
              for r in _rows(d / "ram_table.csv")}  # fmt: skip
-    streamer = _grid(_rows(d / "streamer.csv"), READER_AXES, ("area_um2", "e_beat_pj", "leak_uw"))
+    streamer = _grid(
+        _rows(d / "streamer.csv"), READER_AXES, ("area_um2", "e_beat_pj", "leak_uw", "r_refused")
+    )
     xbar = _complete_xbar(_grid(_rows(d / "xbar.csv"), XBAR_AXES,
                                 ("area_um2", "e_access_pj", "leak_uw"), XBAR_SCALES))  # fmt: skip
     return Costs(tech, read_source(d / "SOURCE"), streamer, xbar, banks,
@@ -292,6 +295,17 @@ def streamer_cost(costs: Costs, depth: int, loops: int, channels: int) -> Cost:
     out = tuple(dict.fromkeys(out_a + out_e))
     _warn("streamer", q, out)
     return Cost(area, e, out, leak)
+
+
+def streamer_refusal(costs: Costs, depth: int, loops: int, channels: int) -> float:
+    """A reader's refused request-cycle as a share of its lane's granted price (``r_refused``,
+    measured per reader on the blocks), the readers' mean ``Terms.r_strm`` where the table has none."""
+    if not costs.streamer.fields.get("r_refused"):
+        return costs.terms.r_strm
+    try:
+        return costs.streamer.at("r_refused", depth=depth, loops=loops, channels=channels)[0]
+    except KeyError:
+        return costs.terms.r_strm
 
 
 def xbar_cost(costs: Costs, inputs: int, banks: int, read_only: int = 0, write_only: int = 0,

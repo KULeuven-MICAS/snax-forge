@@ -10,7 +10,8 @@ pushes, each group's busy-flag cycles, per mover its crossbar requests (grants a
 stalls) and grants, the banks' reads and writes, the window's cycles. A unit fires its firings
 times its span, a buffer link loads and a packer pushes its producer's pushes, a slicer pops on its
 unit's firings (a seed's on its pushes, one a job), each control unit clocks its own group's busy
-cycles, a mover moves its grants and ``r_strm`` of its refusals over its channels (a shared mover
+cycles, a mover moves its grants and its own ``r`` of its refusals (its reader's, measured on the
+blocks; ``r_strm``, their mean, for a mover without one) over its channels (a shared mover
 each beat at the channels its user takes, from its lanes' requests, as the static estimate prices
 each user at its own), the crossbar serves every grant and ``r_xbar`` of every refusal at its
 mover's kind (a reader's read-only, a writer's write-only) and the banks the grants. A
@@ -31,6 +32,7 @@ from typing import TYPE_CHECKING, Any
 from snax_forge.brm import SEED
 from snax_forge.char import load
 from snax_forge.char.tables import streamer_cost as _streamer
+from snax_forge.char.tables import streamer_refusal
 from snax_forge.design.streamers import group_links, instances
 
 from .cost import PARTS
@@ -86,6 +88,7 @@ class Prices:
     r_xbar: float = 1.0
     floor: dict[str, float] = field(default_factory=dict)  # pJ a cycle per part
     e_l2_pj: float = 0.0  # the DMA engine's per L2 <-> L1 beat
+    r_movers: dict[str, float] = field(default_factory=dict)  # a mover's own refusal fraction
 
     def to_dict(self) -> dict[str, Any]:
         return {"units": {k: {"span": s, "e_fire": e} for k, (s, e) in self.units.items()},
@@ -97,6 +100,7 @@ class Prices:
                 "movers": {k: {"write": w, "channels": c, "e_beat": e}
                            | ({"e_beat_at": {str(n): x for n, x in self.narrow[k].items()}}
                               if k in self.narrow else {})
+                           | ({"r": self.r_movers[k]} if k in self.r_movers else {})
                            for k, (w, c, e) in self.movers.items()},
                 "e_xbar_ro": self.e_xro_pj, "e_xbar_wo": self.e_xwo_pj, "e_rd": self.e_rd_pj,
                 "e_wr": self.e_wr_pj, "superbank_banks": self.superbank_banks,
@@ -117,7 +121,8 @@ class Prices:
                    {k: {int(n): x for n, x in v["e_beat_at"].items()}
                     for k, v in d["movers"].items() if "e_beat_at" in v},
                    d.get("e_dma_burst", 0.0), d.get("r_strm", 1.0), d.get("r_xbar", 1.0),
-                   dict(d.get("floor", {})), d.get("e_l2", 0.0))  # fmt: skip
+                   dict(d.get("floor", {})), d.get("e_l2", 0.0),
+                   {k: v["r"] for k, v in d["movers"].items() if "r" in v})  # fmt: skip
 
 
 @dataclass
@@ -238,9 +243,10 @@ def prices_of(graph: Graph, est: Estimate, movers: Sequence[MoverSpec]) -> Price
               for s in movers if any(n < s.channels for n in s.user_channels)}  # fmt: skip
     t = costs.terms
     floor = t.floor(sum(1 + s.channels for s in movers), sum(est.xbar_inputs))
+    r_movers = {s.name: streamer_refusal(costs, s.depth, s.loops, s.channels) for s in movers}
     return Prices(units, links, bits, load(est.tech or "").e_ctrl_pj, beat, x.e_ro_pj, x.e_wo_pj,
                   m.e_rd_pj, m.e_wr_pj, est.superbank_banks, slicers, group_bits, narrow,
-                  costs.dma_burst_pj, t.r_strm, t.r_xbar, floor, t.e_l2_pj)  # fmt: skip
+                  costs.dma_burst_pj, t.r_strm, t.r_xbar, floor, t.e_l2_pj, r_movers)  # fmt: skip
 
 
 def mover_beats(
@@ -301,8 +307,8 @@ def price(p: Prices, c: Counts) -> Energy:
     for name, (write, channels, e_beat) in p.movers.items():
         r, g = c.movers.get(name, (0, 0))
         b, e = mover_beats(channels, e_beat, p.narrow.get(name, {}), c.lanes.get(name), r)
-        # NB (D203): a refusal costs r_strm of a beat in the streamers, r_xbar of an access
-        paid = (g + p.r_strm * (r - g)) / r if r else 0.0
+        # NB (D203): a refusal costs the mover's r of a beat in the streamers, r_xbar of an access
+        paid = (g + p.r_movers.get(name, p.r_strm) * (r - g)) / r if r else 0.0
         beats += b
         strm += e * paid
         requests += r

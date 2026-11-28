@@ -129,10 +129,11 @@ def run_row(point: Point, platform: Path) -> dict[str, Any]:
         return {"passed": False, "status": f"flow failed: {tail[0][:200]}"}
     profile = json.loads((out / "run" / "profile.json").read_text())
     energy = json.loads((out / "energy" / "energy.json").read_text())
+    # the program's windows, as total_cycles: not boot or the result check
     row = {"cycles": profile["total_cycles"], "passed": True,
-           "dynamic_nj": sum(energy["total"][p] for p in PARTS)}  # fmt: skip
+           "dynamic_nj": sum(energy["program"][p] for p in PARTS)}  # fmt: skip
     for p in PARTS:
-        row[f"dynamic_{p}_nj"] = energy["total"][p]
+        row[f"dynamic_{p}_nj"] = energy["program"][p]
     return row
 
 

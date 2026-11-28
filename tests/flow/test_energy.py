@@ -49,10 +49,15 @@ REAL = {
 
 @pytest.fixture
 def events_only(monkeypatch):
-    """The tables with neutral terms: a refusal at a grant's price, no idle floor, no transfer beat."""
-    monkeypatch.setattr(
-        estimate_mod, "load_costs", lambda tech: replace(load_costs(tech), terms=Terms())
-    )
+    """The tables with neutral terms: a refusal at a grant's price (no reader's own r), no idle
+    floor, no transfer beat."""
+
+    def neutral(tech):
+        c = load_costs(tech)
+        fields = {k: v for k, v in c.streamer.fields.items() if k != "r_refused"}
+        return replace(c, terms=Terms(), streamer=replace(c.streamer, fields=fields))
+
+    monkeypatch.setattr(estimate_mod, "load_costs", neutral)
 
 
 def events(e: EnergyRun, est) -> dict[str, float]:
@@ -144,7 +149,20 @@ def test_the_energy_run_round_trips_and_reports():
     assert "| 2 | run | run acc | 30 |" in text
     assert "| static |  | one run of the accelerator | 16 |" in text
     assert "| crossbar: requests | 204 | 192 |" in text
-    assert "## Leakage and the idle floor" in text and "| all | 140 | 2.829 |" in text
+    assert "## Leakage and the idle floor" in text and "| all | 140 | 2.830 |" in text
+
+
+def test_the_program_leaves_out_boot_and_the_result_check():
+    """``program`` sums the windows a profile's total_cycles counts: not boot, not the check."""
+    e = run(stalls=1)
+    assert e.windows[0].kind == "boot"
+    want = {k: sum(x.parts[k] for w, x in zip(e.windows, e.energies, strict=True) if w.kind != "boot")
+            for k in e.static.parts}  # fmt: skip
+    assert e.program == pytest.approx(want) and e.program != e.total
+    check = replace(e.windows[-1], kind="check")
+    e2 = replace(e, windows=[*e.windows[:-1], check])
+    assert e2.program == pytest.approx({k: v - e.energies[-1].parts[k] for k, v in want.items()})
+    assert e.to_dict()["program"] == e.program
 
 
 def test_every_window_pays_the_leakage_and_the_idle_floor_beside_its_dynamic_energy():
@@ -242,7 +260,7 @@ def test_a_pipelined_flow_prices_its_quiet_build_in_the_program_window(tmp_path,
 
 
 def test_a_refusal_costs_its_fraction_and_every_cycle_its_floor():
-    """With the tables' terms: two refusals a lane cost r_strm of their beats in the streamers and
+    """With the tables' terms: two refusals a lane cost each mover's own r of their beats in the streamers and
     r_xbar of their accesses in the crossbar; every cycle of a window costs the streamers', the
     crossbar's and the DMA's floor, an empty window its floor alone."""
     e, base = run(stalls=2), run()
@@ -251,9 +269,10 @@ def test_a_refusal_costs_its_fraction_and_every_cycle_its_floor():
     ((_, want),) = base.of_kind("run")
     granted = (16 * p.e_xro_pj + 8 * p.e_xwo_pj) / 1000
     assert got.parts["crossbar"] - want.parts["crossbar"] == pytest.approx(p.r_xbar * granted)
-    assert 0 < got.parts["streamers"] - want.parts["streamers"] < 0.2 * granted * 4
+    assert 0 < got.parts["streamers"] - want.parts["streamers"] < 0.3 * granted * 4
     assert got.parts["memory"] == want.parts["memory"]
-    assert 0 < p.r_strm < 0.2 and p.r_xbar == 0
+    assert 0.1 < p.r_strm < 0.2 and 0 <= p.r_xbar < 0.01
+    assert p.r_movers and all(0.05 < r < 0.3 for r in p.r_movers.values())
     assert set(p.floor) == {"streamers", "crossbar", "dma"} and p.floor["dma"] == pytest.approx(
         3.378, abs=0.001
     )

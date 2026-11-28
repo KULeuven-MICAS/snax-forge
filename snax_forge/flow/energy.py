@@ -11,8 +11,10 @@ its movers' requests and grants, the crossbar's counts of the DMA's copies insid
 reads and writes (the DMA's transfers among them), its cycles. ``static`` is the estimate's own
 six parts with the counts they were priced on. Beside the dynamic energy, each window's
 ``Background``: the design's leakage, the core's and the rest's, and the core's and the rest's idle
-floor (the DMA's is in its part), each over the window's cycles. ``EnergyRun`` round-trips
-through ``to_dict`` / ``from_dict``.
+floor (the DMA's is in its part), each over the window's cycles. ``program`` is the six parts
+over the program's windows, those between boot and the result check (all of a default build's one
+window), the cycles a profile's ``total_cycles`` counts. ``EnergyRun`` round-trips through
+``to_dict`` / ``from_dict``.
 """
 
 from __future__ import annotations
@@ -36,6 +38,9 @@ from snax_forge.estimate.dynamic import (
 )
 from snax_forge.run import Cluster, RunError
 from snax_forge.run.snapshots import BOOT, WHOLE, Window, snapshots, windows
+
+# The windows outside the program: boot and the result check (lower/c.py's last mark)
+OUTSIDE = (BOOT[0], "check")
 
 if TYPE_CHECKING:
     from snax_forge.dfg import Graph
@@ -103,6 +108,12 @@ class EnergyRun(JsonFile):
         """nJ per part over every window."""
         return {k: sum(e.parts[k] for e in self.energies) for k in self.static.parts}
 
+    @property
+    def program(self) -> dict[str, float]:
+        """nJ per part over the program's windows (module doc)."""
+        es = [e for w, e in zip(self.windows, self.energies, strict=True) if w.kind not in OUTSIDE]
+        return {k: sum(e.parts[k] for e in es) for k in self.static.parts}
+
     def background_of(self, w: Window) -> dict[str, float]:
         """nJ per background line over the window's cycles; empty without a background."""
         return {} if self.background is None else self.background.over(w.cycles)
@@ -126,7 +137,8 @@ class EnergyRun(JsonFile):
              "windows": [w.to_dict() | {"energy": e.to_dict()}
                          | ({"background": self.background_of(w)} if self.background else {})
                          for w, e in zip(self.windows, self.energies, strict=True)],
-             "total": self.total, "static": self.static.to_dict()}  # fmt: skip
+             "total": self.total, "program": self.program,
+             "static": self.static.to_dict()}  # fmt: skip
         if self.background is not None:
             d |= {"background": self.background.to_dict(),
                   "background_total": self.background_total}  # fmt: skip
