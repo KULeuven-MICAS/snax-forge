@@ -7,7 +7,7 @@ Rules (D117):
 - An entry is a choice with a real alternative that someone may want to reverse: direction, ownership, the interfaces between components, the order of work. Implementation details live in the module's docstring and its tests.
 - An entry says what was decided, why, and where the detail lives, in a few short bullets; an edge case only when there is one. A change is written into the entry, not chained after it.
 - Entries merged into one keep all their numbers in its heading, so a cite of any of them still finds it. A number is never changed or reused; the text of a removed entry is in git history.
-- A new decision gets the next free number, under the area it belongs to. Next free number: **D207** (D204 and D205 are taken on `ry/cost3`).
+- A new decision gets the next free number, under the area it belongs to. Next free number: **D208** (D204 and D205 are taken on `ry/cost3`).
 
 Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29–D45, D47–D50, D53, D54, D56, D58–D63, D65–D67, D69, D74, D76–D78, D80, D81, D83, D88–D97, D100, D101, D103, D104, D106, D107, D109, D110, D114, D115, D119, D124, D127, D128, D132, D133, D138–D141, D151, D156, D159, D160, D181.
 
@@ -124,6 +124,12 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 - **Decided:** the MAC is one block with design-time variants (`accumulate`, or a·b + c with `regOut` for a later systolic PE), not vmul into a lane accumulator. The lane accumulator without an op is its own block, `LaneAccumulate`; the one-lane vsum is `SerialAccumulate` (`span` = lanes); a buffer is `LinkBuffer`, not a FIFO.
 - **Why:** each block is the one the RTL has, so the cost of each is measured alone.
 - **Where:** CONTRACTS, "Accelerator RTL spec"; `hw/chisel/`.
+
+### D207 — A narrow multiplier, as an option
+
+- **Decided:** `Mac` and `SimdLanes` (mul, and axpby's products) take a design-time `narrowMul`: each product is made at its operands' own widths, w_a + w_b bits, then extended to `opType`, where the default extends each operand to `opType` first and multiplies there. It applies only where w_a + w_b fits `opType`, so the product is the same bits as NumPy's at `opType`; elsewhere the block keeps the default. Off by default.
+- **Why:** HLS tools narrow a product themselves; at `i8` the default's 32 × 32 multipliers on sign-extended int8 would cost E7 area for a reason that is not the engine's structure. Off by default, so the char tables, the cluster synthesis and §C's runs stay as measured until E7's int8 probe says whether it should become the default (open item 134). SNAX-GVSoC and the estimate need no change: the product is the same.
+- **Where:** `hw/chisel/` (`Mac`, `SimdLanes`, param `narrowMul`); set per design with `--set design.narrow_mul=true` (TOOL.md); CONTRACTS, "Accelerator RTL spec". No BRM carries it: the BRMs, the estimate and SNAX-GVSoC see the same product.
 
 ### D163 · D187 — A fold's seed is a port
 
