@@ -81,7 +81,7 @@ Where things live:
 
 The workload's graph, a `.snaxdfg` JSON file (D71, `dfg/`; C§2): symbols, containers and an ordered body of registered node kinds, body order being execution order. A map's loop is tagged in the sandbox (D73); a reduction is a map whose output memlet carries a `reduce` (D102); an accelerated node is one beat of a bound BRM instance (D82).
 
-`sdfg/expand.py` first expands DaCe's MatMul and Transpose into dot's shape. The importer keeps the kernel's names, decides nothing, and names what it does not support; sequential loops and branches come with the kernels that need them (open item 36).
+`sdfg/expand.py` first expands DaCe's MatMul and Transpose into dot's shape. The importer keeps the kernel's names, decides nothing, and names what it does not support; a widening convert folds into its reader as a cast (D143), a narrowing one of a computed value stays a nest of its own (D203); sequential loops and branches come with the kernels that need them (open item 36).
 
 ### 5.2 Reference executor
 

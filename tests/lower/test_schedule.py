@@ -103,27 +103,31 @@ def test_the_schedule_round_trips_through_the_design_point():
 
 
 @pytest.mark.parametrize("schedule", ["pipeline", "pipeline_compute"])
-def test_the_quiet_build_still_waits_on_every_start_and_each_build_once(tmp_path, schedule,
-                                                                         monkeypatch):  # fmt: skip
-    """As test_c's quiet-build test, on the pipelined mvt_v3_1: each START followed by its
-    polls in the quiet build, and one poll of each half in either build."""
+def test_a_pipelined_quiet_build_keeps_the_default_waits_in_one_section(tmp_path, schedule,
+                                                                        monkeypatch):  # fmt: skip
+    """The pipelined mvt_v3_1: the quiet build has the default build's waits (both STARTs
+    before either poll, each poll once) and two marks, the program window from the first step and
+    the check; with the marks and the prints left out, the two builds are the same lines."""
     from tests.gen import helpers as gen_helpers
 
     real = gen_helpers.DesignPoint.of
     monkeypatch.setattr(gen_helpers.DesignPoint, "of",
                         lambda d, n: replace(real(d, n), schedule=schedule))  # fmt: skip
-    src, _ = quiet(tmp_path, graph=steps("mvt_v3_1", W=8)[-1], name="mvt_v3_1")
+    src, marks = quiet(tmp_path, graph=steps("mvt_v3_1", W=8)[-1], name="mvt_v3_1")
+    assert [(m["kind"], m["label"]) for m in marks] == [
+        ("run", "program window"),
+        ("check", "check"),
+    ]
     q = functions(quiet_text(src), quiet=True)["forge_core_0"]
     default = functions(src)["forge_core_0"]
-    for unit in ("MVT", "MVT_1"):
-        start = q.index(f"csrw_ss({unit}_RW_START, 1);")
-        assert q[start + 1] == f"while (csrr_ss({unit}_RO_STATUS) & 1) {{"
-        for lines in (q, default):
-            assert lines.count(f"while (csrr_ss({unit}_RO_STATUS) & 1) {{") == 1
-    # the default build: both STARTs before either poll
-    starts = [i for i, x in enumerate(default) if re.fullmatch(r"csrw_ss\(\w+_RW_START, 1\);", x)]
-    polls = [i for i, x in enumerate(default) if x.endswith("_RO_STATUS) & 1) {")]
-    assert len(starts) == 2 and max(starts) < min(polls)
+    assert q[0].startswith("write_csr(0x7c5, 1);"), q[:2]
+    for lines in (q, default):
+        starts = [i for i, x in enumerate(lines) if re.fullmatch(r"csrw_ss\(\w+_RW_START, 1\);", x)]
+        polls = [i for i, x in enumerate(lines) if x.endswith("_RO_STATUS) & 1) {")]
+        assert len(starts) == 2 and len(polls) == 2 and max(starts) < min(polls)
+    assert [x for x in q if not x.startswith("write_csr(0x7c5")] == [
+        x for x in default if "printf" not in x
+    ]
 
 
 @pytest.mark.parametrize("schedule", SCHEDULES)

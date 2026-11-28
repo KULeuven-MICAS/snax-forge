@@ -7,7 +7,7 @@ Rules (D117):
 - An entry is a choice with a real alternative that someone may want to reverse: direction, ownership, the interfaces between components, the order of work. Implementation details live in the module's docstring and its tests.
 - An entry says what was decided, why, and where the detail lives, in a few short bullets; an edge case only when there is one. A change is written into the entry, not chained after it.
 - Entries merged into one keep all their numbers in its heading, so a cite of any of them still finds it. A number is never changed or reused; the text of a removed entry is in git history.
-- A new decision gets the next free number, under the area it belongs to. Next free number: **D207** (D204 and D205 reserved for B1).
+- A new decision gets the next free number, under the area it belongs to. Next free number: **D207** (D204 and D205 are taken on `ry/cost3`).
 
 Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29–D45, D47–D50, D53, D54, D56, D58–D63, D65–D67, D69, D74, D76–D78, D80, D81, D83, D88–D97, D100, D101, D103, D104, D106, D107, D109, D110, D114, D115, D119, D124, D127, D128, D132, D133, D138–D141, D151, D156, D159, D160, D181.
 
@@ -240,7 +240,7 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 ### D206 — A halo link: one stream as a row's shifted windows
 
 - **Decided:** a halo link gives one stream's beat to a unit's T inputs as windows shifted by 0 … T − 1 elements. It holds ⌈(T − 1)/W⌉ beats, the taps are wires, `load` is its one pin, and a job gives beats in − H outputs.
-- **Why:** a row's neighbours start mid-word and a packed stream starts on a word (D12 · D142), so three shifted streams cannot read them; a 3 × 3 window needs line buffers (open item 179).
+- **Why:** a row's neighbours start mid-word and a packed stream starts on a word (D12 · D142), so three shifted streams cannot read them; a 3 × 3 window needs line buffers (open item 180).
 - **Where:** `datapath/HaloLink.scala`, SNAX-GVSoC's `SnaxHaloLink`; CONTRACTS, "Accelerator RTL spec".
 
 ### D197 — A held input may come over a link
@@ -297,9 +297,15 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 
 ### D135 — The task list becomes C on snRuntime
 
-- **Decided:** one program per design point: each step on the core owning its component, D64's waits as polls, the DMA waited on for dependences only, two `mcycle` reads bounding the window. The quiet build (`-DFORGE_QUIET`, `forge_quiet.elf`) waits on every start, marks each section in CSR `0x7c5` (core 0's `obs_o`) and prints nothing, in preprocessor blocks, so the default build is unchanged.
+- **Decided:** one program per design point: each step on the core owning its component, D64's waits as polls, the DMA waited on for dependences only, two `mcycle` reads bounding the window. The quiet build (`-DFORGE_QUIET`, `forge_quiet.elf`) waits on every start (a pipelined program's: D202), marks each section in CSR `0x7c5` (core 0's `obs_o`) and prints nothing, in preprocessor blocks, so the default build is unchanged.
 - **Why:** RTL and model run the same program; the quiet sections serve power.
 - **Where:** CONTRACTS, "Generated hjson files"; `lower/c.py`.
+
+### D202 — A pipelined program's quiet build marks the program window
+
+- **Decided:** under `pipeline` and `pipeline_compute` the quiet build keeps the default build's waits (no wait on every start) and marks one section, `run` labelled `program window`, from the program's first step to the check; the energy run prices every schedule's quiet build. Serial and sequential programs, and every default build, are unchanged. Amends D135 and D177.
+- **Why:** a quiet build that waits on every start runs a pipelined program serially, so neither its gate-level power nor its energy run saw the overlap; the program window is the span every level compares (CSYN2).
+- **Where:** `lower/c.py`, `flow/run.py` (`energy_elf`); CONTRACTS, "Generated hjson files".
 
 ## SNAX-GVSoC
 
@@ -367,7 +373,7 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 
 ### D177 — The dynamic energy: the model's counts at the static prices
 
-- **Decided:** a run's dynamic energy is D167's six parts with SNAX-GVSoC's counts at the static prices (D154 · D172, D176), per window between counter snapshots (core 0's writes to CSR `0x7C5`, D135; the end). A unit costs firings × span, a link or packer its producer's pushes, a slicer its pops, control its group's busy cycles, a mover its requests by kind (D178), banks the grants, a copy its L1 accesses (D184); a refused request costs a granted one's. A pipelined run (D179) is one window of the default build.
+- **Decided:** a run's dynamic energy is D167's six parts with SNAX-GVSoC's counts at the static prices (D154 · D172, D176), per window between counter snapshots (core 0's writes to CSR `0x7C5`, D135; the end). A unit costs firings × span, a link or packer its producer's pushes, a slicer its pops, control its group's busy cycles, a mover its requests by kind (D178), banks the grants, a copy its L1 accesses (D184); a refused request costs a granted one's. A pipelined run (D179) is its quiet build's one window, the program window (D202).
 - **Why:** prices are full-rate granted requests, so static and dynamic differ only where the run differs from the graph; trends, not accuracy.
 - **Where:** CONTRACTS, "Cost model"; `estimate/dynamic.py`, `run/snapshots.py`, `flow/energy.py`.
 

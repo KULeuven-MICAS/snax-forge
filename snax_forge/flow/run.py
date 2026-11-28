@@ -37,7 +37,7 @@ from typing import IO, TYPE_CHECKING, Any
 
 from snax_forge.common import cwd_relative, git, repo_root, to_json
 from snax_forge.design import DesignError, DesignPoint, design_name, design_of, load, run_checks
-from snax_forge.design.check import CHECKS, IN_SERIES, STAGES
+from snax_forge.design.check import CHECKS, STAGES
 from snax_forge.dfg import DfgError, Graph
 from snax_forge.dfg.reference import KernelError, kernel_spec, reference_check
 from snax_forge.flow.energy import ENERGY_JSON, EnergyRun, energy_of
@@ -102,9 +102,9 @@ VCD, GTKW = "all.vcd", "view.gtkw"
 
 
 def energy_elf(schedule: str) -> str:
-    """The build the energy run prices: the quiet one for a schedule in series; a pipelined one's
-    own, in one window, as the quiet build waits on every start at once and so runs it serially."""
-    return QUIET_ELF if schedule in IN_SERIES else ELF
+    """The build the energy run prices: the quiet one, by its sections; a pipelined program's quiet
+    build has one, the program window, its waits the default build's."""
+    return QUIET_ELF
 
 
 class FlowError(ValueError):

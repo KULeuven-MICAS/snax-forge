@@ -583,7 +583,7 @@ streamer $k$ at $[b_k, b_k + s_k)$, its own at $[b_k + s_k, b_{k+1})$, and $b_K 
 
 ### The program
 
-`main.c` (`lower/c.py`, D135): `main` reads `mcycle`, runs one function per core and stores each accelerator task's counter after its wait (`forge_counter[]`); `forge_check()` prints `forge cycles: <n>`, checks the outputs against their goldens (`forge data:`) and each counter against its beats (`forge counter <task>:`), and prints `forge errors:`. The quiet build (`-DFORGE_QUIET`) waits on every start right after it and marks each section by a write to CSR `0x7c5`, listed in `obs_marks.json` (`mark` 1 up, at most 255; `kind`; `label`).
+`main.c` (`lower/c.py`, D135): `main` reads `mcycle`, runs one function per core and stores each accelerator task's counter after its wait (`forge_counter[]`); `forge_check()` prints `forge cycles: <n>`, checks the outputs against their goldens (`forge data:`) and each counter against its beats (`forge counter <task>:`), and prints `forge errors:`. The quiet build (`-DFORGE_QUIET`) waits on every start right after it and marks each section by a write to CSR `0x7c5`, listed in `obs_marks.json` (`mark` 1 up, at most 255; `kind`; `label`); a pipelined program's quiet build (D202) keeps the default build's waits and marks one section, `run` labelled `program window`, from its first step, then the check.
 
 ### The manifest
 
@@ -917,7 +917,7 @@ class Profile:
 
 ### The energy run
 
-With `--energy` (D177), the flow runs the program again with only the `summary` traces on, into `energy/`, and prices its windows: `energy/energy.json` (`flow/energy.py`'s `EnergyRun`) and `report/energy.md`. Under `serial` and `sequential` it is the quiet build, priced between its marks; under a pipelined schedule (D179) the default build, in one window. Each core 0 write to CSR `0x7C5` and the end (mark −1) make every component write its running totals (`run/snapshots.py`); window k is $n(k) = N(S_{k+1}) - N(S_k)$ for every counter N.
+With `--energy` (D177), the flow runs the program again with only the `summary` traces on, into `energy/`, and prices its windows: `energy/energy.json` (`flow/energy.py`'s `EnergyRun`) and `report/energy.md`. It is the quiet build, priced between its marks; under a pipelined schedule (D179) its one section is the program window (D202). Each core 0 write to CSR `0x7C5` and the end (mark −1) make every component write its running totals (`run/snapshots.py`); window k is $n(k) = N(S_{k+1}) - N(S_k)$ for every counter N.
 
 | `energy.json` field | Holds |
 |---|---|
@@ -1003,7 +1003,7 @@ What a design costs in area and energy before any synthesis: the blocks and cont
 | `<tech>/dma_copy.json` | the DMA engine's energy per burst of a copy, `engine.e_burst_pj` | X95, X102 |
 
 - `pixi run import-costs` copies the seven files with `<tech>/SOURCE` naming each file's origin and sha256; `tests/char/` checks them. A lookup gives a block's, a streamer's, the crossbar's and a bank's leakage (µW) beside its area, by the same rule; the crossbar's at the table's leakage per µm² at its inputs and banks.
-- **Block lookup** (`lookup`, D176): the entry at the block's own pair if its inputs differ in width and that pair is measured (`exact_params`), else at its width pair (`pair_params`), then a point at its lanes (`measured`), else by `lanes_rule` (`copy`, `interpolate`, `slope`), depth, `width` or `unseeded`; a `Mac` bank from its rows-1 entry and the `bank` forms (D193); a `HaloLink` comb 0 with no entry (`wires`: its taps are wires, its load a clock gate, so its flops alone). Else the comb part counts 0 (`char.missing`).
+- **Block lookup** (`lookup`, D176): the entry at the block's own pair if its inputs differ in width and that pair is measured (`exact_params`), else at its width pair (`pair_params`; SimdLanes' requant, axpbypcz and threshold at their own types and slots, a CSR pin that is off as unset), then a point at its lanes (`measured`), else by `lanes_rule` (`copy`, `interpolate`, `slope`), depth, `width` or `unseeded`; a `Mac` bank from its rows-1 entry and the `bank` forms (D193); a `HaloLink` comb 0 with no entry (`wires`: its taps are wires, its load a clock gate, so its flops alone). Else the comb part counts 0 (`char.missing`).
 - **Table lookup** (`streamer_cost`, `xbar_cost`, `bank`): linear along one axis at a time; outside the grid linear through the two nearest values, clamped at zero, with `cost.extrapolated`. A writer is priced as a reader.
 
 ### The model

@@ -205,6 +205,11 @@ class _Program:
         self.counters: list[str] = []  # accelerator tasks, in the order their counters are read
         self.marks: list[dict[str, Any]] = []  # the quiet build's sections, in order
         self.mark_key: tuple[str, str] | None = None  # the configure section open, if any
+        # NB (D202): a pipelined program's quiet build is its default build with one section,
+        # the program window, so its runs overlap as they do on the default build
+        from snax_forge.design.check import IN_SERIES  # here: design.check imports lower
+
+        self.pipelined = point.schedule not in IN_SERIES
 
     # -- what the design point gives -------------------------------------------------------
 
@@ -288,8 +293,9 @@ class _Program:
         return f"write_csr({_hex(OBS_CSR, 3)}, {k});  // {label}"
 
     def mark(self, core: int, kind: str, label: str, key: tuple[str, str] | None = None) -> None:
-        """A new section in the quiet build, unless ``key`` is the configure section open."""
-        if key is not None and key == self.mark_key:
+        """A new section in the quiet build, unless ``key`` is the configure section open or the
+        program is pipelined (one section, the program window)."""
+        if self.pipelined or (key is not None and key == self.mark_key):
             return
         self.mark_key = key
         self.quiet(core, self.next_mark(kind, label))
@@ -435,7 +441,8 @@ class _Program:
             if c.type == "dma":
                 self.mark(core, DMA_MARKS[c.values["direction"]], f"dma {t}")
                 self.emit(core, *self.dma(c, where))
-                self.quiet(core, "snrt_dma_wait_all();")
+                if not self.pipelined:
+                    self.quiet(core, "snrt_dma_wait_all();")
                 continue
             if not run_marked:  # the run: its streamers' start to the end of its tasks
                 self.mark(core, "run", f"run {', '.join(runs)}")
@@ -449,7 +456,8 @@ class _Program:
                     self.unpolled.add(acc)
             else:
                 self.emit(core, f"csrw_ss({self.csr('START', c.component, t)}, 1);")
-                self.quiet(core, *self.polls(c.component))
+                if not self.pipelined:
+                    self.quiet(core, *self.polls(c.component))
                 self.last_task[self.set_of(c.component)] = t
                 self.unpolled.discard(self.set_of(c.component))
 
@@ -528,9 +536,10 @@ class _Program:
             )  # fmt: skip
         core = self.core_of(comp)
         if comp == "dma":  # every DMA start is waited on at once in the quiet build
-            self.wait_once(core, ["snrt_dma_wait_all();"], True)
+            self.wait_once(core, ["snrt_dma_wait_all();"], not self.pipelined)
         else:
-            self.wait_once(core, self.polls(comp), self.set_of(comp) not in self.unpolled)
+            quieted = not self.pipelined and self.set_of(comp) not in self.unpolled
+            self.wait_once(core, self.polls(comp), quieted)
         ended = [t for c, last in covers.items()
                  for t in self.started[c][: self.started[c].index(last) + 1]
                  if t not in self.waited]  # fmt: skip
@@ -580,6 +589,8 @@ class _Program:
         for w in placed:
             waits.setdefault(w.step, []).append(w)
         everyone = set(range(self.cores.count))
+        if self.pipelined:  # the program window's one section, from its first step
+            self.quiet(self.cores.slot, self.next_mark("run", "program window"))
         for i, s in enumerate(self.tasks.steps):
             where = f"{self.tasks.name}: step {i} ({s.op})"
             if isinstance(s, Configure):
@@ -646,8 +657,13 @@ class _Program:
             + "the SNAX waits as the lowering "
             "places them, the DMA's on dependences only, a barrier where another "
             "core goes on. One function per core, a straight line; the window from main's entry "
-            "to forge_check()'s. Built with -DFORGE_QUIET: every start waited at once, "
-            "each section marked in CSR 0x7c5 (obs_marks.json), no prints."
+            "to forge_check()'s. Built with -DFORGE_QUIET: "
+            + (
+                "the same waits, one section (the program window)"
+                if self.pipelined
+                else "every start waited at once, each section"
+            )
+            + " marked in CSR 0x7c5 (obs_marks.json), no prints."
         )
         head = [
             *generated_header(point_path, what).splitlines(),

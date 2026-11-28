@@ -5,8 +5,8 @@ On SNAX-GVSoC (marker ``gvsoc``: in the image), vecadd and dot_v3 at N = 2048, W
 ``energy``: the counts of the ``run`` window that the program fixes are the static estimate's
 (each mover's grants its words, each unit's firings times its span its fires), every mover's
 requests are at least its grants, and the windows' energies add up to the run's total. A
-pipelined schedule (bicg_v2_1's ``pipeline``) is priced in one window of the default build, its
-control part the static estimate's within 10 %.
+pipelined schedule (bicg_v2_1's ``pipeline``) is priced in its quiet build's one section, the
+program window, its control part the static estimate's within 10 %.
 """
 
 from __future__ import annotations
@@ -185,9 +185,10 @@ def test_the_flow_runs_the_quiet_build_again_and_prices_it(tmp_path, monkeypatch
     assert "energy" in f.times
 
 
-def test_a_pipelined_flow_prices_the_default_build_in_one_window(tmp_path, monkeypatch):
-    """vecadd at ``pipeline`` through the flow with --energy, SNAX-GVSoC stubbed: the energy run
-    is the default build with the summary traces, priced in one window of the whole run."""
+def test_a_pipelined_flow_prices_its_quiet_build_in_the_program_window(tmp_path, monkeypatch):
+    """vecadd at ``pipeline`` through the flow with --energy, SNAX-GVSoC stubbed: the
+    energy run is the quiet build, whose one section is the program window, priced as the static
+    estimate prices it; the check's window after it."""
     from snax_forge.flow import summary
 
     from .helpers import stub
@@ -196,13 +197,16 @@ def test_a_pipelined_flow_prices_the_default_build_in_one_window(tmp_path, monke
     fake = stub(monkeypatch, tmp_path)
     f = flow(tmp_path, energy=True, design_sets=[("schedule", "pipeline")])
     goal, v = fake.calls[-1]
-    assert goal == "run" and v["ELF"].endswith("sw/forge.elf") and v["TRACES"] == "summary"
-    assert v["EVENTS"].endswith("energy/events.log")
-    ((w, got),) = f.energy.runs()
-    assert len(f.energy.windows) == 1 and (w.kind, w.label) == ("whole", "the whole run")
+    assert goal == "run" and v["ELF"].endswith("sw/forge_quiet.elf") and v["TRACES"] == "summary"
+    ((w, got),) = f.energy.of_kind("run")
+    assert w.label == "program window"
+    assert [x.kind for x in f.energy.windows if x.mark > 0] == ["run", "check"]
     for part, want in f.energy.static.parts.items():
         assert got.parts[part] == pytest.approx(want, rel=1e-12), part
-    assert "energy    sw/forge.elf, 1 window; window 0 " in summary(f)
+    assert (
+        f"energy    sw/forge_quiet.elf, {len(f.energy.windows)} windows; window {w.index}"
+        in summary(f)
+    )
 
 
 @pytest.fixture(scope="module", params=sorted(REAL))
@@ -258,13 +262,16 @@ def pipelined(tmp_path_factory):
 
 @pytest.mark.gvsoc
 @needs_gvsoc
-def test_a_real_pipelined_run_is_priced_in_one_window_of_the_default_build(pipelined):
-    """The run is sound, energy.json holds one window, the whole run, and its control part, each
-    group's busy cycles at its own control bits, is the static estimate's within 10 %."""
+def test_a_real_pipelined_run_is_priced_in_its_program_window(pipelined):
+    """The run is sound, energy.json's one run window is the quiet build's program window,
+    and its control part, each group's busy cycles at its own control bits, is the static
+    estimate's within 10 %."""
     f = pipelined
     assert f.passed and f.check["data_errors"] == 0, f.check
     d = json.loads((f.out / "energy" / "energy.json").read_text())
-    ((w,),) = [d["windows"]]
-    assert (w["kind"], w["label"], w["first"]) == ("whole", "the whole run", 0)
+    (w,) = [x for x in d["windows"] if x["kind"] == "run"]
+    assert w["label"] == "program window" and [
+        x["kind"] for x in d["windows"] if x["mark"] > 0
+    ] == ["run", "check"]
     got, want = w["energy"]["parts"]["control"], d["static"]["parts"]["control"]
     assert got == pytest.approx(want, rel=0.10), (got, want)
