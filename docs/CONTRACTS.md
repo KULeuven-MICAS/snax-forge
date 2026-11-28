@@ -1003,7 +1003,7 @@ What a design costs in area and energy before any synthesis: the blocks and cont
 | `<tech>/dma_copy.json` | the DMA engine's energy per burst of a copy, `engine.e_burst_pj` | X95, X102 |
 
 - `pixi run import-costs` copies the seven files with `<tech>/SOURCE` naming each file's origin and sha256; `tests/char/` checks them. A lookup gives a block's, a streamer's, the crossbar's and a bank's leakage (µW) beside its area, by the same rule; the crossbar's at the table's leakage per µm² at its inputs and banks.
-- **Block lookup** (`lookup`, D176): the entry at the block's own pair if its inputs differ in width and that pair is measured (`exact_params`), else at its width pair (`pair_params`), then a point at its lanes (`measured`), else by `lanes_rule` (`copy`, `interpolate`, `slope`), depth, `width` or `unseeded`; a `Mac` bank from its rows-1 entry and the `bank` forms (D193). Else the comb part counts 0 (`char.missing`).
+- **Block lookup** (`lookup`, D176): the entry at the block's own pair if its inputs differ in width and that pair is measured (`exact_params`), else at its width pair (`pair_params`), then a point at its lanes (`measured`), else by `lanes_rule` (`copy`, `interpolate`, `slope`), depth, `width` or `unseeded`; a `Mac` bank from its rows-1 entry and the `bank` forms (D193); a `HaloLink` comb 0 with no entry (`wires`: its taps are wires, its load a clock gate, so its flops alone). Else the comb part counts 0 (`char.missing`).
 - **Table lookup** (`streamer_cost`, `xbar_cost`, `bank`): linear along one axis at a time; outside the grid linear through the two nearest values, clamped at zero, with `cost.extrapolated`. A writer is priced as a reader.
 
 ### The model
@@ -1032,7 +1032,7 @@ $$E = \sum_b E_b + \sum_g E_{\mathit{ctrl},g} + \sum_p \frac{W_p}{C_p}\thinspace
 
 | Field | Holds |
 |---|---|
-| a group's `cost.units`, `cost.links` | per unit and buffer link (and a packed output's packer, `FifoPacker` by `<unit>.<port>`, a fire per result, its point's `load_bits` loading per push; a sliced input's slicer, `FifoSlicer` by `<unit>.<port>`, a fire per pop (its unit's firings, a seed's once a job), its point's `load_bits` loading per pop): `datapath`, `fires`, `found` (`measured`, `copy`, `interpolate`, `slope`, `width`, `unseeded`, or null), `area` (`comb`, `flops`, `total`, µm²), `energy` (`fire` in pJ, `task` in nJ) |
+| a group's `cost.units`, `cost.links` | per unit and buffer link (and a packed output's packer, `FifoPacker` by `<unit>.<port>`, a fire per result, its point's `load_bits` loading per push; a sliced input's slicer, `FifoSlicer` by `<unit>.<port>`, a fire per pop (its unit's firings, a seed's once a job), its point's `load_bits` loading per pop): `datapath`, `fires`, `found` (`measured`, `copy`, `interpolate`, `slope`, `width`, `unseeded`, `wires`, or null), `area` (`comb`, `flops`, `total`, µm²), `energy` (`fire` in pJ, `task` in nJ) |
 | a group's `cost.ctrl` | `bits`, `area` (`flops`, `comb`, `total`), `energy` |
 | a group's `cost.area`, `cost.energy` | its units', links' and control unit's added up |
 | an accelerator's `cost.streamers` | per port's streamer: its counts (`depth`, `loops`, `channels`, `words`, `beats`), `area`, `e_beat`, `energy`, `extrapolated` |

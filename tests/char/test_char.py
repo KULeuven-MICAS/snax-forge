@@ -168,3 +168,25 @@ def test_requant_axpbypcz_and_threshold_are_keyed_at_their_own_types_and_slots()
     assert lookup(table, "SimdLanes", {**gray, "kCsr": False}, 2) == Lookup(180.0, 1.8, "copy")
     assert lookup(table, "SimdLanes", {**requant, "d": 512}, 8) is None
     assert lookup(table, "SimdLanes", {**gray, "inTypes": ["int8"] * 3}, 2) is None
+
+
+def test_a_halo_link_is_wires_priced_by_its_flops():
+    """A HaloLink's taps are wires and its load a clock gate: no table entry, comb 0 at any lanes
+    (not ``char.missing``); the estimate prices its flops from the catalogue, the reset inverters
+    its flops have alone left out."""
+    from snax_forge.estimate.cost import Block, block_cost
+
+    halo = {"taps": 3, "lanes": 8, "dtype": "uint8"}
+    for table in (SMALL, load("nangate45")):
+        assert "HaloLink" not in table.blocks
+        for lanes in (1, 8, 32):
+            assert lookup(table, "HaloLink", {**halo, "lanes": lanes}, lanes) == Lookup(
+                0.0, 0.0, "wires"
+            )
+    table = load("nangate45")
+    bits = 64  # H = 1 beat of 8 lanes of 8 bits
+    got = block_cost(table, Block("HaloLink", halo, 100), bits, 100)
+    assert (got.found, got.comb_um2) == ("wires", 0.0)
+    assert got.flops_um2 == pytest.approx(bits * table.flop_um2)
+    assert got.e_fire_pj == pytest.approx(bits * table.e_load_pj)
+    assert got.leak_uw == pytest.approx(bits * table.flop_leak_uw)

@@ -30,7 +30,20 @@ HERE = Path(__file__).parent
 # The technologies offered: nangate45 only (snax-forge-experiments synthesizes nothing else).
 TECHS = ("nangate45",)
 DEFAULT_TECH = "nangate45"
-FOUND = ("measured", "copy", "interpolate", "slope", "width", "unseeded", "bank", "bank_beyond")
+FOUND = (
+    "measured",
+    "copy",
+    "interpolate",
+    "slope",
+    "width",
+    "unseeded",
+    "bank",
+    "bank_beyond",
+    "wires",
+)
+# The datapaths whose comb part is wires (a HaloLink's taps, its load a clock gate): no table
+# entry, comb 0, priced by their flops alone
+WIRES = ("HaloLink",)
 # A control unit's comb area is CTRL_COMB_PER_FLOP × its flops' area, a rough early estimate (its
 # comb energy taken as negligible); not in the table, a byte copy of snax-forge-experiments'
 # char.json. The L1 side is tables.py's tables.
@@ -232,7 +245,9 @@ def lookup(table: Table, datapath: str, params: Mapping[str, Any], lanes: int,
            depth: int | None = None) -> Lookup | None:  # fmt: skip
     """A block's comb area and energy per fire on ``table`` (CONTRACTS, "Cost model"), or None:
     a block of mixed inputs at its own pair if measured (``exact_params``), else at its width
-    pair."""
+    pair; a ``WIRES`` datapath comb 0, found ``wires``."""
+    if datapath in WIRES:
+        return Lookup(0.0, 0.0, "wires")
     exact = exact_params(datapath, params)
     if exact is not None:  # either order: a and b reach the same multiplier
         for ins in (exact["inTypes"], exact["inTypes"][::-1]):
@@ -294,6 +309,7 @@ __all__ = [
     "DEFAULT_TECH",
     "FOUND",
     "TECHS",
+    "WIRES",
     "CharError",
     "Lookup",
     "Table",
