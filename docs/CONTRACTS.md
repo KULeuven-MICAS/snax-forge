@@ -470,7 +470,7 @@ A note is registered (`register_note(code, fn)`) and runs once the checks passed
 | `streamers` | the resolved shell, `<instance>_<port>` → `instance`, `port`, `write`, `n_ports`, `spatial_bounds`, `temporal_dims`, `dtype`, `num_slc`, `num_ch`, `d_out` (1 unless packed), `d_in` (1 unless sliced), `fifo_depth` |
 | `memory` | the plan: `passes`, `changes`, `layouts` (container → memory → layout) |
 | `schedule` | how LOWER orders the accelerators (D179, section 8): `serial` (the default; a file without the field), `pipeline`, `pipeline_compute` or `sequential` (D183), from `--set design.schedule=` |
-| `data` | where data.h's inputs come from (D199): `kernel`, the kernel's `make_inputs` (the default; a file without the field, and the field is written only when it is not), or `full`, each input uniform over its dtype; from `--set design.data=` |
+| `data` | where data.h's inputs come from (D199): `kernel`, the kernel's `make_inputs` (the default; a file without the field, and the field is written only when it is not), or `full`, each input uniform over its dtype, or over its range where the kernel's spec gives one (`ranges`, D209); from `--set design.data=` |
 
 
 ## 8. Task list

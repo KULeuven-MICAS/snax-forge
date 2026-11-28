@@ -31,6 +31,9 @@ class KernelSpec:
     types: Mapping[str, str] = field(default_factory=dict)
     # preset name -> {container or type parameter: dtype}, chosen with ``--set types=<name>``
     presets: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
+    # container -> (lo, hi), both included: what full-range data draws it from, inside
+    # its dtype; the others are drawn over all of their dtype
+    ranges: Mapping[str, tuple[int, int]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.inout:
@@ -51,6 +54,13 @@ class KernelSpec:
             raise ValueError(f"{self.name}: no descriptor for {sorted(missing)}")
         if clash := sorted(set(self.types) & set(self.descriptors)):
             raise ValueError(f"{self.name}: type parameter {clash[0]!r} is also a container")
+        for c, (lo, hi) in self.ranges.items():
+            if c not in self.descriptors:
+                raise ValueError(f"{self.name}: ranges names {c!r}, which is not a container")
+            info = np.iinfo(self.descriptors[c].dtype.type)
+            if not info.min <= lo <= hi <= info.max:
+                raise ValueError(f"{self.name}: the range of {c}, [{lo}, {hi}], is not inside "
+                                 f"its dtype's [{info.min}, {info.max}]")  # fmt: skip
         for name, preset in self.presets.items():
             if unknown := sorted(set(preset) - set(self.descriptors) - set(self.types)):
                 raise ValueError(f"{self.name}: preset {name!r} names {unknown[0]!r}, neither a "

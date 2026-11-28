@@ -7,7 +7,7 @@ Rules (D117):
 - An entry is a choice with a real alternative that someone may want to reverse: direction, ownership, the interfaces between components, the order of work. Implementation details live in the module's docstring and its tests.
 - An entry says what was decided, why, and where the detail lives, in a few short bullets; an edge case only when there is one. A change is written into the entry, not chained after it.
 - Entries merged into one keep all their numbers in its heading, so a cite of any of them still finds it. A number is never changed or reused; the text of a removed entry is in git history.
-- A new decision gets the next free number, under the area it belongs to. Next free number: **D207** (D204 and D205 are taken on `ry/cost3`).
+- A new decision gets the next free number, under the area it belongs to. Next free number: **D210** (D204 and D205 are taken on `ry/cost3`, D207 on `ry/hcmp1`).
 
 Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29–D45, D47–D50, D53, D54, D56, D58–D63, D65–D67, D69, D74, D76–D78, D80, D81, D83, D88–D97, D100, D101, D103, D104, D106, D107, D109, D110, D114, D115, D119, D124, D127, D128, D132, D133, D138–D141, D151, D156, D159, D160, D181.
 
@@ -91,7 +91,19 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 
 - **Decided:** `--set design.data=full` draws every input of data.h uniform over its integer dtype, both ends included, at the shapes the kernel's `make_inputs` gives, from the flow's seed; the default `kernel` keeps `make_inputs`' own small values. The design point holds it (written only when `full`), so the flow, `forge` and the bundles agree. Sums and products wrap as NumPy's (D143), on the reference, SNAX-GVSoC and the RTL alike.
 - **Why:** gate-level energy depends on the data, and the cost tables were measured on full-range random inputs; a default left as it was keeps every fixture and bundle byte for byte.
-- **Where:** `dfg/reference.py` (`full_range`); CONTRACTS, "Memory plan and design point".
+- **Where:** `dfg/reference.py` (`full_range`); CONTRACTS, "Memory plan and design point". A kernel's spec may narrow an input's range (D209).
+
+### D208 — Constant weights stored in the layout their form reads
+
+- **Decided:** a kernel's constant matrix is stored in the layout the form of its layer reads along rows: $(D_{\text{out}}, D_{\text{in}})$ with `w @ a` for the row form (a dot per output), $(D_{\text{in}}, D_{\text{out}})$ with `w.T @ a` for the column form (one input over the output lanes). A layout another set needs is a kernel of its own with the same inputs, transposed: `mlp_int` (all three layers row form) and `mlp_int_col3` (layer 3 column form, for the chained set).
+- **Why:** the weights are constants, so their layout costs nothing at run time; int8 cannot be read across the loop order (`mark_transpose` refuses an element narrower than the bank word, D182), and `data_transpose` moves one element a burst at 8/3 cycles, about 175k cycles on the large MLP's layer 1 (256 × 256) against its 8k cycles of multiply-adds at W = 8.
+- **Where:** `kernels/dl/mlp_int.py`, `kernels/dl/mlp_int_col3.py`; `kernels/dl/README.md`.
+
+### D209 — A kernel may give an input's data range
+
+- **Decided:** `KernelSpec.ranges` maps a container to its range, both ends included and inside its dtype; full-range data (D199) draws it uniform over that range, every other input over its whole dtype. `mlp_int`'s biases are drawn from $\pm 2^{15}$, and its `make_inputs` draws the same distributions in the same order, so `kernel` and `full` give the same inputs.
+- **Why:** a bias over the whole int32 range would swamp the sums (σ of 24k–85k), so every requantized activation would sit at 0 or 127.
+- **Where:** `sdfg/spec.py`, `dfg/reference.py` (`full_range`); CONTRACTS, "Memory plan and design point".
 
 ## BRMs and blocks
 

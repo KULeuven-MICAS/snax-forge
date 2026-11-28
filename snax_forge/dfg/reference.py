@@ -88,17 +88,19 @@ def kernel_inputs(
         if str(np.asarray(arr).dtype) != cont.dtype:
             inputs[c] = np.asarray(arr).astype(cont.dtype)
     if data == "full":
-        return full_range(graph, inputs, seed)
+        return full_range(graph, inputs, seed, spec.ranges)
     if data != "kernel":
         raise KernelError(f"inputs: data {data!r} is neither kernel nor full")
     return inputs
 
 
-def full_range(graph: Graph, inputs: Mapping[str, Any], seed: int) -> dict[str, np.ndarray]:
-    """Every input the graph has a container for drawn uniform over its integer dtype, both
-    ends included, at its shape, from a generator seeded with ``seed`` in the graph's container
-    order; a baked scalar keeps its value. Products and sums wrap as NumPy's, so the
-    reference, SNAX-GVSoC and the RTL agree on every bit (open item 166)."""
+def full_range(graph: Graph, inputs: Mapping[str, Any], seed: int,
+               ranges: Mapping[str, tuple[int, int]] | None = None) -> dict[str, np.ndarray]:  # fmt: skip
+    """Every input the graph has a container for drawn uniform over its integer dtype, or over
+    its range in ``ranges`` (the kernel's), both ends included, at its shape, from a generator
+    seeded with ``seed`` in the graph's container order; a baked scalar keeps its value.
+    Products and sums wrap as NumPy's, so the reference, SNAX-GVSoC and the RTL agree on every
+    bit (open item 166)."""
     rng = np.random.default_rng(seed)
     out = dict(inputs)
     for c in graph.containers:
@@ -108,8 +110,10 @@ def full_range(graph: Graph, inputs: Mapping[str, Any], seed: int) -> dict[str, 
         if dt.kind not in "iu":
             raise KernelError(f"inputs: full-range data needs an integer dtype; {c} is {dt}")
         info = np.iinfo(dt)
+        lo, hi = (ranges or {}).get(c, (info.min, info.max))
+        lo, hi = max(lo, info.min), min(hi, info.max)  # a recipe's dtypes may narrow it
         shape = np.shape(out[c])
-        out[c] = rng.integers(info.min, info.max, size=shape, dtype=dt, endpoint=True)
+        out[c] = rng.integers(lo, hi, size=shape, dtype=dt, endpoint=True)
     return out
 
 
