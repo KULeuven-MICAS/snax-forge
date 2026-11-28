@@ -224,7 +224,7 @@ object Emit {
   def datapath(d: Datapaths.Datapath, params: Map[String, ujson.Value]): Block = {
     val p = d.complete(params)
     d.check(p)
-    Block(d.name, ujson.Obj.from(d.params.map { case (n, _, _) => n -> p(n) }), () => d.make(p))
+    Block(d.name, ujson.Obj.from(d.params.collect { case (n, _, _) if p.contains(n) => n -> p(n) }), () => d.make(p))
   }
 
   /** The stream blocks `--block` builds beside the catalogue's datapaths, by name, each from its params (checked, an

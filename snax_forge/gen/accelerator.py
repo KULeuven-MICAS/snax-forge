@@ -772,7 +772,8 @@ def _unit(point: DesignPoint, name: str, inst: Instance, offsets: Iterator[int])
         raise GenError("gen.controller", f"{what}: controller "
                        f"{inst.impl.binding['controller']!r}; the nest controller is counted")  # fmt: skip
     dp = DATAPATHS[datapath]
-    fill = fill_node(datapath, inst, point.graph, instance_nodes(point.graph)[name])
+    fill = fill_node(datapath, inst, point.graph, instance_nodes(point.graph)[name],
+                     point.narrow_mul)  # fmt: skip
     if inst.drain != 0:
         raise GenError("gen.drain", f"{what}: drain {inst.drain}; the nest controller has none, "
                        "so a bound implementation's drain is 0")  # fmt: skip

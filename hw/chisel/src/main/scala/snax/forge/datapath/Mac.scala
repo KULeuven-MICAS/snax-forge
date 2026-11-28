@@ -9,7 +9,9 @@ import snax.forge.IntType
   * and enables only.
   *
   * Per lane the product p = cast_out(cast_op(a) · cast_op(b)): `a` and `b` each extended to `opType` by its own
-  * signedness, multiplied wrapping at `opType`, then extended or wrapped into `outType`.
+  * signedness, multiplied wrapping at `opType`, then extended or wrapped into `outType`. With `narrowMul` (D207) a·b is
+  * built at the operands' own widths and then extended to `opType` (`IntType.narrowProduct`), the same bits, where they
+  * fit it; the module name then ends in `_nm`.
   *
   *   - `accumulate`: on `fire`, s ← `first` ? p : s + p at `outType`; `out` is s. Latency 1, pins `fire` and `first`:
   *     its control unit pushes `out` in the cycle after a job's last beat fires, and may fire the next job's first beat
@@ -43,6 +45,8 @@ import snax.forge.IntType
   *   the accumulating form's seed port (the BRM's `seed`); refused on the plain form
   * @param rows
   *   the accumulating form's rows of sums, its bank (1: the plain `Mac`, no pin `row` or `drain`)
+  * @param narrowMul
+  *   a·b built at the operands' own widths where w_a + w_b fits `opType` (D207); elsewhere the default's
   */
 class Mac(
   val inTypes:    Seq[String] = Seq("int64", "int64"),
@@ -52,7 +56,8 @@ class Mac(
   val accumulate: Boolean     = true,
   val regOut:     Boolean     = false,
   val seed:       Boolean     = false,
-  val rows:       Int         = 1
+  val rows:       Int         = 1,
+  val narrowMul:  Boolean     = false
 ) extends DatapathModule {
   require(lanes > 0, s"lanes must be positive, got $lanes")
   require(
@@ -77,9 +82,12 @@ class Mac(
 
   private val form = if (accumulate) "acc" else if (regOut) "reg" else "plain"
 
+  /** a·b is built narrow: asked for, and it fits `opType` (D207). */
+  val narrow: Boolean = narrowMul && IntType.narrowFits(ins(0), ins(1), opT)
+
   override def desiredName: String =
     s"Mac_${ins.take(2).map(_.tag).mkString("x")}_${opT.tag}_${outT.tag}_n${lanes}_$form${if (seed) "_seed" else ""}" +
-      (if (rows > 1) s"_r$rows" else "")
+      (if (rows > 1) s"_r$rows" else "") + (if (narrow) "_nm" else "")
 
   val io = IO(new Bundle {
     val a     = Input(Vec(lanes, ins(0).lane))
@@ -96,9 +104,12 @@ class Mac(
 
   // Per lane p = cast_out(cast_op(a) * cast_op(b)): an unsigned product's low opType bits are the signed one's too
   private val p = (0 until lanes).map { l =>
-    val x = IntType.cast(io.a(l), ins(0), opT).asUInt
-    val y = IntType.cast(io.b(l), ins(1), opT).asUInt
-    IntType.cast((x * y)(opT.width - 1, 0), opT, outT).asUInt
+    if (narrow) IntType.cast(IntType.narrowProduct(io.a(l), ins(0), io.b(l), ins(1), opT), opT, outT).asUInt
+    else {
+      val x = IntType.cast(io.a(l), ins(0), opT).asUInt
+      val y = IntType.cast(io.b(l), ins(1), opT).asUInt
+      IntType.cast((x * y)(opT.width - 1, 0), opT, outT).asUInt
+    }
   }
 
   if (rows > 1) { // NB (D191): the bank's rows, written at `row` and read at `drain`; no register of a row

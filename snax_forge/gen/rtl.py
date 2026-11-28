@@ -9,7 +9,8 @@ checks are CONTRACTS, "Accelerator RTL spec". Python resolves and checks; Scala 
 Per unit the checks run in order: the params by its fill rule, its live ports and pins
 (``live``), its ports, its timing; then each buffer's ``LinkBuffer`` params. The fill rule's
 keys: ``inputs.dtype``, ``outputs.dtype``, ``inputs.lanes``, ``inputs.count``, ``unit.opType``,
-``unit.params.<name>`` (None where unset), ``unit.scalars.<slot>``, ``unit.ports.seed`` and a
+``unit.params.<name>`` (None where unset; a bool with a ``default`` left out),
+``unit.scalars.<slot>``, ``unit.ports.seed`` and a
 link's (``LINK_RULES``): a buffer's ``link.depth``, a halo link's ``link.taps``, and their
 ends' ``link.lanes``, ``link.dtype``. ``vectors`` and ``write_fixture`` write
 the Chisel specs' ``vectors.json``: per outer port its data.h array (lane i of beat t is element
@@ -72,7 +73,8 @@ def _input_dtypes(unit: Unit, kind: str) -> Any:
 
 
 # The catalogue's fill rules (module doc): rule -> its value for a unit, given the param's type;
-# ``unit.params.<key>`` is the unit's param of that name, an ``int`` the unit lacks its min
+# ``unit.params.<key>`` is the unit's param of that name, an ``int`` the unit lacks its min, a
+# ``bool`` with a ``default`` the unit lacks left out (``narrowMul``, as a block leaves it)
 FILL_RULES: dict[str, Callable[[Unit, str], Any]] = {
     "inputs.dtype": _input_dtypes,
     "outputs.dtype": lambda u, kind: _ports(u, "out")[0].dtype,
@@ -92,13 +94,10 @@ def fill(acc: Description | None, unit: Unit, sig: Mapping[str, Any]) -> dict[st
     for name, rule in sig["fill"].items():
         if rule in FILL_RULES:
             out[name] = FILL_RULES[rule](unit, sig["params"][name]["type"])
-        elif rule.startswith(
-            PARAMS_RULE
-        ):  # an int the unit does not have: its min (a Mac's rows 1)
-            t = sig["params"][name]
-            out[name] = unit.params.get(
-                rule.removeprefix(PARAMS_RULE), t.get("min") if t["type"] == "int" else None
-            )
+        elif rule.startswith(PARAMS_RULE):  # an int the unit lacks: its min (a Mac's rows 1)
+            key, t = rule.removeprefix(PARAMS_RULE), sig["params"][name]
+            if key in unit.params or "default" not in t:
+                out[name] = unit.params.get(key, t.get("min") if t["type"] == "int" else None)
         elif rule.startswith(SCALARS_RULE):
             out[name] = rule.removeprefix(SCALARS_RULE) in unit.scalars
         else:
@@ -196,8 +195,11 @@ def flops(datapath: str, params: Mapping[str, Any], cat: Mapping[str, Any]) -> i
 
 
 def check_params(datapath: str, params: Mapping[str, Any], sig: Mapping[str, Any]) -> None:
-    """``params`` (``fill``'s) against the datapath's catalogue params ``sig``."""
+    """``params`` (``fill``'s) against the datapath's catalogue params ``sig``; a param with a
+    ``default`` may be absent."""
     for k, t in sig.items():
+        if k not in params and "default" in t:
+            continue
         v, what = params[k], f"{datapath}.{k}"
         if t["type"] == "int":
             if type(v) is not int or v < t["min"]:

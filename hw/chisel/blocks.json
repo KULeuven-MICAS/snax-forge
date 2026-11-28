@@ -29,7 +29,8 @@
    "d": {"type": "const"},
    "lo": {"type": "const"},
    "hi": {"type": "const"},
-   "k3Csr": {"type": "bool"}
+   "k3Csr": {"type": "bool"},
+   "narrowMul": {"type": "bool", "default": false}
   },
   "ports": {
    "a": "in",
@@ -63,7 +64,8 @@
    "d": "unit.params.d",
    "lo": "unit.params.lo",
    "hi": "unit.params.hi",
-   "k3Csr": "unit.scalars.k3"
+   "k3Csr": "unit.scalars.k3",
+   "narrowMul": "unit.params.narrowMul"
   }
  },
  "TreeAccumulate": {
@@ -111,7 +113,8 @@
    "accumulate": {"type": "bool"},
    "regOut": {"type": "bool"},
    "seed": {"type": "bool"},
-   "rows": {"type": "int", "min": 1}
+   "rows": {"type": "int", "min": 1},
+   "narrowMul": {"type": "bool", "default": false}
   },
   "ports": {
    "a": "in",
@@ -138,7 +141,8 @@
    "accumulate": "unit.params.accumulate",
    "regOut": "unit.params.regOut",
    "seed": "unit.ports.seed",
-   "rows": "unit.params.rows"
+   "rows": "unit.params.rows",
+   "narrowMul": "unit.params.narrowMul"
   }
  },
  "SerialAccumulate": {

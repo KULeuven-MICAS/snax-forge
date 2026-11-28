@@ -47,7 +47,9 @@ import snax.forge.elementwise.{ElementwiseAlu, ElementwiseOp}
   * its signedness), and the result is extended or wrapped into `outType`. Each lane of a plain op is an
   * `ElementwiseAlu` of the one op; the casts sit at its boundary. The products and sums of axpby and axpbypcz are the
   * low opType bits of the operands' (two's complement, the same at either signedness). Every type is fixed at
-  * elaboration, and every baked slot must fit opType.
+  * elaboration, and every baked slot must fit opType. With `narrowMul` (D207) each product, mul's and axpby's and
+  * axpbypcz's `k * x`, is built at its operands' own widths (a baked k's the smallest signed type holding it, a pin's
+  * opType's) where they fit opType, the same bits (`IntType.narrowProduct`); the name then ends in `_nm`.
   *
   * @param inTypes
   *   the inputs' types, `a`'s, `b`'s and `c`'s, or fewer, NumPy's names ("int32", "uint8"), from the unit's input
@@ -85,24 +87,27 @@ import snax.forge.elementwise.{ElementwiseAlu, ElementwiseOp}
   *   requant's lower bound, fitting `opType` (the unit's `params.lo`)
   * @param hi
   *   requant's upper bound and threshold's output above it, fitting `opType` (the unit's `params.hi`)
+  * @param narrowMul
+  *   each product built at its operands' own widths where they fit `opType` (D207); elsewhere the default's
   */
 class SimdLanes(
-  val inTypes: Seq[String]    = Seq("int32", "int32"),
-  val opType:  String         = "int32",
-  val outType: String         = "int32",
-  val lanes:   Int            = 4,
-  val op:      Int            = ElementwiseOp.Add,
-  val k:       Option[BigInt] = None,
-  val k1:      Option[BigInt] = None,
-  val k2:      Option[BigInt] = None,
-  val kCsr:    Boolean        = false,
-  val k1Csr:   Boolean        = false,
-  val k2Csr:   Boolean        = false,
-  val k3:      Option[BigInt] = None,
-  val k3Csr:   Boolean        = false,
-  val d:       Option[BigInt] = None,
-  val lo:      Option[BigInt] = None,
-  val hi:      Option[BigInt] = None
+  val inTypes:   Seq[String]    = Seq("int32", "int32"),
+  val opType:    String         = "int32",
+  val outType:   String         = "int32",
+  val lanes:     Int            = 4,
+  val op:        Int            = ElementwiseOp.Add,
+  val k:         Option[BigInt] = None,
+  val k1:        Option[BigInt] = None,
+  val k2:        Option[BigInt] = None,
+  val kCsr:      Boolean        = false,
+  val k1Csr:     Boolean        = false,
+  val k2Csr:     Boolean        = false,
+  val k3:        Option[BigInt] = None,
+  val k3Csr:     Boolean        = false,
+  val d:         Option[BigInt] = None,
+  val lo:        Option[BigInt] = None,
+  val hi:        Option[BigInt] = None,
+  val narrowMul: Boolean        = false
 ) extends DatapathModule {
   require(
     Seq(1, 2, 3).contains(inTypes.size),
@@ -168,10 +173,25 @@ class SimdLanes(
   private def suffix(s: String, v: Option[BigInt], csr: Boolean = false): String =
     if (csr) s"_${s}r" else v.map(x => if (x < 0) s"_${s}m${-x}" else s"_$s$x").getOrElse("")
 
+  /** Whether `k * x`, x input `i`, is built narrow: asked for, k baked (a pin is opType's width) and its type, the
+    * smallest signed one holding it, and input i's fitting opType (D207).
+    */
+  private def narrowK(v: Option[BigInt], csr: Boolean, i: Int): Boolean =
+    narrowMul && !csr && v.flatMap(SimdLanes.kType).exists(IntType.narrowFits(_, ins(i), opT))
+
+  /** mul's product is built narrow: two inputs that fit opType, or one and a narrow k. */
+  private val narrowMulOp: Boolean =
+    op == ElementwiseOp.Mul && (if (n == 2) narrowMul && IntType.narrowFits(ins(0), ins(1), opT)
+                                else narrowK(k, kCsr, 0))
+
+  /** Some product is built narrow (D207); the name ends in `_nm`. */
+  val narrow: Boolean = narrowMulOp || (axpby || axpbypcz) &&
+    Seq((k1, k1Csr), (k2, k2Csr), (k3, k3Csr)).zipWithIndex.take(n).exists { case ((v, c), i) => narrowK(v, c, i) }
+
   override def desiredName: String =
     s"SimdLanes_${ins.map(_.tag).mkString("x")}_${opT.tag}_${res.tag}_n${lanes}_$opn" +
       suffix("k", k, kCsr) + suffix("k1", k1, k1Csr) + suffix("k2", k2, k2Csr) + suffix("k3", k3, k3Csr) +
-      suffix("d", d) + suffix("lo", lo) + suffix("hi", hi)
+      suffix("d", d) + suffix("lo", lo) + suffix("hi", hi) + (if (narrow) "_nm" else "")
 
   val io = IO(new Bundle {
     val a   = Input(Vec(lanes, ins(0).lane))
@@ -215,15 +235,28 @@ class SimdLanes(
   /** `kx` at opType, the low bits of `k * x`; with no k, `x` itself (no multiplier). */
   private def term(kx: Option[UInt], x: UInt): UInt = kx.map(c => (c * x)(w - 1, 0)).getOrElse(x)
 
+  /** Input `i`'s lane `l` times the baked `v`, built narrow (`narrowK`). */
+  private def narrowTerm(v: BigInt, i: Int, l: Int): UInt = {
+    val t    = SimdLanes.kType(v).get
+    val port = Seq(Some(io.a), io.b, io.c)(i).get
+    IntType.narrowProduct(v.S(t.width.W), t, port(l), ins(i), opT)
+  }
+
+  /** Slot `j`'s term on input `j`'s lane `l`: narrow where `narrowK`, else `term` on the slot `kx`. */
+  private def termAt(j: Int, v: Option[BigInt], csr: Boolean, kx: Option[UInt], l: Int): UInt =
+    if (narrowK(v, csr, j)) narrowTerm(v.get, j, l) else term(kx, at(j, l))
+
   if (axpby) {
     val s1 = slot(k1, io.k1)
     val s2 = slot(k2, io.k2)
     for (l <- 0 until lanes)
-      out(l, term(s1, at(0, l)) + term(s2, at(1, l)))
+      out(l, termAt(0, k1, k1Csr, s1, l) + termAt(1, k2, k2Csr, s2, l))
   } else if (axpbypcz) {
-    val ks = Seq(slot(k1, io.k1), slot(k2, io.k2), slot(k3, io.k3))
+    val ks   = Seq(slot(k1, io.k1), slot(k2, io.k2), slot(k3, io.k3))
+    val vals = Seq((k1, k1Csr), (k2, k2Csr), (k3, k3Csr))
     for (l <- 0 until lanes) {
-      val sum = (0 until 3).map(i => term(ks(i), at(i, l))).reduce((x, y) => (x + y)(w - 1, 0))
+      val sum =
+        (0 until 3).map(i => termAt(i, vals(i)._1, vals(i)._2, ks(i), l)).reduce((x, y) => (x + y)(w - 1, 0))
       out(l, floorDiv(sum))
     }
   } else if (requant) {
@@ -242,6 +275,11 @@ class SimdLanes(
       val delta = (at(0, l) - kk + 1.U)(w - 1, 0)
       val pos   = if (opT.signed) delta.asSInt > 0.S else delta =/= 0.U
       out(l, Mux(pos, hb, 0.U(w.W)))
+    }
+  } else if (narrowMulOp) {
+    for (l <- 0 until lanes) {
+      val y = if (n == 2) IntType.narrowProduct(io.a(l), ins(0), io.b.get(l), ins(1), opT) else narrowTerm(k.get, 0, l)
+      out(l, y)
     }
   } else {
     val kOperand = slot(k, io.k)
@@ -283,6 +321,9 @@ object SimdLanes {
   /** The encoding of the op named `name` (`params.op`). */
   def opByName(name: String): Int =
     Named.collectFirst { case (e, n) if n == name => e }.getOrElse(ElementwiseOp.byName(name))
+
+  /** A baked k's type for a narrow product (D207): the smallest signed type that holds it, if one does. */
+  def kType(v: BigInt): Option[IntType] = IntType.widths.map(IntType(_, signed = true)).find(fits(v, _))
 
   /** `v` is one of `t`'s values. */
   def fits(v: BigInt, t: IntType): Boolean =

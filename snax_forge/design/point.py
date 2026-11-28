@@ -7,7 +7,8 @@ point". The design step writes it once every check has passed; it is not edited 
 ``streamers`` to be the platform's shell for the graph, so an edited or stale file is caught
 rather than lowered. ``schedule`` (one of ``SCHEDULES``, default ``serial``) is how LOWER orders
 the accelerators; a file without it is serial. ``data`` (one of ``DATA``, default ``kernel``,
-written only when another) is where data.h's inputs come from.
+written only when another) is where data.h's inputs come from; ``narrow_mul`` (written only when
+true) builds the Mac and SimdLanes products at their operands' widths (D207).
 """
 
 from __future__ import annotations
@@ -28,7 +29,7 @@ from .problems import DesignError, Problem, read_json
 from .streamers import Streamer, resolve
 
 KEYS = ("name", "graph_from", "graph", "platform", "streamers", "memory")
-OPTIONAL = ("schedule", "data")
+OPTIONAL = ("schedule", "data", "narrow_mul")
 STEP = re.compile(r"\d+_\w+\.snaxdfg")
 
 
@@ -66,6 +67,7 @@ class DesignPoint(JsonFile):
     memory: MemoryPlan
     schedule: str = "serial"
     data: str = "kernel"
+    narrow_mul: bool = False
 
     @classmethod
     def of(cls, design: Design, name: str) -> DesignPoint:
@@ -81,6 +83,7 @@ class DesignPoint(JsonFile):
             design.memory,
             design.schedule,
             design.data,
+            design.narrow_mul,
         )
 
     def design(self) -> Design:
@@ -88,6 +91,7 @@ class DesignPoint(JsonFile):
         return Design(
             self.platform, self.graph, graph_path=self.graph_from, memory=self.memory,
             memory_spec=self.memory.spec, schedule=self.schedule, data=self.data,
+            narrow_mul=self.narrow_mul,
         )  # fmt: skip
 
     def check(self) -> None:
@@ -123,6 +127,8 @@ class DesignPoint(JsonFile):
         }
         if self.data != DATA[0]:  # a file with the default stays as it was
             d["data"] = self.data
+        if self.narrow_mul is not False:  # likewise
+            d["narrow_mul"] = self.narrow_mul
         return d
 
     @classmethod
@@ -146,6 +152,7 @@ class DesignPoint(JsonFile):
             MemoryPlan.from_dict(d["memory"]),
             str(d.get("schedule", SCHEDULES[0])),
             str(d.get("data", DATA[0])),
+            d.get("narrow_mul", False),
         )
         point.check()
         return point

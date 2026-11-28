@@ -29,7 +29,7 @@ import snax.forge.shell.AcceleratorSpec
   *   - `inputs.lanes`: the first input port's lanes;
   *   - `inputs.count`: the number of input ports (SimdLanes' `streams`);
   *   - `unit.opType`, `unit.params.<name>`: the unit's `opType` and its `params.<name>` (an `int` the unit does not
-  *     have, its `min`: a `Mac`'s `rows` 1, the plain `Mac`);
+  *     have, its `min`: a `Mac`'s `rows` 1, the plain `Mac`; a `bool` with a `default`, left out: `narrowMul`);
   *   - `unit.scalars.<slot>`: whether the unit reads that slot from its CSR (a `bool`: its `scalars` has it);
   *   - `unit.ports.seed`: whether the unit has a seed port (a `bool`: a fold's start, read once per job);
   *   - `link.depth`, `link.lanes`, `link.dtype`: a buffer's link's depth and its ends' lanes and dtype;
@@ -46,11 +46,11 @@ import snax.forge.shell.AcceleratorSpec
   * The Python side (`snax_forge/gen/rtl.py`) checks each unit's timing and ports against it; `Emit --spec` builds from
   * the unit with `build`. A spec checks `describe` equal to `blocks.json`.
   *
-  * Param types: `int` (`min`), `bool`, `op` (one op name of `values`: SimdLanes takes every ElementwiseOp and its own
-  * `SimdLanes.NamedNames`, TreeAccumulate `add` only), `dtype` (an element type's NumPy name of `values`, `IntType`'s
-  * eight), `dtypes` (a list of them) and `const` (an integer of any size or null, SimdLanes' slots `k` ... `hi`: null
-  * where the unit has no such param, `k` at two streams; `const`). A `unit.params.<name>` the unit does not have fills
-  * null, or an `int`'s `min`.
+  * Param types: `int` (`min`), `bool` (with `"default": false` it may be left out: `narrowMul`, D207), `op` (one op
+  * name of `values`: SimdLanes takes every ElementwiseOp and its own `SimdLanes.NamedNames`, TreeAccumulate `add`
+  * only), `dtype` (an element type's NumPy name of `values`, `IntType`'s eight), `dtypes` (a list of them) and `const`
+  * (an integer of any size or null, SimdLanes' slots `k` ... `hi`: null where the unit has no such param, `k` at two
+  * streams; `const`). A `unit.params.<name>` the unit does not have fills null, or an `int`'s `min`.
   */
 object Datapaths {
 
@@ -58,6 +58,7 @@ object Datapaths {
   case class IntParam(min: Int)           extends ParamType
   case class OpParam(values: Seq[String]) extends ParamType
   case object BoolParam                   extends ParamType
+  case object FlagParam                   extends ParamType // a bool, false where left out (`narrowMul`)
   case object DtypeParam                  extends ParamType
   case object DtypesParam                 extends ParamType
   case object ConstParam                  extends ParamType // an integer of any size, or null (unset)
@@ -88,7 +89,9 @@ object Datapaths {
 
     /** The params of `unit` by the fill rule, from its input and output BRM ports in port order. */
     def fill(unit: AcceleratorSpec.UnitSpec): Map[String, ujson.Value] =
-      params.map { case (n, t, rule) =>
+      params.filterNot { case (n, t, rule) => // a flag the unit does not set is left out, as a block leaves it
+        t == FlagParam && !unit.params.contains(rule.stripPrefix("unit.params."))
+      }.map { case (n, t, rule) =>
         val inPorts = unit.inPorts.map(unit.port)
         val value: ujson.Value = rule match {
           case "inputs.dtype" if t == DtypesParam => // a seed is no operand (`unit.ports.seed` says it is there)
@@ -147,15 +150,18 @@ object Datapaths {
       */
     def check(p: Map[String, ujson.Value]): Unit = {
       val names            = params.map(_._1)
-      val (missing, extra) = (names.filterNot(p.contains), p.keys.filterNot(names.contains).toSeq.sorted)
+      val optional         = params.collect { case (n, FlagParam, _) => n }
+      val (missing, extra) =
+        (names.filterNot(n => p.contains(n) || optional.contains(n)), p.keys.filterNot(names.contains).toSeq.sorted)
       if (missing.nonEmpty || extra.nonEmpty)
         throw new IllegalArgumentException(
           s"$name: params ${names.mkString(", ")}; missing [${missing.mkString(", ")}], extra [${extra.mkString(", ")}]"
         )
-      for ((n, t, _) <- params) {
+      for ((n, t, _) <- params if p.contains(n)) {
         val ok = (t, p(n)) match {
           case (IntParam(min), ujson.Num(x)) => x.isWhole   && x >= min && x <= Int.MaxValue
           case (BoolParam, _: ujson.Bool)    => true
+          case (FlagParam, _: ujson.Bool)    => true
           case (OpParam(vs), ujson.Str(s))   => vs.contains(s)
           case (DtypeParam, ujson.Str(s))    => dtypes.contains(s)
           case (DtypesParam, ujson.Arr(xs))  => xs.nonEmpty && xs.forall(x => x.strOpt.exists(dtypes.contains))
@@ -194,6 +200,9 @@ object Datapaths {
   private def str(p: Map[String, ujson.Value], n: String): String = p(n).str
   private def int(p: Map[String, ujson.Value], n: String): Int    = p(n).num.toInt
 
+  /** A `FlagParam`: false where left out. */
+  private def flag(p: Map[String, ujson.Value], n: String): Boolean = p.get(n).exists(_.bool)
+
   /** Every dtype a type param takes. */
   private val dtypes = IntType.names
 
@@ -217,7 +226,8 @@ object Datapaths {
         ("d", ConstParam, "unit.params.d"),
         ("lo", ConstParam, "unit.params.lo"),
         ("hi", ConstParam, "unit.params.hi"),
-        ("k3Csr", BoolParam, "unit.scalars.k3")
+        ("k3Csr", BoolParam, "unit.scalars.k3"),
+        ("narrowMul", FlagParam, "unit.params.narrowMul")
       ),
       Seq(
         Port("a", "in"),
@@ -256,7 +266,8 @@ object Datapaths {
           p("k3Csr").bool,
           const(p("d")),
           const(p("lo")),
-          const(p("hi"))
+          const(p("hi")),
+          flag(p, "narrowMul")
         )
       },
       Map(
@@ -315,7 +326,8 @@ object Datapaths {
         ("accumulate", BoolParam, "unit.params.accumulate"),
         ("regOut", BoolParam, "unit.params.regOut"),
         ("seed", BoolParam, "unit.ports.seed"),
-        ("rows", IntParam(1), "unit.params.rows")
+        ("rows", IntParam(1), "unit.params.rows"),
+        ("narrowMul", FlagParam, "unit.params.narrowMul")
       ),
       Seq(
         Port("a", "in"),
@@ -343,7 +355,8 @@ object Datapaths {
           p("accumulate").bool,
           p("regOut").bool,
           p("seed").bool,
-          int(p, "rows")
+          int(p, "rows"),
+          flag(p, "narrowMul")
         )
       },
       Map(
@@ -460,6 +473,7 @@ object Datapaths {
       case IntParam(min)   => ujson.Obj("type" -> "int", "min" -> ujson.Num(min))
       case OpParam(values) => ujson.Obj("type" -> "op", "values" -> ujson.Arr.from(values))
       case BoolParam       => ujson.Obj("type" -> "bool")
+      case FlagParam       => ujson.Obj("type" -> "bool", "default" -> ujson.False)
       case DtypeParam      => ujson.Obj("type" -> "dtype", "values" -> ujson.Arr.from(dtypes))
       case DtypesParam     => ujson.Obj("type" -> "dtypes", "values" -> ujson.Arr.from(dtypes))
       case ConstParam      => ujson.Obj("type" -> "const")

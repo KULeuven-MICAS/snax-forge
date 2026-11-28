@@ -97,6 +97,7 @@ class Design:
     memory: MemoryPlan | None = None  # made by the memory.pin check, or given (a design point)
     schedule: str = "serial"  # one of SCHEDULES, checked by design.schedule
     data: str = "kernel"  # one of DATA, checked by design.data
+    narrow_mul: bool = False  # D207, checked by design.narrow_mul
 
     def context(self) -> MemoryContext:
         return MemoryContext(self.graph, self.platform)
@@ -138,20 +139,22 @@ def load(
     applied when they are given. The memory spec starts from ``memory_path``
     (a memory working copy) or the default passes, with ``memory_sets``
     applied; the plan itself is made by the memory checks. ``design_sets`` set the
-    design point's own fields (``schedule``, ``data``), checked by design.schedule and
-    design.data.
+    design point's own fields (``schedule``, ``data``, ``narrow_mul``), checked by
+    design.schedule, design.data and design.narrow_mul.
     """
     problems: list[Problem] = []
-    schedule, data = "serial", DATA[0]
+    schedule, data, narrow_mul = "serial", DATA[0], False
     for path, value in design_sets:
         if path == "schedule":
             schedule = value
         elif path == "data":
             data = value
+        elif path == "narrow_mul":
+            narrow_mul = value
         else:
             problems.append(Problem("design.schedule", f"design.{path}",
-                                    "no such field; the design point's own fields are schedule "
-                                    "and data", f"--set design.schedule={SCHEDULES[0]}"))  # fmt: skip
+                                    "no such field; the design point's own fields are schedule, "
+                                    "data and narrow_mul", f"--set design.schedule={SCHEDULES[0]}"))  # fmt: skip
     platform = None
     try:
         platform = Platform.load(platform_path).with_changes(sets)
@@ -169,7 +172,7 @@ def load(
     except DesignError as e:
         problems += e.problems
     return Design(platform, graph, problems, str(graph_path), memory_spec=spec, schedule=schedule,
-                  data=data)  # fmt: skip
+                  data=data, narrow_mul=narrow_mul)  # fmt: skip
 
 
 NOTES: dict[str, Check] = {}
@@ -270,6 +273,13 @@ def _design_data(design: Design) -> Iterable[Problem]:
         yield Problem("design.data", "design.data",
                       f"{design.data!r} is no data choice; give one of {', '.join(DATA)}",
                       f"--set design.data={DATA[0]}")  # fmt: skip
+
+
+def _design_narrow_mul(design: Design) -> Iterable[Problem]:
+    """narrow_mul is a bool."""
+    if type(design.narrow_mul) is not bool:
+        yield Problem("design.narrow_mul", "design.narrow_mul",
+                      f"{design.narrow_mul!r} is not a bool", "--set design.narrow_mul=true")  # fmt: skip
 
 
 def _platform_l2(design: Design) -> Iterable[Problem]:
@@ -1257,6 +1267,7 @@ for _code, _stage, _fn in (
     ("platform.banks", "platform", _platform_banks),
     ("design.schedule", "platform", _design_schedule),
     ("design.data", "platform", _design_data),
+    ("design.narrow_mul", "platform", _design_narrow_mul),
     ("graph.load", "graph", _graph_load),
     ("graph.symbols", "graph", _graph_symbols),
     ("graph.unbound", "graph", _graph_unbound),

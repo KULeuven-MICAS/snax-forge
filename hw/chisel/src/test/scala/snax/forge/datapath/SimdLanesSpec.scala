@@ -19,7 +19,11 @@ import snax.forge.elementwise.{ElementwiseModel, ElementwiseOp}
   * products and sum at the op type, wrapping, cast into the output's type. requant, axpbypcz and threshold: names,
   * refusals, the worked lanes, the edge slots (k at the type's min and max, lo = hi, d = 1 and the largest power of two
   * the op type holds) at 1, 4 and 8 lanes, then per seed random slots and data, each CSR slot rewritten every few
-  * beats, against `NamedModel`, written from the options' definitions in values, not bits.
+  * beats, against `NamedModel`, written from the options' definitions in values, not bits. With `narrowMul` (D207): its
+  * name's `_nm` where a product narrows and the default's module where none can (int32 x int32, a k from its pin or as
+  * wide as opType, an op without a product), then per seed mul (two inputs, and one with k baked at int8's, int16's and
+  * int32's range or from its pin), axpby and axpbypcz at int8 and uint8 inputs -> int32, on and off, against the models
+  * above.
   */
 class SimdLanesSpec extends AnyFlatSpec with ForgeTester {
 
@@ -537,18 +541,19 @@ class SimdLanesSpec extends AnyFlatSpec with ForgeTester {
 
   /** One SimdLanes config of a named op: types, lanes and slots (a baked value, or None and its pin). */
   private case class Named(
-    op:    Int,
-    ins:   Seq[IntType],
-    opT:   IntType,
-    out:   IntType,
-    lanes: Int,
-    k:     Option[BigInt]      = None,
-    kCsr:  Boolean             = false,
-    ks:    Seq[Option[BigInt]] = Seq(None, None, None),
-    kCsrs: Seq[Boolean]        = Seq(false, false, false),
-    d:     Option[BigInt]      = None,
-    lo:    Option[BigInt]      = None,
-    hi:    Option[BigInt]      = None
+    op:     Int,
+    ins:    Seq[IntType],
+    opT:    IntType,
+    out:    IntType,
+    lanes:  Int,
+    k:      Option[BigInt]      = None,
+    kCsr:   Boolean             = false,
+    ks:     Seq[Option[BigInt]] = Seq(None, None, None),
+    kCsrs:  Seq[Boolean]        = Seq(false, false, false),
+    d:      Option[BigInt]      = None,
+    lo:     Option[BigInt]      = None,
+    hi:     Option[BigInt]      = None,
+    narrow: Boolean             = false
   ) {
     def build: SimdLanes =
       new SimdLanes(
@@ -567,7 +572,8 @@ class SimdLanesSpec extends AnyFlatSpec with ForgeTester {
         kCsrs(2),
         d,
         lo,
-        hi
+        hi,
+        narrow
       )
 
     def clue: String =
@@ -575,7 +581,8 @@ class SimdLanesSpec extends AnyFlatSpec with ForgeTester {
         s"${if (kCsr) "csr" else k.getOrElse("-")}, ks ${ks
             .zip(kCsrs)
             .map { case (v, c) => if (c) "csr" else v.getOrElse("-") }
-            .mkString(" ")}, d ${d.getOrElse("-")}, lo ${lo.getOrElse("-")}, hi ${hi.getOrElse("-")}"
+            .mkString(" ")}, d ${d.getOrElse("-")}, lo ${lo.getOrElse("-")}, hi ${hi.getOrElse("-")}" +
+        (if (narrow) ", narrowMul" else "")
   }
 
   /** The options' lanes, from their definitions: every value an integer of its type, NumPy's arithmetic at the op type
@@ -659,7 +666,7 @@ class SimdLanesSpec extends AnyFlatSpec with ForgeTester {
           i    <- c.ins.indices
         } LaneBits.poke(port(i).get(l), xs(l)(i))
         for (l <- 0 until c.lanes) {
-          val want = NamedModel.lane(c, xs(l), csr)
+          val want = laneModel(c, xs(l), csr)
           val got  = LaneBits.peek(dut.io.out(l))
           assert(
             got == want,
@@ -790,4 +797,126 @@ class SimdLanesSpec extends AnyFlatSpec with ForgeTester {
         drive(r, Named(SimdLanes.Threshold, Seq(ti), t, tr, r.pick(Lanes), k, csr, hi = Some(any(r, t))))
       }
     }
+
+  behavior of "SimdLanes with narrowMul"
+
+  /** `c`'s lane by the models above: NumPy's mul (`ElementwiseModel.numpy`, one input's k as b at the op type),
+    * `axpbyModel`, else `NamedModel`. A CSR slot's bits in `csr`.
+    */
+  private def laneModel(c: Named, xs: Seq[BigInt], csr: Map[String, BigInt]): BigInt = {
+    def slot(s: String, v: Option[BigInt], pin: Boolean): Option[BigInt] =
+      if (pin) Some(csr(s)) else v.map(_ & LaneBits.mask(c.opT.width))
+    c.op match {
+      case ElementwiseOp.Mul if c.ins.size == 2 =>
+        ElementwiseModel.numpy(c.op, xs(0), xs(1), c.ins(0), c.ins(1), c.opT, c.out)
+      case ElementwiseOp.Mul                    =>
+        ElementwiseModel.numpy(c.op, xs(0), slot("k", c.k, c.kCsr).get, c.ins(0), c.opT, c.opT, c.out)
+      case SimdLanes.Axpby                      =>
+        val (k1, k2) = (slot("k1", c.ks(0), c.kCsrs(0)).get, slot("k2", c.ks(1), c.kCsrs(1)))
+        axpbyModel(xs(0), xs(1), k1, k2, c.ins(0), c.ins(1), c.opT, c.out)
+      case _                                    => NamedModel.lane(c, xs, csr)
+    }
+  }
+
+  private def nameAt(nm: Boolean)(body: Boolean => SimdLanes): String = nameOf(body(nm))
+
+  it should "end its name in _nm where a product narrows, and be the default's module where none can" in {
+    val two = Seq("int8", "int8")
+    def mul(nm: Boolean) = new SimdLanes(two, "int32", "int32", 8, ElementwiseOp.Mul, narrowMul = nm)
+    def axpby(nm: Boolean) =
+      new SimdLanes(two, "int32", "int32", 8, SimdLanes.Axpby, k1 = Some(3), k2Csr = true, narrowMul = nm)
+    def pcz(nm: Boolean)   =
+      new SimdLanes(
+        Seq.fill(3)("uint8"),
+        "int32",
+        "int32",
+        8,
+        SimdLanes.Axpbypcz,
+        k1        = Some(77),
+        k2        = Some(150),
+        k3        = Some(29),
+        d         = Some(256),
+        narrowMul = nm
+      )
+    assert(nameAt(true)(mul) == "SimdLanes_i8xi8_i32_i32_n8_mul_nm")
+    assert(nameAt(true)(axpby) == "SimdLanes_i8xi8_i32_i32_n8_axpby_k13_k2r_nm")
+    assert(nameAt(true)(pcz) == "SimdLanes_u8xu8xu8_i32_i32_n8_axpbypcz_k177_k2150_k329_d256_nm")
+    assert(nameAt(false)(pcz) == "SimdLanes_u8xu8xu8_i32_i32_n8_axpbypcz_k177_k2150_k329_d256")
+    val none: Seq[(String, Boolean => SimdLanes)] = Seq(
+      "int32 x int32"   -> (nm =>
+        new SimdLanes(Seq("int32", "int32"), "int32", "int32", 8, ElementwiseOp.Mul, narrowMul = nm)
+      ),
+      "k from its pin"  -> (nm =>
+        new SimdLanes(Seq("int8"), "int32", "int32", 8, ElementwiseOp.Mul, kCsr = true, narrowMul = nm)
+      ),
+      "k1 from its pin" -> (nm =>
+        new SimdLanes(two, "int32", "int32", 8, SimdLanes.Axpby, k1Csr = true, narrowMul = nm)
+      ),
+      "k1 an int32"     -> (nm =>
+        new SimdLanes(two, "int32", "int32", 8, SimdLanes.Axpby, k1 = Some(BigInt(1) << 20), narrowMul = nm)
+      ),
+      "add"             -> (nm => new SimdLanes(two, "int32", "int32", 8, ElementwiseOp.Add, narrowMul = nm))
+    )
+    for ((what, m) <- none) {
+      val Seq(wide, narrow) = Seq(false, true).map(nm => circt.stage.ChiselStage.emitCHIRRTL(m(nm)))
+      assert(wide == narrow, s"$what: narrowMul changed a module with no product it narrows")
+    }
+  }
+
+  /** A k for a narrow product at int32: baked at int8's, int16's or int32's range (`w` 0, 1, 2; one in four at the
+    * range's ends), or (3) None and its pin.
+    */
+  private def kAt(r: snax.forge.Rand, w: Int): (Option[BigInt], Boolean) =
+    if (w == 3) (None, true) else (Some(any(r, IntType(8 << w, signed = true))), false)
+
+  private val NarrowIns = Seq(Seq(i8, i8), Seq(i8, u8), Seq(u8, u8))
+
+  for (seed <- Seeds())
+    it should s"give the models' lanes with narrowMul on and off: mul, axpby and axpbypcz at int8 -> int32 (seed $seed)" in Seeds
+      .run(seed) { r =>
+        for (narrow <- Seq(false, true)) {
+          for (ins   <- NarrowIns) drive(r, Named(ElementwiseOp.Mul, ins, i32, i32, 8, narrow = narrow))
+          for (w     <- 0 to 3) {
+            val (k, csr) = kAt(r, w)
+            drive(r, Named(ElementwiseOp.Mul, Seq(r.pick(Seq(i8, u8))), i32, i32, 8, k, csr, narrow = narrow))
+          }
+          for {
+            ins      <- NarrowIns
+            (w1, w2) <- Seq((0, -1), (0, 1), (1, 3), (3, 0), (3, 3), (2, 0))
+          } {
+            val (k1, c1) = kAt(r, w1)
+            val (k2, c2) = if (w2 < 0) (None, false) else kAt(r, w2)
+            drive(
+              r,
+              Named(
+                SimdLanes.Axpby,
+                ins,
+                i32,
+                i32,
+                8,
+                ks     = Seq(k1, k2, None),
+                kCsrs  = Seq(c1, c2, false),
+                narrow = narrow
+              )
+            )
+          }
+          for (ws    <- Seq(Seq(0, 0, 0), Seq(3, 3, 3), Seq(0, 1, 2), Seq.fill(3)(r.between(-1, 3)))) {
+            val slots = ws.map(w => if (w < 0) (None, false) else kAt(r, w))
+            drive(
+              r,
+              Named(
+                SimdLanes.Axpbypcz,
+                Seq.fill(3)(r.pick(Seq(i8, u8))),
+                i32,
+                i32,
+                8,
+                ks     = slots.map(_._1),
+                kCsrs  = slots.map(_._2),
+                d      = Some(BigInt(1) << r.between(0, 8)),
+                narrow = narrow
+              )
+            )
+          }
+        }
+      }
 }

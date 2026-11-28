@@ -471,6 +471,7 @@ A note is registered (`register_note(code, fn)`) and runs once the checks passed
 | `memory` | the plan: `passes`, `changes`, `layouts` (container → memory → layout) |
 | `schedule` | how LOWER orders the accelerators (D179, section 8): `serial` (the default; a file without the field), `pipeline`, `pipeline_compute` or `sequential` (D183), from `--set design.schedule=` |
 | `data` | where data.h's inputs come from (D199): `kernel`, the kernel's `make_inputs` (the default; a file without the field, and the field is written only when it is not), or `full`, each input uniform over its dtype; from `--set design.data=` |
+| `narrow_mul` | the products built at their operands' widths (D207): `true`, or false (the default; a file without the field, written only when true); from `--set design.narrow_mul=` |
 
 
 ## 8. Task list
@@ -620,7 +621,7 @@ A unit:
 | `name`, `brm`, `datapath` | the bind's instance, its BRM, a catalogue datapath |
 | `ports` | per BRM port, in its order: `port` (the datapath's), `dir`, `dtype`, `lanes`; an outer output that a packer feeds also `d_out`, an outer input that a slicer feeds `d_in` (each absent at 1, D174 · D180); a broadcast input `broadcast` true (absent when false, D186): its lanes stay the unit's, its stream carries one; a held input `hold` true (absent when false, D190): read once a bank row; a carried seed `carry` true (D192): the unit's own output, 0 on its first CARRY jobs |
 | `opType` | a SIMD or `Mac` unit's op type, NumPy's result type of its inputs or of the kernel's casts (D143 · D175) |
-| `params` | only what the ports do not give: `op`, a baked slot (relu's `k`), a `Mac`'s `accumulate` and `regOut` and its bank's `rows` (absent at 1, D191), `T` when fixed at design time (then no JOB_BEATS) |
+| `params` | only what the ports do not give: `op`, a baked slot (relu's `k`), a `Mac`'s `accumulate` and `regOut` and its bank's `rows` (absent at 1, D191), `T` when fixed at design time (then no JOB_BEATS), `narrowMul` true on a `Mac` and a `SimdLanes` with a product (mul, axpby, an axpbypcz with a k) when the design point's `narrow_mul` is (D207; absent otherwise, the catalogue's default false) |
 | `scalars` | each slot read from a scalar and its type (axpy's `{"k1": "int32"}`), each an R/W CSR with its datapath `pin` |
 | `timing` | `latency`, `ii`, `span` (the cycles a unit reads one input in place; its throughput is one beat per max(ii, span)) |
 | `csrs` | its R/W CSRs |

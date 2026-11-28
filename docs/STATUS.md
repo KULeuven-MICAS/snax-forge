@@ -176,7 +176,7 @@ The ISPASS 2027 plan (PAP3, PAPER §6), as ROAD1 set it on 16 Nov: tier A and SN
 | Step | Waits for | Gives |
 |---|---|---|
 | E4: the composition sweeps (E4S1) | tier A, GE1's energy and CHAR2's tables (all done) | C3 |
-| E7: forge's best engine per kernel against Vitis opt, Bambu and XLS at int8, W = 8: the basic blocks, dot and matvec's column form, tier A (HCMP1, snax-forge-experiments X118) | the narrow-multiplier option (D207), then the int8 probe | the engines against HLS (§B) |
+| E7: forge's best engine per kernel against Vitis opt, Bambu and XLS at int8, W = 8: the basic blocks, dot and matvec's column form, tier A (HCMP1, snax-forge-experiments X118) | the int8 probe (the narrow-multiplier option, D207, built: `--set design.narrow_mul=true`) | the engines against HLS (§B) |
 | E1: mvt, bicg, atax and gesummv on vsim, from tier A's rounds (the dry runs 4 to 7) | tier A (done) | C4, C5 |
 | E11: the Snitch-only clusters against forge's (SNB1) | SNB1, CSYN1 and PWR1 (done) | cluster PPA, the Snitch baseline |
 | E5, E6 and E12: the end-to-end cases (E2E1–E2E5) | track A | where the cycles go per case |

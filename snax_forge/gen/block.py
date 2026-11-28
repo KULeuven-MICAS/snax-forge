@@ -6,7 +6,8 @@
 ``laneType``, ``words``; ``FifoSlicer``: ``words``, ``laneType``, ``outLanes``), which is not in
 the catalogue: the flow places it on a port (a packed outer output, a sliced outer input)
 rather than binding it to a unit. A datapath's ``int`` filled from ``unit.params``
-may be left out and takes its min (``rtl.at_min``, a ``Mac``'s ``rows`` 1), as Emit does.
+may be left out and takes its min (``rtl.at_min``, a ``Mac``'s ``rows`` 1), as Emit does; a
+``bool`` with a ``default`` (``narrowMul``) may be left out too, and is not listed then.
 ``check_entry`` checks every entry
 against its params before any is built (``gen.block``, ``gen.catalogue``, ``gen.params``, each a
 ``GenError``); ``emit_blocks`` builds them all in one java call on rtl.py's cached classpath,
@@ -81,7 +82,8 @@ def check_entry(entry: Any, cat: Mapping[str, Any] | None = None) -> None:
     if name not in STREAM_BLOCKS:  # an int filled from unit.params may be left out: its min
         params = at_min(params, cat[name])
     sig = STREAM_BLOCKS[name] if name in STREAM_BLOCKS else cat[name]["params"]
-    missing, extra = sorted(set(sig) - set(params)), sorted(set(params) - set(sig))
+    optional = {k for k, t in sig.items() if "default" in t}
+    missing, extra = sorted(set(sig) - set(params) - optional), sorted(set(params) - set(sig))
     if missing or extra:
         raise GenError(
             "gen.params", f"{name}: params {list(sig)}; missing {missing}, extra {extra}"

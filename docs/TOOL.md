@@ -47,7 +47,7 @@ flowchart LR
 | Flag | What it does |
 |---|---|
 | `--platform P` | the platform the design point is on; `platforms/snax_forge.json` is snax_cluster's base cluster |
-| `--set NAME=VALUE` | a recipe param (`W=8`), the type preset (`types=i8`) or one dtype (`dtypes.C=int16`), a design one with `platform.` or `memory.` in front (`memory.passes.layout=padded_rows`), the schedule (`design.schedule=serial|pipeline|pipeline_compute|sequential`, D179 · D183; default `serial`), or the inputs (`design.data=kernel|full`, D199; default `kernel`, `full` each input uniform over its dtype); each is added to the folder name |
+| `--set NAME=VALUE` | a recipe param (`W=8`), the type preset (`types=i8`) or one dtype (`dtypes.C=int16`), a design one with `platform.` or `memory.` in front (`memory.passes.layout=padded_rows`), the schedule (`design.schedule=serial|pipeline|pipeline_compute|sequential`, D179 · D183; default `serial`), or the inputs (`design.data=kernel|full`, D199; default `kernel`, `full` each input uniform over its dtype), or the narrow multiplier (`design.narrow_mul=true`, D207; default false, gen-rtl and bundle read it from the design point); each is added to the folder name |
 | `--trace LEVEL[:SOURCES]` | how much of the run is traced (the table below); the level is added to the folder name |
 | `--vcd` | also writes gtkwave's `run/all.vcd` and `run/view.gtkw` of the traced sources |
 | `--keep-work` | keeps gvrun's `run/work/` after a passing run |
@@ -111,7 +111,7 @@ The flow's stages are commands of their own. Each reads the previous one's outpu
 | `pixi run import-dfg K` | the kernel's SDFG | `out/dfg/K.snaxdfg` | |
 | `pixi run check-dfg G --kernel K` | a graph | nothing; checks it against the kernel's reference | |
 | `pixi run sandbox RECIPE` | a recipe | `out/sandbox/<name>/<i>_<transform>.snaxdfg`, each step checked against the reference | `--set`, `--graph G` (start from a graph), `--out`, `--seed` |
-| `pixi run design G --platform P` | a bound graph | `out/design/<name>/`: `platform.json`, `memory.json`, `design_point.json` | `--set platform.PATH=V`, `--set memory.PATH=V`, `--set design.schedule=S`, `--set design.data=D`, `--memory`, `--out` |
+| `pixi run design G --platform P` | a bound graph | `out/design/<name>/`: `platform.json`, `memory.json`, `design_point.json` | `--set platform.PATH=V`, `--set memory.PATH=V`, `--set design.schedule=S`, `--set design.data=D`, `--set design.narrow_mul=true`, `--memory`, `--out` |
 | `pixi run design check G --platform P` | a bound graph | nothing; the design checks only | |
 | `pixi run design save SRC NAME` | a platform working copy | `platforms/NAME.json` | |
 | `pixi run design from-hjson HJSON NAME` | snax_cluster's cluster file | `platforms/NAME.json` (`--force` to replace) | |

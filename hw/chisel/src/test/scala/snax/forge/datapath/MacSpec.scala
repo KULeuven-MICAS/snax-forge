@@ -17,7 +17,9 @@ import snax.forge.elementwise.ElementwiseModel
   * used, `row` the beat mod ROWS and `drain` the row before it, each of the job's last ROWS results its row's sum; and
   * the refusal of a bank on a plain Mac. A seeded bank: row `row` ← (first ? seed : row) + p, random pins and seeds at
   * R = 2, 4 and 16, its module name ending `_acc_seed_r<R>`; and jobs, each row's first firing taking its own seed
-  * beat.
+  * beat. With `narrowMul` (D207): its name's `_nm` where a·b narrows and the default's module where it cannot (int32 x
+  * int32 at int32), then every form, the bank and the seed included, on and off against the same model at int8 -> int32
+  * (int8 and uint8 operands) and a random type triple that fits.
   */
 class MacSpec extends AnyFlatSpec with ForgeTester {
 
@@ -322,6 +324,111 @@ class MacSpec extends AnyFlatSpec with ForgeTester {
             if (e) s = form match {
               case "acc" => if (f) ps else s.zip(ps).map { case (x, y) => (x + y) & LaneBits.mask(out.width) }
               case _     => ys
+            }
+            dut.clock.step()
+          }
+        }
+      }
+    }
+
+  behavior of "a narrow Mac (narrowMul)"
+
+  private def macName(m: => Mac): String =
+    raw"module (Mac\w*)".r.findFirstMatchIn(circt.stage.ChiselStage.emitCHIRRTL(m)).get.group(1)
+
+  it should "end its name in _nm where a·b narrows, and be the default's module where it cannot" in {
+    val i8 = Seq("int8", "int8")
+    assert(macName(new Mac(i8, "int32", "int32", 8, narrowMul = true)) == "Mac_i8xi8_i32_i32_n8_acc_nm")
+    assert(
+      macName(new Mac(i8, "int32", "int32", 8, seed = true, rows = 8, narrowMul = true)) ==
+        "Mac_i8xi8_i32_i32_n8_acc_seed_r8_nm"
+    )
+    assert(macName(new Mac(Seq("int16", "uint16"), "int32", "int32", 4, narrowMul = true)).endsWith("_nm"))
+    for (
+      (ins, op) <- Seq(
+        (Seq("int32", "int32"), "int32"),
+        (Seq("int32", "int64"), "int64"),
+        (Seq("int16", "int32"), "int32")
+      )
+    ) {
+      val Seq(wide, narrow) =
+        Seq(false, true).map(nm => circt.stage.ChiselStage.emitCHIRRTL(new Mac(ins, op, op, 8, narrowMul = nm)))
+      assert(wide == narrow, s"${ins.mkString(" x ")} at $op: narrowMul changed a module it cannot narrow")
+    }
+  }
+
+  /** The forms checked narrow: name, accumulate, regOut, seed, rows. */
+  private val NarrowForms = Seq(
+    ("acc", true, false, false, 1),
+    ("bank", true, false, false, 8),
+    ("seeded", true, false, true, 1),
+    ("seeded bank", true, false, true, 8),
+    ("plain", false, false, false, 1),
+    ("reg", false, true, false, 1)
+  )
+
+  /** NumPy's product of `a` and `b` (bits of their types) at `op`, cast into `out`. */
+  private def pAt(a: BigInt, b: BigInt, ta: IntType, tb: IntType, op: IntType, out: IntType): BigInt =
+    ElementwiseModel.cast(
+      (ElementwiseModel.cast(a, ta, op) * ElementwiseModel.cast(b, tb, op)) & LaneBits.mask(op.width),
+      op,
+      out
+    )
+
+  for (seed <- Seeds())
+    it should s"give the model's outputs with narrowMul on and off, every form (seed $seed)" in Seeds.run(seed) { r =>
+      val names        = IntType.names
+      val fitting      = for {
+        a <- names
+        b <- names
+        o <- names
+        if IntType(a).width + IntType(b).width <= IntType(o).width
+      } yield (a, b, o)
+      val (ra, rb, ro) = r.pick(fitting)
+      val triples      =
+        Seq(("int8", "int8", "int32"), ("int8", "uint8", "int32"), ("uint8", "uint8", "int32"), (ra, rb, ro))
+      for {
+        (na, nb, no)                   <- triples
+        (form, acc, reg, seeded, rows) <- NarrowForms
+        narrow                         <- Seq(false, true)
+      } {
+        val (ta, tb, op) = (IntType(na), IntType(nb), IntType(no))
+        val out          = if ((na, nb, no) == (ra, rb, ro)) IntType(r.pick(names)) else op
+        val lanes        = 8
+        val clue         = s"$form, ${ta.name} x ${tb.name} at ${op.name} -> ${out.name}, narrowMul $narrow"
+        val ins          = if (acc) Seq(na, nb) else Seq(na, nb, out.name)
+        test(new Mac(ins, op.name, out.name, lanes, acc, reg, seeded, rows, narrowMul = narrow)) { dut =>
+          assert(dut.narrow == narrow, s"$clue: built narrow ${dut.narrow}")
+          var s = Seq.fill(rows)(Seq.fill(lanes)(BigInt(0)))
+          var q = Seq.fill(lanes)(BigInt(0)) // reg's output register
+          for (c <- 0 until 24) {
+            val a            = Seq.fill(lanes)(r.word(ta.width))
+            val b            = Seq.fill(lanes)(r.word(tb.width))
+            val cc           = Seq.fill(lanes)(r.word(out.width))
+            val sd           = Seq.fill(lanes)(r.word(out.width))
+            val (row, drain) = (r.pick(0 until rows), r.pick(0 until rows))
+            val (e, f)       = (r.chance(0.7), c == 0 || r.chance(0.3))
+            for (l <- 0 until lanes) {
+              LaneBits.poke(dut.io.a(l), a(l)); LaneBits.poke(dut.io.b(l), b(l))
+              dut.io.c.foreach(x => LaneBits.poke(x(l), cc(l)))
+              dut.io.seed.foreach(x => LaneBits.poke(x(l), sd(l)))
+            }
+            dut.io.fire.foreach(_.poke(e.B)); dut.io.first.foreach(_.poke(f.B)); dut.io.en.foreach(_.poke(e.B))
+            dut.io.row.foreach(_.poke(row.U)); dut.io.drain.foreach(_.poke(drain.U))
+            val ps   = (0 until lanes).map(l => pAt(a(l), b(l), ta, tb, op, out))
+            val ys   = (0 until lanes).map(l => (ps(l) + cc(l)) & LaneBits.mask(out.width))
+            val want = form match {
+              case "plain" => ys
+              case "reg"   => q
+              case _       => s(if (rows > 1) drain else 0)
+            }
+            for (l <- 0 until lanes) assert(LaneBits.peek(dut.io.out(l)) == want(l), s"$clue, cycle $c, lane $l")
+            if (e) {
+              if (acc) {
+                val at   = if (rows > 1) row else 0
+                val from = if (!f) s(at) else if (seeded) sd else Seq.fill(lanes)(BigInt(0))
+                s = s.updated(at, from.zip(ps).map { case (x, y) => (x + y) & LaneBits.mask(out.width) })
+              } else q = ys
             }
             dut.clock.step()
           }

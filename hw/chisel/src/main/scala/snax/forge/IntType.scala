@@ -49,4 +49,21 @@ object IntType {
       else u.pad(to.width)
     if (to.signed) bits.asSInt else bits
   }
+
+  /** Whether a product of `x` and `y` built at their own widths fits `to` (`narrowProduct`). */
+  def narrowFits(x: IntType, y: IntType, to: IntType): Boolean = x.width + y.width <= to.width
+
+  /** `x · y` at `to`, built narrow (D207): the product of the lanes at their own types, w_x + w_y bits (signed when
+    * either is, which holds it), extended to `to` by that signedness; the low bits of the product at `to` where
+    * `narrowFits`.
+    */
+  def narrowProduct(x: Bits, xt: IntType, y: Bits, yt: IntType, to: IntType): UInt = {
+    require(narrowFits(xt, yt, to), s"${xt.name} x ${yt.name} does not fit ${to.name} at its own widths")
+    val w = xt.width + yt.width
+    if (!xt.signed && !yt.signed) (x.asUInt * y.asUInt).pad(to.width)
+    else {
+      def s(v: Bits, t: IntType): SInt = if (t.signed) v.asSInt else v.asUInt.zext
+      (s(x, xt) * s(y, yt))(w - 1, 0).asSInt.pad(to.width).asUInt
+    }
+  }
 }

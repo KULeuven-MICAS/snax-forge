@@ -127,7 +127,7 @@ Numbers retired, never reused: D1–D7, D9–D11, D13–D18, D20–D25, D27, D29
 
 ### D207 — A narrow multiplier, as an option
 
-- **Decided:** `Mac` and `SimdLanes` (mul, and axpby's products) take a design-time `narrowMul`: each product is made at its operands' own widths, w_a + w_b bits, then extended to `opType`, where the default extends each operand to `opType` first and multiplies there. It applies only where w_a + w_b fits `opType`, so the product is the same bits as NumPy's at `opType`; elsewhere the block keeps the default. Off by default.
+- **Decided:** `Mac` and `SimdLanes` (mul, and axpby's and axpbypcz's products) take a design-time `narrowMul`: each product is made at its operands' own widths, w_a + w_b bits, then extended to `opType`, where the default extends each operand to `opType` first and multiplies there. It applies only where w_a + w_b fits `opType`, so the product is the same bits as NumPy's at `opType`; elsewhere the block keeps the default. Off by default.
 - **Why:** HLS tools narrow a product themselves; at `i8` the default's 32 × 32 multipliers on sign-extended int8 would cost E7 area for a reason that is not the engine's structure. Off by default, so the char tables, the cluster synthesis and §C's runs stay as measured until E7's int8 probe says whether it should become the default (open item 134). SNAX-GVSoC and the estimate need no change: the product is the same.
 - **Where:** `hw/chisel/` (`Mac`, `SimdLanes`, param `narrowMul`); set per design with `--set design.narrow_mul=true` (TOOL.md); CONTRACTS, "Accelerator RTL spec". No BRM carries it: the BRMs, the estimate and SNAX-GVSoC see the same product.
 

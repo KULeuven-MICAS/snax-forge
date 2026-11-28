@@ -6,7 +6,7 @@ import chisel3._
 import _root_.circt.stage.ChiselStage
 import org.scalatest.flatspec.AnyFlatSpec
 
-import snax.forge.Datapaths.{BoolParam, ConstParam, DtypeParam, DtypesParam, IntParam, OpParam}
+import snax.forge.Datapaths.{BoolParam, ConstParam, DtypeParam, DtypesParam, FlagParam, IntParam, OpParam}
 
 /** The datapath catalogue: `Emit --describe` (the registry, `Datapaths`) equals the checked-in `hw/chisel/blocks.json`,
   * the file the Python side checks `accelerator.json` against. Compared as JSON, key and list order included, so the
@@ -33,6 +33,7 @@ class DatapathsSpec extends AnyFlatSpec {
       case (n, IntParam(min), _) => n -> ujson.Num(min.max(if (n == "lanes") 8 else min))
       case (n, OpParam(vs), _)   => n -> ujson.Str(vs.head)
       case (n, BoolParam, _)     => n -> ujson.Bool(if (n == "regOut") !flag else flag)
+      case (n, FlagParam, _)     => n -> ujson.Bool(flag)
       case (n, DtypeParam, _)    => n -> ujson.Str(IntType.names.head)
       case (n, DtypesParam, _)   => n -> ujson.Arr.from(Seq.fill(if (plain) 3 else 2)(IntType.names.head))
       case (n, ConstParam, _)    => n -> ujson.Null

@@ -17,7 +17,9 @@ BRM's design param ``seed`` is 1; ``mac`` lanes, ``accumulate`` and ``regOut``;
 input. A datapath registered ``lanewise`` (SimdLanes, Mac: each lane on its own) takes
 a broadcast input, one lane its reader moves given to every lane: the port keeps the
 unit's lanes and carries ``broadcast``. An instance judged without a graph (brm/instance.py's check) has no
-dtypes: its adapter checks all but the widths.
+dtypes: its adapter checks all but the widths. A datapath registered with ``product`` (Mac, and
+SimdLanes at mul, axpby and an axpbypcz with a k) takes ``narrowMul`` true in its params when
+the design point's ``narrow_mul`` is (D207); no other unit, and no default design, has it.
 """
 
 from __future__ import annotations
@@ -91,13 +93,15 @@ Adapter = Callable[..., Fill]  # (inst, dtypes=None, op_type=None) -> Fill
 
 @dataclass(frozen=True)
 class Datapath:
-    """A registered datapath: its latency L, its adapter, its span and whether each lane
-    computes on its own (``lanewise``, so an input may be a broadcast; module doc)."""
+    """A registered datapath: its latency L, its adapter, its span, whether each lane
+    computes on its own (``lanewise``, so an input may be a broadcast) and whether a fill of it
+    has a product (``product``, so it takes ``narrowMul``; module doc)."""
 
     latency: int | str
     fill: Adapter
     span: int | str = 1
     lanewise: bool = False
+    product: Callable[[Fill], bool] | None = None
 
     def timing(self, filled: Fill) -> tuple[int, int]:
         """``(L, span)`` for the unit ``filled`` gives (module doc)."""
@@ -109,29 +113,37 @@ class Datapath:
 
 
 DATAPATHS: dict[str, Datapath] = {}
+NARROW_MUL = "narrowMul"  # the param a product's datapath takes for design.narrow_mul (D207)
 
 
-def fill_node(datapath: str, inst: Instance, graph: Any, node: Any) -> Fill:
+def fill_node(datapath: str, inst: Instance, graph: Any, node: Any,
+              narrow_mul: bool = False) -> Fill:  # fmt: skip
     """``datapath``'s adapter on the instance bound at ``node``, its op type the node's
-    ``opType`` where the kernel's casts set one, else its inputs' result type."""
+    ``opType`` where the kernel's casts set one, else its inputs' result type; with
+    ``narrow_mul``, ``narrowMul`` true in its params where it has a product (module doc)."""
     from dataclasses import replace
 
     from snax_forge.brm import port_dtypes
 
+    dp = DATAPATHS[datapath]
     op_type = node.attrs.get("opType")
-    f = DATAPATHS[datapath].fill(inst, port_dtypes(graph, node), op_type=op_type)
+    f = dp.fill(inst, port_dtypes(graph, node), op_type=op_type)
+    if narrow_mul and dp.product is not None and dp.product(f):
+        f = replace(f, params=f.params | {NARROW_MUL: True})
     if op_type is None or f.op_type is None:
         return f
     return replace(f, op_type=op_type, scalars={s: op_type for s in f.scalars})
 
 
 def register_datapath(name: str, latency: int | str, adapter: Adapter, span: int | str = 1,
-                      lanewise: bool = False) -> None:  # fmt: skip
+                      lanewise: bool = False,
+                      product: Callable[[Fill], bool] | None = None) -> None:  # fmt: skip
     """Add the datapath ``name`` (a binding's ``datapath``) of latency ``latency``, span
-    ``span`` and, ``lanewise``, lanes that compute on their own (module doc)."""
+    ``span``, ``lanewise``, lanes that compute on their own, and ``product``, whether a fill
+    has a product (module doc)."""
     if name in DATAPATHS:
         raise ValueError(f"datapath {name!r} already registered")
-    DATAPATHS[name] = Datapath(latency, adapter, span, lanewise)
+    DATAPATHS[name] = Datapath(latency, adapter, span, lanewise, product)
 
 
 # ElementwiseOp in ElementwiseAlu.scala
@@ -296,7 +308,14 @@ def _read_arg(inst: Instance, name: str) -> bool:
     return arg is not None and bool(expr.names(arg) & set(inst.read))
 
 
-register_datapath("SimdLanes", 0, simd_lanes, lanewise=True)
+def _simd_product(f: Fill) -> bool:
+    """A SimdLanes fill multiplies: mul, axpby (k1 always), or axpbypcz with a k baked or read."""
+    op = f.params["op"]
+    ks = {"k1", "k2", "k3"} & (set(f.params) | set(f.scalars))
+    return op in ("mul", AXPBY) or (op == "axpbypcz" and bool(ks))
+
+
+register_datapath("SimdLanes", 0, simd_lanes, lanewise=True, product=_simd_product)
 
 
 def tree_accumulate(inst: Instance, dtypes: Mapping[str, str] | None = None,
@@ -386,7 +405,8 @@ def mac(inst: Instance, dtypes: Mapping[str, str] | None = None,
     return Fill(ports, op_type, params)
 
 
-register_datapath("Mac", "max(accumulate, regOut)", mac, lanewise=True)
+register_datapath("Mac", "max(accumulate, regOut)", mac, lanewise=True,
+                  product=lambda f: True)  # fmt: skip
 
 
 def lane_accumulate(inst: Instance, dtypes: Mapping[str, str] | None = None,
